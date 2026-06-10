@@ -6,8 +6,10 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Caching;
 
 /// <summary>
-/// Message consumer that handles cache invalidation messages from other instances.
-/// Registered automatically by <see cref="SetupHybridCache"/>.
+/// Message consumer that handles cache invalidation messages from other instances. Not registered by
+/// <see cref="SetupHybridCache"/>: the application must register it with Headless messaging (for example via
+/// <c>ForMessage&lt;CacheInvalidationMessage&gt;()</c> consumer registration or assembly scanning). Routes to the
+/// default hybrid cache instance only; named hybrid instances do not receive backplane invalidations.
 /// </summary>
 [PublicAPI]
 public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<HybridCacheInvalidationConsumer> logger)

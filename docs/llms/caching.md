@@ -1,6 +1,6 @@
 ---
 domain: Caching
-packages: Caching.Abstractions, Caching.Core, Caching.Hybrid, Caching.InMemory, Caching.Redis
+packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.Hybrid, Caching.InMemory, Caching.Redis
 ---
 
 # Caching
@@ -29,7 +29,7 @@ packages: Caching.Abstractions, Caching.Core, Caching.Hybrid, Caching.InMemory, 
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
-- [Headless.Caching.Hybrid](#headlesscachinghybrid)
+- [Headless.Caching.DistributedLocks](#headlesscachingdistributedlocks)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
     - [Design Notes](#design-notes-2)
@@ -38,7 +38,7 @@ packages: Caching.Abstractions, Caching.Core, Caching.Hybrid, Caching.InMemory, 
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
-- [Headless.Caching.InMemory](#headlesscachinginmemory)
+- [Headless.Caching.Hybrid](#headlesscachinghybrid)
     - [Problem Solved](#problem-solved-3)
     - [Key Features](#key-features-3)
     - [Design Notes](#design-notes-3)
@@ -47,7 +47,7 @@ packages: Caching.Abstractions, Caching.Core, Caching.Hybrid, Caching.InMemory, 
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
-- [Headless.Caching.Redis](#headlesscachingredis)
+- [Headless.Caching.InMemory](#headlesscachinginmemory)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
     - [Design Notes](#design-notes-4)
@@ -56,8 +56,17 @@ packages: Caching.Abstractions, Caching.Core, Caching.Hybrid, Caching.InMemory, 
     - [Configuration](#configuration-4)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
+- [Headless.Caching.Redis](#headlesscachingredis)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Design Notes](#design-notes-5)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-5)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
 
-> Unified cache abstraction with in-memory, Redis, and hybrid L1+L2 implementations.
+> Unified cache abstraction with in-memory, Redis, and hybrid L1+L2 implementations, plus fail-safe, refresh, tagging, and multi-node stampede protection on the factory path.
 
 ## Quick Orientation
 
@@ -66,8 +75,9 @@ Install `Headless.Caching.Abstractions` plus one provider. Code against `ICache`
 - Single-instance or development: `Headless.Caching.InMemory` with `AddInMemoryCache()`.
 - Multi-instance shared cache: `Headless.Caching.Redis` with `AddRedisCache(...)`.
 - Local hot path plus shared L2: `Headless.Caching.Hybrid` with non-default in-memory cache, Redis, messaging, then `AddHybridCache()`.
+- Cross-node factory single-flight: add `Headless.Caching.DistributedLocks` and opt in per entry with `CacheEntryOptions.UseDistributedFactoryLock`.
 
-`ICache` supports scalar reads/writes, bulk operations, prefix operations, atomic compare/replace and numeric operations, and set operations. `GetOrAddAsync` is the factory-backed path and is the only path that uses `CacheEntryOptions` fail-safe and factory timeout behavior.
+`ICache` supports scalar reads/writes, bulk operations, prefix operations, atomic compare/replace and numeric operations, set operations, and tag invalidation (`RemoveByTagAsync`). `GetOrAddAsync` is the factory-backed path: it is governed by `CacheEntryOptions` (fail-safe, factory timeouts, sliding expiration, eager refresh, tags, distributed lock) and has a conditional overload taking a `CacheFactoryContext<T>` factory for HTTP-304-style refresh. `UpsertEntryAsync` is the only direct-write path that also honors `CacheEntryOptions`. Named cache instances are added with the `Add{InMemory,Redis,Hybrid}Cache(name, ...)` overloads and resolved through `ICacheProvider`.
 
 ## Agent Instructions
 
@@ -77,14 +87,25 @@ Install `Headless.Caching.Abstractions` plus one provider. Code against `ICache`
 - For hybrid caching, register memory cache as non-default (`AddInMemoryCache(isDefault: false)`), then register Redis cache, then call `AddHybridCache()`. The hybrid cache becomes the default `ICache`.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value`; cache misses return `HasValue = false`.
 - `GetOrAddAsync` takes `CacheEntryOptions`. Passing a `TimeSpan` still works through implicit conversion when only duration is needed.
+- The option-less `GetOrAddAsync` extension overloads use `ICache.DefaultEntryOptions` and throw `InvalidOperationException` when it is unset. Set `options.DefaultEntryOptions` at registration to opt in; never assume a magic default duration exists.
 - Set `CacheEntryOptions.SlidingExpiration` when a factory-backed entry should expire after an idle window while still respecting `Duration` as the absolute cap. Value reads re-arm; metadata reads such as `GetExpirationAsync` do not.
-- Do not combine sliding expiration and fail-safe in the same `CacheEntryOptions`; the coordinator rejects that combination.
+- Do not combine sliding expiration with fail-safe, and do not combine sliding expiration with eager refresh; the coordinator rejects both combinations.
 - Enable fail-safe per factory-backed entry with `CacheEntryOptions.IsFailSafeEnabled = true`. When the factory throws and a logically expired value is still physically retained, `GetOrAddAsync` serves that value and returns `CacheValue<T>.IsStale = true`.
 - Fail-safe retention is bounded by `max(Duration, FailSafeMaxDuration)` from entry creation. `FailSafeThrottleDuration` restamps logical expiration to avoid hammering a failing factory, but never extends physical retention.
 - Normal value reads (`GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `ExistsAsync`) use logical expiration. A fail-safe reserve is only consumed by `GetOrAddAsync`.
-- Keep direct write operations (`UpsertAsync`, `TryInsertAsync`, set/increment operations) on `TimeSpan?`; they do not establish a fail-safe reserve because they do not carry `CacheEntryOptions`.
+- Keep direct write operations (`UpsertAsync`, `TryInsertAsync`, set/increment operations) on `TimeSpan?`; they do not establish a fail-safe reserve because they do not carry `CacheEntryOptions`. Use `UpsertEntryAsync(key, value, options)` only when the write needs option semantics (fail-safe reserve, eager stamp, sliding, tags) — it performs a read-before-write to reconcile tag indexes, so prefer plain `UpsertAsync` on hot paths.
+- Set `CacheEntryOptions.EagerRefreshThreshold` (exclusive between 0 and 1) to refresh hot entries in the background before they expire; the eager point is `createdAt + Duration × threshold`. A failed eager refresh leaves the entry fresh until natural expiry — it never activates fail-safe by itself.
+- In a conditional factory, `context.NotModified()` requires a last-known value: check `context.HasStaleValue` and return `context.Modified(value)` on a cold cache, or the call throws `InvalidOperationException`.
+- Adaptive changes to `context.Options` are re-validated at write time (an invalid mutation throws after the factory ran, nothing is written), and changes to the factory-timeout family (`FactorySoftTimeout`, `FactoryHardTimeout`, `LockTimeout`) are inert for the current call — those fields are consumed before the factory runs.
+- Tags must be non-empty, and both the tag count and each tag's UTF-8 byte length must fit in an unsigned 16-bit value; violations throw `ArgumentException` before anything is written.
+- `RemoveByTagAsync` is version-pinned: it removes exactly the entries that currently carry the tag. A key that expired, was overwritten untagged, or was re-created is never removed by an old tag — its stale index membership is cleaned up instead. Do not expect it to remove "everything that ever had the tag".
+- Redis tag invalidation is NOT supported on Redis Cluster, and the `{KeyPrefix}__cache_tag__:` namespace is reserved for the tag index — never store cache entries under it.
+- `CacheEntryOptions.UseDistributedFactoryLock` requires the `Headless.Caching.DistributedLocks` adapter (`AddCachingDistributedFactoryLock()`) plus a registered `IDistributedLock`; enabling it without the provider fails the read with `InvalidOperationException`. Reserve it for expensive factories — per-node single-flight already exists without it.
+- Named cache instances must not use the reserved role keys `memory`, `remote`, or `hybrid` (`CacheConstants`); the name-taking overloads throw `ArgumentException`. Resolve named instances through `ICacheProvider.GetCache(name)` / `GetCacheOrNull(name)`.
+- Named hybrid instances are not wired to the backplane invalidation consumer: they publish invalidations but never receive them, so their L1 only converges via `DefaultLocalExpiration` TTL. Use the default hybrid when cross-instance L1 invalidation matters.
+- Hybrid auto-recovery (`EnableAutoRecovery = true`) is degraded-mode semantics, not a guarantee: a failing single-key L2 write succeeds against L1 and is replayed later, so L2 (and other instances) can lag L1 until recovery. Bulk, atomic, and set operations are never captured and still surface failures.
 - Use `FactorySoftTimeout` only with fail-safe and a stale reserve. When it fires, the caller gets stale data and the factory continues in the background under a detached internal token.
-- Do not capture request-scoped disposables in a soft-timeout factory. The background refresh can outlive the request token; create a fresh scope inside the factory when scoped services are needed.
+- Do not capture request-scoped disposables in a soft-timeout or eager-refresh factory. The background refresh can outlive the request token; create a fresh scope inside the factory when scoped services are needed.
 - Use `FactoryHardTimeout` to bound cold-cache factory waits. When it fires with no stale fallback, `GetOrAddAsync` throws `CacheFactoryTimeoutException`; when stale data exists, it serves stale.
 - `BackgroundFactoryCeiling` defaults to `Timeout.InfiniteTimeSpan` (no ceiling); a detached background refresh runs to completion. Set a finite, positive value to bound how long it can hold the per-key lock.
 - `LockTimeout` defaults to `Timeout.InfiniteTimeSpan`: a caller with no stale reserve waits until the in-flight factory releases the per-key lock. Set a finite, positive value so such a caller degrades to a miss (`CacheValue<T>.NoValue`) instead of blocking. When a stale reserve exists and `FactorySoftTimeout` is finite, the soft timeout governs the wait instead and the caller is served stale.
@@ -105,7 +126,17 @@ Entries can carry two expiration timestamps:
 - Logical expiration controls ordinary reads and cache freshness.
 - Physical expiration controls how long a fail-safe reserve remains available to `GetOrAddAsync`.
 
-`SlidingExpiration` is an optional idle window for factory-backed entries. `Duration` remains the absolute cap from entry creation, and value-returning reads re-arm the logical deadline to `min(now + SlidingExpiration, createdAt + Duration)`. Metadata reads do not re-arm. Sliding expiration and fail-safe are rejected together in this version.
+`SlidingExpiration` is an optional idle window for factory-backed entries. `Duration` remains the absolute cap from entry creation, and value-returning reads re-arm the logical deadline to `min(now + SlidingExpiration, createdAt + Duration)`. Metadata reads do not re-arm. Sliding expiration is rejected together with fail-safe and together with eager refresh in this version.
+
+Eager refresh renews hot entries before they expire. `EagerRefreshThreshold` stamps an eager point of `createdAt + Duration × threshold` on the entry itself (`EagerRefreshAt`), so any reader of an eager-stamped entry can refresh it with its current factory and options — including readers on other nodes sharing the store. A fresh `GetOrAddAsync` hit past the eager point returns the cached value immediately and starts a detached refresh, deduplicated by a zero-timeout per-key lock attempt: the first reader past the point wins, everyone else returns untouched. The winner clears the eager stamp with a gate write before running the factory so concurrent readers stop triggering; a failed gate write skips the refresh and leaves the entry fresh and re-triggerable. A failed eager factory only loses the proactive renewal — the entry stays fresh to natural expiry (no fail-safe restamp, because nothing is stale yet), and fail-safe takes over after expiry when enabled.
+
+Conditional refresh (the HTTP-304 pattern) runs the factory with a `CacheFactoryContext<T>` carrying the last-known value and its validators (`ETag`, `LastModifiedAt`). The factory asks the origin "changed since?" and returns `context.NotModified()` to re-stamp the existing value as fresh without re-transferring it, or `context.Modified(value, eTag, lastModifiedAt)` to replace it. The context's `Options` and `Tags` are mutable (adaptive caching): the write uses whatever the factory left there, re-validated before persisting. The simple value-factory overload adapts onto the same engine, so both shapes share identical timeout, fail-safe, and refresh semantics, and conditional factories also work through soft-timeout background completion and eager refresh.
+
+Tag invalidation uses a real reverse index per provider (tag → keys), not FusionCache-style lazy expiry barriers: Headless owns the providers, so it can maintain the index atomically with the write, and actually deleting entries keeps prefix reads, key listing, and counts ghost-free instead of leaving logically-dead entries behind. Memberships are pinned to the entry version (the in-memory index verifies the live entry's tags; Redis records the entry's physical-expiry stamp and verifies it in the removal script), which makes `RemoveByTagAsync` precise: re-created or overwritten entries are never removed by an old tag, and stale memberships are garbage-collected during invalidation. `RemoveByTagAsync` returns the number of entries removed.
+
+Named caches are keyed `ICache` registrations created by the `Add{InMemory,Redis,Hybrid}Cache(name, ...)` overloads, each with independent options (and for Redis, an independent multiplexer and scripts loader). Three role keys are reserved and registered by every provider setup — `memory`, `remote`, `hybrid` (`CacheConstants`) — so the default tiers are always reachable by role; named instances must pick other names. `ICacheProvider` resolves both shapes. `DefaultEntryOptions` (per cache instance, from `CacheOptions`) feeds the option-less `GetOrAddAsync` extension overloads and is deliberately explicit-at-registration: unset means those overloads throw rather than invent a duration.
+
+The distributed factory lock is an opt-in second locking layer for multi-node stampede protection. The local per-key lock always comes first; with `UseDistributedFactoryLock` set and the `Headless.Caching.DistributedLocks` adapter registered, the coordinator then acquires a distributed lock with the same wait budget, re-checks the shared store (the loser of the cross-node race serves the winner's fresh value), and only then runs the factory. The lease transfers through soft-timeout background completions and eager refreshes so the cross-node guard holds until the detached write lands.
 
 Factory timeout selection is a single decision:
 
@@ -119,7 +150,7 @@ Soft timeout also bounds acquisition of the per-key lock when fail-safe and a st
 
 Background completion is per-key, not global. The keyed lock prevents duplicate cooperative factories for the same key while the background refresh runs, but it does not limit refreshes across distinct keys. If the background ceiling abandons a token-ignoring factory, that factory may continue running untracked; the coordinator gates late success writes from the timeout path so it cannot overwrite a newer timeout-path value after abandonment. Direct explicit writes (`Set`, `Upsert`, `Remove`) are not version-checked against a slow background write; a slow successful background refresh can still overwrite an explicit write. CAS/versioned write protection is deferred.
 
-FusionCache alignment is intentional but not exact. Headless uses FusionCache-like soft and hard timeout selection and waiter lock timeout behavior, but Headless detaches the background refresh token from the caller token. Headless hard timeout abandons the factory path instead of allowing background completion after the hard limit.
+FusionCache alignment is intentional but not exact. Headless uses FusionCache-like soft and hard timeout selection, waiter lock timeout behavior, eager refresh, conditional/adaptive factories, and auto-recovery, but Headless detaches the background refresh token from the caller token, abandons the factory path on hard timeout instead of allowing background completion after the hard limit, and deletes tagged entries through a real reverse index instead of lazy expiry barriers.
 
 ## Choosing a Provider
 
@@ -128,6 +159,8 @@ FusionCache alignment is intentional but not exact. Headless uses FusionCache-li
 | `Headless.Caching.InMemory` | Single process, tests, local development, or L1 for Hybrid. | Multiple app instances must share cache state. | Fastest path, but data is per process and retained in memory. |
 | `Headless.Caching.Redis` | Multiple app instances need a shared cache and Redis is already operational. | The app cannot tolerate Redis operational dependency. | Distributed and script-backed atomic operations, with network latency and Redis timeout tuning. |
 | `Headless.Caching.Hybrid` | Reads are hot enough to benefit from L1 while L2 keeps instances coherent. | Invalidation messaging is not configured or L1 staleness is unacceptable. | Fast local reads plus remote sharing, with extra moving parts and invalidation timing. |
+
+`Headless.Caching.DistributedLocks` is not a provider — it is an adapter that any provider's factory path can opt into per entry when the factory is expensive enough to justify a distributed lock round-trip.
 
 ## Headless.Caching.Abstractions
 
@@ -145,24 +178,45 @@ Provides a provider-agnostic caching API so applications can switch between memo
     - Prefix-based operations (GetByPrefix, RemoveByPrefix)
     - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
     - Set operations (SetAdd, SetRemove, GetSet)
+    - Tag invalidation (`UpsertEntryAsync` with `CacheEntryOptions.Tags`, `RemoveByTagAsync` returning the removed count)
 - `IInMemoryCache` - marker interface for in-memory implementations.
 - `IRemoteCache` - marker interface for remote implementations.
 - `ICache<T>` - strongly typed cache wrapper.
+- `ICacheProvider` - resolves named cache instances and the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`).
 - `CacheValue<T>` - cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
-- `CacheEntryOptions` - factory-backed entry options: `Duration`, `SlidingExpiration`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, `FailSafeThrottleDuration`, `FactorySoftTimeout`, `FactoryHardTimeout`, `BackgroundFactoryCeiling`, and `LockTimeout`.
+- `CacheEntryOptions` - factory-backed entry options: `Duration`, `SlidingExpiration`, `EagerRefreshThreshold`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, `FailSafeThrottleDuration`, `FactorySoftTimeout`, `FactoryHardTimeout`, `BackgroundFactoryCeiling`, `LockTimeout`, `UseDistributedFactoryLock`, and `Tags`.
+- `CacheFactoryContext<T>` / `CacheFactoryResult<T>` - conditional-factory contract (the HTTP-304 pattern): the factory sees the last-known value and its validators (`ETag`, `LastModifiedAt`) and returns `NotModified()` or `Modified(value, eTag, lastModifiedAt)`; it may also replace `Options` and `Tags` before returning (adaptive caching).
+- `CacheOptions` - base provider options carrying `KeyPrefix` and `DefaultEntryOptions`.
+- `CacheDefaultEntryExtensions` - option-less `GetOrAddAsync` overloads that apply the cache instance's `DefaultEntryOptions` and throw `InvalidOperationException` when none is configured.
 - `CacheFactoryTimeoutException` - `TimeoutException` subtype thrown when a hard factory timeout fires without a stale fallback.
 
 ### Design Notes
 
 `GetOrAddAsync` accepts `CacheEntryOptions` so factory-backed cache entries have a stable extension point for fail-safe, factory timeouts, refresh, and tagging features. A `TimeSpan` converts implicitly to `CacheEntryOptions`, so positional duration-only call sites keep their shorthand while explicit options are available when a caller wants to name the duration. This is a greenfield public API break for named arguments: callers using `expiration: ...` on `GetOrAddAsync` must rename that argument to `options: ...`.
 
-Fail-safe is opt-in and only applies to `GetOrAddAsync`. Direct writes keep the `TimeSpan?` API and write logical expiration equal to physical expiration. A stale value served by fail-safe returns `CacheValue<T>.IsStale = true` only for the activating call; reads during the throttle window are logical hits and return `IsStale = false`.
+`SlidingExpiration` is an optional idle window for factory-backed entries. `Duration` remains the absolute cap from entry creation, and value-returning reads re-arm the logical deadline to `min(now + SlidingExpiration, createdAt + Duration)`. Metadata reads do not re-arm. Sliding expiration is rejected together with fail-safe and together with eager refresh in this version.
+
+`EagerRefreshThreshold` (exclusive between 0 and 1) stamps an eager point of `createdAt + Duration × threshold` on the entry. A fresh `GetOrAddAsync` hit past that point returns the cached value immediately and starts a non-blocking, deduplicated background refresh, so hot keys are renewed before they expire and callers never block on the refresh. A failed eager refresh only loses the proactive renewal — the entry stays fresh until natural expiry, and fail-safe (when enabled) takes over from there.
+
+The conditional `GetOrAddAsync` overload exists for origins that can answer "has this changed since?" cheaper than re-sending the value (HTTP `ETag`/`If-Modified-Since`, DB row versions). `NotModified()` re-stamps the existing entry as fresh without re-transferring the payload; it throws `InvalidOperationException` when no last-known value exists (`HasStaleValue` is `false`) — return `Modified(value)` on a cold cache. Mutating `context.Options` is re-validated before the write: an invalid adaptive mutation (e.g. non-positive duration) throws after the factory ran and nothing is written. The factory-timeout family (`FactorySoftTimeout`, `FactoryHardTimeout`, `LockTimeout`) is consumed before the factory runs, so adaptive changes to those fields are inert for the current call.
+
+`Tags` are persisted with the entry for later one-call invalidation through `RemoveByTagAsync`. On a factory-backed read, call-provided tags win over the tags carried by an existing entry; `null` carries the existing tags forward. Each tag must be non-empty, and both the tag count and each tag's UTF-8 byte length must fit in an unsigned 16-bit value (provider envelope limits) — violations throw `ArgumentException` before anything is written. `RemoveByTagAsync` removes exactly the entries that currently carry the tag: memberships are pinned to the entry version, so a key that expired or was re-created without the tag is cleaned up from the index instead of removed.
+
+`UpsertEntryAsync(key, value, options)` is the direct-write path that honors full `CacheEntryOptions` semantics (fail-safe physical retention, eager stamp, sliding clamp, tags). It performs a read-before-write to reconcile provider tag indexes, so prefer the plain `UpsertAsync(key, value, TimeSpan?)` on hot paths that need none of the per-entry option semantics. It is named distinctly because the `TimeSpan`-to-options implicit conversion would otherwise make every bare-`TimeSpan` upsert ambiguous.
+
+Fail-safe is opt-in and only applies to `GetOrAddAsync`. Direct `TimeSpan?` writes keep logical expiration equal to physical expiration. A stale value served by fail-safe returns `CacheValue<T>.IsStale = true` only for the activating call; reads during the throttle window are logical hits and return `IsStale = false`.
 
 Factory soft timeouts are useful only when fail-safe is enabled and a stale reserve exists. In that case the caller gets stale data and the factory continues in the background. Soft timeouts configured without fail-safe are inert and logged once per key. Factory hard timeouts cancel or abandon the factory; they serve stale when possible and throw `CacheFactoryTimeoutException` on a cold cache.
 
-Background completion uses a detached coordinator-owned cancellation token, not the caller token. A request token may be cancelled after the stale response is returned and the background refresh can still finish. Factories used with soft timeouts must not capture request-scoped disposables; create a fresh dependency scope inside the factory when scoped services are required after the request path returns.
+Background completion uses a detached coordinator-owned cancellation token, not the caller token. A request token may be cancelled after the stale response is returned and the background refresh can still finish. Factories used with soft timeouts or eager refresh must not capture request-scoped disposables; create a fresh dependency scope inside the factory when scoped services are required after the request path returns.
 
 `BackgroundFactoryCeiling` defaults to `Timeout.InfiniteTimeSpan` (no ceiling): a detached background factory runs to completion, matching the behavior of comparable caches (FusionCache, Caffeine, sturdyc). Set a finite, positive value to bound how long a detached factory may hold the per-key lock. When the ceiling fires, the coordinator cancels the internal token and releases the lock: cooperative factories stop, while non-cooperative factories may continue running untracked, but the coordinator gates late success writes so an abandoned factory cannot clobber a newer cache value through the timeout path.
+
+`LockTimeout` defaults to `Timeout.InfiniteTimeSpan`, matching FusionCache's default: a caller with no stale reserve waits until the in-flight factory releases the per-key lock. Set a finite, positive value so a caller that cannot acquire the lock in time degrades to a miss (`CacheValue<T>.NoValue`) instead of blocking, bounding tail latency when an in-flight factory is slow and no fail-safe reserve exists. When a stale reserve does exist and `FactorySoftTimeout` is finite, that soft timeout governs the wait instead and the caller is served stale on elapse.
+
+`UseDistributedFactoryLock` adds a cross-node single-flight layer on top of the local per-key lock. It is off by default and zero-cost when disabled; enabling it requires a registered `ICacheFactoryLockProvider` (reference `Headless.Caching.DistributedLocks` and call `AddCachingDistributedFactoryLock()`), otherwise the factory-backed read throws `InvalidOperationException` rather than silently degrading to single-node behavior.
+
+`DefaultEntryOptions` is explicit-at-registration, never magic: the option-less `GetOrAddAsync` extension overloads throw `InvalidOperationException` when the cache instance has no configured default, so a missing default is a loud configuration error instead of a silent surprise duration.
 
 ### Installation
 
@@ -202,12 +256,13 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
                 new CacheEntryOptions
                 {
                     Duration = TimeSpan.FromMinutes(10),
+                    EagerRefreshThreshold = 0.8f, // refresh in the background after 8 minutes
                     IsFailSafeEnabled = true,
                     FailSafeMaxDuration = TimeSpan.FromHours(1),
                     FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
                     FactorySoftTimeout = TimeSpan.FromMilliseconds(200),
                     FactoryHardTimeout = TimeSpan.FromSeconds(2),
-                    BackgroundFactoryCeiling = TimeSpan.FromMinutes(2),
+                    Tags = ["products", $"product:{id}"],
                 },
                 ct
             )
@@ -218,13 +273,63 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 }
 ```
 
+Conditional refresh (the HTTP-304 pattern) — extend the cached entry without re-transferring the value when the origin reports it unchanged:
+
+```csharp
+public sealed class FeedService(ICache cache, HttpClient httpClient)
+{
+    public async Task<string?> GetFeedAsync(CancellationToken ct)
+    {
+        var cached = await cache.GetOrAddAsync<string>(
+            "feed:latest",
+            async (context, token) =>
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, "https://example.com/feed");
+
+                if (context.HasStaleValue && context.ETag is not null)
+                {
+                    request.Headers.IfNoneMatch.ParseAdd(context.ETag);
+                }
+
+                using var response = await httpClient.SendAsync(request, token);
+
+                if (response.StatusCode == HttpStatusCode.NotModified)
+                {
+                    return context.NotModified(); // re-stamp the cached value as fresh
+                }
+
+                var body = await response.Content.ReadAsStringAsync(token);
+                return context.Modified(body, eTag: response.Headers.ETag?.Tag);
+            },
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            ct
+        );
+
+        return cached.HasValue ? cached.Value : null;
+    }
+}
+```
+
+Tag invalidation:
+
+```csharp
+await cache.UpsertEntryAsync(
+    "product:42",
+    product,
+    new CacheEntryOptions { Duration = TimeSpan.FromMinutes(30), Tags = ["products"] },
+    ct
+);
+
+var removed = await cache.RemoveByTagAsync("products", ct); // count of entries removed
+```
+
 ### Configuration
 
-No configuration required. This is an abstractions-only package.
+No configuration required. This is an abstractions-only package; `CacheOptions.KeyPrefix` and `CacheOptions.DefaultEntryOptions` are configured on the provider packages.
 
 ### Dependencies
 
-None.
+- `Headless.Extensions`
 
 ### Side Effects
 
@@ -238,22 +343,33 @@ Shared factory-backed cache orchestration for cache providers.
 
 ### Problem Solved
 
-Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid providers share the same factory execution, keyed locking, fail-safe fallback, timeout, background completion, and throttle behavior.
+Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid providers share the same factory execution, keyed locking, fail-safe fallback, timeout, eager refresh, conditional refresh, and background completion behavior.
 
 ### Key Features
 
-- `FactoryCacheCoordinator` - shared factory orchestration engine.
-- `IFactoryCacheStore` - provider primitive for metadata-aware entry reads and writes.
-- `CacheStoreEntry<T>` - logical, physical, and optional sliding expiration snapshot used by the coordinator.
+- `FactoryCacheCoordinator` - shared factory orchestration engine; both the simple value factory and the conditional `CacheFactoryContext<T>` factory run on one state machine with identical timeout, fail-safe, and refresh semantics.
+- `IFactoryCacheStore` - provider primitive for metadata-aware entry reads, writes, and metadata-only sliding re-arm (`TryRearmSlidingAsync`).
+- `CacheStoreEntry<T>` - entry snapshot with logical, physical, and sliding expiration plus per-entry metadata (`EagerRefreshAt`, `ETag`, `LastModifiedAt`, `Tags`).
+- `CacheStoreEntryWrite<T>` - write descriptor carrying the value, expirations, eager stamp, validators, `Tags`, and `RemovedTags` (stale memberships a reverse tag index must drop atomically with the write).
+- `CacheEntryStamps` - single home of the fresh-write stamp math (fail-safe extends physical retention, eager threshold stamps the eager point, sliding clamps the logical lifetime) and of options/tags validation, so the coordinator and the providers' direct `UpsertEntryAsync` writes always agree.
+- `FactoryCacheStoreExtensions.UpsertEntryAsync` - shared direct options-based upsert composed on the store primitive (read-before-write for tag-index reconciliation).
+- `ICacheFactoryLockProvider` - optional cross-node coordination seam consumed when `CacheEntryOptions.UseDistributedFactoryLock` is set (adapter: `Headless.Caching.DistributedLocks`).
 - `CacheStoreEntryExtensions` - shared `IsFresh`/`IsPhysicallyPresent` predicates so every provider and the coordinator agree on the expiration boundary (an entry is expired at the exact tick, `expiresAt <= now`).
 - `FactoryCacheCoordinator.IsCallerCancellation` - shared predicate provider composites use so caller cancellation propagates while an unrelated/downstream `OperationCanceledException` activates fail-safe consistently.
-- Fail-safe, factory timeout, and background completion logs.
+- `SetupCacheProvider.AddCacheProvider` - registers `ICacheProvider` over the container's keyed `ICache` registrations; called by every provider setup.
+- Fail-safe, factory timeout, eager refresh, and background completion logs.
 
 ### Design Notes
 
-Providers construct the coordinator directly with their `TimeProvider` and logger; the Core package has no DI setup. Store read failures are treated as misses, fail-safe restamp writes are best-effort, and sliding re-arm writes are best-effort so a cached value can still be returned when the backing store is unhealthy. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe. Sliding expiration and fail-safe are rejected together because one needs value reads to extend the logical deadline while the other needs logical expiration to expose a stale reserve.
+Providers construct the coordinator directly with their `TimeProvider`, logger, and optional `ICacheFactoryLockProvider`; the Core package ships no provider DI setup, only the `AddCacheProvider()` helper the provider setups call. Store read failures are treated as misses, fail-safe restamp writes are best-effort, and sliding re-arm writes are best-effort so a cached value can still be returned when the backing store is unhealthy. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe. Sliding expiration is rejected together with fail-safe (one needs value reads to extend the logical deadline while the other needs logical expiration to expose a stale reserve) and together with eager refresh (both re-arm the logical lifetime).
 
 Factory timeout selection is centralized in the coordinator. If fail-safe is enabled, a stale reserve exists, and `FactorySoftTimeout` is finite, the soft timeout governs. Otherwise a finite `FactoryHardTimeout` governs. Otherwise factory execution is unbounded except for caller cancellation. A finite soft timeout also bounds acquisition of the same per-key lock when stale data exists, so waiters and supported same-key re-entrant calls return stale instead of blocking behind an in-flight refresh. When no stale reserve exists, `LockTimeout` (default `Timeout.InfiniteTimeSpan`) bounds that acquisition instead, and a finite value makes the waiter degrade to a miss rather than block.
+
+Eager refresh triggers off the entry's own `EagerRefreshAt` stamp, so any reader of an eager-stamped entry can refresh it with its current factory and options. The first reader past the eager point wins a zero-timeout per-key `TryLock`; everyone else returns the still-fresh value untouched. The winner double-checks the entry under the lock, then performs a gate write that clears the eager stamp before the factory starts, so other readers (including other nodes reading through a shared store) stop triggering while the refresh is in flight. The gate write is best-effort: when it fails, the refresh is skipped and the entry stays fresh and re-triggerable. An eager factory failure is logged and the entry is left untouched — it is still fresh, so there is no fail-safe restamp; natural expiry and fail-safe (when enabled) take over from there.
+
+Conditional refresh and adaptive options run through one write path shared by the foreground factory, the soft-timeout background completion, and the eager refresh. A `NotModified` result re-stamps the existing last-known-good value as fresh with the context's current options, preserving its validators; the factory's adaptive `Options` replacement is re-validated before the write and an invalid mutation throws after the factory ran with nothing written. The throttle restamp applied when fail-safe activates preserves the stale entry's metadata (`ETag`, `LastModifiedAt`, `Tags`) but drops `EagerRefreshAt`, so a restamped stale reserve cannot trigger an eager refresh on top of the throttle.
+
+When `CacheEntryOptions.UseDistributedFactoryLock` is set and a provider is registered, the coordinator layers a cross-node lock over the local per-key lock: acquire local, acquire distributed with the same wait budget, re-check the shared store (the loser of the cross-node race serves the winner's value), then run the factory. The lease transfers into soft-timeout background completions and eager refreshes so the cross-node guard stays held until the detached write lands, and release is best-effort with the lease TTL as the backstop. Enabling the option without a registered `ICacheFactoryLockProvider` throws `InvalidOperationException` naming the adapter package.
 
 The coordinator deliberately diverges from FusionCache on background cancellation. A soft-timed-out factory uses a detached internal token and can outlive the caller request. Hard timeouts cancel or abandon the factory and never allow background completion. The per-key no-duplicate-factory guarantee holds cleanly for cooperative factories; after the background ceiling abandons a token-ignoring factory, another factory may run for that key while the abandoned task continues untracked, but late timeout-path writes are gated off.
 
@@ -265,7 +381,7 @@ dotnet add package Headless.Caching.Core
 
 ### Quick Start
 
-Consumers normally do not use this package directly. Provider packages reference it to implement `GetOrAddAsync`.
+Consumers normally do not use this package directly. Provider packages reference it to implement `GetOrAddAsync` and the options-based `UpsertEntryAsync`.
 
 ### Configuration
 
@@ -275,11 +391,110 @@ None.
 
 - `Headless.Caching.Abstractions`
 - `Headless.Extensions`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 
 ### Side Effects
 
-None. Providers own coordinator construction.
+- `AddCacheProvider()` registers `ICacheProvider` as singleton (`TryAdd`); provider setups call it automatically.
+- Providers own coordinator construction; no other registrations.
+
+---
+
+## Headless.Caching.DistributedLocks
+
+Adapter that bridges the caching factory-lock seam (`ICacheFactoryLockProvider`) onto `IDistributedLock`, enabling opt-in multi-node cache stampede protection for entries that set `CacheEntryOptions.UseDistributedFactoryLock`.
+
+### Problem Solved
+
+The per-key factory lock in `Headless.Caching.Core` is process-local: with N app instances sharing one Redis cache, a popular key expiring can still run N concurrent factories — one per node. This package makes the factory single-flight across nodes: the node that wins a distributed lock runs the factory, the others wait on the lock and re-check the shared store, so the losers serve the winner's freshly written value instead of duplicating the work.
+
+### Key Features
+
+- `AddCachingDistributedFactoryLock()` registers `ICacheFactoryLockProvider` backed by the application's `IDistributedLock` registration (any `Headless.DistributedLocks.*` provider).
+- Per-entry opt-in through `CacheEntryOptions.UseDistributedFactoryLock`; entries that do not set it pay zero cost.
+- Lock resources are namespaced with a configurable prefix (default `cache:factory:`) so cache locks never collide with other lock consumers on the same backend.
+- The seam timeout maps directly onto `DistributedLockAcquireOptions.AcquireTimeout`: `TimeSpan.Zero` is a single try-once attempt (used by eager refresh), `Timeout.InfiniteTimeSpan` waits unboundedly, and a finite value bounds the wait.
+- Optional lease TTL override (`TimeUntilExpires`) as the backstop that frees the key when a node dies mid-factory.
+
+### Design Notes
+
+- The cross-node lock is a second layer, not a replacement. The coordinator always acquires the local per-key lock first, then the distributed lock, with the same wait budget the local lock used (the soft timeout when a fail-safe stale reserve can absorb the elapse, `LockTimeout` otherwise). Degradation on elapse therefore mirrors the local lock-timeout path exactly: serve stale when a reserve exists, degrade to a miss otherwise.
+- After acquiring the distributed lock the coordinator re-checks the shared store before running the factory. The previous owner on another node may have just written a fresh value; the loser of the cross-node race serves the winner's value instead of refreshing again.
+- The lease transfers through detached paths. On a soft timeout the lease moves into the background completion together with the local lock releaser, and the eager-refresh path holds it until the detached factory lands — the cross-node guard stays held until the write happens, not just until the caller returns.
+- Eager refresh uses a single non-blocking attempt (`TimeSpan.Zero`). When the lock is held elsewhere another node is already refreshing, so the local node skips silently and leaves the still-fresh entry untouched.
+- Lock release is best-effort: a failed release is logged and the lease TTL is the backstop, so a release failure never masks the cache operation's outcome. Keep `TimeUntilExpires` (or the lock provider's default lease) comfortably above the slowest expected factory run.
+- Use it when the factory is expensive enough (slow query, paid API call) to outweigh a distributed lock round-trip per cold refresh. For cheap factories, per-node single-flight is already enough — N small duplicated calls are cheaper than N lock round-trips on every miss.
+
+### Installation
+
+```bash
+dotnet add package Headless.Caching.DistributedLocks
+```
+
+### Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+
+// Any Headless.DistributedLocks provider works; the adapter resolves IDistributedLock.
+builder.Services.AddHeadlessDistributedLocks(locks => locks.UseRedis());
+builder.Services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
+builder.Services.AddCachingDistributedFactoryLock();
+```
+
+```csharp
+public sealed class ReportService(ICache cache, IReportRepository repository)
+{
+    public async Task<Report?> GetDailyReportAsync(CancellationToken ct)
+    {
+        var cached = await cache.GetOrAddAsync(
+            "report:daily",
+            token => repository.BuildExpensiveReportAsync(token),
+            new CacheEntryOptions
+            {
+                Duration = TimeSpan.FromMinutes(30),
+                UseDistributedFactoryLock = true, // one node builds; others re-check the shared store
+            },
+            ct
+        );
+
+        return cached.HasValue ? cached.Value : null;
+    }
+}
+```
+
+Enabling `UseDistributedFactoryLock` without calling `AddCachingDistributedFactoryLock()` (or registering another `ICacheFactoryLockProvider`) fails the factory-backed read with `InvalidOperationException` instead of silently degrading to single-node behavior.
+
+### Configuration
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `ResourcePrefix` | `"cache:factory:"` | Prefix prepended to the cache key to form the distributed lock resource name; override to namespace cache locks away from other lock consumers sharing the backend. |
+| `TimeUntilExpires` | `null` | Lease TTL applied to each acquired factory lock; `null` uses the distributed lock provider's default lease duration. The TTL frees the key when a node dies mid-factory. |
+
+```csharp
+builder.Services.AddCachingDistributedFactoryLock(options =>
+{
+    options.ResourcePrefix = "myapp:cache:factory:";
+    options.TimeUntilExpires = TimeSpan.FromMinutes(2);
+});
+```
+
+### Dependencies
+
+- `Headless.Caching.Core`
+- `Headless.DistributedLocks.Abstractions`
+- `Headless.Hosting`
+
+### Side Effects
+
+- Registers `ICacheFactoryLockProvider` as singleton (`TryAdd`, so an existing registration wins).
+- Registers `CacheFactoryLockOptions` as a singleton option value.
+- Requires an `IDistributedLock` registration at resolution time; none is added by this package.
 
 ---
 
@@ -298,13 +513,18 @@ Provides one `ICache` implementation that reads from a fast local cache first, f
 - Miss path executes the factory once through the shared `FactoryCacheCoordinator`.
 - Supports strongly typed `ICache<T>`.
 - Uses `DefaultLocalExpiration` to keep L1 fresher than L2.
-- Shared `GetOrAddAsync` fail-safe, factory timeout, and background completion behavior through `Headless.Caching.Core`.
+- Tag invalidation across both tiers plus a `Tag` invalidation message on the backplane so other instances drop their L1 copies.
+- Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `AddHybridCache(name, ...)`.
+- Opt-in auto-recovery: transient L2/backplane outages queue failed single-key operations and replay them on recovery.
+- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ### Design Notes
 
-Register an in-memory cache as non-default, then a remote cache, then the hybrid cache. The hybrid cache becomes the default `ICache` when `isDefault: true`.
+Register an in-memory cache as non-default, then a remote cache, then the hybrid cache. The hybrid cache becomes the default `ICache` when `isDefault: true`. Incoming invalidations are handled by `HybridCacheInvalidationConsumer` (`IConsume<CacheInvalidationMessage>`); register it with the application's messaging setup (explicit `ForMessage<CacheInvalidationMessage>(...)` registration or assembly scanning) — without it this instance publishes invalidations but never receives them. The consumer routes to the default `HybridCache` only: named hybrid instances publish invalidations but are not wired to the backplane consumer, so their L1 tiers converge only through `DefaultLocalExpiration` TTL (known limitation).
 
-Hybrid fail-safe and factory timeouts use the same coordinator semantics as the other providers. A stale reserve can come from L1 or L2. On soft timeout, the stale value is returned to the caller and the detached background factory writes through the composite store on success, so both tiers are refreshed. `DefaultLocalExpiration` still caps L1 physical retention independently of the L2 duration.
+Hybrid fail-safe and factory timeouts use the same coordinator semantics as the other providers. A stale reserve can come from L1 or L2. On soft timeout, the stale value is returned to the caller and the detached background factory writes through the composite store on success, so both tiers are refreshed. Eager refresh and conditional (`NotModified`) refresh likewise run through the composite store, so a refresh extends or replaces the entry in both tiers. `DefaultLocalExpiration` still caps L1 physical retention independently of the L2 duration.
+
+`RemoveByTagAsync` publishes the `Tag` invalidation first (minimizing the window in which another instance re-populates its L1 from a not-yet-invalidated L2), then removes from L2, then from its own L1, and returns the L2 removed count. Receivers apply the tag invalidation to their L1 through the same version-pinned `RemoveByTagAsync` semantics.
 
 For factory-backed sliding entries, `DefaultLocalExpiration` caps the L1 copy only. Hybrid revalidates sliding L1 hits against L2 before re-arm so L2 keeps the original `Duration` as the absolute cap. If L2 is unavailable, a fresh L1 sliding value can still be returned, but the read is not re-armed.
 
@@ -364,19 +584,34 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 }
 ```
 
+Named tiers — point the hybrid at named L1/L2 registrations instead of the default `IInMemoryCache`/`IRemoteCache`:
+
+```csharp
+services.AddInMemoryCache("hot-l1", options => options.MaxItems = 5000);
+services.AddRedisCache("hot-l2", options => options.ConnectionMultiplexer = redis);
+services.AddHybridCache(options =>
+{
+    options.LocalCacheName = "hot-l1";   // must implement IInMemoryCache
+    options.RemoteCacheName = "hot-l2";  // must implement IRemoteCache
+});
+```
+
 ### Configuration
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `KeyPrefix` | `""` | Prefix for all cache keys. |
+| `DefaultEntryOptions` | `null` | Default `CacheEntryOptions` for the option-less `GetOrAddAsync` extension overloads; when `null` those overloads throw. |
 | `DefaultLocalExpiration` | `5 minutes` | Default L1 TTL; when null, L1 uses the L2 expiration. |
 | `InstanceId` | Auto-generated | Unique ID for filtering self-originated invalidation messages. |
+| `LocalCacheName` | `null` | Keyed `ICache` registration to use as the L1 tier; must implement `IInMemoryCache` or resolution throws. `null` uses the default `IInMemoryCache`. |
+| `RemoteCacheName` | `null` | Keyed `ICache` registration to use as the L2 tier; must implement `IRemoteCache` or resolution throws. `null` uses the default `IRemoteCache`. |
 | `EnableAutoRecovery` | `false` | Opt-in self-healing for transient L2/backplane outages: failed single-key L2 writes/removes and failed invalidation publishes are queued and replayed on recovery instead of surfacing. |
-| `AutoRecoveryMaxItems` | `128` | Max pending recovery items (one per key); on overflow the earliest-expiring item is evicted. |
+| `AutoRecoveryMaxItems` | `128` | Max pending recovery items (one per key); on overflow the earliest-expiring item is evicted (or the incoming item is rejected when it expires soonest). |
 | `AutoRecoveryMaxRetries` | `8` | Failed replay attempts before a pending item is dropped with a warning. |
 | `AutoRecoveryDelay` | `5 seconds` | Recovery loop cadence and the back-off barrier armed after a failed replay. |
 
-Auto-recovery (design reference: FusionCache's auto-recovery, adapted) keeps one pending operation per key — newer operations replace older ones, and any successful L2 write for a key clears its pending item. A queued set is only replayed while the L1 entry still carries the exact stamp the write produced (L1 is the source of truth; otherwise the item is dropped as obsolete), and incoming invalidations from other instances drop older queued items so a replay cannot resurrect stale data. With auto-recovery enabled, a failing single-key L2 write no longer propagates to the caller: the call succeeds against L1 in degraded mode (logged as a warning). Bulk, atomic (increment/set-if), and set operations are never captured.
+Auto-recovery (design reference: FusionCache's auto-recovery, adapted) keeps one pending operation per key — newer operations replace older ones, and any successful L2 write for a key clears its pending item. A queued set is only replayed while the L1 entry still carries the exact stamp the write produced (L1 is the source of truth; otherwise the item is dropped as obsolete), and incoming invalidations from other instances drop older queued items so a replay cannot resurrect stale data (a message without a timestamp is treated as newer — conservative drop; tag invalidations are not conflict-matched because queued items are not indexed by tag). With auto-recovery enabled, a failing single-key L2 write no longer propagates to the caller: the call succeeds against L1 in degraded mode (logged as a warning), so callers must tolerate L2 lagging L1 until replay. Items without a natural expiry (removes, publishes) are retained for `AutoRecoveryDelay × AutoRecoveryMaxRetries`; replay passes run oldest-first and stop at the first failure, arming the back-off barrier so a sustained outage does not become a retry storm. Bulk, atomic (increment/set-if), and set operations are never captured.
 
 ### Dependencies
 
@@ -392,8 +627,11 @@ Auto-recovery (design reference: FusionCache's auto-recovery, adapted) keeps one
 - Registers `ICache` as singleton when `isDefault: true`.
 - Registers keyed `ICache` under `CacheConstants.HybridCacheProvider`.
 - Registers `ICache<T>` as singleton.
+- Registers `ICacheProvider` (shared, `TryAdd`).
+- Named overloads register a keyed `ICache` under the instance name with its own options and tier resolution.
 - Reads configured `HybridCacheOptions`.
 - Publishes cache invalidation messages through the registered message bus.
+- Runs a `TimeProvider`-driven recovery timer when `EnableAutoRecovery` is set.
 
 ---
 
@@ -410,16 +648,20 @@ Provides process-local caching through the unified `ICache` abstraction, suitabl
 - Full `IInMemoryCache` implementation.
 - Can serve as default `ICache` or alongside a distributed cache.
 - Supports strongly typed `ICache<T>`.
+- Named cache instances via `AddInMemoryCache(name, ...)`, resolvable as keyed `ICache` services or through `ICacheProvider`.
 - Automatic memory management with configurable limits (`MaxItems` plus LRU eviction).
+- Tag invalidation through an in-process reverse tag index with live-entry verification.
 - Can act as an `IRemoteCache` adapter for single-instance scenarios.
 - Optional value cloning for isolation.
-- Shared `GetOrAddAsync` fail-safe, factory timeout, and background completion behavior through `Headless.Caching.Core`.
+- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ### Design Notes
 
 Memory cache stores entries in an internal envelope with logical expiration, physical expiration, and optional sliding expiration. Direct writes set logical and physical timestamps equal. Fail-safe `GetOrAddAsync` can make physical expiration outlive logical expiration so a stale reserve stays in memory after normal value reads miss. Sliding `GetOrAddAsync` keeps physical expiration as the absolute cap and re-arms logical expiration on value reads only; `GetExpirationAsync`, `ExistsAsync`, key listing, and count operations do not extend the idle window. Physical expiration still drives eviction, LRU maintenance, size compaction, `GetCountAsync`, and key listing. Logical expiration drives `GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `ExistsAsync`, and `GetExpirationAsync`.
 
-Long `FailSafeMaxDuration` values and long sliding absolute caps can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments. Soft-timeout background refreshes also hold values in process while the detached factory runs; `BackgroundFactoryCeiling` bounds how long a cooperative refresh keeps the per-key lock.
+The reverse tag index maps each tag to the set of keys whose entry carried the tag when written. Memberships may be momentarily stale (an untagged overwrite races the index update), so `RemoveByTagAsync` always verifies against the live entry's tags before removing: a key overwritten by an untagged write, or re-created after expiry, has its stale membership cleaned up instead of the new entry being removed. Empty per-tag sets are intentionally not pruned — residue is bounded by the process-lifetime distinct-tag cardinality, and pruning would race concurrent tagged writes.
+
+Long `FailSafeMaxDuration` values and long sliding absolute caps can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments. Soft-timeout and eager background refreshes also hold values in process while the detached factory runs; `BackgroundFactoryCeiling` (infinite by default) optionally bounds how long a cooperative refresh keeps the per-key lock when set to a finite value.
 
 `Memory` in Headless caching docs means this package, `Headless.Caching.InMemory`, not `Microsoft.Extensions.Caching.Memory`.
 
@@ -440,18 +682,41 @@ builder.Services.AddInMemoryCache(options =>
 {
     options.MaxItems = 10000;
     options.CloneValues = true;
+    options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
 });
 
 builder.Services.AddInMemoryCache(isDefault: false);
 ```
 
-### Configuration
+Named instances (independent options, resolved by name):
 
 ```csharp
-options.MaxItems = 10000;
-options.CloneValues = false;
-options.KeyPrefix = "myapp:";
+builder.Services.AddInMemoryCache("orders", options => options.MaxItems = 1000);
+
+public sealed class OrderService(ICacheProvider cacheProvider)
+{
+    private readonly ICache _cache = cacheProvider.GetCache("orders");
+}
 ```
+
+Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException`. Named instances never touch the default (unkeyed) `ICache`.
+
+### Configuration
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `KeyPrefix` | `""` | Prefix for all cache keys. |
+| `DefaultEntryOptions` | `null` | Default `CacheEntryOptions` for the option-less `GetOrAddAsync` extension overloads; when `null` those overloads throw. |
+| `MaxItems` | `10000` | Maximum number of items before LRU eviction. |
+| `CloneValues` | `false` | Clone values on get/set so cached entries are isolated from caller mutations. |
+| `MaxMemorySize` | `null` | Maximum total memory in bytes; requires `SizeCalculator`. |
+| `SizeCalculator` | `null` | Function computing the byte size of cached objects; required for `MaxMemorySize`/`MaxEntrySize`. |
+| `MaxEntrySize` | `null` | Maximum size of a single entry in bytes; requires `SizeCalculator`. |
+| `ShouldThrowOnMaxEntrySizeExceeded` | `false` | Throw when an entry exceeds `MaxEntrySize` instead of logging and skipping. |
+| `ShouldThrowOnSerializationError` | `true` | Throw on serialization errors during cloning. |
+| `MaintenanceInterval` | `250 ms` | Interval between background maintenance runs. |
+| `MaxEvictionsPerCompaction` | `10` | Maximum items evicted per compaction cycle. |
+| `EvictionSampleSize` | `5` | Entries sampled when finding eviction candidates. |
 
 ### Dependencies
 
@@ -463,8 +728,11 @@ options.KeyPrefix = "myapp:";
 
 - Registers `IInMemoryCache` as singleton.
 - Registers `ICache` as singleton when `isDefault: true`.
-- Registers `IRemoteCache` adapter when `isDefault: true`.
+- Registers a keyed `ICache` under the `memory` role key (`CacheConstants.MemoryCacheProvider`).
+- Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `remote` role key) when `isDefault: true`.
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons.
+- Registers `ICacheProvider` (shared, `TryAdd`).
+- Named overloads register a keyed `ICache` under the instance name with its own options.
 
 ---
 
@@ -480,28 +748,34 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 
 - Full `IRemoteCache` implementation using StackExchange.Redis.
 - Supports strongly typed `IRemoteCache<T>`.
+- Named cache instances via `AddRedisCache(name, ...)`, each owning its own scripts loader bound to its own multiplexer.
 - Prefix-based key management.
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower).
 - Set/list operations with pagination.
 - Lua scripts for atomic multi-key operations.
-- Redis Cluster support.
-- Shared `GetOrAddAsync` fail-safe, factory timeout, and background completion behavior through `Headless.Caching.Core`.
+- Tag invalidation through a script-maintained reverse tag index (not supported on Redis Cluster).
+- Redis Cluster support for the non-tag operations.
+- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ### Design Notes
 
-Scalar write operations (`UpsertAsync`, `TryInsertAsync`, `TryReplaceAsync`, `TryReplaceIfEqualAsync`, `UpsertAllAsync`) store entries as a versioned binary envelope: a 19-byte base header followed by an optional 8-byte sliding-expiration field and the raw value segment produced by the cache value codec. The header starts with magic/version bytes `0xFF 0x01`, then flags, then logical and physical expiration timestamps encoded as little-endian Unix milliseconds. Physical expiration is mapped to the Redis key TTL; when fail-safe is enabled, Redis retains the key until physical expiration even after logical expiration has passed. Sliding expiration maps the key TTL to the idle deadline and keeps physical expiration in the envelope as the absolute cap. Logical expiration rides in the payload so normal value reads can miss while `GetOrAddAsync` still has a fail-safe reserve. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) bypass framing and write raw Redis-native numeric strings.
+Scalar write operations (`UpsertAsync`, `TryInsertAsync`, `TryReplaceAsync`, `TryReplaceIfEqualAsync`, `UpsertAllAsync`, `UpsertEntryAsync`) store entries as a versioned binary envelope: a 19-byte fixed header, optional variable sections, then the raw value segment produced by the cache value codec. Physical expiration is mapped to the Redis key TTL; when fail-safe is enabled, Redis retains the key until physical expiration even after logical expiration has passed. Sliding expiration maps the key TTL to the idle deadline and keeps physical expiration in the envelope as the absolute cap. Logical expiration rides in the payload so normal value reads can miss while `GetOrAddAsync` still has a fail-safe reserve. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) bypass framing and write raw Redis-native numeric strings (see below).
 
-The envelope byte layout is:
+The envelope byte layout (version `0x02`) is:
 
 | Offset | Field | Description |
 | --- | --- | --- |
-| 0 | Magic | `0xFF`, marks a framed entry |
-| 1 | Version | `0x01`, current envelope version |
-| 2 | Flags | bit0 = `isNull`, bit1 = `hasLogicalExpiresAt`, bit2 = `hasPhysicalExpiresAt`, bit3 = `hasSlidingExpiration` |
-| 3-10 | LogicalExpiresAt | `Int64` little-endian Unix milliseconds, present only when bit1 is set |
-| 11-18 | PhysicalExpiresAt | `Int64` little-endian Unix milliseconds, present only when bit2 is set |
-| 19–26 | SlidingExpiration | `Int64` little-endian milliseconds (present only when bit3 is set) |
-| 19+ or 27+ | ValueSegment | raw codec bytes; offset is 27 when bit3 is set, otherwise 19; empty when `isNull` is set |
+| 0 | Magic | `0xFF` — marks a framed entry |
+| 1 | Version | `0x02` — current envelope version; any other version (including the retired `0x01`) reads as unframed legacy bytes, i.e. a framed-semantics miss |
+| 2 | Flags | bit0 = `isNull`, bit1 = `hasLogicalExpiresAt`, bit2 = `hasPhysicalExpiresAt`, bit3 = `hasSlidingExpiration`, bit4 = `hasEagerRefreshAt`, bit5 = `hasETag`, bit6 = `hasLastModifiedAt`, bit7 = `hasTags` |
+| 3–10 | LogicalExpiresAt | `Int64` little-endian Unix milliseconds; bytes always reserved, meaningful only when bit1 is set |
+| 11–18 | PhysicalExpiresAt | `Int64` little-endian Unix milliseconds; bytes always reserved, meaningful only when bit2 is set |
+| 19+ | Optional sections | In order, each present only when its flag is set: `SlidingExpiration` (`Int64` little-endian milliseconds, bit3), `EagerRefreshAt` (`Int64` little-endian Unix milliseconds, bit4), `LastModifiedAt` (`Int64` little-endian Unix milliseconds, bit6), `ETag` (`UInt16` little-endian byte length + UTF-8 bytes, bit5), `Tags` (`UInt16` little-endian count, then per tag a `UInt16` little-endian byte length + UTF-8 bytes, bit7) |
+| rest | ValueSegment | raw codec bytes after the last present section; empty when `isNull` is set |
+
+Note the section order is positional (sliding, eager, last-modified, etag, tags), which differs from the flag bit order. The decoder is defensive: truncated sections, out-of-range timestamps, and non-positive sliding windows all read as unframed legacy bytes rather than throwing, so corrupt or foreign data degrades to a miss.
+
+Tagged entries maintain a reverse tag index in the reserved namespace `{KeyPrefix}__cache_tag__:{tag}`: each tag is a Redis HASH whose fields are the full prefixed cache keys carrying the tag and whose values are the entry's `PhysicalExpiresAt` Unix-millisecond stamp — the entry "version" that pins memberships. A tagged write runs one atomic Lua script that SETs the framed value, HSETs the current tags with the version, extends each tag hash TTL with greater-than semantics (the index TTL is only ever extended, so it outlives its longest-lived member and is never shortened by a short-lived write), and HDELs memberships for tags the write drops. Untagged writes with no prior tags keep the plain `SET` path — zero hot-path regression. `RemoveByTagAsync` walks the tag hash and UNLINKs an entry only when its live header (magic, version, physical stamp) matches the recorded version; a key that expired, was plain-`SET` overwritten, or was re-created without the tag carries a different stamp and has its stale membership dropped instead. Consumers must not store cache entries under keys starting with `{KeyPrefix}__cache_tag__:`. The tag scripts construct hash key names from the tag prefix, so the touched keys do not hash to one slot: tag invalidation is NOT supported on Redis Cluster (standalone/replicated deployments are unaffected).
 
 Null scalar values are represented by a header flag with an empty value segment. The literal string `"@@NULL"` is a normal cacheable string when written through Redis cache APIs. Raw legacy keys containing `"@@NULL"` still read as null. Atomic counters remain raw Redis-native numeric strings so Redis can perform native atomic arithmetic; their read path falls back to the raw value codec.
 
@@ -528,12 +802,31 @@ builder.Services.AddRedisCache(options =>
 });
 ```
 
-### Configuration
+Named instances (independent multiplexer, prefix, and scripts loader per name):
 
 ```csharp
-options.ConnectionMultiplexer = multiplexer;
-options.KeyPrefix = "myapp:";
+builder.Services.AddRedisCache("sessions", options =>
+{
+    options.ConnectionMultiplexer = sessionsRedis;
+    options.KeyPrefix = "sessions:";
+});
+
+public sealed class SessionService(ICacheProvider cacheProvider)
+{
+    private readonly ICache _cache = cacheProvider.GetCache("sessions");
+}
 ```
+
+Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException`. Named instances never touch the default (unkeyed) `ICache`.
+
+### Configuration
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `ConnectionMultiplexer` | required | The StackExchange.Redis multiplexer the cache uses; the setup never creates one. |
+| `KeyPrefix` | `""` | Prefix for all cache keys (and the tag-index namespace). |
+| `DefaultEntryOptions` | `null` | Default `CacheEntryOptions` for the option-less `GetOrAddAsync` extension overloads; when `null` those overloads throw. |
+| `ReadMode` | `CommandFlags.None` | StackExchange.Redis command flags applied to read operations (e.g. `PreferReplica`). |
 
 ### Dependencies
 
@@ -547,7 +840,10 @@ options.KeyPrefix = "myapp:";
 ### Side Effects
 
 - Registers `IRemoteCache` as singleton.
-- Registers `IRemoteCache<T>` as singleton.
-- Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`.
-- Registers a hosted `IInitializer` that warms Redis cache Lua scripts on host start.
-- Uses existing `IConnectionMultiplexer` if registered, otherwise creates one.
+- Registers `ICache` as singleton when `isDefault: true`.
+- Registers a keyed `ICache` under the `remote` role key (`CacheConstants.RemoteCacheProvider`).
+- Registers `IRemoteCache<T>` and `ICache<T>` as singletons.
+- Registers `ICacheProvider` (shared, `TryAdd`).
+- Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.
+- Named overloads register a keyed `ICache` under the instance name with a per-instance scripts loader and initializer bound to that instance's multiplexer.
+- Tagged writes create/maintain Redis hashes in the reserved `{KeyPrefix}__cache_tag__:{tag}` namespace.
