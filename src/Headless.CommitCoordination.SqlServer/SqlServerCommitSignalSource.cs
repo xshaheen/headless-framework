@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Headless.CommitCoordination;
 using Headless.Checks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -29,7 +30,18 @@ public sealed partial class SqlServerCommitSignalSource(
         Argument.IsNotNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var scope = scopeFactory.Begin(bindings.Services, bindings.Capabilities);
+        var ownedServices = bindings.Services.CreateAsyncScope();
+        ICommitScope scope;
+
+        try
+        {
+            scope = scopeFactory.Begin(ownedServices.ServiceProvider, bindings.Capabilities);
+        }
+        catch
+        {
+            ownedServices.Dispose();
+            throw;
+        }
 
         if (bindings.ProviderTransactionKey is not null)
         {
@@ -37,7 +49,8 @@ public sealed partial class SqlServerCommitSignalSource(
             // entry and a later transaction reuses the same key, this scope's disposal must not evict the successor.
             var trackedScope = new TrackedCommitScope(
                 scope,
-                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self))
+                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self)),
+                ownedServices
             );
 
             if (!_scopes.TryAdd(bindings.ProviderTransactionKey, trackedScope))
@@ -51,6 +64,10 @@ public sealed partial class SqlServerCommitSignalSource(
             }
 
             scope = trackedScope;
+        }
+        else
+        {
+            scope = new TrackedCommitScope(scope, static _ => { }, ownedServices);
         }
 
         return scope;
@@ -116,52 +133,4 @@ public sealed partial class SqlServerCommitSignalSource(
     )]
     private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
 
-    private sealed class TrackedCommitScope(ICommitScope inner, Action<ICommitScope> detach) : ICommitScope
-    {
-        private int _disposed;
-
-        public ICommitCoordinator Coordinator => inner.Coordinator;
-
-        public async ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken)
-        {
-            await inner.SignalAsync(outcome, cancellationToken).ConfigureAwait(false);
-        }
-
-        public void Dispose()
-        {
-            if (Interlocked.Exchange(ref _disposed, 1) == 1)
-            {
-                return;
-            }
-
-            try
-            {
-                inner.Dispose();
-            }
-            finally
-            {
-                detach(this);
-            }
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            if (Interlocked.Exchange(ref _disposed, 1) == 1)
-            {
-                return ValueTask.CompletedTask;
-            }
-
-            // Not async: forward to the inner scope on this frame so its synchronous ambient pop propagates to the
-            // caller; the inner drain (if any) is returned for the caller to await. Detach (registry remove-if-equal)
-            // is ambient-free, so it can run synchronously once the pop has happened.
-            try
-            {
-                return inner.DisposeAsync();
-            }
-            finally
-            {
-                detach(this);
-            }
-        }
-    }
 }

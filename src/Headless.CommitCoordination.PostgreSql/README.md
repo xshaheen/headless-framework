@@ -33,4 +33,4 @@ None.
 
 ## Side Effects
 
-Registers core commit coordination services and `PostgreSqlCommitSignalSource`.
+Registers core commit coordination services, `PostgreSqlCommitSignalSource`, and `ICommitSignalSource`.

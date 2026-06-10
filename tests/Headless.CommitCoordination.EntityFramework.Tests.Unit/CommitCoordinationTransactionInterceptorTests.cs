@@ -4,6 +4,7 @@ using System.Data;
 using System.Data.Common;
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -14,7 +15,10 @@ public sealed class CommitCoordinationTransactionInterceptorTests
     {
         var stack = new CommitScopeStack();
         var factory = new CommitScopeFactory(stack);
-        var signalSource = new EntityFrameworkCommitSignalSource(factory);
+        var signalSource = new EntityFrameworkCommitSignalSource(
+            factory,
+            NullLogger<EntityFrameworkCommitSignalSource>.Instance
+        );
         var transaction = new FakeDbTransaction();
         var ran = false;
 
@@ -43,7 +47,40 @@ public sealed class CommitCoordinationTransactionInterceptorTests
         );
 
         completed.Should().BeTrue("the sync TransactionCommitted override must offload the drain off the captured SynchronizationContext");
-        ran.Should().BeTrue();
+        SpinWait.SpinUntil(() => ran, TimeSpan.FromSeconds(5)).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_throw_when_provider_key_already_has_active_scope()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var signalSource = new EntityFrameworkCommitSignalSource(
+            factory,
+            NullLogger<EntityFrameworkCommitSignalSource>.Instance
+        );
+        var key = new object();
+        using var first = signalSource.Attach(
+            new CommitCoordinatorBindings
+            {
+                Services = new EmptyServiceProvider(),
+                ProviderTransactionKey = key,
+            },
+            CancellationToken.None
+        );
+
+        signalSource
+            .Invoking(x => x.Attach(
+                new CommitCoordinatorBindings
+                {
+                    Services = new EmptyServiceProvider(),
+                    ProviderTransactionKey = key,
+                },
+                CancellationToken.None
+            ))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("An EF Core commit coordination scope is already attached for this provider transaction key.");
     }
 
     private sealed class FakeDbTransaction : DbTransaction

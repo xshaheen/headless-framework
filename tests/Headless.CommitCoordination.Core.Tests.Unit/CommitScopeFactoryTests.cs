@@ -55,6 +55,37 @@ public sealed class CommitScopeFactoryTests
     }
 
     [Fact]
+    public async Task should_throw_when_child_enlists_after_child_commit_signal()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var services = new EmptyServiceProvider();
+
+        await using var parent = factory.Begin(services);
+        await using var child = factory.Begin(services);
+
+        await child.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+
+        child
+            .Coordinator.Invoking(x => x.OnCommit((_, _) => ValueTask.CompletedTask))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Commit scope already Committed.");
+
+        child
+            .Coordinator.Invoking(x => x.OnRollback((_, _) => ValueTask.CompletedTask))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Commit scope already Committed.");
+
+        child
+            .Coordinator.Invoking(x => x.GetOrAdd(_ => new DisposableBuffer()))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Commit scope already Committed.");
+    }
+
+    [Fact]
     public async Task should_doom_parent_when_child_rolls_back()
     {
         var stack = new CommitScopeStack();
@@ -118,7 +149,7 @@ public sealed class CommitScopeFactoryTests
             });
         }
 
-        calls.Should().Be(1);
+        SpinWait.SpinUntil(() => calls == 1, TimeSpan.FromSeconds(5)).Should().BeTrue();
         stack.Current.Should().BeNull();
     }
 
@@ -147,7 +178,7 @@ public sealed class CommitScopeFactoryTests
         );
 
         completed.Should().BeTrue("sync Dispose must offload the rollback drain off the captured SynchronizationContext");
-        ran.Should().BeTrue();
+        SpinWait.SpinUntil(() => ran, TimeSpan.FromSeconds(5)).Should().BeTrue();
     }
 
     [Fact]
@@ -219,6 +250,11 @@ public sealed class CommitScopeFactoryTests
     private sealed class EmptyServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
+    }
+
+    private sealed class DisposableBuffer : ICommitWorkBuffer, IDisposable
+    {
+        public void Dispose() { }
     }
 
     /// <summary>

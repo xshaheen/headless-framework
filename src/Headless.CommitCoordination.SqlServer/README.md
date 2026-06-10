@@ -12,7 +12,7 @@ Correlates SQL Server commit or rollback signals to attached commit scopes.
 
 ## Design Notes
 
-Detected signals remove the scope from the registry before signaling and dispose it after the terminal outcome so captured services are not leaked.
+Detected signals remove the scope from the registry before signaling. The returned scope still owns the ambient pop; the signal source owns an async service scope for the out-of-band drain and releases it after the terminal signal completes.
 
 ## Installation
 
@@ -39,4 +39,4 @@ None.
 
 ## Side Effects
 
-Registers core commit coordination services and `SqlServerCommitSignalSource`.
+Registers core commit coordination services, `SqlServerCommitSignalSource`, `ICommitSignalSource`, the SqlClient diagnostic observer/listener, and an `IHostedService` that owns the diagnostic subscription lifetime.

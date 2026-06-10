@@ -21,7 +21,8 @@ public static class SetupInMemoryCommitCoordination
         public IServiceCollection AddInMemoryCommitCoordination()
         {
             services.AddCommitCoordination();
-            services.TryAddSingleton<ICommitSignalSource, InMemoryCommitSignalSource>();
+            services.TryAddSingleton<InMemoryCommitSignalSource>();
+            services.TryAddSingleton<ICommitSignalSource>(sp => sp.GetRequiredService<InMemoryCommitSignalSource>());
 
             return services;
         }

@@ -27,6 +27,9 @@ public sealed partial class SqlServerCommitDiagnosticObserver(
     ILogger<SqlServerCommitDiagnosticObserver> logger
 ) : IObserver<KeyValuePair<string, object?>>
 {
+    private readonly ILogger _logger = logger;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Task, byte> _drains = [];
+
     /// <summary>The SqlClient diagnostic event raised after a transaction commit completes.</summary>
     public const string SqlAfterCommitTransaction = "Microsoft.Data.SqlClient.WriteTransactionCommitAfter";
 
@@ -87,15 +90,61 @@ public sealed partial class SqlServerCommitDiagnosticObserver(
         }
     }
 
+    internal static bool IsSupportedEvent(string eventName)
+    {
+        return eventName is
+            SqlAfterCommitTransaction
+            or SqlErrorCommitTransaction
+            or SqlAfterRollbackTransaction
+            or SqlBeforeCloseConnection;
+    }
+
+    internal async Task WaitForDrainsAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var drains = _drains.Keys.ToArray();
+
+            if (drains.Length == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                await Task.WhenAll(drains).WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Drain faults are observed and logged by their continuations; shutdown only waits for completion.
+                LogDrainFaulted(_logger, ex);
+            }
+        }
+    }
+
     private void _Drain(Task drain)
     {
-        // Observe faults off the diagnostic thread; the relay recovers any uncommitted buffer on restart. The
-        // continuation itself never faults, so its result is intentionally discarded.
+        _drains.TryAdd(drain, 0);
+
+        // Observe faults off the diagnostic thread; the relay recovers any uncommitted buffer on restart.
         _ = drain.ContinueWith(
-            static (t, state) => LogDrainFaulted((ILogger)state!, t.Exception),
-            logger,
+            static (t, state) =>
+            {
+                var self = (SqlServerCommitDiagnosticObserver)state!;
+                self._drains.TryRemove(t, out _);
+
+                if (t.IsFaulted)
+                {
+                    LogDrainFaulted(self._logger, t.Exception);
+                }
+            },
+            this,
             CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default
         );
     }

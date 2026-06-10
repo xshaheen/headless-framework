@@ -64,6 +64,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     public IDisposable OnCommit(Func<CommitContext, CancellationToken, ValueTask> work)
     {
         Argument.IsNotNull(work);
+        _ThrowIfNotActive();
 
         if (_parent is not null)
         {
@@ -79,6 +80,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     public IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work)
     {
         Argument.IsNotNull(work);
+        _ThrowIfNotActive();
 
         if (_parent is not null)
         {
@@ -95,6 +97,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         where TBuffer : class, ICommitWorkBuffer
     {
         Argument.IsNotNull(factory);
+        _ThrowIfNotActive();
 
         if (_parent is not null)
         {
@@ -117,6 +120,18 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
 
             return buffer;
         }
+    }
+
+    internal static void DrainInBackground(CommitTerminalClaim claim, IServiceProvider services)
+    {
+        _ = Task.Run(() => DrainAsync(claim, services, CancellationToken.None).AsTask())
+            .ContinueWith(
+                static (t, state) => LogBackgroundDrainFaulted((ILogger)state!, t.Exception),
+                claim.Coordinator._logger,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default
+            );
     }
 
     /// <inheritdoc />
@@ -417,4 +432,11 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         CommitCoordinatorState state,
         CommitOutcome signal
     );
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Error,
+        Message = "A commit coordination background drain faulted."
+    )]
+    private static partial void LogBackgroundDrainFaulted(ILogger logger, Exception? exception);
 }

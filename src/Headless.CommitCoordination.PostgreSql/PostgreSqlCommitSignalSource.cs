@@ -1,8 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using Headless.CommitCoordination;
 using Headless.Checks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.CommitCoordination.PostgreSql;
 
@@ -18,8 +21,12 @@ namespace Headless.CommitCoordination.PostgreSql;
 /// transaction back. If the caller never signals, disposing the returned scope discards the enlisted work.
 /// </remarks>
 [PublicAPI]
-public sealed class PostgreSqlCommitSignalSource(CommitScopeFactory scopeFactory) : ICommitSignalSource
+public sealed partial class PostgreSqlCommitSignalSource(
+    CommitScopeFactory scopeFactory,
+    ILogger<PostgreSqlCommitSignalSource>? logger = null
+) : ICommitSignalSource
 {
+    private readonly ILogger _logger = logger ?? NullLogger<PostgreSqlCommitSignalSource>.Instance;
     private readonly ConcurrentDictionary<object, ICommitScope> _scopes = new();
 
     /// <inheritdoc />
@@ -32,7 +39,22 @@ public sealed class PostgreSqlCommitSignalSource(CommitScopeFactory scopeFactory
 
         if (bindings.ProviderTransactionKey is not null)
         {
-            _scopes[bindings.ProviderTransactionKey] = scope;
+            var trackedScope = new TrackedCommitScope(
+                scope,
+                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self))
+            );
+
+            if (!_scopes.TryAdd(bindings.ProviderTransactionKey, trackedScope))
+            {
+                trackedScope.Dispose();
+                LogDuplicateScope(_logger, bindings.ProviderTransactionKey);
+
+                throw new InvalidOperationException(
+                    "A PostgreSQL commit coordination scope is already attached for this provider transaction key."
+                );
+            }
+
+            scope = trackedScope;
         }
 
         return scope;
@@ -45,6 +67,11 @@ public sealed class PostgreSqlCommitSignalSource(CommitScopeFactory scopeFactory
     /// <param name="providerTransactionKey">The provider transaction key (the open <c>NpgsqlTransaction</c>).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The signal task.</returns>
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
+    )]
     public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(providerTransactionKey);
@@ -54,8 +81,7 @@ public sealed class PostgreSqlCommitSignalSource(CommitScopeFactory scopeFactory
             return;
         }
 
-        await using var ownedScope = scope;
-        await ownedScope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+        await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -64,6 +90,11 @@ public sealed class PostgreSqlCommitSignalSource(CommitScopeFactory scopeFactory
     /// <param name="providerTransactionKey">The provider transaction key (the open <c>NpgsqlTransaction</c>).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The signal task.</returns>
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
+    )]
     public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(providerTransactionKey);
@@ -73,7 +104,13 @@ public sealed class PostgreSqlCommitSignalSource(CommitScopeFactory scopeFactory
             return;
         }
 
-        await using var ownedScope = scope;
-        await ownedScope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
+        await scope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Error,
+        Message = "A PostgreSQL commit coordination scope is already attached for provider transaction key {ProviderTransactionKey}."
+    )]
+    private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
 }

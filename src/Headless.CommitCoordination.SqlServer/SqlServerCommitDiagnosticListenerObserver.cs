@@ -11,8 +11,11 @@ namespace Headless.CommitCoordination.SqlServer;
 /// </summary>
 [PublicAPI]
 public sealed class SqlServerCommitDiagnosticListenerObserver(SqlServerCommitDiagnosticObserver observer)
-    : IObserver<DiagnosticListener>
+    : IObserver<DiagnosticListener>, IDisposable
 {
+    private readonly Lock _gate = new();
+    private List<IDisposable> _subscriptions = [];
+
     /// <summary>The name of the SqlClient diagnostic listener.</summary>
     public const string DiagnosticListenerName = "SqlClientDiagnosticListener";
 
@@ -29,7 +32,32 @@ public sealed class SqlServerCommitDiagnosticListenerObserver(SqlServerCommitDia
 
         if (string.Equals(listener.Name, DiagnosticListenerName, StringComparison.Ordinal))
         {
-            listener.Subscribe(observer);
+            var subscription = listener.Subscribe(
+                observer,
+                static (eventName, _, _) => SqlServerCommitDiagnosticObserver.IsSupportedEvent(eventName)
+            );
+
+            lock (_gate)
+            {
+                _subscriptions.Add(subscription);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        List<IDisposable> subscriptions;
+
+        lock (_gate)
+        {
+            subscriptions = _subscriptions;
+            _subscriptions = [];
+        }
+
+        foreach (var subscription in subscriptions)
+        {
+            subscription.Dispose();
         }
     }
 }

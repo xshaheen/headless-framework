@@ -13,7 +13,7 @@ Implements the in-process coordinator, ambient stack, scope factory, and relatio
 
 ## Design Notes
 
-`DisposeAsync` restores the ambient parent synchronously before any rollback drain so `await using` does not strand `AsyncLocal` state.
+`Dispose` schedules an un-signalled rollback drain in the background so sync callers are not blocked on async callbacks. `DisposeAsync` restores the ambient parent synchronously before any rollback drain so `await using` does not strand `AsyncLocal` state.
 
 ## Installation
 

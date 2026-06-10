@@ -176,7 +176,7 @@ Implements the in-process coordinator, ambient stack, scope factory, and relatio
 
 ### Design Notes
 
-`DisposeAsync` restores the ambient parent synchronously before any rollback drain so `await using` does not strand `AsyncLocal` state.
+`Dispose` schedules an un-signalled rollback drain in the background so sync callers are not blocked on async callbacks. `DisposeAsync` restores the ambient parent synchronously before any rollback drain so `await using` does not strand `AsyncLocal` state.
 
 ### Installation
 
@@ -290,7 +290,7 @@ None.
 
 ### Side Effects
 
-Registers core commit coordination services and `EntityFrameworkCommitSignalSource`.
+Registers core commit coordination services, `EntityFrameworkCommitSignalSource`, `ICommitSignalSource`, and the EF transaction interceptor.
 
 ## Headless.CommitCoordination.InMemory
 
@@ -326,7 +326,7 @@ None.
 
 ### Side Effects
 
-Registers core commit coordination services and `ICommitSignalSource`.
+Registers core commit coordination services, `InMemoryCommitSignalSource`, and `ICommitSignalSource`.
 
 ## Headless.CommitCoordination.PostgreSql
 
@@ -363,7 +363,7 @@ None.
 
 ### Side Effects
 
-Registers core commit coordination services and `PostgreSqlCommitSignalSource`.
+Registers core commit coordination services, `PostgreSqlCommitSignalSource`, and `ICommitSignalSource`.
 
 ## Headless.CommitCoordination.SqlServer
 
@@ -379,7 +379,7 @@ Correlates SQL Server commit or rollback signals to attached commit scopes.
 
 ### Design Notes
 
-Detected signals remove the scope from the registry before signaling and dispose it after the terminal outcome so captured services are not leaked.
+Detected signals remove the scope from the registry before signaling. The returned scope still owns the ambient pop; the signal source owns an async service scope for the out-of-band drain and releases it after the terminal signal completes.
 
 ### Installation
 
@@ -406,4 +406,4 @@ None.
 
 ### Side Effects
 
-Registers core commit coordination services and `SqlServerCommitSignalSource`.
+Registers core commit coordination services, `SqlServerCommitSignalSource`, `ICommitSignalSource`, the SqlClient diagnostic observer/listener, and an `IHostedService` that owns the diagnostic subscription lifetime.

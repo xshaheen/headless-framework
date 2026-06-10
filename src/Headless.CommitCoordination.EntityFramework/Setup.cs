@@ -23,6 +23,9 @@ public static class SetupEntityFrameworkCommitCoordination
         {
             services.AddCommitCoordination();
             services.TryAddSingleton<EntityFrameworkCommitSignalSource>();
+            services.TryAddSingleton<ICommitSignalSource>(sp =>
+                sp.GetRequiredService<EntityFrameworkCommitSignalSource>()
+            );
 
             // EF Core resolves IInterceptor services from the application service provider (wired by AddDbContext)
             // and applies them to every context, so the commit/rollback edges are observed without per-context setup.

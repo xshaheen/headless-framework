@@ -33,4 +33,4 @@ None.
 
 ## Side Effects
 
-Registers core commit coordination services and `EntityFrameworkCommitSignalSource`.
+Registers core commit coordination services, `EntityFrameworkCommitSignalSource`, `ICommitSignalSource`, and the EF transaction interceptor.

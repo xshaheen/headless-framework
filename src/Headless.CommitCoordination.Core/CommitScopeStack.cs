@@ -19,14 +19,14 @@ public sealed class CommitScopeStack : ICurrentCommitCoordinator
         "CA1822:Mark members as static",
         Justification = "This property is intentionally instance-shaped for DI consumers."
     )]
-    public CommitCoordinator? CurrentCore => _current.Value?.Coordinator;
+    internal CommitCoordinator? CurrentCore => _current.Value?.Coordinator;
 
     [SuppressMessage(
         "Performance",
         "CA1822:Mark members as static",
         Justification = "This method is intentionally instance-shaped for the registered stack service."
     )]
-    public IDisposable Push(CommitCoordinator coordinator)
+    internal IDisposable Push(CommitCoordinator coordinator)
     {
         var frame = new CommitScopeFrame(coordinator, _current.Value);
         _current.Value = frame;
@@ -59,6 +59,9 @@ public sealed class CommitScopeStack : ICurrentCommitCoordinator
                 {
                     throw new InvalidOperationException("Commit scope disposed out of order.");
                 }
+
+                _disposed = true;
+                return;
             }
 
             _current.Value = frame.Parent;

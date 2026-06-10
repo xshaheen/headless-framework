@@ -46,6 +46,43 @@ public sealed class SqlServerCommitSignalSourceTests
     }
 
     [Fact]
+    public async Task should_keep_owned_service_scope_alive_until_out_of_band_drain_completes()
+    {
+        var source = new SqlServerCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<SqlServerCommitSignalSource>.Instance
+        );
+        var services = new ServiceCollection();
+        services.AddScoped<ScopedMarker>();
+        await using var provider = services.BuildServiceProvider();
+        await using var callerScope = provider.CreateAsyncScope();
+        var key = new object();
+        ScopedMarker? marker = null;
+
+        var scope = source.Attach(
+            new CommitCoordinatorBindings
+            {
+                Services = callerScope.ServiceProvider,
+                ProviderTransactionKey = key,
+            },
+            CancellationToken.None
+        );
+
+        scope.Coordinator.OnCommit((context, _) =>
+        {
+            marker = context.Services.GetRequiredService<ScopedMarker>();
+
+            return ValueTask.CompletedTask;
+        });
+
+        await callerScope.DisposeAsync();
+        await source.SignalCommittedAsync(key, CancellationToken.None);
+        await scope.DisposeAsync();
+
+        marker.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task should_ignore_signal_for_unattached_key_silently()
     {
         var source = new SqlServerCommitSignalSource(
@@ -215,4 +252,6 @@ public sealed class SqlServerCommitSignalSourceTests
     }
 
     private sealed record DiagnosticPayload(SqlConnection Connection, string Operation);
+
+    private sealed class ScopedMarker;
 }

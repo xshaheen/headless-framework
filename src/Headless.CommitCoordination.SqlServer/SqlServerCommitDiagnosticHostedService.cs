@@ -11,26 +11,37 @@ namespace Headless.CommitCoordination.SqlServer;
 /// start and disposes the subscription on stop.
 /// </summary>
 [PublicAPI]
-public sealed class SqlServerCommitDiagnosticHostedService(SqlServerCommitDiagnosticListenerObserver listenerObserver)
-    : IHostedService, IDisposable
+public sealed class SqlServerCommitDiagnosticHostedService : IHostedService, IDisposable
 {
+    private readonly SqlServerCommitDiagnosticListenerObserver _listenerObserver;
+    private readonly SqlServerCommitDiagnosticObserver _observer;
     private IDisposable? _subscription;
+
+    public SqlServerCommitDiagnosticHostedService(
+        SqlServerCommitDiagnosticListenerObserver listenerObserver,
+        SqlServerCommitDiagnosticObserver observer
+    )
+    {
+        _listenerObserver = listenerObserver;
+        _observer = observer;
+    }
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _subscription ??= DiagnosticListener.AllListeners.Subscribe(listenerObserver);
+        _subscription ??= DiagnosticListener.AllListeners.Subscribe(_listenerObserver);
 
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
         _subscription?.Dispose();
         _subscription = null;
+        _listenerObserver.Dispose();
 
-        return Task.CompletedTask;
+        await _observer.WaitForDrainsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -38,5 +49,6 @@ public sealed class SqlServerCommitDiagnosticHostedService(SqlServerCommitDiagno
     {
         _subscription?.Dispose();
         _subscription = null;
+        _listenerObserver.Dispose();
     }
 }

@@ -32,4 +32,4 @@ None.
 
 ## Side Effects
 
-Registers core commit coordination services and `ICommitSignalSource`.
+Registers core commit coordination services, `InMemoryCommitSignalSource`, and `ICommitSignalSource`.
