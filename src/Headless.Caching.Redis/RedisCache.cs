@@ -48,6 +48,10 @@ public sealed class RedisCache(
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
+
+    /// <inheritdoc />
+    public CacheEntryOptions? DefaultEntryOptions { get; } = options.DefaultEntryOptions;
+
     private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger, factoryLockProvider);
 
     private volatile bool _supportsMsetEx;

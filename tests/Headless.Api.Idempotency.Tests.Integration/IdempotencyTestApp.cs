@@ -458,6 +458,8 @@ internal static class IdempotencyTestApp
     {
         private static InvalidOperationException _Boom() => new("simulated cache outage");
 
+        public CacheEntryOptions? DefaultEntryOptions => null;
+
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T?>> factory,

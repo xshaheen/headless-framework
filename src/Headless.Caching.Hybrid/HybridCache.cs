@@ -49,6 +49,9 @@ public sealed class HybridCache(
     private long _invalidateCacheCalls;
     private int _isDisposed;
 
+    /// <inheritdoc />
+    public CacheEntryOptions? DefaultEntryOptions { get; } = options.DefaultEntryOptions;
+
     /// <summary>Gets the number of L1 cache hits.</summary>
     public long LocalCacheHits => Interlocked.Read(ref _localCacheHits);
 

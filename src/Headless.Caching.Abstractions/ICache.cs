@@ -6,6 +6,14 @@ namespace Headless.Caching;
 public interface ICache
 {
     /// <summary>
+    /// Gets the default <see cref="CacheEntryOptions"/> configured for this cache instance at registration
+    /// (for example via the provider options' <c>DefaultEntryOptions</c>). Used by the option-less
+    /// <c>GetOrAddAsync</c> extension overloads; when <see langword="null"/>, those overloads throw
+    /// <see cref="InvalidOperationException"/> — defaults are explicit-at-registration, never magic.
+    /// </summary>
+    CacheEntryOptions? DefaultEntryOptions { get; }
+
+    /// <summary>
     /// Gets a value from cache, or creates it using the factory if not found.
     /// Uses keyed locking to prevent cache stampedes (multiple concurrent factory executions for the same key).
     /// </summary>

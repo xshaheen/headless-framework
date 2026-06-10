@@ -1,8 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Caching;
 
@@ -45,8 +48,65 @@ public static class SetupInMemoryCache
             return services._AddCacheCore(isDefault);
         }
 
+        /// <summary>
+        /// Adds an independently-configured named in-memory cache instance, resolvable as a keyed
+        /// <see cref="ICache"/> service or through <see cref="ICacheProvider"/>. Named instances never touch
+        /// the default (unkeyed) <see cref="ICache"/> nor the reserved role keys.
+        /// </summary>
+        /// <param name="name">The cache instance name. Must be non-empty and not a reserved role key.</param>
+        /// <param name="setupAction">Configuration action for the instance's <see cref="InMemoryCacheOptions"/>.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public IServiceCollection AddInMemoryCache(string name, Action<InMemoryCacheOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            return services._AddNamedCache(name, (options, _) => setupAction(options));
+        }
+
+        /// <summary>
+        /// Adds an independently-configured named in-memory cache instance with service provider-aware
+        /// configuration. See <c>AddInMemoryCache(string, Action&lt;InMemoryCacheOptions&gt;)</c>.
+        /// </summary>
+        /// <param name="name">The cache instance name. Must be non-empty and not a reserved role key.</param>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public IServiceCollection AddInMemoryCache(
+            string name,
+            Action<InMemoryCacheOptions, IServiceProvider> setupAction
+        )
+        {
+            Argument.IsNotNull(setupAction);
+
+            return services._AddNamedCache(name, setupAction);
+        }
+
+        private IServiceCollection _AddNamedCache(
+            string name,
+            Action<InMemoryCacheOptions, IServiceProvider> setupAction
+        )
+        {
+            _EnsureValidInstanceName(name);
+
+            services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
+            services.AddCacheProvider();
+
+            services.AddKeyedSingleton<ICache>(
+                name,
+                (provider, _) =>
+                    new InMemoryCache(
+                        provider.GetRequiredService<TimeProvider>(),
+                        provider.GetRequiredService<IOptionsMonitor<InMemoryCacheOptions>>().Get(name),
+                        provider.GetService<ILogger<InMemoryCache>>(),
+                        provider.GetService<ICacheFactoryLockProvider>()
+                    )
+            );
+
+            return services;
+        }
+
         private IServiceCollection _AddCacheCore(bool isDefault)
         {
+            services.AddCacheProvider();
             services.AddSingletonOptionValue<InMemoryCacheOptions>();
             services.TryAddSingleton<IInMemoryCache, InMemoryCache>();
             services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
@@ -78,8 +138,25 @@ public static class SetupInMemoryCache
         }
     }
 
+    private static void _EnsureValidInstanceName(string name)
+    {
+        Argument.IsNotNullOrWhiteSpace(name);
+
+        if (CacheConstants.IsReservedProviderKey(name))
+        {
+            throw new ArgumentException(
+                $"The cache name '{name}' is reserved for the role-keyed registrations "
+                    + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
+                    + $"'{CacheConstants.HybridCacheProvider}'). Pick a different instance name.",
+                nameof(name)
+            );
+        }
+    }
+
     private sealed class InMemoryRemoteCacheAdapter(IInMemoryCache inMemoryCache) : IRemoteCache
     {
+        public CacheEntryOptions? DefaultEntryOptions => inMemoryCache.DefaultEntryOptions;
+
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T?>> factory,

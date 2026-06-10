@@ -1,11 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+using Headless.Hosting.Initialization;
 using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Caching;
 
@@ -38,13 +42,103 @@ public static class SetupRedisCache
             return services._AddCacheCore(isDefault);
         }
 
-        private IServiceCollection _AddCacheCore(bool isDefault)
+        /// <summary>
+        /// Adds an independently-configured named Redis cache instance, resolvable as a keyed
+        /// <see cref="ICache"/> service or through <see cref="ICacheProvider"/>. The instance owns its own
+        /// scripts loader bound to its own <see cref="RedisCacheOptions.ConnectionMultiplexer"/> and key prefix.
+        /// Named instances never touch the default (unkeyed) <see cref="ICache"/> nor the reserved role keys.
+        /// </summary>
+        /// <param name="name">The cache instance name. Must be non-empty and not a reserved role key.</param>
+        /// <param name="setupAction">Configuration action for the instance's <see cref="RedisCacheOptions"/>.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public IServiceCollection AddRedisCache(string name, Action<RedisCacheOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            return services._AddNamedCache(name, (options, _) => setupAction(options));
+        }
+
+        /// <summary>
+        /// Adds an independently-configured named Redis cache instance with service provider-aware
+        /// configuration. See <c>AddRedisCache(string, Action&lt;RedisCacheOptions&gt;)</c>.
+        /// </summary>
+        /// <param name="name">The cache instance name. Must be non-empty and not a reserved role key.</param>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public IServiceCollection AddRedisCache(string name, Action<RedisCacheOptions, IServiceProvider> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            return services._AddNamedCache(name, setupAction);
+        }
+
+        private IServiceCollection _AddNamedCache(string name, Action<RedisCacheOptions, IServiceProvider> setupAction)
+        {
+            _EnsureValidInstanceName(name);
+
+            services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
+            services._AddSerializerCore();
+            services.AddCacheProvider();
+
+            var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
+            var initializerKey = RedisCacheServiceKeys.NamedScriptsInitializer(name);
+
+            services.TryAddKeyedSingleton(
+                loaderKey,
+                (sp, _) =>
+                    new HeadlessRedisScriptsLoader(
+                        sp.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>().Get(name).ConnectionMultiplexer,
+                        sp.GetService<TimeProvider>(),
+                        sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
+                    )
+            );
+
+            // Per-instance scripts preload: the same shared singleton is forwarded as IInitializer and
+            // IHostedService (mirrors AddInitializerHostedService, which cannot be reused because each named
+            // instance needs its own initializer bound to its own loader).
+            services.TryAddKeyedSingleton(
+                initializerKey,
+                (sp, _) =>
+                    new RedisCacheScriptsInitializer(sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey))
+            );
+            services.AddSingleton<IInitializer>(sp =>
+                sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
+            );
+            services.AddSingleton<IHostedService>(sp =>
+                sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
+            );
+
+            services.AddKeyedSingleton<ICache>(
+                name,
+                (sp, _) =>
+                    new RedisCache(
+                        sp.GetRequiredService<ISerializer>(),
+                        sp.GetRequiredService<TimeProvider>(),
+                        sp.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>().Get(name),
+                        sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey),
+                        sp.GetService<ILogger<RedisCache>>(),
+                        sp.GetService<ICacheFactoryLockProvider>()
+                    )
+            );
+
+            return services;
+        }
+
+        private IServiceCollection _AddSerializerCore()
         {
             services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
             services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
                 sp.GetRequiredService<IJsonOptionsProvider>()
             ));
             services.TryAddSingleton<ISerializer>(sp => sp.GetRequiredService<IJsonSerializer>());
+
+            return services;
+        }
+
+        private IServiceCollection _AddCacheCore(bool isDefault)
+        {
+            services._AddSerializerCore();
+            services.AddCacheProvider();
 
             services.AddSingletonOptionValue<RedisCacheOptions>();
             services.TryAddKeyedSingleton(
@@ -75,6 +169,21 @@ public static class SetupRedisCache
             }
 
             return services;
+        }
+    }
+
+    private static void _EnsureValidInstanceName(string name)
+    {
+        Argument.IsNotNullOrWhiteSpace(name);
+
+        if (CacheConstants.IsReservedProviderKey(name))
+        {
+            throw new ArgumentException(
+                $"The cache name '{name}' is reserved for the role-keyed registrations "
+                    + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
+                    + $"'{CacheConstants.HybridCacheProvider}'). Pick a different instance name.",
+                nameof(name)
+            );
         }
     }
 }

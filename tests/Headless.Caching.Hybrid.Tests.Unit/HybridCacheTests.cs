@@ -642,6 +642,8 @@ public sealed class HybridCacheTests : TestBase
     {
         private readonly InMemoryCache _cache = new(timeProvider, new InMemoryCacheOptions());
 
+        public CacheEntryOptions? DefaultEntryOptions => null;
+
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T?>> factory,

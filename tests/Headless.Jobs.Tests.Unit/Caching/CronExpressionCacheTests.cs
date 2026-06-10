@@ -324,6 +324,8 @@ public sealed class CronExpressionCacheTests
 
     private sealed class RecordingCache : ICache
     {
+        public CacheEntryOptions? DefaultEntryOptions => null;
+
         public CacheBehavior Behavior { get; init; } = CacheBehavior.InvokeFactory;
 
         public CronJobEntity[] CachedCronExpressions { get; init; } = [];

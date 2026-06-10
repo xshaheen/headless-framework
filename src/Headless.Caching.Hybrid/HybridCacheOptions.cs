@@ -20,4 +20,20 @@ public sealed class HybridCacheOptions : CacheOptions
     /// Auto-generated if null.
     /// </summary>
     public string? InstanceId { get; set; }
+
+    /// <summary>
+    /// Optional name of a keyed <see cref="ICache"/> registration to use as the local (L1) tier. The named
+    /// cache must implement <see cref="IInMemoryCache"/> (register it with <c>AddInMemoryCache(name, …)</c>);
+    /// otherwise resolution fails with <see cref="InvalidOperationException"/>. When <see langword="null"/>
+    /// (the default) the hybrid cache uses the default <see cref="IInMemoryCache"/> registration.
+    /// </summary>
+    public string? LocalCacheName { get; set; }
+
+    /// <summary>
+    /// Optional name of a keyed <see cref="ICache"/> registration to use as the distributed (L2) tier. The
+    /// named cache must implement <see cref="IRemoteCache"/> (register it with <c>AddRedisCache(name, …)</c>);
+    /// otherwise resolution fails with <see cref="InvalidOperationException"/>. When <see langword="null"/>
+    /// (the default) the hybrid cache uses the default <see cref="IRemoteCache"/> registration.
+    /// </summary>
+    public string? RemoteCacheName { get; set; }
 }

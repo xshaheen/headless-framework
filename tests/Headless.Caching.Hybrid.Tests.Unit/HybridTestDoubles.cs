@@ -7,6 +7,8 @@ namespace Tests;
 /// <summary>Simple adapter to use InMemoryCache as IRemoteCache for testing.</summary>
 internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteCache, IFactoryCacheStore
 {
+    public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;
+
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
@@ -206,6 +208,8 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
 /// </summary>
 internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemoteCache, IFactoryCacheStore, IDisposable
 {
+    public CacheEntryOptions? DefaultEntryOptions => null;
+
     private readonly InMemoryCache _inner = new(timeProvider, new InMemoryCacheOptions());
 
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
@@ -400,6 +404,8 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
 /// </summary>
 internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCache, IFactoryCacheStore, IDisposable
 {
+    public CacheEntryOptions? DefaultEntryOptions => null;
+
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken)
     {
         // Return a found entry with null timestamps regardless of type requested.

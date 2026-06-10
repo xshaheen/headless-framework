@@ -14,5 +14,13 @@ public sealed class HybridCacheOptionsValidator : AbstractValidator<HybridCacheO
         RuleFor(x => x.DefaultLocalExpiration)
             .Must(x => x is null || x.Value > TimeSpan.Zero)
             .WithMessage("DefaultLocalExpiration must be positive if set");
+
+        RuleFor(x => x.LocalCacheName)
+            .Must(x => x is null || !string.IsNullOrWhiteSpace(x))
+            .WithMessage("LocalCacheName must be non-empty if set");
+
+        RuleFor(x => x.RemoteCacheName)
+            .Must(x => x is null || !string.IsNullOrWhiteSpace(x))
+            .WithMessage("RemoteCacheName must be non-empty if set");
     }
 }
