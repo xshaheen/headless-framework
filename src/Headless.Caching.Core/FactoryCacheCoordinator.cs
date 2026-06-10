@@ -213,7 +213,14 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                 throw new CacheFactoryTimeoutException(key, timeoutSelection.Timeout);
             }
 
-            return await _WriteFactoryResultAsync(store, key, context, factoryResult.Value, cancellationToken)
+            return await _WriteFactoryResultAsync(
+                    store,
+                    key,
+                    context,
+                    factoryResult.Value,
+                    previousTags: entry.Tags,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         finally
@@ -343,7 +350,14 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
             if (!internalCts.IsCancellationRequested)
             {
-                await _WriteFactoryResultAsync(store, key, context, result, CancellationToken.None)
+                await _WriteFactoryResultAsync(
+                        store,
+                        key,
+                        context,
+                        result,
+                        previousTags: staleCandidate.Tags,
+                        CancellationToken.None
+                    )
                     .ConfigureAwait(false);
                 _logger.LogCacheBackgroundCompletionSucceeded(key);
             }
@@ -442,7 +456,12 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     {
         if (!entry.IsPhysicallyPresent(now))
         {
-            return new CacheFactoryContext<T>(CacheValue<T>.NoValue) { Key = key, Options = options };
+            return new CacheFactoryContext<T>(CacheValue<T>.NoValue)
+            {
+                Key = key,
+                Options = options,
+                Tags = options.Tags,
+            };
         }
 
         var staleValue = entry.IsNull
@@ -455,7 +474,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             ETag = entry.ETag,
             LastModifiedAt = entry.LastModifiedAt,
             Options = options,
-            Tags = entry.Tags,
+            // Call-provided tags win; otherwise carry the existing entry's tags forward.
+            Tags = options.Tags ?? entry.Tags,
         };
     }
 
@@ -468,6 +488,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         string key,
         CacheFactoryContext<T> context,
         CacheFactoryResult<T> result,
+        IReadOnlyCollection<string>? previousTags,
         CancellationToken cancellationToken
     )
     {
@@ -475,6 +496,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         // invalid adaptive mutation throws (after the factory ran) instead of persisting a malformed entry.
         var options = context.Options;
         _ValidateOptions(options);
+        // Factory-mutated context tags bypass options validation; hold them to the same envelope limits.
+        CacheEntryStamps.ValidateTags(context.Tags, paramName: "context.Tags");
 
         T? value;
         string? eTag;
@@ -505,36 +528,20 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         }
 
         var now = _GetUtcNow();
-        var logicalExpiresAt = now.Add(options.Duration);
-        var physicalDuration = options.IsFailSafeEnabled
-            ? _Max(options.Duration, options.FailSafeMaxDuration)
-            : options.Duration;
-        var physicalExpiresAt = now.Add(physicalDuration);
-        var slidingExpiration = options.SlidingExpiration;
-
-        if (slidingExpiration.HasValue)
-        {
-            logicalExpiresAt = _Min(now.Add(slidingExpiration.Value), physicalExpiresAt);
-        }
-
-        DateTime? eagerRefreshAt = null;
-
-        if (options.EagerRefreshThreshold is { } eagerRefreshThreshold)
-        {
-            eagerRefreshAt = now.AddTicks((long)(options.Duration.Ticks * (double)eagerRefreshThreshold));
-        }
+        var stamps = CacheEntryStamps.Compute(options, now);
 
         var entry = new CacheStoreEntryWrite<T>
         {
             Value = value,
             IsNull = value is null,
-            LogicalExpiresAt = logicalExpiresAt,
-            PhysicalExpiresAt = physicalExpiresAt,
-            SlidingExpiration = slidingExpiration,
-            EagerRefreshAt = eagerRefreshAt,
+            LogicalExpiresAt = stamps.LogicalExpiresAt,
+            PhysicalExpiresAt = stamps.PhysicalExpiresAt,
+            SlidingExpiration = options.SlidingExpiration,
+            EagerRefreshAt = stamps.EagerRefreshAt,
             ETag = eTag,
             LastModifiedAt = lastModifiedAt,
             Tags = context.Tags,
+            RemovedTags = CacheEntryStamps.ComputeRemovedTags(previousTags, context.Tags),
         };
 
         await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
@@ -638,7 +645,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             }
 
             ownsReleaser = false;
-            await _StartEagerFactoryAsync(store, key, context, factory, options, releaser).ConfigureAwait(false);
+            await _StartEagerFactoryAsync(store, key, context, factory, options, entry.Tags, releaser)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -656,6 +664,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         CacheFactoryContext<T> context,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
+        IReadOnlyCollection<string>? previousTags,
         IDisposable releaser
     )
     {
@@ -663,7 +672,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         var internalCts = new CancellationTokenSource();
 #pragma warning restore CA2000
         var factoryTask = _RunDetachedFactoryAsync(token => factory(context, token), internalCts.Token);
-        await _CompleteEagerRefreshAsync(store, key, context, factoryTask, internalCts, options, releaser)
+        await _CompleteEagerRefreshAsync(store, key, context, factoryTask, internalCts, options, previousTags, releaser)
             .ConfigureAwait(false);
     }
 
@@ -683,6 +692,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheEntryOptions options,
+        IReadOnlyCollection<string>? previousTags,
         IDisposable releaser
     )
     {
@@ -691,7 +701,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         {
             if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
             {
-                await _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts).ConfigureAwait(false);
+                await _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts, previousTags)
+                    .ConfigureAwait(false);
                 return;
             }
 
@@ -704,7 +715,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             if (winner == factoryTask)
             {
                 await ceilingCts.CancelAsync().ConfigureAwait(false);
-                await _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts).ConfigureAwait(false);
+                await _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts, previousTags)
+                    .ConfigureAwait(false);
                 return;
             }
 
@@ -729,7 +741,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         string key,
         CacheFactoryContext<T> context,
         Task<CacheFactoryResult<T>> factoryTask,
-        CancellationTokenSource internalCts
+        CancellationTokenSource internalCts,
+        IReadOnlyCollection<string>? previousTags
     )
     {
 #pragma warning disable VSTHRD003 // This continuation deliberately observes the detached eager factory task.
@@ -739,7 +752,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
             if (!internalCts.IsCancellationRequested)
             {
-                await _WriteFactoryResultAsync(store, key, context, result, CancellationToken.None)
+                await _WriteFactoryResultAsync(store, key, context, result, previousTags, CancellationToken.None)
                     .ConfigureAwait(false);
                 _logger.LogEagerRefreshSucceeded(key);
             }
@@ -1012,8 +1025,6 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
     private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 
-    private static TimeSpan _Max(TimeSpan left, TimeSpan right) => left >= right ? left : right;
-
     private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 
     // Keep the structured TimeoutKind log value consistent (kebab/lower) with the other LogCacheFactoryTimedOut
@@ -1053,70 +1064,9 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         );
     }
 
-    private static void _ValidateOptions(CacheEntryOptions options)
-    {
-        Argument.IsPositive(options.Duration);
-
-        if (options.SlidingExpiration is { } configuredSlidingExpiration)
-        {
-            Argument.IsPositive(configuredSlidingExpiration);
-
-            // Redis encodes the idle window as whole milliseconds; a sub-millisecond span floors to 0 and the
-            // frame then decodes as unframed (silent value loss), while in-memory would keep it natively. Reject
-            // it at the single sliding write choke point so every provider behaves identically.
-            Argument.IsGreaterThanOrEqualTo(configuredSlidingExpiration, TimeSpan.FromMilliseconds(1));
-
-            Ensure.False(
-                options.IsFailSafeEnabled,
-                "Sliding expiration and fail-safe are not supported together in this version."
-            );
-
-            Ensure.False(
-                options.EagerRefreshThreshold.HasValue,
-                "Sliding expiration and eager refresh are not supported together: both re-arm the logical lifetime."
-            );
-        }
-
-        if (options.EagerRefreshThreshold is { } eagerRefreshThreshold)
-        {
-            Argument.IsGreaterThan(eagerRefreshThreshold, 0f, paramName: nameof(options.EagerRefreshThreshold));
-            Argument.IsLessThan(eagerRefreshThreshold, 1f, paramName: nameof(options.EagerRefreshThreshold));
-        }
-
-        if (options.IsFailSafeEnabled)
-        {
-            Argument.IsPositive(options.FailSafeMaxDuration);
-            Argument.IsPositive(options.FailSafeThrottleDuration);
-        }
-
-        _ValidateOptionalTimeout(options.FactorySoftTimeout, nameof(options.FactorySoftTimeout));
-        _ValidateOptionalTimeout(options.FactoryHardTimeout, nameof(options.FactoryHardTimeout));
-        _ValidateOptionalTimeout(options.BackgroundFactoryCeiling, nameof(options.BackgroundFactoryCeiling));
-        _ValidateOptionalTimeout(options.LockTimeout, nameof(options.LockTimeout));
-
-        if (
-            options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
-            && options.FactoryHardTimeout != Timeout.InfiniteTimeSpan
-        )
-        {
-            Argument.IsGreaterThan(
-                options.FactoryHardTimeout,
-                options.FactorySoftTimeout,
-                message: "FactoryHardTimeout must be greater than FactorySoftTimeout when both are finite.",
-                paramName: nameof(options.FactoryHardTimeout)
-            );
-        }
-    }
-
-    private static void _ValidateOptionalTimeout(TimeSpan timeout, string paramName)
-    {
-        if (timeout == Timeout.InfiniteTimeSpan)
-        {
-            return;
-        }
-
-        Argument.IsPositive(timeout, paramName: paramName);
-    }
+    // The validation rules live in CacheEntryStamps so the coordinator and the providers' direct
+    // options-based upserts always agree; keep this thin wrapper for call-site brevity.
+    private static void _ValidateOptions(CacheEntryOptions options) => CacheEntryStamps.ValidateOptions(options);
 
     private enum FactoryTimeoutKind
     {

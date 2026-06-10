@@ -479,6 +479,13 @@ internal static class IdempotencyTestApp
             CancellationToken cancellationToken = default
         ) => throw _Boom();
 
+        public ValueTask<bool> UpsertEntryAsync<T>(
+            string key,
+            T? value,
+            CacheEntryOptions options,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
+
         public ValueTask<int> UpsertAllAsync<T>(
             IDictionary<string, T> value,
             TimeSpan? expiration,
@@ -603,6 +610,9 @@ internal static class IdempotencyTestApp
         ) => throw _Boom();
 
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+            throw _Boom();
+
+        public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
             throw _Boom();
 
         public ValueTask<long> SetRemoveAsync<T>(

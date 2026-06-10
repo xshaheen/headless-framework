@@ -675,6 +675,166 @@ public abstract class CacheConformanceTestsBase : TestBase
         cached.Value.Should().Be("v2");
     }
 
+    public virtual async Task should_remove_entries_by_tag()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var keyA = Faker.Random.AlphaNumeric(10);
+        var keyB = Faker.Random.AlphaNumeric(10);
+        var keyC = Faker.Random.AlphaNumeric(10);
+        var firstTag = Faker.Random.AlphaNumeric(8);
+        var secondTag = Faker.Random.AlphaNumeric(8);
+
+        await cache.GetOrAddAsync(
+            keyA,
+            _ => ValueTask.FromResult<string?>("a"),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [firstTag] },
+            AbortToken
+        );
+
+        await cache.GetOrAddAsync(
+            keyB,
+            _ => ValueTask.FromResult<string?>("b"),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [firstTag, secondTag] },
+            AbortToken
+        );
+
+        await cache.GetOrAddAsync(
+            keyC,
+            _ => ValueTask.FromResult<string?>("c"),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [secondTag] },
+            AbortToken
+        );
+
+        var removed = await cache.RemoveByTagAsync(firstTag, AbortToken);
+
+        var cachedA = await cache.GetAsync<string>(keyA, AbortToken);
+        var cachedB = await cache.GetAsync<string>(keyB, AbortToken);
+        var cachedC = await cache.GetAsync<string>(keyC, AbortToken);
+
+        removed.Should().Be(2);
+        cachedA.HasValue.Should().BeFalse();
+        cachedB.HasValue.Should().BeFalse();
+        cachedC.HasValue.Should().BeTrue();
+        cachedC.Value.Should().Be("c");
+    }
+
+    public virtual async Task should_remove_entry_via_any_of_its_tags()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var firstTag = Faker.Random.AlphaNumeric(8);
+        var secondTag = Faker.Random.AlphaNumeric(8);
+
+        await cache.GetOrAddAsync(
+            key,
+            _ => ValueTask.FromResult<string?>("value"),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [firstTag, secondTag] },
+            AbortToken
+        );
+
+        var removed = await cache.RemoveByTagAsync(secondTag, AbortToken);
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        removed.Should().Be(1);
+        cached.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_not_remove_recreated_entry_without_tag()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+
+        await cache.GetOrAddAsync(
+            key,
+            _ => ValueTask.FromResult<string?>("tagged"),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+
+        // Remove the KEY (not the tag), then re-create the same key WITHOUT the tag. The tag membership is
+        // pinned to the removed entry's version, so it must not take the re-created entry down with it.
+        await cache.RemoveAsync(key, AbortToken);
+        await cache.UpsertAsync(key, "recreated", TimeSpan.FromMinutes(10), AbortToken);
+
+        var removed = await cache.RemoveByTagAsync(tag, AbortToken);
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        removed.Should().Be(0);
+        cached.HasValue.Should().BeTrue();
+        cached.Value.Should().Be("recreated");
+    }
+
+    public virtual async Task should_tag_entries_via_conditional_context_and_tagged_upsert()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var conditionalKey = Faker.Random.AlphaNumeric(10);
+        var upsertKey = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+
+        await cache.GetOrAddAsync<string>(
+            conditionalKey,
+            (context, _) =>
+            {
+                context.Tags = [tag];
+                return ValueTask.FromResult(context.Modified("v1"));
+            },
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+
+        await cache.UpsertEntryAsync(
+            upsertKey,
+            "v2",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+
+        var removed = await cache.RemoveByTagAsync(tag, AbortToken);
+        var conditionalCached = await cache.GetAsync<string>(conditionalKey, AbortToken);
+        var upsertCached = await cache.GetAsync<string>(upsertKey, AbortToken);
+
+        removed.Should().Be(2);
+        conditionalCached.HasValue.Should().BeFalse();
+        upsertCached.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_honor_failsafe_options_in_tagged_upsert()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMilliseconds(100),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMilliseconds(900),
+            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+            Tags = [tag],
+        };
+
+        // The tagged upsert must extend physical retention exactly like a factory write would, so the entry
+        // can serve as a fail-safe stale reserve after its logical expiry.
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+
+        var result = await cache.GetOrAddAsync<string>(
+            key,
+            _ => throw new InvalidOperationException("downstream unavailable"),
+            options,
+            AbortToken
+        );
+
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be("value");
+        result.IsStale.Should().BeTrue();
+    }
+
     // Fail-safe keeps the entry physically retained past its logical expiry, so a stale last-known-good value
     // (and its validators) is still available to the conditional factory after AdvanceAsync(Duration).
     private static CacheEntryOptions _CreateConditionalOptions() =>

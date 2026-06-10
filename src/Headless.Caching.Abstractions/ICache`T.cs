@@ -57,6 +57,17 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Sets a value as a direct write honoring the full <see cref="CacheEntryOptions"/> semantics, including
+    /// <see cref="CacheEntryOptions.Tags"/> for later <see cref="RemoveByTagAsync"/> invalidation.
+    /// </summary>
+    ValueTask<bool> UpsertEntryAsync(
+        string cacheKey,
+        T? cacheValue,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    );
+
     ValueTask<int> UpsertAllAsync(
         IDictionary<string, T> value,
         TimeSpan expiration,
@@ -120,6 +131,9 @@ public interface ICache<T>
 
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
+    /// <summary>Removes exactly the entries that currently carry <paramref name="tag"/>. See <see cref="ICache.RemoveByTagAsync"/>.</summary>
+    ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
+
     ValueTask<long> SetRemoveAsync(
         string key,
         IEnumerable<T> value,
@@ -160,6 +174,16 @@ public class Cache<T>(ICache cache) : ICache<T>
     )
     {
         return cache.UpsertAsync(cacheKey, cacheValue, expiration, cancellationToken);
+    }
+
+    public ValueTask<bool> UpsertEntryAsync(
+        string cacheKey,
+        T? cacheValue,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.UpsertEntryAsync(cacheKey, cacheValue, options, cancellationToken);
     }
 
     public ValueTask<int> UpsertAllAsync(
@@ -251,6 +275,11 @@ public class Cache<T>(ICache cache) : ICache<T>
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
         return cache.RemoveByPrefixAsync(prefix, cancellationToken);
+    }
+
+    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        return cache.RemoveByTagAsync(tag, cancellationToken);
     }
 
     public ValueTask<long> SetRemoveAsync(

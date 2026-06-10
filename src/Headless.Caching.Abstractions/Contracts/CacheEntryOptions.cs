@@ -109,6 +109,16 @@ public readonly record struct CacheEntryOptions
     /// </summary>
     public TimeSpan LockTimeout { get; init; } = Timeout.InfiniteTimeSpan;
 
+    /// <summary>
+    /// Gets the optional invalidation tags persisted with the entry. Tagged entries can later be removed in one
+    /// call with <see cref="ICache.RemoveByTagAsync"/>. When set on a factory-backed read, call-provided tags win
+    /// over the tags carried by an existing entry; when <see langword="null"/>, an existing entry's tags are
+    /// carried forward unchanged. Each tag must be non-empty, and both the tag count and each tag's UTF-8 byte
+    /// length must fit in an unsigned 16-bit value (provider envelope limits); violations are rejected with an
+    /// <see cref="ArgumentException"/> before anything is written.
+    /// </summary>
+    public IReadOnlyCollection<string>? Tags { get; init; }
+
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>
     public static CacheEntryOptions FromTimeSpan(TimeSpan duration) => new() { Duration = duration };

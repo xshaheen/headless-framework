@@ -416,6 +416,13 @@ public sealed class CronExpressionCacheTests
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
 
+        public ValueTask<bool> UpsertEntryAsync<T>(
+            string key,
+            T? value,
+            CacheEntryOptions options,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
         public ValueTask<int> UpsertAllAsync<T>(
             IDictionary<string, T> value,
             TimeSpan? expiration,
@@ -539,6 +546,9 @@ public sealed class CronExpressionCacheTests
         ) => throw new NotSupportedException();
 
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public ValueTask<long> SetRemoveAsync<T>(

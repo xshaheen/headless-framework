@@ -63,6 +63,32 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Sets a value as a direct write honoring the full <see cref="CacheEntryOptions"/> semantics: the entry is
+    /// stamped exactly like a fresh factory write (fail-safe extends physical retention, an eager-refresh
+    /// threshold stamps the eager point, sliding expiration clamps the logical lifetime) and
+    /// <see cref="CacheEntryOptions.Tags"/> are persisted for later <see cref="RemoveByTagAsync"/> invalidation.
+    /// Options are validated with the same rules as <c>GetOrAddAsync</c>. This method performs a
+    /// read-before-write to reconcile provider tag indexes, so prefer
+    /// <see cref="UpsertAsync{T}(string, T, TimeSpan?, CancellationToken)"/> on hot paths that need none of the
+    /// per-entry option semantics. (Named distinctly because the <see cref="TimeSpan"/>-to-options implicit
+    /// conversion would otherwise make every bare-<see cref="TimeSpan"/> upsert ambiguous.)
+    /// </summary>
+    /// <typeparam name="T">The type of the cached value.</typeparam>
+    /// <param name="key">The cache key.</param>
+    /// <param name="value">The value to cache; <see langword="null"/> caches the null sentinel.</param>
+    /// <param name="options">The cache entry options applied to the written entry.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><see langword="true"/> when the write was issued.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the entry options are invalid, for example a non-positive <see cref="CacheEntryOptions.Duration"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <see cref="CacheEntryOptions.Tags"/> contains an empty tag or exceeds the supported tag count/length limits.</exception>
+    ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Upsert all async.</summary>
     ValueTask<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
@@ -199,6 +225,17 @@ public interface ICache
 
     /// <summary>Removes cached item by cache key's prefix.</summary>
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes exactly the entries that CURRENTLY carry <paramref name="tag"/> (assigned via
+    /// <see cref="CacheEntryOptions.Tags"/> or <see cref="CacheFactoryContext{T}.Tags"/>). A key that expired or
+    /// was re-created without the tag is NOT removed: tag memberships are pinned to the entry version, so a
+    /// later untagged write over the same key invalidates the stale membership instead of removing the new entry.
+    /// </summary>
+    /// <param name="tag">The invalidation tag.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of entries removed.</returns>
+    ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
 
     /// <summary>Remove some values from set.</summary>
     ValueTask<long> SetRemoveAsync<T>(

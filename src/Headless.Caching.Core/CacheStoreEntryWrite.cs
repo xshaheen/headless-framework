@@ -34,4 +34,11 @@ public readonly record struct CacheStoreEntryWrite<T>
 
     /// <summary>Gets the optional invalidation tags associated with the cached value.</summary>
     public IReadOnlyCollection<string>? Tags { get; init; }
+
+    /// <summary>
+    /// Gets the tags that were present on the previous physically-retained entry but are absent from this write.
+    /// Stores that maintain an external reverse tag index (e.g. Redis) drop these stale memberships atomically
+    /// with the write; stores with the old entry at hand in-process (in-memory) may ignore it.
+    /// </summary>
+    public IReadOnlyCollection<string>? RemovedTags { get; init; }
 }

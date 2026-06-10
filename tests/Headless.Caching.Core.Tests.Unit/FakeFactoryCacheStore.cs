@@ -125,10 +125,15 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 LastModifiedAt: entry.LastModifiedAt,
                 Tags: entry.Tags
             );
+
+            LastRemovedTags = entry.RemovedTags;
         }
 
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>The <see cref="CacheStoreEntryWrite{T}.RemovedTags"/> carried by the most recent write.</summary>
+    public IReadOnlyCollection<string>? LastRemovedTags { get; private set; }
 
     public ValueTask TryRearmSlidingAsync(
         string key,

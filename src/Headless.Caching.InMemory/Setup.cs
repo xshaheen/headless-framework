@@ -101,6 +101,13 @@ public static class SetupInMemoryCache
             CancellationToken cancellationToken = default
         ) => inMemoryCache.UpsertAsync(key, value, expiration, cancellationToken);
 
+        public ValueTask<bool> UpsertEntryAsync<T>(
+            string key,
+            T? value,
+            CacheEntryOptions options,
+            CancellationToken cancellationToken = default
+        ) => inMemoryCache.UpsertEntryAsync(key, value, options, cancellationToken);
+
         public ValueTask<int> UpsertAllAsync<T>(
             IDictionary<string, T> value,
             TimeSpan? expiration,
@@ -228,6 +235,9 @@ public static class SetupInMemoryCache
 
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
             inMemoryCache.RemoveByPrefixAsync(prefix, cancellationToken);
+
+        public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+            inMemoryCache.RemoveByTagAsync(tag, cancellationToken);
 
         public ValueTask<long> SetRemoveAsync<T>(
             string key,

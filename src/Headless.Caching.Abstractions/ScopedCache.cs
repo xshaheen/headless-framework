@@ -81,6 +81,18 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
+    public ValueTask<bool> UpsertEntryAsync(
+        string cacheKey,
+        T? cacheValue,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(cacheKey);
+        return _cache.UpsertEntryAsync(_ScopeKey(cacheKey), cacheValue, options, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public ValueTask<int> UpsertAllAsync(
         IDictionary<string, T> value,
         TimeSpan expiration,
@@ -239,6 +251,17 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
         return _cache.RemoveByPrefixAsync($"{_Prefix()}{prefix}", cancellationToken);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Tags are NOT scope-isolated: only keys are scoped, so a tag invalidation removes every tagged entry in
+    /// the underlying cache regardless of scope. Scope-isolate tags by embedding the scope in the tag value
+    /// when per-scope invalidation is required.
+    /// </remarks>
+    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        return _cache.RemoveByTagAsync(tag, cancellationToken);
     }
 
     /// <inheritdoc />
