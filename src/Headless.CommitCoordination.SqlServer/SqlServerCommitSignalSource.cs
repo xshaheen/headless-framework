@@ -15,6 +15,12 @@ namespace Headless.CommitCoordination.SqlServer;
 /// <c>ClientConnectionId</c>. The out-of-band <see cref="SqlServerCommitDiagnosticObserver" /> turns the native
 /// SqlClient commit/rollback edge into a signal here.
 /// </summary>
+/// <remarks>
+/// The diagnostic signal that drives this source is an acceleration hook, not the durability mechanism. If a commit
+/// signal is missed, delayed, or disabled, deferred work must still be recoverable through the consumer's durable
+/// store and polling recovery (e.g. messaging's outbox rows committed in-transaction plus its retry sweep); this
+/// source only dispatches that work sooner. Correctness must never depend on the signal firing.
+/// </remarks>
 [PublicAPI]
 public sealed partial class SqlServerCommitSignalSource(
     CommitScopeFactory scopeFactory,

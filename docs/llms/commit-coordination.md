@@ -84,12 +84,15 @@ Use Commit Coordination when a framework subsystem must defer work until the dat
 
 The coordinator guarantees exactly-once callback invocation per coordinator instance. It does not guarantee exactly-once business effects for brokers, external services, or processes that crash after commit.
 
+**Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); `DurableWorkBuffer<TRow>` writes rows in-transaction and does not depend on detection at all.
+
 ## Agent Instructions
 
 - Consumer packages should depend on `Headless.CommitCoordination.Abstractions`; provider packages depend on `Headless.CommitCoordination.Core`.
 - Register work with `OnCommit` or `OnRollback`; do not expose commit or rollback control to consumers.
 - Use `GetOrAdd<TBuffer>` only for scope-local deferred work buffers. Do not use it as a service locator.
 - Use `TryGetCapability<IRelationalCommitContext>` when work must write durable rows inside the active relational transaction.
+- Never make correctness depend on a detected commit signal. Detection (SQL Server diagnostic, EF interceptor) only dispatches sooner; back every in-memory accelerator buffer with a durable row committed in-transaction plus an independent polling/recovery sweep, so a missed, delayed, or disabled signal still executes the work.
 - Durable jobs should keep `DurableWorkProviderMismatchPolicy.Throw`; fallback modes are for at-least-once accelerators that already have recovery.
 
 ## Core Concepts
@@ -100,7 +103,7 @@ The coordinator guarantees exactly-once callback invocation per coordinator inst
 
 ### Signal Source
 
-`ICommitSignalSource` adapts a provider's native commit or rollback edge into a coordinator signal. In-memory sources are driven directly; SQL Server can correlate detected signals by provider transaction key.
+`ICommitSignalSource` adapts a provider's native commit or rollback edge into a coordinator signal. In-memory sources are driven directly; SQL Server can correlate detected signals by provider transaction key. A detected signal is a latency accelerator: it dispatches deferred work as soon as the commit edge is observed, but the consumer's durable store and polling recovery — not the signal — are the source of truth.
 
 ### Work Buffer
 
@@ -218,7 +221,7 @@ Provides a base for durable work buffers that must write rows inside the active 
 
 ### Design Notes
 
-Durable work fails closed by default because running a job before its triggering data commits is a correctness bug.
+Durable work fails closed by default because running a job before its triggering data commits is a correctness bug. Rows are written inside the active relational transaction at enlist time, so a durable buffer does not depend on commit detection at all: the row commits atomically with the business data and is recovered by the consumer's relay regardless of whether any signal fires.
 
 ### Installation
 
@@ -380,6 +383,8 @@ Correlates SQL Server commit or rollback signals to attached commit scopes.
 ### Design Notes
 
 Detected signals remove the scope from the registry before signaling. The returned scope still owns the ambient pop; the signal source owns an async service scope for the out-of-band drain and releases it after the terminal signal completes.
+
+The SqlClient diagnostic is a low-latency commit signal, not the durability mechanism. It depends on `Microsoft.Data.SqlClient` diagnostic event names and payload shapes, which can drift across driver upgrades, so a missed, delayed, or disabled diagnostic must not lose work: the consumer commits a durable row inside the transaction and recovers it by polling, and a faulted drain is left for that recovery path. Prefer `Headless.CommitCoordination.EntityFramework` where EF owns the commit edge — its interceptor signal has no such fragility.
 
 ### Installation
 

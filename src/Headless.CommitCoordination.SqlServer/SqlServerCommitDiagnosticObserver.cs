@@ -12,7 +12,10 @@ namespace Headless.CommitCoordination.SqlServer;
 /// transaction into a signal on <see cref="SqlServerCommitSignalSource" />, correlated by the connection's
 /// <c>ClientConnectionId</c>. This is the out-of-band detector: it watches the real provider transaction boundary
 /// rather than an application-driven <c>CommitAsync</c> call, so it observes the durable commit even on code paths
-/// the framework never sees.
+/// the framework never sees. This signal is a low-latency acceleration hook, not a correctness mechanism: it depends
+/// on undocumented SqlClient payload shapes and may be missed, delayed, or disabled, so deferred work must remain
+/// recoverable without it (a durable row committed in-transaction plus relay polling). A faulted or absent signal
+/// degrades dispatch latency, never durability.
 /// </summary>
 /// <remarks>
 /// SqlClient's diagnostic callbacks are synchronous <c>void</c> on the connection's own thread; blocking them on the

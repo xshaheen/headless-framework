@@ -12,7 +12,7 @@ Provides a base for durable work buffers that must write rows inside the active 
 
 ## Design Notes
 
-Durable work fails closed by default because running a job before its triggering data commits is a correctness bug.
+Durable work fails closed by default because running a job before its triggering data commits is a correctness bug. Rows are written inside the active relational transaction at enlist time, so a durable buffer does not depend on commit detection at all: the row commits atomically with the business data and is recovered by the consumer's relay regardless of whether any signal fires.
 
 ## Installation
 
