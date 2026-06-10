@@ -336,22 +336,27 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         var physicalExpiresAt = staleCandidate.PhysicalExpiresAt!.Value;
         var logicalExpiresAt = _Min(now.Add(options.FailSafeThrottleDuration), physicalExpiresAt);
 
+        // Preserve the stale entry's metadata across the throttle restamp (ETag/LastModifiedAt/Tags), but drop
+        // EagerRefreshAt: a restamped stale reserve must not trigger an eager refresh on top of the throttle.
+        var restampEntry = new CacheStoreEntryWrite<T>
+        {
+            Value = staleCandidate.Value,
+            IsNull = staleCandidate.IsNull,
+            LogicalExpiresAt = logicalExpiresAt,
+            PhysicalExpiresAt = physicalExpiresAt,
+            SlidingExpiration = null,
+            EagerRefreshAt = null,
+            ETag = staleCandidate.ETag,
+            LastModifiedAt = staleCandidate.LastModifiedAt,
+            Tags = staleCandidate.Tags,
+        };
+
         try
         {
             // Caller-facing restamps pass CancellationToken.None (a caller cancellation between the factory
             // throw and this await must not abort the stale return); the ceiling-bounded background restamp
             // passes the ceiling token so a hung store write can be cancelled instead of orphaning it.
-            await store
-                .SetEntryAsync(
-                    key,
-                    staleCandidate.Value,
-                    staleCandidate.IsNull,
-                    logicalExpiresAt,
-                    physicalExpiresAt,
-                    slidingExpiration: null,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            await store.SetEntryAsync(key, in restampEntry, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -383,17 +388,16 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             logicalExpiresAt = _Min(now.Add(slidingExpiration.Value), physicalExpiresAt);
         }
 
-        await store
-            .SetEntryAsync(
-                key,
-                value,
-                isNull: value is null,
-                logicalExpiresAt,
-                physicalExpiresAt,
-                slidingExpiration,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var entry = new CacheStoreEntryWrite<T>
+        {
+            Value = value,
+            IsNull = value is null,
+            LogicalExpiresAt = logicalExpiresAt,
+            PhysicalExpiresAt = physicalExpiresAt,
+            SlidingExpiration = slidingExpiration,
+        };
+
+        await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask _TryRearmSlidingEntryAsync<T>(

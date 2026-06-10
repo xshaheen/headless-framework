@@ -103,6 +103,53 @@ public sealed class HybridCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_round_trip_entry_metadata_through_composite_store()
+    {
+        // given
+        var (cache, l1, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var entry = new CacheStoreEntryWrite<int>
+        {
+            Value = Faker.Random.Int(1, 100),
+            IsNull = false,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(10),
+            EagerRefreshAt = now.AddMinutes(4),
+            ETag = "W/\"v42\"",
+            LastModifiedAt = now.AddMinutes(-30),
+            Tags = ["tenant:1", "products"],
+        };
+
+        // when — write through the composite store (both tiers), then read it back
+        await ((IFactoryCacheStore)cache).SetEntryAsync(key, in entry, AbortToken);
+        var roundTripped = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, AbortToken);
+
+        // then — the composite read surfaces the metadata unchanged
+        roundTripped.Found.Should().BeTrue();
+        roundTripped.Value.Should().Be(entry.Value);
+        roundTripped.EagerRefreshAt.Should().Be(entry.EagerRefreshAt);
+        roundTripped.ETag.Should().Be(entry.ETag);
+        roundTripped.LastModifiedAt.Should().Be(entry.LastModifiedAt);
+        roundTripped.Tags.Should().BeEquivalentTo("tenant:1", "products");
+
+        // and — both tiers persisted the metadata, not just the one that served the read
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
+        l1Entry.ETag.Should().Be(entry.ETag);
+        l1Entry.EagerRefreshAt.Should().Be(entry.EagerRefreshAt);
+        l1Entry.LastModifiedAt.Should().Be(entry.LastModifiedAt);
+        l1Entry.Tags.Should().BeEquivalentTo("tenant:1", "products");
+
+        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, AbortToken);
+        l2Entry.ETag.Should().Be(entry.ETag);
+        l2Entry.EagerRefreshAt.Should().Be(entry.EagerRefreshAt);
+        l2Entry.LastModifiedAt.Should().Be(entry.LastModifiedAt);
+        l2Entry.Tags.Should().BeEquivalentTo("tenant:1", "products");
+    }
+
+    [Fact]
     public async Task should_return_fresh_l2_value_when_l1_has_stale_reserve()
     {
         // given
@@ -115,11 +162,13 @@ public sealed class HybridCacheTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         await ((IFactoryCacheStore)l1).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            now.AddMinutes(-1),
-            now.AddMinutes(5),
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddMinutes(5),
+            },
             AbortToken
         );
         await l2.UpsertAsync(key, freshValue, TimeSpan.FromMinutes(5), AbortToken);

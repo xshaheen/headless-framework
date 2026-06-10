@@ -1103,13 +1103,10 @@ public sealed class HybridCache(
         return l2Entry.Found ? l2Entry : l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
     }
 
-    async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+    // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
+    ValueTask IFactoryCacheStore.SetEntryAsync<T>(
         string key,
-        T? value,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
-        TimeSpan? slidingExpiration,
+        in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1118,21 +1115,21 @@ public sealed class HybridCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        return _SetEntryCoreAsync(key, entry, cancellationToken);
+    }
+
+    private async ValueTask _SetEntryCoreAsync<T>(
+        string key,
+        CacheStoreEntryWrite<T> entry,
+        CancellationToken cancellationToken
+    )
+    {
         if (l2Cache is IFactoryCacheStore l2Store)
         {
             try
             {
-                await l2Store
-                    .SetEntryAsync(
-                        key,
-                        value,
-                        isNull,
-                        logicalExpiresAt,
-                        physicalExpiresAt,
-                        slidingExpiration,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                // Pass the descriptor through unchanged so per-entry metadata round-trips the L2 tier.
+                await l2Store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
@@ -1142,12 +1139,14 @@ public sealed class HybridCache(
         }
         else
         {
-            var expiresIn = (slidingExpiration is null ? physicalExpiresAt : logicalExpiresAt).Subtract(_GetUtcNow());
+            var expiresIn = (
+                entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
+            ).Subtract(_GetUtcNow());
 
             try
             {
                 await l2Cache
-                    .UpsertAsync(key, isNull ? default : value, expiresIn, cancellationToken)
+                    .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception exception)
@@ -1159,24 +1158,30 @@ public sealed class HybridCache(
 
         if (LocalCache is IFactoryCacheStore l1Store)
         {
-            var entry = new CacheStoreEntry<T>(
+            var l1Entry = new CacheStoreEntry<T>(
                 Found: true,
-                IsNull: isNull,
-                Value: isNull ? default : value,
-                LogicalExpiresAt: logicalExpiresAt,
-                PhysicalExpiresAt: physicalExpiresAt,
-                SlidingExpiration: slidingExpiration
-            );
+                IsNull: entry.IsNull,
+                Value: entry.IsNull ? default : entry.Value,
+                LogicalExpiresAt: entry.LogicalExpiresAt,
+                PhysicalExpiresAt: entry.PhysicalExpiresAt,
+                SlidingExpiration: entry.SlidingExpiration
+            )
+            {
+                EagerRefreshAt = entry.EagerRefreshAt,
+                ETag = entry.ETag,
+                LastModifiedAt = entry.LastModifiedAt,
+                Tags = entry.Tags,
+            };
 
-            await _SetLocalEntryAsync(l1Store, key, entry, cancellationToken).ConfigureAwait(false);
+            await _SetLocalEntryAsync(l1Store, key, l1Entry, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             await LocalCache
                 .UpsertAsync(
                     key,
-                    isNull ? default : value,
-                    _GetLocalExpiration(physicalExpiresAt.Subtract(_GetUtcNow())),
+                    entry.IsNull ? default : entry.Value,
+                    _GetLocalExpiration(entry.PhysicalExpiresAt.Subtract(_GetUtcNow())),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1248,17 +1253,20 @@ public sealed class HybridCache(
                 return;
             }
 
-            await l1Store
-                .SetEntryAsync(
-                    key,
-                    entry.Value,
-                    entry.IsNull,
-                    localCeiling.Value,
-                    localCeiling.Value,
-                    slidingExpiration: null,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            var ceilingWrite = new CacheStoreEntryWrite<T>
+            {
+                Value = entry.Value,
+                IsNull = entry.IsNull,
+                LogicalExpiresAt = localCeiling.Value,
+                PhysicalExpiresAt = localCeiling.Value,
+                SlidingExpiration = null,
+                EagerRefreshAt = entry.EagerRefreshAt,
+                ETag = entry.ETag,
+                LastModifiedAt = entry.LastModifiedAt,
+                Tags = entry.Tags,
+            };
+
+            await l1Store.SetEntryAsync(key, in ceilingWrite, cancellationToken).ConfigureAwait(false);
 
             return;
         }
@@ -1270,17 +1278,20 @@ public sealed class HybridCache(
             ? _Min(entry.PhysicalExpiresAt.Value, localCeiling.Value)
             : entry.PhysicalExpiresAt.Value;
 
-        await l1Store
-            .SetEntryAsync(
-                key,
-                entry.Value,
-                entry.IsNull,
-                logicalExpiresAt,
-                physicalExpiresAt,
-                entry.SlidingExpiration,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var localWrite = new CacheStoreEntryWrite<T>
+        {
+            Value = entry.Value,
+            IsNull = entry.IsNull,
+            LogicalExpiresAt = logicalExpiresAt,
+            PhysicalExpiresAt = physicalExpiresAt,
+            SlidingExpiration = entry.SlidingExpiration,
+            EagerRefreshAt = entry.EagerRefreshAt,
+            ETag = entry.ETag,
+            LastModifiedAt = entry.LastModifiedAt,
+            Tags = entry.Tags,
+        };
+
+        await l1Store.SetEntryAsync(key, in localWrite, cancellationToken).ConfigureAwait(false);
     }
 
     private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;

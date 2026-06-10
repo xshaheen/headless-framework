@@ -1616,16 +1616,19 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 PhysicalExpiresAt: existingEntry.PhysicalExpiresAt,
                 SlidingExpiration: existingEntry.SlidingExpiration
             )
+            {
+                EagerRefreshAt = existingEntry.EagerRefreshAt,
+                ETag = existingEntry.ETag,
+                LastModifiedAt = existingEntry.LastModifiedAt,
+                Tags = existingEntry.Tags,
+            }
         );
     }
 
-    async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+    // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
+    ValueTask IFactoryCacheStore.SetEntryAsync<T>(
         string key,
-        T? value,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
-        TimeSpan? slidingExpiration,
+        in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1634,26 +1637,35 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        return _SetEntryCoreAsync(key, entry);
+    }
+
+    private async ValueTask _SetEntryCoreAsync<T>(string key, CacheStoreEntryWrite<T> entry)
+    {
         key = _GetKey(key);
-        var entrySize = _CalculateEntrySize(value);
+        var entrySize = _CalculateEntrySize(entry.Value);
 
         if (!_ValidateEntrySize(entrySize))
         {
             return;
         }
 
-        var entry = new CacheEntry(
-            isNull ? default : value,
-            logicalExpiresAt,
-            physicalExpiresAt,
-            slidingExpiration,
+        var cacheEntry = new CacheEntry(
+            entry.IsNull ? default : entry.Value,
+            entry.LogicalExpiresAt,
+            entry.PhysicalExpiresAt,
+            entry.SlidingExpiration,
             _timeProvider,
             _shouldClone,
             _shouldThrowOnSerializationError,
-            entrySize
+            entrySize,
+            tags: entry.Tags,
+            eagerRefreshAt: entry.EagerRefreshAt,
+            etag: entry.ETag,
+            lastModifiedAt: entry.LastModifiedAt
         );
 
-        await _SetInternalAsync(key, entry).ConfigureAwait(false);
+        await _SetInternalAsync(key, cacheEntry).ConfigureAwait(false);
     }
 
     ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
@@ -2176,7 +2188,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             bool shouldThrowOnSerializationError = true,
             long size = 0,
             LastFactoryError? lastFactoryError = null,
-            IReadOnlySet<string>? tags = null
+            IReadOnlyCollection<string>? tags = null,
+            DateTime? eagerRefreshAt = null,
+            string? etag = null,
+            DateTime? lastModifiedAt = null
         )
         {
             _timeProvider = timeProvider;
@@ -2191,6 +2206,9 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             SlidingExpiration = slidingExpiration;
             LastFactoryError = lastFactoryError;
             Tags = tags is { Count: > 0 } ? tags.ToFrozenSet(StringComparer.Ordinal) : null;
+            EagerRefreshAt = eagerRefreshAt;
+            ETag = etag;
+            LastModifiedAt = lastModifiedAt;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
@@ -2214,6 +2232,9 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             SlidingExpiration = slidingExpiration;
             LastFactoryError = prototype.LastFactoryError;
             Tags = prototype.Tags;
+            EagerRefreshAt = prototype.EagerRefreshAt;
+            ETag = prototype.ETag;
+            LastModifiedAt = prototype.LastModifiedAt;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
@@ -2231,6 +2252,12 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         internal LastFactoryError? LastFactoryError { get; }
 
         internal IReadOnlySet<string>? Tags { get; }
+
+        internal DateTime? EagerRefreshAt { get; }
+
+        internal string? ETag { get; }
+
+        internal DateTime? LastModifiedAt { get; }
 
         // Expired at the exact tick (expiresAt <= now): align with the Core (IsFresh/IsPhysicallyPresent),
         // Redis (_IsExpired), and the eviction maintenance loop conventions so every provider and the

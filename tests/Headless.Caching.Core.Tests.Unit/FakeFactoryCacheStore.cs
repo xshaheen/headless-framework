@@ -36,7 +36,11 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         T? value,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
-        TimeSpan? slidingExpiration = null
+        TimeSpan? slidingExpiration = null,
+        DateTime? eagerRefreshAt = null,
+        string? etag = null,
+        DateTime? lastModifiedAt = null,
+        IReadOnlyCollection<string>? tags = null
     )
     {
         lock (_lock)
@@ -46,7 +50,11 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 IsNull: value is null,
                 LogicalExpiresAt: logicalExpiresAt,
                 PhysicalExpiresAt: physicalExpiresAt,
-                SlidingExpiration: slidingExpiration
+                SlidingExpiration: slidingExpiration,
+                EagerRefreshAt: eagerRefreshAt,
+                ETag: etag,
+                LastModifiedAt: lastModifiedAt,
+                Tags: tags
             );
         }
     }
@@ -84,19 +92,17 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                     PhysicalExpiresAt: entry.PhysicalExpiresAt,
                     SlidingExpiration: entry.SlidingExpiration
                 )
+                {
+                    EagerRefreshAt = entry.EagerRefreshAt,
+                    ETag = entry.ETag,
+                    LastModifiedAt = entry.LastModifiedAt,
+                    Tags = entry.Tags,
+                }
             );
         }
     }
 
-    public ValueTask SetEntryAsync<T>(
-        string key,
-        T? value,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
-        TimeSpan? slidingExpiration,
-        CancellationToken cancellationToken
-    )
+    public ValueTask SetEntryAsync<T>(string key, in CacheStoreEntryWrite<T> entry, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         SetEntryCalls++;
@@ -109,11 +115,15 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         lock (_lock)
         {
             _entries[key] = new Entry(
-                Value: value,
-                IsNull: isNull,
-                LogicalExpiresAt: logicalExpiresAt,
-                PhysicalExpiresAt: physicalExpiresAt,
-                SlidingExpiration: slidingExpiration
+                Value: entry.Value,
+                IsNull: entry.IsNull,
+                LogicalExpiresAt: entry.LogicalExpiresAt,
+                PhysicalExpiresAt: entry.PhysicalExpiresAt,
+                SlidingExpiration: entry.SlidingExpiration,
+                EagerRefreshAt: entry.EagerRefreshAt,
+                ETag: entry.ETag,
+                LastModifiedAt: entry.LastModifiedAt,
+                Tags: entry.Tags
             );
         }
 
@@ -180,6 +190,10 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         bool IsNull,
         DateTime LogicalExpiresAt,
         DateTime PhysicalExpiresAt,
-        TimeSpan? SlidingExpiration
+        TimeSpan? SlidingExpiration,
+        DateTime? EagerRefreshAt = null,
+        string? ETag = null,
+        DateTime? LastModifiedAt = null,
+        IReadOnlyCollection<string>? Tags = null
     );
 }

@@ -1163,13 +1163,10 @@ public sealed class RedisCache(
         return _TryGetEntryAsync<T>(key);
     }
 
-    async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+    // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
+    ValueTask IFactoryCacheStore.SetEntryAsync<T>(
         string key,
-        T? value,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
-        TimeSpan? slidingExpiration,
+        in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1177,8 +1174,15 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        return _SetEntryCoreAsync(key, entry);
+    }
+
+    private async ValueTask _SetEntryCoreAsync<T>(string key, CacheStoreEntryWrite<T> entry)
+    {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var expiresIn = (slidingExpiration is null ? physicalExpiresAt : logicalExpiresAt).Subtract(now);
+        var expiresIn = (entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt).Subtract(
+            now
+        );
         var redisKey = _GetKey(key);
 
         if (expiresIn <= TimeSpan.Zero)
@@ -1187,13 +1191,17 @@ public sealed class RedisCache(
             return;
         }
 
-        var valueSegment = isNull ? RedisValue.EmptyString : _ToRedisValue(value);
+        var valueSegment = entry.IsNull ? RedisValue.EmptyString : _ToRedisValue(entry.Value);
         var redisValue = RedisCacheEntryFrame.Encode(
             valueSegment,
-            isNull,
-            logicalExpiresAt,
-            physicalExpiresAt,
-            slidingExpiration
+            entry.IsNull,
+            entry.LogicalExpiresAt,
+            entry.PhysicalExpiresAt,
+            entry.SlidingExpiration,
+            entry.EagerRefreshAt,
+            entry.ETag,
+            entry.LastModifiedAt,
+            entry.Tags
         );
 
         await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
@@ -1255,7 +1263,13 @@ public sealed class RedisCache(
                 LogicalExpiresAt: frame.SlidingExpiration.HasValue ? null : frame.LogicalExpiresAt,
                 PhysicalExpiresAt: frame.PhysicalExpiresAt,
                 SlidingExpiration: frame.SlidingExpiration
-            );
+            )
+            {
+                EagerRefreshAt = frame.EagerRefreshAt,
+                ETag = frame.ETag,
+                LastModifiedAt = frame.LastModifiedAt,
+                Tags = frame.Tags,
+            };
         }
 
         if (redisValue == _NullValue)

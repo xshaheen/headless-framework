@@ -421,6 +421,49 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public async Task should_preserve_entry_metadata_on_failsafe_restamp_but_clear_eager_refresh()
+    {
+        // given — a stale reserve carrying the full metadata envelope
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var options = _CreateOptions(
+            duration: TimeSpan.FromSeconds(5),
+            isFailSafeEnabled: true,
+            throttleDuration: TimeSpan.FromSeconds(10)
+        );
+        var tags = new[] { "tenant:1", "products" };
+        _store.SetEntry(
+            key,
+            "stale",
+            now.AddSeconds(-1),
+            now.AddMinutes(1),
+            eagerRefreshAt: now.AddSeconds(-2),
+            etag: "W/\"v42\"",
+            lastModifiedAt: now.AddMinutes(-30),
+            tags: tags
+        );
+        var coordinator = _CreateCoordinator();
+
+        // when — the factory throws, activating fail-safe and the throttle restamp
+        var stale = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            _ => throw new InvalidOperationException("downstream unavailable"),
+            options,
+            AbortToken
+        );
+
+        // then — the restamped entry preserves ETag/LastModifiedAt/Tags but must not eager-refresh
+        stale.IsStale.Should().BeTrue();
+        var restamped = _store.GetEntry(key)!;
+        restamped.ETag.Should().Be("W/\"v42\"");
+        restamped.LastModifiedAt.Should().Be(now.AddMinutes(-30));
+        restamped.Tags.Should().BeEquivalentTo(tags);
+        restamped.EagerRefreshAt.Should().BeNull("a restamped stale reserve must not trigger an eager refresh");
+        restamped.SlidingExpiration.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_not_serve_stale_when_caller_token_is_cancelled()
     {
         // given

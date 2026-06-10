@@ -21,6 +21,18 @@ public readonly record struct CacheStoreEntry<T>(
     TimeSpan? SlidingExpiration
 )
 {
+    /// <summary>Gets the optional timestamp after which a fresh read may trigger an eager background refresh.</summary>
+    public DateTime? EagerRefreshAt { get; init; }
+
+    /// <summary>Gets the optional opaque entity tag the factory associated with the cached value.</summary>
+    public string? ETag { get; init; }
+
+    /// <summary>Gets the optional timestamp at which the cached value was last modified at its origin.</summary>
+    public DateTime? LastModifiedAt { get; init; }
+
+    /// <summary>Gets the optional invalidation tags associated with the cached value.</summary>
+    public IReadOnlyCollection<string>? Tags { get; init; }
+
     /// <summary>Gets an entry representing a store miss.</summary>
     public static CacheStoreEntry<T> NotFound { get; } =
         new(

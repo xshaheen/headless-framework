@@ -11,7 +11,7 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
 {
     private const int _HeaderLength = 19;
     private const byte _Magic = 0xFF;
-    private const byte _Version = 0x01;
+    private const byte _Version = 0x02;
     private const byte _NullFlag = 1 << 0;
     private const byte _HasPhysicalExpiresAtFlag = 1 << 2;
     private const byte _HasSlidingExpirationFlag = 1 << 3;
@@ -195,6 +195,38 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
 
         logical.Should().BeOnOrAfter(before + duration - TimeSpan.FromSeconds(5));
         logical.Should().BeOnOrBefore(after + duration + TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task should_round_trip_entry_metadata_through_factory_store()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Lorem.Word();
+        var now = DateTime.UtcNow;
+        var entry = new CacheStoreEntryWrite<string>
+        {
+            Value = value,
+            IsNull = false,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(10),
+            EagerRefreshAt = now.AddMinutes(4),
+            ETag = "W/\"v42\"",
+            LastModifiedAt = now.AddMinutes(-30),
+            Tags = ["tenant:1", "products"],
+        };
+
+        await store.SetEntryAsync(key, in entry, AbortToken);
+
+        var roundTripped = await store.TryGetEntryAsync<string>(key, AbortToken);
+        roundTripped.Found.Should().BeTrue();
+        roundTripped.Value.Should().Be(value);
+        roundTripped.EagerRefreshAt.Should().BeCloseTo(entry.EagerRefreshAt!.Value, TimeSpan.FromMilliseconds(1));
+        roundTripped.ETag.Should().Be(entry.ETag);
+        roundTripped.LastModifiedAt.Should().BeCloseTo(entry.LastModifiedAt!.Value, TimeSpan.FromMilliseconds(1));
+        roundTripped.Tags.Should().Equal("tenant:1", "products");
     }
 
     [Fact]

@@ -353,7 +353,7 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await TriggerTimeoutAsync(options.FactorySoftTimeout);
+        await TriggerTimeoutAsync(options.FactorySoftTimeout, timeoutTask);
 
         var timedOut = await timeoutTask;
         factoryGate.SetResult("fresh");
@@ -385,7 +385,7 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await TriggerTimeoutAsync(options.FactoryHardTimeout);
+        await TriggerTimeoutAsync(options.FactoryHardTimeout, timeoutTask);
         var act = async () => await timeoutTask;
 
         await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
@@ -411,7 +411,7 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await TriggerTimeoutAsync(options.FactoryHardTimeout);
+        await TriggerTimeoutAsync(options.FactoryHardTimeout, timeoutTask);
         var result = await timeoutTask;
 
         result.Value.Should().Be("stale");
@@ -447,7 +447,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         await firstStarted.Task;
         await Task.Yield();
         var second = cache.GetOrAddAsync(key, SecondFactory, options, AbortToken).AsTask();
-        await TriggerTimeoutAsync(options.FactorySoftTimeout);
+        await TriggerTimeoutAsync(options.FactorySoftTimeout, second);
         var secondResult = await second;
         firstGate.SetResult("fresh");
         await first;
@@ -564,10 +564,20 @@ public abstract class CacheConformanceTestsBase : TestBase
             BackgroundFactoryCeiling = TimeSpan.FromSeconds(2),
         };
 
-    private async ValueTask TriggerTimeoutAsync(TimeSpan timeout)
+    private async ValueTask TriggerTimeoutAsync(TimeSpan timeout, Task pendingTimeout)
     {
         await Task.Yield();
         await AdvanceAsync(timeout);
+
+        // The coordinator arms its delay timer only after the factory has started, so with a fake time
+        // provider the advance above can land before the timer exists — leaving it armed at the already
+        // advanced "now" plus the timeout, with nothing left to move the clock (a permanent hang). Keep
+        // nudging time forward on a real-time cadence until the caller-observable task completes.
+        for (var attempt = 0; attempt < 50 && !pendingTimeout.IsCompleted; attempt++)
+        {
+            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
+            await AdvanceAsync(TimeSpan.FromMilliseconds(20));
+        }
     }
 
     private async ValueTask WaitUntilAsync(Func<ValueTask<bool>> condition)

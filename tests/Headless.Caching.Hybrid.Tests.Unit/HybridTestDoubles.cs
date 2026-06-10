@@ -19,22 +19,9 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
 
     public ValueTask SetEntryAsync<T>(
         string key,
-        T? value,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
-        TimeSpan? slidingExpiration,
+        in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
-    ) =>
-        ((IFactoryCacheStore)cache).SetEntryAsync(
-            key,
-            value,
-            isNull,
-            logicalExpiresAt,
-            physicalExpiresAt,
-            slidingExpiration,
-            cancellationToken
-        );
+    ) => ((IFactoryCacheStore)cache).SetEntryAsync(key, in entry, cancellationToken);
 
     public ValueTask TryRearmSlidingAsync(
         string key,
@@ -209,11 +196,7 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
 
     public ValueTask SetEntryAsync<T>(
         string key,
-        T? value,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
-        TimeSpan? slidingExpiration,
+        in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     ) =>
         // No-op: writes are silently dropped (non-fatal in HybridCache.SetEntryAsync)
@@ -402,11 +385,7 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
 
     public ValueTask SetEntryAsync<T>(
         string key,
-        T? val,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
-        TimeSpan? slidingExpiration,
+        in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     ) => ValueTask.CompletedTask;
 

@@ -75,7 +75,10 @@ public sealed class InMemoryCacheTests : TestBase
                 typeof(bool),
                 typeof(long),
                 lastFactoryErrorType!,
-                typeof(IReadOnlySet<string>),
+                typeof(IReadOnlyCollection<string>),
+                typeof(DateTime?),
+                typeof(string),
+                typeof(DateTime?),
             ],
             modifiers: null
         );
@@ -94,6 +97,9 @@ public sealed class InMemoryCacheTests : TestBase
             false,
             true,
             0L,
+            null,
+            null,
+            null,
             null,
             null,
         ]);
@@ -2034,11 +2040,13 @@ public sealed class InMemoryCacheTests : TestBase
 
         await ((IFactoryCacheStore)cache).SetEntryAsync(
             key,
-            new TestClass { Value = 1 },
-            isNull: false,
-            logicalExpiresAt: now.AddMinutes(-1),
-            physicalExpiresAt: now.AddMinutes(5),
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<TestClass>
+            {
+                Value = new TestClass { Value = 1 },
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddMinutes(5),
+            },
             AbortToken
         );
 
@@ -2093,6 +2101,41 @@ public sealed class InMemoryCacheTests : TestBase
 
         // then
         result.Should().BeFalse("reference equality fails for cloned custom classes that don't override Equals");
+    }
+
+    [Fact]
+    public async Task should_round_trip_entry_metadata_through_factory_store()
+    {
+        // given
+        using var cache = _CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var entry = new CacheStoreEntryWrite<string>
+        {
+            Value = "value",
+            IsNull = false,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(10),
+            EagerRefreshAt = now.AddMinutes(4),
+            ETag = "W/\"v42\"",
+            LastModifiedAt = now.AddMinutes(-30),
+            Tags = ["tenant:1", "products"],
+        };
+
+        // when
+        await store.SetEntryAsync(key, in entry, AbortToken);
+        var roundTripped = await store.TryGetEntryAsync<string>(key, AbortToken);
+
+        // then
+        roundTripped.Found.Should().BeTrue();
+        roundTripped.Value.Should().Be("value");
+        roundTripped.LogicalExpiresAt.Should().Be(entry.LogicalExpiresAt);
+        roundTripped.PhysicalExpiresAt.Should().Be(entry.PhysicalExpiresAt);
+        roundTripped.EagerRefreshAt.Should().Be(entry.EagerRefreshAt);
+        roundTripped.ETag.Should().Be(entry.ETag);
+        roundTripped.LastModifiedAt.Should().Be(entry.LastModifiedAt);
+        roundTripped.Tags.Should().BeEquivalentTo("tenant:1", "products");
     }
 
     [Fact]

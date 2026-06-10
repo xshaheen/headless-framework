@@ -65,11 +65,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1); // still physically held
         await ((IFactoryCacheStore)l1).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -109,11 +111,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1);
         await ((IFactoryCacheStore)l2).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -164,11 +168,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1);
         await ((IFactoryCacheStore)l1Cache).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -211,11 +217,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         await ((IFactoryCacheStore)l1Cache).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicalExpiresAt: now.AddMinutes(-1),
-            physicalExpiresAt: now.AddHours(1),
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddHours(1),
+            },
             AbortToken
         );
 
@@ -409,11 +417,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1);
         await ((IFactoryCacheStore)l2).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -448,11 +458,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         await ((IFactoryCacheStore)l2).SetEntryAsync(
             key,
-            value,
-            isNull: false,
-            logicalExpiresAt: now.Add(logicalTtl),
-            physicalExpiresAt: now.AddHours(1),
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = value,
+                IsNull = false,
+                LogicalExpiresAt = now.Add(logicalTtl),
+                PhysicalExpiresAt = now.AddHours(1),
+            },
             AbortToken
         );
 
@@ -492,11 +504,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1);
         await ((IFactoryCacheStore)l2).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
-            slidingExpiration: null,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
