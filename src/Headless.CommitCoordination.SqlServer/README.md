@@ -9,6 +9,7 @@ Correlates SQL Server commit or rollback signals to attached commit scopes.
 - `SqlServerCommitSignalSource`.
 - Provider-key registry for detected commit and rollback signals.
 - DI extension `AddSqlServerCommitCoordination()`.
+- `SqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
 
 ## Design Notes
 
@@ -26,6 +27,14 @@ dotnet add package Headless.CommitCoordination.SqlServer
 
 ```csharp
 services.AddSqlServerCommitCoordination();
+
+// Open + enlist + commit in one call; the enlist cannot be forgotten.
+await connection.ExecuteCoordinatedTransactionAsync(
+    async (conn, ct) =>
+    {
+        // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
+    },
+    services: requestServiceProvider);
 ```
 
 ## Configuration

@@ -93,6 +93,7 @@ The coordinator guarantees exactly-once callback invocation per coordinator inst
 - Use `GetOrAdd<TBuffer>` only for scope-local deferred work buffers. Do not use it as a service locator.
 - Use `TryGetCapability<IRelationalCommitContext>` when work must write durable rows inside the active relational transaction.
 - Never make correctness depend on a detected commit signal. Detection (SQL Server diagnostic, EF interceptor) only dispatches sooner; back every in-memory accelerator buffer with a durable row committed in-transaction plus an independent polling/recovery sweep, so a missed, delayed, or disabled signal still executes the work.
+- Prefer the single-call `ExecuteCoordinatedTransactionAsync(...)` helper over hand-rolling `Begin` + `EnlistCommitCoordination`; it welds the enlist into the transaction so it cannot be forgotten. A `HeadlessDbContext` self-sources its request scope (no `IServiceProvider` argument); a plain `DbContext`, `SqlConnection`, or `NpgsqlConnection` cannot, so those overloads require the scope passed explicitly.
 - Durable jobs should keep `DurableWorkProviderMismatchPolicy.Throw`; fallback modes are for at-least-once accelerators that already have recovery.
 
 ## Core Concepts
@@ -268,6 +269,7 @@ Provides EF Core commit coordination registration points.
 
 - `EntityFrameworkCommitSignalSource`.
 - DI extension `AddEntityFrameworkCommitCoordination()`.
+- `DbContext.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call resilient coordinated transaction (plain `DbContext`; pass the request scope). `HeadlessDbContext` has a scope-free overload in `Headless.Orm.EntityFramework`.
 
 ### Installation
 
@@ -279,6 +281,15 @@ dotnet add package Headless.CommitCoordination.EntityFramework
 
 ```csharp
 services.AddEntityFrameworkCommitCoordination();
+
+// Open + enlist + commit in one call; publishes inside the operation drain atomically on commit.
+await db.ExecuteCoordinatedTransactionAsync(
+    async (context, ct) =>
+    {
+        await context.SaveChangesAsync(ct);
+        await bus.PublishAsync(new OrderPlaced(orderId), ct);
+    },
+    services: requestServiceProvider);
 ```
 
 ### Configuration
@@ -341,6 +352,7 @@ Provides PostgreSQL commit coordination registration points for inline framework
 
 - `PostgreSqlCommitSignalSource`.
 - DI extension `AddPostgreSqlCommitCoordination()`.
+- `NpgsqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
 
 ### Installation
 
@@ -352,6 +364,14 @@ dotnet add package Headless.CommitCoordination.PostgreSql
 
 ```csharp
 services.AddPostgreSqlCommitCoordination();
+
+// Open + enlist + commit in one call; the enlist cannot be forgotten.
+await connection.ExecuteCoordinatedTransactionAsync(
+    async (conn, ct) =>
+    {
+        // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
+    },
+    services: requestServiceProvider);
 ```
 
 ### Configuration
@@ -379,6 +399,7 @@ Correlates SQL Server commit or rollback signals to attached commit scopes.
 - `SqlServerCommitSignalSource`.
 - Provider-key registry for detected commit and rollback signals.
 - DI extension `AddSqlServerCommitCoordination()`.
+- `SqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
 
 ### Design Notes
 
@@ -396,6 +417,14 @@ dotnet add package Headless.CommitCoordination.SqlServer
 
 ```csharp
 services.AddSqlServerCommitCoordination();
+
+// Open + enlist + commit in one call; the enlist cannot be forgotten.
+await connection.ExecuteCoordinatedTransactionAsync(
+    async (conn, ct) =>
+    {
+        // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
+    },
+    services: requestServiceProvider);
 ```
 
 ### Configuration
