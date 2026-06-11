@@ -28,8 +28,7 @@ internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOpt
                     + "Configure via UseSqlServer(connectionString) or UseSqlServer(options => options.ConnectionString = ...)"
             );
 
-        RuleFor(x => x.OwnerColumnMaxLength)
-            .GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
+        RuleFor(x => x.OwnerColumnMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
     }
 }
 

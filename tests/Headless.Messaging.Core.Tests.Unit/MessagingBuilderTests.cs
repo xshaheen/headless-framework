@@ -5,8 +5,8 @@ using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Tests.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Tests.Helpers;
 
 namespace Tests;
 

@@ -368,7 +368,13 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         return null;
     }
 
-    private static readonly string[] _LastBeatMetadataKeys = ["last_beat", "lastBeat", "last_heartbeat", "lastHeartbeat"];
+    private static readonly string[] _LastBeatMetadataKeys =
+    [
+        "last_beat",
+        "lastBeat",
+        "last_heartbeat",
+        "lastHeartbeat",
+    ];
 
     public async Task<CronJobEntity[]> GetCronJobsAsync(CancellationToken cancellationToken = default)
     {

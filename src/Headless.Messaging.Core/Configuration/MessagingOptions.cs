@@ -266,7 +266,6 @@ public sealed class MessagingOptions
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
         RetryProcessor.CopyTo(target.RetryProcessor);
-
     }
 
     /// <summary>
@@ -377,7 +376,6 @@ public sealed class MessagingOptions
             }
         }
     }
-
 
     internal ConsumerMetadata CreateConsumerMetadata(
         Type consumerType,

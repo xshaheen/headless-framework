@@ -56,8 +56,7 @@ internal sealed class PostgreSqlOptionsValidator : AbstractValidator<PostgreSqlO
                     + "Configure via UsePostgreSql(connectionString) or UsePostgreSql(options => options.ConnectionString = ...)"
             );
 
-        RuleFor(x => x.OwnerColumnMaxLength)
-            .GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
+        RuleFor(x => x.OwnerColumnMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
     }
 }
 

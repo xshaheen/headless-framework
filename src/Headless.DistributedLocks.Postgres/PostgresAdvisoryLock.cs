@@ -332,8 +332,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         {
             await setSavePointCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException exception)
-            when (exception.SqlState == PostgresErrorCodes.NoActiveSqlTransaction)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.NoActiveSqlTransaction)
         {
             return false;
         }

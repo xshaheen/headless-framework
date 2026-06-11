@@ -402,53 +402,144 @@ public sealed class CronExpressionCacheTests
             return ValueTask.FromResult(true);
         }
 
-        public ValueTask<bool> UpsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> UpsertAsync<T>(
+            string key,
+            T? value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<int> UpsertAllAsync<T>(IDictionary<string, T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<int> UpsertAllAsync<T>(
+            IDictionary<string, T> value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<bool> TryInsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryInsertAsync<T>(
+            string key,
+            T? value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<bool> TryReplaceAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryReplaceAsync<T>(
+            string key,
+            T? value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<bool> TryReplaceIfEqualAsync<T>(string key, T? expected, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> TryReplaceIfEqualAsync<T>(
+            string key,
+            T? expected,
+            T? value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<double> IncrementAsync(string key, double amount, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<double> IncrementAsync(
+            string key,
+            double amount,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<long> IncrementAsync(string key, long amount, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<long> IncrementAsync(
+            string key,
+            long amount,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<double> SetIfHigherAsync(string key, double value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<double> SetIfHigherAsync(
+            string key,
+            double value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<long> SetIfHigherAsync(string key, long value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<long> SetIfHigherAsync(
+            string key,
+            long value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<double> SetIfLowerAsync(string key, double value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<double> SetIfLowerAsync(
+            string key,
+            double value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<long> SetIfLowerAsync(string key, long value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<long> SetIfLowerAsync(
+            string key,
+            long value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<long> SetAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<long> SetAddAsync<T>(
+            string key,
+            IEnumerable<T> value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+            IEnumerable<string> cacheKeys,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(string prefix, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
+            string prefix,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+            string prefix,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+            string key,
+            int? pageIndex = null,
+            int pageSize = 100,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> RemoveIfEqualAsync<T>(
+            string key,
+            T? expected,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<int> RemoveAllAsync(
+            IEnumerable<string> cacheKeys,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public ValueTask<long> SetRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<long> SetRemoveAsync<T>(
+            string key,
+            IEnumerable<T> value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
         public ValueTask FlushAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }

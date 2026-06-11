@@ -1890,15 +1890,14 @@ public sealed class InMemoryCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
-        await ((IFactoryCacheStore)cache)
-            .SetEntryAsync(
-                key,
-                new TestClass { Value = 1 },
-                isNull: false,
-                logicalExpiresAt: now.AddMinutes(-1),
-                physicalExpiresAt: now.AddMinutes(5),
-                AbortToken
-            );
+        await ((IFactoryCacheStore)cache).SetEntryAsync(
+            key,
+            new TestClass { Value = 1 },
+            isNull: false,
+            logicalExpiresAt: now.AddMinutes(-1),
+            physicalExpiresAt: now.AddMinutes(5),
+            AbortToken
+        );
 
         var failSafeOptions = new CacheEntryOptions
         {

@@ -67,7 +67,9 @@ public sealed class CoordinationSetupBuilderTests
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
         // when
-        services.AddHeadlessCoordination(setup => setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension()));
+        services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
 
@@ -84,7 +86,9 @@ public sealed class CoordinationSetupBuilderTests
 
         // when
         services.AddHeadlessMessaging(_ => { });
-        services.AddHeadlessCoordination(setup => setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension()));
+        services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
         using var provider = services.BuildServiceProvider();
 
         // then

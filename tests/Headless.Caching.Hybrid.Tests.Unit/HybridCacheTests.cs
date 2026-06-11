@@ -113,8 +113,14 @@ public sealed class HybridCacheTests : TestBase
         var staleValue = Faker.Random.Int(1, 100);
         var freshValue = Faker.Random.Int(101, 200);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        await ((IFactoryCacheStore)l1)
-            .SetEntryAsync(key, staleValue, isNull: false, now.AddMinutes(-1), now.AddMinutes(5), AbortToken);
+        await ((IFactoryCacheStore)l1).SetEntryAsync(
+            key,
+            staleValue,
+            isNull: false,
+            now.AddMinutes(-1),
+            now.AddMinutes(5),
+            AbortToken
+        );
         await l2.UpsertAsync(key, freshValue, TimeSpan.FromMinutes(5), AbortToken);
         var factoryCalled = false;
 
@@ -916,5 +922,4 @@ public sealed class HybridCacheTests : TestBase
     }
 
     #endregion
-
 }

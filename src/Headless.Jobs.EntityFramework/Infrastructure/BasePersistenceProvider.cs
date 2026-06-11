@@ -518,8 +518,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return result.HasValue ? result.Value ?? [] : [];
         }
 #pragma warning disable ERP022, RCS1075
-        catch (Exception exception)
-            when (!factoryFailed && !_IsCallerCancellation(exception, cancellationToken))
+        catch (Exception exception) when (!factoryFailed && !_IsCallerCancellation(exception, cancellationToken))
         {
             // Cache read/write failures are non-authoritative for Jobs; the database remains the source of truth.
             // A cache-layer OperationCanceledException bound to a foreign/internal token (e.g. a Redis command
