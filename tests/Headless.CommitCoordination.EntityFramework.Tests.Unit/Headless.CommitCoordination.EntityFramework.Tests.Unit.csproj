@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.CommitCoordination.EntityFramework\Headless.CommitCoordination.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.CommitCoordination.Tests.Harness\Headless.CommitCoordination.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

@@ -102,6 +102,7 @@
         <Project Path="tests/Headless.CommitCoordination.Core.Tests.Unit/Headless.CommitCoordination.Core.Tests.Unit.csproj" />
         <Project Path="tests/Headless.CommitCoordination.DurableWork.Tests.Unit/Headless.CommitCoordination.DurableWork.Tests.Unit.csproj" />
         <Project Path="tests/Headless.CommitCoordination.EntityFramework.Tests.Unit/Headless.CommitCoordination.EntityFramework.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.CommitCoordination.PostgreSql.Tests.Integration/Headless.CommitCoordination.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.CommitCoordination.PostgreSql.Tests.Unit/Headless.CommitCoordination.PostgreSql.Tests.Unit.csproj" />
         <Project Path="tests/Headless.CommitCoordination.SqlServer.Tests.Integration/Headless.CommitCoordination.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.CommitCoordination.SqlServer.Tests.Unit/Headless.CommitCoordination.SqlServer.Tests.Unit.csproj" />
