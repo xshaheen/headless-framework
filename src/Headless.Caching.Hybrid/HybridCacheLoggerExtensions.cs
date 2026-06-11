@@ -121,4 +121,12 @@ internal static partial class HybridCacheLoggerExtensions
         Message = "Ignored a remote invalidation for key {Key}: a pending local auto-recovery operation for the key is at least as new"
     )]
     public static partial void LogIgnoredStaleRemoteInvalidation(this ILogger logger, string key);
+
+    [LoggerMessage(
+        EventId = 15,
+        EventName = "FailedBulkL2CacheOperation",
+        Level = LogLevel.Warning,
+        Message = "Failed to perform a bulk L2 cache operation for {KeyCount} key(s); the failure is surfaced to the caller and is not auto-recovered in v1"
+    )]
+    public static partial void LogFailedBulkL2CacheOperation(this ILogger logger, Exception exception, int keyCount);
 }

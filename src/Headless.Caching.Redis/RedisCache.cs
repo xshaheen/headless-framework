@@ -62,6 +62,22 @@ public sealed class RedisCache(
 
     private bool IsCluster => _isClusterLazy.Value;
 
+    // Tag operations touch the tag reverse-index hash and the tagged entry keys together; on Redis Cluster those
+    // span hash slots, which a single Lua script cannot do (CROSSSLOT). Fail fast with a clear message instead of
+    // surfacing a raw RedisServerException. A cluster-safe design is tracked in issue #438.
+    private void _EnsureTaggingClusterSupported()
+    {
+        if (IsCluster)
+        {
+            throw new NotSupportedException(
+                "Redis cache tag operations (tagged writes and RemoveByTagAsync) are not supported on Redis "
+                    + "Cluster: the tag reverse-index and tagged entries span hash slots, which a single Lua "
+                    + "script cannot touch. Use a standalone or replicated Redis deployment for tagging, or omit "
+                    + "tags when connected to a cluster."
+            );
+        }
+    }
+
     private static bool _CheckIsCluster(IConnectionMultiplexer connectionMultiplexer)
     {
         foreach (var endpoint in connectionMultiplexer.GetEndPoints())
@@ -992,6 +1008,7 @@ public sealed class RedisCache(
     {
         Argument.IsNotNullOrEmpty(tag);
         cancellationToken.ThrowIfCancellationRequested();
+        _EnsureTaggingClusterSupported();
 
         var tagHashKey = (RedisKey)_GetTagHashKey(tag);
         var scriptArgs = new
@@ -1307,6 +1324,8 @@ public sealed class RedisCache(
             await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
             return;
         }
+
+        _EnsureTaggingClusterSupported();
 
         // Tagged write: one atomic script does the SET plus the reverse-tag-index reconciliation (HSET the
         // current tags with the physical-expiry version, GT-extend the tag hash TTLs, HDEL dropped tags).

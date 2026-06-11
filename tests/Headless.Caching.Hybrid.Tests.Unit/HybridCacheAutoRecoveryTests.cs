@@ -58,6 +58,39 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     }
 
     [Fact]
+    public async Task should_propagate_bulk_l2_upsert_failure()
+    {
+        // given — bulk ops are not captured by auto-recovery; the L2 failure must surface, not be swallowed
+        var (cache, _, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        l2.FailWrites = true;
+        var values = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 };
+
+        // when
+        var act = async () => await cache.UpsertAllAsync(values, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task should_propagate_bulk_l2_remove_failure()
+    {
+        // given
+        var (cache, _, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        l2.FailWrites = true;
+
+        // when
+        var act = async () => await cache.RemoveAllAsync(["a", "b"], AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public async Task should_queue_failed_factory_write_and_replay_when_l2_recovers()
     {
         // given

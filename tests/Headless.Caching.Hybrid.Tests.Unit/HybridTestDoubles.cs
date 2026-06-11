@@ -686,7 +686,10 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
         IDictionary<string, T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.UpsertAllAsync(value, expiration, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.UpsertAllAsync(value, expiration, cancellationToken);
 
     public ValueTask<bool> TryInsertAsync<T>(
         string key,
@@ -811,7 +814,10 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
     public ValueTask<int> RemoveAllAsync(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
-    ) => _cache.RemoveAllAsync(cacheKeys, cancellationToken);
+    ) =>
+        FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.RemoveAllAsync(cacheKeys, cancellationToken);
 
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
         _cache.RemoveByPrefixAsync(prefix, cancellationToken);

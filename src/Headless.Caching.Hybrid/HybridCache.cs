@@ -506,7 +506,19 @@ public sealed partial class HybridCache(
 
         _logger.LogSettingKeys(value.Keys, expiration);
 
-        var setCount = await l2Cache.UpsertAllAsync(value, expiration, cancellationToken).ConfigureAwait(false);
+        int setCount;
+
+        try
+        {
+            setCount = await l2Cache.UpsertAllAsync(value, expiration, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+        {
+            // Bulk ops are not captured by auto-recovery in v1 (issue #440); surface the L2 failure for
+            // observability and rethrow so the caller is not told the bulk write succeeded.
+            _logger.LogFailedBulkL2CacheOperation(exception, value.Count);
+            throw;
+        }
 
         if (setCount == value.Count)
         {
@@ -1009,7 +1021,20 @@ public sealed partial class HybridCache(
         var items = cacheKeys?.ToArray();
         var flushAll = items is null or { Length: 0 };
 
-        var removed = await l2Cache.RemoveAllAsync(items!, cancellationToken).ConfigureAwait(false);
+        int removed;
+
+        try
+        {
+            removed = await l2Cache.RemoveAllAsync(items!, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+        {
+            // Bulk ops are not captured by auto-recovery in v1 (issue #440); surface the L2 failure for
+            // observability and rethrow so the caller is not told the bulk remove succeeded.
+            _logger.LogFailedBulkL2CacheOperation(exception, items?.Length ?? 0);
+            throw;
+        }
+
         await LocalCache.RemoveAllAsync(items!, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if keys were actually removed
