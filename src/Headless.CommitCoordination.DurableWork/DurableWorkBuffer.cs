@@ -62,14 +62,22 @@ public abstract partial class DurableWorkBuffer<TRow>(
     );
 
     /// <summary>
-    /// Handles opt-in non-relational fallback.
+    /// Handles opt-in non-relational fallback. The base implementation fails closed: a non-<see cref="DurableWorkProviderMismatchPolicy.Throw" />
+    /// policy is only safe when a derived buffer overrides this with a genuinely durable write. The base must not
+    /// silently drop the row — that would void the "no work lost" floor for a consumer that opted into
+    /// <see cref="DurableWorkProviderMismatchPolicy.Warn" /> without supplying a real fallback.
     /// </summary>
     /// <param name="row">The row to write.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the fallback.</returns>
     protected virtual ValueTask EnlistWithoutRelationalContextAsync(TRow row, CancellationToken cancellationToken)
     {
-        return ValueTask.CompletedTask;
+        throw new InvalidOperationException(
+            $"Durable commit work for '{typeof(TRow).Name}' was enlisted without an {nameof(IRelationalCommitContext)} "
+                + $"and this buffer does not override {nameof(EnlistWithoutRelationalContextAsync)} to provide a durable "
+                + $"fallback. Provide a relational context, override the fallback, or use "
+                + $"{nameof(DurableWorkProviderMismatchPolicy)}.{nameof(DurableWorkProviderMismatchPolicy.Throw)}."
+        );
     }
 
     [LoggerMessage(

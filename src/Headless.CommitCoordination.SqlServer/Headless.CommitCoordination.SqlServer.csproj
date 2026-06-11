@@ -10,6 +10,10 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.CommitCoordination.SqlServer.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.SqlServer.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />
   </ItemGroup>

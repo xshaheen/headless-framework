@@ -24,8 +24,7 @@ namespace Headless.CommitCoordination.SqlServer;
 /// uncommitted work buffer is recovered by the relay on restart, so a logged fault here is a diagnostic, not data
 /// loss). We do not <c>GetAwaiter().GetResult()</c> on the diagnostic thread.
 /// </remarks>
-[PublicAPI]
-public sealed partial class SqlServerCommitDiagnosticObserver(
+internal sealed partial class SqlServerCommitDiagnosticObserver(
     SqlServerCommitSignalSource signalSource,
     ILogger<SqlServerCommitDiagnosticObserver> logger
 ) : IObserver<KeyValuePair<string, object?>>
@@ -104,7 +103,13 @@ public sealed partial class SqlServerCommitDiagnosticObserver(
 
     internal async Task WaitForDrainsAsync(CancellationToken cancellationToken)
     {
-        while (true)
+        // Callers dispose the diagnostic subscription BEFORE awaiting this, so no new drains should arrive. Bound the
+        // wait anyway: re-snapshot a few times to catch stragglers enqueued between the last observed event and the
+        // unsubscribe completing, but never spin unboundedly if events are somehow still flowing — remaining work is
+        // relay-recoverable, so a bounded wait that logs on overflow is safer than an open-ended loop.
+        const int maxIterations = 3;
+
+        for (var iteration = 0; iteration < maxIterations; iteration++)
         {
             var drains = _drains.Keys.ToArray();
 
@@ -126,6 +131,11 @@ public sealed partial class SqlServerCommitDiagnosticObserver(
                 // Drain faults are observed and logged by their continuations; shutdown only waits for completion.
                 LogDrainFaulted(_logger, ex);
             }
+        }
+
+        if (!_drains.IsEmpty)
+        {
+            LogDrainsStillPendingAtShutdown(_logger, maxIterations);
         }
     }
 
@@ -186,6 +196,14 @@ public sealed partial class SqlServerCommitDiagnosticObserver(
         Message = "A SQL Server commit coordination signal drain faulted; the relay will recover any uncommitted work."
     )]
     private static partial void LogDrainFaulted(ILogger logger, Exception? exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Warning,
+        Message = "SQL Server commit coordination drains were still pending after {Iterations} shutdown wait iterations; "
+            + "abandoning the wait — remaining work is relay-recoverable."
+    )]
+    private static partial void LogDrainsStillPendingAtShutdown(ILogger logger, int iterations);
 
     private sealed class ConcurrentPropertyCache
     {

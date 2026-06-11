@@ -10,8 +10,7 @@ namespace Headless.CommitCoordination.SqlServer;
 /// <see cref="SqlServerCommitDiagnosticListenerObserver" /> to <see cref="DiagnosticListener.AllListeners" /> on
 /// start and disposes the subscription on stop.
 /// </summary>
-[PublicAPI]
-public sealed class SqlServerCommitDiagnosticHostedService : IHostedService, IAsyncDisposable, IDisposable
+internal sealed class SqlServerCommitDiagnosticHostedService : IHostedService, IAsyncDisposable, IDisposable
 {
     private readonly SqlServerCommitDiagnosticListenerObserver _listenerObserver;
     private readonly SqlServerCommitDiagnosticObserver _observer;

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Diagnostics;
 using Headless.CommitCoordination;
 using Headless.Messaging.Configuration;
@@ -35,9 +36,11 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
-        // Pre-decide whether this publish enlists on an ambient commit coordinator so the pipeline can
-        // stamp PublishingContext.IsTransactional before post-success middleware resumes.
-        var isTransactional = _IsCoordinatedTransactional();
+        // Capture the ambient coordinator + relational transaction ONCE here, in the caller's frame, before the
+        // pipeline await. Re-reading ICurrentCommitCoordinator.Current inside _PublishInternalAsync (after the
+        // middleware await) could observe a torn-down scope and silently fall through to the non-transactional
+        // immediate path — dispatching to the broker non-atomically with the transaction.
+        var coordinated = _TryCaptureCoordinatedContext();
 
         return publishPipeline.ExecuteAsync(
             contentObj,
@@ -48,9 +51,10 @@ internal sealed class OutboxMessageWriter(
             innerPublish: (middlewareOptions, _, ct) =>
                 _PublishInternalAsync(
                     publishRequestFactory.Create(contentObj, middlewareOptions, intentType: intentType),
+                    coordinated,
                     ct
                 ),
-            isTransactional,
+            isTransactional: coordinated is not null,
             cancellationToken
         );
     }
@@ -63,7 +67,7 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
-        var isTransactional = _IsCoordinatedTransactional();
+        var coordinated = _TryCaptureCoordinatedContext();
 
         return publishPipeline.ExecuteAsync(
             contentObj,
@@ -77,47 +81,56 @@ internal sealed class OutboxMessageWriter(
                 var request = middlewareDelay.HasValue
                     ? publishRequestFactory.Create(contentObj, middlewareOptions, middlewareDelay.Value, intentType)
                     : publishRequestFactory.Create(contentObj, middlewareOptions, intentType: intentType);
-                return _PublishInternalAsync(request, ct);
+                return _PublishInternalAsync(request, coordinated, ct);
             },
-            isTransactional,
+            isTransactional: coordinated is not null,
             cancellationToken
         );
     }
 
-    private bool _IsCoordinatedTransactional()
+    private CoordinatedPublishContext? _TryCaptureCoordinatedContext()
     {
-        return currentCommitCoordinator.Current?.TryGetCapability<IRelationalCommitContext>(
-                out var relationalCommitContext
-            ) == true
-            && relationalCommitContext.Transaction is not null;
+        var coordinator = currentCommitCoordinator.Current;
+
+        if (
+            coordinator?.TryGetCapability<IRelationalCommitContext>(out var relationalCommitContext) == true
+            && relationalCommitContext.Transaction is { } transaction
+        )
+        {
+            return new CoordinatedPublishContext(coordinator, transaction);
+        }
+
+        return null;
     }
 
-    private async Task _PublishInternalAsync(PreparedPublishMessage publishRequest, CancellationToken cancellationToken)
+    private async Task _PublishInternalAsync(
+        PreparedPublishMessage publishRequest,
+        CoordinatedPublishContext? coordinated,
+        CancellationToken cancellationToken
+    )
     {
         long? tracingTimestamp = null;
         try
         {
             tracingTimestamp = _TracingBefore(publishRequest.Message, publishRequest.IntentType, cancellationToken);
 
-            var currentCoordinator = currentCommitCoordinator.Current;
-
-            if (
-                currentCoordinator?.TryGetCapability<IRelationalCommitContext>(out var relationalCommitContext) == true
-                && relationalCommitContext.Transaction is { } relationalTransaction
-            )
+            // Use the coordinator/transaction captured in the caller's frame — never re-read Current here. If the
+            // captured transaction has since completed, StoreMessageAsync fails loudly rather than silently dropping
+            // to the non-atomic immediate path.
+            if (coordinated is { } context)
             {
                 var mediumMessage = await storage
                     .StoreMessageAsync(
                         publishRequest.MessageName,
                         _CreateStorageEnvelope(publishRequest),
-                        relationalTransaction,
+                        context.Transaction,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
 
-                var buffer = currentCoordinator.GetOrAdd(coordinator =>
+                var buffer = context.Coordinator.GetOrAdd(coordinator =>
                     new MessageOutboxBuffer(
                         coordinator,
                         dispatcher,
@@ -161,6 +174,10 @@ internal sealed class OutboxMessageWriter(
             throw;
         }
     }
+
+    // The ambient coordinator + relational transaction captured once at publish time, carried through the pipeline so
+    // the inner publish never re-reads the AsyncLocal Current after an await.
+    private readonly record struct CoordinatedPublishContext(ICommitCoordinator Coordinator, DbTransaction Transaction);
 
     private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest) =>
         new()
