@@ -16,7 +16,7 @@ namespace Headless.Caching;
 /// <list type="number">
 /// <item>Check L1 (local in-memory) - fastest, per-instance</item>
 /// <item>Check L2 (distributed) - slower but shared across instances</item>
-/// <item>Execute factory if both miss, populate both caches</item>
+/// <item>Execute factory if both miss, populate both caches, publish invalidation so peers drop stale L1</item>
 /// </list>
 /// <para><b>Write/Invalidation path:</b></para>
 /// <list type="number">
@@ -455,16 +455,10 @@ public sealed class HybridCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // The hybrid store write fans out to L2 then L1 with the full per-entry metadata (tags included).
+        // The hybrid store write fans out to L2 then L1 with the full per-entry metadata (tags included) and
+        // publishes the key invalidation itself: every value-write through the composite store broadcasts.
         await ((IFactoryCacheStore)this)
             .UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken)
-            .ConfigureAwait(false);
-
-        await _PublishInvalidationAsync(
-                new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
-                cancellationToken,
-                queueOnFailure: true
-            )
             .ConfigureAwait(false);
 
         return true;
@@ -1472,19 +1466,33 @@ public sealed class HybridCache(
                 .ConfigureAwait(false);
         }
 
-        if (RecoveryQueue is null)
+        if (RecoveryQueue is not null)
         {
-            return;
+            if (l2WriteSucceeded)
+            {
+                RecoveryQueue.OnSuccessfulL2Operation(key);
+            }
+            else
+            {
+                // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
+                _QueueSetEntryRecovery(key, entry, l1PhysicalStamp);
+            }
         }
 
-        if (l2WriteSucceeded)
+        // Factory value-writes (cold-miss fresh write, soft-timeout background completion, eager refresh,
+        // conditional Modified) invalidate peers' L1 exactly like the explicit-upsert path. Metadata-only
+        // restamps (NotModified extension, fail-safe throttle, eager-refresh gate) are skipped: peers' cached
+        // bytes are still identical, so invalidating them would only force pointless L2 re-reads. The publish
+        // runs after the recovery bookkeeping so a queued publish-recovery item cannot be cleared by this
+        // write's own L2 success.
+        if (!entry.IsRestamp)
         {
-            RecoveryQueue.OnSuccessfulL2Operation(key);
-        }
-        else
-        {
-            // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
-            _QueueSetEntryRecovery(key, entry, l1PhysicalStamp);
+            await _PublishInvalidationAsync(
+                    new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
+                    cancellationToken,
+                    queueOnFailure: true
+                )
+                .ConfigureAwait(false);
         }
     }
 
