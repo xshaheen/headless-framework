@@ -27,8 +27,13 @@ public static class SetupEntityFrameworkCommitCoordination
                 sp.GetRequiredService<EntityFrameworkCommitSignalSource>()
             );
 
-            // EF Core resolves IInterceptor services from the application service provider (wired by AddDbContext)
-            // and applies them to every context, so the commit/rollback edges are observed without per-context setup.
+            // IMPORTANT: EF Core does NOT auto-discover IInterceptor registrations from the application
+            // service provider — the interceptor must be added to the context options explicitly or the
+            // commit/rollback edges are never observed (and coordinated work silently drains as rollback).
+            // The Headless ORM path (AddHeadlessDbContext / AddHeadlessIdentityDbContext) applies DI-registered
+            // interceptors automatically; plain AddDbContext consumers must opt in themselves:
+            //   services.AddDbContext<MyDbContext>((sp, options) =>
+            //       options.UseNpgsql(...).AddInterceptors(sp.GetServices<IInterceptor>()));
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IInterceptor, CommitCoordinationTransactionInterceptor>()
             );

@@ -81,6 +81,12 @@ public static class SetupEntityFramework
                 (serviceProvider, optionsBuilder) =>
                 {
                     optionsAction?.Invoke(serviceProvider, optionsBuilder);
+
+                    // EF Core does not auto-discover IInterceptor registrations from the application
+                    // container — without this, package-registered interceptors (e.g. the commit-coordination
+                    // transaction interceptor) silently never fire. Dedups against optionsAction's own adds.
+                    optionsBuilder.AddDiRegisteredInterceptors(serviceProvider);
+
                     optionsBuilder.AddHeadlessExtension();
                 },
                 contextLifetime,
