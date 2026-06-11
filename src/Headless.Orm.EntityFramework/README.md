@@ -227,7 +227,7 @@ var result = await dbContext.ExecuteTransactionAsync<int>(async (ctx, ct) =>
 });
 ```
 
-`ExecuteCoordinatedTransactionAsync(...)` is the commit-coordinated sibling: it additionally enlists the transaction in commit coordination, so integration events (outbox) and durable jobs buffered inside the operation drain atomically on commit and are discarded on rollback. On `HeadlessDbContext` it self-sources the request scope (no `IServiceProvider` argument); the plain `DbContext`, `SqlConnection`, and `NpgsqlConnection` overloads (in the `Headless.CommitCoordination.*` packages) require the scope passed explicitly.
+`ExecuteCoordinatedTransactionAsync(...)` is the commit-coordinated sibling: it additionally enlists the transaction in commit coordination, so integration events (outbox) and durable jobs buffered inside the operation drain atomically on commit and are discarded on rollback. On `HeadlessDbContext` it self-sources the request scope (no `IServiceProvider` argument) and the operation lambda receives the concrete `HeadlessDbContext` (no cast needed); the plain `DbContext`, `SqlConnection`, and `NpgsqlConnection` overloads (in the `Headless.CommitCoordination.*` packages) require the scope passed explicitly.
 
 ```csharp
 await dbContext.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>

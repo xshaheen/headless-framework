@@ -30,38 +30,24 @@ public static class CoordinatedTransactionExtensions
         /// <param name="services">The scoped (request) service provider captured for the post-commit drain.</param>
         /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted"/>.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        public async Task ExecuteCoordinatedTransactionAsync(
+        public Task ExecuteCoordinatedTransactionAsync(
             Func<SqlConnection, CancellationToken, Task> operation,
             IServiceProvider services,
             IsolationLevel isolation = IsolationLevel.ReadCommitted,
             CancellationToken cancellationToken = default
         )
         {
-            var shouldClose = connection.State == ConnectionState.Closed;
-
-            if (shouldClose)
-            {
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            try
-            {
-                await using var transaction = (SqlTransaction)
-                    await connection.BeginTransactionAsync(isolation, cancellationToken).ConfigureAwait(false);
-
-                // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-                await using var _ = connection.EnlistCommitCoordination(transaction, services);
-
-                await operation(connection, cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                if (shouldClose)
+            return _ExecuteCoreAsync(
+                connection,
+                services,
+                isolation,
+                async (c, ct) =>
                 {
-                    await connection.CloseAsync().ConfigureAwait(false);
-                }
-            }
+                    await operation(c, ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken
+            );
         }
 
         /// <summary>
@@ -73,7 +59,7 @@ public static class CoordinatedTransactionExtensions
         /// <param name="services">The scoped (request) service provider captured for the post-commit drain.</param>
         /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted"/>.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
-        public async Task ExecuteCoordinatedTransactionAsync<TArg>(
+        public Task ExecuteCoordinatedTransactionAsync<TArg>(
             Func<TArg, SqlConnection, CancellationToken, Task> operation,
             TArg arg,
             IServiceProvider services,
@@ -81,30 +67,17 @@ public static class CoordinatedTransactionExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var shouldClose = connection.State == ConnectionState.Closed;
-
-            if (shouldClose)
-            {
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            try
-            {
-                await using var transaction = (SqlTransaction)
-                    await connection.BeginTransactionAsync(isolation, cancellationToken).ConfigureAwait(false);
-
-                await using var _ = connection.EnlistCommitCoordination(transaction, services);
-
-                await operation(arg, connection, cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                if (shouldClose)
+            return _ExecuteCoreAsync(
+                connection,
+                services,
+                isolation,
+                async (c, ct) =>
                 {
-                    await connection.CloseAsync().ConfigureAwait(false);
-                }
-            }
+                    await operation(arg, c, ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken
+            );
         }
 
         /// <summary>
@@ -116,39 +89,14 @@ public static class CoordinatedTransactionExtensions
         /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted"/>.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The result produced by <paramref name="operation"/>.</returns>
-        public async Task<TResult> ExecuteCoordinatedTransactionAsync<TResult>(
+        public Task<TResult> ExecuteCoordinatedTransactionAsync<TResult>(
             Func<SqlConnection, CancellationToken, Task<TResult>> operation,
             IServiceProvider services,
             IsolationLevel isolation = IsolationLevel.ReadCommitted,
             CancellationToken cancellationToken = default
         )
         {
-            var shouldClose = connection.State == ConnectionState.Closed;
-
-            if (shouldClose)
-            {
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            try
-            {
-                await using var transaction = (SqlTransaction)
-                    await connection.BeginTransactionAsync(isolation, cancellationToken).ConfigureAwait(false);
-
-                await using var _ = connection.EnlistCommitCoordination(transaction, services);
-
-                var result = await operation(connection, cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-                return result;
-            }
-            finally
-            {
-                if (shouldClose)
-                {
-                    await connection.CloseAsync().ConfigureAwait(false);
-                }
-            }
+            return _ExecuteCoreAsync(connection, services, isolation, operation, cancellationToken);
         }
 
         /// <summary>
@@ -162,7 +110,7 @@ public static class CoordinatedTransactionExtensions
         /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted"/>.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The result produced by <paramref name="operation"/>.</returns>
-        public async Task<TResult> ExecuteCoordinatedTransactionAsync<TResult, TArg>(
+        public Task<TResult> ExecuteCoordinatedTransactionAsync<TResult, TArg>(
             Func<TArg, SqlConnection, CancellationToken, Task<TResult>> operation,
             TArg arg,
             IServiceProvider services,
@@ -170,31 +118,56 @@ public static class CoordinatedTransactionExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var shouldClose = connection.State == ConnectionState.Closed;
+            return _ExecuteCoreAsync(
+                connection,
+                services,
+                isolation,
+                (c, ct) => operation(arg, c, ct),
+                cancellationToken
+            );
+        }
+    }
 
+    /// <summary>
+    /// Shared body for every <c>ExecuteCoordinatedTransactionAsync</c> overload: opens the connection when
+    /// closed, begins the transaction, enlists commit coordination, runs <paramref name="operation"/>, commits,
+    /// and closes the connection if it was opened here. SqlServer commit detection is out-of-band — the SqlClient
+    /// diagnostic raises <c>SignalCommittedAsync</c> within <c>CommitAsync</c> — so this helper does not signal
+    /// explicitly (contrast the PostgreSql inline helper, which must).
+    /// </summary>
+    private static async Task<TResult> _ExecuteCoreAsync<TResult>(
+        SqlConnection connection,
+        IServiceProvider services,
+        IsolationLevel isolation,
+        Func<SqlConnection, CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        var shouldClose = connection.State == ConnectionState.Closed;
+
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await using var transaction = (SqlTransaction)
+                await connection.BeginTransactionAsync(isolation, cancellationToken).ConfigureAwait(false);
+
+            // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
+            await using var _ = connection.EnlistCommitCoordination(transaction, services);
+
+            var result = await operation(connection, cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            return result;
+        }
+        finally
+        {
             if (shouldClose)
             {
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            try
-            {
-                await using var transaction = (SqlTransaction)
-                    await connection.BeginTransactionAsync(isolation, cancellationToken).ConfigureAwait(false);
-
-                await using var _ = connection.EnlistCommitCoordination(transaction, services);
-
-                var result = await operation(arg, connection, cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-                return result;
-            }
-            finally
-            {
-                if (shouldClose)
-                {
-                    await connection.CloseAsync().ConfigureAwait(false);
-                }
+                await connection.CloseAsync().ConfigureAwait(false);
             }
         }
     }

@@ -40,7 +40,7 @@ public static class HeadlessCoordinatedTransactionExtensions
     /// <param name="cancellationToken">Cancellation token.</param>
     public static Task ExecuteCoordinatedTransactionAsync(
         this HeadlessDbContext context,
-        Func<DbContext, CancellationToken, Task> operation,
+        Func<HeadlessDbContext, CancellationToken, Task> operation,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
     )
@@ -69,12 +69,12 @@ public static class HeadlessCoordinatedTransactionExtensions
             );
     }
 
-    /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync(HeadlessDbContext, Func{DbContext, CancellationToken, Task}, IsolationLevel, CancellationToken)"/>
+    /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync(HeadlessDbContext, Func{HeadlessDbContext, CancellationToken, Task}, IsolationLevel, CancellationToken)"/>
     /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
     /// <param name="arg">Argument forwarded to <paramref name="operation"/>.</param>
     public static Task ExecuteCoordinatedTransactionAsync<TArg>(
         this HeadlessDbContext context,
-        Func<TArg, DbContext, CancellationToken, Task> operation,
+        Func<TArg, HeadlessDbContext, CancellationToken, Task> operation,
         TArg arg,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
@@ -114,7 +114,7 @@ public static class HeadlessCoordinatedTransactionExtensions
     /// <returns>The result produced by <paramref name="operation"/>.</returns>
     public static Task<TResult> ExecuteCoordinatedTransactionAsync<TResult>(
         this HeadlessDbContext context,
-        Func<DbContext, CancellationToken, Task<TResult>> operation,
+        Func<HeadlessDbContext, CancellationToken, Task<TResult>> operation,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
     )
@@ -143,12 +143,12 @@ public static class HeadlessCoordinatedTransactionExtensions
             );
     }
 
-    /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync{TResult}(HeadlessDbContext, Func{DbContext, CancellationToken, Task{TResult}}, IsolationLevel, CancellationToken)"/>
+    /// <inheritdoc cref="ExecuteCoordinatedTransactionAsync{TResult}(HeadlessDbContext, Func{HeadlessDbContext, CancellationToken, Task{TResult}}, IsolationLevel, CancellationToken)"/>
     /// <typeparam name="TArg">Type of the argument passed to <paramref name="operation"/>.</typeparam>
     /// <param name="arg">Argument forwarded to <paramref name="operation"/>.</param>
     public static Task<TResult> ExecuteCoordinatedTransactionAsync<TResult, TArg>(
         this HeadlessDbContext context,
-        Func<TArg, DbContext, CancellationToken, Task<TResult>> operation,
+        Func<TArg, HeadlessDbContext, CancellationToken, Task<TResult>> operation,
         TArg arg,
         IsolationLevel isolation = IsolationLevel.ReadCommitted,
         CancellationToken cancellationToken = default
