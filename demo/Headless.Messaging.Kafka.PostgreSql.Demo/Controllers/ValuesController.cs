@@ -1,14 +1,10 @@
-using System.Data;
-using Dapper;
 using Headless.Messaging;
-using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.AspNetCore.Mvc;
-using Npgsql;
 
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxQueue producer, IOutboxTransaction outboxTransaction) : Controller
+public class ValuesController(IOutboxQueue producer) : Controller
 {
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
@@ -43,54 +39,6 @@ public class ValuesController(IOutboxQueue producer, IOutboxTransaction outboxTr
             new EnqueueOptions { MessageName = "sample.kafka.postgrsql" }
         );
 
-        return Ok();
-    }
-
-    [Route("~/adonet/transaction")]
-    public async Task<IActionResult> AdonetWithTransaction()
-    {
-        await using (var connection = new NpgsqlConnection(AppConstants.DbConnectionString))
-        {
-            await using var transaction = await connection.BeginTransactionAsync(outboxTransaction, autoCommit: false);
-
-            //your business code
-            await connection.ExecuteAsync(
-                "INSERT INTO \"Persons\"(\"Name\",\"Age\",\"CreateTime\") VALUES('Lucy',25, NOW())",
-                transaction: (IDbTransaction?)transaction.DbTransaction
-            );
-
-            await producer.EnqueueAsync(
-                new KafkaMessage(DateTime.UtcNow),
-                new EnqueueOptions { MessageName = "sample.kafka.postgrsql" }
-            );
-
-            await transaction.CommitAsync();
-        }
-
-        await producer.EnqueueAsync(
-            new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { MessageName = "sample.kafka.postgrsql" }
-        );
-
-        return Ok();
-    }
-
-    [Route("~/ef/transaction")]
-    public async Task<IActionResult> EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
-    {
-        await using (await dbContext.Database.BeginTransactionAsync(outboxTransaction, autoCommit: false))
-        {
-            dbContext.Persons.Add(new Person { Name = "ef.transaction", Age = 11 });
-
-            await dbContext.SaveChangesAsync();
-
-            await producer.EnqueueAsync(
-                new KafkaMessage(DateTime.UtcNow),
-                new EnqueueOptions { MessageName = "sample.kafka.postgrsql" }
-            );
-
-            await dbContext.Database.CommitTransactionAsync();
-        }
         return Ok();
     }
 }

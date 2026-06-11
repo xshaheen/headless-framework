@@ -85,6 +85,7 @@ Validation notes:
 - Enable tenant-owned write protection through `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))` when the host uses root tenancy.
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses.
 - Use `ExecuteTransactionAsync(...)` (from `DbContextTransactionExtensions`) for multi-step EF operations that must be atomic under retry execution strategies.
+- Use `ExecuteCoordinatedTransactionAsync(...)` (from `HeadlessCoordinatedTransactionExtensions`) instead when the operation also publishes integration events or enqueues durable jobs that must drain atomically on commit — it welds `EnlistCommitCoordination` into the transaction so the enlist cannot be forgotten. On `HeadlessDbContext` it self-sources the request scope and the operation lambda receives the concrete `HeadlessDbContext` (no cast); plain `DbContext`/`SqlConnection`/`NpgsqlConnection` overloads (in `Headless.CommitCoordination.*`) require an explicit `IServiceProvider`.
 - `AddHeadlessDbContextServices(...)` returns `IHeadlessDbContextBuilder`; chain `.AddDomainEvents()` and `.AddIntegrationEventOutbox()` off it to opt in to each event tier. `.AddDomainEvents()` lives in `Headless.Orm.EntityFramework`; `.AddIntegrationEventOutbox()` lives in `Headless.Orm.EntityFramework.Messaging` and is parameterless (broker/storage/retry are configured on `AddHeadlessMessaging`, which must include an outbox storage provider).
 - Customize the save pipeline through `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
 - Apply module-specific EF mappings explicitly through `ModelBuilder` extensions inside the consumer's `OnModelCreating`: `modelBuilder.AddHeadlessAuditLog(auditLogStorageOptions)`, `modelBuilder.AddHeadlessFeatures(featuresStorageOptions)`, `modelBuilder.AddHeadlessPermissions(permissionsStorageOptions)`, `modelBuilder.AddHeadlessSettings(settingsStorageOptions)`. The legacy `Add*Configuration(this)` shapes were replaced by these options-driven extensions.
@@ -268,7 +269,7 @@ Known gaps:
 - Public setup API found: `AddHeadlessDbContext<TDbContext>(...)`, `AddHeadlessDbContextServices(...)` (returns `IHeadlessDbContextBuilder`), `AddDomainEvents()`
 - Base context found: `HeadlessDbContext` with abstract `DefaultSchema`
 - Extension points: `IHeadlessSaveEntryProcessor`, `IHeadlessSaveChangesPipeline`, `IHeadlessOutboxDispatcher`, `ILocalEventBus`, `HeadlessDbContextOptions.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)`
-- Transaction extensions found: `ExecuteTransactionAsync(...)`
+- Transaction extensions found: `ExecuteTransactionAsync(...)`, `ExecuteCoordinatedTransactionAsync(...)` (from `HeadlessCoordinatedTransactionExtensions`)
 - Filter API found: `HeadlessQueryFilters.MultiTenancyFilter`, `NotDeletedFilter`, `NotSuspendedFilter` with matching `Ignore*Filter()` extensions
 
 ---
@@ -290,8 +291,8 @@ Bridge package that supplies the real `IHeadlessOutboxDispatcher` for EF integra
 
 ## Design Notes
 
-- **Option A enlistment.** The dispatcher attaches the EF `IDbContextTransaction` to a fresh transient `IOutboxTransaction` with `AutoCommit = false`, publishes (rows buffered and written inside the transaction rather than sent to the broker in-band), and detaches in `finally` without disposing — the EF pipeline owns the transaction's commit and dispose lifecycle. Outbox rows therefore commit atomically with the business data.
-- **Post-commit delivery differs by provider.** On SQL Server the rows flush to the broker via the connection-commit ADO.NET diagnostic. On PostgreSQL the background relay dispatches them, which adds latency bounded by the relay interval. Pick the storage provider on `AddHeadlessMessaging` with that trade-off in mind.
+- **Commit-coordinated enlistment.** The save pipeline opens its transaction and synchronously enlists it in commit coordination (`DatabaseFacade.EnlistCommitCoordination`), so the ambient commit coordinator carries the live transaction. The dispatcher just publishes each integration event; the outbox writer sees the ambient coordinator and writes the rows **inside** the transaction (buffered, not sent to the broker in-band). The registered EF `IDbTransactionInterceptor` drains the buffered dispatch when the transaction commits and discards it on rollback, so outbox rows commit atomically with the business data. The enlist is synchronous on purpose: an `AsyncLocal` push performed inside an `async` helper does not flow back to the caller, so the pipeline pushes the ambient scope in its own frame.
+- **Post-commit delivery.** The interceptor triggers the buffered dispatch on commit; the background relay also sweeps committed rows independently for crash recovery (on PostgreSQL the relay is the primary latency-bounded path). Pick the storage provider on `AddHeadlessMessaging` with that trade-off in mind.
 - **Dependency isolation.** Keeping the implementation here leaves `Headless.Orm.EntityFramework` free of any messaging dependency — this bridge is the only messaging-aware seam between the two domains.
 - **CDC alternative.** Change Data Capture (for example, Debezium reading the database transaction log) is an advanced alternative deployment for capturing integration events outside the application process; it bypasses this dispatcher entirely and is a host-infrastructure decision.
 

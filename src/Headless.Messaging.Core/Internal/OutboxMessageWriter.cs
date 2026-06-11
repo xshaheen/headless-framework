@@ -1,11 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.CommitCoordination;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
@@ -13,9 +17,11 @@ internal sealed class OutboxMessageWriter(
     IDataStorage storage,
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
-    IOutboxTransactionAccessor transactionAccessor,
+    ICurrentCommitCoordinator currentCommitCoordinator,
     IPublishMiddlewarePipeline publishPipeline,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    IOptions<MessagingOptions> messagingOptions,
+    ILogger<MessageOutboxBuffer> outboxBufferLogger
 )
 {
     // ReSharper disable once InconsistentNaming
@@ -29,9 +35,9 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
-        // Pre-decide whether this publish lands on the non-AutoCommit transactional branch so the
-        // pipeline can stamp PublishingContext.IsTransactional before post-success middleware resumes.
-        var isTransactional = _IsNonAutoCommitTransactional();
+        // Pre-decide whether this publish enlists on an ambient commit coordinator so the pipeline can
+        // stamp PublishingContext.IsTransactional before post-success middleware resumes.
+        var isTransactional = _IsCoordinatedTransactional();
 
         return publishPipeline.ExecuteAsync(
             contentObj,
@@ -57,7 +63,7 @@ internal sealed class OutboxMessageWriter(
         CancellationToken cancellationToken
     )
     {
-        var isTransactional = _IsNonAutoCommitTransactional();
+        var isTransactional = _IsCoordinatedTransactional();
 
         return publishPipeline.ExecuteAsync(
             contentObj,
@@ -78,10 +84,12 @@ internal sealed class OutboxMessageWriter(
         );
     }
 
-    private bool _IsNonAutoCommitTransactional()
+    private bool _IsCoordinatedTransactional()
     {
-        var currentTransaction = transactionAccessor.Current;
-        return currentTransaction?.DbTransaction is not null && !currentTransaction.AutoCommit;
+        return currentCommitCoordinator.Current?.TryGetCapability<IRelationalCommitContext>(
+                out var relationalCommitContext
+            ) == true
+            && relationalCommitContext.Transaction is not null;
     }
 
     private async Task _PublishInternalAsync(PreparedPublishMessage publishRequest, CancellationToken cancellationToken)
@@ -91,59 +99,59 @@ internal sealed class OutboxMessageWriter(
         {
             tracingTimestamp = _TracingBefore(publishRequest.Message, publishRequest.IntentType, cancellationToken);
 
-            var currentTransaction = transactionAccessor.Current;
+            var currentCoordinator = currentCommitCoordinator.Current;
 
-            if (currentTransaction?.DbTransaction == null)
+            if (
+                currentCoordinator?.TryGetCapability<IRelationalCommitContext>(out var relationalCommitContext) == true
+                && relationalCommitContext.Transaction is { } relationalTransaction
+            )
             {
                 var mediumMessage = await storage
                     .StoreMessageAsync(
                         publishRequest.MessageName,
                         _CreateStorageEnvelope(publishRequest),
-                        null,
+                        relationalTransaction,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
 
-                if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
-                {
-                    await dispatcher
-                        .EnqueueToScheduler(mediumMessage, publishRequest.PublishAt, null, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                else
-                {
-                    await dispatcher.EnqueueToPublish(mediumMessage, cancellationToken).ConfigureAwait(false);
-                }
+                var buffer = currentCoordinator.GetOrAdd(coordinator =>
+                    new MessageOutboxBuffer(
+                        coordinator,
+                        dispatcher,
+                        messagingOptions.Value.OutboxFlushTimeout,
+                        outboxBufferLogger
+                    )
+                );
+                buffer.Add(mediumMessage);
+
+                return;
+            }
+
+            // No ambient coordinator (or no relational transaction on it): store immediately with no transaction
+            // and dispatch in-band. The message is persisted and enqueued in one shot — no atomic enlistment.
+            var immediateMessage = await storage
+                .StoreMessageAsync(
+                    publishRequest.MessageName,
+                    _CreateStorageEnvelope(publishRequest),
+                    null,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
+
+            if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
+            {
+                await dispatcher
+                    .EnqueueToScheduler(immediateMessage, publishRequest.PublishAt, null, cancellationToken)
+                    .ConfigureAwait(false);
             }
             else
             {
-                if (currentTransaction is not IOutboxMessageBuffer transaction)
-                {
-                    throw new InvalidOperationException(
-                        $"Registered {nameof(IOutboxTransaction)} must implement {nameof(IOutboxMessageBuffer)} "
-                            + "when publishing with an ambient database transaction."
-                    );
-                }
-
-                var mediumMessage = await storage
-                    .StoreMessageAsync(
-                        publishRequest.MessageName,
-                        _CreateStorageEnvelope(publishRequest),
-                        currentTransaction.DbTransaction,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
-
-                transaction.AddToSent(mediumMessage);
-
-                if (currentTransaction.AutoCommit)
-                {
-                    await currentTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                }
+                await dispatcher.EnqueueToPublish(immediateMessage, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (Exception e)

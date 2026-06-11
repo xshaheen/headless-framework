@@ -22,6 +22,12 @@ internal interface IHeadlessDbContext
     string? TenantId { get; }
 
     /// <summary>
+    /// The scoped (request) service provider that resolved this context — used by coordinated-transaction
+    /// helpers to enlist with the correct scope for the post-commit drain.
+    /// </summary>
+    IServiceProvider ServiceProvider { get; }
+
+    /// <summary>
     /// Optional service scope owned by the context — set by <c>HeadlessDbContextFactory</c> when the context
     /// is created via <c>IDbContextFactory&lt;TDbContext&gt;</c>, and disposed with the context (see
     /// <see cref="HeadlessDbContextDisposal"/>).
@@ -89,6 +95,8 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
     string? IHeadlessDbContext.DefaultSchema => DefaultSchema;
 
     string? IHeadlessDbContext.TenantId => TenantId;
+
+    IServiceProvider IHeadlessDbContext.ServiceProvider => _runtime.ServiceProvider;
 
     IServiceScope? IHeadlessDbContext.OwnedScope
     {

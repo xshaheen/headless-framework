@@ -1,0 +1,450 @@
+---
+domain: Commit Coordination
+packages: CommitCoordination.Abstractions, CommitCoordination.Core, CommitCoordination.DurableWork, CommitCoordination.EntityFramework, CommitCoordination.InMemory, CommitCoordination.PostgreSql, CommitCoordination.SqlServer
+---
+
+# Commit Coordination
+
+## Table of Contents
+
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Core Concepts](#core-concepts)
+    - [Coordinator](#coordinator)
+    - [Signal Source](#signal-source)
+    - [Work Buffer](#work-buffer)
+    - [Capability](#capability)
+- [Choosing a Provider](#choosing-a-provider)
+- [Headless.CommitCoordination.Abstractions](#headlesscommitcoordinationabstractions)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
+- [Headless.CommitCoordination.Core](#headlesscommitcoordinationcore)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
+- [Headless.CommitCoordination.DurableWork](#headlesscommitcoordinationdurablework)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
+- [Headless.CommitCoordination.EntityFramework](#headlesscommitcoordinationentityframework)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
+- [Headless.CommitCoordination.InMemory](#headlesscommitcoordinationinmemory)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
+- [Headless.CommitCoordination.PostgreSql](#headlesscommitcoordinationpostgresql)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-5)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
+- [Headless.CommitCoordination.SqlServer](#headlesscommitcoordinationsqlserver)
+    - [Problem Solved](#problem-solved-6)
+    - [Key Features](#key-features-6)
+    - [Design Notes](#design-notes-3)
+    - [Installation](#installation-6)
+    - [Quick Start](#quick-start-6)
+    - [Configuration](#configuration-6)
+    - [Dependencies](#dependencies-6)
+    - [Side Effects](#side-effects-6)
+
+> Commit Coordination runs registered work only after the unit of work it belongs to reaches a committed or rolled-back terminal outcome.
+
+## Quick Orientation
+
+Use Commit Coordination when a framework subsystem must defer work until the data it belongs to has durably committed. Messaging uses it to store outbox rows inside the relational transaction and dispatch only after commit. Jobs can use `DurableWorkBuffer<TRow>` to fail closed unless a relational capability is available.
+
+The coordinator guarantees exactly-once callback invocation per coordinator instance. It does not guarantee exactly-once business effects for brokers, external services, or processes that crash after commit.
+
+**Commit detection is an acceleration hook, not a correctness mechanism.** A detected signal (SQL Server SqlClient diagnostic, EF interceptor) only dispatches deferred work *sooner*; correctness must not depend on it firing. The consumer commits a durable row inside the transaction and recovers it through an independent polling sweep, so if the signal is missed, delayed, or disabled, the work is still found and executed. In-memory accelerator buffers (`InMemoryWorkBuffer<T>`) therefore require the consumer to own that durable store plus recovery (messaging: outbox rows + retry sweep); `DurableWorkBuffer<TRow>` writes rows in-transaction and does not depend on detection at all.
+
+## Agent Instructions
+
+- Consumer packages should depend on `Headless.CommitCoordination.Abstractions`; provider packages depend on `Headless.CommitCoordination.Core`.
+- Register work with `OnCommit` or `OnRollback`; do not expose commit or rollback control to consumers.
+- Use `GetOrAdd<TBuffer>` only for scope-local deferred work buffers. Do not use it as a service locator.
+- Use `TryGetCapability<IRelationalCommitContext>` when work must write durable rows inside the active relational transaction.
+- Never make correctness depend on a detected commit signal. Detection (SQL Server diagnostic, EF interceptor) only dispatches sooner; back every in-memory accelerator buffer with a durable row committed in-transaction plus an independent polling/recovery sweep, so a missed, delayed, or disabled signal still executes the work.
+- Prefer the single-call `ExecuteCoordinatedTransactionAsync(...)` helper over hand-rolling `Begin` + `EnlistCommitCoordination`; it welds the enlist into the transaction so it cannot be forgotten. A `HeadlessDbContext` self-sources its request scope (no `IServiceProvider` argument); a plain `DbContext`, `SqlConnection`, or `NpgsqlConnection` cannot, so those overloads require the scope passed explicitly. Pass the **request-scoped** provider (e.g. `HttpContext.RequestServices` or an injected scoped `IServiceProvider`), never the root container — the post-commit drain resolves scoped services, and the root provider would resolve the wrong (or no) scope.
+- Durable jobs should keep `DurableWorkProviderMismatchPolicy.Throw`; fallback modes are for at-least-once accelerators that already have recovery.
+
+## Core Concepts
+
+### Coordinator
+
+`ICommitCoordinator` is the register-only contract. It accepts outcome-keyed callbacks and typed work buffers while `State == Active`; enlistment after terminal transition throws.
+
+### Signal Source
+
+`ICommitSignalSource` adapts a provider's native commit or rollback edge into a coordinator signal. In-memory sources are driven directly; SQL Server can correlate detected signals by provider transaction key. A detected signal is a latency accelerator: it dispatches deferred work as soon as the commit edge is observed, but the consumer's durable store and polling recovery — not the signal — are the source of truth.
+
+### Work Buffer
+
+`ICommitWorkBuffer` marks state that belongs to one commit scope. `InMemoryWorkBuffer<T>` is a thread-safe queue for post-commit accelerators. `DurableWorkBuffer<TRow>` writes rows while the relational transaction is still open.
+
+### Capability
+
+`ICommitCapability` is a read-only provider escape hatch populated by the scope owner. `IRelationalCommitContext` exposes BCL `DbConnection` and `DbTransaction` handles without putting database concepts on the root coordinator.
+
+## Choosing a Provider
+
+| Provider | Use when | Avoid when | Trade-off |
+| --- | --- | --- | --- |
+| `Headless.CommitCoordination.InMemory` | The owner explicitly signals commit or rollback in-process. | Work needs relational transaction handles. | No provider capability. |
+| `Headless.CommitCoordination.EntityFramework` | EF Core owns the unit-of-work edge. | Raw ADO.NET owns commit detection. | Depends only on EF Core relational APIs. |
+| `Headless.CommitCoordination.PostgreSql` | PostgreSQL flows commit through framework-owned transaction APIs. | The app bypasses framework transaction helpers. | Inline signal source; no out-of-band detection. |
+| `Headless.CommitCoordination.SqlServer` | SQL Server commit is detected by provider transaction key. | Diagnostic correlation cannot be established. | Correlation registry must remove scopes on every terminal path. |
+
+## Headless.CommitCoordination.Abstractions
+
+### Problem Solved
+
+Defines the public commit coordination contracts without provider dependencies.
+
+### Key Features
+
+- `ICommitCoordinator`, `ICurrentCommitCoordinator`, `ICommitScope`, and `ICommitSignalSource`.
+- Outcome callbacks for commit and rollback.
+- Typed scope-local work buffers.
+- Capability lookup through `ICommitCapability`.
+
+### Design Notes
+
+The root contract is not a transaction. Consumers can register work but cannot decide the terminal outcome.
+
+### Installation
+
+```bash
+dotnet add package Headless.CommitCoordination.Abstractions
+```
+
+### Quick Start
+
+```csharp
+var coordinator = currentCommitCoordinator.Current;
+coordinator?.OnCommit((context, ct) => ValueTask.CompletedTask);
+```
+
+### Configuration
+
+None.
+
+### Dependencies
+
+None.
+
+### Side Effects
+
+None.
+
+## Headless.CommitCoordination.Core
+
+### Problem Solved
+
+Implements the in-process coordinator, ambient stack, scope factory, and relational capability implementation.
+
+### Key Features
+
+- Thread-safe callback registration and typed buffers.
+- Ambient current coordinator through `CommitScopeStack`.
+- Nested scopes join the root by default.
+- Terminal drain runs callbacks with `CancellationToken.None` and aggregates failures.
+
+### Design Notes
+
+`Dispose` schedules an un-signalled rollback drain in the background so sync callers are not blocked on async callbacks. `DisposeAsync` restores the ambient parent synchronously before any rollback drain so `await using` does not strand `AsyncLocal` state.
+
+### Installation
+
+```bash
+dotnet add package Headless.CommitCoordination.Core
+```
+
+### Quick Start
+
+```csharp
+services.AddCommitCoordination();
+```
+
+### Configuration
+
+None.
+
+### Dependencies
+
+- `Headless.CommitCoordination.Abstractions`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
+
+### Side Effects
+
+Registers `CommitScopeStack`, `ICurrentCommitCoordinator`, and `CommitScopeFactory`.
+
+## Headless.CommitCoordination.DurableWork
+
+### Problem Solved
+
+Provides a base for durable work buffers that must write rows inside the active relational transaction.
+
+### Key Features
+
+- `DurableWorkBuffer<TRow>` base class.
+- `DurableWorkProviderMismatchPolicy.Throw` default.
+- Explicit `Warn` fallback for consumers that already have recovery.
+
+### Design Notes
+
+Durable work fails closed by default because running a job before its triggering data commits is a correctness bug. Rows are written inside the active relational transaction at enlist time, so a durable buffer does not depend on commit detection at all: the row commits atomically with the business data and is recovered by the consumer's relay regardless of whether any signal fires.
+
+### Installation
+
+```bash
+dotnet add package Headless.CommitCoordination.DurableWork
+```
+
+### Quick Start
+
+```csharp
+public sealed record JobRow(string Name);
+
+public sealed class JobWorkBuffer(ICommitCoordinator coordinator)
+    : DurableWorkBuffer<JobRow>(coordinator)
+{
+    protected override ValueTask WriteRowAsync(JobRow row, IRelationalCommitContext context, CancellationToken ct)
+    {
+        // write row using context.Connection/context.Transaction
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+### Configuration
+
+Choose `DurableWorkProviderMismatchPolicy.Throw` or `Warn` per buffer.
+
+### Dependencies
+
+- `Headless.CommitCoordination.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
+
+### Side Effects
+
+None.
+
+## Headless.CommitCoordination.EntityFramework
+
+### Problem Solved
+
+Provides EF Core commit coordination registration points.
+
+### Key Features
+
+- `EntityFrameworkCommitSignalSource`.
+- DI extension `AddEntityFrameworkCommitCoordination()`.
+- `DbContext.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call resilient coordinated transaction (plain `DbContext`; pass the request scope). `HeadlessDbContext` has a scope-free overload in `Headless.Orm.EntityFramework`.
+
+### Installation
+
+```bash
+dotnet add package Headless.CommitCoordination.EntityFramework
+```
+
+### Quick Start
+
+```csharp
+services.AddEntityFrameworkCommitCoordination();
+
+// REQUIRED for plain AddDbContext: EF Core does NOT auto-discover IInterceptor registrations from
+// the application container — without AddInterceptors the commit edge is never observed and
+// coordinated work silently drains as rollback. (AddHeadlessDbContext / AddHeadlessIdentityDbContext
+// in Headless.Orm.EntityFramework apply DI-registered interceptors automatically — skip this there.)
+services.AddDbContext<MyDbContext>(
+    (sp, options) => options.UseNpgsql(connectionString).AddInterceptors(sp.GetServices<IInterceptor>()));
+
+// Open + enlist + commit in one call; publishes inside the operation drain atomically on commit.
+await db.ExecuteCoordinatedTransactionAsync(
+    async (context, ct) =>
+    {
+        await context.SaveChangesAsync(ct);
+        await bus.PublishAsync(new OrderPlaced(orderId), ct);
+    },
+    services: requestServiceProvider);
+```
+
+### Configuration
+
+None.
+
+### Dependencies
+
+- `Headless.CommitCoordination.Core`
+- `Microsoft.EntityFrameworkCore.Relational`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+
+### Side Effects
+
+Registers core commit coordination services, `EntityFrameworkCommitSignalSource`, `ICommitSignalSource`, and the EF transaction interceptor **in DI only** — the interceptor still has to reach the context options. `AddHeadlessDbContext`/`AddHeadlessIdentityDbContext` wire it automatically; plain `AddDbContext` consumers must call `options.AddInterceptors(sp.GetServices<IInterceptor>())` themselves or the commit edge is never observed.
+
+## Headless.CommitCoordination.InMemory
+
+### Problem Solved
+
+Provides an explicit in-process signal source for tests and owner-driven flows.
+
+### Key Features
+
+- `InMemoryCommitSignalSource`.
+- DI extension `AddInMemoryCommitCoordination()`.
+
+### Installation
+
+```bash
+dotnet add package Headless.CommitCoordination.InMemory
+```
+
+### Quick Start
+
+```csharp
+services.AddInMemoryCommitCoordination();
+```
+
+### Configuration
+
+None.
+
+### Dependencies
+
+- `Headless.CommitCoordination.Core`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+
+### Side Effects
+
+Registers core commit coordination services, `InMemoryCommitSignalSource`, and `ICommitSignalSource`.
+
+## Headless.CommitCoordination.PostgreSql
+
+### Problem Solved
+
+Provides PostgreSQL commit coordination registration points for inline framework-owned transaction flows.
+
+### Key Features
+
+- `PostgreSqlCommitSignalSource`.
+- DI extension `AddPostgreSqlCommitCoordination()`.
+- `NpgsqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
+
+### Installation
+
+```bash
+dotnet add package Headless.CommitCoordination.PostgreSql
+```
+
+### Quick Start
+
+```csharp
+services.AddPostgreSqlCommitCoordination();
+
+// Open + enlist + commit in one call; the enlist cannot be forgotten.
+await connection.ExecuteCoordinatedTransactionAsync(
+    async (conn, ct) =>
+    {
+        // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
+    },
+    services: requestServiceProvider);
+```
+
+### Configuration
+
+None.
+
+### Dependencies
+
+- `Headless.CommitCoordination.Core`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Npgsql`
+
+### Side Effects
+
+Registers core commit coordination services, `PostgreSqlCommitSignalSource`, and `ICommitSignalSource`.
+
+## Headless.CommitCoordination.SqlServer
+
+### Problem Solved
+
+Correlates SQL Server commit or rollback signals to attached commit scopes.
+
+### Key Features
+
+- `SqlServerCommitSignalSource`.
+- Provider-key registry for detected commit and rollback signals.
+- DI extension `AddSqlServerCommitCoordination()`.
+- `SqlConnection.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call coordinated transaction for raw ADO (opens the connection if closed; no execution-strategy retry).
+
+### Design Notes
+
+Detected signals remove the scope from the registry before signaling. The returned scope still owns the ambient pop; the signal source owns an async service scope for the out-of-band drain and releases it after the terminal signal completes.
+
+The SqlClient diagnostic is a low-latency commit signal, not the durability mechanism. It depends on `Microsoft.Data.SqlClient` diagnostic event names and payload shapes, which can drift across driver upgrades, so a missed, delayed, or disabled diagnostic must not lose work: the consumer commits a durable row inside the transaction and recovers it by polling, and a faulted drain is left for that recovery path. Prefer `Headless.CommitCoordination.EntityFramework` where EF owns the commit edge — its interceptor signal has no such fragility.
+
+### Installation
+
+```bash
+dotnet add package Headless.CommitCoordination.SqlServer
+```
+
+### Quick Start
+
+```csharp
+services.AddSqlServerCommitCoordination();
+
+// Open + enlist + commit in one call; the enlist cannot be forgotten.
+await connection.ExecuteCoordinatedTransactionAsync(
+    async (conn, ct) =>
+    {
+        // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
+    },
+    services: requestServiceProvider);
+```
+
+### Configuration
+
+None.
+
+### Dependencies
+
+- `Headless.CommitCoordination.Core`
+- `Microsoft.Data.SqlClient`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
+
+### Side Effects
+
+Registers core commit coordination services, `SqlServerCommitSignalSource`, `ICommitSignalSource`, the SqlClient diagnostic observer/listener, and an `IHostedService` that owns the diagnostic subscription lifetime.

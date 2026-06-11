@@ -38,6 +38,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
 
     public string? TenantId => services.TenantId;
 
+    internal IServiceProvider ServiceProvider => services.ServiceProvider;
+
     public void Initialize()
     {
         if (_initialized)

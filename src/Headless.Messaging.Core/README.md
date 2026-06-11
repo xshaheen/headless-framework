@@ -69,17 +69,21 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 });
 
-// Publish broadcast messages with outbox (reliable delivery)
-public sealed class OrderService(IOutboxBus bus, IOutboxTransaction transaction)
+// Publish broadcast messages with the transactional outbox (reliable delivery).
+// EnlistCommitCoordination (from Headless.CommitCoordination.EntityFramework) makes the open transaction the
+// ambient commit coordinator, so the outbox writer stores rows INSIDE it; the EF transaction interceptor
+// dispatches them post-commit and discards them on rollback. The enlist is synchronous on purpose — it must
+// run in the caller's frame so the ambient scope flows to the publish below.
+public sealed class OrderService(IOutboxBus bus, AppDbContext dbContext, IServiceProvider services)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
-        await using (var dbTransaction = await dbContext.Database.BeginTransactionAsync(transaction, autoCommit: false, ct))
-        {
-            await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
-            await dbContext.SaveChangesAsync(ct);
-            await dbTransaction.CommitAsync(ct);
-        }
+        await using var tx = await dbContext.Database.BeginTransactionAsync(ct);
+        await using var _ = dbContext.Database.EnlistCommitCoordination(tx, services);
+
+        await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
+        await dbContext.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 }
 
@@ -319,6 +323,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
     setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
     setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
+    setup.Options.OutboxFlushTimeout = TimeSpan.FromSeconds(30);
     setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
         initialDelay: TimeSpan.FromSeconds(1),
         maxDelay: TimeSpan.FromMinutes(5)
@@ -351,6 +356,7 @@ Top-level messaging timeouts that influence retry behavior:
 | --- | --- | --- | --- |
 | `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
 | `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
+| `OutboxFlushTimeout` | `TimeSpan` | `30s` | Bounds the post-commit drain that flushes buffered outbox messages to the transport. The drain runs with `CancellationToken.None`, so an unresponsive broker would otherwise hold the request thread, DI scope, and DB connection indefinitely. Undispatched messages stay durable and are recovered by the relay sweep. `> 0`, `<= 5m`. |
 
 Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.
 

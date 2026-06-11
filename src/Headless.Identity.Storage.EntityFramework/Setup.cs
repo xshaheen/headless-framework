@@ -216,6 +216,12 @@ public static class SetupIdentityEntityFramework
                 (serviceProvider, optionsBuilder) =>
                 {
                     optionsAction?.Invoke(serviceProvider, optionsBuilder);
+
+                    // Parity with AddHeadlessDbContext: EF Core does not auto-discover IInterceptor
+                    // registrations from the application container; apply them here so package-registered
+                    // interceptors (e.g. commit coordination) fire for Identity contexts too.
+                    optionsBuilder.AddDiRegisteredInterceptors(serviceProvider);
+
                     optionsBuilder.AddHeadlessExtension();
                 },
                 contextLifetime,

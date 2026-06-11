@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Checks;
+using Headless.CommitCoordination.EntityFramework;
 using Headless.Core;
 using Headless.Domain;
 using Headless.EntityFramework.CompiledQueryCache;
@@ -80,6 +81,12 @@ public static class SetupEntityFramework
                 (serviceProvider, optionsBuilder) =>
                 {
                     optionsAction?.Invoke(serviceProvider, optionsBuilder);
+
+                    // EF Core does not auto-discover IInterceptor registrations from the application
+                    // container — without this, package-registered interceptors (e.g. the commit-coordination
+                    // transaction interceptor) silently never fire. Dedups against optionsAction's own adds.
+                    optionsBuilder.AddDiRegisteredInterceptors(serviceProvider);
+
                     optionsBuilder.AddHeadlessExtension();
                 },
                 contextLifetime,
@@ -107,6 +114,11 @@ public static class SetupEntityFramework
             var options = _GetOrAddHeadlessDbContextOptions(services);
             configureOptions?.Invoke(options);
             options.RegisterServices(services);
+
+            // The SaveChanges pipeline opens a coordinated EF transaction so the messaging outbox (and any
+            // other commit-enlisted work) drains atomically when the save commits. Registering the EF commit
+            // coordination source + interceptor here is harmless when nothing enlists (the drain is empty).
+            services.AddEntityFrameworkCommitCoordination();
 
             services.AddOptions<TenantWriteGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();
