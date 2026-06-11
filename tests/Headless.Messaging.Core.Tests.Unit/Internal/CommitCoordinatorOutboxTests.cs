@@ -67,7 +67,9 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 _CreatePublishRequestFactory(),
                 stack,
                 new NoopPublishMiddlewarePipeline(),
-                TimeProvider.System
+                TimeProvider.System,
+                Options.Create(new MessagingOptions()),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
             );
 
             await writer.PublishAsync(

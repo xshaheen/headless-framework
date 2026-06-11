@@ -169,7 +169,9 @@ public sealed class IsTransactionalPropagationTests : TestBase
             publishRequestFactory,
             currentCommitCoordinator,
             pipeline,
-            TimeProvider.System
+            TimeProvider.System,
+            Options.Create(new MessagingOptions()),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
         );
     }
 
