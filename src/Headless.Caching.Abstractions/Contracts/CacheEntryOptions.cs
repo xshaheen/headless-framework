@@ -94,7 +94,10 @@ public readonly record struct CacheEntryOptions
     /// <see cref="Timeout.InfiniteTimeSpan"/> (no ceiling): a detached factory runs to completion, matching
     /// the behavior of comparable caches. Provide a finite, positive value to bound how long a detached
     /// factory may hold the per-key lock; when the ceiling fires, the coordinator cancels the internal token,
-    /// releases the lock, and best-effort re-stamps the stale reserve.
+    /// releases the lock, and best-effort re-stamps the stale reserve. Must be finite when
+    /// <see cref="IsFailSafeEnabled"/> is set together with a finite <see cref="FactorySoftTimeout"/>: that is
+    /// the only combination that detaches the factory, so an infinite ceiling would let a hung factory hold the
+    /// per-key lock indefinitely. Validation rejects that combination.
     /// </summary>
     public TimeSpan BackgroundFactoryCeiling { get; init; } = Timeout.InfiniteTimeSpan;
 
