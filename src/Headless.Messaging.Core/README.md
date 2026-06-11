@@ -359,6 +359,8 @@ Top-level messaging timeouts that influence retry behavior:
 
 Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.
 
+**Delivery semantics are at-least-once; consumers must be idempotent.** The framework never promises exactly-once: the commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease plus the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers on recovery. Dedupe in consumers by business key or message id.
+
 ### Exhausted vs Stop
 
 `OnExhausted` fires **only on `RetryDecision.Exhausted`** — the retry budget was fully consumed and the failure was transient.
