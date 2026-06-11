@@ -50,7 +50,7 @@ public static class SetupHybridCache
         {
             setup.RegisterDefaultProvider(
                 CacheConstants.HybridCacheProvider,
-                new HybridCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     if (setupAction is null)
                     {
@@ -80,7 +80,7 @@ public static class SetupHybridCache
 
             setup.RegisterDefaultProvider(
                 CacheConstants.HybridCacheProvider,
-                new HybridCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction);
                     services._AddCacheCore();
@@ -102,7 +102,7 @@ public static class SetupHybridCache
 
             setup.RegisterDefaultProvider(
                 CacheConstants.HybridCacheProvider,
-                new HybridCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(configuration);
                     services._AddCacheCore();
@@ -131,7 +131,7 @@ public static class SetupHybridCache
             var name = instance.Name;
 
             instance.RegisterProvider(
-                new HybridCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
                     services._AddNamedCacheCore(name);
@@ -154,7 +154,7 @@ public static class SetupHybridCache
             var name = instance.Name;
 
             instance.RegisterProvider(
-                new HybridCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
                     services._AddNamedCacheCore(name);
@@ -177,7 +177,7 @@ public static class SetupHybridCache
             var name = instance.Name;
 
             instance.RegisterProvider(
-                new HybridCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(configuration, name);
                     services._AddNamedCacheCore(name);
@@ -244,7 +244,7 @@ public static class SetupHybridCache
             provider.GetRequiredService<IBus>(),
             options,
             provider.GetService<ILogger<HybridCache>>(),
-            provider.GetService<TimeProvider>(),
+            provider.GetRequiredService<TimeProvider>(),
             provider.GetService<ICacheFactoryLockProvider>()
         );
     }
@@ -275,10 +275,5 @@ public static class SetupHybridCache
                     + $"that name ({cache.GetType().Name}) does not implement {typeof(TTier).Name}. Register the "
                     + $"named tier with {registrationHint}."
             );
-    }
-
-    private sealed class HybridCacheOptionsExtension(Action<IServiceCollection> apply) : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services) => apply(services);
     }
 }

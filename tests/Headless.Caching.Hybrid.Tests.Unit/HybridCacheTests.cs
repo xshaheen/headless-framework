@@ -1050,6 +1050,8 @@ public sealed class HybridCacheTests : TestBase
             FailSafeMaxDuration = TimeSpan.FromHours(1),
             FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
             FactorySoftTimeout = TimeSpan.FromMilliseconds(75),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            BackgroundFactoryCeiling = TimeSpan.FromSeconds(5),
         };
 
         await cache.GetOrAddAsync(key, _ => new ValueTask<int?>(1), options, AbortToken);

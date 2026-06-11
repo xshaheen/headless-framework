@@ -72,7 +72,12 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         using var hold = _lockProvider.Hold(key);
         var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
-        var options = _CreateOptions(isFailSafeEnabled: true, factorySoftTimeout: TimeSpan.FromMilliseconds(50));
+        // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromMilliseconds(50),
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
+        );
 
         ValueTask<string?> Factory(CancellationToken cancellationToken)
         {
@@ -171,7 +176,12 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var options = _CreateOptions(isFailSafeEnabled: true, factorySoftTimeout: TimeSpan.FromSeconds(1));
+        // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
+        );
 
         async ValueTask<string?> Factory(CancellationToken cancellationToken)
         {
@@ -532,6 +542,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         TimeSpan? duration = null,
         bool isFailSafeEnabled = false,
         TimeSpan? factorySoftTimeout = null,
+        TimeSpan? backgroundFactoryCeiling = null,
         TimeSpan? lockTimeout = null,
         float? eagerRefreshThreshold = null,
         bool useDistributedFactoryLock = true
@@ -544,6 +555,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             FailSafeMaxDuration = TimeSpan.FromMinutes(1),
             FailSafeThrottleDuration = TimeSpan.FromSeconds(10),
             FactorySoftTimeout = factorySoftTimeout ?? Timeout.InfiniteTimeSpan,
+            BackgroundFactoryCeiling = backgroundFactoryCeiling ?? Timeout.InfiniteTimeSpan,
             LockTimeout = lockTimeout ?? Timeout.InfiniteTimeSpan,
             UseDistributedFactoryLock = useDistributedFactoryLock,
         };

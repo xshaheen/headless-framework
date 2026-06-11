@@ -107,6 +107,18 @@ public readonly record struct CacheEntryStamps(
             );
         }
 
+        // The lock-holding background-detach path is only reachable when a SOFT timeout is selected, which requires
+        // fail-safe enabled AND a finite FactorySoftTimeout (see FactoryCacheCoordinator._SelectFactoryTimeout). On
+        // that path an infinite BackgroundFactoryCeiling lets a hung factory hold the per-key lock indefinitely. A
+        // finite soft timeout WITHOUT fail-safe is inert (it only logs), so reject only the dangerous combination.
+        Ensure.False(
+            options.IsFailSafeEnabled
+                && options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
+                && options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan,
+            "BackgroundFactoryCeiling must be finite when fail-safe is enabled with a finite FactorySoftTimeout, "
+                + "otherwise a hung factory holds the per-key lock indefinitely."
+        );
+
         ValidateTags(options.Tags, paramName: nameof(options.Tags));
     }
 

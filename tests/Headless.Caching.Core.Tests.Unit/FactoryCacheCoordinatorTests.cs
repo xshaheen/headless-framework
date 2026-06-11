@@ -830,7 +830,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var options = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
-            factoryHardTimeout: TimeSpan.FromSeconds(10)
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
         async ValueTask<string?> Factory(CancellationToken cancellationToken)
@@ -872,7 +874,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var options = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
-            factoryHardTimeout: TimeSpan.FromSeconds(10)
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
         async ValueTask<string?> Factory(CancellationToken cancellationToken)
@@ -919,7 +923,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             isFailSafeEnabled: true,
             throttleDuration: TimeSpan.FromSeconds(20),
             factorySoftTimeout: TimeSpan.FromSeconds(1),
-            factoryHardTimeout: TimeSpan.FromSeconds(10)
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
         async ValueTask<string?> Factory(CancellationToken cancellationToken)
@@ -1049,7 +1055,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var options = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
-            factoryHardTimeout: TimeSpan.FromSeconds(10)
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
         using var cts = new CancellationTokenSource();
 
@@ -1088,7 +1096,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var options = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
-            factoryHardTimeout: TimeSpan.FromSeconds(10)
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
         using var cts = new CancellationTokenSource();
 
@@ -1163,19 +1173,12 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
-    public async Task should_run_background_factory_to_completion_without_ceiling_when_ceiling_is_infinite()
+    public async Task should_throw_when_fail_safe_and_finite_soft_timeout_leave_background_ceiling_infinite()
     {
-        // given
+        // given — the dangerous combination: fail-safe + a finite soft timeout select the lock-holding
+        // background-detach path, but an infinite BackgroundFactoryCeiling lets a hung factory hold the per-key
+        // lock forever. Validation must reject it up front rather than admit the unbounded lock hold.
         var key = Faker.Random.AlphaNumeric(8);
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddHours(1));
-        var coordinator = _CreateCoordinator();
-        var ceilingTimerRegistered = false;
-        coordinator.BackgroundCompletionCeilingTimerRegistered = () => ceilingTimerRegistered = true;
-        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
-        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
-        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
@@ -1183,27 +1186,15 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             backgroundFactoryCeiling: Timeout.InfiniteTimeSpan
         );
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
-        {
-            factoryStarted.SetResult();
-            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        // when — soft timeout returns stale, factory keeps running detached
-        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
-        await factoryStarted.Task;
-        await timeoutRegistered;
-        _timeProvider.Advance(TimeSpan.FromSeconds(1));
-        (await resultTask).IsStale.Should().BeTrue();
-
-        // advance well past any plausible ceiling to prove the detached factory is never cancelled
-        _timeProvider.Advance(TimeSpan.FromMinutes(10));
-        factoryGate.SetResult("fresh");
-        await backgroundFinished;
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, key, _FactoryReturns("fresh"), options, AbortToken);
 
         // then
-        ceilingTimerRegistered.Should().BeFalse("no ceiling timer is armed when the ceiling is infinite");
-        _store.GetEntry(key)!.Value.Should().Be("fresh");
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*BackgroundFactoryCeiling must be finite*");
     }
 
     [Fact]
@@ -1431,7 +1422,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var options = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
-            factoryHardTimeout: TimeSpan.FromSeconds(10)
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
         async ValueTask<string?> FirstFactory(CancellationToken cancellationToken)
@@ -1513,12 +1506,16 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var innerOptions = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
-            factoryHardTimeout: TimeSpan.FromSeconds(10)
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
         var outerOptions = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(10),
-            factoryHardTimeout: TimeSpan.FromSeconds(20)
+            factoryHardTimeout: TimeSpan.FromSeconds(20),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(30)
         );
 
         async ValueTask<string?> OuterFactory(CancellationToken cancellationToken)
@@ -2128,7 +2125,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             duration: duration,
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
-            factoryHardTimeout: TimeSpan.FromSeconds(10)
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
         );
 
         async ValueTask<CacheFactoryResult<string>> Factory(

@@ -32,7 +32,7 @@ public static class SetupRedisCache
 
             setup.RegisterDefaultProvider(
                 CacheConstants.RemoteCacheProvider,
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
                     services._AddCacheCore(isDefault: true);
@@ -54,7 +54,7 @@ public static class SetupRedisCache
 
             setup.RegisterDefaultProvider(
                 CacheConstants.RemoteCacheProvider,
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
                     services._AddCacheCore(isDefault: true);
@@ -77,7 +77,7 @@ public static class SetupRedisCache
 
             setup.RegisterDefaultProvider(
                 CacheConstants.RemoteCacheProvider,
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration);
                     services._AddCacheCore(isDefault: true);
@@ -100,7 +100,7 @@ public static class SetupRedisCache
 
             setup.RegisterTierProvider(
                 CacheConstants.RemoteCacheProvider,
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
                     services._AddCacheCore(isDefault: false);
@@ -122,7 +122,7 @@ public static class SetupRedisCache
 
             setup.RegisterTierProvider(
                 CacheConstants.RemoteCacheProvider,
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
                     services._AddCacheCore(isDefault: false);
@@ -144,7 +144,7 @@ public static class SetupRedisCache
 
             setup.RegisterTierProvider(
                 CacheConstants.RemoteCacheProvider,
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration);
                     services._AddCacheCore(isDefault: false);
@@ -172,7 +172,7 @@ public static class SetupRedisCache
             var name = instance.Name;
 
             instance.RegisterProvider(
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
                     services._AddNamedCacheCore(name);
@@ -195,7 +195,7 @@ public static class SetupRedisCache
             var name = instance.Name;
 
             instance.RegisterProvider(
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
                     services._AddNamedCacheCore(name);
@@ -218,7 +218,7 @@ public static class SetupRedisCache
             var name = instance.Name;
 
             instance.RegisterProvider(
-                new RedisCacheOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration, name);
                     services._AddNamedCacheCore(name);
@@ -326,10 +326,5 @@ public static class SetupRedisCache
 
             return services;
         }
-    }
-
-    private sealed class RedisCacheOptionsExtension(Action<IServiceCollection> apply) : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services) => apply(services);
     }
 }
