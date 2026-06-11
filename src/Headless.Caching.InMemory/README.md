@@ -9,9 +9,9 @@ Provides process-local caching through the unified `ICache` abstraction, suitabl
 ## Key Features
 
 - Full `IInMemoryCache` implementation.
-- Can serve as default `ICache` or alongside a distributed cache.
+- Can serve as the default `ICache` (`setup.UseInMemory(...)`) or as the memory tier of a default hybrid (`setup.AddMemoryTier(...)`).
 - Supports strongly typed `ICache<T>`.
-- Named cache instances via `AddInMemoryCache(name, ...)`, resolvable as keyed `ICache` services or through `ICacheProvider`.
+- Named cache instances via `setup.AddNamed(name, i => i.UseInMemory(...))`, resolvable as keyed `ICache` services or through `ICacheProvider`.
 - Automatic memory management with configurable limits (`MaxItems` plus LRU eviction).
 - Tag invalidation through an in-process reverse tag index with live-entry verification.
 - Can act as an `IRemoteCache` adapter for single-instance scenarios.
@@ -39,22 +39,36 @@ dotnet add package Headless.Caching.InMemory
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddInMemoryCache();
+// Pick one shape — AddHeadlessCaching may be called only once per service collection.
 
-builder.Services.AddInMemoryCache(options =>
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+
+builder.Services.AddHeadlessCaching(setup =>
+    setup.UseInMemory(options =>
+    {
+        options.MaxItems = 10000;
+        options.CloneValues = true;
+        options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
+    })
+);
+
+// As the memory tier of a default hybrid instead of the default ICache (see Headless.Caching.Hybrid):
+builder.Services.AddHeadlessCaching(setup =>
 {
-    options.MaxItems = 10000;
-    options.CloneValues = true;
-    options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
+    setup.AddMemoryTier();
+    setup.AddRedisTier(options => options.ConnectionMultiplexer = redis); // redis: ConnectionMultiplexer.Connect(...)
+    setup.UseHybrid();
 });
-
-builder.Services.AddInMemoryCache(isDefault: false);
 ```
 
-Named instances (independent options, resolved by name):
+Named instances (independent options, resolved by name; the setup still needs exactly one default `Use*`):
 
 ```csharp
-builder.Services.AddInMemoryCache("orders", options => options.MaxItems = 1000);
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseInMemory();
+    setup.AddNamed("orders", i => i.UseInMemory(options => options.MaxItems = 1000));
+});
 
 public sealed class OrderService(ICacheProvider cacheProvider)
 {
@@ -62,7 +76,7 @@ public sealed class OrderService(ICacheProvider cacheProvider)
 }
 ```
 
-Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException`. Named instances never touch the default (unkeyed) `ICache`.
+Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException` and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
 ## Configuration
 
@@ -89,10 +103,10 @@ Names must be non-empty and must not be one of the reserved role keys (`memory`,
 
 ## Side Effects
 
-- Registers `IInMemoryCache` as singleton.
-- Registers `ICache` as singleton when `isDefault: true`.
+- Registers `IInMemoryCache` as singleton (`setup.UseInMemory(...)` and `setup.AddMemoryTier(...)`).
+- Registers `ICache` as singleton when used as the default provider (`setup.UseInMemory(...)`).
 - Registers a keyed `ICache` under the `memory` role key (`CacheConstants.MemoryCacheProvider`).
-- Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `remote` role key) when `isDefault: true`.
+- Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `remote` role key) when used as the default provider.
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
-- Named overloads register a keyed `ICache` under the instance name with its own options.
+- `setup.AddNamed(name, i => i.UseInMemory(...))` registers a keyed `ICache` under the instance name with its own options.

@@ -70,21 +70,22 @@ packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.
 
 ## Quick Orientation
 
-Install `Headless.Caching.Abstractions` plus one provider. Code against `ICache` for application cache operations.
+Install `Headless.Caching.Abstractions` plus one provider. All registration flows through a single `services.AddHeadlessCaching(setup => ...)` call (entry point in `Headless.Caching.Core`); provider packages contribute `Use*`/`Add*Tier`/`AddNamed` extensions on the setup builder. Code against `ICache` for application cache operations.
 
-- Single-instance or development: `Headless.Caching.InMemory` with `AddInMemoryCache()`.
-- Multi-instance shared cache: `Headless.Caching.Redis` with `AddRedisCache(...)`.
-- Local hot path plus shared L2: `Headless.Caching.Hybrid` with non-default in-memory cache, Redis, messaging, then `AddHybridCache()`.
-- Cross-node factory single-flight: add `Headless.Caching.DistributedLocks` and opt in per entry with `CacheEntryOptions.UseDistributedFactoryLock`.
+- Single-instance or development: `Headless.Caching.InMemory` with `setup.UseInMemory()`.
+- Multi-instance shared cache: `Headless.Caching.Redis` with `setup.UseRedis(...)`.
+- Local hot path plus shared L2: `Headless.Caching.Hybrid` with `setup.AddMemoryTier()`, `setup.AddRedisTier(...)`, messaging, then `setup.UseHybrid()`.
+- Cross-node factory single-flight: add `Headless.Caching.DistributedLocks`, call `setup.UseDistributedFactoryLock()`, and opt in per entry with `CacheEntryOptions.UseDistributedFactoryLock`.
 
-`ICache` supports scalar reads/writes, bulk operations, prefix operations, atomic compare/replace and numeric operations, set operations, and tag invalidation (`RemoveByTagAsync`). `GetOrAddAsync` is the factory-backed path: it is governed by `CacheEntryOptions` (fail-safe, factory timeouts, sliding expiration, eager refresh, tags, distributed lock) and has a conditional overload taking a `CacheFactoryContext<T>` factory for HTTP-304-style refresh. `UpsertEntryAsync` is the only direct-write path that also honors `CacheEntryOptions`. Named cache instances are added with the `Add{InMemory,Redis,Hybrid}Cache(name, ...)` overloads and resolved through `ICacheProvider`.
+`ICache` supports scalar reads/writes, bulk operations, prefix operations, atomic compare/replace and numeric operations, set operations, and tag invalidation (`RemoveByTagAsync`). `GetOrAddAsync` is the factory-backed path: it is governed by `CacheEntryOptions` (fail-safe, factory timeouts, sliding expiration, eager refresh, tags, distributed lock) and has a conditional overload taking a `CacheFactoryContext<T>` factory for HTTP-304-style refresh. `UpsertEntryAsync` is the only direct-write path that also honors `CacheEntryOptions`. Named cache instances are added with `setup.AddNamed(name, i => i.Use{InMemory,Redis,Hybrid}(...))` and resolved through `ICacheProvider`.
 
 ## Agent Instructions
 
 - Use `ICache` from `Headless.Caching.Abstractions`, not `Microsoft.Extensions.Caching.Distributed.IDistributedCache`. Use `IRemoteCache` only when a remote/L2 implementation is required.
 - In Headless caching docs, `Memory` means `Headless.Caching.InMemory`, not `Microsoft.Extensions.Caching.Memory`.
 - Use `Headless.Caching.InMemory` for development and single-instance deployments. Use `Headless.Caching.Redis` for production multi-instance deployments. Use `Headless.Caching.Hybrid` when the app needs process-local read speed with remote cache sharing.
-- For hybrid caching, register memory cache as non-default (`AddInMemoryCache(isDefault: false)`), then register Redis cache, then call `AddHybridCache()`. The hybrid cache becomes the default `ICache`.
+- Configure every cache instance (default, tiers, named, cross-cutting) in one `services.AddHeadlessCaching(setup => ...)` call. Exactly one default `Use{InMemory,Redis,Hybrid}` is required; a second `AddHeadlessCaching` call on the same service collection throws, and a failed setup leaves the service collection unchanged.
+- For hybrid caching, call `setup.AddMemoryTier()`, then `setup.AddRedisTier(...)`, then `setup.UseHybrid()` in the same setup. The hybrid cache becomes the default `ICache`. Registering a tier for the role the default provider already claims (for example `UseRedis` plus `AddRedisTier`) throws at registration.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value`; cache misses return `HasValue = false`.
 - `GetOrAddAsync` takes `CacheEntryOptions`. Passing a `TimeSpan` still works through implicit conversion when only duration is needed.
 - The option-less `GetOrAddAsync` extension overloads use `ICache.DefaultEntryOptions` and throw `InvalidOperationException` when it is unset. Set `options.DefaultEntryOptions` at registration to opt in; never assume a magic default duration exists.
@@ -100,8 +101,8 @@ Install `Headless.Caching.Abstractions` plus one provider. Code against `ICache`
 - Tags must be non-empty, and both the tag count and each tag's UTF-8 byte length must fit in an unsigned 16-bit value; violations throw `ArgumentException` before anything is written.
 - `RemoveByTagAsync` is version-pinned: it removes exactly the entries that currently carry the tag. A key that expired, was overwritten untagged, or was re-created is never removed by an old tag — its stale index membership is cleaned up instead. Do not expect it to remove "everything that ever had the tag".
 - Redis tag invalidation is NOT supported on Redis Cluster, and the `{KeyPrefix}__cache_tag__:` namespace is reserved for the tag index — never store cache entries under it.
-- `CacheEntryOptions.UseDistributedFactoryLock` requires the `Headless.Caching.DistributedLocks` adapter (`AddCachingDistributedFactoryLock()`) plus a registered `IDistributedLock`; enabling it without the provider fails the read with `InvalidOperationException`. Reserve it for expensive factories — per-node single-flight already exists without it.
-- Named cache instances must not use the reserved role keys `memory`, `remote`, or `hybrid` (`CacheConstants`); the name-taking overloads throw `ArgumentException`. Resolve named instances through `ICacheProvider.GetCache(name)` / `GetCacheOrNull(name)`.
+- `CacheEntryOptions.UseDistributedFactoryLock` requires the `Headless.Caching.DistributedLocks` adapter (`setup.UseDistributedFactoryLock()`) plus a registered `IDistributedLock`; enabling it without the provider fails the read with `InvalidOperationException`. Reserve it for expensive factories — per-node single-flight already exists without it.
+- Named cache instances must not use the reserved role keys `memory`, `remote`, or `hybrid` (`CacheConstants`); `setup.AddNamed` throws `ArgumentException` for reserved names and rejects duplicates. Resolve named instances through `ICacheProvider.GetCache(name)` / `GetCacheOrNull(name)`.
 - Named hybrid instances are not wired to the backplane invalidation consumer: they publish invalidations but never receive them, so their L1 only converges via `DefaultLocalExpiration` TTL. Use the default hybrid when cross-instance L1 invalidation matters.
 - Hybrid auto-recovery (`EnableAutoRecovery = true`) is degraded-mode semantics, not a guarantee: a failing single-key L2 write succeeds against L1 and is replayed later, so L2 (and other instances) can lag L1 until recovery. Successful set/remove replays republish their key invalidation, so peers converge once replay lands instead of waiting out their L1 TTL. Bulk, atomic, and set operations are never captured and still surface failures.
 - Use `FactorySoftTimeout` only with fail-safe and a stale reserve. When it fires, the caller gets stale data and the factory continues in the background under a detached internal token.
@@ -134,7 +135,9 @@ Conditional refresh (the HTTP-304 pattern) runs the factory with a `CacheFactory
 
 Tag invalidation uses a real reverse index per provider (tag → keys), not FusionCache-style lazy expiry barriers: Headless owns the providers, so it can maintain the index atomically with the write, and actually deleting entries keeps prefix reads, key listing, and counts ghost-free instead of leaving logically-dead entries behind. Memberships are pinned to the entry version (the in-memory index verifies the live entry's tags; Redis records the entry's physical-expiry stamp and verifies it in the removal script), which makes `RemoveByTagAsync` precise: re-created or overwritten entries are never removed by an old tag, and stale memberships are garbage-collected during invalidation. `RemoveByTagAsync` returns the number of entries removed.
 
-Named caches are keyed `ICache` registrations created by the `Add{InMemory,Redis,Hybrid}Cache(name, ...)` overloads, each with independent options (and for Redis, an independent multiplexer and scripts loader). Three role keys are reserved and registered by every provider setup — `memory`, `remote`, `hybrid` (`CacheConstants`) — so the default tiers are always reachable by role; named instances must pick other names. `ICacheProvider` resolves both shapes. `DefaultEntryOptions` (per cache instance, from `CacheOptions`) feeds the option-less `GetOrAddAsync` extension overloads and is deliberately explicit-at-registration: unset means those overloads throw rather than invent a duration.
+Registration uses one builder with four slots. `services.AddHeadlessCaching(setup => ...)` is the single entry point, and provider packages contribute deferred extensions into the default slot (`Use{InMemory,Redis,Hybrid}` — the unkeyed `ICache`), the role-keyed tier slots (`AddMemoryTier`/`AddRedisTier` — the L1/L2 of a default hybrid), the named slot (`AddNamed(name, i => i.Use…(...))` — unlimited independent instances), and the cross-cutting slot (`UseDistributedFactoryLock`). The invariant is per-slot exactly-one rather than a global exactly-one-provider gate: exactly one default is required, at most one tier per reserved role is allowed, named instances need unique non-reserved names and exactly one provider each, and a tier role the default provider already claims (for example `UseRedis` plus `AddRedisTier`, which both claim `remote`) is rejected. The old per-provider extensions let two `isDefault: true` registrations silently race for the default `ICache` (first-wins); the builder turns that into a hard error at registration. All contributions are deferred until the gates pass and applied tiers → default → named → cross-cutting, so a throwing setup leaves the service collection unchanged, and a second `AddHeadlessCaching` call on the same service collection throws. `UseInMemory`, `UseRedis`, and `UseHybrid` each come in `Action<TOptions>`, `Action<TOptions, IServiceProvider>`, and `IConfiguration` shapes (`UseInMemory` and `UseHybrid` also work with no arguments; `UseRedis` does not, because `ConnectionMultiplexer` is required), and named instances bind their options per instance name — including the `IConfiguration` shape.
+
+Named caches are keyed `ICache` registrations created by `setup.AddNamed(name, i => i.Use{InMemory,Redis,Hybrid}(...))`, each with independent options (and for Redis, an independent multiplexer and scripts loader). Three role keys are reserved and registered by every provider setup — `memory`, `remote`, `hybrid` (`CacheConstants`) — so the default tiers are always reachable by role; named instances must pick other names. `ICacheProvider` resolves both shapes. `DefaultEntryOptions` (per cache instance, from `CacheOptions`) feeds the option-less `GetOrAddAsync` extension overloads and is deliberately explicit-at-registration: unset means those overloads throw rather than invent a duration.
 
 The distributed factory lock is an opt-in second locking layer for multi-node stampede protection. The local per-key lock always comes first; with `UseDistributedFactoryLock` set and the `Headless.Caching.DistributedLocks` adapter registered, the coordinator then acquires a distributed lock with the same wait budget, re-checks the shared store (the loser of the cross-node race serves the winner's fresh value), and only then runs the factory. The lease transfers through soft-timeout background completions and eager refreshes so the cross-node guard holds until the detached write lands.
 
@@ -214,7 +217,7 @@ Background completion uses a detached coordinator-owned cancellation token, not 
 
 `LockTimeout` defaults to `Timeout.InfiniteTimeSpan`, matching FusionCache's default: a caller with no stale reserve waits until the in-flight factory releases the per-key lock. Set a finite, positive value so a caller that cannot acquire the lock in time degrades to a miss (`CacheValue<T>.NoValue`) instead of blocking, bounding tail latency when an in-flight factory is slow and no fail-safe reserve exists. When a stale reserve does exist and `FactorySoftTimeout` is finite, that soft timeout governs the wait instead and the caller is served stale on elapse.
 
-`UseDistributedFactoryLock` adds a cross-node single-flight layer on top of the local per-key lock. It is off by default and zero-cost when disabled; enabling it requires a registered `ICacheFactoryLockProvider` (reference `Headless.Caching.DistributedLocks` and call `AddCachingDistributedFactoryLock()`), otherwise the factory-backed read throws `InvalidOperationException` rather than silently degrading to single-node behavior.
+`UseDistributedFactoryLock` adds a cross-node single-flight layer on top of the local per-key lock. It is off by default and zero-cost when disabled; enabling it requires a registered `ICacheFactoryLockProvider` (reference `Headless.Caching.DistributedLocks` and call `setup.UseDistributedFactoryLock()` inside `AddHeadlessCaching`), otherwise the factory-backed read throws `InvalidOperationException` rather than silently degrading to single-node behavior.
 
 `DefaultEntryOptions` is explicit-at-registration, never magic: the option-less `GetOrAddAsync` extension overloads throw `InvalidOperationException` when the cache instance has no configured default, so a missing default is a loud configuration error instead of a silent surprise duration.
 
@@ -356,12 +359,14 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 - `ICacheFactoryLockProvider` - optional cross-node coordination seam consumed when `CacheEntryOptions.UseDistributedFactoryLock` is set (adapter: `Headless.Caching.DistributedLocks`).
 - `CacheStoreEntryExtensions` - shared `IsFresh`/`IsPhysicallyPresent` predicates so every provider and the coordinator agree on the expiration boundary (an entry is expired at the exact tick, `expiresAt <= now`).
 - `FactoryCacheCoordinator.IsCallerCancellation` - shared predicate provider composites use so caller cancellation propagates while an unrelated/downstream `OperationCanceledException` activates fail-safe consistently.
-- `SetupCacheProvider.AddCacheProvider` - registers `ICacheProvider` over the container's keyed `ICache` registrations; called by every provider setup.
+- `SetupCachingCore.AddHeadlessCaching` - the single registration entry point: provider packages contribute deferred extensions through `Use*`/`Add*Tier`/`AddNamed` on the setup builder, and contributions are applied only after the setup gates pass.
+- `HeadlessCachingSetupBuilder` / `HeadlessCacheInstanceBuilder` / `ICacheProviderOptionsExtension` - the builder surface provider packages extend: a default slot (exactly one `Use*`), role-keyed tier slots (at most one per reserved role), named instances (unlimited, unique non-reserved names, exactly one provider each), and cross-cutting extensions.
+- `ICacheProvider` over the container's keyed `ICache` registrations; `AddHeadlessCaching` registers it automatically.
 - Fail-safe, factory timeout, eager refresh, and background completion logs.
 
 ### Design Notes
 
-Providers construct the coordinator directly with their `TimeProvider`, logger, and optional `ICacheFactoryLockProvider`; the Core package ships no provider DI setup, only the `AddCacheProvider()` helper the provider setups call. Store read failures are treated as misses, fail-safe restamp writes are best-effort, and sliding re-arm writes are best-effort so a cached value can still be returned when the backing store is unhealthy. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe. Sliding expiration is rejected together with fail-safe (one needs value reads to extend the logical deadline while the other needs logical expiration to expose a stale reserve) and together with eager refresh (both re-arm the logical lifetime).
+Providers construct the coordinator directly with their `TimeProvider`, logger, and optional `ICacheFactoryLockProvider`; the Core package ships the `AddHeadlessCaching` entry point and the setup builder, not a provider. Provider packages queue deferred `ICacheProviderOptionsExtension` contributions that `AddHeadlessCaching` applies tiers → default → named → cross-cutting only after the per-slot gates pass — exactly one default provider, at most one tier per reserved role, no tier role already claimed by the default provider, unique non-reserved instance names with exactly one provider each, and no repeated `AddHeadlessCaching` call — so a failed setup leaves the service collection unchanged. Store read failures are treated as misses, fail-safe restamp writes are best-effort, and sliding re-arm writes are best-effort so a cached value can still be returned when the backing store is unhealthy. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe. Sliding expiration is rejected together with fail-safe (one needs value reads to extend the logical deadline while the other needs logical expiration to expose a stale reserve) and together with eager refresh (both re-arm the logical lifetime).
 
 Factory timeout selection is centralized in the coordinator. If fail-safe is enabled, a stale reserve exists, and `FactorySoftTimeout` is finite, the soft timeout governs. Otherwise a finite `FactoryHardTimeout` governs. Otherwise factory execution is unbounded except for caller cancellation. A finite soft timeout also bounds acquisition of the same per-key lock when stale data exists, so waiters and supported same-key re-entrant calls return stale instead of blocking behind an in-flight refresh. When no stale reserve exists, `LockTimeout` (default `Timeout.InfiniteTimeSpan`) bounds that acquisition instead, and a finite value makes the waiter degrade to a miss rather than block.
 
@@ -381,7 +386,24 @@ dotnet add package Headless.Caching.Core
 
 ### Quick Start
 
-Consumers normally do not use this package directly. Provider packages reference it to implement `GetOrAddAsync` and the options-based `UpsertEntryAsync`.
+`AddHeadlessCaching` is the registration entry point this package owns; the `Use*`/`Add*Tier` extensions come from the provider packages:
+
+```csharp
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+
+services.AddHeadlessCaching(setup =>
+{
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis); // default slot: exactly one Use* required
+    setup.AddNamed("sessions", i => i.UseRedis(options =>
+    {
+        options.ConnectionMultiplexer = redis;
+        options.KeyPrefix = "sessions:";
+    }));
+    setup.UseDistributedFactoryLock(); // cross-cutting opt-in (Headless.Caching.DistributedLocks)
+});
+```
+
+Beyond the entry point, consumers do not use this package directly. Provider packages reference it to implement `GetOrAddAsync` and the options-based `UpsertEntryAsync`.
 
 ### Configuration
 
@@ -396,7 +418,8 @@ None.
 
 ### Side Effects
 
-- `AddCacheProvider()` registers `ICacheProvider` as singleton (`TryAdd`); provider setups call it automatically.
+- `AddHeadlessCaching` validates the setup gates, then applies provider contributions in tier → default → named → cross-cutting order; a failed setup registers nothing.
+- Registers `ICacheProvider` as singleton (`TryAdd`) and a registration sentinel that makes a second `AddHeadlessCaching` call throw.
 - Providers own coordinator construction; no other registrations.
 
 ---
@@ -411,7 +434,7 @@ The per-key factory lock in `Headless.Caching.Core` is process-local: with N app
 
 ### Key Features
 
-- `AddCachingDistributedFactoryLock()` registers `ICacheFactoryLockProvider` backed by the application's `IDistributedLock` registration (any `Headless.DistributedLocks.*` provider).
+- `setup.UseDistributedFactoryLock()` — a cross-cutting extension on the `AddHeadlessCaching` setup builder — registers `ICacheFactoryLockProvider` backed by the application's `IDistributedLock` registration (any `Headless.DistributedLocks.*` provider).
 - Per-entry opt-in through `CacheEntryOptions.UseDistributedFactoryLock`; entries that do not set it pay zero cost.
 - Lock resources are namespaced with a configurable prefix (default `cache:factory:`) so cache locks never collide with other lock consumers on the same backend.
 - The seam timeout maps directly onto `DistributedLockAcquireOptions.AcquireTimeout`: `TimeSpan.Zero` is a single try-once attempt (used by eager refresh), `Timeout.InfiniteTimeSpan` waits unboundedly, and a finite value bounds the wait.
@@ -443,8 +466,11 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 
 // Any Headless.DistributedLocks provider works; the adapter resolves IDistributedLock.
 builder.Services.AddHeadlessDistributedLocks(locks => locks.UseRedis());
-builder.Services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
-builder.Services.AddCachingDistributedFactoryLock();
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
+    setup.UseDistributedFactoryLock();
+});
 ```
 
 ```csharp
@@ -468,7 +494,7 @@ public sealed class ReportService(ICache cache, IReportRepository repository)
 }
 ```
 
-Enabling `UseDistributedFactoryLock` without calling `AddCachingDistributedFactoryLock()` (or registering another `ICacheFactoryLockProvider`) fails the factory-backed read with `InvalidOperationException` instead of silently degrading to single-node behavior.
+Enabling `CacheEntryOptions.UseDistributedFactoryLock` without calling `setup.UseDistributedFactoryLock()` (or registering another `ICacheFactoryLockProvider`) fails the factory-backed read with `InvalidOperationException` instead of silently degrading to single-node behavior.
 
 ### Configuration
 
@@ -478,10 +504,14 @@ Enabling `UseDistributedFactoryLock` without calling `AddCachingDistributedFacto
 | `TimeUntilExpires` | `null` | Lease TTL applied to each acquired factory lock; `null` uses the distributed lock provider's default lease duration. The TTL frees the key when a node dies mid-factory. |
 
 ```csharp
-builder.Services.AddCachingDistributedFactoryLock(options =>
+builder.Services.AddHeadlessCaching(setup =>
 {
-    options.ResourcePrefix = "myapp:cache:factory:";
-    options.TimeUntilExpires = TimeSpan.FromMinutes(2);
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
+    setup.UseDistributedFactoryLock(options =>
+    {
+        options.ResourcePrefix = "myapp:cache:factory:";
+        options.TimeUntilExpires = TimeSpan.FromMinutes(2);
+    });
 });
 ```
 
@@ -515,13 +545,13 @@ Provides one `ICache` implementation that reads from a fast local cache first, f
 - Supports strongly typed `ICache<T>`.
 - Uses `DefaultLocalExpiration` to keep L1 fresher than L2.
 - Tag invalidation across both tiers plus a `Tag` invalidation message on the backplane so other instances drop their L1 copies.
-- Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `AddHybridCache(name, ...)`.
+- Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `setup.AddNamed(name, i => i.UseHybrid(...))`.
 - Opt-in auto-recovery: transient L2/backplane outages queue failed single-key operations and replay them on recovery.
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ### Design Notes
 
-Register an in-memory cache as non-default, then a remote cache, then the hybrid cache. The hybrid cache becomes the default `ICache` when `isDefault: true`. Incoming invalidations are handled by `HybridCacheInvalidationConsumer` (`IConsume<CacheInvalidationMessage>`); register it with the application's messaging setup (explicit `ForMessage<CacheInvalidationMessage>(...)` registration or assembly scanning) — without it this instance publishes invalidations but never receives them. The consumer routes to the default `HybridCache` only: named hybrid instances publish invalidations but are not wired to the backplane consumer, so their L1 tiers converge only through `DefaultLocalExpiration` TTL (known limitation).
+A default hybrid composes role-keyed tiers registered in the same `AddHeadlessCaching` setup: `setup.AddMemoryTier()` registers the L1 (`IInMemoryCache` plus the `memory` role key) and `setup.AddRedisTier(...)` the L2 (`IRemoteCache` plus the `remote` role key) without touching the default unkeyed `ICache`; `setup.UseHybrid()` then becomes the default `ICache`. Prefer the tier recipe for the common one-hybrid host — no instance names to invent, and the role keys stay reachable through `ICacheProvider`; set `LocalCacheName`/`RemoteCacheName` to bind `AddNamed` instances instead when a tier needs an identity of its own (for example a second hybrid, or tiers shared with other named consumers). Incoming invalidations are handled by `HybridCacheInvalidationConsumer` (`IConsume<CacheInvalidationMessage>`); register it with the application's messaging setup (explicit `ForMessage<CacheInvalidationMessage>(...)` registration or assembly scanning) — without it this instance publishes invalidations but never receives them. The consumer routes to the default `HybridCache` only: named hybrid instances publish invalidations but are not wired to the backplane consumer, so their L1 tiers converge only through `DefaultLocalExpiration` TTL (known limitation).
 
 Hybrid fail-safe and factory timeouts use the same coordinator semantics as the other providers. A stale reserve can come from L1 or L2. On soft timeout, the stale value is returned to the caller and the detached background factory writes through the composite store on success, so both tiers are refreshed. Eager refresh and conditional (`NotModified`) refresh likewise run through the composite store, so a refresh extends or replaces the entry in both tiers. `DefaultLocalExpiration` still caps L1 physical retention independently of the L2 duration.
 
@@ -546,13 +576,13 @@ dotnet add package Headless.Caching.Hybrid
 ```csharp
 var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
-services.AddInMemoryCache(isDefault: false);
 services.AddSingleton<IConnectionMultiplexer>(redis);
-services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
 services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
-services.AddHybridCache(options =>
+services.AddHeadlessCaching(setup =>
 {
-    options.DefaultLocalExpiration = TimeSpan.FromMinutes(5);
+    setup.AddMemoryTier();
+    setup.AddRedisTier(options => options.ConnectionMultiplexer = redis);
+    setup.UseHybrid(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
 });
 ```
 
@@ -590,14 +620,19 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 Named tiers — point the hybrid at named L1/L2 registrations instead of the default `IInMemoryCache`/`IRemoteCache`:
 
 ```csharp
-services.AddInMemoryCache("hot-l1", options => options.MaxItems = 5000);
-services.AddRedisCache("hot-l2", options => options.ConnectionMultiplexer = redis);
-services.AddHybridCache(options =>
+services.AddHeadlessCaching(setup =>
 {
-    options.LocalCacheName = "hot-l1";   // must implement IInMemoryCache
-    options.RemoteCacheName = "hot-l2";  // must implement IRemoteCache
+    setup.AddNamed("hot-l1", i => i.UseInMemory(options => options.MaxItems = 5000));
+    setup.AddNamed("hot-l2", i => i.UseRedis(options => options.ConnectionMultiplexer = redis));
+    setup.UseHybrid(options =>
+    {
+        options.LocalCacheName = "hot-l1";   // must implement IInMemoryCache
+        options.RemoteCacheName = "hot-l2";  // must implement IRemoteCache
+    });
 });
 ```
+
+A named hybrid instance binds named tiers the same way — `setup.AddNamed("hot", i => i.UseHybrid(options => { options.LocalCacheName = "hot-l1"; options.RemoteCacheName = "hot-l2"; }))` — but named hybrids are not wired to the backplane invalidation consumer (see Design Notes).
 
 ### Configuration
 
@@ -626,12 +661,9 @@ Auto-recovery (design reference: FusionCache's auto-recovery, adapted) keeps one
 
 ### Side Effects
 
-- Registers `HybridCache` as singleton.
-- Registers `ICache` as singleton when `isDefault: true`.
-- Registers keyed `ICache` under `CacheConstants.HybridCacheProvider`.
-- Registers `ICache<T>` as singleton.
+- `setup.UseHybrid(...)` (default) registers `HybridCache` as singleton, the default `ICache` over it, a keyed `ICache` under `CacheConstants.HybridCacheProvider`, and `ICache<T>`.
 - Registers `ICacheProvider` (shared, `TryAdd`).
-- Named overloads register a keyed `ICache` under the instance name with its own options and tier resolution.
+- `setup.AddNamed(name, i => i.UseHybrid(...))` registers a keyed `ICache` under the instance name with its own options and tier resolution.
 - Reads configured `HybridCacheOptions`.
 - Publishes cache invalidation messages through the registered message bus.
 - Runs a `TimeProvider`-driven recovery timer when `EnableAutoRecovery` is set.
@@ -649,9 +681,9 @@ Provides process-local caching through the unified `ICache` abstraction, suitabl
 ### Key Features
 
 - Full `IInMemoryCache` implementation.
-- Can serve as default `ICache` or alongside a distributed cache.
+- Can serve as the default `ICache` (`setup.UseInMemory(...)`) or as the memory tier of a default hybrid (`setup.AddMemoryTier(...)`).
 - Supports strongly typed `ICache<T>`.
-- Named cache instances via `AddInMemoryCache(name, ...)`, resolvable as keyed `ICache` services or through `ICacheProvider`.
+- Named cache instances via `setup.AddNamed(name, i => i.UseInMemory(...))`, resolvable as keyed `ICache` services or through `ICacheProvider`.
 - Automatic memory management with configurable limits (`MaxItems` plus LRU eviction).
 - Tag invalidation through an in-process reverse tag index with live-entry verification.
 - Can act as an `IRemoteCache` adapter for single-instance scenarios.
@@ -679,22 +711,36 @@ dotnet add package Headless.Caching.InMemory
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddInMemoryCache();
+// Pick one shape — AddHeadlessCaching may be called only once per service collection.
 
-builder.Services.AddInMemoryCache(options =>
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+
+builder.Services.AddHeadlessCaching(setup =>
+    setup.UseInMemory(options =>
+    {
+        options.MaxItems = 10000;
+        options.CloneValues = true;
+        options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
+    })
+);
+
+// As the memory tier of a default hybrid instead of the default ICache (see Headless.Caching.Hybrid):
+builder.Services.AddHeadlessCaching(setup =>
 {
-    options.MaxItems = 10000;
-    options.CloneValues = true;
-    options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
+    setup.AddMemoryTier();
+    setup.AddRedisTier(options => options.ConnectionMultiplexer = redis); // redis: ConnectionMultiplexer.Connect(...)
+    setup.UseHybrid();
 });
-
-builder.Services.AddInMemoryCache(isDefault: false);
 ```
 
-Named instances (independent options, resolved by name):
+Named instances (independent options, resolved by name; the setup still needs exactly one default `Use*`):
 
 ```csharp
-builder.Services.AddInMemoryCache("orders", options => options.MaxItems = 1000);
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseInMemory();
+    setup.AddNamed("orders", i => i.UseInMemory(options => options.MaxItems = 1000));
+});
 
 public sealed class OrderService(ICacheProvider cacheProvider)
 {
@@ -702,7 +748,7 @@ public sealed class OrderService(ICacheProvider cacheProvider)
 }
 ```
 
-Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException`. Named instances never touch the default (unkeyed) `ICache`.
+Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException` and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
 ### Configuration
 
@@ -729,13 +775,13 @@ Names must be non-empty and must not be one of the reserved role keys (`memory`,
 
 ### Side Effects
 
-- Registers `IInMemoryCache` as singleton.
-- Registers `ICache` as singleton when `isDefault: true`.
+- Registers `IInMemoryCache` as singleton (`setup.UseInMemory(...)` and `setup.AddMemoryTier(...)`).
+- Registers `ICache` as singleton when used as the default provider (`setup.UseInMemory(...)`).
 - Registers a keyed `ICache` under the `memory` role key (`CacheConstants.MemoryCacheProvider`).
-- Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `remote` role key) when `isDefault: true`.
+- Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `remote` role key) when used as the default provider.
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
-- Named overloads register a keyed `ICache` under the instance name with its own options.
+- `setup.AddNamed(name, i => i.UseInMemory(...))` registers a keyed `ICache` under the instance name with its own options.
 
 ---
 
@@ -750,8 +796,9 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 ### Key Features
 
 - Full `IRemoteCache` implementation using StackExchange.Redis.
+- Can serve as the default `ICache` (`setup.UseRedis(...)`) or as the remote tier of a default hybrid (`setup.AddRedisTier(...)`).
 - Supports strongly typed `IRemoteCache<T>`.
-- Named cache instances via `AddRedisCache(name, ...)`, each owning its own scripts loader bound to its own multiplexer.
+- Named cache instances via `setup.AddNamed(name, i => i.UseRedis(...))`, each owning its own scripts loader bound to its own multiplexer.
 - Prefix-based key management.
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower).
 - Set/list operations with pagination.
@@ -798,20 +845,28 @@ var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 
-builder.Services.AddRedisCache(options =>
-{
-    options.ConnectionMultiplexer = redis;
-    options.KeyPrefix = "myapp:";
-});
+builder.Services.AddHeadlessCaching(setup =>
+    setup.UseRedis(options =>
+    {
+        options.ConnectionMultiplexer = redis;
+        options.KeyPrefix = "myapp:";
+    })
+);
 ```
 
-Named instances (independent multiplexer, prefix, and scripts loader per name):
+`UseRedis` has no parameterless shape: `ConnectionMultiplexer` is required, and the `IConfiguration`-binding shape still needs the multiplexer supplied through an additional `Configure` call.
+
+Named instances (independent multiplexer, prefix, and scripts loader per name; the setup still needs exactly one default `Use*`):
 
 ```csharp
-builder.Services.AddRedisCache("sessions", options =>
+builder.Services.AddHeadlessCaching(setup =>
 {
-    options.ConnectionMultiplexer = sessionsRedis;
-    options.KeyPrefix = "sessions:";
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
+    setup.AddNamed("sessions", i => i.UseRedis(options =>
+    {
+        options.ConnectionMultiplexer = sessionsRedis;
+        options.KeyPrefix = "sessions:";
+    }));
 });
 
 public sealed class SessionService(ICacheProvider cacheProvider)
@@ -820,7 +875,7 @@ public sealed class SessionService(ICacheProvider cacheProvider)
 }
 ```
 
-Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException`. Named instances never touch the default (unkeyed) `ICache`.
+Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException` and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
 ### Configuration
 
@@ -842,11 +897,11 @@ Names must be non-empty and must not be one of the reserved role keys (`memory`,
 
 ### Side Effects
 
-- Registers `IRemoteCache` as singleton.
-- Registers `ICache` as singleton when `isDefault: true`.
+- Registers `IRemoteCache` as singleton (`setup.UseRedis(...)` and `setup.AddRedisTier(...)`).
+- Registers `ICache` as singleton when used as the default provider (`setup.UseRedis(...)`).
 - Registers a keyed `ICache` under the `remote` role key (`CacheConstants.RemoteCacheProvider`).
 - Registers `IRemoteCache<T>` and `ICache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.
-- Named overloads register a keyed `ICache` under the instance name with a per-instance scripts loader and initializer bound to that instance's multiplexer.
+- `setup.AddNamed(name, i => i.UseRedis(...))` registers a keyed `ICache` under the instance name with a per-instance scripts loader and initializer bound to that instance's multiplexer.
 - Tagged writes create/maintain Redis hashes in the reserved `{KeyPrefix}__cache_tag__:{tag}` namespace.

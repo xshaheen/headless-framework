@@ -9,8 +9,9 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 ## Key Features
 
 - Full `IRemoteCache` implementation using StackExchange.Redis.
+- Can serve as the default `ICache` (`setup.UseRedis(...)`) or as the remote tier of a default hybrid (`setup.AddRedisTier(...)`).
 - Supports strongly typed `IRemoteCache<T>`.
-- Named cache instances via `AddRedisCache(name, ...)`, each owning its own scripts loader bound to its own multiplexer.
+- Named cache instances via `setup.AddNamed(name, i => i.UseRedis(...))`, each owning its own scripts loader bound to its own multiplexer.
 - Prefix-based key management.
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower).
 - Set/list operations with pagination.
@@ -57,20 +58,28 @@ var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 
-builder.Services.AddRedisCache(options =>
-{
-    options.ConnectionMultiplexer = redis;
-    options.KeyPrefix = "myapp:";
-});
+builder.Services.AddHeadlessCaching(setup =>
+    setup.UseRedis(options =>
+    {
+        options.ConnectionMultiplexer = redis;
+        options.KeyPrefix = "myapp:";
+    })
+);
 ```
 
-Named instances (independent multiplexer, prefix, and scripts loader per name):
+`UseRedis` has no parameterless shape: `ConnectionMultiplexer` is required, and the `IConfiguration`-binding shape still needs the multiplexer supplied through an additional `Configure` call.
+
+Named instances (independent multiplexer, prefix, and scripts loader per name; the setup still needs exactly one default `Use*`):
 
 ```csharp
-builder.Services.AddRedisCache("sessions", options =>
+builder.Services.AddHeadlessCaching(setup =>
 {
-    options.ConnectionMultiplexer = sessionsRedis;
-    options.KeyPrefix = "sessions:";
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
+    setup.AddNamed("sessions", i => i.UseRedis(options =>
+    {
+        options.ConnectionMultiplexer = sessionsRedis;
+        options.KeyPrefix = "sessions:";
+    }));
 });
 
 public sealed class SessionService(ICacheProvider cacheProvider)
@@ -79,7 +88,7 @@ public sealed class SessionService(ICacheProvider cacheProvider)
 }
 ```
 
-Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException`. Named instances never touch the default (unkeyed) `ICache`.
+Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException` and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
 ## Configuration
 
@@ -101,11 +110,11 @@ Names must be non-empty and must not be one of the reserved role keys (`memory`,
 
 ## Side Effects
 
-- Registers `IRemoteCache` as singleton.
-- Registers `ICache` as singleton when `isDefault: true`.
+- Registers `IRemoteCache` as singleton (`setup.UseRedis(...)` and `setup.AddRedisTier(...)`).
+- Registers `ICache` as singleton when used as the default provider (`setup.UseRedis(...)`).
 - Registers a keyed `ICache` under the `remote` role key (`CacheConstants.RemoteCacheProvider`).
 - Registers `IRemoteCache<T>` and `ICache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.
-- Named overloads register a keyed `ICache` under the instance name with a per-instance scripts loader and initializer bound to that instance's multiplexer.
+- `setup.AddNamed(name, i => i.UseRedis(...))` registers a keyed `ICache` under the instance name with a per-instance scripts loader and initializer bound to that instance's multiplexer.
 - Tagged writes create/maintain Redis hashes in the reserved `{KeyPrefix}__cache_tag__:{tag}` namespace.

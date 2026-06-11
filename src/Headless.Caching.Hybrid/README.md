@@ -14,13 +14,13 @@ Provides one `ICache` implementation that reads from a fast local cache first, f
 - Supports strongly typed `ICache<T>`.
 - Uses `DefaultLocalExpiration` to keep L1 fresher than L2.
 - Tag invalidation across both tiers plus a `Tag` invalidation message on the backplane so other instances drop their L1 copies.
-- Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `AddHybridCache(name, ...)`.
+- Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `setup.AddNamed(name, i => i.UseHybrid(...))`.
 - Opt-in auto-recovery: transient L2/backplane outages queue failed single-key operations and replay them on recovery.
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ## Design Notes
 
-Register an in-memory cache as non-default, then a remote cache, then the hybrid cache. The hybrid cache becomes the default `ICache` when `isDefault: true`. Incoming invalidations are handled by `HybridCacheInvalidationConsumer` (`IConsume<CacheInvalidationMessage>`); register it with the application's messaging setup (explicit `ForMessage<CacheInvalidationMessage>(...)` registration or assembly scanning) — without it this instance publishes invalidations but never receives them. The consumer routes to the default `HybridCache` only: named hybrid instances publish invalidations but are not wired to the backplane consumer, so their L1 tiers converge only through `DefaultLocalExpiration` TTL (known limitation).
+A default hybrid composes role-keyed tiers registered in the same `AddHeadlessCaching` setup: `setup.AddMemoryTier()` registers the L1 (`IInMemoryCache` plus the `memory` role key) and `setup.AddRedisTier(...)` the L2 (`IRemoteCache` plus the `remote` role key) without touching the default unkeyed `ICache`; `setup.UseHybrid()` then becomes the default `ICache`. Prefer the tier recipe for the common one-hybrid host — no instance names to invent, and the role keys stay reachable through `ICacheProvider`; set `LocalCacheName`/`RemoteCacheName` to bind `AddNamed` instances instead when a tier needs an identity of its own (for example a second hybrid, or tiers shared with other named consumers). Incoming invalidations are handled by `HybridCacheInvalidationConsumer` (`IConsume<CacheInvalidationMessage>`); register it with the application's messaging setup (explicit `ForMessage<CacheInvalidationMessage>(...)` registration or assembly scanning) — without it this instance publishes invalidations but never receives them. The consumer routes to the default `HybridCache` only: named hybrid instances publish invalidations but are not wired to the backplane consumer, so their L1 tiers converge only through `DefaultLocalExpiration` TTL (known limitation).
 
 Hybrid fail-safe and factory timeouts use the same coordinator semantics as the other providers. A stale reserve can come from L1 or L2. On soft timeout, the stale value is returned to the caller and the detached background factory writes through the composite store on success, so both tiers are refreshed. Eager refresh and conditional (`NotModified`) refresh likewise run through the composite store, so a refresh extends or replaces the entry in both tiers. `DefaultLocalExpiration` still caps L1 physical retention independently of the L2 duration.
 
@@ -43,13 +43,13 @@ dotnet add package Headless.Caching.Hybrid
 ```csharp
 var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
-services.AddInMemoryCache(isDefault: false);
 services.AddSingleton<IConnectionMultiplexer>(redis);
-services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
 services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
-services.AddHybridCache(options =>
+services.AddHeadlessCaching(setup =>
 {
-    options.DefaultLocalExpiration = TimeSpan.FromMinutes(5);
+    setup.AddMemoryTier();
+    setup.AddRedisTier(options => options.ConnectionMultiplexer = redis);
+    setup.UseHybrid(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
 });
 ```
 
@@ -87,14 +87,19 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 Named tiers — point the hybrid at named L1/L2 registrations instead of the default `IInMemoryCache`/`IRemoteCache`:
 
 ```csharp
-services.AddInMemoryCache("hot-l1", options => options.MaxItems = 5000);
-services.AddRedisCache("hot-l2", options => options.ConnectionMultiplexer = redis);
-services.AddHybridCache(options =>
+services.AddHeadlessCaching(setup =>
 {
-    options.LocalCacheName = "hot-l1";   // must implement IInMemoryCache
-    options.RemoteCacheName = "hot-l2";  // must implement IRemoteCache
+    setup.AddNamed("hot-l1", i => i.UseInMemory(options => options.MaxItems = 5000));
+    setup.AddNamed("hot-l2", i => i.UseRedis(options => options.ConnectionMultiplexer = redis));
+    setup.UseHybrid(options =>
+    {
+        options.LocalCacheName = "hot-l1";   // must implement IInMemoryCache
+        options.RemoteCacheName = "hot-l2";  // must implement IRemoteCache
+    });
 });
 ```
+
+A named hybrid instance binds named tiers the same way — `setup.AddNamed("hot", i => i.UseHybrid(options => { options.LocalCacheName = "hot-l1"; options.RemoteCacheName = "hot-l2"; }))` — but named hybrids are not wired to the backplane invalidation consumer (see Design Notes).
 
 ## Configuration
 
@@ -125,12 +130,9 @@ For factory-backed sliding entries, `DefaultLocalExpiration` caps the L1 copy on
 
 ## Side Effects
 
-- Registers `HybridCache` as singleton.
-- Registers `ICache` as singleton when `isDefault: true`.
-- Registers keyed `ICache` under `CacheConstants.HybridCacheProvider`.
-- Registers `ICache<T>` as singleton.
+- `setup.UseHybrid(...)` (default) registers `HybridCache` as singleton, the default `ICache` over it, a keyed `ICache` under `CacheConstants.HybridCacheProvider`, and `ICache<T>`.
 - Registers `ICacheProvider` (shared, `TryAdd`).
-- Named overloads register a keyed `ICache` under the instance name with its own options and tier resolution.
+- `setup.AddNamed(name, i => i.UseHybrid(...))` registers a keyed `ICache` under the instance name with its own options and tier resolution.
 - Reads configured `HybridCacheOptions`.
 - Publishes cache invalidation messages through the registered message bus.
 - Runs a `TimeProvider`-driven recovery timer when `EnableAutoRecovery` is set.

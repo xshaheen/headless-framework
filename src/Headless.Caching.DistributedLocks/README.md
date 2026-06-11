@@ -8,7 +8,7 @@ The per-key factory lock in `Headless.Caching.Core` is process-local: with N app
 
 ## Key Features
 
-- `AddCachingDistributedFactoryLock()` registers `ICacheFactoryLockProvider` backed by the application's `IDistributedLock` registration (any `Headless.DistributedLocks.*` provider).
+- `setup.UseDistributedFactoryLock()` — a cross-cutting extension on the `AddHeadlessCaching` setup builder — registers `ICacheFactoryLockProvider` backed by the application's `IDistributedLock` registration (any `Headless.DistributedLocks.*` provider).
 - Per-entry opt-in through `CacheEntryOptions.UseDistributedFactoryLock`; entries that do not set it pay zero cost.
 - Lock resources are namespaced with a configurable prefix (default `cache:factory:`) so cache locks never collide with other lock consumers on the same backend.
 - The seam timeout maps directly onto `DistributedLockAcquireOptions.AcquireTimeout`: `TimeSpan.Zero` is a single try-once attempt (used by eager refresh), `Timeout.InfiniteTimeSpan` waits unboundedly, and a finite value bounds the wait.
@@ -40,8 +40,11 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 
 // Any Headless.DistributedLocks provider works; the adapter resolves IDistributedLock.
 builder.Services.AddHeadlessDistributedLocks(locks => locks.UseRedis());
-builder.Services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
-builder.Services.AddCachingDistributedFactoryLock();
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
+    setup.UseDistributedFactoryLock();
+});
 ```
 
 ```csharp
@@ -65,7 +68,7 @@ public sealed class ReportService(ICache cache, IReportRepository repository)
 }
 ```
 
-Enabling `UseDistributedFactoryLock` without calling `AddCachingDistributedFactoryLock()` (or registering another `ICacheFactoryLockProvider`) fails the factory-backed read with `InvalidOperationException` instead of silently degrading to single-node behavior.
+Enabling `CacheEntryOptions.UseDistributedFactoryLock` without calling `setup.UseDistributedFactoryLock()` (or registering another `ICacheFactoryLockProvider`) fails the factory-backed read with `InvalidOperationException` instead of silently degrading to single-node behavior.
 
 ## Configuration
 
@@ -75,10 +78,14 @@ Enabling `UseDistributedFactoryLock` without calling `AddCachingDistributedFacto
 | `TimeUntilExpires` | `null` | Lease TTL applied to each acquired factory lock; `null` uses the distributed lock provider's default lease duration. The TTL frees the key when a node dies mid-factory. |
 
 ```csharp
-builder.Services.AddCachingDistributedFactoryLock(options =>
+builder.Services.AddHeadlessCaching(setup =>
 {
-    options.ResourcePrefix = "myapp:cache:factory:";
-    options.TimeUntilExpires = TimeSpan.FromMinutes(2);
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
+    setup.UseDistributedFactoryLock(options =>
+    {
+        options.ResourcePrefix = "myapp:cache:factory:";
+        options.TimeUntilExpires = TimeSpan.FromMinutes(2);
+    });
 });
 ```
 
