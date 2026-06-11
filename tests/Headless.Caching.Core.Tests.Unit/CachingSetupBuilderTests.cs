@@ -155,9 +155,6 @@ public sealed class CachingSetupBuilderTests
     [InlineData(CacheConstants.MemoryCacheProvider)]
     [InlineData(CacheConstants.RemoteCacheProvider)]
     [InlineData(CacheConstants.HybridCacheProvider)]
-    [InlineData("memory")]
-    [InlineData("remote")]
-    [InlineData("hybrid")]
     [InlineData("Headless.Caching:custom")]
     public void add_named_should_reject_reserved_names(string reservedName)
     {

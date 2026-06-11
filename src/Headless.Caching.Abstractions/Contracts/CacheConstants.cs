@@ -19,9 +19,7 @@ public static class CacheConstants
 
     /// <summary>
     /// Indicates whether <paramref name="name"/> is reserved for the caching role registrations: the three
-    /// role keys (and any other name under the <c>Headless.Caching:</c> namespace, which the framework owns)
-    /// plus the bare short aliases <c>memory</c>/<c>remote</c>/<c>hybrid</c>, rejected to avoid confusion
-    /// with the role keys.
+    /// role keys and any other name under the <c>Headless.Caching:</c> namespace, which the framework owns.
     /// </summary>
     /// <param name="name">The candidate cache instance name.</param>
     /// <returns><see langword="true"/> when the name is reserved.</returns>

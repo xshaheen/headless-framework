@@ -102,7 +102,7 @@ public sealed class HeadlessCachingSetupBuilder
             throw new ArgumentException(
                 $"The cache name '{name}' is reserved for the role-keyed registrations "
                     + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
-                    + $"'{CacheConstants.HybridCacheProvider}', their short aliases, and the 'Headless.Caching:' "
+                    + $"'{CacheConstants.HybridCacheProvider}', and the 'Headless.Caching:' "
                     + "namespace). Pick a different instance name.",
                 nameof(name)
             );

@@ -112,7 +112,7 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 
 - Registers `IRemoteCache` as singleton (`setup.UseRedis(...)` and `setup.AddRedisTier(...)`).
 - Registers `ICache` as singleton when used as the default provider (`setup.UseRedis(...)`).
-- Registers a keyed `ICache` under the `CacheConstants.RemoteCacheProvider` role key (`Headless.Caching:remote`).
+- Registers a keyed `ICache` under the `CacheConstants.RemoteCacheProvider` role key (`Headless.Caching:Remote`).
 - Registers `IRemoteCache<T>` and `ICache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.

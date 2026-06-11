@@ -105,7 +105,7 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 
 - Registers `IInMemoryCache` as singleton (`setup.UseInMemory(...)` and `setup.AddMemoryTier(...)`).
 - Registers `ICache` as singleton when used as the default provider (`setup.UseInMemory(...)`).
-- Registers a keyed `ICache` under the `CacheConstants.MemoryCacheProvider` role key (`Headless.Caching:memory`).
+- Registers a keyed `ICache` under the `CacheConstants.MemoryCacheProvider` role key (`Headless.Caching:Memory`).
 - Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `CacheConstants.RemoteCacheProvider` role key) when used as the default provider.
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).

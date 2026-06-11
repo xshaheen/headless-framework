@@ -102,7 +102,7 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 - `RemoveByTagAsync` is version-pinned: it removes exactly the entries that currently carry the tag. A key that expired, was overwritten untagged, or was re-created is never removed by an old tag — its stale index membership is cleaned up instead. Do not expect it to remove "everything that ever had the tag".
 - Redis tag invalidation is NOT supported on Redis Cluster, and the `{KeyPrefix}__cache_tag__:` namespace is reserved for the tag index — never store cache entries under it.
 - `CacheEntryOptions.UseDistributedFactoryLock` requires the `Headless.Caching.DistributedLocks` adapter (`setup.UseDistributedFactoryLock()`) plus a registered `IDistributedLock`; enabling it without the provider fails the read with `InvalidOperationException`. Reserve it for expensive factories — per-node single-flight already exists without it.
-- Named cache instances must not use a reserved name — the `CacheConstants` role keys (`Headless.Caching:memory`, `Headless.Caching:remote`, `Headless.Caching:hybrid`), their bare aliases (`memory`/`remote`/`hybrid`), or any name under the `Headless.Caching:` namespace; `setup.AddNamed` throws `ArgumentException` for reserved names and rejects duplicates. Resolve named instances through `ICacheProvider.GetCache(name)` / `GetCacheOrNull(name)`.
+- Named cache instances must not use a reserved name — the `CacheConstants` role keys (`Headless.Caching:Memory`, `Headless.Caching:Remote`, `Headless.Caching:Hybrid`), or any name under the `Headless.Caching:` namespace; `setup.AddNamed` throws `ArgumentException` for reserved names and rejects duplicates. Resolve named instances through `ICacheProvider.GetCache(name)` / `GetCacheOrNull(name)`.
 - Named hybrid instances are not wired to the backplane invalidation consumer: they publish invalidations but never receive them, so their L1 only converges via `DefaultLocalExpiration` TTL. Use the default hybrid when cross-instance L1 invalidation matters.
 - Hybrid auto-recovery (`EnableAutoRecovery = true`) is degraded-mode semantics, not a guarantee: a failing single-key L2 write succeeds against L1 and is replayed later, so L2 (and other instances) can lag L1 until recovery. Successful set/remove replays republish their key invalidation, so peers converge once replay lands instead of waiting out their L1 TTL. Bulk, atomic, and set operations are never captured and still surface failures.
 - Use `FactorySoftTimeout` only with fail-safe and a stale reserve. When it fires, the caller gets stale data and the factory continues in the background under a detached internal token.
@@ -777,7 +777,7 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 
 - Registers `IInMemoryCache` as singleton (`setup.UseInMemory(...)` and `setup.AddMemoryTier(...)`).
 - Registers `ICache` as singleton when used as the default provider (`setup.UseInMemory(...)`).
-- Registers a keyed `ICache` under the `CacheConstants.MemoryCacheProvider` role key (`Headless.Caching:memory`).
+- Registers a keyed `ICache` under the `CacheConstants.MemoryCacheProvider` role key (`Headless.Caching:Memory`).
 - Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `CacheConstants.RemoteCacheProvider` role key) when used as the default provider.
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
@@ -899,7 +899,7 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 
 - Registers `IRemoteCache` as singleton (`setup.UseRedis(...)` and `setup.AddRedisTier(...)`).
 - Registers `ICache` as singleton when used as the default provider (`setup.UseRedis(...)`).
-- Registers a keyed `ICache` under the `CacheConstants.RemoteCacheProvider` role key (`Headless.Caching:remote`).
+- Registers a keyed `ICache` under the `CacheConstants.RemoteCacheProvider` role key (`Headless.Caching:Remote`).
 - Registers `IRemoteCache<T>` and `ICache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.

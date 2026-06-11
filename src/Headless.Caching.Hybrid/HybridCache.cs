@@ -1152,7 +1152,7 @@ public sealed class HybridCache(
         {
             await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (!FactoryCacheCoordinator.IsCallerCancellation(ex, ct))
         {
             // Publish failure is non-fatal: other instances may have stale L1 data
             // until their TTL expires. This is acceptable for eventual consistency.
