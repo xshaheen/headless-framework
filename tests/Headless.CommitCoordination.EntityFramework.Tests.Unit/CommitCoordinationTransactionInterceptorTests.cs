@@ -4,12 +4,19 @@ using System.Data;
 using System.Data.Common;
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
-public sealed class CommitCoordinationTransactionInterceptorTests
+public sealed class CommitCoordinationTransactionInterceptorTests : IDisposable
 {
+    // A real provider so Attach can CreateAsyncScope an owned drain scope (callbacks resolve scoped services that
+    // outlive the request) — the same contract SqlServerCommitSignalSource imposes.
+    private readonly ServiceProvider _services = new ServiceCollection().BuildServiceProvider();
+
+    public void Dispose() => _services.Dispose();
+
     [Fact]
     public void should_not_deadlock_when_sync_commit_override_drains_under_a_synchronization_context()
     {
@@ -25,7 +32,7 @@ public sealed class CommitCoordinationTransactionInterceptorTests
         var scope = signalSource.Attach(
             new CommitCoordinatorBindings
             {
-                Services = new EmptyServiceProvider(),
+                Services = _services,
                 ProviderTransactionKey = transaction,
             },
             CancellationToken.None
@@ -63,7 +70,7 @@ public sealed class CommitCoordinationTransactionInterceptorTests
         using var first = signalSource.Attach(
             new CommitCoordinatorBindings
             {
-                Services = new EmptyServiceProvider(),
+                Services = _services,
                 ProviderTransactionKey = key,
             },
             CancellationToken.None
@@ -73,7 +80,7 @@ public sealed class CommitCoordinationTransactionInterceptorTests
             .Invoking(x => x.Attach(
                 new CommitCoordinatorBindings
                 {
-                    Services = new EmptyServiceProvider(),
+                    Services = _services,
                     ProviderTransactionKey = key,
                 },
                 CancellationToken.None
@@ -92,11 +99,6 @@ public sealed class CommitCoordinationTransactionInterceptorTests
         public override void Commit() { }
 
         public override void Rollback() { }
-    }
-
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType) => null;
     }
 
     /// <summary>

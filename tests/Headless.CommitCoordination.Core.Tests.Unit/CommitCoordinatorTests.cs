@@ -138,6 +138,65 @@ public sealed class CommitCoordinatorTests
     }
 
     [Fact]
+    public async Task should_drain_every_accepted_enlist_exactly_once_under_concurrent_enlist_and_signal()
+    {
+        // Acceptance criterion (plan section 8): concurrent enlist during the Active -> terminal transition. Every
+        // OnCommit that is accepted (does not throw) must be drained exactly once; every enlist that loses the race to
+        // the terminal claim must throw InvalidOperationException -- never a silent strand (accepted but never drained).
+        const int enlisters = 24;
+
+        for (var iteration = 0; iteration < 150; iteration++)
+        {
+            var coordinator = new CommitCoordinator();
+            var drained = 0;
+            var accepted = 0;
+            using var barrier = new Barrier(enlisters + 1);
+
+            var tasks = new Task[enlisters + 1];
+
+            for (var i = 0; i < enlisters; i++)
+            {
+                tasks[i] = Task.Run(() =>
+                {
+                    barrier.SignalAndWait();
+
+                    try
+                    {
+                        coordinator.OnCommit((_, _) =>
+                        {
+                            Interlocked.Increment(ref drained);
+
+                            return ValueTask.CompletedTask;
+                        });
+
+                        Interlocked.Increment(ref accepted);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Lost the race to the terminal transition: enlist-after-terminal throws (never a strand).
+                    }
+                });
+            }
+
+            tasks[enlisters] = Task.Run(async () =>
+            {
+                barrier.SignalAndWait();
+
+                await coordinator.SignalAsync(
+                    CommitOutcome.Committed,
+                    new EmptyServiceProvider(),
+                    CancellationToken.None
+                );
+            });
+
+            await Task.WhenAll(tasks);
+
+            coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+            drained.Should().Be(accepted, "every accepted enlist must drain exactly once with no silent strand");
+        }
+    }
+
+    [Fact]
     public void should_resolve_capability_by_contract()
     {
         var capability = new TestCapability();

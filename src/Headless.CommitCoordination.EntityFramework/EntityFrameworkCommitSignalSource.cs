@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Headless.CommitCoordination;
 using Headless.Checks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -27,13 +28,30 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         Argument.IsNotNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var scope = scopeFactory.Begin(bindings.Services, bindings.Capabilities);
+        // Own a DI scope for the post-commit drain so callbacks resolving scoped services (CommitContext.Services)
+        // outlive the request and the EF interceptor's off-thread drain — matching SqlServerCommitSignalSource. The
+        // scope is disposed by TrackedCommitScope after the drain (signal path) or on un-signalled dispose.
+        var ownedServices = bindings.Services.CreateAsyncScope();
+        ICommitScope scope;
+
+        try
+        {
+            scope = scopeFactory.Begin(ownedServices.ServiceProvider, bindings.Capabilities);
+        }
+        catch
+        {
+            ownedServices.Dispose();
+            throw;
+        }
 
         if (bindings.ProviderTransactionKey is not null)
         {
+            // Remove-if-equal: a tracked scope only ever evicts its OWN entry, so a successor transaction reusing the
+            // same DbTransaction key (improbable but cheap to guard) is never evicted by this scope's disposal.
             var trackedScope = new TrackedCommitScope(
                 scope,
-                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self))
+                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self)),
+                ownedServices
             );
 
             if (!_scopes.TryAdd(bindings.ProviderTransactionKey, trackedScope))
@@ -47,6 +65,10 @@ public sealed partial class EntityFrameworkCommitSignalSource(
             }
 
             scope = trackedScope;
+        }
+        else
+        {
+            scope = new TrackedCommitScope(scope, static _ => { }, ownedServices);
         }
 
         return scope;
@@ -85,7 +107,11 @@ public sealed partial class EntityFrameworkCommitSignalSource(
     {
         Argument.IsNotNull(providerTransactionKey);
 
-        _SignalInBackground(Task.Run(() => SignalCommittedAsync(providerTransactionKey, CancellationToken.None).AsTask()));
+        // Invoke synchronously (NOT via Task.Run): the terminal claim — TryRemove plus the scope's CAS — runs on the
+        // commit thread, settling before this returns and before the caller's un-signalled scope dispose can race it.
+        // Only the drain (the awaited continuation, ConfigureAwait(false)) runs off-thread. Wrapping the whole call in
+        // Task.Run would defer the claim itself, letting a racing Dispose claim RolledBack and discard committed work.
+        _SignalInBackground(SignalCommittedAsync(providerTransactionKey, CancellationToken.None).AsTask());
     }
 
     /// <summary>
@@ -116,17 +142,19 @@ public sealed partial class EntityFrameworkCommitSignalSource(
     {
         Argument.IsNotNull(providerTransactionKey);
 
-        _SignalInBackground(Task.Run(() => SignalRolledBackAsync(providerTransactionKey, CancellationToken.None).AsTask()));
+        // Invoke synchronously (NOT via Task.Run) so the terminal claim settles on the commit thread; see the note on
+        // SignalCommittedInBackground. Only the drain runs off-thread.
+        _SignalInBackground(SignalRolledBackAsync(providerTransactionKey, CancellationToken.None).AsTask());
     }
 
-    // Background signals are fire-and-forget with no shutdown drain gate — deliberately, and unlike
+    // The claim settles synchronously on the commit thread (see SignalCommittedInBackground); only the drain runs
+    // off-thread here, fire-and-forget with no shutdown drain gate — deliberately, and unlike
     // SqlServerCommitDiagnosticHostedService, which tracks _drains and awaits WaitForDrainsAsync on stop.
     // The asymmetry is safe because the drain is acceleration, not correctness: the outbox/durable rows were
     // already written in the committed transaction, so an in-flight drain abandoned by an abrupt host stop is
     // recovered by the relay/polling sweep — it degrades dispatch latency, never durability. A tracking gate
     // here would only shorten the post-commit dispatch window on graceful shutdown; it is not required for
-    // correctness. (The EF interceptor's synchronous TransactionCommitted offloads here precisely so the commit
-    // thread is never blocked on the drain.)
+    // correctness.
     private void _SignalInBackground(Task signal)
     {
         _ = signal.ContinueWith(

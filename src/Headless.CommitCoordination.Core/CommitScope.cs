@@ -51,8 +51,13 @@ internal sealed class CommitScope(
         if (_TryClaimSignal() && coordinator.TryClaimTerminal(CommitOutcome.RolledBack, out var claim))
         {
             // Un-signalled abandon: discard the work by claiming rollback. Offload the drain so disposing under a
-            // captured SynchronizationContext cannot deadlock or stall the disposing thread.
-            CommitCoordinator.DrainInBackground(claim, services);
+            // captured SynchronizationContext cannot deadlock or stall the disposing thread. Promoted registrations
+            // are disposed only AFTER the offloaded drain runs — disposing them synchronously here would mark a
+            // child's promoted rollback callbacks IsDisposed before the drain reached them, silently dropping them
+            // (the DisposeAsync path orders these the same way).
+            CommitCoordinator.DrainInBackground(claim, services, coordinator.DisposePromotedRegistrations);
+
+            return;
         }
 
         coordinator.DisposePromotedRegistrations();

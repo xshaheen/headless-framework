@@ -61,7 +61,6 @@ internal sealed class TrackedCommitScope(
         }
 
         ValueTask innerDispose;
-        var signalStarted = Volatile.Read(ref _signalStarted) == 1;
 
         try
         {
@@ -73,10 +72,10 @@ internal sealed class TrackedCommitScope(
             throw;
         }
 
-        return _FinishDisposeAsync(innerDispose, signalStarted);
+        return _FinishDisposeAsync(innerDispose);
     }
 
-    private async ValueTask _FinishDisposeAsync(ValueTask innerDispose, bool signalStarted)
+    private async ValueTask _FinishDisposeAsync(ValueTask innerDispose)
     {
         try
         {
@@ -86,7 +85,11 @@ internal sealed class TrackedCommitScope(
         {
             detach(this);
 
-            if (!signalStarted)
+            // Re-read _signalStarted AFTER the inner dispose, not from a snapshot taken before it: a SignalAsync may
+            // have started concurrently and claimed the drain, which owns these services for its lifetime and disposes
+            // them in its own finally. Only dispose here when no signal started; _ownedServicesDisposed is the final
+            // double-dispose guard.
+            if (Volatile.Read(ref _signalStarted) == 0)
             {
                 await _DisposeOwnedServicesAsync().ConfigureAwait(false);
             }

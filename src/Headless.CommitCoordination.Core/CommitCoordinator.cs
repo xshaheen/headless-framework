@@ -122,9 +122,13 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         }
     }
 
-    internal static void DrainInBackground(CommitTerminalClaim claim, IServiceProvider services)
+    internal static void DrainInBackground(
+        CommitTerminalClaim claim,
+        IServiceProvider services,
+        Action? afterDrain = null
+    )
     {
-        _ = Task.Run(() => DrainAsync(claim, services, CancellationToken.None).AsTask())
+        _ = Task.Run(() => _DrainThenAsync(claim, services, afterDrain))
             .ContinueWith(
                 static (t, state) => LogBackgroundDrainFaulted((ILogger)state!, t.Exception),
                 claim.Coordinator._logger,
@@ -132,6 +136,20 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
                 TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default
             );
+    }
+
+    private static async Task _DrainThenAsync(CommitTerminalClaim claim, IServiceProvider services, Action? afterDrain)
+    {
+        try
+        {
+            await DrainAsync(claim, services, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Runs after the drain completes (or faults) so a caller offloading the drain can order post-drain work
+            // — e.g. disposing promoted child registrations only once the rollback drain has invoked them.
+            afterDrain?.Invoke();
+        }
     }
 
     /// <inheritdoc />
@@ -349,7 +367,10 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
 
             foreach (var contract in capability.GetType().GetInterfaces())
             {
-                if (typeof(ICommitCapability).IsAssignableFrom(contract))
+                // Skip the bare ICommitCapability marker: indexing it as a key would make the last-registered
+                // capability answer TryGetCapability<ICommitCapability>() — a meaningless lookup. Only concrete
+                // capability contracts (the interfaces a consumer actually queries) belong in the map.
+                if (contract != typeof(ICommitCapability) && typeof(ICommitCapability).IsAssignableFrom(contract))
                 {
                     map[contract] = capability;
                 }
