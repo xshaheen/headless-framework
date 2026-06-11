@@ -2414,7 +2414,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     // interleaving tests need it.
     private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key)
     {
-        var field = typeof(FakeFactoryCacheStore).GetField("_entries", BindingFlags.Instance | BindingFlags.NonPublic);
+        var field = typeof(FakeFactoryCacheStore).GetField(
+            "_entries",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
         field.Should().NotBeNull("FakeFactoryCacheStore's private entry map moved — update _RemoveEntryDirectly");
         var entries = (IDictionary)field!.GetValue(store)!;
         entries.Remove(key);
