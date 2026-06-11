@@ -61,7 +61,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     public async Task should_queue_failed_factory_write_and_replay_when_l2_recovers()
     {
         // given
-        var (cache, l1, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        var (cache, l1, l2, publisher) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
         await using var _ = cache;
 
         l2.FailWrites = true;
@@ -87,11 +87,19 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         _timeProvider.Advance(_Delay);
         await cache.RecoveryQueue.ProcessAsync(AbortToken);
 
-        // then — the replay landed the value in L2 and the queue drained
+        // then — the replay landed the value in L2 and the queue drained, and the replayed entry write
+        // republished the key invalidation (live publish + post-replay publish)
         (await l2.GetAsync<int>(key, AbortToken))
             .Value.Should()
             .Be(value);
         cache.RecoveryQueue.Count.Should().Be(0);
+        await publisher
+            .Received(2)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -292,7 +300,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     public async Task should_queue_failed_remove_and_replay_when_l2_recovers()
     {
         // given — the key exists in both tiers
-        var (cache, l1, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        var (cache, l1, l2, publisher) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
@@ -315,8 +323,213 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         _timeProvider.Advance(_Delay);
         await cache.RecoveryQueue.ProcessAsync(AbortToken);
 
-        // then — the removal was replayed
+        // then — the removal was replayed and republished the key invalidation (live publish + post-replay)
         cache.RecoveryQueue.Count.Should().Be(0);
         (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
+        await publisher
+            .Received(2)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_displace_queued_value_op_when_publish_fails_for_same_key()
+    {
+        // given — a full outage: L2 writes and invalidation publishes both fail
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("Publish failed"));
+
+        var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true }, publisher);
+        await using var _ = cache;
+
+        l2.FailWrites = true;
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int();
+
+        // when — the L2 write fails (queues a SetEntry), then the publish fails for the same key
+        await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then — the value op survives: the failed publish is subsumed instead of displacing it
+        cache.RecoveryQueue!.Count.Should().Be(1);
+        cache.RecoveryQueue.GetKind(key).Should().Be(HybridCacheRecoveryKind.SetEntry);
+    }
+
+    [Fact]
+    public async Task should_replace_queued_publish_when_value_op_queued_for_same_key()
+    {
+        // given — a backplane-only outage queues a publish for the key
+        var failPublish = true;
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => failPublish ? throw new InvalidOperationException("Publish failed") : Task.CompletedTask);
+
+        var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true }, publisher);
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, Faker.Random.Int(), TimeSpan.FromMinutes(5), AbortToken);
+        cache.RecoveryQueue!.GetKind(key).Should().Be(HybridCacheRecoveryKind.PublishInvalidation);
+
+        // when — a later write to the same key fails against L2 too
+        l2.FailWrites = true;
+        await cache.UpsertAsync(key, Faker.Random.Int(), TimeSpan.FromMinutes(5), AbortToken);
+
+        // then — last intent wins: the value op replaced the queued publish (which it subsumes)
+        cache.RecoveryQueue.Count.Should().Be(1);
+        cache.RecoveryQueue.GetKind(key).Should().Be(HybridCacheRecoveryKind.SetEntry);
+    }
+
+    [Fact]
+    public async Task should_publish_invalidation_with_original_write_timestamp_after_successful_set_replay()
+    {
+        // given — L2 down, backplane healthy
+        var (cache, _, l2, publisher) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        await using var _ = cache;
+
+        l2.FailWrites = true;
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int();
+        var writeTime = _timeProvider.GetUtcNow();
+
+        await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
+        cache.RecoveryQueue!.GetKind(key).Should().Be(HybridCacheRecoveryKind.SetEntry);
+
+        // when — L2 recovers and the replay pass runs after the cadence elapsed
+        l2.FailWrites = false;
+        _timeProvider.Advance(_Delay);
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the value landed in L2 and the replay republished the key invalidation stamped with the
+        // ORIGINAL write time (not the replay time), so receivers order it correctly against newer writes
+        cache.RecoveryQueue.Count.Should().Be(0);
+        (await l2.GetAsync<int>(key, AbortToken)).Value.Should().Be(value);
+        await publisher
+            .Received(2)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Key == key && m.Timestamp == writeTime),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_queue_residual_publish_when_post_replay_publish_fails()
+    {
+        // given — a full outage queues a SetEntry for the key
+        var failPublish = true;
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => failPublish ? throw new InvalidOperationException("Publish failed") : Task.CompletedTask);
+
+        var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true }, publisher);
+        await using var _ = cache;
+
+        l2.FailWrites = true;
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int();
+        await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
+        cache.RecoveryQueue!.GetKind(key).Should().Be(HybridCacheRecoveryKind.SetEntry);
+
+        // when — only L2 recovers; the replay pass lands the value but its post-replay publish fails
+        l2.FailWrites = false;
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the Set already landed, so the correct residual intent is a queued PublishInvalidation
+        (await l2.GetAsync<int>(key, AbortToken))
+            .Value.Should()
+            .Be(value);
+        cache.RecoveryQueue.Count.Should().Be(1);
+        cache.RecoveryQueue.GetKind(key).Should().Be(HybridCacheRecoveryKind.PublishInvalidation);
+
+        // when — the backplane recovers and the next pass runs
+        failPublish = false;
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the residual invalidation went out and the queue drained (initial failed publish +
+        // post-replay failed publish + successful residual replay)
+        cache.RecoveryQueue.Count.Should().Be(0);
+        await publisher
+            .Received(3)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_bound_residual_publish_retries_when_backplane_stays_down()
+    {
+        // given — a full outage with a tight retry budget; the backplane never recovers
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("Publish failed"));
+
+        var (cache, _, l2, _) = _CreateCache(
+            new HybridCacheOptions { EnableAutoRecovery = true, AutoRecoveryMaxRetries = 2 },
+            publisher
+        );
+        await using var _ = cache;
+
+        l2.FailWrites = true;
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, Faker.Random.Int(), TimeSpan.FromMinutes(5), AbortToken);
+
+        // when — L2 recovers: the Set replays and its failed post-replay publish queues the residual
+        l2.FailWrites = false;
+        await cache.RecoveryQueue!.ProcessAsync(AbortToken);
+        cache.RecoveryQueue.GetKind(key).Should().Be(HybridCacheRecoveryKind.PublishInvalidation);
+
+        // and — every further pass keeps failing until the residual exhausts its budget (one attempt per
+        // pass, separated by the failure barrier)
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+        cache.RecoveryQueue.Count.Should().Be(1, "one retry left in the budget");
+        _timeProvider.Advance(_Delay);
+
+        // then — the residual cannot loop unboundedly: it is gone and no further publish attempts are made
+        cache.RecoveryQueue.Count.Should().Be(0);
+        var publishAttempts = publisher.ReceivedCalls().Count();
+        _timeProvider.Advance(_Delay);
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+        publisher.ReceivedCalls().Count().Should().Be(publishAttempts, "the dropped residual must not be retried");
+    }
+
+    [Fact]
+    public async Task should_ignore_older_foreign_invalidation_when_newer_local_op_is_queued()
+    {
+        // given — a queued Set for the key (our local intent)
+        var (cache, l1, l2, _) = _CreateCache(
+            new HybridCacheOptions { EnableAutoRecovery = true, InstanceId = "instance-1" }
+        );
+        await using var _ = cache;
+
+        l2.FailWrites = true;
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int();
+        await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
+        cache.RecoveryQueue!.Count.Should().Be(1);
+
+        // when — another node's invalidation arrives with an OLDER timestamp (it lost the race to our write)
+        var message = new CacheInvalidationMessage
+        {
+            InstanceId = "instance-2",
+            Key = key,
+            Timestamp = _timeProvider.GetUtcNow().AddSeconds(-1),
+        };
+
+        await cache.HandleInvalidationAsync(message, AbortToken);
+
+        // then — our newer pending write survives AND keeps its L1 entry: wiping L1 would make the
+        // stamp-verified replay drop itself as obsolete and lose the newer value
+        cache.RecoveryQueue.Count.Should().Be(1);
+        (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(value);
     }
 }

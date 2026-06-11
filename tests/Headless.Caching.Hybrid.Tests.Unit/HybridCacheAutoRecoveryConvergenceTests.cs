@@ -22,7 +22,7 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
     private static readonly TimeSpan _Ttl = TimeSpan.FromMinutes(30);
 
     [Fact]
-    public async Task should_converge_on_absence_when_full_outage_writes_replay_oldest_writer_first()
+    public async Task should_converge_on_last_writer_value_when_full_outage_writes_replay_oldest_writer_first()
     {
         // given — L2 and the backplane are both down for both nodes
         await using var harness = new TwoNodeConvergenceHarness();
@@ -38,11 +38,13 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         harness.Time.Advance(TimeSpan.FromSeconds(1));
         await b.Cache.UpsertAsync(key, "v-b", _Ttl, AbortToken);
 
-        // then — each caller succeeded against its own L1 and queued exactly one recovery item. Because the
-        // queue holds one item per key, the failed publish REPLACED the failed SetEntry (accepted quirk): what
-        // survives the outage on each node is the invalidation, not the value write.
+        // then — each caller succeeded against its own L1 and queued exactly one recovery item, and it is the
+        // VALUE write that survives: the failed publish never displaces a queued value op (the value op
+        // subsumes it because its replay publishes the key invalidation itself).
         a.Cache.RecoveryQueue!.Count.Should().Be(1);
         b.Cache.RecoveryQueue!.Count.Should().Be(1);
+        a.Cache.RecoveryQueue.GetKind(key).Should().Be(HybridCacheRecoveryKind.SetEntry);
+        b.Cache.RecoveryQueue.GetKind(key).Should().Be(HybridCacheRecoveryKind.SetEntry);
         (await a.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-a");
         (await b.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
 
@@ -51,23 +53,32 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         a.L2.FailWrites = false;
         b.L2.FailWrites = false;
         await a.Cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — A's replayed Set landed in L2 and republished its invalidation stamped with A's ORIGINAL write
+        // time, so B (whose queued write is newer) ignores it instead of wiping its L1: B's pending value and
+        // its local copy both survive the older writer's replay.
+        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken))
+            .Value.Should()
+            .Be("v-a");
+        b.Cache.RecoveryQueue.Count.Should().Be(1, "A's older invalidation must not conflict-drop B's newer write");
+        (await b.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+
         await b.Cache.RecoveryQueue.ProcessAsync(AbortToken);
 
-        // then — NEITHER writer wins: each node replays only its invalidation, which clears the other node's
-        // L1 (A's older message cannot conflict-drop B's newer queued item, so B still republishes), and the
-        // value writes are never replayed against L2. Every tier converges on the same single state — absence —
-        // so the next read repopulates from the source of truth instead of resurrecting either value.
+        // then — the LAST WRITER wins by the conflict/timestamp rules: B's replayed Set overwrites L2 and its
+        // republished (newer) invalidation clears A's L1, so every tier converges on v-b.
         a.Cache.RecoveryQueue.Count.Should().Be(0);
         b.Cache.RecoveryQueue.Count.Should().Be(0);
-        a.L2.UpsertAttempts.Should().Be(1, "the queued value write was replaced by the queued publish");
-        b.L2.UpsertAttempts.Should().Be(1, "the queued value write was replaced by the queued publish");
-        (await a.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
-        (await b.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
-        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+        a.L2.UpsertAttempts.Should().Be(2, "the initial failed write plus the successful replay");
+        b.L2.UpsertAttempts.Should().Be(2, "the initial failed write plus the successful replay");
+        (await a.L1.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse("B's republish cleared A's L1");
+        (await a.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+        (await b.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
     }
 
     [Fact]
-    public async Task should_keep_only_newest_writer_l1_value_when_full_outage_writes_replay_newest_writer_first()
+    public async Task should_converge_on_last_writer_value_when_full_outage_writes_replay_newest_writer_first()
     {
         // given — the same full-outage divergence as the oldest-first test
         await using var harness = new TwoNodeConvergenceHarness();
@@ -87,36 +98,27 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         b.L2.FailWrites = false;
         await b.Cache.RecoveryQueue!.ProcessAsync(AbortToken);
 
-        // then — B's republished invalidation (newer timestamp) conflict-drops A's older queued publish and
-        // clears A's L1, so A has nothing left to replay and never publishes: B's local copy survives.
-        a.Cache.RecoveryQueue!.Count.Should().Be(0, "A's older queued publish lost the timestamp conflict check");
+        // then — B's replayed Set landed in L2 and its republished invalidation (newer timestamp)
+        // conflict-drops A's older queued write and clears A's L1: A has nothing left to replay.
+        a.Cache.RecoveryQueue!.Count.Should().Be(0, "A's older queued write lost the timestamp conflict check");
         (await a.L1.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
 
         await a.Cache.RecoveryQueue.ProcessAsync(AbortToken);
 
-        // then — replay order decides the outcome: newest-first leaves B serving v-b from its own L1 while L2
-        // stays empty (the value write was never replayed), so the nodes are diverged.
-        (await b.Cache.GetAsync<string>(key, AbortToken))
-            .Value.Should()
-            .Be("v-b");
-        (await a.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
-        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken))
-            .HasValue.Should()
-            .BeFalse("the value write was never replayed");
-
-        // and — the residual divergence is bounded by the local TTL: once B's L1 entry expires every tier
-        // converges on absence.
-        harness.Time.Advance(TimeSpan.FromMinutes(6));
-        (await b.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
-        (await a.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+        // then — the winner is the same as in the oldest-first ordering: convergence is replay-order
+        // independent, and v-a is never resurrected against L2.
+        a.L2.UpsertAttempts.Should().Be(1, "the conflict-dropped write must never be replayed");
+        (await a.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+        (await b.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
     }
 
     [Fact]
     public async Task should_stay_diverged_while_l2_down_after_backplane_restore_then_converge_on_last_recovered_writer()
     {
         // given — L2 is down for both nodes and the backplane is PARTITIONED (publishes are accepted but never
-        // delivered). A throwing backplane would replace the queued SetEntry with a queued publish (one item
-        // per key), so a lossy partition is the outage shape that leaves the value writes queued.
+        // delivered). Unlike a throwing backplane (where the failed publish is subsumed by the queued value
+        // op), a lossy partition queues no publish at all — the SetEntry is the only pending item either way.
         await using var harness = new TwoNodeConvergenceHarness();
         var (a, b) = (harness.A, harness.B);
         harness.Bus.State = FakeBackplaneState.Lossy;
@@ -138,8 +140,8 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         harness.Time.Advance(_Delay);
 
         // then — the queued SetEntry replays keep failing and stay queued (retry count advanced by exactly one
-        // attempt per pass), and a recovered backplane alone does not converge values: replaying a SetEntry
-        // publishes nothing, so each node keeps serving its own value.
+        // attempt per pass), and a recovered backplane alone does not converge values: nothing replayed yet,
+        // so nothing is republished and each node keeps serving its own value.
         a.Cache.RecoveryQueue.Count.Should().Be(1);
         b.Cache.RecoveryQueue.Count.Should().Be(1);
         a.L2.UpsertAttempts.Should().Be(2, "exactly one failed replay attempt ran");
@@ -157,13 +159,16 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         a.L2.FailWrites = false;
         harness.Time.Advance(_Delay);
 
-        // then — A's value lands in L2; B is still failing and stays queued
+        // then — A's value lands in L2 and its replayed Set republishes the invalidation stamped with A's
+        // original write time, so B (whose pending write is newer) ignores it and keeps both its queued item
+        // and its L1 copy; B's own replay is still failing
         (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken))
             .Value.Should()
             .Be("v-a");
         a.Cache.RecoveryQueue.Count.Should().Be(0);
         b.Cache.RecoveryQueue.Count.Should().Be(1);
         b.L2.UpsertAttempts.Should().Be(3);
+        (await b.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
 
         // when — B's L2 connection recovers last
         b.L2.FailWrites = false;
@@ -175,12 +180,12 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
             .Be("v-b");
         b.Cache.RecoveryQueue.Count.Should().Be(0);
 
-        // and — replayed Sets do not republish invalidations: A keeps serving its own value from L1 until the
-        // local TTL expires; only then do both nodes converge on B's value via L2.
-        (await a.Cache.GetAsync<string>(key, AbortToken))
-            .Value.Should()
-            .Be("v-a");
-        harness.Time.Advance(TimeSpan.FromMinutes(6));
+        // and — B's replayed Set republishes its (newer) invalidation, which clears A's stale L1 copy
+        // immediately: the loser converges on the winner's value via the next L2 read instead of waiting for
+        // its local TTL to expire.
+        (await a.L1.GetAsync<string>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse();
         (await a.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
         (await b.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
     }

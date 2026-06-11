@@ -113,4 +113,12 @@ internal static partial class HybridCacheLoggerExtensions
         bool hasPrefix,
         bool flushAll
     );
+
+    [LoggerMessage(
+        EventId = 14,
+        EventName = "IgnoredStaleRemoteInvalidation",
+        Level = LogLevel.Debug,
+        Message = "Ignored a remote invalidation for key {Key}: a pending local auto-recovery operation for the key is at least as new"
+    )]
+    public static partial void LogIgnoredStaleRemoteInvalidation(this ILogger logger, string key);
 }

@@ -121,13 +121,31 @@ public sealed class HybridCache(
 
         if (message.Keys is { Length: > 0 })
         {
-            await LocalCache.RemoveAllAsync(message.Keys, ct).ConfigureAwait(false);
+            var keys = message.Keys;
+
+            if (RecoveryQueue is not null)
+            {
+                // A key with a surviving recovery item has local intent at least as new as this message (the
+                // conflict pass above dropped everything older): wiping its L1 entry would discard the newer
+                // local write and make the stamp-verified replay drop itself as obsolete.
+                keys = Array.FindAll(keys, key => !_ShouldIgnoreInvalidationFor(key));
+            }
+
+            if (keys.Length > 0)
+            {
+                await LocalCache.RemoveAllAsync(keys, ct).ConfigureAwait(false);
+            }
+
             return;
         }
 
         if (!string.IsNullOrEmpty(message.Key))
         {
-            await LocalCache.RemoveAsync(message.Key, ct).ConfigureAwait(false);
+            if (!_ShouldIgnoreInvalidationFor(message.Key))
+            {
+                await LocalCache.RemoveAsync(message.Key, ct).ConfigureAwait(false);
+            }
+
             return;
         }
 
@@ -1122,11 +1140,13 @@ public sealed class HybridCache(
         bool queueOnFailure = false
     )
     {
-        // Stamp the publish time so receivers can run the auto-recovery conflict check against it.
-        message = message with
+        // Stamp the publish time so receivers can run the auto-recovery conflict check against it. Replayed
+        // invalidations arrive pre-stamped with the original write time so receivers still order them correctly
+        // against operations that happened between the original write and its replay.
+        if (message.Timestamp is null)
         {
-            Timestamp = _timeProvider.GetUtcNow(),
-        };
+            message = message with { Timestamp = _timeProvider.GetUtcNow() };
+        }
 
         try
         {
@@ -1150,6 +1170,20 @@ public sealed class HybridCache(
                 _QueuePublishRecovery(message);
             }
         }
+    }
+
+    private bool _ShouldIgnoreInvalidationFor(string key)
+    {
+        // Only consulted after the OnIncomingInvalidation conflict pass dropped every queued item older than
+        // the message, so a surviving item means our pending local operation is at least as new: applying the
+        // older foreign invalidation would wipe the newer local state it is about to replay.
+        if (RecoveryQueue?.Contains(key) != true)
+        {
+            return false;
+        }
+
+        _logger.LogIgnoredStaleRemoteInvalidation(key);
+        return true;
     }
 
     private void _QueueScalarUpsertRecovery<T>(string key, T? value, TimeSpan? expiration)
@@ -1184,6 +1218,7 @@ public sealed class HybridCache(
                 }
 
                 await l2Cache.UpsertAsync(key, value, remaining, ct).ConfigureAwait(false);
+                await _PublishReplayedInvalidationAsync(key, now, ct).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;
             }
         );
@@ -1192,6 +1227,7 @@ public sealed class HybridCache(
     private void _QueueSetEntryRecovery<T>(string key, CacheStoreEntryWrite<T> entry, DateTime? l1PhysicalStamp)
     {
         var queue = RecoveryQueue!;
+        var writeTimestamp = _timeProvider.GetUtcNow();
 
         queue.Enqueue(
             key,
@@ -1242,6 +1278,13 @@ public sealed class HybridCache(
                         .ConfigureAwait(false);
                 }
 
+                // Mirror the live SetEntry path, restamp gating included: peers' cached bytes are identical
+                // for a metadata-only restamp, so only value-bearing replays broadcast.
+                if (!entry.IsRestamp)
+                {
+                    await _PublishReplayedInvalidationAsync(key, writeTimestamp, ct).ConfigureAwait(false);
+                }
+
                 return HybridCacheRecoveryReplayOutcome.Replayed;
             }
         );
@@ -1250,14 +1293,16 @@ public sealed class HybridCache(
     private void _QueueRemoveRecovery(string key)
     {
         var queue = RecoveryQueue!;
+        var removeTimestamp = _timeProvider.GetUtcNow();
 
         queue.Enqueue(
             key,
             HybridCacheRecoveryKind.Remove,
-            _timeProvider.GetUtcNow() + queue.DefaultRetention,
+            removeTimestamp + queue.DefaultRetention,
             async ct =>
             {
                 await l2Cache.RemoveAsync(key, ct).ConfigureAwait(false);
+                await _PublishReplayedInvalidationAsync(key, removeTimestamp, ct).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;
             }
         );
@@ -1277,8 +1322,38 @@ public sealed class HybridCache(
                 // it correctly against operations that happened after the original publish attempt.
                 await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;
-            }
+            },
+            // The item's intent timestamp is the original publish time, not now: a foreign write that raced in
+            // between must still win the incoming-invalidation conflict check against this pending publish.
+            enqueuedAt: message.Timestamp
         );
+    }
+
+    /// <summary>
+    /// Publishes the key invalidation for a successfully replayed value op, mirroring the live path (a landed
+    /// set/remove subsumes its invalidation). Stamped with the ORIGINAL write time so receivers order it
+    /// correctly: a peer whose own pending write for the key is newer ignores it instead of wiping its L1. A
+    /// publish failure queues a residual PublishInvalidation — the value already landed in L2, so a pending
+    /// publish is the correct remaining intent; it replaces the value op being replayed and inherits the normal
+    /// retry cap, so the failure path cannot loop unboundedly.
+    /// </summary>
+    private async ValueTask _PublishReplayedInvalidationAsync(
+        string key,
+        DateTimeOffset writeTimestamp,
+        CancellationToken ct
+    )
+    {
+        await _PublishInvalidationAsync(
+                new CacheInvalidationMessage
+                {
+                    InstanceId = _instanceId,
+                    Key = key,
+                    Timestamp = writeTimestamp,
+                },
+                ct,
+                queueOnFailure: true
+            )
+            .ConfigureAwait(false);
     }
 
     private void _ThrowIfDisposed()

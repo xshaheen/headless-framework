@@ -25,9 +25,11 @@ internal enum HybridCacheRecoveryReplayOutcome
 
 /// <summary>
 /// Bounded queue of pending L2/backplane operations used by <see cref="HybridCache"/> auto-recovery (design
-/// reference: FusionCache's AutoRecoveryService, adapted). One pending operation per cache key — a newer
-/// operation for the same key replaces the older one, and any successful L2 write for a key clears its pending
-/// item, so a surviving item always represents the latest local intent for that key.
+/// reference: FusionCache's AutoRecoveryService, adapted). One pending operation per cache key with kind-aware
+/// coalescing: a newer value op (set/remove) replaces any queued item, but an invalidation publish never
+/// displaces a queued value op — the value op subsumes it because its successful replay publishes the key
+/// invalidation itself. Any successful L2 write for a key clears its pending item, so a surviving item always
+/// represents the latest local intent for that key.
 /// </summary>
 /// <remarks>
 /// Scope is intentionally limited to single-key operations (factory/entry sets, scalar upserts, removes, and
@@ -47,6 +49,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     private long _barrierUntilTicks;
     private int _processing;
     private int _isDisposed;
+    private RecoveryItem? _replaying;
 
     public HybridCacheRecoveryQueue(HybridCacheOptions options, TimeProvider timeProvider, ILogger logger)
     {
@@ -66,8 +69,15 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     /// <summary>Number of pending recovery items (test/diagnostic hook).</summary>
     internal int Count => _items.Count;
 
-    /// <summary>Whether a pending item exists for the given key (test/diagnostic hook).</summary>
+    /// <summary>
+    /// Whether a pending item exists for the given key. <see cref="HybridCache.HandleInvalidationAsync"/> uses
+    /// it after the <see cref="OnIncomingInvalidation"/> conflict pass: a surviving item is local intent at
+    /// least as new as the incoming message, so the message must not wipe the local L1 entry.
+    /// </summary>
     internal bool Contains(string key) => _items.ContainsKey(key);
+
+    /// <summary>Kind of the pending item for the given key, when one exists (test/diagnostic hook).</summary>
+    internal HybridCacheRecoveryKind? GetKind(string key) => _items.TryGetValue(key, out var item) ? item.Kind : null;
 
     /// <summary>
     /// Default retention window for items without a natural expiry (removes, publishes, sets without TTL).
@@ -75,15 +85,23 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     internal TimeSpan DefaultRetention => _options.AutoRecoveryDelay * _options.AutoRecoveryMaxRetries;
 
     /// <summary>
-    /// Queues a pending operation for the key. A newer operation for the same key replaces the older one. On
-    /// overflow the item with the earliest expiry (including the incoming one) is sacrificed to keep the items
-    /// most likely to still matter when the dependency recovers.
+    /// Queues a pending operation for the key with kind-aware coalescing: a value op (set/remove) replaces any
+    /// queued item (last intent wins), a publish refreshes a queued publish, but a publish never displaces a
+    /// queued value op — the value op subsumes it because its successful replay publishes the key invalidation
+    /// itself. On overflow the item with the earliest expiry (including the incoming one) is sacrificed to keep
+    /// the items most likely to still matter when the dependency recovers.
     /// </summary>
+    /// <param name="enqueuedAt">
+    /// Overrides the item's intent timestamp (used by replay ordering and the incoming-invalidation conflict
+    /// check). Residual publishes pass the original write time so a foreign write that raced between the
+    /// original write and its replay still wins the conflict check.
+    /// </param>
     public void Enqueue(
         string key,
         HybridCacheRecoveryKind kind,
         DateTimeOffset expiresAt,
-        Func<CancellationToken, ValueTask<HybridCacheRecoveryReplayOutcome>> replay
+        Func<CancellationToken, ValueTask<HybridCacheRecoveryReplayOutcome>> replay,
+        DateTimeOffset? enqueuedAt = null
     )
     {
         var now = _timeProvider.GetUtcNow();
@@ -93,11 +111,27 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             return; // Nothing left to recover.
         }
 
-        var item = new RecoveryItem(key, kind, now, expiresAt, replay);
+        var item = new RecoveryItem(key, kind, enqueuedAt ?? now, expiresAt, replay);
 
         lock (_admissionLock)
         {
-            if (!_items.ContainsKey(key) && _items.Count >= _options.AutoRecoveryMaxItems)
+            if (_items.TryGetValue(key, out var existing))
+            {
+                // A queued value op must survive a publish for the same key: displacing it would lose the value
+                // permanently while its replay already covers the invalidation. The one exception is the value
+                // op currently being replayed — its L2 write has already landed, so a residual publish is the
+                // correct remaining intent for the key.
+                if (
+                    kind == HybridCacheRecoveryKind.PublishInvalidation
+                    && existing.Kind != HybridCacheRecoveryKind.PublishInvalidation
+                    && !ReferenceEquals(existing, Volatile.Read(ref _replaying))
+                )
+                {
+                    _logger.LogAutoRecoveryPublishSubsumed(key, existing.Kind);
+                    return;
+                }
+            }
+            else if (_items.Count >= _options.AutoRecoveryMaxItems)
             {
                 var victim = _FindEarliestExpiry();
 
@@ -231,6 +265,10 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                 var item = pair.Value;
                 HybridCacheRecoveryReplayOutcome outcome;
 
+                // Mark the in-flight item so a residual publish enqueued from inside its own replay (post-replay
+                // publish failure) is allowed to replace it instead of being subsumed by it.
+                Volatile.Write(ref _replaying, item);
+
                 try
                 {
                     outcome = await item.Replay(cancellationToken).ConfigureAwait(false);
@@ -268,8 +306,13 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
 
                     return;
                 }
+                finally
+                {
+                    Volatile.Write(ref _replaying, null);
+                }
 
-                // Conditional remove: a newer item may have replaced this one mid-replay; keep that one.
+                // Conditional remove: a newer item (or this item's own residual publish) may have replaced this
+                // one mid-replay; keep that one.
                 _items.TryRemove(pair);
 
                 if (outcome == HybridCacheRecoveryReplayOutcome.Replayed)
@@ -473,6 +516,18 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         Message = "Auto-recovery dropped the pending {Kind} for key {Key}: a newer invalidation from another instance won the race"
     )]
     public static partial void LogAutoRecoveryItemConflicted(
+        this ILogger logger,
+        string key,
+        HybridCacheRecoveryKind kind
+    );
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "AutoRecoveryPublishSubsumed",
+        Level = LogLevel.Debug,
+        Message = "Auto-recovery dropped an incoming pending PublishInvalidation for key {Key}: the queued {Kind} subsumes it (a successful value-op replay publishes the key invalidation itself)"
+    )]
+    public static partial void LogAutoRecoveryPublishSubsumed(
         this ILogger logger,
         string key,
         HybridCacheRecoveryKind kind
