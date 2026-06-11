@@ -942,7 +942,7 @@ public sealed class FactoryCacheCoordinator(
         }
         catch (Exception exception)
         {
-            _logger.LogSlidingExpirationRearmFailed(exception, key);
+            _logger.LogCoordinatorSlidingExpirationRearmFailed(exception, key);
         }
     }
 
@@ -1346,7 +1346,14 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Debug,
         Message = "Cache sliding-expiration re-arm failed for key {Key}; the cached value will still be returned."
     )]
-    public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
+    // Named "Coordinator…" (not the bare "LogSlidingExpirationRearmFailed") to avoid extension-method ambiguity
+    // with provider log classes (e.g. RedisCacheLog) now that the provider assemblies see Core internals via
+    // InternalsVisibleTo.
+    public static partial void LogCoordinatorSlidingExpirationRearmFailed(
+        this ILogger logger,
+        Exception exception,
+        string key
+    );
 
     [LoggerMessage(
         EventId = 9,
