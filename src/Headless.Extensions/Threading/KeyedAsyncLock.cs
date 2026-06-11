@@ -121,26 +121,75 @@ public sealed class KeyedAsyncLock : IDisposable
 
         var semaphore = _GetOrCreate(key);
 
-        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using var delayCts = new CancellationTokenSource();
-        var waitTask = semaphore.WaitAsync(waitCts.Token);
-        var delayTask = Task.Delay(timeout, timeProvider, delayCts.Token);
-        var winner = await Task.WhenAny(waitTask, delayTask).ConfigureAwait(false);
-
-        if (winner == waitTask)
+        // When the caller token cannot be cancelled, skip the linked CTS — one allocation instead of two.
+        if (!cancellationToken.CanBeCanceled)
         {
+            using var delayCts = new CancellationTokenSource();
+            var waitTask = semaphore.WaitAsync(delayCts.Token);
+            var delayTask = Task.Delay(timeout, timeProvider, delayCts.Token);
+            var winner = await Task.WhenAny(waitTask, delayTask).ConfigureAwait(false);
+
+            if (winner == waitTask)
+            {
+                try
+                {
+                    await waitTask.ConfigureAwait(false);
+                }
+                catch
+                {
+                    await delayCts.CancelAsync().ConfigureAwait(false);
+                    _DecrementRefCount(key);
+                    throw;
+                }
+
+                await delayCts.CancelAsync().ConfigureAwait(false);
+                return new Releaser(this, key);
+            }
+
+            // Timeout elapsed: cancel the semaphore wait and clean up.
+            await delayCts.CancelAsync().ConfigureAwait(false);
+
             try
             {
                 await waitTask.ConfigureAwait(false);
+                // The wait completed in the window between the race and our cancel — treat as acquired then released.
+                _Release(key);
+            }
+            catch (OperationCanceledException)
+            {
+                // Our own delayCts triggered this; the caller did not cancel (CanBeCanceled was false).
+                _DecrementRefCount(key);
             }
             catch
             {
-                await delayCts.CancelAsync().ConfigureAwait(false);
                 _DecrementRefCount(key);
                 throw;
             }
 
-            await delayCts.CancelAsync().ConfigureAwait(false);
+            return null;
+        }
+
+        // Both a finite timeout AND a cancellable caller token: link them so either can abort the wait.
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var delayCts2 = new CancellationTokenSource();
+        var waitTask2 = semaphore.WaitAsync(waitCts.Token);
+        var delayTask2 = Task.Delay(timeout, timeProvider, delayCts2.Token);
+        var winner2 = await Task.WhenAny(waitTask2, delayTask2).ConfigureAwait(false);
+
+        if (winner2 == waitTask2)
+        {
+            try
+            {
+                await waitTask2.ConfigureAwait(false);
+            }
+            catch
+            {
+                await delayCts2.CancelAsync().ConfigureAwait(false);
+                _DecrementRefCount(key);
+                throw;
+            }
+
+            await delayCts2.CancelAsync().ConfigureAwait(false);
             return new Releaser(this, key);
         }
 
@@ -148,11 +197,12 @@ public sealed class KeyedAsyncLock : IDisposable
 
         try
         {
-            await waitTask.ConfigureAwait(false);
+            await waitTask2.ConfigureAwait(false);
             _Release(key);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            // Cancelled by waitCts (timeout path), not by the caller.
             _DecrementRefCount(key);
         }
         catch

@@ -228,9 +228,17 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
 
     /// <summary>
     /// Runs one processing pass: skipped while behind the failure barrier, drops expired items, then replays
-    /// pending items oldest-first. The pass stops at the first replay failure and arms the barrier so a
-    /// sustained outage does not turn into a retry storm. Never throws (cancellation included).
+    /// pending items in dictionary-enumeration order. The pass stops at the first replay failure and arms the
+    /// barrier so a sustained outage does not turn into a retry storm. Never throws (cancellation included).
     /// </summary>
+    /// <remarks>
+    /// Per-tick snapshot+sort (ToArray+OrderBy) is intentionally avoided: ConcurrentDictionary's lock-free
+    /// removal paths in <see cref="OnIncomingInvalidation"/> and <see cref="OnSuccessfulL2Operation"/> make it
+    /// impossible to keep a sorted side-structure consistent without adding broad locking around those paths.
+    /// Convergence is timestamp-driven (each item carries its original EnqueuedAt), so per-pass replay order
+    /// does not affect correctness — the last writer always wins regardless of which item in a multi-item queue
+    /// is replayed first.
+    /// </remarks>
     public async Task ProcessAsync(CancellationToken cancellationToken)
     {
         if (Interlocked.CompareExchange(ref _processing, 1, 0) != 0)
@@ -255,7 +263,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                 }
             }
 
-            foreach (var pair in _items.ToArray().OrderBy(static p => p.Value.EnqueuedAt))
+            foreach (var pair in _items)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {

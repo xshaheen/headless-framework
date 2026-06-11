@@ -263,31 +263,28 @@ internal static class RedisCacheEntryFrame
     {
         Argument.IsLessThanOrEqualTo(tags.Count, ushort.MaxValue, paramName: nameof(tags));
 
-        var encodedTags = new byte[tags.Count][];
-        var length = sizeof(ushort);
-        var index = 0;
+        // First pass: measure total byte count using GetByteCount to avoid allocating per-tag byte[] arrays.
+        var length = sizeof(ushort); // u16le tag count prefix
 
         foreach (var tag in tags)
         {
-            var tagValueBytes = Encoding.UTF8.GetBytes(tag);
-            Argument.IsLessThanOrEqualTo(tagValueBytes.Length, ushort.MaxValue, paramName: nameof(tags));
-            encodedTags[index++] = tagValueBytes;
-            length += sizeof(ushort) + tagValueBytes.Length;
+            var tagByteCount = Encoding.UTF8.GetByteCount(tag);
+            Argument.IsLessThanOrEqualTo(tagByteCount, ushort.MaxValue, paramName: nameof(tags));
+            length += sizeof(ushort) + tagByteCount; // per-tag: u16le length prefix + UTF-8 bytes
         }
 
         var buffer = new byte[length];
         BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(0, sizeof(ushort)), (ushort)tags.Count);
         var offset = sizeof(ushort);
 
-        foreach (var tagValueBytes in encodedTags)
+        // Second pass: encode each tag directly into the pre-sized destination buffer.
+        foreach (var tag in tags)
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(
-                buffer.AsSpan(offset, sizeof(ushort)),
-                (ushort)tagValueBytes.Length
-            );
-            offset += sizeof(ushort);
-            tagValueBytes.CopyTo(buffer.AsSpan(offset));
-            offset += tagValueBytes.Length;
+            // Write the UTF-8 bytes into the buffer starting after the per-tag length prefix slot,
+            // then back-fill the prefix with the actual byte count written.
+            var written = Encoding.UTF8.GetBytes(tag, buffer.AsSpan(offset + sizeof(ushort)));
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(offset, sizeof(ushort)), (ushort)written);
+            offset += sizeof(ushort) + written;
         }
 
         return buffer;

@@ -738,6 +738,59 @@ public sealed class KeyedAsyncLockTests : TestBase
         act2.Should().NotThrow();
     }
 
+    [Fact]
+    public async Task should_return_null_on_timeout_when_caller_token_is_not_cancellable()
+    {
+        // given — CancellationToken.None cannot be cancelled, so the single-CTS path is taken
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        using var holder = await keyedLock.LockAsync("non-cancellable-timeout-key", AbortToken);
+
+        // when
+        var waiter = keyedLock.LockAsync(
+            "non-cancellable-timeout-key",
+            TimeSpan.FromSeconds(5),
+            timeProvider,
+            CancellationToken.None
+        );
+
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var releaser = await waiter;
+
+        // then
+        releaser.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_cleanup_ref_count_on_timeout_when_caller_token_is_not_cancellable()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        var holder = await keyedLock.LockAsync("non-cancellable-timeout-cleanup-key", AbortToken);
+
+        // when
+        var waiter = keyedLock.LockAsync(
+            "non-cancellable-timeout-cleanup-key",
+            TimeSpan.FromSeconds(5),
+            timeProvider,
+            CancellationToken.None
+        );
+
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var timedOut = await waiter;
+        holder.Dispose();
+
+        // then — no leaked ref count after the non-cancellable-token timeout path
+        timedOut.Should().BeNull();
+        _SemaphoreCount(keyedLock).Should().Be(0);
+
+        using (await keyedLock.LockAsync("non-cancellable-timeout-cleanup-key", AbortToken))
+        {
+            // reacquisition succeeds — semaphore was properly cleaned up
+        }
+    }
+
     private static int _SemaphoreCount(KeyedAsyncLock keyedLock)
     {
         var field = typeof(KeyedAsyncLock).GetField("_semaphores", BindingFlags.Instance | BindingFlags.NonPublic);

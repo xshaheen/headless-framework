@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using System.Text;
 using Headless.Checks;
 using Headless.Redis;
@@ -979,22 +980,50 @@ public sealed class RedisCache(
     }
 
     /// <inheritdoc />
-    /// <remarks>Not supported on Redis Cluster: the tag hash and the tagged keys span hash slots.</remarks>
+    /// <remarks>
+    /// Not supported on Redis Cluster: the tag hash and the tagged keys span hash slots.
+    /// <para>
+    /// Processes tag members in batches of up to <see cref="RedisCacheOptions.MaxMembersPerTagRemoval"/>
+    /// per Lua call and loops in C# until the tag hash is fully drained, so removal is always complete
+    /// regardless of tag cardinality. The returned count is the total across all batches.
+    /// </para>
+    /// </remarks>
     public async ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(tag);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var redisResult = await scriptsLoader
-            .EvaluateAsync(
-                _database,
-                CacheRemoveByTagScriptDefinition.Instance,
-                new { tagHash = (RedisKey)_GetTagHashKey(tag), headerLen = RedisCacheEntryFrame.HeaderLength },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var tagHashKey = (RedisKey)_GetTagHashKey(tag);
+        var scriptArgs = new
+        {
+            tagHash = tagHashKey,
+            headerLen = RedisCacheEntryFrame.HeaderLength,
+            maxMembers = options.MaxMembersPerTagRemoval,
+        };
 
-        return (int)redisResult;
+        var totalRemoved = 0;
+
+        // Loop until the Lua script reports no remaining members. Each invocation processes a bounded
+        // batch so no single script call blocks Redis for an unbounded duration (large tag sets).
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = await scriptsLoader
+                .EvaluateAsync(_database, CacheRemoveByTagScriptDefinition.Instance, scriptArgs, cancellationToken)
+                .ConfigureAwait(false);
+
+            var resultArray = (RedisResult[])result!;
+            totalRemoved += (int)resultArray[0];
+            var hasRemaining = (int)resultArray[1] == 1;
+
+            if (!hasRemaining)
+            {
+                break;
+            }
+        }
+
+        return totalRemoved;
     }
 
     public async ValueTask<long> SetRemoveAsync<T>(
@@ -1501,6 +1530,21 @@ public sealed class RedisCache(
         if (typeof(T) == typeof(string))
         {
             return (T?)(object)Encoding.UTF8.GetString(segment.Span);
+        }
+
+        // Avoid copying segment into a new byte[] via ToArray(). If the backing store is a managed array
+        // (the common path — RedisValue is decoded into byte[] by StackExchange.Redis), wrap it directly
+        // in a non-writable MemoryStream at the right offset and length. Fall back to the copy path for
+        // exotic memory types where TryGetArray returns false (e.g. NativeMemoryManager).
+        if (MemoryMarshal.TryGetArray(segment, out var arraySegment))
+        {
+            var stream = new MemoryStream(
+                arraySegment.Array!,
+                arraySegment.Offset,
+                arraySegment.Count,
+                writable: false
+            );
+            return serializer.Deserialize<T>(stream);
         }
 
         return serializer.Deserialize<T>(segment.ToArray());

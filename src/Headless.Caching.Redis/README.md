@@ -40,6 +40,8 @@ Note the section order is positional (sliding, eager, last-modified, etag, tags)
 
 Tagged entries maintain a reverse tag index in the reserved namespace `{KeyPrefix}__cache_tag__:{tag}`: each tag is a Redis HASH whose fields are the full prefixed cache keys carrying the tag and whose values are the entry's `PhysicalExpiresAt` Unix-millisecond stamp — the entry "version" that pins memberships. A tagged write runs one atomic Lua script that SETs the framed value, HSETs the current tags with the version, extends each tag hash TTL with greater-than semantics (the index TTL is only ever extended, so it outlives its longest-lived member and is never shortened by a short-lived write), and HDELs memberships for tags the write drops. Untagged writes with no prior tags keep the plain `SET` path — zero hot-path regression. `RemoveByTagAsync` walks the tag hash and UNLINKs an entry only when its live header (magic, version, physical stamp) matches the recorded version; a key that expired, was plain-`SET` overwritten, or was re-created without the tag carries a different stamp and has its stale membership dropped instead. Consumers must not store cache entries under keys starting with `{KeyPrefix}__cache_tag__:`. The tag scripts construct hash key names from the tag prefix, so the touched keys do not hash to one slot: tag invalidation is NOT supported on Redis Cluster (standalone/replicated deployments are unaffected).
 
+`RemoveByTagAsync` processes tag members in batches of `MaxMembersPerTagRemoval` (default `1000`) per Lua call and loops in C# until the tag hash is fully drained, so the operation is always complete regardless of tag cardinality. The returned count is the total number of entries removed across all batches. Each Lua call is bounded to prevent long-running scripts on tags with very large membership sets.
+
 Null scalar values are represented by a header flag with an empty value segment. The literal string `"@@NULL"` is a normal cacheable string when written through Redis cache APIs. Raw legacy keys containing `"@@NULL"` still read as null. Atomic counters remain raw Redis-native numeric strings so Redis can perform native atomic arithmetic; their read path falls back to the raw value codec.
 
 Factory timeouts are enforced in the shared coordinator before provider writes. A soft-timeout background refresh writes through Redis on success and Redis TTL still follows physical expiration. StackExchange.Redis operation timeouts remain configured on `ConfigurationOptions.SyncTimeout` and `AsyncTimeout`; they are separate from `CacheEntryOptions.FactorySoftTimeout` and `FactoryHardTimeout`.
@@ -88,7 +90,7 @@ public sealed class SessionService(ICacheProvider cacheProvider)
 }
 ```
 
-Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{memory,remote,hybrid}`), their bare aliases (`memory`, `remote`, `hybrid`), and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
+Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{Memory,Remote,Hybrid}`) and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
 ## Configuration
 
@@ -98,6 +100,7 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 | `KeyPrefix` | `""` | Prefix for all cache keys (and the tag-index namespace). |
 | `DefaultEntryOptions` | `null` | Default `CacheEntryOptions` for the option-less `GetOrAddAsync` extension overloads; when `null` those overloads throw. |
 | `ReadMode` | `CommandFlags.None` | StackExchange.Redis command flags applied to read operations (e.g. `PreferReplica`). |
+| `MaxMembersPerTagRemoval` | `1000` | Maximum tag-hash members processed per Lua call during `RemoveByTagAsync`. The C# caller loops until the hash is fully drained, so removal is always complete. Decrease to keep individual Lua scripts shorter; increase to reduce round-trips on large tags. Must be greater than zero. |
 
 ## Dependencies
 
