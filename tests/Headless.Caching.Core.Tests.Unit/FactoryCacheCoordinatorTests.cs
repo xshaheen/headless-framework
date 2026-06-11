@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections;
+using System.Reflection;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -2236,6 +2238,186 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // then
         _store.GetEntry(modifiedKey)!.Tags.Should().BeEquivalentTo("tenant:1", "products");
         _store.GetEntry(notModifiedKey)!.Tags.Should().BeEquivalentTo("tenant:2");
+    }
+
+    [Fact]
+    public async Task should_resurrect_removed_key_when_factory_write_lands_after_mid_flight_removal()
+    {
+        // given — a stale entry whose refresh factory is in flight
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — another actor removes the key while the factory is running, then the factory completes
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken).AsTask();
+        await factoryStarted.Task.WaitAsync(AbortToken);
+        _RemoveEntryDirectly(_store, key);
+        _store.GetEntry(key).Should().BeNull("the concurrent removal must be visible before the factory lands");
+        factoryGate.SetResult("fresh");
+        var result = await resultTask;
+
+        // then — PINNED SEMANTICS: the late factory write is unconditional, so it RESURRECTS the removed key.
+        // There is no remove-versus-write fencing in the IFactoryCacheStore contract; a Remove that races an
+        // in-flight factory loses.
+        result.Value.Should().Be("fresh");
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_overwrite_concurrent_writer_value_when_in_flight_factory_completes_last()
+    {
+        // given — a stale entry whose refresh factory is in flight
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — a concurrent writer replaces the entry mid-factory, then the factory completes
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(), AbortToken).AsTask();
+        await factoryStarted.Task.WaitAsync(AbortToken);
+        _store.SetEntry(key, "concurrent", now.AddMinutes(5), now.AddMinutes(5));
+        factoryGate.SetResult("fresh");
+        var result = await resultTask;
+
+        // then — PINNED SEMANTICS: last write wins. The factory's write is unconditional (no ETag/version CAS
+        // against the store), so the in-flight factory clobbers the concurrent writer's fresher value.
+        result.Value.Should().Be("fresh");
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_join_in_flight_eager_refresh_instead_of_second_factory_when_entry_expires_mid_refresh()
+    {
+        // given — a fresh entry past its eager point; the eager refresh factory is started and held open
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(2), now.AddMinutes(10), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryCalls = 0;
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            factoryStarted.TrySetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — the triggering caller returns the still-fresh value and the eager factory holds the keyed lock
+        var first = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        await factoryStarted.Task.WaitAsync(AbortToken);
+        first.Value.Should().Be("old");
+
+        // the entry crosses logical expiration while the eager refresh is still running
+        _timeProvider.Advance(TimeSpan.FromMinutes(3));
+
+        // a normal GetOrAdd caller arrives: it must block on the keyed lock held by the eager refresh
+        var second = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await Task.Delay(50, AbortToken); // give the joiner real time to park on the lock
+        second.IsCompleted.Should().BeFalse("the joiner must wait for the in-flight eager refresh");
+
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+        var secondResult = await second;
+
+        // then — NO double factory: the joiner re-checked under the lock and served the eager refresh's value
+        secondResult.Value.Should().Be("fresh");
+        secondResult.IsStale.Should().BeFalse();
+        factoryCalls.Should().Be(1);
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_clamp_physical_expiration_to_duration_when_fail_safe_max_duration_is_shorter()
+    {
+        // given — FailSafeMaxDuration SHORTER than Duration: physical = max(Duration, FailSafeMaxDuration)
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var duration = TimeSpan.FromMinutes(10);
+        var failSafeMaxDuration = TimeSpan.FromMinutes(1);
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => ValueTask.FromResult<string?>("fresh"),
+                _CreateOptions(duration: duration, isFailSafeEnabled: true, maxDuration: failSafeMaxDuration),
+                AbortToken
+            );
+
+        // then — the written physical expiration equals Duration (never shorter than the logical lifetime)
+        result.Value.Should().Be("fresh");
+        var entry = _store.GetEntry(key)!;
+        entry.LogicalExpiresAt.Should().Be(now.Add(duration));
+        entry.PhysicalExpiresAt.Should().Be(now.Add(duration));
+    }
+
+    [Fact]
+    public async Task should_invoke_factory_once_for_high_concurrency_cold_stampede()
+    {
+        // given — a REAL time provider (no fake-time orchestration) and a briefly-gated factory
+        var key = Faker.Random.AlphaNumeric(8);
+        var store = new FakeFactoryCacheStore();
+        using var coordinator = new FactoryCacheCoordinator(
+            TimeProvider.System,
+            NullLogger<FactoryCacheCoordinator>.Instance
+        );
+        var factoryCalls = 0;
+        var gate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(5));
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return await gate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — ~500 concurrent cold callers stampede one key
+        var tasks = Enumerable
+            .Range(0, 500)
+            .Select(_ => Task.Run(() => coordinator.GetOrAddAsync(store, key, Factory, options, AbortToken).AsTask()))
+            .ToArray();
+
+        await Task.Delay(100, AbortToken); // let the pack pile up on the keyed lock before the factory completes
+        gate.SetResult("fresh");
+        var results = await Task.WhenAll(tasks);
+
+        // then — single flight: exactly one factory call; every caller got the fresh value
+        factoryCalls.Should().Be(1);
+        results.Should().HaveCount(500);
+        results.Should().OnlyContain(result => result.HasValue && result.Value == "fresh");
+    }
+
+    // Reaches into the fake's private entry map to model an actor that bypasses the coordinator (e.g. a direct
+    // RemoveAsync on the provider) while a factory is in flight. Kept here (not on the fake) because only these
+    // interleaving tests need it.
+    private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key)
+    {
+        var field = typeof(FakeFactoryCacheStore).GetField("_entries", BindingFlags.Instance | BindingFlags.NonPublic);
+        field.Should().NotBeNull("FakeFactoryCacheStore's private entry map moved — update _RemoveEntryDirectly");
+        var entries = (IDictionary)field!.GetValue(store)!;
+        entries.Remove(key);
     }
 
     private FactoryCacheCoordinator _CreateCoordinator() =>

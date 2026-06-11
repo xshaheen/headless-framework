@@ -41,4 +41,13 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// with the write; stores with the old entry at hand in-process (in-memory) may ignore it.
     /// </summary>
     public IReadOnlyCollection<string>? RemovedTags { get; init; }
+
+    /// <summary>
+    /// Gets whether this write merely re-stamps the value already cached under the key with new expiration
+    /// metadata (a conditional <c>NotModified</c> extension, a fail-safe throttle restamp, or an eager-refresh
+    /// gate write) instead of producing a new value. Multi-tier stores use this to skip cross-instance
+    /// invalidation: peers' cached bytes are still identical, so invalidating them would only force pointless
+    /// remote re-reads. Defaults to <see langword="false"/> (a value-producing write).
+    /// </summary>
+    public bool IsRestamp { get; init; }
 }

@@ -158,9 +158,32 @@ public sealed class FactoryCacheCoordinator(
                 // used (soft timeout when a fail-safe stale reserve can absorb the elapse, LockTimeout otherwise),
                 // so the degradation semantics on elapse mirror the local lock-timeout path exactly.
                 var distributedLockTimeout = _SelectLockTimeout(options, staleCandidate, now);
-                distributedLease = await _factoryLockProvider!
-                    .TryAcquireAsync(key, distributedLockTimeout, cancellationToken)
-                    .ConfigureAwait(false);
+
+                try
+                {
+                    distributedLease = await _factoryLockProvider!
+                        .TryAcquireAsync(key, distributedLockTimeout, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
+                {
+                    // A throwing acquire means the lock backend is down (vs null = held elsewhere). Stale beats
+                    // failure: with fail-safe and a usable stale reserve, serve it without running the factory and
+                    // restamp the throttle so per-call retries stop hammering the down backend. With no usable
+                    // reserve the provider's failure propagates, mirroring the factory-throw fail-safe path.
+                    now = _GetUtcNow();
+
+                    if (!options.IsFailSafeEnabled || !_IsStaleCandidate(staleCandidate, now))
+                    {
+                        throw;
+                    }
+
+                    await _TryRestampStaleAsync(store, key, staleCandidate, options, now, CancellationToken.None)
+                        .ConfigureAwait(false);
+
+                    _logger.LogCacheFactoryLockAcquireFailed(exception, key, exception.GetType().Name);
+                    return _ToCacheValue(staleCandidate, isStale: true);
+                }
 
                 if (distributedLease is null)
                 {
@@ -502,6 +525,7 @@ public sealed class FactoryCacheCoordinator(
             ETag = staleCandidate.ETag,
             LastModifiedAt = staleCandidate.LastModifiedAt,
             Tags = staleCandidate.Tags,
+            IsRestamp = true,
         };
 
         try
@@ -616,6 +640,9 @@ public sealed class FactoryCacheCoordinator(
             LastModifiedAt = lastModifiedAt,
             Tags = context.Tags,
             RemovedTags = CacheEntryStamps.ComputeRemovedTags(previousTags, context.Tags),
+            // A NotModified extension re-stamps the existing value: peers' cached bytes stay valid, so
+            // multi-tier stores must not broadcast an invalidation for it.
+            IsRestamp = result.IsNotModified,
         };
 
         await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
@@ -722,6 +749,7 @@ public sealed class FactoryCacheCoordinator(
                 ETag = entry.ETag,
                 LastModifiedAt = entry.LastModifiedAt,
                 Tags = entry.Tags,
+                IsRestamp = true,
             };
 
             try
@@ -1357,4 +1385,18 @@ internal static partial class FactoryCacheCoordinatorLog
             + "other nodes may be delayed until it expires."
     )]
     public static partial void LogCacheFactoryLockReleaseFailed(this ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(
+        EventId = 13,
+        EventName = "CacheFactoryLockAcquireFailed",
+        Level = LogLevel.Warning,
+        Message = "Cache distributed factory-lock acquire failed for key {Key}; serving stale value after lock "
+            + "provider exception {ExceptionType}."
+    )]
+    public static partial void LogCacheFactoryLockAcquireFailed(
+        this ILogger logger,
+        Exception exception,
+        string key,
+        string exceptionType
+    );
 }

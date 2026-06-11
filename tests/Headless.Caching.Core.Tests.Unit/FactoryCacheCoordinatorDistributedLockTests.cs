@@ -2,6 +2,7 @@
 
 using Headless.Caching;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -333,6 +334,195 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         // then — off by default means zero distributed-lock traffic
         result.Value.Should().Be("fresh");
         _lockProvider.AcquireAttempts.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_serve_stale_without_running_factory_and_log_warning_when_lock_acquire_throws_with_fail_safe()
+    {
+        // given — a stale fail-safe reserve and a lock backend that is DOWN (acquire throws, not "held elsewhere")
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
+        var factoryCalls = 0;
+        var options = _CreateOptions(isFailSafeEnabled: true);
+
+        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("fresh");
+        }
+
+        // when
+        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+
+        // then — stale beats failure: the reserve is served, the factory never runs, and the throttle restamp
+        // shields the down backend from per-call retries
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        factoryCalls.Should().Be(0);
+        _lockProvider.AcquireSuccesses.Should().Be(0);
+        _store.GetEntry(key)!.Value.Should().Be("stale");
+        _store.SetEntryCalls.Should().Be(1, "the throttle restamp must be written");
+
+        var logged = logger
+            .ReceivedCalls()
+            .Any(call =>
+            {
+                var arguments = call.GetArguments();
+
+                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    && arguments[0] is LogLevel.Warning
+                    && arguments[1] is EventId { Id: 13, Name: "CacheFactoryLockAcquireFailed" };
+            });
+
+        logged.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_propagate_lock_acquire_exception_when_cache_is_cold()
+    {
+        // given — no stale reserve exists, so there is nothing to degrade to
+        var key = Faker.Random.AlphaNumeric(8);
+        _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
+        var coordinator = _CreateCoordinator();
+        var factoryCalls = 0;
+
+        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("fresh");
+        }
+
+        // when
+        var act = async () =>
+            await coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(isFailSafeEnabled: true), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("lock backend unavailable");
+        factoryCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_propagate_lock_acquire_exception_when_fail_safe_is_disabled()
+    {
+        // given — a stale entry exists, but with fail-safe off it is not a usable reserve
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
+        var coordinator = _CreateCoordinator();
+        var factoryCalls = 0;
+
+        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("fresh");
+        }
+
+        // when
+        var act = async () =>
+            await coordinator.GetOrAddAsync(_store, key, Factory, _CreateOptions(isFailSafeEnabled: false), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("lock backend unavailable");
+        factoryCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_propagate_caller_token_oce_from_lock_acquire_instead_of_serving_stale()
+    {
+        // given — a stale fail-safe reserve and an acquire that throws an OCE bound to the CALLER's token;
+        // caller cancellation must propagate, never be converted to a stale serve (mirrors the factory path)
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        using var callerCts = new CancellationTokenSource(); // not cancelled — identity match must suffice
+        _lockProvider.AcquireFault = () => new OperationCanceledException(callerCts.Token);
+        var coordinator = _CreateCoordinator();
+
+        // when
+        var act = async () =>
+            await coordinator.GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => ValueTask.FromResult<string?>("fresh"),
+                _CreateOptions(isFailSafeEnabled: true),
+                callerCts.Token
+            );
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_serve_stale_when_lock_acquire_throws_oce_from_unrelated_token()
+    {
+        // given — the acquire OCE carries an internal/downstream token, NOT the caller's: that is a backend
+        // failure, so fail-safe activates exactly like any other acquire exception
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        using var callerCts = new CancellationTokenSource(); // not cancelled
+        using var internalCts = new CancellationTokenSource();
+        _lockProvider.AcquireFault = () => new OperationCanceledException(internalCts.Token);
+        var coordinator = _CreateCoordinator();
+
+        // when
+        var result = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            _ => ValueTask.FromResult<string?>("fresh"),
+            _CreateOptions(isFailSafeEnabled: true),
+            callerCts.Token
+        );
+
+        // then
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_swallow_release_failure_and_still_return_factory_result_with_warning_logged()
+    {
+        // given — a healthy acquire but a lease release that throws (backend hiccup on the way out)
+        var key = Faker.Random.AlphaNumeric(8);
+        _lockProvider.ReleaseFault = () => new InvalidOperationException("release failed");
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
+
+        // when — the release failure must never mask the operation's outcome
+        var result = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            _ => ValueTask.FromResult<string?>("fresh"),
+            _CreateOptions(),
+            AbortToken
+        );
+
+        // then — the fresh value is returned and persisted; the failure is only logged (EventId 12)
+        result.Value.Should().Be("fresh");
+        result.IsStale.Should().BeFalse();
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+        _lockProvider.AcquireSuccesses.Should().Be(1);
+        _lockProvider.Releases.Should().Be(0, "the release faulted before completing");
+
+        var logged = logger
+            .ReceivedCalls()
+            .Any(call =>
+            {
+                var arguments = call.GetArguments();
+
+                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    && arguments[0] is LogLevel.Warning
+                    && arguments[1] is EventId { Id: 12, Name: "CacheFactoryLockReleaseFailed" };
+            });
+
+        logged.Should().BeTrue();
     }
 
     private FactoryCacheCoordinator _CreateCoordinator() =>

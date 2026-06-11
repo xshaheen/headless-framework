@@ -2,6 +2,7 @@
 
 using Headless.Caching;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -73,5 +74,71 @@ public sealed class CacheDefaultEntryExtensionsTests : TestBase
 
         // then
         await cache.Received(1).GetOrAddAsync("key", _ContextFactory, options, AbortToken);
+    }
+
+    [Fact]
+    public async Task no_options_overload_should_apply_default_duration_to_real_cache_entries()
+    {
+        // given — a real cache whose instance default is a 5-minute duration
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCache(
+            timeProvider,
+            new InMemoryCacheOptions
+            {
+                DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            }
+        );
+        var key = Faker.Random.AlphaNumeric(10);
+        var factoryCalls = 0;
+
+        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("value");
+        }
+
+        // when / then — within the default duration the entry stays fresh (factory not re-invoked)…
+        await cache.GetOrAddAsync(key, Factory, AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(4));
+        var withinDefault = await cache.GetOrAddAsync(key, Factory, AbortToken);
+        withinDefault.Value.Should().Be("value");
+        factoryCalls.Should().Be(1, "the entry must still be fresh within the default 5-minute duration");
+
+        // …and right after it the entry expires, proving the DEFAULT duration actually governed the write
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+        await cache.GetOrAddAsync(key, Factory, AbortToken);
+        factoryCalls.Should().Be(2, "the default duration must bound the entry's lifetime");
+    }
+
+    [Fact]
+    public async Task per_call_options_should_beat_default_entry_options()
+    {
+        // given — a real cache with a LONG instance default and a SHORT per-call duration
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCache(
+            timeProvider,
+            new InMemoryCacheOptions
+            {
+                DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) },
+            }
+        );
+        var key = Faker.Random.AlphaNumeric(10);
+        var perCallOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(1) };
+        var factoryCalls = 0;
+
+        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("value");
+        }
+
+        // when — the write goes through the options overload, then time passes beyond the per-call duration
+        // but well within the instance default
+        await cache.GetOrAddAsync(key, Factory, perCallOptions, AbortToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+        await cache.GetOrAddAsync(key, Factory, perCallOptions, AbortToken);
+
+        // then — the factory re-ran: the per-call 1-minute duration governed, not the 10-minute default
+        factoryCalls.Should().Be(2);
     }
 }

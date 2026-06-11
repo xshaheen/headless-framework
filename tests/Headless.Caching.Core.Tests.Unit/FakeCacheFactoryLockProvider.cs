@@ -27,6 +27,12 @@ internal sealed class FakeCacheFactoryLockProvider : ICacheFactoryLockProvider
 
     public int Releases => Volatile.Read(ref _releases);
 
+    /// <summary>When set, <see cref="TryAcquireAsync"/> throws (simulates a down lock backend, not "held elsewhere").</summary>
+    public Func<Exception>? AcquireFault { get; set; }
+
+    /// <summary>When set, the lease's <see cref="IAsyncDisposable.DisposeAsync"/> throws after freeing the semaphore.</summary>
+    public Func<Exception>? ReleaseFault { get; set; }
+
     public bool IsHeld(string key) => _locks.TryGetValue(key, out var semaphore) && semaphore.CurrentCount == 0;
 
     /// <summary>Acquires the key's lock out-of-band, simulating a remote node holding it.</summary>
@@ -49,6 +55,12 @@ internal sealed class FakeCacheFactoryLockProvider : ICacheFactoryLockProvider
     )
     {
         Interlocked.Increment(ref _acquireAttempts);
+
+        if (AcquireFault is { } acquireFault)
+        {
+            throw acquireFault();
+        }
+
         var semaphore = _GetSemaphore(key);
 
         var acquired =
@@ -82,7 +94,15 @@ internal sealed class FakeCacheFactoryLockProvider : ICacheFactoryLockProvider
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
+                // Free the semaphore before faulting so a release failure never deadlocks later acquisitions
+                // in the same test; the fault only models the provider surfacing an error to the coordinator.
                 semaphore.Release();
+
+                if (owner.ReleaseFault is { } releaseFault)
+                {
+                    throw releaseFault();
+                }
+
                 Interlocked.Increment(ref owner._releases);
             }
 
