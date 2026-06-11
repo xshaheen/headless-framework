@@ -76,7 +76,7 @@ public sealed class OrderService(ICacheProvider cacheProvider)
 }
 ```
 
-Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{memory,remote,hybrid}`), their bare aliases (`memory`, `remote`, `hybrid`), and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
+Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{Memory,Remote,Hybrid}`) and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
 ## Configuration
 

@@ -36,6 +36,9 @@ public sealed class ScopedCache<T> : ICache<T>
         _scopeProvider = scopeProvider;
     }
 
+    /// <inheritdoc />
+    public CacheEntryOptions? DefaultEntryOptions => _cache.DefaultEntryOptions;
+
     private string _Prefix() => $"{_scopeProvider()}:";
 
     private string _ScopeKey(string key) => $"{_Prefix()}{key}";

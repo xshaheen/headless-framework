@@ -5,6 +5,14 @@ namespace Headless.Caching;
 public interface ICache<T>
 {
     /// <summary>
+    /// Gets the default <see cref="CacheEntryOptions"/> configured for this cache instance at registration.
+    /// Used by the option-less <c>GetOrAddAsync</c> extension overloads; when <see langword="null"/>,
+    /// those overloads throw <see cref="InvalidOperationException"/> — defaults are explicit-at-registration,
+    /// never magic.
+    /// </summary>
+    CacheEntryOptions? DefaultEntryOptions { get; }
+
+    /// <summary>
     /// Gets a value from cache, or creates it using the factory if not found.
     /// Uses keyed locking to prevent cache stampedes (multiple concurrent factory executions for the same key).
     /// </summary>
@@ -146,6 +154,9 @@ public interface ICache<T>
 
 public class Cache<T>(ICache cache) : ICache<T>
 {
+    /// <inheritdoc />
+    public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;
+
     public ValueTask<CacheValue<T>> GetOrAddAsync(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
