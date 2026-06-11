@@ -18,7 +18,7 @@ Provides a provider-agnostic caching API so applications can switch between memo
 - `IInMemoryCache` - marker interface for in-memory implementations.
 - `IRemoteCache` - marker interface for remote implementations.
 - `ICache<T>` - strongly typed cache wrapper.
-- `ICacheProvider` - resolves named cache instances and the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`).
+- `ICacheProvider` - resolves named cache instances and the reserved role keys (`CacheConstants.{Memory,Remote,Hybrid}CacheProvider` — `Headless.Caching:{memory,remote,hybrid}`).
 - `CacheValue<T>` - cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
 - `CacheEntryOptions` - factory-backed entry options: `Duration`, `SlidingExpiration`, `EagerRefreshThreshold`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, `FailSafeThrottleDuration`, `FactorySoftTimeout`, `FactoryHardTimeout`, `BackgroundFactoryCeiling`, `LockTimeout`, `UseDistributedFactoryLock`, and `Tags`.
 - `CacheFactoryContext<T>` / `CacheFactoryResult<T>` - conditional-factory contract (the HTTP-304 pattern): the factory sees the last-known value and its validators (`ETag`, `LastModifiedAt`) and returns `NotModified()` or `Modified(value, eTag, lastModifiedAt)`; it may also replace `Options` and `Tags` before returning (adaptive caching).

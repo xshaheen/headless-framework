@@ -446,7 +446,7 @@ Kafka-can't-bus is currently a runtime startup guard (#359 U5). The cleaner long
 | Outbox ambient mechanism exists | **FACT** (§3.2 E1) | `IOutboxTransactionAccessor` + `OutboxMessageWriter` branch; 4 interfaces are facades. |
 | Dual-lane same-type: zero internal usage | **FACT** (§3.2 E5) | One unit test only; feeds Q6. |
 | Option 4 un-sharing cost = very high | **FACT** (§3.2 E5) | 5 shared components beyond topology. |
-| Target API modeled (Option 2 + Opt 4 delta) | **DONE** (2026-06-10, 2nd session) | Appendix F; sub-decisions F.3 a–e open. |
+| Target API modeled (Option 2 + Opt 4 delta) | **DONE** (2026-06-10, 2nd session) | Appendix F; F.3 a–e all since DECIDED — surface kept as `IBus`/`IQueue` (4 → 2), durability via `DeliveryMode`. Authoritative shape: the type-intent requirements doc. |
 
 ---
 
@@ -468,6 +468,8 @@ Kafka-can't-bus is currently a runtime startup guard (#359 U5). The cleaner long
 ## Appendix F — Modeled target API (what "well-designed" concretely looks like)
 
 > Added 2026-06-10 (second session) per §0.1 job 1: prototype the API shapes so the §7/Q7 fork is a choice between artifacts, not abstractions. **F.1 is maintained in place at the decided state**: Option 3 (no `AsDualLane()`; a both-lanes need = two types) and **F.3-a decided after a DX deep-dive: A1 — marker interfaces + generic constraints** (an interim no-markers lean was considered and superseded; rationale in F.3-a). Earlier shapes are in git history. §F.4's Option 4 delta is preserved for the record.
+>
+> **SUPERSEDED on the publish surface (third session): the owner chose to keep `IBus`/`IQueue` — collapse 4 → 2, verbs `PublishAsync`/`EnqueueAsync` — so F.1's single `IMessagePublisher` no longer reflects the decision.** F.3-b (naming: existing nouns kept) and F.3-c (options records stay separate per surface) are thereby DECIDED; F.3-d/e resolved via `DeliveryMode` (`Auto` follows the framework transaction accessor, `Durable`, `TransportDirect`; `Delay` upgrades to durable under `Auto` and is an error with `TransportDirect`). The authoritative API shape and durability model live in `docs/brainstorms/2026-06-10-messaging-type-intent-public-api-requirements.md`.
 
 ### F.1 Full lifecycle (decided state: Option 3 + A1 markers/constraints)
 

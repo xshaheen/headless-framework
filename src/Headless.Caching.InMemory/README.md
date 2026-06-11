@@ -76,7 +76,7 @@ public sealed class OrderService(ICacheProvider cacheProvider)
 }
 ```
 
-Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException` and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
+Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{memory,remote,hybrid}`), their bare aliases (`memory`, `remote`, `hybrid`), and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
 ## Configuration
 
@@ -105,8 +105,8 @@ Names must be non-empty and must not be one of the reserved role keys (`memory`,
 
 - Registers `IInMemoryCache` as singleton (`setup.UseInMemory(...)` and `setup.AddMemoryTier(...)`).
 - Registers `ICache` as singleton when used as the default provider (`setup.UseInMemory(...)`).
-- Registers a keyed `ICache` under the `memory` role key (`CacheConstants.MemoryCacheProvider`).
-- Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `remote` role key) when used as the default provider.
+- Registers a keyed `ICache` under the `CacheConstants.MemoryCacheProvider` role key (`Headless.Caching:memory`).
+- Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `CacheConstants.RemoteCacheProvider` role key) when used as the default provider.
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - `setup.AddNamed(name, i => i.UseInMemory(...))` registers a keyed `ICache` under the instance name with its own options.

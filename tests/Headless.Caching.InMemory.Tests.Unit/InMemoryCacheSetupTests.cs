@@ -22,7 +22,7 @@ public sealed class InMemoryCacheSetupTests : TestBase
         // when
         var defaultCache = provider.GetRequiredService<ICache>();
 
-        // then - the unkeyed default is the in-memory cache, aliased under the "memory" role key
+        // then - the unkeyed default is the in-memory cache, aliased under the memory role key
         defaultCache.Should().BeOfType<InMemoryCache>();
         provider.GetRequiredService<IInMemoryCache>().Should().BeSameAs(defaultCache);
         provider.GetRequiredKeyedService<ICache>(CacheConstants.MemoryCacheProvider).Should().BeSameAs(defaultCache);
@@ -30,7 +30,7 @@ public sealed class InMemoryCacheSetupTests : TestBase
         // then - the generic cache adapter resolves over the default cache
         provider.GetRequiredService<ICache<InMemoryCacheSetupTests>>().Should().NotBeNull();
 
-        // then - the remote adapter wraps the same store and is aliased under the "remote" role key
+        // then - the remote adapter wraps the same store and is aliased under the remote role key
         var remote = provider.GetRequiredService<IRemoteCache>();
         provider.GetRequiredKeyedService<IRemoteCache>(CacheConstants.RemoteCacheProvider).Should().BeSameAs(remote);
         await defaultCache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);

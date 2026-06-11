@@ -88,7 +88,7 @@ public sealed class SessionService(ICacheProvider cacheProvider)
 }
 ```
 
-Names must be non-empty and must not be one of the reserved role keys (`memory`, `remote`, `hybrid` on `CacheConstants`); reserved names are rejected with `ArgumentException` and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
+Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{memory,remote,hybrid}`), their bare aliases (`memory`, `remote`, `hybrid`), and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
 ## Configuration
 
@@ -112,7 +112,7 @@ Names must be non-empty and must not be one of the reserved role keys (`memory`,
 
 - Registers `IRemoteCache` as singleton (`setup.UseRedis(...)` and `setup.AddRedisTier(...)`).
 - Registers `ICache` as singleton when used as the default provider (`setup.UseRedis(...)`).
-- Registers a keyed `ICache` under the `remote` role key (`CacheConstants.RemoteCacheProvider`).
+- Registers a keyed `ICache` under the `CacheConstants.RemoteCacheProvider` role key (`Headless.Caching:remote`).
 - Registers `IRemoteCache<T>` and `ICache<T>` as singletons.
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.

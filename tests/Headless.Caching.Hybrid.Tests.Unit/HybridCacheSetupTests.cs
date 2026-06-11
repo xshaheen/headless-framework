@@ -37,11 +37,11 @@ public sealed class HybridCacheSetupTests : TestBase
         // when
         var defaultCache = provider.GetRequiredService<ICache>();
 
-        // then - the unkeyed default is the hybrid, aliased under the "hybrid" role key
+        // then - the unkeyed default is the hybrid, aliased under the hybrid role key
         var hybrid = defaultCache.Should().BeOfType<HybridCache>().Subject;
         provider.GetRequiredKeyedService<ICache>(CacheConstants.HybridCacheProvider).Should().BeSameAs(defaultCache);
 
-        // then - the local tier is the memory tier's IInMemoryCache, also reachable via the "memory" role key
+        // then - the local tier is the memory tier's IInMemoryCache, also reachable via the memory role key
         var memoryTier = provider.GetRequiredService<IInMemoryCache>();
         hybrid.LocalCache.Should().BeSameAs(memoryTier);
         provider.GetRequiredKeyedService<ICache>(CacheConstants.MemoryCacheProvider).Should().BeSameAs(memoryTier);

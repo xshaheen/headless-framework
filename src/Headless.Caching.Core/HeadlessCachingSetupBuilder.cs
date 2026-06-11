@@ -50,7 +50,14 @@ public sealed class HeadlessCachingSetupBuilder
         Argument.IsNotNullOrWhiteSpace(roleKey);
         Argument.IsNotNull(extension);
 
-        if (!CacheConstants.IsReservedProviderKey(roleKey))
+        if (
+            roleKey
+            is not (
+                CacheConstants.MemoryCacheProvider
+                or CacheConstants.RemoteCacheProvider
+                or CacheConstants.HybridCacheProvider
+            )
+        )
         {
             throw new ArgumentException(
                 $"The tier role key '{roleKey}' is not one of the reserved role keys "
@@ -95,7 +102,8 @@ public sealed class HeadlessCachingSetupBuilder
             throw new ArgumentException(
                 $"The cache name '{name}' is reserved for the role-keyed registrations "
                     + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
-                    + $"'{CacheConstants.HybridCacheProvider}'). Pick a different instance name.",
+                    + $"'{CacheConstants.HybridCacheProvider}', their short aliases, and the 'Headless.Caching:' "
+                    + "namespace). Pick a different instance name.",
                 nameof(name)
             );
         }

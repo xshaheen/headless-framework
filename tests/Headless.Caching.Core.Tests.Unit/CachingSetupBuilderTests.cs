@@ -119,7 +119,7 @@ public sealed class CachingSetupBuilderTests
             });
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*'memory'*");
+        action.Should().Throw<InvalidOperationException>().WithMessage($"*'{CacheConstants.MemoryCacheProvider}'*");
         services.Should().BeEmpty();
     }
 
@@ -155,6 +155,10 @@ public sealed class CachingSetupBuilderTests
     [InlineData(CacheConstants.MemoryCacheProvider)]
     [InlineData(CacheConstants.RemoteCacheProvider)]
     [InlineData(CacheConstants.HybridCacheProvider)]
+    [InlineData("memory")]
+    [InlineData("remote")]
+    [InlineData("hybrid")]
+    [InlineData("Headless.Caching:custom")]
     public void add_named_should_reject_reserved_names(string reservedName)
     {
         // given
@@ -245,6 +249,22 @@ public sealed class CachingSetupBuilderTests
     }
 
     [Fact]
+    public void register_tier_should_reject_bare_role_alias()
+    {
+        // given - "memory" is a reserved short alias, but the tier role key must be the namespaced constant
+        var services = new ServiceCollection();
+
+        // when
+        var action = () =>
+            services.AddHeadlessCaching(setup =>
+                setup.RegisterTierProvider("memory", new FakeCacheProviderOptionsExtension())
+            );
+
+        // then
+        action.Should().Throw<ArgumentException>().WithMessage("*'memory'*reserved role keys*");
+    }
+
+    [Fact]
     public void register_tier_should_reject_duplicate_role()
     {
         // given
@@ -259,7 +279,10 @@ public sealed class CachingSetupBuilderTests
             });
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*already registered*'memory'*");
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*already registered*'{CacheConstants.MemoryCacheProvider}'*");
     }
 
     [Fact]
@@ -280,7 +303,10 @@ public sealed class CachingSetupBuilderTests
             });
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*'remote'*default*tier*");
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage($"*'{CacheConstants.RemoteCacheProvider}'*default*tier*");
     }
 
     [Fact]

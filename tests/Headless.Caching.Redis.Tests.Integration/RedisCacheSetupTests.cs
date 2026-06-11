@@ -85,7 +85,7 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
         // when
         var defaultCache = host.Services.GetRequiredService<ICache>();
 
-        // then - the unkeyed default is the Redis cache, aliased under the "remote" role key
+        // then - the unkeyed default is the Redis cache, aliased under the remote role key
         defaultCache.Should().BeOfType<RedisCache>();
         host.Services.GetRequiredService<IRemoteCache>().Should().BeSameAs(defaultCache);
         host.Services.GetRequiredKeyedService<ICache>(CacheConstants.RemoteCacheProvider)
