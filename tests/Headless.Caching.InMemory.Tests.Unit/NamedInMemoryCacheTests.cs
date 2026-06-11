@@ -15,25 +15,31 @@ public sealed class NamedInMemoryCacheTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(_timeProvider);
-        services.AddInMemoryCache();
 
-        services.AddInMemoryCache(
-            "orders",
-            options =>
-            {
-                options.MaxItems = 100;
-                options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
-            }
-        );
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.UseInMemory();
 
-        services.AddInMemoryCache(
-            "catalog",
-            options =>
-            {
-                options.MaxItems = 50;
-                options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(30) };
-            }
-        );
+            setup.AddNamed(
+                "orders",
+                instance =>
+                    instance.UseInMemory(options =>
+                    {
+                        options.MaxItems = 100;
+                        options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) };
+                    })
+            );
+
+            setup.AddNamed(
+                "catalog",
+                instance =>
+                    instance.UseInMemory(options =>
+                    {
+                        options.MaxItems = 50;
+                        options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(30) };
+                    })
+            );
+        });
 
         return services.BuildServiceProvider();
     }
@@ -119,32 +125,6 @@ public sealed class NamedInMemoryCacheTests : TestBase
         act.Should().Throw<InvalidOperationException>().WithMessage("*unknown*");
     }
 
-    [Theory]
-    [InlineData(CacheConstants.MemoryCacheProvider)]
-    [InlineData(CacheConstants.RemoteCacheProvider)]
-    [InlineData(CacheConstants.HybridCacheProvider)]
-    public void registering_named_instance_with_reserved_name_should_throw(string reservedName)
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () => services.AddInMemoryCache(reservedName, _ => { });
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage($"*{reservedName}*reserved*");
-    }
-
-    [Fact]
-    public void registering_named_instance_with_empty_name_should_throw()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () => services.AddInMemoryCache(" ", _ => { });
-
-        // then
-        act.Should().Throw<ArgumentException>();
-    }
+    // Reserved-name and whitespace-name rejection is owned by AddHeadlessCaching's AddNamed gate and is
+    // covered by Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.
 }

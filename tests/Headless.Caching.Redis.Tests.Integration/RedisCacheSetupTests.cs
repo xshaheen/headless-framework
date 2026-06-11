@@ -11,11 +11,13 @@ namespace Tests;
 public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
 {
     [Fact]
-    public async Task AddRedisCache_should_register_and_run_script_initializer_on_host_start()
+    public async Task use_redis_should_register_and_run_script_initializer_on_host_start()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddRedisCache(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer);
+        builder.Services.AddHeadlessCaching(setup =>
+            setup.UseRedis(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer)
+        );
 
         using var host = builder.Build();
 
@@ -26,6 +28,73 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
 
         // then
         initializer.IsInitialized.Should().BeTrue();
+
+        await host.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task default_plus_named_should_register_one_initializer_each()
+    {
+        // given - a default Redis cache plus a named instance, each owning its own scripts initializer
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddHeadlessCaching(setup =>
+        {
+            setup.UseRedis(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer);
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseRedis(options =>
+                    {
+                        options.ConnectionMultiplexer = fixture.ConnectionMultiplexer;
+                        options.KeyPrefix = "setup-tenant:";
+                    })
+            );
+        });
+
+        using var host = builder.Build();
+
+        // when
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var initializers = host.Services.GetRequiredService<IEnumerable<IInitializer>>().ToList();
+
+        // then
+        initializers.Should().HaveCount(2);
+
+        foreach (var initializer in initializers)
+        {
+            await initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken);
+            initializer.IsInitialized.Should().BeTrue();
+        }
+
+        await host.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task use_redis_should_register_default_cache_role_key_and_generic_adapters()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddHeadlessCaching(setup =>
+            setup.UseRedis(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer)
+        );
+
+        using var host = builder.Build();
+        await host.StartAsync(TestContext.Current.CancellationToken);
+
+        // when
+        var defaultCache = host.Services.GetRequiredService<ICache>();
+
+        // then - the unkeyed default is the Redis cache, aliased under the "remote" role key
+        defaultCache.Should().BeOfType<RedisCache>();
+        host.Services.GetRequiredService<IRemoteCache>().Should().BeSameAs(defaultCache);
+        host.Services.GetRequiredKeyedService<ICache>(CacheConstants.RemoteCacheProvider)
+            .Should()
+            .BeSameAs(defaultCache);
+
+        // then - the generic adapters resolve over the default cache
+        host.Services.GetRequiredService<ICache<RedisCacheSetupTests>>().Should().NotBeNull();
+        host.Services.GetRequiredService<IRemoteCache<RedisCacheSetupTests>>().Should().NotBeNull();
 
         await host.StopAsync(TestContext.Current.CancellationToken);
     }

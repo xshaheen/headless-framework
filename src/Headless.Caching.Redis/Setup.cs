@@ -11,72 +11,228 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Caching;
 
 [PublicAPI]
 public static class SetupRedisCache
 {
+    extension(HeadlessCachingSetupBuilder setup)
+    {
+        /// <summary>
+        /// Uses the Redis cache as the default (unkeyed) <see cref="ICache"/> and <see cref="IRemoteCache"/>.
+        /// Also registers the <see cref="CacheConstants.RemoteCacheProvider"/> role key and the Lua scripts
+        /// preload initializer. <see cref="RedisCacheOptions.ConnectionMultiplexer"/> is required.
+        /// </summary>
+        /// <param name="setupAction">Configuration action for <see cref="RedisCacheOptions"/>.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseRedis(Action<RedisCacheOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterDefaultProvider(
+                CacheConstants.RemoteCacheProvider,
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+                    services._AddCacheCore(isDefault: true);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Uses the Redis cache as the default (unkeyed) <see cref="ICache"/> with service provider-aware
+        /// configuration. See <see cref="UseRedis(HeadlessCachingSetupBuilder, Action{RedisCacheOptions})"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseRedis(Action<RedisCacheOptions, IServiceProvider> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterDefaultProvider(
+                CacheConstants.RemoteCacheProvider,
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+                    services._AddCacheCore(isDefault: true);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Uses the Redis cache as the default (unkeyed) <see cref="ICache"/>, binding
+        /// <see cref="RedisCacheOptions"/> from configuration. The multiplexer must still be supplied
+        /// (for example through an additional <c>Configure</c> call), as it cannot be bound from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseRedis(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterDefaultProvider(
+                CacheConstants.RemoteCacheProvider,
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration);
+                    services._AddCacheCore(isDefault: true);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Adds the Redis cache as the remote tier of a default hybrid cache: registers
+        /// <see cref="IRemoteCache"/> and the <see cref="CacheConstants.RemoteCacheProvider"/> role key
+        /// without touching the default (unkeyed) <see cref="ICache"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action for <see cref="RedisCacheOptions"/>.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder AddRedisTier(Action<RedisCacheOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterTierProvider(
+                CacheConstants.RemoteCacheProvider,
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+                    services._AddCacheCore(isDefault: false);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Adds the Redis cache as the remote tier of a default hybrid cache with service provider-aware
+        /// configuration. See <see cref="AddRedisTier(HeadlessCachingSetupBuilder, Action{RedisCacheOptions})"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder AddRedisTier(Action<RedisCacheOptions, IServiceProvider> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterTierProvider(
+                CacheConstants.RemoteCacheProvider,
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+                    services._AddCacheCore(isDefault: false);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Adds the Redis cache as the remote tier of a default hybrid cache, binding
+        /// <see cref="RedisCacheOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder AddRedisTier(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterTierProvider(
+                CacheConstants.RemoteCacheProvider,
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration);
+                    services._AddCacheCore(isDefault: false);
+                })
+            );
+
+            return setup;
+        }
+    }
+
+    extension(HeadlessCacheInstanceBuilder instance)
+    {
+        /// <summary>
+        /// Uses the Redis cache for this named instance, resolvable as a keyed <see cref="ICache"/> service
+        /// or through <see cref="ICacheProvider"/>. The instance owns its own scripts loader bound to its own
+        /// <see cref="RedisCacheOptions.ConnectionMultiplexer"/> and key prefix. Named instances never touch
+        /// the default (unkeyed) <see cref="ICache"/> nor the reserved role keys.
+        /// </summary>
+        /// <param name="setupAction">Configuration action for the instance's <see cref="RedisCacheOptions"/>.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseRedis(Action<RedisCacheOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
+                    services._AddNamedCacheCore(name);
+                })
+            );
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses the Redis cache for this named instance with service provider-aware configuration.
+        /// See <see cref="UseRedis(HeadlessCacheInstanceBuilder, Action{RedisCacheOptions})"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseRedis(Action<RedisCacheOptions, IServiceProvider> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
+                    services._AddNamedCacheCore(name);
+                })
+            );
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses the Redis cache for this named instance, binding the instance's
+        /// <see cref="RedisCacheOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseRedis(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(
+                new RedisCacheOptionsExtension(services =>
+                {
+                    services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration, name);
+                    services._AddNamedCacheCore(name);
+                })
+            );
+
+            return instance;
+        }
+    }
+
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddRedisCache(
-            Action<RedisCacheOptions, IServiceProvider> setupAction,
-            bool isDefault = true
-        )
+        private IServiceCollection _AddNamedCacheCore(string name)
         {
-            services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
-
-            return services._AddCacheCore(isDefault);
-        }
-
-        public IServiceCollection AddRedisCache(IConfiguration configuration, bool isDefault = true)
-        {
-            services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration);
-
-            return services._AddCacheCore(isDefault);
-        }
-
-        public IServiceCollection AddRedisCache(Action<RedisCacheOptions> setupAction, bool isDefault = true)
-        {
-            services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
-
-            return services._AddCacheCore(isDefault);
-        }
-
-        /// <summary>
-        /// Adds an independently-configured named Redis cache instance, resolvable as a keyed
-        /// <see cref="ICache"/> service or through <see cref="ICacheProvider"/>. The instance owns its own
-        /// scripts loader bound to its own <see cref="RedisCacheOptions.ConnectionMultiplexer"/> and key prefix.
-        /// Named instances never touch the default (unkeyed) <see cref="ICache"/> nor the reserved role keys.
-        /// </summary>
-        /// <param name="name">The cache instance name. Must be non-empty and not a reserved role key.</param>
-        /// <param name="setupAction">Configuration action for the instance's <see cref="RedisCacheOptions"/>.</param>
-        /// <returns>The service collection for chaining.</returns>
-        public IServiceCollection AddRedisCache(string name, Action<RedisCacheOptions> setupAction)
-        {
-            Argument.IsNotNull(setupAction);
-
-            return services._AddNamedCache(name, (options, _) => setupAction(options));
-        }
-
-        /// <summary>
-        /// Adds an independently-configured named Redis cache instance with service provider-aware
-        /// configuration. See <c>AddRedisCache(string, Action&lt;RedisCacheOptions&gt;)</c>.
-        /// </summary>
-        /// <param name="name">The cache instance name. Must be non-empty and not a reserved role key.</param>
-        /// <param name="setupAction">Configuration action with access to the service provider.</param>
-        /// <returns>The service collection for chaining.</returns>
-        public IServiceCollection AddRedisCache(string name, Action<RedisCacheOptions, IServiceProvider> setupAction)
-        {
-            Argument.IsNotNull(setupAction);
-
-            return services._AddNamedCache(name, setupAction);
-        }
-
-        private IServiceCollection _AddNamedCache(string name, Action<RedisCacheOptions, IServiceProvider> setupAction)
-        {
-            _EnsureValidInstanceName(name);
-
-            services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
             services._AddSerializerCore();
             services.AddCacheProvider();
 
@@ -172,18 +328,8 @@ public static class SetupRedisCache
         }
     }
 
-    private static void _EnsureValidInstanceName(string name)
+    private sealed class RedisCacheOptionsExtension(Action<IServiceCollection> apply) : ICacheProviderOptionsExtension
     {
-        Argument.IsNotNullOrWhiteSpace(name);
-
-        if (CacheConstants.IsReservedProviderKey(name))
-        {
-            throw new ArgumentException(
-                $"The cache name '{name}' is reserved for the role-keyed registrations "
-                    + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
-                    + $"'{CacheConstants.HybridCacheProvider}'). Pick a different instance name.",
-                nameof(name)
-            );
-        }
+        public void AddServices(IServiceCollection services) => apply(services);
     }
 }

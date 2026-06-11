@@ -5,9 +5,9 @@ namespace Headless.Caching;
 
 /// <summary>
 /// Keyed-DI constants for the caching packages. The three role keys below are reserved: every provider setup
-/// registers its cache under the matching role key (<c>AddInMemoryCache</c> → <see cref="MemoryCacheProvider"/>,
-/// <c>AddRedisCache</c> → <see cref="RemoteCacheProvider"/>, <c>AddHybridCache</c> → <see cref="HybridCacheProvider"/>),
-/// so named cache instances must not use them — the name-taking setup overloads reject them with
+/// registers its cache under the matching role key (<c>UseInMemory</c> → <see cref="MemoryCacheProvider"/>,
+/// <c>UseRedis</c> → <see cref="RemoteCacheProvider"/>, <c>UseHybrid</c> → <see cref="HybridCacheProvider"/>),
+/// so named cache instances must not use them — <c>setup.AddNamed(…)</c> rejects them with
 /// <see cref="ArgumentException"/>.
 /// </summary>
 public static class CacheConstants

@@ -103,7 +103,7 @@ public sealed class FactoryCacheCoordinator(
                 $"{nameof(CacheEntryOptions)}.{nameof(CacheEntryOptions.UseDistributedFactoryLock)} is enabled for "
                     + $"cache key '{key}' but no {nameof(ICacheFactoryLockProvider)} is registered. Reference the "
                     + "Headless.Caching.DistributedLocks adapter package and call "
-                    + "services.AddCachingDistributedFactoryLock(), or disable the option."
+                    + "setup.UseDistributedFactoryLock() inside AddHeadlessCaching, or disable the option."
             );
         }
 

@@ -4,7 +4,7 @@ namespace Headless.Caching;
 
 /// <summary>
 /// Resolves <see cref="ICache"/> instances registered under a name — either named instances added through the
-/// name-taking provider setup overloads (for example <c>AddInMemoryCache("orders", …)</c>) or the role keys
+/// setup builder (for example <c>setup.AddNamed("orders", i => i.UseInMemory(…))</c>) or the role keys
 /// documented on <c>CacheConstants</c> (<c>"memory"</c>, <c>"remote"</c>, <c>"hybrid"</c>).
 /// </summary>
 [PublicAPI]

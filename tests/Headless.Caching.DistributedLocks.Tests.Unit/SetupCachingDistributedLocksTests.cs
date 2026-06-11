@@ -17,7 +17,11 @@ public sealed class SetupCachingDistributedLocksTests : TestBase
         services.AddSingleton(Substitute.For<IDistributedLock>());
 
         // when
-        services.AddCachingDistributedFactoryLock();
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.UseDistributedFactoryLock();
+        });
         using var serviceProvider = services.BuildServiceProvider();
 
         // then
@@ -35,10 +39,14 @@ public sealed class SetupCachingDistributedLocksTests : TestBase
         services.AddSingleton(Substitute.For<IDistributedLock>());
 
         // when
-        services.AddCachingDistributedFactoryLock(options =>
+        services.AddHeadlessCaching(setup =>
         {
-            options.ResourcePrefix = "custom:";
-            options.TimeUntilExpires = TimeSpan.FromMinutes(2);
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.UseDistributedFactoryLock(options =>
+            {
+                options.ResourcePrefix = "custom:";
+                options.TimeUntilExpires = TimeSpan.FromMinutes(2);
+            });
         });
 
         using var serviceProvider = services.BuildServiceProvider();
@@ -59,10 +67,19 @@ public sealed class SetupCachingDistributedLocksTests : TestBase
         services.AddSingleton(existing);
 
         // when
-        services.AddCachingDistributedFactoryLock();
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.UseDistributedFactoryLock();
+        });
         using var serviceProvider = services.BuildServiceProvider();
 
         // then — TryAdd semantics keep the caller's registration
         serviceProvider.GetRequiredService<ICacheFactoryLockProvider>().Should().BeSameAs(existing);
+    }
+
+    private sealed class NoOpCacheProviderOptionsExtension : ICacheProviderOptionsExtension
+    {
+        public void AddServices(IServiceCollection services) { }
     }
 }

@@ -23,7 +23,8 @@ public sealed class HybridCacheOptions : CacheOptions
 
     /// <summary>
     /// Optional name of a keyed <see cref="ICache"/> registration to use as the local (L1) tier. The named
-    /// cache must implement <see cref="IInMemoryCache"/> (register it with <c>AddInMemoryCache(name, …)</c>);
+    /// cache must implement <see cref="IInMemoryCache"/> (register it with
+    /// <c>setup.AddNamed(name, i => i.UseInMemory(…))</c>);
     /// otherwise resolution fails with <see cref="InvalidOperationException"/>. When <see langword="null"/>
     /// (the default) the hybrid cache uses the default <see cref="IInMemoryCache"/> registration.
     /// </summary>
@@ -31,7 +32,8 @@ public sealed class HybridCacheOptions : CacheOptions
 
     /// <summary>
     /// Optional name of a keyed <see cref="ICache"/> registration to use as the distributed (L2) tier. The
-    /// named cache must implement <see cref="IRemoteCache"/> (register it with <c>AddRedisCache(name, …)</c>);
+    /// named cache must implement <see cref="IRemoteCache"/> (register it with
+    /// <c>setup.AddNamed(name, i => i.UseRedis(…))</c>);
     /// otherwise resolution fails with <see cref="InvalidOperationException"/>. When <see langword="null"/>
     /// (the default) the hybrid cache uses the default <see cref="IRemoteCache"/> registration.
     /// </summary>

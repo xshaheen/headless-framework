@@ -50,7 +50,9 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddHeadlessLocalEventBus();
 
         // Cache
-        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
+        services.AddHeadlessCaching(setup =>
+            setup.UseRedis(options => options.ConnectionMultiplexer = Fixture.Multiplexer)
+        );
         // Lock Storage
         services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
         // Resource Lock

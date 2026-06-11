@@ -9,7 +9,7 @@ namespace Headless.Caching;
 [PublicAPI]
 public static class SetupCachingDistributedLocks
 {
-    extension(IServiceCollection services)
+    extension(HeadlessCachingSetupBuilder setup)
     {
         /// <summary>
         /// Registers <see cref="ICacheFactoryLockProvider"/> backed by the application's
@@ -19,19 +19,32 @@ public static class SetupCachingDistributedLocks
         /// <c>Headless.DistributedLocks.*</c> setup builders).
         /// </summary>
         /// <param name="setupAction">Optional configuration for <see cref="CacheFactoryLockOptions"/>.</param>
-        /// <returns>The service collection for chaining.</returns>
-        public IServiceCollection AddCachingDistributedFactoryLock(Action<CacheFactoryLockOptions>? setupAction = null)
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseDistributedFactoryLock(
+            Action<CacheFactoryLockOptions>? setupAction = null
+        )
         {
-            if (setupAction is not null)
-            {
-                services.Configure(setupAction);
-            }
+            setup.RegisterCrossCuttingExtension(
+                new CachingDistributedLocksOptionsExtension(services =>
+                {
+                    if (setupAction is not null)
+                    {
+                        services.Configure(setupAction);
+                    }
 
-            services.AddOptions();
-            services.AddSingletonOptionValue<CacheFactoryLockOptions>();
-            services.TryAddSingleton<ICacheFactoryLockProvider, DistributedLockCacheFactoryLockProvider>();
+                    services.AddOptions();
+                    services.AddSingletonOptionValue<CacheFactoryLockOptions>();
+                    services.TryAddSingleton<ICacheFactoryLockProvider, DistributedLockCacheFactoryLockProvider>();
+                })
+            );
 
-            return services;
+            return setup;
         }
+    }
+
+    private sealed class CachingDistributedLocksOptionsExtension(Action<IServiceCollection> apply)
+        : ICacheProviderOptionsExtension
+    {
+        public void AddServices(IServiceCollection services) => apply(services);
     }
 }

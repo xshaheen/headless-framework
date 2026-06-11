@@ -18,7 +18,7 @@ internal sealed class KeyedServiceCacheProvider(IServiceProvider serviceProvider
         return serviceProvider.GetKeyedService<ICache>(name)
             ?? throw new InvalidOperationException(
                 $"No cache is registered under the name '{name}'. Register a named instance first — for example "
-                    + $"AddInMemoryCache(\"{name}\", …), AddRedisCache(\"{name}\", …), or AddHybridCache(\"{name}\", …) — "
+                    + $"setup.AddNamed(\"{name}\", i => i.UseInMemory(…)), i.UseRedis(…), or i.UseHybrid(…) — "
                     + $"or use one of the role keys ('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
                     + $"'{CacheConstants.HybridCacheProvider}') registered by the corresponding cache setup."
             );

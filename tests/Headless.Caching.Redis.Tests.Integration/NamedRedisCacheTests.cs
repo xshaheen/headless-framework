@@ -17,17 +17,21 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
         // given - a default Redis cache plus a named instance with its own prefix and entry defaults
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddRedisCache(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer);
+        builder.Services.AddHeadlessCaching(setup =>
+        {
+            setup.UseRedis(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer);
 
-        builder.Services.AddRedisCache(
-            "tenant",
-            options =>
-            {
-                options.ConnectionMultiplexer = fixture.ConnectionMultiplexer;
-                options.KeyPrefix = "named-tenant:";
-                options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(7) };
-            }
-        );
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseRedis(options =>
+                    {
+                        options.ConnectionMultiplexer = fixture.ConnectionMultiplexer;
+                        options.KeyPrefix = "named-tenant:";
+                        options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(7) };
+                    })
+            );
+        });
 
         using var host = builder.Build();
         await host.StartAsync(AbortToken);

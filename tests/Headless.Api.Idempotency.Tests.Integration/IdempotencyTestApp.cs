@@ -63,7 +63,7 @@ internal static class IdempotencyTestApp
         builder.Services.AddScoped<ICurrentUser>(_ => userState.CurrentForRequest());
 
         // In-memory cache (no Redis dependency for v1)
-        builder.Services.AddInMemoryCache();
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 
         // Optional in-memory distributed-lock provider for WaitAndReplay tests. Built on a
         // SemaphoreSlim-per-resource map; the production wiring (DistributedLock in

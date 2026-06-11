@@ -7,87 +7,238 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Caching;
 
 [PublicAPI]
 public static class SetupInMemoryCache
 {
+    extension(HeadlessCachingSetupBuilder setup)
+    {
+        /// <summary>
+        /// Uses the in-memory cache as the default (unkeyed) <see cref="ICache"/>. Also registers the
+        /// <see cref="CacheConstants.MemoryCacheProvider"/> role key and an <see cref="IRemoteCache"/>
+        /// adapter over the same store for single-node hosts.
+        /// </summary>
+        /// <param name="setupAction">Optional configuration for <see cref="InMemoryCacheOptions"/>.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseInMemory(Action<InMemoryCacheOptions>? setupAction = null)
+        {
+            setup.RegisterDefaultProvider(
+                CacheConstants.MemoryCacheProvider,
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    if (setupAction is null)
+                    {
+                        services.AddOptions<InMemoryCacheOptions, InMemoryCacheOptionsValidator>();
+                    }
+                    else
+                    {
+                        services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
+                    }
+
+                    services._AddCacheCore(isDefault: true);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Uses the in-memory cache as the default (unkeyed) <see cref="ICache"/> with service
+        /// provider-aware configuration. See <see cref="UseInMemory(HeadlessCachingSetupBuilder, Action{InMemoryCacheOptions})"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseInMemory(Action<InMemoryCacheOptions, IServiceProvider> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterDefaultProvider(
+                CacheConstants.MemoryCacheProvider,
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
+                    services._AddCacheCore(isDefault: true);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Uses the in-memory cache as the default (unkeyed) <see cref="ICache"/>, binding
+        /// <see cref="InMemoryCacheOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseInMemory(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterDefaultProvider(
+                CacheConstants.MemoryCacheProvider,
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration);
+                    services._AddCacheCore(isDefault: true);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Adds the in-memory cache as the local tier of a default hybrid cache: registers
+        /// <see cref="IInMemoryCache"/> and the <see cref="CacheConstants.MemoryCacheProvider"/> role key
+        /// without touching the default (unkeyed) <see cref="ICache"/>.
+        /// </summary>
+        /// <param name="setupAction">Optional configuration for <see cref="InMemoryCacheOptions"/>.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder AddMemoryTier(Action<InMemoryCacheOptions>? setupAction = null)
+        {
+            setup.RegisterTierProvider(
+                CacheConstants.MemoryCacheProvider,
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    if (setupAction is null)
+                    {
+                        services.AddOptions<InMemoryCacheOptions, InMemoryCacheOptionsValidator>();
+                    }
+                    else
+                    {
+                        services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
+                    }
+
+                    services._AddCacheCore(isDefault: false);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Adds the in-memory cache as the local tier of a default hybrid cache with service
+        /// provider-aware configuration. See <see cref="AddMemoryTier(HeadlessCachingSetupBuilder, Action{InMemoryCacheOptions})"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder AddMemoryTier(Action<InMemoryCacheOptions, IServiceProvider> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterTierProvider(
+                CacheConstants.MemoryCacheProvider,
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
+                    services._AddCacheCore(isDefault: false);
+                })
+            );
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Adds the in-memory cache as the local tier of a default hybrid cache, binding
+        /// <see cref="InMemoryCacheOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder AddMemoryTier(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterTierProvider(
+                CacheConstants.MemoryCacheProvider,
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration);
+                    services._AddCacheCore(isDefault: false);
+                })
+            );
+
+            return setup;
+        }
+    }
+
+    extension(HeadlessCacheInstanceBuilder instance)
+    {
+        /// <summary>
+        /// Uses the in-memory cache for this named instance, resolvable as a keyed <see cref="ICache"/>
+        /// service or through <see cref="ICacheProvider"/>. Named instances never touch the default
+        /// (unkeyed) <see cref="ICache"/> nor the reserved role keys.
+        /// </summary>
+        /// <param name="setupAction">Configuration action for the instance's <see cref="InMemoryCacheOptions"/>.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseInMemory(Action<InMemoryCacheOptions> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
+                    services._AddNamedCacheCore(name);
+                })
+            );
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses the in-memory cache for this named instance with service provider-aware configuration.
+        /// See <see cref="UseInMemory(HeadlessCacheInstanceBuilder, Action{InMemoryCacheOptions})"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseInMemory(Action<InMemoryCacheOptions, IServiceProvider> setupAction)
+        {
+            Argument.IsNotNull(setupAction);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
+                    services._AddNamedCacheCore(name);
+                })
+            );
+
+            return instance;
+        }
+
+        /// <summary>
+        /// Uses the in-memory cache for this named instance, binding the instance's
+        /// <see cref="InMemoryCacheOptions"/> from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessCacheInstanceBuilder UseInMemory(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(
+                new InMemoryCacheOptionsExtension(services =>
+                {
+                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration, name);
+                    services._AddNamedCacheCore(name);
+                })
+            );
+
+            return instance;
+        }
+    }
+
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddInMemoryCache(
-            Action<InMemoryCacheOptions, IServiceProvider> setupAction,
-            bool isDefault = true
-        )
+        private IServiceCollection _AddNamedCacheCore(string name)
         {
-            services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
-
-            return services._AddCacheCore(isDefault);
-        }
-
-        public IServiceCollection AddInMemoryCache(IConfiguration configuration, bool isDefault = true)
-        {
-            services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration);
-
-            return services._AddCacheCore(isDefault);
-        }
-
-        public IServiceCollection AddInMemoryCache(
-            Action<InMemoryCacheOptions>? setupAction = null,
-            bool isDefault = true
-        )
-        {
-            if (setupAction is null)
-            {
-                services.AddOptions<InMemoryCacheOptions, InMemoryCacheOptionsValidator>();
-            }
-            else
-            {
-                services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
-            }
-
-            return services._AddCacheCore(isDefault);
-        }
-
-        /// <summary>
-        /// Adds an independently-configured named in-memory cache instance, resolvable as a keyed
-        /// <see cref="ICache"/> service or through <see cref="ICacheProvider"/>. Named instances never touch
-        /// the default (unkeyed) <see cref="ICache"/> nor the reserved role keys.
-        /// </summary>
-        /// <param name="name">The cache instance name. Must be non-empty and not a reserved role key.</param>
-        /// <param name="setupAction">Configuration action for the instance's <see cref="InMemoryCacheOptions"/>.</param>
-        /// <returns>The service collection for chaining.</returns>
-        public IServiceCollection AddInMemoryCache(string name, Action<InMemoryCacheOptions> setupAction)
-        {
-            Argument.IsNotNull(setupAction);
-
-            return services._AddNamedCache(name, (options, _) => setupAction(options));
-        }
-
-        /// <summary>
-        /// Adds an independently-configured named in-memory cache instance with service provider-aware
-        /// configuration. See <c>AddInMemoryCache(string, Action&lt;InMemoryCacheOptions&gt;)</c>.
-        /// </summary>
-        /// <param name="name">The cache instance name. Must be non-empty and not a reserved role key.</param>
-        /// <param name="setupAction">Configuration action with access to the service provider.</param>
-        /// <returns>The service collection for chaining.</returns>
-        public IServiceCollection AddInMemoryCache(
-            string name,
-            Action<InMemoryCacheOptions, IServiceProvider> setupAction
-        )
-        {
-            Argument.IsNotNull(setupAction);
-
-            return services._AddNamedCache(name, setupAction);
-        }
-
-        private IServiceCollection _AddNamedCache(
-            string name,
-            Action<InMemoryCacheOptions, IServiceProvider> setupAction
-        )
-        {
-            _EnsureValidInstanceName(name);
-
-            services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
             services.AddCacheProvider();
 
             services.AddKeyedSingleton<ICache>(
@@ -138,19 +289,10 @@ public static class SetupInMemoryCache
         }
     }
 
-    private static void _EnsureValidInstanceName(string name)
+    private sealed class InMemoryCacheOptionsExtension(Action<IServiceCollection> apply)
+        : ICacheProviderOptionsExtension
     {
-        Argument.IsNotNullOrWhiteSpace(name);
-
-        if (CacheConstants.IsReservedProviderKey(name))
-        {
-            throw new ArgumentException(
-                $"The cache name '{name}' is reserved for the role-keyed registrations "
-                    + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
-                    + $"'{CacheConstants.HybridCacheProvider}'). Pick a different instance name.",
-                nameof(name)
-            );
-        }
+        public void AddServices(IServiceCollection services) => apply(services);
     }
 
     private sealed class InMemoryRemoteCacheAdapter(IInMemoryCache inMemoryCache) : IRemoteCache

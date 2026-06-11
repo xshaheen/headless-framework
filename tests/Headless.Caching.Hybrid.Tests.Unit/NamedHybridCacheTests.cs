@@ -32,14 +32,19 @@ public sealed class NamedHybridCacheTests : TestBase
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
         services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
 
-        services.AddHybridCache(
-            "tenant",
-            options =>
-            {
-                options.LocalCacheName = "tenant-l1";
-                options.RemoteCacheName = "tenant-l2";
-            }
-        );
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(options =>
+                    {
+                        options.LocalCacheName = "tenant-l1";
+                        options.RemoteCacheName = "tenant-l2";
+                    })
+            );
+        });
 
         await using var provider = services.BuildServiceProvider();
 
@@ -65,11 +70,13 @@ public sealed class NamedHybridCacheTests : TestBase
         services.AddKeyedSingleton<ICache>("local-tier", l1);
         services.AddKeyedSingleton<ICache>("remote-tier", new InMemoryRemoteCacheAdapter(l2Inner));
 
-        services.AddHybridCache(options =>
-        {
-            options.LocalCacheName = "local-tier";
-            options.RemoteCacheName = "remote-tier";
-        });
+        services.AddHeadlessCaching(setup =>
+            setup.UseHybrid(options =>
+            {
+                options.LocalCacheName = "local-tier";
+                options.RemoteCacheName = "remote-tier";
+            })
+        );
 
         await using var provider = services.BuildServiceProvider();
 
@@ -85,7 +92,14 @@ public sealed class NamedHybridCacheTests : TestBase
     {
         // given
         var services = _CreateBaseServices();
-        services.AddHybridCache("broken", options => options.LocalCacheName = "missing-tier");
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.AddNamed(
+                "broken",
+                instance => instance.UseHybrid(options => options.LocalCacheName = "missing-tier")
+            );
+        });
         await using var provider = services.BuildServiceProvider();
 
         // when
@@ -104,7 +118,14 @@ public sealed class NamedHybridCacheTests : TestBase
         var services = _CreateBaseServices();
         var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
         services.AddKeyedSingleton<ICache>("remote-only", new InMemoryRemoteCacheAdapter(l2Inner));
-        services.AddHybridCache("bad-shape", options => options.LocalCacheName = "remote-only");
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.AddNamed(
+                "bad-shape",
+                instance => instance.UseHybrid(options => options.LocalCacheName = "remote-only")
+            );
+        });
         await using var provider = services.BuildServiceProvider();
 
         // when
@@ -139,15 +160,20 @@ public sealed class NamedHybridCacheTests : TestBase
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
         services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
 
-        services.AddHybridCache(
-            "tenant",
-            options =>
-            {
-                options.LocalCacheName = "tenant-l1";
-                options.RemoteCacheName = "tenant-l2";
-                options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) };
-            }
-        );
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(options =>
+                    {
+                        options.LocalCacheName = "tenant-l1";
+                        options.RemoteCacheName = "tenant-l2";
+                        options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) };
+                    })
+            );
+        });
 
         await using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
@@ -201,15 +227,20 @@ public sealed class NamedHybridCacheTests : TestBase
         services.AddKeyedSingleton<ICache>("tenant-l1", l1);
         services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
 
-        services.AddHybridCache(
-            "tenant",
-            options =>
-            {
-                options.LocalCacheName = "tenant-l1";
-                options.RemoteCacheName = "tenant-l2";
-                options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) };
-            }
-        );
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(options =>
+                    {
+                        options.LocalCacheName = "tenant-l1";
+                        options.RemoteCacheName = "tenant-l2";
+                        options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) };
+                    })
+            );
+        });
 
         await using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredKeyedService<ICache>("tenant");
@@ -232,19 +263,11 @@ public sealed class NamedHybridCacheTests : TestBase
         factoryCalls.Should().Be(2, "per-call options must beat the hybrid's default and both tier defaults");
     }
 
-    [Theory]
-    [InlineData(CacheConstants.MemoryCacheProvider)]
-    [InlineData(CacheConstants.RemoteCacheProvider)]
-    [InlineData(CacheConstants.HybridCacheProvider)]
-    public void registering_named_hybrid_with_reserved_name_should_throw(string reservedName)
+    // Reserved-name rejection is owned by AddHeadlessCaching's AddNamed gate and is covered by
+    // Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.
+
+    private sealed class NoOpCacheProviderOptionsExtension : ICacheProviderOptionsExtension
     {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () => services.AddHybridCache(reservedName, _ => { });
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage($"*{reservedName}*reserved*");
+        public void AddServices(IServiceCollection services) { }
     }
 }

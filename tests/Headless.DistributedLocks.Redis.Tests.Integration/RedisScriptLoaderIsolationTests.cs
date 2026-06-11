@@ -73,7 +73,7 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
         services.AddSingleton<IConnectionMultiplexer>(_lockMultiplexer);
         services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
         // cache uses its own multiplexer from RedisCacheOptions = cache container (A)
-        services.AddRedisCache(o => o.ConnectionMultiplexer = _cacheMultiplexer);
+        services.AddHeadlessCaching(setup => setup.UseRedis(o => o.ConnectionMultiplexer = _cacheMultiplexer));
 
         await using var provider = services.BuildServiceProvider();
 
