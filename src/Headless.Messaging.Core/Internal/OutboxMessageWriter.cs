@@ -2,11 +2,14 @@
 
 using System.Diagnostics;
 using Headless.CommitCoordination;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
@@ -16,7 +19,9 @@ internal sealed class OutboxMessageWriter(
     IMessagePublishRequestFactory publishRequestFactory,
     ICurrentCommitCoordinator currentCommitCoordinator,
     IPublishMiddlewarePipeline publishPipeline,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    IOptions<MessagingOptions> messagingOptions,
+    ILogger<MessageOutboxBuffer> outboxBufferLogger
 )
 {
     // ReSharper disable once InconsistentNaming
@@ -112,7 +117,14 @@ internal sealed class OutboxMessageWriter(
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
 
-                var buffer = currentCoordinator.GetOrAdd(coordinator => new MessageOutboxBuffer(coordinator, dispatcher));
+                var buffer = currentCoordinator.GetOrAdd(coordinator =>
+                    new MessageOutboxBuffer(
+                        coordinator,
+                        dispatcher,
+                        messagingOptions.Value.OutboxFlushTimeout,
+                        outboxBufferLogger
+                    )
+                );
                 buffer.Add(mediumMessage);
 
                 return;

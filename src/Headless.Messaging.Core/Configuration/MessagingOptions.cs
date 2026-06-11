@@ -210,6 +210,19 @@ public sealed class MessagingOptions
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets the maximum time the commit-coordination drain spends flushing buffered outbox messages to
+    /// the transport after a transaction commits. Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// The post-commit drain runs with <see cref="CancellationToken.None"/> (a committed dispatch must not be
+    /// abandoned because the request was cancelled), so an unresponsive broker would otherwise hold the drain —
+    /// and the request thread, DI scope, and DB connection — indefinitely. This timeout bounds that wait;
+    /// messages are already durably stored in-transaction, so any not dispatched before the deadline are
+    /// recovered by the relay sweep (dispatch is acceleration, not correctness).
+    /// </remarks>
+    public TimeSpan OutboxFlushTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
     /// <see cref="IConsumerBuilderBase{TConsumer, TBuilder}.WithCircuitBreaker"/>.
@@ -263,6 +276,7 @@ public sealed class MessagingOptions
         target.TenantContextRequired = TenantContextRequired;
         target.TransportPublishTimeout = TransportPublishTimeout;
         target.CommandTimeout = CommandTimeout;
+        target.OutboxFlushTimeout = OutboxFlushTimeout;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
@@ -470,6 +484,11 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("CommandTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("CommandTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.OutboxFlushTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("OutboxFlushTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("OutboxFlushTimeout must not exceed 5 minutes.");
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
     }
 

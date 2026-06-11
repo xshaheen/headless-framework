@@ -119,6 +119,14 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         _SignalInBackground(Task.Run(() => SignalRolledBackAsync(providerTransactionKey, CancellationToken.None).AsTask()));
     }
 
+    // Background signals are fire-and-forget with no shutdown drain gate — deliberately, and unlike
+    // SqlServerCommitDiagnosticHostedService, which tracks _drains and awaits WaitForDrainsAsync on stop.
+    // The asymmetry is safe because the drain is acceleration, not correctness: the outbox/durable rows were
+    // already written in the committed transaction, so an in-flight drain abandoned by an abrupt host stop is
+    // recovered by the relay/polling sweep — it degrades dispatch latency, never durability. A tracking gate
+    // here would only shorten the post-commit dispatch window on graceful shutdown; it is not required for
+    // correctness. (The EF interceptor's synchronous TransactionCommitted offloads here precisely so the commit
+    // thread is never blocked on the drain.)
     private void _SignalInBackground(Task signal)
     {
         _ = signal.ContinueWith(
