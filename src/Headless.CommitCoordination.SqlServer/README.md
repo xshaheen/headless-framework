@@ -25,6 +25,8 @@ dotnet add package Headless.CommitCoordination.SqlServer
 
 ## Quick Start
 
+`ExecuteCoordinatedTransactionAsync` is **the recommended path** — it welds open + enlist + commit into one call so the enlist cannot be forgotten; raw `EnlistCommitCoordination` is the advanced seam (commit detection is out-of-band here, so no manual signal is needed, unlike PostgreSQL).
+
 ```csharp
 services.AddSqlServerCommitCoordination();
 

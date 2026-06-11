@@ -281,6 +281,8 @@ dotnet add package Headless.CommitCoordination.EntityFramework
 
 ### Quick Start
 
+`ExecuteCoordinatedTransactionAsync` is **the recommended path** — it welds open + enlist + commit into one call so the enlist cannot be forgotten; raw `EnlistCommitCoordination` is the advanced seam (the EF interceptor signals the commit edge, so no manual signal is needed, unlike PostgreSQL).
+
 ```csharp
 services.AddEntityFrameworkCommitCoordination();
 
@@ -371,6 +373,8 @@ dotnet add package Headless.CommitCoordination.PostgreSql
 
 ### Quick Start
 
+`ExecuteCoordinatedTransactionAsync` is **the recommended path** — it welds open + enlist + commit + signal into one call so nothing can be forgotten:
+
 ```csharp
 services.AddPostgreSqlCommitCoordination();
 
@@ -381,6 +385,23 @@ await connection.ExecuteCoordinatedTransactionAsync(
         // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
     },
     services: requestServiceProvider);
+```
+
+### Advanced: raw enlistment
+
+> **WARNING — PostgreSQL is an inline (caller-driven) signal provider.** Npgsql exposes no commit
+> diagnostic, so nothing signals for you. If you hand-roll `EnlistCommitCoordination`, you MUST call
+> `scope.SignalAsync(CommitOutcome.Committed, ct)` immediately after `transaction.CommitAsync(...)`.
+> An un-signalled scope dispose drains as **rollback** and silently discards every enlisted publish on
+> a transaction that actually committed — durable outbox rows survive (the relay sweep recovers them),
+> but accelerator-only work is lost. Prefer the helper above; it signals for you.
+
+```csharp
+await using var tx = await connection.BeginTransactionAsync(ct);
+await using var scope = connection.EnlistCommitCoordination(tx, requestServiceProvider);
+// ... raw-ADO work + publishes ...
+await tx.CommitAsync(ct);
+await scope.SignalAsync(CommitOutcome.Committed, ct); // REQUIRED — see warning above
 ```
 
 ### Configuration
@@ -423,6 +444,8 @@ dotnet add package Headless.CommitCoordination.SqlServer
 ```
 
 ### Quick Start
+
+`ExecuteCoordinatedTransactionAsync` is **the recommended path** — it welds open + enlist + commit into one call so the enlist cannot be forgotten; raw `EnlistCommitCoordination` is the advanced seam (commit detection is out-of-band here, so no manual signal is needed, unlike PostgreSQL).
 
 ```csharp
 services.AddSqlServerCommitCoordination();
