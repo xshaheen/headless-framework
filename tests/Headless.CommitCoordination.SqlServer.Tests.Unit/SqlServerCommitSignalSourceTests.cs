@@ -144,6 +144,62 @@ public sealed class SqlServerCommitSignalSourceTests
     }
 
     [Fact]
+    public async Task diagnostic_observer_should_roll_back_the_scope_when_commit_after_event_carries_rollback_operation()
+    {
+        var source = new SqlServerCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<SqlServerCommitSignalSource>.Instance
+        );
+        var observer = new SqlServerCommitDiagnosticObserver(
+            source,
+            NullLogger<SqlServerCommitDiagnosticObserver>.Instance
+        );
+
+        await using var connection = new SqlConnection();
+        var rolledBack = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commits = 0;
+
+        var scope = source.Attach(
+            new CommitCoordinatorBindings
+            {
+                Services = new ServiceCollection().BuildServiceProvider(),
+                ProviderTransactionKey = connection.ClientConnectionId,
+            },
+            CancellationToken.None
+        );
+
+        await using (scope)
+        {
+            scope.Coordinator.OnCommit((_, _) =>
+            {
+                Interlocked.Increment(ref commits);
+
+                return ValueTask.CompletedTask;
+            });
+            scope.Coordinator.OnRollback((_, _) =>
+            {
+                rolledBack.SetResult();
+
+                return ValueTask.CompletedTask;
+            });
+
+            // Same commit-after event key, but the payload carries a "Rollback" operation — the observer must treat
+            // it as a rollback edge, not a commit.
+            observer.OnNext(
+                new KeyValuePair<string, object?>(
+                    SqlServerCommitDiagnosticObserver.SqlAfterCommitTransaction,
+                    new DiagnosticPayload(connection, Operation: "Rollback")
+                )
+            );
+
+            await rolledBack.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        }
+
+        commits.Should().Be(0, "a rollback-operation commit-after event must never run commit work");
+        scope.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
+    }
+
+    [Fact]
     public void diagnostic_observer_should_ignore_an_event_without_a_sql_connection()
     {
         var source = new SqlServerCommitSignalSource(
