@@ -5,6 +5,7 @@ using Headless.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -217,6 +218,17 @@ public static class SetupHybridCache
 
             services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<HybridCache>());
             services.AddKeyedSingleton(CacheConstants.HybridCacheProvider, (x, _) => x.GetRequiredService<ICache>());
+
+            // Startup advisor: logs warnings for questionable-but-valid configurations once at host
+            // startup so operators notice misconfigurations before they see unexpected runtime behavior.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, HybridCacheBestPracticesAdvisor>(
+                    provider => new HybridCacheBestPracticesAdvisor(
+                        provider.GetRequiredService<HybridCacheOptions>(),
+                        provider.GetRequiredService<ILogger<HybridCacheBestPracticesAdvisor>>()
+                    )
+                )
+            );
 
             return services;
         }
