@@ -10,6 +10,7 @@ Provides a provider-agnostic caching API so applications can switch between memo
 
 - `ICache` - core interface for cache operations:
   - Upsert/Get/Remove with expiration
+  - Removal (`RemoveAsync` hard-deletes including the fail-safe reserve; `ExpireAsync` logically expires but preserves the reserve)
   - Bulk operations (UpsertAll, GetAll, RemoveAll)
   - Prefix-based operations (GetByPrefix, RemoveByPrefix)
   - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
@@ -39,6 +40,8 @@ The conditional `GetOrAddAsync` overload exists for origins that can answer "has
 `Tags` are persisted with the entry for later one-call invalidation through `RemoveByTagAsync`. On a factory-backed read, call-provided tags win over the tags carried by an existing entry; `null` carries the existing tags forward. Each tag must be non-empty, and both the tag count and each tag's UTF-8 byte length must fit in an unsigned 16-bit value (provider envelope limits) — violations throw `ArgumentException` before anything is written. `RemoveByTagAsync` removes exactly the entries that currently carry the tag: memberships are pinned to the entry version, so a key that expired or was re-created without the tag is cleaned up from the index instead of removed.
 
 `UpsertEntryAsync(key, value, options)` is the direct-write path that honors full `CacheEntryOptions` semantics (fail-safe physical retention, eager stamp, sliding clamp, tags). It performs a read-before-write to reconcile provider tag indexes, so prefer the plain `UpsertAsync(key, value, TimeSpan?)` on hot paths that need none of the per-entry option semantics. It is named distinctly because the `TimeSpan`-to-options implicit conversion would otherwise make every bare-`TimeSpan` upsert ambiguous.
+
+`RemoveAsync` and `ExpireAsync` are two strengths of the same invalidation, distinguished by what happens to the fail-safe reserve. `RemoveAsync` hard-deletes the entry and its physical reserve — a subsequent `GetOrAddAsync` whose factory throws has nothing to fall back to. `ExpireAsync` only pulls logical expiration forward: ordinary reads (`GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, …) miss immediately, but the physical reserve survives, so a later `GetOrAddAsync` whose factory fails (with `IsFailSafeEnabled`) can still serve the stale value (the fail-safe parachute). Reach for `ExpireAsync` when you want to force a refresh while keeping the staleness safety net; reach for `RemoveAsync` when the cached value must be gone for good. For an entry written without a fail-safe reserve (a plain `TimeSpan?` write, or fail-safe disabled — logical and physical expiration coincide) `ExpireAsync` is equivalent to `RemoveAsync`: there is no reserve to preserve. Both return `true` when an entry was found and expired/removed, `false` when the key is absent.
 
 Fail-safe is opt-in and only applies to `GetOrAddAsync`. Direct `TimeSpan?` writes keep logical expiration equal to physical expiration. A stale value served by fail-safe returns `CacheValue<T>.IsStale = true` only for the activating call; reads during the throttle window are logical hits and return `IsStale = false`.
 

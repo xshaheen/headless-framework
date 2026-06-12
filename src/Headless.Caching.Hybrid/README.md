@@ -14,6 +14,7 @@ Provides one `ICache` implementation that reads from a fast local cache first, f
 - Supports strongly typed `ICache<T>`.
 - Uses `DefaultLocalExpiration` to keep L1 fresher than L2.
 - Tag invalidation across both tiers plus a `Tag` invalidation message on the backplane so other instances drop their L1 copies.
+- `ExpireAsync` across both tiers plus an `Expire` invalidation message on the backplane so peers logically expire their L1 copy (fail-safe reserve preserved) instead of removing it.
 - Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `setup.AddNamed(name, i => i.UseHybrid(...))`.
 - Opt-in auto-recovery: transient L2/backplane outages queue failed single-key operations and replay them on recovery.
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
@@ -27,6 +28,8 @@ Hybrid fail-safe and factory timeouts use the same coordinator semantics as the 
 Factory value-writes publish the same key invalidation as explicit upserts: cold-miss fresh writes, soft-timeout background completion writes, eager-refresh writes, and conditional `Modified` writes all broadcast, so peers drop their stale L1 copy instead of serving the old value until its local TTL. Metadata-only restamps do not publish — conditional `NotModified` extensions, fail-safe throttle restamps, and the eager-refresh gate write leave peers' cached bytes identical, so invalidating them would only force pointless L2 re-reads. Publish failures on this path follow the upsert semantics: they never fail the caller, are logged, and with `EnableAutoRecovery` the single-key publish is queued and replayed.
 
 `RemoveByTagAsync` publishes the `Tag` invalidation first (minimizing the window in which another instance re-populates its L1 from a not-yet-invalidated L2), then removes from L2, then from its own L1, and returns the L2 removed count. Receivers apply the tag invalidation to their L1 through the same version-pinned `RemoveByTagAsync` semantics.
+
+`ExpireAsync` carries the logical-expire-keeps-reserve contract across the backplane. It expires L2, expires its own L1, and — only when the key existed — publishes a `CacheInvalidationMessage` with `Expire = true`, so receivers run `LocalCache.ExpireAsync` (logical expiry, reserve preserved) rather than the plain remove a `Key` message would trigger. The local instance's reserve is preserved too, so a `GetOrAddAsync` on either the originating node or a peer can still serve stale through fail-safe after the expiration. Under `EnableAutoRecovery`, a failing L2 expiration follows the same degraded path as `RemoveAsync`: L1 is expired, the L2 expiration is queued for replay, and the call conservatively reports `true` and publishes the `Expire` invalidation because the L2 state is unknown. The `Expire` flag is meaningful only with `Key`/`Keys` set; it is ignored for `Prefix`, `Tag`, and `FlushAll` messages.
 
 On reads, Hybrid promotes L2 entries into L1 only when they are logically fresh. Promoting stale reserves on every read would amplify L1 writes and could overwrite a newer L1 reserve. Fail-safe activation and background success still write through the composite store intentionally.
 
