@@ -57,6 +57,10 @@ public static class FactoryCacheStoreExtensions
             EagerRefreshAt = stamps.EagerRefreshAt,
             Tags = options.Tags,
             RemovedTags = CacheEntryStamps.ComputeRemovedTags(previousTags, options.Tags),
+            // Per-call tier-write control for the direct upsert path. Hybrid honors these; single-tier providers
+            // ignore the descriptor fields.
+            SkipMemoryCacheWrite = options.SkipMemoryCacheWrite,
+            SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
         };
 
         await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);

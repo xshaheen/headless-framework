@@ -133,6 +133,33 @@ public readonly record struct CacheEntryOptions
     /// </summary>
     public IReadOnlyCollection<string>? Tags { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether the value must not be written to the L1 (memory) tier. Hybrid-relevant:
+    /// single-tier providers (the in-memory cache has only L1, Redis only L2) ignore it. When set on a
+    /// factory-backed read, the freshly-produced value is fanned to L2 only; L1 stays untouched (useful for a
+    /// large value that should not occupy process memory). Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool SkipMemoryCacheWrite { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the value must not be written to the L2 (distributed) tier. Hybrid-relevant:
+    /// single-tier providers (the in-memory cache has only L1, Redis only L2) ignore it. When set on a
+    /// factory-backed read, the freshly-produced value is written to L1 only; the L2 mirror and its peer
+    /// invalidation publish are skipped (useful for a node-local value that should not be shared). Defaults to
+    /// <see langword="false"/>.
+    /// </summary>
+    public bool SkipDistributedCacheWrite { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether <c>GetOrAddAsync</c> must force-refresh: bypass the cached read on both
+    /// tiers and always run the factory, then store the result subject to <see cref="SkipMemoryCacheWrite"/> and
+    /// <see cref="SkipDistributedCacheWrite"/>. Hybrid-relevant: single-tier providers (the in-memory cache has
+    /// only L1, Redis only L2) ignore it. Because no cached entry is read, no stale fail-safe reserve is loaded:
+    /// a factory failure has nothing to fall back to and propagates even when <see cref="IsFailSafeEnabled"/> is
+    /// set. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool SkipCacheRead { get; init; }
+
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>
     public static CacheEntryOptions FromTimeSpan(TimeSpan duration) => new() { Duration = duration };

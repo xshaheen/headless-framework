@@ -113,7 +113,13 @@ public sealed partial class FactoryCacheCoordinator(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+        // Force-refresh (SkipCacheRead): bypass every store read and go straight to the factory. NotFound makes
+        // the freshness/stale checks below false, so the read short-circuits and the eager/sliding read-path
+        // helpers never fire; the per-key lock and any distributed lease are still acquired/released normally,
+        // and staleCandidate stays NotFound so fail-safe cannot serve a reserve (none was read).
+        var entry = options.SkipCacheRead
+            ? CacheStoreEntry<T>.NotFound
+            : await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
         var now = _GetUtcNow();
 
         if (entry.IsFresh(now))
@@ -142,18 +148,23 @@ public sealed partial class FactoryCacheCoordinator(
 
         try
         {
-            entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
-            now = _GetUtcNow();
-
-            if (entry.IsFresh(now))
+            // Force-refresh skips the under-lock re-check too: there is no cached value to honor, so go straight
+            // to the factory while still holding the per-key lock for single-flight.
+            if (!options.SkipCacheRead)
             {
-                await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
-                return _ToCacheValue(entry, isStale: false);
-            }
+                entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+                now = _GetUtcNow();
 
-            if (_IsStaleCandidate(entry, now))
-            {
-                staleCandidate = entry;
+                if (entry.IsFresh(now))
+                {
+                    await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
+                    return _ToCacheValue(entry, isStale: false);
+                }
+
+                if (_IsStaleCandidate(entry, now))
+                {
+                    staleCandidate = entry;
+                }
             }
 
             if (options.UseDistributedFactoryLock)
@@ -202,18 +213,23 @@ public sealed partial class FactoryCacheCoordinator(
 
                 // The previous lock owner on another node may have just written a fresh value to the shared store;
                 // re-check before running the factory so the loser of the cross-node race serves the winner's value.
-                entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
-                now = _GetUtcNow();
-
-                if (entry.IsFresh(now))
+                // Force-refresh skips this re-check as well: the caller asked to bypass the cached read on both
+                // tiers unconditionally, so a peer's fresh write must not short-circuit the forced factory run.
+                if (!options.SkipCacheRead)
                 {
-                    await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
-                    return _ToCacheValue(entry, isStale: false);
-                }
+                    entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+                    now = _GetUtcNow();
 
-                if (_IsStaleCandidate(entry, now))
-                {
-                    staleCandidate = entry;
+                    if (entry.IsFresh(now))
+                    {
+                        await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
+                        return _ToCacheValue(entry, isStale: false);
+                    }
+
+                    if (_IsStaleCandidate(entry, now))
+                    {
+                        staleCandidate = entry;
+                    }
                 }
             }
 
@@ -431,6 +447,10 @@ public sealed partial class FactoryCacheCoordinator(
             // A NotModified extension re-stamps the existing value: peers' cached bytes stay valid, so
             // multi-tier stores must not broadcast an invalidation for it.
             IsRestamp = result.IsNotModified,
+            // Per-call tier-write control, taken from the (possibly adaptively-replaced) context options the same
+            // way Tags are, so a conditional factory mutating its options also governs which tiers are written.
+            SkipMemoryCacheWrite = options.SkipMemoryCacheWrite,
+            SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
         };
 
         await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);

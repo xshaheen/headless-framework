@@ -50,4 +50,20 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// remote re-reads. Defaults to <see langword="false"/> (a value-producing write).
     /// </summary>
     public bool IsRestamp { get; init; }
+
+    /// <summary>
+    /// Gets whether the L1 (memory) tier write must be skipped for this entry. Hybrid-relevant only: single-tier
+    /// stores ignore it. The coordinator copies this from <see cref="CacheEntryOptions.SkipMemoryCacheWrite"/>.
+    /// Declared as an initializer-only property (not a positional parameter) so existing construction sites stay
+    /// valid. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool SkipMemoryCacheWrite { get; init; }
+
+    /// <summary>
+    /// Gets whether the L2 (distributed) tier write must be skipped for this entry. Hybrid-relevant only:
+    /// single-tier stores ignore it. The coordinator copies this from
+    /// <see cref="CacheEntryOptions.SkipDistributedCacheWrite"/>. Declared as an initializer-only property (not a
+    /// positional parameter) so existing construction sites stay valid. Defaults to <see langword="false"/>.
+    /// </summary>
+    public bool SkipDistributedCacheWrite { get; init; }
 }

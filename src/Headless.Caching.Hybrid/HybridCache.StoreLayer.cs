@@ -136,45 +136,52 @@ public sealed partial class HybridCache
             return;
         }
 
+        // Per-call tier control: skip the L2 (distributed) write entirely. No recovery replay is queued (the skip
+        // is intentional, not a failure), and the peer-invalidation publish below is skipped together with it —
+        // a value that never reached L2 has no shared copy for peers to invalidate against.
+        var skipL2 = entry.SkipDistributedCacheWrite;
         var l2WriteSucceeded = false;
 
-        if (l2Cache is IFactoryCacheStore l2Store)
+        if (!skipL2)
         {
-            try
+            if (l2Cache is IFactoryCacheStore l2Store)
             {
-                // Pass the descriptor through unchanged so per-entry metadata round-trips the L2 tier.
-                await l2Store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
-                l2WriteSucceeded = true;
+                try
+                {
+                    // Pass the descriptor through unchanged so per-entry metadata round-trips the L2 tier.
+                    await l2Store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+                    l2WriteSucceeded = true;
+                }
+                catch (Exception exception)
+                    when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+                {
+                    _logger.LogFailedToWriteToL2Cache(exception, key);
+                }
             }
-            catch (Exception exception)
-                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            else
             {
-                _logger.LogFailedToWriteToL2Cache(exception, key);
-            }
-        }
-        else
-        {
-            var expiresIn = (
-                entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
-            ).Subtract(_GetUtcNow());
+                var expiresIn = (
+                    entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
+                ).Subtract(_GetUtcNow());
 
-            try
-            {
-                await l2Cache
-                    .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, cancellationToken)
-                    .ConfigureAwait(false);
-                l2WriteSucceeded = true;
-            }
-            catch (Exception exception)
-                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
-            {
-                _logger.LogFailedToWriteToL2Cache(exception, key);
+                try
+                {
+                    await l2Cache
+                        .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, cancellationToken)
+                        .ConfigureAwait(false);
+                    l2WriteSucceeded = true;
+                }
+                catch (Exception exception)
+                    when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+                {
+                    _logger.LogFailedToWriteToL2Cache(exception, key);
+                }
             }
         }
 
         var l1PhysicalStampSync = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
 
-        if (RecoveryQueue is not null)
+        if (RecoveryQueue is not null && !skipL2)
         {
             if (l2WriteSucceeded)
             {
@@ -190,8 +197,10 @@ public sealed partial class HybridCache
         // Factory value-writes (cold-miss fresh write, soft-timeout background completion, eager refresh,
         // conditional Modified) invalidate peers' L1 exactly like the explicit-upsert path. Metadata-only
         // restamps (NotModified extension, fail-safe throttle, eager-refresh gate) are skipped: peers' cached
-        // bytes are still identical, so invalidating them would only force pointless L2 re-reads. The publish
-        // runs after the recovery bookkeeping so a queued publish-recovery item cannot be cleared by this
+        // bytes are still identical, so invalidating them would only force pointless L2 re-reads. The publish is
+        // kept as-is for the tier-skip flags (it does not depend on skipL2): a fresh value here means peers'
+        // cached copies are stale, so they must still drop their L1 even when this node wrote only one tier. The
+        // publish runs after the recovery bookkeeping so a queued publish-recovery item cannot be cleared by this
         // write's own L2 success.
         if (!entry.IsRestamp)
         {
@@ -215,6 +224,13 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
+        // Per-call tier control: skip the L1 (memory) write entirely. The L2 mirror and the peer invalidation
+        // publish still run, so peers drop their stale L1 copy even though this node wrote nothing to L1.
+        if (entry.SkipMemoryCacheWrite)
+        {
+            return null;
+        }
+
         if (LocalCache is IFactoryCacheStore l1Store)
         {
             var l1Entry = new CacheStoreEntry<T>(
@@ -256,42 +272,48 @@ public sealed partial class HybridCache
     /// </summary>
     private async Task _SetEntryL2TailAsync<T>(string key, CacheStoreEntryWrite<T> entry, DateTime? l1PhysicalStamp)
     {
+        // Per-call tier control: skip the L2 write (and its recovery bookkeeping) when requested; the publish
+        // below is kept as-is so peers still drop their stale L1.
+        var skipL2 = entry.SkipDistributedCacheWrite;
         var l2WriteSucceeded = false;
 
-        if (l2Cache is IFactoryCacheStore l2Store)
+        if (!skipL2)
         {
-            try
+            if (l2Cache is IFactoryCacheStore l2Store)
             {
-                await l2Store.SetEntryAsync(key, in entry, CancellationToken.None).ConfigureAwait(false);
-                l2WriteSucceeded = true;
+                try
+                {
+                    await l2Store.SetEntryAsync(key, in entry, CancellationToken.None).ConfigureAwait(false);
+                    l2WriteSucceeded = true;
+                }
+                catch (Exception exception)
+                    when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+                {
+                    _logger.LogFailedToWriteToL2Cache(exception, key);
+                }
             }
-            catch (Exception exception)
-                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+            else
             {
-                _logger.LogFailedToWriteToL2Cache(exception, key);
+                var expiresIn = (
+                    entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
+                ).Subtract(_GetUtcNow());
+
+                try
+                {
+                    await l2Cache
+                        .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    l2WriteSucceeded = true;
+                }
+                catch (Exception exception)
+                    when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+                {
+                    _logger.LogFailedToWriteToL2Cache(exception, key);
+                }
             }
         }
-        else
-        {
-            var expiresIn = (
-                entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
-            ).Subtract(_GetUtcNow());
 
-            try
-            {
-                await l2Cache
-                    .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, CancellationToken.None)
-                    .ConfigureAwait(false);
-                l2WriteSucceeded = true;
-            }
-            catch (Exception exception)
-                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
-            {
-                _logger.LogFailedToWriteToL2Cache(exception, key);
-            }
-        }
-
-        if (RecoveryQueue is not null)
+        if (RecoveryQueue is not null && !skipL2)
         {
             if (l2WriteSucceeded)
             {
