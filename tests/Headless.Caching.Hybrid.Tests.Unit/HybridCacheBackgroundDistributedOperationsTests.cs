@@ -141,7 +141,7 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
 
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         l2.UpsertGate = gate;
-        var values = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 };
+        var values = new Dictionary<string, int>(StringComparer.Ordinal) { ["a"] = 1, ["b"] = 2 };
 
         // when
         var count = await cache.UpsertAllAsync(values, TimeSpan.FromMinutes(5), AbortToken);

@@ -65,7 +65,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         await using var _ = cache;
 
         l2.FailWrites = true;
-        var values = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 };
+        var values = new Dictionary<string, int>(StringComparer.Ordinal) { ["a"] = 1, ["b"] = 2 };
 
         // when
         var act = async () => await cache.UpsertAllAsync(values, TimeSpan.FromMinutes(5), AbortToken);
