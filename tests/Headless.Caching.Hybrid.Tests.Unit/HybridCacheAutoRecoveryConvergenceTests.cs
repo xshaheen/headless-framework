@@ -633,6 +633,15 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
             : backend.RemoveAsync(key, cancellationToken);
     }
 
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+    {
+        RemoveAttempts++;
+
+        return FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : backend.ExpireAsync(key, cancellationToken);
+    }
+
     public ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,
         T? expected,

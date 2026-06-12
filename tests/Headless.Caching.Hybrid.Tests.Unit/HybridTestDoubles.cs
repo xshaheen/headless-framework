@@ -175,6 +175,9 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
         cache.RemoveAsync(key, cancellationToken);
 
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) =>
+        cache.ExpireAsync(key, cancellationToken);
+
     public ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,
         T? expected,
@@ -371,6 +374,8 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
     ) => new(CacheValue<ICollection<T>>.NoValue);
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) => new(false);
+
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) => new(false);
 
     public ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,
@@ -574,6 +579,8 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
     ) => new(CacheValue<ICollection<T>>.NoValue);
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) => new(true);
+
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) => new(true);
 
     public ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,
@@ -803,6 +810,15 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
         return FailWrites
             ? throw new InvalidOperationException("L2 write failed")
             : _cache.RemoveAsync(key, cancellationToken);
+    }
+
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+    {
+        RemoveAttempts++;
+
+        return FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.ExpireAsync(key, cancellationToken);
     }
 
     public ValueTask<bool> RemoveIfEqualAsync<T>(
@@ -1077,6 +1093,9 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
         _cache.RemoveAsync(key, cancellationToken);
+
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) =>
+        _cache.ExpireAsync(key, cancellationToken);
 
     public ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,

@@ -153,6 +153,9 @@ internal sealed class InMemoryRemoteCacheAdapter(IInMemoryCache inMemoryCache) :
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
         inMemoryCache.RemoveAsync(key, cancellationToken);
 
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) =>
+        inMemoryCache.ExpireAsync(key, cancellationToken);
+
     public ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,
         T? expected,

@@ -1393,6 +1393,61 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         return new ValueTask<bool>(!entry.IsExpired);
     }
 
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+
+        if (!_memory.TryGetValue(key, out var existingEntry))
+        {
+            return new ValueTask<bool>(false);
+        }
+
+        if (existingEntry.IsExpired)
+        {
+            _TryRemoveExpiredEntry(key, existingEntry);
+            return new ValueTask<bool>(false);
+        }
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // Reserve-preservation fork. Physical > Logical is overloaded: it is produced both by a fail-safe write
+        // (FailSafeMaxDuration extends physical) and by a sliding entry whose absolute Duration cap exceeds its
+        // idle window. Only the former is a fail-safe parachute worth keeping — sliding × fail-safe is mutually
+        // exclusive, so a sliding entry's surplus physical span is just its cap, not a reserve, and must collapse.
+        var hasFailSafeReserve =
+            existingEntry.SlidingExpiration is null && existingEntry.PhysicalExpiresAt > existingEntry.LogicalExpiresAt;
+
+        if (hasFailSafeReserve)
+        {
+            // Logically expire in place: normal reads miss, but the physical reserve survives so a later
+            // GetOrAddAsync whose factory fails (fail-safe) can still serve the stale value. Optimistic single
+            // swap, matching _TryRearmSlidingEntry's fire-and-forget posture: a lost race means a concurrent
+            // writer already produced a newer state, which satisfies the caller's intent to expire what they saw.
+            var expiredEntry = existingEntry.WithLogicalExpiration(now);
+
+            if (_memory.TryUpdate(key, expiredEntry, existingEntry))
+            {
+                _TrackUpdate(key, expiredEntry.TrackedExpiresAt);
+            }
+
+            return new ValueTask<bool>(true);
+        }
+
+        // No reserve to preserve: removing avoids manufacturing a phantom reserve that headless's per-call
+        // fail-safe model could later resurrect. Mirror RemoveAsync's size/tag bookkeeping.
+        if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
+        {
+            Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
+            _UntagEntry(key, existingEntry);
+        }
+
+        return new ValueTask<bool>(true);
+    }
+
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,
         T? expected,

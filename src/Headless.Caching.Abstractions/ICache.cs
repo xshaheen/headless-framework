@@ -225,6 +225,19 @@ public interface ICache
     /// <summary>Remove the specified cache key.</summary>
     ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Logically expires the entry instead of removing it: normal reads immediately treat it as a miss, but its
+    /// fail-safe physical reserve is preserved, so a subsequent <c>GetOrAddAsync</c> whose factory fails can still
+    /// serve the stale value (the fail-safe parachute). For an entry written WITHOUT fail-safe (no physical
+    /// reserve beyond its logical lifetime) this is equivalent to <see cref="RemoveAsync"/>. On a two-tier cache
+    /// the expiration is applied to both tiers and propagated to other instances so their copies are logically
+    /// expired too (reserves preserved). A no-op when the key is absent.
+    /// </summary>
+    /// <param name="key">The cache key to logically expire.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><see langword="true"/> when an entry was found and expired; otherwise <see langword="false"/>.</returns>
+    ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default);
+
     /// <summary>Remove only if equal the expected value.</summary>
     ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default);
 

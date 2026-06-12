@@ -30,6 +30,14 @@ public sealed record CacheInvalidationMessage
     public bool FlushAll { get; init; }
 
     /// <summary>
+    /// When true, the <see cref="Key"/>/<see cref="Keys"/> targets are LOGICALLY expired on receivers rather than
+    /// removed: each entry becomes stale (normal reads miss) but its fail-safe physical reserve is preserved, so a
+    /// later failing factory can still serve the stale value. Only meaningful with <see cref="Key"/> or
+    /// <see cref="Keys"/> set; ignored for <see cref="Prefix"/>, <see cref="Tag"/>, and <see cref="FlushAll"/>.
+    /// </summary>
+    public bool Expire { get; init; }
+
+    /// <summary>
     /// UTC timestamp at which the originating instance published this invalidation. Stamped automatically by
     /// <see cref="HybridCache"/> on publish. Receivers use it to resolve conflicts with auto-recovery items
     /// queued locally: a queued write older than an incoming invalidation is dropped so replaying it cannot

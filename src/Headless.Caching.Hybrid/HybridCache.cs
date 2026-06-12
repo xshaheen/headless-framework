@@ -133,7 +133,19 @@ public sealed partial class HybridCache(
 
             if (keys.Length > 0)
             {
-                await LocalCache.RemoveAllAsync(keys, ct).ConfigureAwait(false);
+                if (message.Expire)
+                {
+                    // Logical expiration preserves each peer's fail-safe reserve: expire per key rather than
+                    // removing, since there is no bulk logical-expire on the local store.
+                    foreach (var key in keys)
+                    {
+                        await LocalCache.ExpireAsync(key, ct).ConfigureAwait(false);
+                    }
+                }
+                else
+                {
+                    await LocalCache.RemoveAllAsync(keys, ct).ConfigureAwait(false);
+                }
             }
 
             return;
@@ -143,7 +155,14 @@ public sealed partial class HybridCache(
         {
             if (!_ShouldIgnoreInvalidationFor(message.Key))
             {
-                await LocalCache.RemoveAsync(message.Key, ct).ConfigureAwait(false);
+                if (message.Expire)
+                {
+                    await LocalCache.ExpireAsync(message.Key, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await LocalCache.RemoveAsync(message.Key, ct).ConfigureAwait(false);
+                }
             }
 
             return;
@@ -1075,6 +1094,55 @@ public sealed partial class HybridCache(
     }
 
     /// <inheritdoc />
+    public async ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        bool expired;
+
+        try
+        {
+            expired = await l2Cache.ExpireAsync(key, cancellationToken).ConfigureAwait(false);
+            RecoveryQueue?.OnSuccessfulL2Operation(key);
+        }
+        catch (Exception exception)
+            when (RecoveryQueue is not null
+                && !FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+            )
+        {
+            // Degraded mode: L1 is expired below, the L2 expiration is queued for replay, and we conservatively
+            // report (and publish) the expiration because the L2 state is unknown — mirrors RemoveAsync.
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+            _QueueExpireRecovery(key);
+            expired = true;
+        }
+
+        // Logically expire the local copy too: a peer's reserve is preserved, and so is ours.
+        await LocalCache.ExpireAsync(key, cancellationToken).ConfigureAwait(false);
+
+        // Only notify other nodes if the key actually existed; the Expire flag tells receivers to logically
+        // expire their L1 copy (preserving its fail-safe reserve) rather than remove it.
+        if (expired)
+        {
+            await _PublishInvalidationAsync(
+                    new CacheInvalidationMessage
+                    {
+                        InstanceId = _instanceId,
+                        Key = key,
+                        Expire = true,
+                    },
+                    cancellationToken,
+                    queueOnFailure: true
+                )
+                .ConfigureAwait(false);
+        }
+
+        return expired;
+    }
+
+    /// <inheritdoc />
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,
         T? expected,
@@ -1427,6 +1495,24 @@ public sealed partial class HybridCache(
         );
     }
 
+    private void _QueueExpireRecovery(string key)
+    {
+        var queue = RecoveryQueue!;
+        var expireTimestamp = _timeProvider.GetUtcNow();
+
+        queue.Enqueue(
+            key,
+            HybridCacheRecoveryKind.Expire,
+            expireTimestamp + queue.DefaultRetention,
+            async ct =>
+            {
+                await l2Cache.ExpireAsync(key, ct).ConfigureAwait(false);
+                await _PublishReplayedInvalidationAsync(key, expireTimestamp, ct, expire: true).ConfigureAwait(false);
+                return HybridCacheRecoveryReplayOutcome.Replayed;
+            }
+        );
+    }
+
     private void _QueuePublishRecovery(CacheInvalidationMessage message)
     {
         var queue = RecoveryQueue!;
@@ -1459,7 +1545,8 @@ public sealed partial class HybridCache(
     private async ValueTask _PublishReplayedInvalidationAsync(
         string key,
         DateTimeOffset writeTimestamp,
-        CancellationToken ct
+        CancellationToken ct,
+        bool expire = false
     )
     {
         await _PublishInvalidationAsync(
@@ -1467,6 +1554,7 @@ public sealed partial class HybridCache(
                 {
                     InstanceId = _instanceId,
                     Key = key,
+                    Expire = expire,
                     Timestamp = writeTimestamp,
                 },
                 ct,

@@ -135,6 +135,9 @@ public interface ICache<T>
 
     ValueTask<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default);
 
+    /// <summary>Logically expires the entry, preserving its fail-safe reserve. See <see cref="ICache.ExpireAsync"/>.</summary>
+    ValueTask<bool> ExpireAsync(string cacheKey, CancellationToken cancellationToken = default);
+
     ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected);
 
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
@@ -276,6 +279,11 @@ public class Cache<T>(ICache cache) : ICache<T>
     public ValueTask<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
         return cache.RemoveAsync(cacheKey, cancellationToken);
+    }
+
+    public ValueTask<bool> ExpireAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        return cache.ExpireAsync(cacheKey, cancellationToken);
     }
 
     public ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected)

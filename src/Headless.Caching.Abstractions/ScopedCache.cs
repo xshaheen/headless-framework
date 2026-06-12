@@ -244,6 +244,13 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
+    public ValueTask<bool> ExpireAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(cacheKey);
+        return _cache.ExpireAsync(_ScopeKey(cacheKey), cancellationToken);
+    }
+
+    /// <inheritdoc />
     public ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected)
     {
         Argument.IsNotNullOrEmpty(cacheKey);

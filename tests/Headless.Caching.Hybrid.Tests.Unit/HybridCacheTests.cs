@@ -785,6 +785,8 @@ public sealed class HybridCacheTests : TestBase
 
         public ValueTask<bool> RemoveAsync(string key, CancellationToken ct = default) => _cache.RemoveAsync(key, ct);
 
+        public ValueTask<bool> ExpireAsync(string key, CancellationToken ct = default) => _cache.ExpireAsync(key, ct);
+
         public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken ct = default) =>
             _cache.RemoveIfEqualAsync(key, expected, ct);
 

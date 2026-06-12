@@ -411,6 +411,20 @@ public sealed class CronExpressionCacheTests
             return ValueTask.FromResult(true);
         }
 
+        public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+        {
+            RemoveCalls++;
+
+            if (RemoveException is not null)
+            {
+                throw RemoveException;
+            }
+
+            RemovedKeys.Add(key);
+
+            return ValueTask.FromResult(true);
+        }
+
         public ValueTask<bool> UpsertAsync<T>(
             string key,
             T? value,

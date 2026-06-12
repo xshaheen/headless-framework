@@ -10,6 +10,7 @@ internal enum HybridCacheRecoveryKind
 {
     SetEntry,
     Remove,
+    Expire,
     PublishInvalidation,
 }
 

@@ -854,6 +854,71 @@ public sealed class RedisCache(
         return await _database.KeyDeleteAsync(_GetKey(key)).ConfigureAwait(false);
     }
 
+    public async ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var redisKey = _GetKey(key);
+        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+
+        if (!redisValue.HasValue)
+        {
+            return false;
+        }
+
+        var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+        // A non-framed (legacy/raw) key carries no logical metadata, so there is no fail-safe reserve to preserve:
+        // logical expiration collapses to removal, the same fork the framed no-reserve branch takes below.
+        if (!frame.IsFramed)
+        {
+            return await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        if (_IsExpired(frame.PhysicalExpiresAt, now))
+        {
+            await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+            return false;
+        }
+
+        // Physical > Logical is overloaded (fail-safe extension vs sliding's absolute cap); only the former, on a
+        // non-sliding entry, is a parachute worth keeping — mirror InMemoryCache.ExpireAsync exactly.
+        var hasFailSafeReserve =
+            frame.SlidingExpiration is null
+            && frame is { LogicalExpiresAt: { } logical, PhysicalExpiresAt: { } physical }
+            && physical > logical;
+
+        if (!hasFailSafeReserve)
+        {
+            return await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+        }
+
+        // Re-stamp the logical expiry to now while preserving the physical reserve and the key's server TTL
+        // (KeepTtl). Reads now miss; a later failing fail-safe factory can still serve the stale value. The eager
+        // stamp is cleared — a logically-expired entry must route the next caller through the factory, not eager
+        // refresh. Last-writer-wins under a concurrent fresh write, consistent with the sliding re-arm RMW.
+        var reStamped = RedisCacheEntryFrame.Encode(
+            (byte[])frame.ValueSegment.ToArray(),
+            frame.IsNull,
+            logicalExpiresAt: now,
+            physicalExpiresAt: frame.PhysicalExpiresAt,
+            slidingExpiration: null,
+            eagerRefreshAt: null,
+            etag: frame.ETag,
+            lastModifiedAt: frame.LastModifiedAt,
+            tags: frame.Tags
+        );
+
+        await _database
+            .StringSetAsync(redisKey, reStamped, expiry: null, keepTtl: true, when: When.Exists)
+            .ConfigureAwait(false);
+
+        return true;
+    }
+
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
         string key,
         T? expected,
