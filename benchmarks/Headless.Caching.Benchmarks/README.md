@@ -29,7 +29,7 @@ Set `HEADLESS_CACHE_BENCHMARK_REDIS` to opt into Redis-backed FusionCache and Mi
 HEADLESS_CACHE_BENCHMARK_REDIS=localhost:6379 dotnet run -c Release --project benchmarks/Headless.Caching.Benchmarks -- --filter '*Redis*'
 ```
 
-BenchmarkDotNet writes Markdown and HTML artifacts under `BenchmarkDotNet.Artifacts`.
+BenchmarkDotNet writes Markdown and HTML artifacts under `artifacts/BenchmarkDotNet.Artifacts`.
 
 ## Lanes
 
