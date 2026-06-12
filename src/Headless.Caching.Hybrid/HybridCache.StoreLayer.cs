@@ -76,17 +76,40 @@ public sealed partial class HybridCache
             return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
 
-        CacheStoreEntry<T> l2Entry;
+        var timeoutKind = l1StaleCandidate is not null
+            ? DistributedCacheTimeoutKind.Soft
+            : DistributedCacheTimeoutKind.Hard;
+        var l2Read = await _ReadFromL2Async(
+                key,
+                ct => l2Store.TryGetEntryAsync<T>(key, ct),
+                _SelectDistributedReadTimeout(
+                    hasLocalFallback: l1StaleCandidate is not null,
+                    softCanDegradeToMiss: false
+                ),
+                timeoutKind,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-        try
+        if (!l2Read.IsSuccess)
         {
-            l2Entry = await l2Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
-        {
-            _logger.LogFailedToReadFromL2Cache(exception, key);
+            if (l2Read.Exception is { } exception)
+            {
+                _logger.LogFailedToReadFromL2Cache(exception, key);
+            }
+
+            if (
+                l1StaleCandidate is { } fallback
+                && l2Read.Status is DistributedCacheReadStatus.TimedOut or DistributedCacheReadStatus.CircuitOpen
+            )
+            {
+                return fallback with { ServeStaleImmediately = true };
+            }
+
             return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
+
+        var l2Entry = l2Read.Value!;
 
         // Only promote a logically-fresh L2 entry into L1. Promoting a stale (logically-expired) reserve on
         // every fail-safe read amplifies L1 writes under stampede and can overwrite a newer L1 stale reserve.
@@ -144,7 +167,7 @@ public sealed partial class HybridCache
         // Per-call tier control: skip the L2 (distributed) write entirely. No recovery replay is queued (the skip
         // is intentional, not a failure), and the peer-invalidation publish below is skipped together with it —
         // a value that never reached L2 has no shared copy for peers to invalidate against.
-        var skipL2 = entry.SkipDistributedCacheWrite;
+        var skipL2 = entry.SkipDistributedCacheWrite || !_IsDistributedCacheCircuitClosed();
         var l2WriteSucceeded = false;
         var l2WriteConditionFailed = false;
 
@@ -165,6 +188,7 @@ public sealed partial class HybridCache
                 catch (Exception exception)
                     when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
                 {
+                    _OpenDistributedCacheCircuit(exception, key);
                     _logger.LogFailedToWriteToL2Cache(exception, key);
                 }
             }
@@ -184,6 +208,7 @@ public sealed partial class HybridCache
                 catch (Exception exception)
                     when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
                 {
+                    _OpenDistributedCacheCircuit(exception, key);
                     _logger.LogFailedToWriteToL2Cache(exception, key);
                 }
             }
@@ -299,7 +324,7 @@ public sealed partial class HybridCache
     {
         // Per-call tier control: skip the L2 write (and its recovery bookkeeping) when requested; the publish
         // below is kept as-is so peers still drop their stale L1.
-        var skipL2 = entry.SkipDistributedCacheWrite;
+        var skipL2 = entry.SkipDistributedCacheWrite || !_IsDistributedCacheCircuitClosed();
         var l2WriteSucceeded = false;
         var l2WriteConditionFailed = false;
 
@@ -319,6 +344,7 @@ public sealed partial class HybridCache
                 catch (Exception exception)
                     when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
                 {
+                    _OpenDistributedCacheCircuit(exception, key);
                     _logger.LogFailedToWriteToL2Cache(exception, key);
                 }
             }
@@ -338,6 +364,7 @@ public sealed partial class HybridCache
                 catch (Exception exception)
                     when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
                 {
+                    _OpenDistributedCacheCircuit(exception, key);
                     _logger.LogFailedToWriteToL2Cache(exception, key);
                 }
             }
@@ -386,7 +413,7 @@ public sealed partial class HybridCache
         // Re-arm both tiers (KTD-8). L2 carries the authoritative physical cap; L1's own re-arm bounds the new
         // logical deadline by its locally-capped entry metadata, so passing the L2 cap is safe. L2 is best-effort
         // (a remote hiccup must not fail the read); L1 is in-process and effectively infallible.
-        if (l2Cache is IFactoryCacheStore l2Store)
+        if (l2Cache is IFactoryCacheStore l2Store && _IsDistributedCacheCircuitClosed())
         {
             try
             {
@@ -397,6 +424,7 @@ public sealed partial class HybridCache
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
+                _OpenDistributedCacheCircuit(exception, key);
                 _logger.LogFailedToWriteToL2Cache(exception, key);
             }
         }

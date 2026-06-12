@@ -142,4 +142,38 @@ internal static partial class HybridCacheLoggerExtensions
         string key,
         string exceptionType
     );
+
+    [LoggerMessage(
+        EventId = 17,
+        EventName = "DistributedCacheReadTimedOut",
+        Level = LogLevel.Warning,
+        Message = "Distributed L2 cache read timed out for key {Key} after {Timeout} ({TimeoutKind}); degrading to local fallback or miss"
+    )]
+    public static partial void LogDistributedCacheReadTimedOut(
+        this ILogger logger,
+        string key,
+        TimeSpan timeout,
+        string timeoutKind
+    );
+
+    [LoggerMessage(
+        EventId = 18,
+        EventName = "DistributedCacheCircuitOpened",
+        Level = LogLevel.Warning,
+        Message = "Distributed L2 cache circuit opened for {Duration} after a failure on key {Key}"
+    )]
+    public static partial void LogDistributedCacheCircuitOpened(
+        this ILogger logger,
+        Exception exception,
+        string key,
+        TimeSpan duration
+    );
+
+    [LoggerMessage(
+        EventId = 19,
+        EventName = "DistributedCacheCircuitClosed",
+        Level = LogLevel.Warning,
+        Message = "Distributed L2 cache circuit closed; L2 operations are enabled again"
+    )]
+    public static partial void LogDistributedCacheCircuitClosed(this ILogger logger);
 }

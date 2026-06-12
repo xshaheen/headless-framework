@@ -224,12 +224,38 @@ public sealed partial class HybridCache(
         }
 
         _logger.LogLocalCacheMiss(key);
-        cacheValue = await l2Cache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+        var l2Read = await _ReadFromL2Async(
+                key,
+                async ct =>
+                {
+                    var value = await l2Cache.GetAsync<T>(key, ct).ConfigureAwait(false);
+                    var expiration = value.HasValue
+                        ? await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false)
+                        : null;
+
+                    return (Value: value, Expiration: expiration);
+                },
+                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
+                DistributedCacheTimeoutKind.Soft,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!l2Read.IsSuccess)
+        {
+            if (l2Read.Exception is { } exception)
+            {
+                _logger.LogFailedToReadFromL2Cache(exception, key);
+            }
+
+            return CacheValue<T>.NoValue;
+        }
+
+        cacheValue = l2Read.Value.Value;
 
         if (cacheValue.HasValue)
         {
-            var expiration = await l2Cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
-            var localExpiration = _GetLocalExpiration(expiration);
+            var localExpiration = _GetLocalExpiration(l2Read.Value.Expiration);
             _logger.LogSettingLocalCacheKey(key, localExpiration);
             await LocalCache
                 .UpsertAsync(key, cacheValue.Value, localExpiration, cancellationToken)
@@ -281,7 +307,27 @@ public sealed partial class HybridCache(
         }
 
         var result = new Dictionary<string, CacheValue<T>>(localValues, StringComparer.Ordinal);
-        var distributedResults = await l2Cache.GetAllAsync<T>(missedKeys, cancellationToken).ConfigureAwait(false);
+        var distributedRead = await _ReadFromL2Async(
+                missedKeys[0],
+                ct => l2Cache.GetAllAsync<T>(missedKeys, ct),
+                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
+                DistributedCacheTimeoutKind.Soft,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!distributedRead.IsSuccess)
+        {
+            if (distributedRead.Exception is { } exception)
+            {
+                _logger.LogFailedBulkL2CacheOperation(exception, missedKeys.Count);
+                throw exception;
+            }
+
+            return result;
+        }
+
+        var distributedResults = distributedRead.Value!;
 
         var valuesToCache = new Dictionary<string, (T Value, TimeSpan? Expiration)>(StringComparer.Ordinal);
         foreach (var kvp in distributedResults)
@@ -289,8 +335,19 @@ public sealed partial class HybridCache(
             result[kvp.Key] = kvp.Value;
             if (kvp.Value is { HasValue: true, Value: not null })
             {
-                var expiration = await l2Cache.GetExpirationAsync(kvp.Key, cancellationToken).ConfigureAwait(false);
-                valuesToCache[kvp.Key] = (kvp.Value.Value, _GetLocalExpiration(expiration));
+                var expirationRead = await _ReadFromL2Async(
+                        kvp.Key,
+                        ct => l2Cache.GetExpirationAsync(kvp.Key, ct),
+                        _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
+                        DistributedCacheTimeoutKind.Soft,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (expirationRead.IsSuccess)
+                {
+                    valuesToCache[kvp.Key] = (kvp.Value.Value, _GetLocalExpiration(expirationRead.Value));
+                }
             }
         }
 
@@ -356,7 +413,26 @@ public sealed partial class HybridCache(
         }
 
         _logger.LogLocalCacheMiss(key);
-        return await l2Cache.ExistsAsync(key, cancellationToken).ConfigureAwait(false);
+        var l2Read = await _ReadFromL2Async(
+                key,
+                ct => l2Cache.ExistsAsync(key, ct),
+                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
+                DistributedCacheTimeoutKind.Soft,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!l2Read.IsSuccess)
+        {
+            if (l2Read.Exception is { } exception)
+            {
+                _logger.LogFailedToReadFromL2Cache(exception, key);
+            }
+
+            return false;
+        }
+
+        return l2Read.Value;
     }
 
     /// <inheritdoc />
@@ -376,7 +452,26 @@ public sealed partial class HybridCache(
         }
 
         _logger.LogLocalCacheMiss(key);
-        return await l2Cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+        var l2Read = await _ReadFromL2Async(
+                key,
+                ct => l2Cache.GetExpirationAsync(key, ct),
+                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
+                DistributedCacheTimeoutKind.Soft,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!l2Read.IsSuccess)
+        {
+            if (l2Read.Exception is { } exception)
+            {
+                _logger.LogFailedToReadFromL2Cache(exception, key);
+            }
+
+            return null;
+        }
+
+        return l2Read.Value;
     }
 
     /// <inheritdoc />
@@ -402,12 +497,38 @@ public sealed partial class HybridCache(
         }
 
         _logger.LogLocalCacheMiss(key);
-        cacheValue = await l2Cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken).ConfigureAwait(false);
+        var l2Read = await _ReadFromL2Async(
+                key,
+                async ct =>
+                {
+                    var value = await l2Cache.GetSetAsync<T>(key, pageIndex, pageSize, ct).ConfigureAwait(false);
+                    var expiration = value.HasValue
+                        ? await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false)
+                        : null;
+
+                    return (Value: value, Expiration: expiration);
+                },
+                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
+                DistributedCacheTimeoutKind.Soft,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!l2Read.IsSuccess)
+        {
+            if (l2Read.Exception is { } exception)
+            {
+                _logger.LogFailedToReadFromL2Cache(exception, key);
+            }
+
+            return CacheValue<ICollection<T>>.NoValue;
+        }
+
+        cacheValue = l2Read.Value.Value;
 
         if (cacheValue.HasValue)
         {
-            var expiration = await l2Cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
-            var localExpiration = _GetLocalExpiration(expiration);
+            var localExpiration = _GetLocalExpiration(l2Read.Value.Expiration);
             _logger.LogSettingLocalCacheKey(key, localExpiration);
             // Use UpsertAsync to replace any existing L1 data (not SetAddAsync which would merge)
             await LocalCache
@@ -458,20 +579,33 @@ public sealed partial class HybridCache(
 
         bool updated;
 
-        try
+        if (!_IsDistributedCacheCircuitClosed())
         {
-            updated = await l2Cache.UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
-            RecoveryQueue?.OnSuccessfulL2Operation(key);
-        }
-        catch (Exception exception)
-            when (RecoveryQueue is not null
-                && !FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-            )
-        {
-            // Degraded mode: the caller succeeds against L1 and the L2 write is queued for replay.
-            _logger.LogFailedToWriteToL2Cache(exception, key);
-            _QueueScalarUpsertRecovery(key, value, expiration);
             updated = true;
+        }
+        else
+        {
+            try
+            {
+                updated = await l2Cache.UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
+                RecoveryQueue?.OnSuccessfulL2Operation(key);
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                    && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                )
+            {
+                // Degraded mode: with recovery on, queue the L2 write; with only the circuit breaker on, avoid
+                // amplifying an unhealthy L2 and let the caller succeed against L1 for this additive write.
+                _OpenDistributedCacheCircuit(exception, key);
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+                if (RecoveryQueue is not null)
+                {
+                    _QueueScalarUpsertRecovery(key, value, expiration);
+                }
+
+                updated = true;
+            }
         }
 
         if (updated)
@@ -503,23 +637,34 @@ public sealed partial class HybridCache(
     /// </summary>
     private async Task _BackgroundScalarUpsertAsync<T>(string key, T? value, TimeSpan? expiration)
     {
-        try
+        if (!_IsDistributedCacheCircuitClosed())
         {
-            await l2Cache.UpsertAsync(key, value, expiration, CancellationToken.None).ConfigureAwait(false);
-            RecoveryQueue?.OnSuccessfulL2Operation(key);
-        }
-        catch (Exception exception)
-            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
-        {
-            _logger.LogFailedToWriteToL2Cache(exception, key);
-
             if (RecoveryQueue is not null)
             {
-                // Same capture the synchronous degraded path uses: queue the failed L2 write for replay.
                 _QueueScalarUpsertRecovery(key, value, expiration);
             }
+        }
+        else
+        {
+            try
+            {
+                await l2Cache.UpsertAsync(key, value, expiration, CancellationToken.None).ConfigureAwait(false);
+                RecoveryQueue?.OnSuccessfulL2Operation(key);
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+            {
+                _OpenDistributedCacheCircuit(exception, key);
+                _logger.LogFailedToWriteToL2Cache(exception, key);
 
-            // Auto-recovery off: best-effort, swallow. The caller already returned success (fire-and-forget).
+                if (RecoveryQueue is not null)
+                {
+                    // Same capture the synchronous degraded path uses: queue the failed L2 write for replay.
+                    _QueueScalarUpsertRecovery(key, value, expiration);
+                }
+
+                // Auto-recovery off: best-effort, swallow. The caller already returned success (fire-and-forget).
+            }
         }
 
         await _PublishInvalidationAsync(
@@ -541,14 +686,22 @@ public sealed partial class HybridCache(
         TimeSpan? expiration
     )
     {
-        try
+        if (_IsDistributedCacheCircuitClosed())
         {
-            await l2Cache.UpsertAllAsync(snapshot, expiration, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception exception)
-            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
-        {
-            _logger.LogFailedBulkL2CacheOperation(exception, snapshot.Count);
+            try
+            {
+                await l2Cache.UpsertAllAsync(snapshot, expiration, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+            {
+                if (keys.Length > 0)
+                {
+                    _OpenDistributedCacheCircuit(exception, keys[0]);
+                }
+
+                _logger.LogFailedBulkL2CacheOperation(exception, snapshot.Count);
+            }
         }
 
         await _PublishInvalidationAsync(
@@ -622,16 +775,25 @@ public sealed partial class HybridCache(
 
         int setCount;
 
-        try
+        if (!_IsDistributedCacheCircuitClosed())
         {
-            setCount = await l2Cache.UpsertAllAsync(value, expiration, cancellationToken).ConfigureAwait(false);
+            setCount = value.Count;
         }
-        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+        else
         {
-            // Bulk ops are not captured by auto-recovery in v1 (issue #440); surface the L2 failure for
-            // observability and rethrow so the caller is not told the bulk write succeeded.
-            _logger.LogFailedBulkL2CacheOperation(exception, value.Count);
-            throw;
+            try
+            {
+                setCount = await l2Cache.UpsertAllAsync(value, expiration, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                    && options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero
+                )
+            {
+                _OpenDistributedCacheCircuit(exception, value.Keys.First());
+                _logger.LogFailedBulkL2CacheOperation(exception, value.Count);
+                setCount = value.Count;
+            }
         }
 
         if (setCount == value.Count)
@@ -1073,6 +1235,7 @@ public sealed partial class HybridCache(
         {
             // Degraded mode: L1 is removed below, the L2 removal is queued for replay, and we conservatively
             // report (and publish) the removal because the L2 state is unknown.
+            _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
             _QueueRemoveRecovery(key);
             removed = true;
@@ -1115,6 +1278,7 @@ public sealed partial class HybridCache(
         {
             // Degraded mode: L1 is expired below, the L2 expiration is queued for replay, and we conservatively
             // report (and publish) the expiration because the L2 state is unknown — mirrors RemoveAsync.
+            _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
             _QueueExpireRecovery(key);
             expired = true;
@@ -1194,6 +1358,11 @@ public sealed partial class HybridCache(
         {
             // Bulk ops are not captured by auto-recovery in v1 (issue #440); surface the L2 failure for
             // observability and rethrow so the caller is not told the bulk remove succeeded.
+            if (items is { Length: > 0 })
+            {
+                _OpenDistributedCacheCircuit(exception, items[0]);
+            }
+
             _logger.LogFailedBulkL2CacheOperation(exception, items?.Length ?? 0);
             throw;
         }

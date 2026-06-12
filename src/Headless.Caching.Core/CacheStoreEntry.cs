@@ -44,6 +44,12 @@ public readonly record struct CacheStoreEntry<T>(
     /// </remarks>
     public string? ConcurrencyStamp { get; init; }
 
+    /// <summary>
+    /// Gets whether the store is asking the coordinator to serve this physically-present stale entry without
+    /// running the factory because a lower tier degraded during the read.
+    /// </summary>
+    public bool ServeStaleImmediately { get; init; }
+
     /// <summary>Gets an entry representing a store miss.</summary>
     public static CacheStoreEntry<T> NotFound { get; } =
         new(

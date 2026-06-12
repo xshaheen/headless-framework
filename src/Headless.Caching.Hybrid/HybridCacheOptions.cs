@@ -74,6 +74,24 @@ public sealed class HybridCacheOptions : CacheOptions
     public bool AllowBackgroundDistributedCacheOperations { get; set; }
 
     /// <summary>
+    /// Maximum time to wait for a distributed (L2) read when Hybrid can degrade to a local fallback or a miss.
+    /// Defaults to <see cref="Timeout.InfiniteTimeSpan"/> (disabled).
+    /// </summary>
+    public TimeSpan DistributedCacheSoftTimeout { get; set; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// Maximum time to wait for a distributed (L2) read when no local fallback exists. Defaults to
+    /// <see cref="Timeout.InfiniteTimeSpan"/> (disabled).
+    /// </summary>
+    public TimeSpan DistributedCacheHardTimeout { get; set; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// Duration for which Hybrid temporarily skips distributed (L2) operations after a non-cancellation L2
+    /// failure. Defaults to <see cref="TimeSpan.Zero"/> (disabled).
+    /// </summary>
+    public TimeSpan DistributedCacheCircuitBreakerDuration { get; set; } = TimeSpan.Zero;
+
+    /// <summary>
     /// Maximum number of pending recovery items (one per cache key). On overflow the item with the earliest
     /// expiry is evicted to admit the new one. Only used when <see cref="EnableAutoRecovery"/> is enabled.
     /// </summary>
@@ -117,5 +135,28 @@ internal sealed class HybridCacheOptionsValidator : AbstractValidator<HybridCach
         RuleFor(x => x.AutoRecoveryDelay)
             .Must(x => x > TimeSpan.Zero)
             .WithMessage("AutoRecoveryDelay must be positive");
+
+        RuleFor(x => x.DistributedCacheSoftTimeout)
+            .Must(_IsValidTimeout)
+            .WithMessage("DistributedCacheSoftTimeout must be positive or Timeout.InfiniteTimeSpan");
+
+        RuleFor(x => x.DistributedCacheHardTimeout)
+            .Must(_IsValidTimeout)
+            .WithMessage("DistributedCacheHardTimeout must be positive or Timeout.InfiniteTimeSpan");
+
+        RuleFor(x => x.DistributedCacheHardTimeout)
+            .GreaterThan(x => x.DistributedCacheSoftTimeout)
+            .When(x =>
+                x.DistributedCacheSoftTimeout != Timeout.InfiniteTimeSpan
+                && x.DistributedCacheHardTimeout != Timeout.InfiniteTimeSpan
+            )
+            .WithMessage("DistributedCacheHardTimeout must be greater than DistributedCacheSoftTimeout");
+
+        RuleFor(x => x.DistributedCacheCircuitBreakerDuration)
+            .GreaterThanOrEqualTo(TimeSpan.Zero)
+            .WithMessage("DistributedCacheCircuitBreakerDuration must be zero or positive");
     }
+
+    private static bool _IsValidTimeout(TimeSpan timeout) =>
+        timeout == Timeout.InfiniteTimeSpan || timeout > TimeSpan.Zero;
 }

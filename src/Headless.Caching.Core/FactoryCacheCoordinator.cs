@@ -129,6 +129,11 @@ public sealed partial class FactoryCacheCoordinator(
             return _ToCacheValue(entry, isStale: false);
         }
 
+        if (entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now))
+        {
+            return _ToCacheValue(entry, isStale: true);
+        }
+
         var staleCandidate = _IsStaleCandidate(entry, now) ? entry : CacheStoreEntry<T>.NotFound;
         var lockTimeout = _SelectLockTimeout(options, staleCandidate, now);
         var releaser = await _keyedLock
@@ -159,6 +164,11 @@ public sealed partial class FactoryCacheCoordinator(
                 {
                     await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
                     return _ToCacheValue(entry, isStale: false);
+                }
+
+                if (entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now))
+                {
+                    return _ToCacheValue(entry, isStale: true);
                 }
 
                 if (_IsStaleCandidate(entry, now))
@@ -224,6 +234,11 @@ public sealed partial class FactoryCacheCoordinator(
                     {
                         await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
                         return _ToCacheValue(entry, isStale: false);
+                    }
+
+                    if (entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now))
+                    {
+                        return _ToCacheValue(entry, isStale: true);
                     }
 
                     if (_IsStaleCandidate(entry, now))

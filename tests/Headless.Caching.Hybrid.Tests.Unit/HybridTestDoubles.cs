@@ -621,14 +621,36 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
     /// <summary>When true, entry sets, scalar upserts, and removes throw.</summary>
     public bool FailWrites { get; set; }
 
+    /// <summary>When true, read operations throw.</summary>
+    public bool FailReads { get; set; }
+
+    public int ReadAttempts { get; private set; }
+
     public int SetEntryAttempts { get; private set; }
 
     public int UpsertAttempts { get; private set; }
 
     public int RemoveAttempts { get; private set; }
 
-    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
-        ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken);
+    public async ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken)
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken);
+    }
+
+    private ValueTask _WaitReadGateAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ReadAttempts++;
+
+        if (FailReads)
+        {
+            throw new InvalidOperationException("L2 read failed");
+        }
+
+        return ValueTask.CompletedTask;
+    }
 
     public ValueTask<bool> SetEntryAsync<T>(
         string key,
@@ -773,10 +795,15 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
         CancellationToken cancellationToken = default
     ) => _cache.SetAddAsync(key, value, expiration, cancellationToken);
 
-    public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+    public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
-    ) => _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+    }
 
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
@@ -788,24 +815,41 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
         CancellationToken cancellationToken = default
     ) => _cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
 
-    public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
-        _cache.GetAsync<T>(key, cancellationToken);
+    public async ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetAsync<T>(key, cancellationToken);
+    }
 
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
         _cache.GetCountAsync(prefix, cancellationToken);
 
-    public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
-        _cache.ExistsAsync(key, cancellationToken);
+    public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
 
-    public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
-        _cache.GetExpirationAsync(key, cancellationToken);
+        return await _cache.ExistsAsync(key, cancellationToken);
+    }
 
-    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+    public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetExpirationAsync(key, cancellationToken);
+    }
+
+    public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
         int? pageIndex = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
-    ) => _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
@@ -888,17 +932,26 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     /// <summary>Completed when a gated UpsertAsync/UpsertAllAsync has started and is parked on the gate.</summary>
     public TaskCompletionSource UpsertStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    public int ReadAttempts { get; private set; }
+
     public CacheEntryOptions? DefaultEntryOptions => null;
 
     public async ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken)
     {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken);
+    }
+
+    private async ValueTask _WaitReadGateAsync(CancellationToken cancellationToken)
+    {
+        ReadAttempts++;
+
         if (ReadGate is { } gate)
         {
             ReadStarted.TrySetResult();
             await gate.Task.WaitAsync(cancellationToken);
         }
-
-        return await ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken);
     }
 
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
@@ -1061,10 +1114,15 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         CancellationToken cancellationToken = default
     ) => _cache.SetAddAsync(key, value, expiration, cancellationToken);
 
-    public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+    public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
-    ) => _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+    }
 
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
@@ -1076,24 +1134,41 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         CancellationToken cancellationToken = default
     ) => _cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
 
-    public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
-        _cache.GetAsync<T>(key, cancellationToken);
+    public async ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetAsync<T>(key, cancellationToken);
+    }
 
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
         _cache.GetCountAsync(prefix, cancellationToken);
 
-    public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
-        _cache.ExistsAsync(key, cancellationToken);
+    public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
 
-    public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
-        _cache.GetExpirationAsync(key, cancellationToken);
+        return await _cache.ExistsAsync(key, cancellationToken);
+    }
 
-    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+    public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetExpirationAsync(key, cancellationToken);
+    }
+
+    public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
         int? pageIndex = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
-    ) => _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        return await _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
         _cache.RemoveAsync(key, cancellationToken);
