@@ -33,6 +33,17 @@ public readonly record struct CacheStoreEntry<T>(
     /// <summary>Gets the optional invalidation tags associated with the cached value.</summary>
     public IReadOnlyCollection<string>? Tags { get; init; }
 
+    /// <summary>
+    /// Gets an opaque store-owned stamp identifying the exact physical entry snapshot that was read.
+    /// </summary>
+    /// <remarks>
+    /// The coordinator copies this stamp to <see cref="CacheStoreEntryWrite{T}.ExpectedConcurrencyStamp"/> for
+    /// factory writes derived from an existing physical entry, so a late factory cannot resurrect a removed
+    /// entry or clobber a concurrent writer. The value is provider-specific and must only be treated as an
+    /// equality token.
+    /// </remarks>
+    public string? ConcurrencyStamp { get; init; }
+
     /// <summary>Gets an entry representing a store miss.</summary>
     public static CacheStoreEntry<T> NotFound { get; } =
         new(

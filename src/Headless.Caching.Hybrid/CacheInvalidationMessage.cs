@@ -14,6 +14,11 @@ public sealed record CacheInvalidationMessage
     /// </summary>
     public required string InstanceId { get; init; }
 
+    /// <summary>
+    /// Optional named hybrid cache target. <see langword="null"/> targets the default hybrid cache instance.
+    /// </summary>
+    public string? CacheName { get; init; }
+
     /// <summary>Single key to invalidate. Mutually exclusive with <see cref="Prefix"/> and <see cref="FlushAll"/>.</summary>
     public string? Key { get; init; }
 

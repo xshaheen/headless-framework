@@ -135,6 +135,7 @@ public static class SetupHybridCache
                 new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
+                    services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
                     services._AddNamedCacheCore(name);
                 })
             );
@@ -158,6 +159,7 @@ public static class SetupHybridCache
                 new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(setupAction, name);
+                    services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
                     services._AddNamedCacheCore(name);
                 })
             );
@@ -181,6 +183,7 @@ public static class SetupHybridCache
                 new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     services.Configure<HybridCacheOptions, HybridCacheOptionsValidator>(configuration, name);
+                    services.Configure<HybridCacheOptions>(name, options => options.CacheName = name);
                     services._AddNamedCacheCore(name);
                 })
             );

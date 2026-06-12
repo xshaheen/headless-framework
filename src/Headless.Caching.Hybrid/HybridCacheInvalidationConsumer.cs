@@ -9,11 +9,14 @@ namespace Headless.Caching;
 /// Message consumer that handles cache invalidation messages from other instances. Not registered by
 /// <see cref="SetupHybridCache"/>: the application must register it with Headless messaging (for example via
 /// <c>ForMessage&lt;CacheInvalidationMessage&gt;()</c> consumer registration or assembly scanning). Routes to the
-/// default hybrid cache instance only; named hybrid instances do not receive backplane invalidations.
+/// default hybrid cache when <see cref="CacheInvalidationMessage.CacheName"/> is <see langword="null"/>, or to
+/// the matching named hybrid cache through <see cref="ICacheProvider"/> when set.
 /// </summary>
 [PublicAPI]
-public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<HybridCacheInvalidationConsumer> logger)
-    : IConsume<CacheInvalidationMessage>
+public sealed class HybridCacheInvalidationConsumer(
+    ICacheProvider cacheProvider,
+    ILogger<HybridCacheInvalidationConsumer> logger
+) : IConsume<CacheInvalidationMessage>
 {
     /// <inheritdoc />
     public async ValueTask ConsumeAsync(
@@ -23,7 +26,14 @@ public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<H
     {
         try
         {
-            await cache.HandleInvalidationAsync(context.Message, cancellationToken).ConfigureAwait(false);
+            var target = _ResolveTarget(context.Message);
+
+            if (target is null)
+            {
+                return;
+            }
+
+            await target.HandleInvalidationAsync(context.Message, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -41,6 +51,16 @@ public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<H
                 msg.FlushAll
             );
         }
+    }
+
+    private HybridCache? _ResolveTarget(CacheInvalidationMessage message)
+    {
+        if (message.CacheName is null)
+        {
+            return cacheProvider.GetCacheOrNull(CacheConstants.HybridCacheProvider) as HybridCache;
+        }
+
+        return cacheProvider.GetCacheOrNull(message.CacheName) as HybridCache;
     }
 }
 

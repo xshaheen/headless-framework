@@ -101,7 +101,7 @@ public sealed partial class HybridCache
     }
 
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
-    ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+    ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,
         in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
@@ -115,7 +115,7 @@ public sealed partial class HybridCache
         return _SetEntryCoreAsync(key, entry, cancellationToken);
     }
 
-    private async ValueTask _SetEntryCoreAsync<T>(
+    private async ValueTask<bool> _SetEntryCoreAsync<T>(
         string key,
         CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
@@ -129,11 +129,16 @@ public sealed partial class HybridCache
         // (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns immutable state.
         if (options.AllowBackgroundDistributedCacheOperations)
         {
-            var l1PhysicalStamp = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
+            var localWrite = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
 
-            _RunDetached(() => _SetEntryL2TailAsync(key, entry, l1PhysicalStamp), key);
+            if (!localWrite.Committed)
+            {
+                return false;
+            }
 
-            return;
+            _RunDetached(() => _SetEntryL2TailAsync(key, entry, localWrite.PhysicalStamp), key);
+
+            return true;
         }
 
         // Per-call tier control: skip the L2 (distributed) write entirely. No recovery replay is queued (the skip
@@ -141,16 +146,21 @@ public sealed partial class HybridCache
         // a value that never reached L2 has no shared copy for peers to invalidate against.
         var skipL2 = entry.SkipDistributedCacheWrite;
         var l2WriteSucceeded = false;
+        var l2WriteConditionFailed = false;
 
         if (!skipL2)
         {
+            var l2Entry = entry with { ExpectedConcurrencyStamp = null };
+
             if (l2Cache is IFactoryCacheStore l2Store)
             {
                 try
                 {
-                    // Pass the descriptor through unchanged so per-entry metadata round-trips the L2 tier.
-                    await l2Store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
-                    l2WriteSucceeded = true;
+                    // ExpectedConcurrencyStamp is store-local; an L1 stamp must not be applied to the L2 mirror.
+                    l2WriteSucceeded = await l2Store
+                        .SetEntryAsync(key, in l2Entry, cancellationToken)
+                        .ConfigureAwait(false);
+                    l2WriteConditionFailed = !l2WriteSucceeded;
                 }
                 catch (Exception exception)
                     when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
@@ -179,7 +189,17 @@ public sealed partial class HybridCache
             }
         }
 
-        var l1PhysicalStampSync = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
+        if (!skipL2 && l2WriteConditionFailed)
+        {
+            return false;
+        }
+
+        var localWriteSync = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
+
+        if (!localWriteSync.Committed)
+        {
+            return false;
+        }
 
         if (RecoveryQueue is not null && !skipL2)
         {
@@ -190,7 +210,7 @@ public sealed partial class HybridCache
             else
             {
                 // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
-                _QueueSetEntryRecovery(key, entry, l1PhysicalStampSync);
+                _QueueSetEntryRecovery(key, entry, localWriteSync.PhysicalStamp);
             }
         }
 
@@ -211,6 +231,8 @@ public sealed partial class HybridCache
                 )
                 .ConfigureAwait(false);
         }
+
+        return true;
     }
 
     /// <summary>
@@ -218,7 +240,7 @@ public sealed partial class HybridCache
     /// written so the auto-recovery replay can detect that the L1 entry was later replaced. Shared by the
     /// synchronous and background <see cref="_SetEntryCoreAsync{T}"/> flows so both write L1 identically.
     /// </summary>
-    private async ValueTask<DateTime?> _WriteSetEntryToLocalAsync<T>(
+    private async ValueTask<(bool Committed, DateTime? PhysicalStamp)> _WriteSetEntryToLocalAsync<T>(
         string key,
         CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
@@ -228,7 +250,7 @@ public sealed partial class HybridCache
         // publish still run, so peers drop their stale L1 copy even though this node wrote nothing to L1.
         if (entry.SkipMemoryCacheWrite)
         {
-            return null;
+            return (true, null);
         }
 
         if (LocalCache is IFactoryCacheStore l1Store)
@@ -248,7 +270,10 @@ public sealed partial class HybridCache
                 Tags = entry.Tags,
             };
 
-            return await _SetLocalEntryAsync(l1Store, key, l1Entry, cancellationToken).ConfigureAwait(false);
+            var physicalStamp = await _SetLocalEntryAsync(l1Store, key, l1Entry, cancellationToken)
+                .ConfigureAwait(false);
+
+            return (true, physicalStamp);
         }
 
         await LocalCache
@@ -260,7 +285,7 @@ public sealed partial class HybridCache
             )
             .ConfigureAwait(false);
 
-        return null;
+        return (true, null);
     }
 
     /// <summary>
@@ -276,15 +301,20 @@ public sealed partial class HybridCache
         // below is kept as-is so peers still drop their stale L1.
         var skipL2 = entry.SkipDistributedCacheWrite;
         var l2WriteSucceeded = false;
+        var l2WriteConditionFailed = false;
 
         if (!skipL2)
         {
+            var l2Entry = entry with { ExpectedConcurrencyStamp = null };
+
             if (l2Cache is IFactoryCacheStore l2Store)
             {
                 try
                 {
-                    await l2Store.SetEntryAsync(key, in entry, CancellationToken.None).ConfigureAwait(false);
-                    l2WriteSucceeded = true;
+                    l2WriteSucceeded = await l2Store
+                        .SetEntryAsync(key, in l2Entry, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    l2WriteConditionFailed = !l2WriteSucceeded;
                 }
                 catch (Exception exception)
                     when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
@@ -311,6 +341,11 @@ public sealed partial class HybridCache
                     _logger.LogFailedToWriteToL2Cache(exception, key);
                 }
             }
+        }
+
+        if (!skipL2 && l2WriteConditionFailed)
+        {
+            return;
         }
 
         if (RecoveryQueue is not null && !skipL2)

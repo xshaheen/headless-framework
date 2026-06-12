@@ -28,6 +28,13 @@ internal sealed class CacheTaggedSetScriptDefinition : RedisScriptDefinition
             local keyTtlMs = tonumber(@keyTtlMs)
             local tagTtlMs = tonumber(@tagTtlMs)
 
+            if @expectedValue ~= nil and string.len(@expectedValue) > 0 then
+              local current = redis.call('get', @key)
+              if current ~= @expectedValue then
+                return 0
+              end
+            end
+
             redis.call('set', @key, @value, 'PX', keyTtlMs)
 
             -- Parse a tag blob: u16le count, then per tag a u16le UTF-8 byte length + the tag bytes.

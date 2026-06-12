@@ -39,6 +39,7 @@ public sealed partial class HybridCache(
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly string _instanceId = options.InstanceId ?? Guid.NewGuid().ToString("N");
+    private readonly string? _cacheName = options.CacheName;
     private readonly FactoryCacheCoordinator _coordinator = new(
         timeProvider ?? TimeProvider.System,
         logger,
@@ -1333,6 +1334,11 @@ public sealed partial class HybridCache(
         if (message.Timestamp is null)
         {
             message = message with { Timestamp = _timeProvider.GetUtcNow() };
+        }
+
+        if (!string.Equals(message.CacheName, _cacheName, StringComparison.Ordinal))
+        {
+            message = message with { CacheName = _cacheName };
         }
 
         try

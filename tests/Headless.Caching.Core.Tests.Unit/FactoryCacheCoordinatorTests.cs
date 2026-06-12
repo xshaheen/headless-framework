@@ -2240,7 +2240,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
-    public async Task should_resurrect_removed_key_when_factory_write_lands_after_mid_flight_removal()
+    public async Task should_not_resurrect_removed_key_when_factory_write_lands_after_mid_flight_removal()
     {
         // given — a stale entry whose refresh factory is in flight
         var key = Faker.Random.AlphaNumeric(8);
@@ -2264,15 +2264,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         factoryGate.SetResult("fresh");
         var result = await resultTask;
 
-        // then — PINNED SEMANTICS: the late factory write is unconditional, so it RESURRECTS the removed key.
-        // There is no remove-versus-write fencing in the IFactoryCacheStore contract; a Remove that races an
-        // in-flight factory loses.
+        // then — the late factory result is still returned to the caller, but the store write is conditional on
+        // the stale entry snapshot and must not resurrect a key another actor removed while the factory ran.
         result.Value.Should().Be("fresh");
-        _store.GetEntry(key)!.Value.Should().Be("fresh");
+        _store.GetEntry(key).Should().BeNull();
     }
 
     [Fact]
-    public async Task should_overwrite_concurrent_writer_value_when_in_flight_factory_completes_last()
+    public async Task should_not_overwrite_concurrent_writer_value_when_in_flight_factory_completes_last()
     {
         // given — a stale entry whose refresh factory is in flight
         var key = Faker.Random.AlphaNumeric(8);
@@ -2295,10 +2294,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         factoryGate.SetResult("fresh");
         var result = await resultTask;
 
-        // then — PINNED SEMANTICS: last write wins. The factory's write is unconditional (no ETag/version CAS
-        // against the store), so the in-flight factory clobbers the concurrent writer's fresher value.
+        // then — the late factory result is returned to its caller, but the conditional store write observes the
+        // changed live entry and leaves the concurrent writer's newer value intact.
         result.Value.Should().Be("fresh");
-        _store.GetEntry(key)!.Value.Should().Be("fresh");
+        _store.GetEntry(key)!.Value.Should().Be("concurrent");
     }
 
     [Fact]

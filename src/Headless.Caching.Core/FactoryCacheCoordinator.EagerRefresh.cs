@@ -109,12 +109,20 @@ public sealed partial class FactoryCacheCoordinator
                 ETag = entry.ETag,
                 LastModifiedAt = entry.LastModifiedAt,
                 Tags = entry.Tags,
+                ExpectedConcurrencyStamp = entry.ConcurrencyStamp,
                 IsRestamp = true,
             };
 
             try
             {
-                await store.SetEntryAsync(key, in gateEntry, CancellationToken.None).ConfigureAwait(false);
+                var gateCommitted = await store
+                    .SetEntryAsync(key, in gateEntry, CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                if (!gateCommitted)
+                {
+                    return;
+                }
             }
             catch (Exception exception)
             {
@@ -253,7 +261,15 @@ public sealed partial class FactoryCacheCoordinator
 
             if (!internalCts.IsCancellationRequested)
             {
-                await _WriteFactoryResultAsync(store, key, context, result, previousTags, CancellationToken.None)
+                await _WriteFactoryResultAsync(
+                        store,
+                        key,
+                        context,
+                        result,
+                        sourceEntry: CacheStoreEntry<T>.NotFound,
+                        previousTags,
+                        CancellationToken.None
+                    )
                     .ConfigureAwait(false);
                 _logger.LogEagerRefreshSucceeded(key);
             }

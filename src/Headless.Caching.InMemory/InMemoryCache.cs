@@ -1796,12 +1796,13 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 ETag = existingEntry.ETag,
                 LastModifiedAt = existingEntry.LastModifiedAt,
                 Tags = existingEntry.Tags,
+                ConcurrencyStamp = existingEntry.InstanceNumber.ToString(CultureInfo.InvariantCulture),
             }
         );
     }
 
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
-    ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+    ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,
         in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
@@ -1812,17 +1813,17 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _SetEntryCoreAsync(key, entry);
+        return _SetEntryCoreWithResultAsync(key, entry);
     }
 
-    private async ValueTask _SetEntryCoreAsync<T>(string key, CacheStoreEntryWrite<T> entry)
+    private async ValueTask<bool> _SetEntryCoreWithResultAsync<T>(string key, CacheStoreEntryWrite<T> entry)
     {
         key = _GetKey(key);
         var entrySize = _CalculateEntrySize(entry.Value);
 
         if (!_ValidateEntrySize(entrySize))
         {
-            return;
+            return false;
         }
 
         var cacheEntry = new CacheEntry(
@@ -1840,7 +1841,12 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             lastModifiedAt: entry.LastModifiedAt
         );
 
-        await _SetInternalAsync(key, cacheEntry).ConfigureAwait(false);
+        if (entry.ExpectedConcurrencyStamp is { } expectedStamp)
+        {
+            return await _SetInternalIfStampMatchesAsync(key, cacheEntry, expectedStamp).ConfigureAwait(false);
+        }
+
+        return await _SetInternalAsync(key, cacheEntry).ConfigureAwait(false);
     }
 
     ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
@@ -2092,6 +2098,54 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
 
         return wasUpdated;
+    }
+
+    private async ValueTask<bool> _SetInternalIfStampMatchesAsync(string key, CacheEntry entry, string expectedStamp)
+    {
+        if (entry.IsExpired)
+        {
+            return false;
+        }
+
+        if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.IsExpired)
+        {
+            if (existingEntry is not null)
+            {
+                _TryRemoveExpiredEntry(key, existingEntry);
+            }
+
+            return false;
+        }
+
+        if (
+            !string.Equals(
+                existingEntry.InstanceNumber.ToString(CultureInfo.InvariantCulture),
+                expectedStamp,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return false;
+        }
+
+        if (!_memory.TryUpdate(key, entry, existingEntry))
+        {
+            return false;
+        }
+
+        var sizeDelta = entry.Size - existingEntry.Size;
+
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
+
+        _TrackUpdate(key, entry.TrackedExpiresAt);
+        _UpdateTagIndex(key, existingEntry.Tags, entry.Tags);
+
+        await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
+
+        return true;
     }
 
     private bool ShouldCompact =>

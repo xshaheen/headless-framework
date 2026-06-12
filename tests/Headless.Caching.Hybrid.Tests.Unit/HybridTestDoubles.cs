@@ -26,7 +26,7 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
         ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, cancellationToken);
 
-    public ValueTask SetEntryAsync<T>(
+    public ValueTask<bool> SetEntryAsync<T>(
         string key,
         in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
@@ -218,13 +218,13 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
         throw new InvalidOperationException("L2 store is unavailable");
 
-    public ValueTask SetEntryAsync<T>(
+    public ValueTask<bool> SetEntryAsync<T>(
         string key,
         in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     ) =>
         // No-op: writes are silently dropped (non-fatal in HybridCache.SetEntryAsync)
-        ValueTask.CompletedTask;
+        new(true);
 
     public ValueTask TryRearmSlidingAsync(
         string key,
@@ -427,11 +427,11 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         return new ValueTask<CacheStoreEntry<T>>(entry);
     }
 
-    public ValueTask SetEntryAsync<T>(
+    public ValueTask<bool> SetEntryAsync<T>(
         string key,
         in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
-    ) => ValueTask.CompletedTask;
+    ) => new(true);
 
     public ValueTask TryRearmSlidingAsync(
         string key,
@@ -630,7 +630,11 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
         ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken);
 
-    public ValueTask SetEntryAsync<T>(string key, in CacheStoreEntryWrite<T> entry, CancellationToken cancellationToken)
+    public ValueTask<bool> SetEntryAsync<T>(
+        string key,
+        in CacheStoreEntryWrite<T> entry,
+        CancellationToken cancellationToken
+    )
     {
         SetEntryAttempts++;
 
@@ -898,13 +902,13 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     }
 
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
-    public ValueTask SetEntryAsync<T>(
+    public ValueTask<bool> SetEntryAsync<T>(
         string key,
         in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     ) => _SetEntryCoreAsync(key, entry, cancellationToken);
 
-    private async ValueTask _SetEntryCoreAsync<T>(
+    private async ValueTask<bool> _SetEntryCoreAsync<T>(
         string key,
         CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
@@ -916,7 +920,7 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
             await gate.Task.WaitAsync(cancellationToken);
         }
 
-        await ((IFactoryCacheStore)_cache).SetEntryAsync(key, in entry, cancellationToken);
+        return await ((IFactoryCacheStore)_cache).SetEntryAsync(key, in entry, cancellationToken);
     }
 
     public ValueTask TryRearmSlidingAsync(

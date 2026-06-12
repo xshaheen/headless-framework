@@ -21,11 +21,15 @@ public interface IFactoryCacheStore
     ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken);
 
     /// <summary>Sets an entry with explicit expiration and per-entry metadata.</summary>
+    /// <returns>
+    /// <see langword="true"/> when the entry was committed; <see langword="false"/> when
+    /// <see cref="CacheStoreEntryWrite{T}.ExpectedConcurrencyStamp"/> did not match the live entry.
+    /// </returns>
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="key">The cache key.</param>
     /// <param name="entry">The write descriptor carrying the value, expirations, and optional metadata.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    ValueTask SetEntryAsync<T>(string key, in CacheStoreEntryWrite<T> entry, CancellationToken cancellationToken);
+    ValueTask<bool> SetEntryAsync<T>(string key, in CacheStoreEntryWrite<T> entry, CancellationToken cancellationToken);
 
     /// <summary>
     /// Re-arms a sliding entry's logical expiration on a fresh read, extending it by the idle window without

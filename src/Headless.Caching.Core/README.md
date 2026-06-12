@@ -9,7 +9,7 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 ## Key Features
 
 - `FactoryCacheCoordinator` - shared factory orchestration engine; both the simple value factory and the conditional `CacheFactoryContext<T>` factory run on one state machine with identical timeout, fail-safe, and refresh semantics.
-- `IFactoryCacheStore` - provider primitive for metadata-aware entry reads, writes, and metadata-only sliding re-arm (`TryRearmSlidingAsync`).
+- `IFactoryCacheStore` - provider primitive for metadata-aware entry reads, conditional writes, and metadata-only sliding re-arm (`TryRearmSlidingAsync`). Factory writes derived from an existing physical entry carry the entry's opaque `ConcurrencyStamp`; stores return `false` when the live entry no longer matches, preventing a late factory from resurrecting a removed key or clobbering a concurrent writer.
 - `CacheStoreEntry<T>` - entry snapshot with logical, physical, and sliding expiration plus per-entry metadata (`EagerRefreshAt`, `ETag`, `LastModifiedAt`, `Tags`).
 - `CacheStoreEntryWrite<T>` - write descriptor carrying the value, expirations, eager stamp, validators, `Tags`, `RemovedTags` (stale memberships a reverse tag index must drop atomically with the write), and `IsRestamp` (marks metadata-only restamps — `NotModified` extensions, fail-safe throttle restamps, the eager-refresh gate write — so multi-tier stores can skip cross-instance invalidation for them).
 - `CacheEntryStamps` - single home of the fresh-write stamp math (fail-safe extends physical retention, eager threshold stamps the eager point, sliding clamps the logical lifetime) and of options/tags validation, so the coordinator and the providers' direct `UpsertEntryAsync` writes always agree.

@@ -135,6 +135,7 @@ public sealed partial class FactoryCacheCoordinator
                         key,
                         context,
                         result,
+                        sourceEntry: staleCandidate,
                         previousTags: staleCandidate.Tags,
                         CancellationToken.None
                     )
@@ -208,6 +209,7 @@ public sealed partial class FactoryCacheCoordinator
             ETag = staleCandidate.ETag,
             LastModifiedAt = staleCandidate.LastModifiedAt,
             Tags = staleCandidate.Tags,
+            ExpectedConcurrencyStamp = staleCandidate.ConcurrencyStamp,
             IsRestamp = true,
         };
 
@@ -216,7 +218,7 @@ public sealed partial class FactoryCacheCoordinator
             // Caller-facing restamps pass CancellationToken.None (a caller cancellation between the factory
             // throw and this await must not abort the stale return); the ceiling-bounded background restamp
             // passes the ceiling token so a hung store write can be cancelled instead of orphaning it.
-            await store.SetEntryAsync(key, in restampEntry, cancellationToken).ConfigureAwait(false);
+            _ = await store.SetEntryAsync(key, in restampEntry, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {

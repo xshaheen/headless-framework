@@ -1348,7 +1348,7 @@ public sealed class RedisCache(
     }
 
     // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
-    ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+    ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,
         in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
@@ -1361,7 +1361,7 @@ public sealed class RedisCache(
         return _SetEntryCoreAsync(key, entry);
     }
 
-    private async ValueTask _SetEntryCoreAsync<T>(string key, CacheStoreEntryWrite<T> entry)
+    private async ValueTask<bool> _SetEntryCoreAsync<T>(string key, CacheStoreEntryWrite<T> entry)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var expiresIn = (entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt).Subtract(
@@ -1371,8 +1371,23 @@ public sealed class RedisCache(
 
         if (expiresIn <= TimeSpan.Zero)
         {
+            if (entry.ExpectedConcurrencyStamp is { } expiredExpectedStamp)
+            {
+                if (!_TryDecodeConcurrencyStamp(expiredExpectedStamp, out var expiredExpectedValue))
+                {
+                    return false;
+                }
+
+                var current = await _database.StringGetAsync(redisKey).ConfigureAwait(false);
+
+                if (current != expiredExpectedValue)
+                {
+                    return false;
+                }
+            }
+
             await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
-            return;
+            return true;
         }
 
         var valueSegment = entry.IsNull ? RedisValue.EmptyString : _ToRedisValue(entry.Value);
@@ -1390,12 +1405,19 @@ public sealed class RedisCache(
 
         var hasTags = entry.Tags is { Count: > 0 };
         var hasRemovedTags = entry.RemovedTags is { Count: > 0 };
+        var hasExpectedStamp = entry.ExpectedConcurrencyStamp is not null;
+        var expectedValue = RedisValue.EmptyString;
+
+        if (hasExpectedStamp && !_TryDecodeConcurrencyStamp(entry.ExpectedConcurrencyStamp!, out expectedValue))
+        {
+            return false;
+        }
 
         // Untagged writes with no prior tags keep the plain SET path: zero hot-path regression.
-        if (!hasTags && !hasRemovedTags)
+        if (!hasTags && !hasRemovedTags && !hasExpectedStamp)
         {
             await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
-            return;
+            return true;
         }
 
         _EnsureTaggingClusterSupported();
@@ -1406,7 +1428,7 @@ public sealed class RedisCache(
         var tagTtlMs = Math.Max(_ToPositiveMilliseconds(entry.PhysicalExpiresAt.Subtract(now)), keyTtlMs);
         var physicalMs = RedisCacheEntryFrame.ToUnixTimeMilliseconds(entry.PhysicalExpiresAt);
 
-        await scriptsLoader
+        var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
                 CacheTaggedSetScriptDefinition.Instance,
@@ -1414,6 +1436,7 @@ public sealed class RedisCache(
                 {
                     key = (RedisKey)redisKey,
                     value = (RedisValue)redisValue,
+                    expectedValue = hasExpectedStamp ? expectedValue : RedisValue.EmptyString,
                     keyTtlMs,
                     tagTtlMs,
                     physicalMs = (RedisValue)physicalMs.ToString(CultureInfo.InvariantCulture),
@@ -1426,6 +1449,33 @@ public sealed class RedisCache(
                 CancellationToken.None
             )
             .ConfigureAwait(false);
+
+        return (int)result == 1;
+    }
+
+    private static string _ToConcurrencyStamp(RedisValue value) =>
+        string.Concat("b64:", Convert.ToBase64String((byte[])value!));
+
+    private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
+    {
+        const string Prefix = "b64:";
+
+        if (!stamp.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            value = RedisValue.Null;
+            return false;
+        }
+
+        try
+        {
+            value = Convert.FromBase64String(stamp[Prefix.Length..]);
+            return true;
+        }
+        catch (FormatException)
+        {
+            value = RedisValue.Null;
+            return false;
+        }
     }
 
     private string _GetTagHashKey(string tag) => string.Concat(_keyPrefix, _TagNamespace, tag);
@@ -1469,6 +1519,7 @@ public sealed class RedisCache(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var concurrencyStamp = _ToConcurrencyStamp(redisValue);
         var frame = RedisCacheEntryFrame.Decode(redisValue);
 
         if (frame.IsFramed)
@@ -1498,6 +1549,7 @@ public sealed class RedisCache(
                 ETag = frame.ETag,
                 LastModifiedAt = frame.LastModifiedAt,
                 Tags = frame.Tags,
+                ConcurrencyStamp = concurrencyStamp,
             };
         }
 
@@ -1510,7 +1562,10 @@ public sealed class RedisCache(
                 LogicalExpiresAt: null,
                 PhysicalExpiresAt: null,
                 SlidingExpiration: null
-            );
+            )
+            {
+                ConcurrencyStamp = concurrencyStamp,
+            };
         }
 
         return new CacheStoreEntry<T>(
@@ -1520,7 +1575,10 @@ public sealed class RedisCache(
             LogicalExpiresAt: null,
             PhysicalExpiresAt: null,
             SlidingExpiration: null
-        );
+        )
+        {
+            ConcurrencyStamp = concurrencyStamp,
+        };
     }
 
     private bool _RedisValueIsLogicallyPresent(RedisValue redisValue)

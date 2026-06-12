@@ -43,6 +43,16 @@ public readonly record struct CacheStoreEntryWrite<T>
     public IReadOnlyCollection<string>? RemovedTags { get; init; }
 
     /// <summary>
+    /// Gets an opaque store-owned stamp the live entry must still match for this write to commit.
+    /// </summary>
+    /// <remarks>
+    /// <see langword="null"/> means unconditional write. Factory refresh paths set this from the
+    /// <see cref="CacheStoreEntry{T}.ConcurrencyStamp"/> they read before running the factory, turning the final
+    /// write into a compare-and-set so a concurrent remove or value write wins over the late factory result.
+    /// </remarks>
+    public string? ExpectedConcurrencyStamp { get; init; }
+
+    /// <summary>
     /// Gets whether this write merely re-stamps the value already cached under the key with new expiration
     /// metadata (a conditional <c>NotModified</c> extension, a fail-safe throttle restamp, or an eager-refresh
     /// gate write) instead of producing a new value. Multi-tier stores use this to skip cross-instance

@@ -54,7 +54,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 EagerRefreshAt: eagerRefreshAt,
                 ETag: etag,
                 LastModifiedAt: lastModifiedAt,
-                Tags: tags
+                Tags: tags,
+                ConcurrencyStamp: Guid.NewGuid().ToString("N")
             );
         }
     }
@@ -97,12 +98,17 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                     ETag = entry.ETag,
                     LastModifiedAt = entry.LastModifiedAt,
                     Tags = entry.Tags,
+                    ConcurrencyStamp = entry.ConcurrencyStamp,
                 }
             );
         }
     }
 
-    public ValueTask SetEntryAsync<T>(string key, in CacheStoreEntryWrite<T> entry, CancellationToken cancellationToken)
+    public ValueTask<bool> SetEntryAsync<T>(
+        string key,
+        in CacheStoreEntryWrite<T> entry,
+        CancellationToken cancellationToken
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
         SetEntryCalls++;
@@ -114,6 +120,21 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 
         lock (_lock)
         {
+            if (
+                entry.ExpectedConcurrencyStamp is not null
+                && (
+                    !_entries.TryGetValue(key, out var currentEntry)
+                    || !string.Equals(
+                        currentEntry.ConcurrencyStamp,
+                        entry.ExpectedConcurrencyStamp,
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+            {
+                return new ValueTask<bool>(false);
+            }
+
             _entries[key] = new Entry(
                 Value: entry.Value,
                 IsNull: entry.IsNull,
@@ -123,13 +144,14 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 EagerRefreshAt: entry.EagerRefreshAt,
                 ETag: entry.ETag,
                 LastModifiedAt: entry.LastModifiedAt,
-                Tags: entry.Tags
+                Tags: entry.Tags,
+                ConcurrencyStamp: Guid.NewGuid().ToString("N")
             );
 
             LastRemovedTags = entry.RemovedTags;
         }
 
-        return ValueTask.CompletedTask;
+        return new ValueTask<bool>(true);
     }
 
     /// <summary>The <see cref="CacheStoreEntryWrite{T}.RemovedTags"/> carried by the most recent write.</summary>
@@ -199,6 +221,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         DateTime? EagerRefreshAt = null,
         string? ETag = null,
         DateTime? LastModifiedAt = null,
-        IReadOnlyCollection<string>? Tags = null
+        IReadOnlyCollection<string>? Tags = null,
+        string ConcurrencyStamp = ""
     );
 }

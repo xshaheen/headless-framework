@@ -318,6 +318,7 @@ public sealed partial class FactoryCacheCoordinator(
                     key,
                     context,
                     factoryResult.Value,
+                    sourceEntry: entry,
                     previousTags: entry.Tags,
                     cancellationToken
                 )
@@ -390,6 +391,7 @@ public sealed partial class FactoryCacheCoordinator(
         string key,
         CacheFactoryContext<T> context,
         CacheFactoryResult<T> result,
+        CacheStoreEntry<T> sourceEntry,
         IReadOnlyCollection<string>? previousTags,
         CancellationToken cancellationToken
     )
@@ -444,6 +446,7 @@ public sealed partial class FactoryCacheCoordinator(
             LastModifiedAt = lastModifiedAt,
             Tags = context.Tags,
             RemovedTags = CacheEntryStamps.ComputeRemovedTags(previousTags, context.Tags),
+            ExpectedConcurrencyStamp = sourceEntry.ConcurrencyStamp,
             // A NotModified extension re-stamps the existing value: peers' cached bytes stay valid, so
             // multi-tier stores must not broadcast an invalidation for it.
             IsRestamp = result.IsNotModified,
@@ -453,7 +456,7 @@ public sealed partial class FactoryCacheCoordinator(
             SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
         };
 
-        await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+        _ = await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
 
         return new CacheValue<T>(value, hasValue: true);
     }

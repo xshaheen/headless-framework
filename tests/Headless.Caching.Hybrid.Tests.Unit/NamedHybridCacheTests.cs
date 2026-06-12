@@ -4,6 +4,7 @@ using Headless.Caching;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
@@ -58,6 +59,107 @@ public sealed class NamedHybridCacheTests : TestBase
         await hybrid.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
         (await l1.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
         (await l2Inner.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
+    }
+
+    [Fact]
+    public async Task named_hybrid_should_publish_invalidation_with_cache_name()
+    {
+        // given
+        var services = _CreateBaseServices();
+        var bus = services
+            .Single(x => x.ServiceType == typeof(IBus))
+            .ImplementationInstance.Should()
+            .BeAssignableTo<IBus>()
+            .Subject;
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        services.AddKeyedSingleton<ICache>("tenant-l1", l1);
+        services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
+
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(options =>
+                    {
+                        options.LocalCacheName = "tenant-l1";
+                        options.RemoteCacheName = "tenant-l2";
+                    })
+            );
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredKeyedService<ICache>("tenant");
+
+        // when
+        await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        await bus.Received(1)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(message => message.CacheName == "tenant" && message.Key == "key"),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task invalidation_consumer_should_route_named_message_to_named_hybrid()
+    {
+        // given
+        var services = _CreateBaseServices();
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        var l2Inner = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+        services.AddKeyedSingleton<ICache>("tenant-l1", l1);
+        services.AddKeyedSingleton<ICache>("tenant-l2", new InMemoryRemoteCacheAdapter(l2Inner));
+
+        services.AddHeadlessCaching(setup =>
+        {
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.AddNamed(
+                "tenant",
+                instance =>
+                    instance.UseHybrid(options =>
+                    {
+                        options.InstanceId = "node-b";
+                        options.LocalCacheName = "tenant-l1";
+                        options.RemoteCacheName = "tenant-l2";
+                    })
+            );
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        await l1.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+        var consumer = new HybridCacheInvalidationConsumer(
+            provider.GetRequiredService<ICacheProvider>(),
+            NullLogger<HybridCacheInvalidationConsumer>.Instance
+        );
+
+        // when
+        await consumer.ConsumeAsync(
+            new ConsumeContext<CacheInvalidationMessage>
+            {
+                IntentType = IntentType.Bus,
+                Message = new CacheInvalidationMessage
+                {
+                    InstanceId = "node-a",
+                    CacheName = "tenant",
+                    Key = "key",
+                },
+                MessageId = Faker.Random.Guid().ToString(),
+                CorrelationId = null,
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+                Timestamp = _timeProvider.GetUtcNow(),
+                MessageName = nameof(CacheInvalidationMessage),
+            },
+            AbortToken
+        );
+
+        // then
+        var value = await l1.GetAsync<string>("key", AbortToken);
+        value.HasValue.Should().BeFalse();
     }
 
     [Fact]

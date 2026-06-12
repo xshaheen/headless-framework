@@ -33,6 +33,36 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
     }
 
     [Fact]
+    public async Task should_reject_factory_store_write_when_concurrency_stamp_changed()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = DateTime.UtcNow;
+        var originalEntry = new CacheStoreEntryWrite<string>
+        {
+            Value = "original",
+            IsNull = false,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(5),
+        };
+        await store.SetEntryAsync(key, in originalEntry, AbortToken);
+        var snapshot = await store.TryGetEntryAsync<string>(key, AbortToken);
+
+        var concurrentEntry = originalEntry with { Value = "concurrent" };
+        await store.SetEntryAsync(key, in concurrentEntry, AbortToken);
+
+        var staleWrite = originalEntry with { Value = "late", ExpectedConcurrencyStamp = snapshot.ConcurrencyStamp };
+
+        var committed = await store.SetEntryAsync(key, in staleWrite, AbortToken);
+
+        committed.Should().BeFalse();
+        var value = await cache.GetAsync<string>(key, AbortToken);
+        value.Value.Should().Be("concurrent");
+    }
+
+    [Fact]
     public async Task should_map_physical_expiration_to_redis_ttl()
     {
         await FlushAsync();
