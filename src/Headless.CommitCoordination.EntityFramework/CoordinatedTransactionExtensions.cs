@@ -46,14 +46,19 @@ public static class CoordinatedTransactionExtensions
                 state,
                 static async (state, ct) =>
                 {
-                    await using var transaction = await state
+                    var transaction = await state
                         .Context.Database.BeginTransactionAsync(state.Isolation, ct)
                         .ConfigureAwait(false);
 
-                    await using var _ = state.Context.Database.EnlistCommitCoordination(transaction, state.Services);
+                    await using (transaction.ConfigureAwait(false))
+                    {
+                        await using var _ = state
+                            .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                            .ConfigureAwait(false);
 
-                    await state.Operation(state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                        await state.Operation(state.Context, ct).ConfigureAwait(false);
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    }
                 },
                 cancellationToken
             );
@@ -79,14 +84,19 @@ public static class CoordinatedTransactionExtensions
                 state,
                 static async (state, ct) =>
                 {
-                    await using var transaction = await state
+                    var transaction = await state
                         .Context.Database.BeginTransactionAsync(state.Isolation, ct)
                         .ConfigureAwait(false);
 
-                    await using var _ = state.Context.Database.EnlistCommitCoordination(transaction, state.Services);
+                    await using (transaction.ConfigureAwait(false))
+                    {
+                        await using var _ = state
+                            .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                            .ConfigureAwait(false);
 
-                    await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                        await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    }
                 },
                 cancellationToken
             );
@@ -118,16 +128,21 @@ public static class CoordinatedTransactionExtensions
                 state,
                 static async (state, ct) =>
                 {
-                    await using var transaction = await state
+                    var transaction = await state
                         .Context.Database.BeginTransactionAsync(state.Isolation, ct)
                         .ConfigureAwait(false);
 
-                    await using var _ = state.Context.Database.EnlistCommitCoordination(transaction, state.Services);
+                    await using (transaction.ConfigureAwait(false))
+                    {
+                        await using var _ = state
+                            .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                            .ConfigureAwait(false);
 
-                    var result = await state.Operation(state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                        var result = await state.Operation(state.Context, ct).ConfigureAwait(false);
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
 
-                    return result;
+                        return result;
+                    }
                 },
                 cancellationToken
             );
@@ -153,16 +168,21 @@ public static class CoordinatedTransactionExtensions
                 state,
                 static async (state, ct) =>
                 {
-                    await using var transaction = await state
+                    var transaction = await state
                         .Context.Database.BeginTransactionAsync(state.Isolation, ct)
                         .ConfigureAwait(false);
 
-                    await using var _ = state.Context.Database.EnlistCommitCoordination(transaction, state.Services);
+                    await using (transaction.ConfigureAwait(false))
+                    {
+                        await using var _ = state
+                            .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                            .ConfigureAwait(false);
 
-                    var result = await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
-                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                        var result = await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
 
-                    return result;
+                        return result;
+                    }
                 },
                 cancellationToken
             );

@@ -104,7 +104,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var publisher = _BuildOutboxMessageWriter(pipeline, new NullCurrentCommitCoordinator());
+        var publisher = _BuildOutboxMessageWriter(pipeline, new MessagingNullCommitCoordinator());
 
         // when
         await publisher.PublishAsync(

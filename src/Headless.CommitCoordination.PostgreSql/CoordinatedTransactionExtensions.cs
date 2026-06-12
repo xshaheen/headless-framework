@@ -157,18 +157,24 @@ public static class CoordinatedTransactionExtensions
 
         try
         {
-            await using var transaction = await connection
+            var transaction = await connection
                 .BeginTransactionAsync(isolation, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-            await using var scope = connection.EnlistCommitCoordination(transaction, services);
+            await using (transaction.ConfigureAwait(false))
+            {
+                // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
+                var scope = connection.EnlistCommitCoordination(transaction, services);
 
-            var result = await operation(connection, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+                await using (scope.ConfigureAwait(false))
+                {
+                    var result = await operation(connection, cancellationToken).ConfigureAwait(false);
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
 
-            return result;
+                    return result;
+                }
+            }
         }
         finally
         {

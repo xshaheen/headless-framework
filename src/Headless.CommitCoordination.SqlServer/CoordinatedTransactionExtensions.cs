@@ -152,16 +152,21 @@ public static class CoordinatedTransactionExtensions
 
         try
         {
-            await using var transaction = (SqlTransaction)
+            var transaction = (SqlTransaction)
                 await connection.BeginTransactionAsync(isolation, cancellationToken).ConfigureAwait(false);
 
-            // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-            await using var _ = connection.EnlistCommitCoordination(transaction, services);
+            await using (transaction.ConfigureAwait(false))
+            {
+                // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
+                await using var _ = connection
+                    .EnlistCommitCoordination(transaction, services)
+                    .ConfigureAwait(false);
 
-            var result = await operation(connection, cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                var result = await operation(connection, cancellationToken).ConfigureAwait(false);
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-            return result;
+                return result;
+            }
         }
         finally
         {

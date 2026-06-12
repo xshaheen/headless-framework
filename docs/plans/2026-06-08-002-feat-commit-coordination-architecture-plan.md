@@ -41,6 +41,13 @@ This is the load-bearing inversion of #265.
 
 ## 2. Architectural recommendation
 
+> **Shipped deviations from this plan (kept for the design record; the code is the source of truth):**
+> - `CommitCoordinatorState` shipped as `{ Active, Committed, RolledBack }` — the `Draining` value was collapsed into the terminal states. The terminal transition is a single `Interlocked.CompareExchange` on `Active → Committed/RolledBack` that snapshots the work lists; there is no observable intermediate `Draining` state.
+> - The ambient stack is an `AsyncLocal` chain of linked-list frames (`CommitScopeFrame(Coordinator, Parent)`), not `AsyncLocal<ImmutableStack<…>>`. Same parent-restore semantics; lighter per-push allocation.
+> - The `TryGetCapability` sketches below are illustrative pseudocode; the shipped `CommitContext.TryGetCapability` / `CommitCoordinator.TryGetCapability` do a real dictionary lookup keyed by capability contract.
+>
+> The agent-facing surface (`docs/llms/commit-coordination.md`) reflects the shipped shapes.
+
 ### 2.1 The core (datastore-agnostic, BCL-only)
 
 ```csharp
