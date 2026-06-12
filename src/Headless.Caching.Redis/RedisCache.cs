@@ -950,6 +950,13 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
+        return (int)await _RemoveByPatternAsync($"{_GetKey(prefix)}*", cancellationToken).ConfigureAwait(false);
+    }
+
+    // Scans every primary node for keys matching the pattern and UNLINKs them in batches. Shared by
+    // RemoveByPrefixAsync (the instance prefix plus the caller's prefix) and FlushAsync (the instance prefix only).
+    private async ValueTask<long> _RemoveByPatternAsync(string pattern, CancellationToken cancellationToken)
+    {
         var endpoints = options.ConnectionMultiplexer.GetEndPoints();
 
         if (endpoints.Length is 0)
@@ -972,9 +979,7 @@ public sealed class RedisCache(
             var keys = new List<RedisKey>();
 
             await foreach (
-                var key in server
-                    .KeysAsync(pattern: $"{_GetKey(prefix)}*", pageSize: _BatchSize)
-                    .WithCancellation(cancellationToken)
+                var key in server.KeysAsync(pattern: pattern, pageSize: _BatchSize).WithCancellation(cancellationToken)
             )
             {
                 keys.Add(key);
@@ -992,7 +997,7 @@ public sealed class RedisCache(
             }
         }
 
-        return (int)deleted;
+        return deleted;
     }
 
     /// <inheritdoc />
@@ -1088,7 +1093,10 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        await options.ConnectionMultiplexer.FlushAllAsync().ConfigureAwait(false);
+        // Clear only this cache instance's keyspace (its KeyPrefix), not the whole Redis database: a shared Redis
+        // may host other caches and application data. When no KeyPrefix is configured the pattern is "*", which
+        // clears the database — unavoidable for an unprefixed cache, and documented as such.
+        await _RemoveByPatternAsync($"{_keyPrefix}*", cancellationToken).ConfigureAwait(false);
     }
 
     #endregion

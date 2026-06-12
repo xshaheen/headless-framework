@@ -12,7 +12,7 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 - Can serve as the default `ICache` (`setup.UseRedis(...)`) or as the remote tier of a default hybrid (`setup.AddRedisTier(...)`).
 - Supports strongly typed `IRemoteCache<T>`.
 - Named cache instances via `setup.AddNamed(name, i => i.UseRedis(...))`, each owning its own scripts loader bound to its own multiplexer.
-- Prefix-based key management.
+- Prefix-based key management. `FlushAsync` clears only this cache's `KeyPrefix` (scan + `UNLINK`), not the whole Redis database — a shared Redis keeps its other keyspaces. (An unprefixed cache has nothing to scope to, so it still clears the database.)
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower).
 - Set/list operations with pagination.
 - Lua scripts for atomic multi-key operations.
