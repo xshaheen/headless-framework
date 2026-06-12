@@ -22,7 +22,7 @@ namespace Headless.CommitCoordination.PostgreSql;
 /// </remarks>
 [PublicAPI]
 public sealed partial class PostgreSqlCommitSignalSource(
-    CommitScopeFactory scopeFactory,
+    ICommitScopeFactory scopeFactory,
     ILogger<PostgreSqlCommitSignalSource>? logger = null
 ) : ICommitSignalSource
 {

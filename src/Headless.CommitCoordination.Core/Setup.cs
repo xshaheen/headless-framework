@@ -25,6 +25,7 @@ public static class SetupCommitCoordination
             // coordinator wins regardless of which setup call the host invokes first.
             services.AddSingleton<ICurrentCommitCoordinator>(sp => sp.GetRequiredService<CommitScopeStack>());
             services.TryAddSingleton<CommitScopeFactory>();
+            services.TryAddSingleton<ICommitScopeFactory>(sp => sp.GetRequiredService<CommitScopeFactory>());
 
             return services;
         }

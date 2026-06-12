@@ -22,7 +22,7 @@ public sealed class InMemoryCommitCoordinationFixture : ICommitCoordinationFixtu
         return ValueTask.FromResult(factory.Begin(_services));
     }
 
-    public CommitScopeStack CreateStack() => new();
+    public ICurrentCommitCoordinator CreateStack() => new CommitScopeStack();
 
     public void Dispose()
     {

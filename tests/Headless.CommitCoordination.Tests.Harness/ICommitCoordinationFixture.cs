@@ -12,9 +12,10 @@ public interface ICommitCoordinationFixture
     /// <summary>
     /// Creates a fresh ambient stack. Provider-portable scenarios that need to open a root and a
     /// joining child on the same stack (nesting, slot isolation) build a factory over it and read
-    /// the ambient <see cref="CommitScopeStack.Current" /> back.
+    /// the ambient <see cref="ICurrentCommitCoordinator.Current" /> back. Returns the interface because
+    /// the concrete stack is Core-internal; harness-side callers cast under <c>InternalsVisibleTo</c>.
     /// </summary>
-    CommitScopeStack CreateStack();
+    ICurrentCommitCoordinator CreateStack();
 
     /// <summary>A stub service provider captured for callback drain.</summary>
     IServiceProvider Services { get; }

@@ -5,10 +5,10 @@ using System.Diagnostics.CodeAnalysis;
 namespace Headless.CommitCoordination;
 
 /// <summary>
-/// Maintains the ambient commit coordinator stack for the current async flow.
+/// Maintains the ambient commit coordinator stack for the current async flow. Core-internal infrastructure:
+/// resolve <see cref="ICurrentCommitCoordinator" /> instead.
 /// </summary>
-[PublicAPI]
-public sealed class CommitScopeStack : ICurrentCommitCoordinator
+internal sealed class CommitScopeStack : ICurrentCommitCoordinator
 {
     private static readonly AsyncLocal<CommitScopeFrame?> _current = new();
 

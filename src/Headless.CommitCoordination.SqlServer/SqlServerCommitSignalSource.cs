@@ -23,7 +23,7 @@ namespace Headless.CommitCoordination.SqlServer;
 /// </remarks>
 [PublicAPI]
 public sealed partial class SqlServerCommitSignalSource(
-    CommitScopeFactory scopeFactory,
+    ICommitScopeFactory scopeFactory,
     ILogger<SqlServerCommitSignalSource>? logger = null
 ) : ICommitSignalSource
 {

@@ -8,10 +8,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.CommitCoordination;
 
 /// <summary>
-/// Opens ambient commit coordination scopes.
+/// Opens ambient commit coordination scopes. Core-internal infrastructure: signal sources reach it via
+/// <c>InternalsVisibleTo</c>; consumers interact only through <see cref="ICurrentCommitCoordinator" /> and the
+/// provider enlistment extensions.
 /// </summary>
-[PublicAPI]
-public sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitCoordinator>? logger = null)
+internal sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitCoordinator>? logger = null)
+    : ICommitScopeFactory
 {
     private readonly ILogger _logger = logger ?? NullLogger<CommitCoordinator>.Instance;
 

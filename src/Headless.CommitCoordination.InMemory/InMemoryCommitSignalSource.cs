@@ -9,7 +9,7 @@ namespace Headless.CommitCoordination.InMemory;
 /// Driven in-memory signal source for owners that explicitly signal commit or rollback.
 /// </summary>
 [PublicAPI]
-public sealed class InMemoryCommitSignalSource(CommitScopeFactory scopeFactory) : ICommitSignalSource
+public sealed class InMemoryCommitSignalSource(ICommitScopeFactory scopeFactory) : ICommitSignalSource
 {
     /// <inheritdoc />
     public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken)

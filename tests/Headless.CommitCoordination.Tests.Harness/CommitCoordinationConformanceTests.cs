@@ -65,7 +65,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
     public virtual async Task should_promote_child_commit_work_to_root_when_root_commits()
     {
-        var factory = new CommitScopeFactory(fixture.CreateStack());
+        var factory = new CommitScopeFactory((CommitScopeStack)fixture.CreateStack());
 
         await using var root = factory.Begin(fixture.Services);
         var calls = 0;
@@ -95,7 +95,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
     public virtual async Task should_doom_root_and_discard_all_work_when_child_rolls_back()
     {
-        var factory = new CommitScopeFactory(fixture.CreateStack());
+        var factory = new CommitScopeFactory((CommitScopeStack)fixture.CreateStack());
 
         await using var root = factory.Begin(fixture.Services);
         var rootCalls = 0;
@@ -127,7 +127,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
     public virtual async Task should_discard_promoted_child_work_when_root_rolls_back()
     {
-        var factory = new CommitScopeFactory(fixture.CreateStack());
+        var factory = new CommitScopeFactory((CommitScopeStack)fixture.CreateStack());
 
         await using var root = factory.Begin(fixture.Services);
         var calls = 0;
@@ -149,7 +149,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
     public virtual async Task should_preserve_parent_slot_when_concurrent_child_flows_fork_and_dispose()
     {
-        var stack = fixture.CreateStack();
+        var stack = (CommitScopeStack)fixture.CreateStack();
         var factory = new CommitScopeFactory(stack);
 
         await using var root = factory.Begin(fixture.Services);
@@ -197,7 +197,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
     public virtual async Task should_discard_work_when_scope_is_disposed_without_signal()
     {
-        var factory = new CommitScopeFactory(fixture.CreateStack());
+        var factory = new CommitScopeFactory((CommitScopeStack)fixture.CreateStack());
         var calls = 0;
 
         await using (var scope = factory.Begin(fixture.Services))

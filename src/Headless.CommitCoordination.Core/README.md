@@ -7,7 +7,7 @@ Implements the in-process coordinator, ambient stack, scope factory, and relatio
 ## Key Features
 
 - Thread-safe callback registration and typed buffers.
-- Ambient current coordinator through `CommitScopeStack`.
+- Ambient current coordinator through `ICurrentCommitCoordinator` (backed by an internal AsyncLocal stack).
 - Nested scopes join the root by default.
 - Terminal drain runs callbacks with `CancellationToken.None` and aggregates failures.
 
@@ -41,4 +41,4 @@ None.
 
 ## Side Effects
 
-Registers `CommitScopeStack`, `ICurrentCommitCoordinator`, and `CommitScopeFactory`.
+Registers `ICurrentCommitCoordinator` and `ICommitScopeFactory` (the scope-opening seam for custom `ICommitSignalSource` implementations); the backing stack and factory types are internal.

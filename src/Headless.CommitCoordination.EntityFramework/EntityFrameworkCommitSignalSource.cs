@@ -15,7 +15,7 @@ namespace Headless.CommitCoordination.EntityFramework;
 /// </summary>
 [PublicAPI]
 public sealed partial class EntityFrameworkCommitSignalSource(
-    CommitScopeFactory scopeFactory,
+    ICommitScopeFactory scopeFactory,
     ILogger<EntityFrameworkCommitSignalSource>? logger = null
 ) : ICommitSignalSource
 {
