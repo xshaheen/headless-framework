@@ -1878,6 +1878,24 @@ public sealed class InMemoryCacheTests : TestBase
         afterFlush.Value.Should().Be(2);
     }
 
+    [Fact]
+    public async Task should_not_write_cache_when_reading_a_missing_key()
+    {
+        // FusionCache parity (GetOrDefaultDoesNotSetAsync): a plain read never writes the cache.
+        // Reading a missing key must not materialize an entry.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await cache.GetAsync<int>(key, AbortToken);
+
+        // then
+        result.HasValue.Should().BeFalse();
+        (await cache.ExistsAsync(key, AbortToken)).Should().BeFalse();
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(0);
+    }
+
     #endregion
 
     #region Expiration Behavior
