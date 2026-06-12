@@ -2408,6 +2408,311 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         results.Should().OnlyContain(result => result.HasValue && result.Value == "fresh");
     }
 
+    // ---------------------------------------------------------------------------------------------------------
+    // FusionCache L1 parity ports. Each pins a behavior FusionCache covers against the headless coordinator API.
+    // Names map to the FusionCache originals in L1Tests_Async.cs; intent is preserved, mechanics use FakeTimeProvider
+    // and the FactoryCacheCoordinator store-primitive instead of FusionCache's real-clock Task.Delay.
+    // ---------------------------------------------------------------------------------------------------------
+
+    // FusionCache: DoesNotReturnStaleDataIfFactorySucceedsAsync.
+    // A logically-expired entry whose refresh factory SUCCEEDS must return the NEW value, not the stale reserve —
+    // the success path bypasses fail-safe entirely. This is the success-side complement to the stale-on-FAILURE
+    // tests above (should_serve_stale_when_factory_throws_within_physical_window).
+    [Fact]
+    public async Task should_return_fresh_value_when_factory_succeeds_after_logical_expiry()
+    {
+        // given — a physically-retained but logically-expired fail-safe reserve
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var options = _CreateOptions(duration: TimeSpan.FromSeconds(1), isFailSafeEnabled: true);
+
+        // when — the refresh factory succeeds
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(_store, key, _FactoryReturns("fresh"), options, AbortToken);
+
+        // then — the new value wins; nothing stale is served despite the usable reserve
+        result.Value.Should().Be("fresh");
+        result.IsStale.Should().BeFalse();
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    // FusionCache: AdaptiveCachingDoesNotChangeOptionsAsync.
+    // A factory that mutates ctx.Options must NOT mutate the caller's original CacheEntryOptions. Headless makes this
+    // structurally guaranteed: CacheEntryOptions is a readonly record struct, so the context holds a by-value copy and
+    // a `with` replacement on ctx.Options cannot alias the caller's instance. This pins that guarantee.
+    [Fact]
+    public async Task should_not_mutate_caller_options_when_adaptive_factory_replaces_context_options()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var callerOptions = _CreateOptions(duration: TimeSpan.FromSeconds(10));
+
+        // when — the factory adaptively shortens the duration on its context copy
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (context, _) =>
+                {
+                    context.Options = context.Options with { Duration = TimeSpan.FromSeconds(20) };
+                    return ValueTask.FromResult(context.Modified("fresh"));
+                },
+                callerOptions,
+                AbortToken
+            );
+
+        // then — the adaptive mutation was honored on the write, but the caller's options object is untouched
+        result.Value.Should().Be("fresh");
+        callerOptions.Duration.Should().Be(TimeSpan.FromSeconds(10));
+    }
+
+    // FusionCache: AdaptiveCachingWithBackgroundFactoryCompletionAsync.
+    // A factory that soft-times out and completes in the BACKGROUND, replacing ctx.Options (adaptive caching), must
+    // apply the adaptive options to the eventually-written entry. Mirrors should_return_stale_on_soft_timeout_and_
+    // complete_factory_in_background plus the adaptive-duration write path.
+    [Fact]
+    public async Task should_apply_adaptive_options_when_background_completion_writes_after_soft_timeout()
+    {
+        // given — a stale reserve and a soft timeout that detaches the factory
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            duration: TimeSpan.FromSeconds(5),
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10),
+            // Required: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(5)
+        );
+
+        async ValueTask<CacheFactoryResult<string>> Factory(
+            CacheFactoryContext<string> context,
+            CancellationToken cancellationToken
+        )
+        {
+            factoryStarted.SetResult();
+            await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // Adaptive: replace the duration on the background-completion write.
+            context.Options = context.Options with
+            {
+                Duration = TimeSpan.FromSeconds(30),
+            };
+            return context.Modified("fresh");
+        }
+
+        // when — soft timeout serves stale, then the detached factory completes with adaptive options
+        var resultTask = coordinator.GetOrAddAsync<string>(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await resultTask;
+        var writeNow = _timeProvider.GetUtcNow().UtcDateTime;
+        factoryGate.SetResult();
+        await backgroundFinished;
+
+        // then — the background write honors the adaptive 30s duration, not the call's 5s duration
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("fresh");
+        entry.LogicalExpiresAt.Should().Be(writeNow.AddSeconds(30));
+    }
+
+    // FusionCache: AdaptiveCachingCanWorkOnExceptionAsync.
+    // PINNED DIVERGENCE FROM FusionCache: in FusionCache a factory that disables fail-safe via ctx.Options in a
+    // finally and then THROWS lets the exception propagate (the catch reads the live, mutated options). Headless
+    // reads fail-safe activation from the ORIGINAL caller options captured before the factory ran — ctx.Options
+    // only governs the WRITE, which never happens on a throw (FactoryCacheCoordinator.cs catch at line ~260 uses
+    // `options`, not `context.Options`). So fail-safe still activates and the stale reserve is served. This pins the
+    // headless semantics: adaptive fail-safe-disable does NOT influence exception handling on the throwing call.
+    [Fact]
+    public async Task should_still_serve_stale_when_adaptive_factory_disables_failsafe_then_throws()
+    {
+        // given — a usable stale reserve and caller-enabled fail-safe
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+
+        // when — the factory disables fail-safe on its context copy (in a finally) and throws
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (CacheFactoryContext<string> context, CancellationToken _) =>
+                {
+                    try
+                    {
+                        throw new InvalidOperationException("downstream unavailable");
+                    }
+                    finally
+                    {
+                        context.Options = context.Options with { IsFailSafeEnabled = false };
+                    }
+                },
+                _CreateOptions(isFailSafeEnabled: true),
+                AbortToken
+            );
+
+        // then — headless serves stale (the adaptive disable did not reach the exception-handling decision)
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+    }
+
+    // FusionCache: CanEagerRefreshNoCancellationAsync.
+    // An eager refresh fires in the background detached from the caller's token. Cancelling the ORIGINAL caller's
+    // token after the refresh starts must NOT abort the detached factory — it runs under a fresh internal CTS
+    // (FactoryCacheCoordinator.EagerRefresh.cs: _StartEagerFactoryAsync news up its own CancellationTokenSource).
+    [Fact]
+    public async Task should_complete_eager_refresh_even_when_caller_token_is_cancelled()
+    {
+        // given — a fresh entry whose eager point has already passed
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+        var cts = new CancellationTokenSource();
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            // when — the eager refresh starts, then the caller cancels its own token
+            var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, cts.Token);
+            await factoryStarted.Task;
+            await cts.CancelAsync();
+            factoryGate.SetResult("fresh");
+            await backgroundFinished;
+
+            // then — the caller got the still-fresh value, and the detached refresh completed despite the cancellation
+            result.Value.Should().Be("old");
+            _store.GetEntry(key)!.Value.Should().Be("fresh");
+        }
+        finally
+        {
+            // Dispose only after the detached refresh has fully settled (backgroundFinished awaited), so the
+            // token source is never freed while a task might still observe its token (CA2025).
+            cts.Dispose();
+        }
+    }
+
+    // FusionCache: CanEagerRefreshWithInfiniteDurationAsync.
+    // Eager refresh configured on an entry with a very large duration works (the eager threshold still triggers).
+    // FusionCache uses TimeSpan.MaxValue; headless computes logical expiry as now.Add(Duration), so a literal
+    // TimeSpan.MaxValue would overflow DateTime — a ~1000-year duration exercises the same "huge duration + eager
+    // threshold" path without overflow.
+    [Fact]
+    public async Task should_eager_refresh_with_very_large_duration()
+    {
+        // given — a fresh entry past its eager point, carrying a near-infinite duration
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var hugeDuration = TimeSpan.FromDays(365_000);
+        _store.SetEntry(key, "old", now.AddDays(180_000), now.AddDays(180_000), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var options = _CreateOptions(duration: hugeDuration, eagerRefreshThreshold: 0.5f);
+
+        // when
+        var result = await coordinator.GetOrAddAsync(_store, key, _FactoryReturns("fresh"), options, AbortToken);
+        await backgroundFinished;
+
+        // then — the eager refresh ran and re-stamped the entry; the huge duration's eager point is honored
+        result.Value.Should().Be("old");
+        result.IsStale.Should().BeFalse();
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("fresh");
+        entry.LogicalExpiresAt.Should().Be(now.Add(hugeDuration));
+        entry.EagerRefreshAt.Should().Be(now.AddTicks(hugeDuration.Ticks / 2));
+    }
+
+    // FusionCache: CanHandleEagerRefreshWithTagsAsync.
+    // Tags supplied by the eager-refresh factory persist on the rewritten entry. (FusionCache then removes via
+    // RemoveByTagAsync; that operation lives on ICache, not the FactoryCacheCoordinator store primitive, so this
+    // port asserts tag persistence and the RemovedTags bookkeeping the coordinator emits — the removal itself is
+    // covered at the ICache/hybrid level, not here.)
+    [Fact]
+    public async Task should_persist_eager_refresh_factory_tags_on_rewritten_entry()
+    {
+        // given — a fresh entry past its eager point with an existing tag
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(
+            key,
+            "old",
+            now.AddMinutes(5),
+            now.AddMinutes(5),
+            eagerRefreshAt: now.AddSeconds(-1),
+            tags: ["a", "b"]
+        );
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        // when — the eager refresh factory replaces the tags
+        var result = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            (context, _) =>
+            {
+                context.Tags = ["c", "d"];
+                return ValueTask.FromResult(context.Modified("fresh"));
+            },
+            options,
+            AbortToken
+        );
+        await backgroundFinished;
+
+        // then — the rewritten entry carries the new tags; the dropped tags are reported for the store's reverse index
+        result.Value.Should().Be("old");
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("fresh");
+        entry.Tags.Should().BeEquivalentTo("c", "d");
+        _store.LastRemovedTags.Should().BeEquivalentTo("a", "b");
+    }
+
+    // FusionCache: CanAccessCacheKeyInsideFactoryAsync.
+    // The factory's ctx.Key carries the cache key the store sees. The coordinator does not apply a key prefix (that
+    // is an ICache-layer concern), so ctx.Key equals the key passed to GetOrAddAsync verbatim.
+    [Fact]
+    public async Task should_expose_cache_key_to_factory_via_context()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        string? observedKey = null;
+
+        // when
+        await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (context, _) =>
+                {
+                    observedKey = context.Key;
+                    return ValueTask.FromResult(context.Modified("fresh"));
+                },
+                _CreateOptions(),
+                AbortToken
+            );
+
+        // then
+        observedKey.Should().Be(key);
+    }
+
     // Reaches into the fake's private entry map to model an actor that bypasses the coordinator (e.g. a direct
     // RemoveAsync on the provider) while a factory is in flight. Kept here (not on the fake) because only these
     // interleaving tests need it.

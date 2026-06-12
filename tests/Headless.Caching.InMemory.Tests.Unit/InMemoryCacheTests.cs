@@ -1803,6 +1803,81 @@ public sealed class InMemoryCacheTests : TestBase
         count.Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_clear_fail_safe_stale_reserve_on_flush()
+    {
+        // FusionCache parity (CanClearWithFailSafeAsync): flush must wipe the physical fail-safe
+        // reserve, not just logically-live entries. A fail-safe entry keeps a physical reserve
+        // beyond logical expiry; after flush that reserve must be gone, so a fail-safe read whose
+        // factory throws gets nothing instead of serving the stale value.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // entry already past logical expiry but still within the physical fail-safe reserve
+        await ((IFactoryCacheStore)cache).SetEntryAsync(
+            key,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = 1,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddMinutes(10),
+            },
+            AbortToken
+        );
+
+        var failSafeOptions = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(1),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(10),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+        };
+
+        // sanity: the stale reserve serves the old value before the flush
+        var beforeFlush = await cache.GetOrAddAsync<int>(
+            key,
+            _ => throw new InvalidOperationException("factory failed"),
+            failSafeOptions,
+            AbortToken
+        );
+        beforeFlush.IsStale.Should().BeTrue();
+        beforeFlush.Value.Should().Be(1);
+
+        // re-seed the stale reserve (the read above may have refreshed logical expiry)
+        await ((IFactoryCacheStore)cache).SetEntryAsync(
+            key,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = 1,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddMinutes(10),
+            },
+            AbortToken
+        );
+
+        // when
+        await cache.FlushAsync(AbortToken);
+
+        // then — reserve is gone: no entry, and a throwing fail-safe factory cannot serve the old value
+        (await cache.ExistsAsync(key, AbortToken))
+            .Should()
+            .BeFalse();
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(0);
+
+        var afterFlush = await cache.GetOrAddAsync<int>(
+            key,
+            _ => ValueTask.FromResult<int>(2),
+            failSafeOptions,
+            AbortToken
+        );
+        afterFlush.IsStale.Should().BeFalse("flush wiped the stale reserve, so the factory runs fresh");
+        afterFlush.Value.Should().Be(2);
+    }
+
     #endregion
 
     #region Expiration Behavior
@@ -2209,6 +2284,72 @@ public sealed class InMemoryCacheTests : TestBase
     #endregion
 
     #region Complex Type Support
+
+    [Theory]
+    [InlineData(42)]
+    [InlineData(int.MinValue)]
+    [InlineData(int.MaxValue)]
+    public async Task should_convert_boxed_simple_value_to_concrete_int_on_read(int boxedInt)
+    {
+        // FusionCache parity (HandlesFlexibleSimpleTypeConversionsAsync): a value written boxed as
+        // object round-trips to its concrete type on read. Headless only tested the failure side
+        // (should_throw_on_invalid_type_conversion...); this pins the success round-trip.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        object boxed = boxedInt;
+
+        // when
+        await cache.UpsertAsync<object>(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.GetAsync<int>(key, AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be(boxedInt);
+    }
+
+    [Fact]
+    public async Task should_convert_boxed_simple_values_of_various_types_on_read()
+    {
+        // Covers long/bool/string in addition to the int case above.
+        // given
+        using var cache = _CreateCache();
+        var longKey = Faker.Random.AlphaNumeric(10);
+        var boolKey = Faker.Random.AlphaNumeric(10);
+        var stringKey = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await cache.UpsertAsync<object>(longKey, 9_000_000_000L, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync<object>(boolKey, true, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync<object>(stringKey, "boxed-string", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        (await cache.GetAsync<long>(longKey, AbortToken))
+            .Value.Should()
+            .Be(9_000_000_000L);
+        (await cache.GetAsync<bool>(boolKey, AbortToken)).Value.Should().BeTrue();
+        (await cache.GetAsync<string>(stringKey, AbortToken)).Value.Should().Be("boxed-string");
+    }
+
+    [Fact]
+    public async Task should_convert_boxed_complex_value_to_concrete_type_on_read()
+    {
+        // FusionCache parity (HandlesFlexibleComplexTypeConversionsAsync): a complex object written
+        // boxed as object reads back as its concrete type with fields intact. Distinct from the typed
+        // should_cache_complex_objects — this exercises the boxed-object -> concrete path.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        object boxed = new TestClass { Value = 1234 };
+
+        // when
+        await cache.UpsertAsync<object>(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.GetAsync<TestClass>(key, AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value!.Value.Should().Be(1234);
+    }
 
     [Fact]
     public async Task should_cache_complex_objects()
