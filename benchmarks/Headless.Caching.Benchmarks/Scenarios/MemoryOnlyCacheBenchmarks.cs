@@ -4,9 +4,9 @@ using BenchmarkDotNet.Attributes;
 
 namespace Headless.Caching.Benchmarks.Scenarios;
 
-public class CommonCacheBenchmarks : CacheOperationBenchmarksBase
+public class MemoryOnlyCacheBenchmarks : CacheOperationBenchmarksBase
 {
-    [ParamsSource(typeof(BenchmarkScenarioSources), nameof(BenchmarkScenarioSources.CommonProviders))]
+    [ParamsSource(typeof(BenchmarkScenarioSources), nameof(BenchmarkScenarioSources.MemoryOnlyProviders))]
     public string Provider { get; set; } = BenchmarkProviderIds.HeadlessInMemory;
 
     protected override string ProviderId => Provider;

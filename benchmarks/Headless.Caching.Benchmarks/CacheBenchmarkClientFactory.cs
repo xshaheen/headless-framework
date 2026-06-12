@@ -4,11 +4,14 @@ using System.Diagnostics.CodeAnalysis;
 using Foundatio.Caching;
 using Headless.Caching.Benchmarks.Adapters;
 using Headless.Caching.Benchmarks.Infrastructure;
+using Headless.Redis;
+using Headless.Serializer;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using ZiggyCreatures.Caching.Fusion;
 using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
 
@@ -51,6 +54,12 @@ internal static class CacheBenchmarkClientFactory
             CacheBenchmarkFeatures.None
         ),
         new(
+            BenchmarkProviderIds.MicrosoftMemory,
+            "Microsoft IMemoryCache",
+            CacheBenchmarkBackend.InProcess,
+            CacheBenchmarkFeatures.None
+        ),
+        new(
             BenchmarkProviderIds.MicrosoftMemoryDistributed,
             "Microsoft IDistributedCache - Memory",
             CacheBenchmarkBackend.InProcess,
@@ -61,6 +70,12 @@ internal static class CacheBenchmarkClientFactory
     private static readonly CacheBenchmarkClientDescriptor[] s_redisDescriptors =
     [
         new(
+            BenchmarkProviderIds.HeadlessRedis,
+            "Headless ICache - Redis",
+            CacheBenchmarkBackend.Redis,
+            CacheBenchmarkFeatures.GetOrAdd | CacheBenchmarkFeatures.FailSafe | CacheBenchmarkFeatures.EagerRefresh
+        ),
+        new(
             BenchmarkProviderIds.FusionRedis,
             "FusionCache - Redis L2",
             CacheBenchmarkBackend.Redis,
@@ -68,6 +83,18 @@ internal static class CacheBenchmarkClientFactory
                 | CacheBenchmarkFeatures.Hybrid
                 | CacheBenchmarkFeatures.FailSafe
                 | CacheBenchmarkFeatures.EagerRefresh
+        ),
+        new(
+            BenchmarkProviderIds.FusionRedisDistributed,
+            "FusionCache - Redis Distributed Only",
+            CacheBenchmarkBackend.Redis,
+            CacheBenchmarkFeatures.GetOrAdd | CacheBenchmarkFeatures.FailSafe | CacheBenchmarkFeatures.EagerRefresh
+        ),
+        new(
+            BenchmarkProviderIds.FoundatioRedis,
+            "Foundatio - Redis",
+            CacheBenchmarkBackend.Redis,
+            CacheBenchmarkFeatures.None
         ),
         new(
             BenchmarkProviderIds.MicrosoftRedisDistributed,
@@ -88,10 +115,14 @@ internal static class CacheBenchmarkClientFactory
         return providerId switch
         {
             BenchmarkProviderIds.HeadlessInMemory => _CreateHeadlessInMemory(keyPrefix),
+            BenchmarkProviderIds.HeadlessRedis => _CreateHeadlessRedis(keyPrefix),
             BenchmarkProviderIds.HeadlessHybrid => _CreateHeadlessHybrid(keyPrefix),
             BenchmarkProviderIds.FusionMemory => _CreateFusionMemory(keyPrefix),
             BenchmarkProviderIds.FusionRedis => _CreateFusionRedis(keyPrefix),
+            BenchmarkProviderIds.FusionRedisDistributed => _CreateFusionRedisDistributed(keyPrefix),
             BenchmarkProviderIds.FoundatioMemory => _CreateFoundatioMemory(keyPrefix),
+            BenchmarkProviderIds.FoundatioRedis => _CreateFoundatioRedis(keyPrefix),
+            BenchmarkProviderIds.MicrosoftMemory => _CreateMicrosoftMemory(keyPrefix),
             BenchmarkProviderIds.MicrosoftMemoryDistributed => _CreateMicrosoftMemoryDistributed(keyPrefix),
             BenchmarkProviderIds.MicrosoftRedisDistributed => _CreateMicrosoftRedisDistributed(keyPrefix),
             _ => throw new ArgumentOutOfRangeException(
@@ -100,6 +131,30 @@ internal static class CacheBenchmarkClientFactory
                 "Unknown cache benchmark provider."
             ),
         };
+    }
+
+    public static IEnumerable<string> MemoryOnlyProviderIds() =>
+        [
+            BenchmarkProviderIds.HeadlessInMemory,
+            BenchmarkProviderIds.FusionMemory,
+            BenchmarkProviderIds.FoundatioMemory,
+            BenchmarkProviderIds.MicrosoftMemory,
+        ];
+
+    public static IEnumerable<string> DistributedOnlyProviderIds(bool includeRedis = false)
+    {
+        if (!includeRedis)
+        {
+            return [BenchmarkProviderIds.MicrosoftMemoryDistributed];
+        }
+
+        return
+        [
+            BenchmarkProviderIds.HeadlessRedis,
+            BenchmarkProviderIds.FusionRedisDistributed,
+            BenchmarkProviderIds.FoundatioRedis,
+            BenchmarkProviderIds.MicrosoftRedisDistributed,
+        ];
     }
 
     private static ICacheBenchmarkClient _CreateHeadlessInMemory(string keyPrefix)
@@ -115,6 +170,26 @@ internal static class CacheBenchmarkClientFactory
         );
 
         return new HeadlessCacheBenchmarkClient(descriptor, cache);
+    }
+
+    private static ICacheBenchmarkClient _CreateHeadlessRedis(string keyPrefix)
+    {
+        var descriptor = _GetDescriptor(BenchmarkProviderIds.HeadlessRedis);
+        var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
+        var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
+        var cache = new Headless.Caching.RedisCache(
+            new SystemJsonSerializer(),
+            TimeProvider.System,
+            new RedisCacheOptions
+            {
+                ConnectionMultiplexer = multiplexer,
+                KeyPrefix = keyPrefix,
+                DefaultEntryOptions = _CreateHeadlessOptions(TimeSpan.FromMinutes(1)),
+            },
+            scriptsLoader
+        );
+
+        return new HeadlessCacheBenchmarkClient(descriptor, cache, scriptsLoader, multiplexer);
     }
 
     private static ICacheBenchmarkClient _CreateHeadlessHybrid(string keyPrefix)
@@ -168,6 +243,31 @@ internal static class CacheBenchmarkClientFactory
         return new FusionCacheBenchmarkClient(descriptor, provider.GetRequiredService<IFusionCache>(), provider);
     }
 
+    private static ICacheBenchmarkClient _CreateFusionRedisDistributed(string keyPrefix)
+    {
+        var descriptor = _GetDescriptor(BenchmarkProviderIds.FusionRedisDistributed);
+        var redisConnection = _GetRequiredRedisConnectionString();
+        var services = new ServiceCollection();
+        services.AddMemoryCache();
+        services.AddLogging();
+        services.AddStackExchangeRedisCache(options => options.Configuration = redisConnection);
+        services.AddFusionCacheSystemTextJsonSerializer();
+        services
+            .AddFusionCache()
+            .WithCacheKeyPrefix(keyPrefix)
+            .WithDefaultEntryOptions(_CreateFusionDistributedOptions(TimeSpan.FromMinutes(1)))
+            .WithRegisteredDistributedCache(ignoreMemoryDistributedCache: false);
+
+        var provider = services.BuildServiceProvider();
+
+        return new FusionCacheBenchmarkClient(
+            descriptor,
+            provider.GetRequiredService<IFusionCache>(),
+            provider,
+            _CreateFusionDistributedOptions
+        );
+    }
+
     private static ICacheBenchmarkClient _CreateFusionRedis(string keyPrefix)
     {
         var descriptor = _GetDescriptor(BenchmarkProviderIds.FusionRedis);
@@ -196,6 +296,26 @@ internal static class CacheBenchmarkClientFactory
         return new FoundatioCacheBenchmarkClient(descriptor, cache);
     }
 
+    private static ICacheBenchmarkClient _CreateFoundatioRedis(string keyPrefix)
+    {
+        var descriptor = _GetDescriptor(BenchmarkProviderIds.FoundatioRedis);
+        var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
+        var cache = new ScopedCacheClient(
+            new RedisCacheClient(options => options.ConnectionMultiplexer(multiplexer)),
+            keyPrefix
+        );
+
+        return new FoundatioCacheBenchmarkClient(descriptor, cache, multiplexer);
+    }
+
+    private static ICacheBenchmarkClient _CreateMicrosoftMemory(string keyPrefix)
+    {
+        var descriptor = _GetDescriptor(BenchmarkProviderIds.MicrosoftMemory);
+        var cache = new MemoryCache(Options.Create(new MemoryCacheOptions()));
+
+        return new MicrosoftMemoryCacheBenchmarkClient(descriptor, cache, keyPrefix);
+    }
+
     private static ICacheBenchmarkClient _CreateMicrosoftMemoryDistributed(string keyPrefix)
     {
         var descriptor = _GetDescriptor(BenchmarkProviderIds.MicrosoftMemoryDistributed);
@@ -212,8 +332,13 @@ internal static class CacheBenchmarkClientFactory
         var descriptor = _GetDescriptor(BenchmarkProviderIds.MicrosoftRedisDistributed);
         var cache = new PrefixDistributedCache(
             keyPrefix,
-            new RedisCache(
-                Options.Create(new RedisCacheOptions { Configuration = _GetRequiredRedisConnectionString() })
+            new Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache(
+                Options.Create(
+                    new Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions
+                    {
+                        Configuration = _GetRequiredRedisConnectionString(),
+                    }
+                )
             )
         );
 
@@ -251,6 +376,9 @@ internal static class CacheBenchmarkClientFactory
         new FusionCacheEntryOptions(duration)
             .SetFailSafe(true, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(1))
             .SetEagerRefresh(0.8f);
+
+    private static FusionCacheEntryOptions _CreateFusionDistributedOptions(TimeSpan duration) =>
+        _CreateFusionOptions(duration).SetSkipMemoryCache(true);
 
     private sealed class PrefixDistributedCache(string prefix, IDistributedCache inner) : IDistributedCache, IDisposable
     {

@@ -7,9 +7,12 @@ namespace Headless.Caching.Benchmarks.Adapters;
 internal sealed class FusionCacheBenchmarkClient(
     CacheBenchmarkClientDescriptor descriptor,
     IFusionCache cache,
-    IServiceProvider services
+    IServiceProvider services,
+    Func<TimeSpan, FusionCacheEntryOptions>? optionsFactory = null
 ) : ICacheBenchmarkClient
 {
+    private readonly Func<TimeSpan, FusionCacheEntryOptions> _optionsFactory = optionsFactory ?? _CreateOptions;
+
     public CacheBenchmarkClientDescriptor Descriptor { get; } = descriptor;
 
     public async ValueTask SetAsync(
@@ -20,7 +23,7 @@ internal sealed class FusionCacheBenchmarkClient(
     )
     {
         await cache
-            .SetAsync(key, value, _CreateOptions(expiration), tags: null, token: cancellationToken)
+            .SetAsync(key, value, _optionsFactory(expiration), tags: null, token: cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -43,7 +46,7 @@ internal sealed class FusionCacheBenchmarkClient(
                 key,
                 async (_, ct) => await factory(ct).ConfigureAwait(false),
                 MaybeValue<BenchmarkPayload>.None,
-                options: _CreateOptions(expiration),
+                options: _optionsFactory(expiration),
                 tags: null,
                 token: cancellationToken
             )

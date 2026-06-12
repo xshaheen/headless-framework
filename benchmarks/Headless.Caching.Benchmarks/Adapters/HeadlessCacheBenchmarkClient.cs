@@ -4,7 +4,8 @@ namespace Headless.Caching.Benchmarks.Adapters;
 
 internal sealed class HeadlessCacheBenchmarkClient(
     CacheBenchmarkClientDescriptor descriptor,
-    Headless.Caching.ICache cache
+    Headless.Caching.ICache cache,
+    params object[] ownedResources
 ) : ICacheBenchmarkClient
 {
     public CacheBenchmarkClientDescriptor Descriptor { get; } = descriptor;
@@ -59,6 +60,20 @@ internal sealed class HeadlessCacheBenchmarkClient(
         else if (cache is IDisposable disposable)
         {
             disposable.Dispose();
+        }
+
+        foreach (var resource in ownedResources)
+        {
+            switch (resource)
+            {
+                case IAsyncDisposable ownedAsyncDisposable:
+                    await ownedAsyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+
+                case IDisposable ownedDisposable:
+                    ownedDisposable.Dispose();
+                    break;
+            }
         }
     }
 }

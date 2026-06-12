@@ -4,8 +4,11 @@ using Foundatio.Caching;
 
 namespace Headless.Caching.Benchmarks.Adapters;
 
-internal sealed class FoundatioCacheBenchmarkClient(CacheBenchmarkClientDescriptor descriptor, ICacheClient cache)
-    : ICacheBenchmarkClient
+internal sealed class FoundatioCacheBenchmarkClient(
+    CacheBenchmarkClientDescriptor descriptor,
+    ICacheClient cache,
+    params object[] ownedResources
+) : ICacheBenchmarkClient
 {
     public CacheBenchmarkClientDescriptor Descriptor { get; } = descriptor;
 
@@ -60,6 +63,20 @@ internal sealed class FoundatioCacheBenchmarkClient(CacheBenchmarkClientDescript
         else if (cache is IDisposable disposable)
         {
             disposable.Dispose();
+        }
+
+        foreach (var resource in ownedResources)
+        {
+            switch (resource)
+            {
+                case IAsyncDisposable ownedAsyncDisposable:
+                    await ownedAsyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+
+                case IDisposable ownedDisposable:
+                    ownedDisposable.Dispose();
+                    break;
+            }
         }
     }
 }

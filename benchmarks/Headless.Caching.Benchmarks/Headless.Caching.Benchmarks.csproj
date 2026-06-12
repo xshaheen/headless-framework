@@ -9,18 +9,23 @@
     <InternalsVisibleTo Include="Headless.Caching.Benchmarks.Tests.Unit" />
     <PackageReference Include="BenchmarkDotNet" />
     <PackageReference Include="Foundatio" />
+    <PackageReference Include="Foundatio.Redis" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="ZiggyCreatures.FusionCache" />
     <PackageReference Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Hybrid\Headless.Caching.Hybrid.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Redis\Headless.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
   </ItemGroup>
 </Project>

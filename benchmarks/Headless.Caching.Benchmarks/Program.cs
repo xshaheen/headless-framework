@@ -5,5 +5,11 @@ using Headless.Caching.Benchmarks;
 using Headless.Caching.Benchmarks.Scenarios;
 
 BenchmarkSwitcher
-    .FromTypes([typeof(CommonCacheBenchmarks), typeof(FactoryCacheBenchmarks), typeof(FeatureCacheBenchmarks)])
+    .FromTypes([
+        typeof(CommonCacheBenchmarks),
+        typeof(MemoryOnlyCacheBenchmarks),
+        typeof(DistributedOnlyCacheBenchmarks),
+        typeof(FactoryCacheBenchmarks),
+        typeof(FeatureCacheBenchmarks),
+    ])
     .Run(args, BenchmarkRunConfig.Create());

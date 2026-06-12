@@ -22,6 +22,7 @@ public sealed class CacheBenchmarkClientFactoryTests
                 BenchmarkProviderIds.HeadlessHybrid,
                 BenchmarkProviderIds.FusionMemory,
                 BenchmarkProviderIds.FoundatioMemory,
+                BenchmarkProviderIds.MicrosoftMemory,
                 BenchmarkProviderIds.MicrosoftMemoryDistributed,
             ]);
     }
@@ -31,8 +32,48 @@ public sealed class CacheBenchmarkClientFactoryTests
     {
         var providerIds = CacheBenchmarkClientFactory.GetDescriptors(includeRedis: true).Select(x => x.Id);
 
+        providerIds.Should().Contain(BenchmarkProviderIds.HeadlessRedis);
         providerIds.Should().Contain(BenchmarkProviderIds.FusionRedis);
+        providerIds.Should().Contain(BenchmarkProviderIds.FusionRedisDistributed);
+        providerIds.Should().Contain(BenchmarkProviderIds.FoundatioRedis);
         providerIds.Should().Contain(BenchmarkProviderIds.MicrosoftRedisDistributed);
+    }
+
+    [Fact]
+    public void MemoryOnlyProviderIds_ReturnsStandaloneMemoryProviders()
+    {
+        CacheBenchmarkClientFactory
+            .MemoryOnlyProviderIds()
+            .Should()
+            .Equal(
+                BenchmarkProviderIds.HeadlessInMemory,
+                BenchmarkProviderIds.FusionMemory,
+                BenchmarkProviderIds.FoundatioMemory,
+                BenchmarkProviderIds.MicrosoftMemory
+            );
+    }
+
+    [Fact]
+    public void DistributedOnlyProviderIds_WithoutRedis_ReturnsDistributedContractBaseline()
+    {
+        CacheBenchmarkClientFactory
+            .DistributedOnlyProviderIds(includeRedis: false)
+            .Should()
+            .Equal(BenchmarkProviderIds.MicrosoftMemoryDistributed);
+    }
+
+    [Fact]
+    public void DistributedOnlyProviderIds_WithRedis_ReturnsStandaloneDistributedProviders()
+    {
+        CacheBenchmarkClientFactory
+            .DistributedOnlyProviderIds(includeRedis: true)
+            .Should()
+            .Equal(
+                BenchmarkProviderIds.HeadlessRedis,
+                BenchmarkProviderIds.FusionRedisDistributed,
+                BenchmarkProviderIds.FoundatioRedis,
+                BenchmarkProviderIds.MicrosoftRedisDistributed
+            );
     }
 
     [Fact]
@@ -43,6 +84,7 @@ public sealed class CacheBenchmarkClientFactoryTests
         providerIds.Should().Contain(BenchmarkProviderIds.HeadlessInMemory);
         providerIds.Should().Contain(BenchmarkProviderIds.FusionMemory);
         providerIds.Should().NotContain(BenchmarkProviderIds.FoundatioMemory);
+        providerIds.Should().NotContain(BenchmarkProviderIds.MicrosoftMemory);
         providerIds.Should().NotContain(BenchmarkProviderIds.MicrosoftMemoryDistributed);
     }
 
@@ -51,6 +93,7 @@ public sealed class CacheBenchmarkClientFactoryTests
     [InlineData(BenchmarkProviderIds.HeadlessHybrid)]
     [InlineData(BenchmarkProviderIds.FusionMemory)]
     [InlineData(BenchmarkProviderIds.FoundatioMemory)]
+    [InlineData(BenchmarkProviderIds.MicrosoftMemory)]
     [InlineData(BenchmarkProviderIds.MicrosoftMemoryDistributed)]
     public async Task Create_InProcessProvider_RoundTripsPayload(string providerId)
     {
