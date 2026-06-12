@@ -19,9 +19,20 @@ public static class SetupSqlServerCommitCoordination
         /// Adds SQL Server commit coordination services.
         /// </summary>
         /// <returns>The service collection.</returns>
-        public IServiceCollection AddSqlServerCommitCoordination()
+        public IServiceCollection AddSqlServerCommitCoordination(
+            Action<SqlServerCommitCoordinationOptions>? configure = null
+        )
         {
             services.AddCommitCoordination();
+            var optionsBuilder = services.AddOptions<SqlServerCommitCoordinationOptions>();
+
+            if (configure is not null)
+            {
+                optionsBuilder.Configure(configure);
+            }
+
+            services.TryAddSingleton<SqlServerCommitDiagnosticProbeState>();
+            services.TryAddSingleton<ISqlServerCommitDiagnosticProbe, SqlServerCommitDiagnosticProbe>();
             services.TryAddSingleton<SqlServerCommitSignalSource>();
             services.TryAddSingleton<ICommitSignalSource>(sp =>
                 sp.GetRequiredService<SqlServerCommitSignalSource>()

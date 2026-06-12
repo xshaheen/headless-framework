@@ -51,8 +51,6 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     /// <inheritdoc />
     public CommitCoordinatorState State => (CommitCoordinatorState)Volatile.Read(ref _state);
 
-    internal bool IsRoot => ReferenceEquals(this, Root);
-
     internal CommitCoordinator CreateChild()
     {
         _ThrowIfNotActive();
@@ -97,11 +95,22 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         where TBuffer : class, ICommitWorkBuffer
     {
         Argument.IsNotNull(factory);
+
+        return GetOrAdd<TBuffer, Func<ICommitCoordinator, TBuffer>>(factory, static (coordinator, create) =>
+            create(coordinator)
+        );
+    }
+
+    /// <inheritdoc />
+    public TBuffer GetOrAdd<TBuffer, TState>(TState state, Func<ICommitCoordinator, TState, TBuffer> factory)
+        where TBuffer : class, ICommitWorkBuffer
+    {
+        Argument.IsNotNull(factory);
         _ThrowIfNotActive();
 
         if (_parent is not null)
         {
-            return Root.GetOrAdd(factory);
+            return Root.GetOrAdd(state, factory);
         }
 
         lock (_gate)
@@ -115,7 +124,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
                 return (TBuffer)existing;
             }
 
-            var buffer = factory(this);
+            var buffer = factory(this, state);
             _buffers.Add(type, buffer);
 
             return buffer;
@@ -284,8 +293,6 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
 
         await _DisposeBuffersAsync(claim.Buffers, exceptions).ConfigureAwait(false);
 
-        cancellationToken.ThrowIfCancellationRequested();
-
         if (exceptions.Count == 1)
         {
             ExceptionDispatchInfo.Capture(exceptions[0]).Throw();
@@ -299,7 +306,10 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
 
     internal void DisposePromotedRegistrations()
     {
-        if (_parent is not null && State == CommitCoordinatorState.Committed)
+        if (
+            _parent is not null
+            && (State == CommitCoordinatorState.Committed || Root.State != CommitCoordinatorState.Active)
+        )
         {
             return;
         }

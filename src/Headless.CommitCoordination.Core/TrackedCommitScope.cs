@@ -10,6 +10,7 @@ internal sealed class TrackedCommitScope(
     AsyncServiceScope? ownedServices = null
 ) : ICommitScope
 {
+    private readonly Lock _gate = new();
     private int _disposed;
     private int _signalStarted;
     private int _ownedServicesDisposed;
@@ -18,11 +19,17 @@ internal sealed class TrackedCommitScope(
 
     public async ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken)
     {
-        Volatile.Write(ref _signalStarted, 1);
+        ValueTask signal;
 
         try
         {
-            await inner.SignalAsync(outcome, cancellationToken).ConfigureAwait(false);
+            lock (_gate)
+            {
+                Volatile.Write(ref _signalStarted, 1);
+                signal = inner.SignalAsync(outcome, cancellationToken);
+            }
+
+            await signal.ConfigureAwait(false);
         }
         finally
         {
@@ -40,7 +47,10 @@ internal sealed class TrackedCommitScope(
 
         try
         {
-            inner.Dispose();
+            lock (_gate)
+            {
+                inner.Dispose();
+            }
         }
         finally
         {
@@ -64,7 +74,10 @@ internal sealed class TrackedCommitScope(
 
         try
         {
-            innerDispose = inner.DisposeAsync();
+            lock (_gate)
+            {
+                innerDispose = inner.DisposeAsync();
+            }
         }
         catch
         {

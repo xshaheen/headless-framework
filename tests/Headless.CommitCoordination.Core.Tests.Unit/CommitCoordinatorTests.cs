@@ -78,6 +78,27 @@ public sealed class CommitCoordinatorTests
     }
 
     [Fact]
+    public async Task should_not_mask_callback_faults_when_signal_token_is_canceled_after_terminal_claim()
+    {
+        var coordinator = new CommitCoordinator();
+        using var cts = new CancellationTokenSource();
+
+        coordinator.OnCommit((_, _) =>
+        {
+            cts.Cancel();
+
+            throw new InvalidOperationException("callback failed");
+        });
+
+        var act = () => coordinator
+            .SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), cts.Token)
+            .AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("callback failed");
+        coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+    }
+
+    [Fact]
     public async Task should_throw_when_enlisting_after_terminal_state()
     {
         var coordinator = new CommitCoordinator();
@@ -120,6 +141,27 @@ public sealed class CommitCoordinatorTests
         await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None);
 
         buffer.IsDisposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_pass_state_to_get_or_add_factory_and_reuse_existing_buffer()
+    {
+        var coordinator = new CommitCoordinator();
+        var calls = 0;
+
+        var first = coordinator.GetOrAdd(
+            new BufferFactoryState("first", () => ++calls),
+            static (_, state) => new StatefulBuffer(state.Value, state.Next())
+        );
+        var second = coordinator.GetOrAdd(
+            new BufferFactoryState("second", () => ++calls),
+            static (_, state) => new StatefulBuffer(state.Value, state.Next())
+        );
+
+        first.Should().BeSameAs(second);
+        first.State.Should().Be("first");
+        first.CallsAtCreation.Should().Be(1);
+        calls.Should().Be(1);
     }
 
     [Fact]
@@ -225,6 +267,10 @@ public sealed class CommitCoordinatorTests
             throw new InvalidOperationException("dispose");
         }
     }
+
+    private sealed record BufferFactoryState(string Value, Func<int> Next);
+
+    private sealed record StatefulBuffer(string State, int CallsAtCreation) : ICommitWorkBuffer;
 
     private interface ITestCapability : ICommitCapability;
 

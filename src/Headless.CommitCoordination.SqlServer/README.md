@@ -17,6 +17,8 @@ Detected signals remove the scope from the registry before signaling. The return
 
 The SqlClient diagnostic is a low-latency commit signal, not the durability mechanism. It depends on `Microsoft.Data.SqlClient` diagnostic event names and payload shapes, which can drift across driver upgrades, so a missed, delayed, or disabled diagnostic must not lose work: the consumer commits a durable row inside the transaction and recovers it by polling, and a faulted drain is left for that recovery path. Prefer `Headless.CommitCoordination.EntityFramework` where EF owns the commit edge — its interceptor signal has no such fragility.
 
+On startup the hosted diagnostic service runs a bounded self-probe when enabled. The probe opens a configured SQL Server connection, commits a throwaway transaction, and verifies that SqlClient emitted a commit diagnostic payload with the expected connection correlation shape. The result is recorded in `SqlServerCommitDiagnosticProbeState`: default `Warn` mode marks the state `Degraded` and logs a warning when the probe cannot run or fails, `Strict` mode fails hosted-service startup, and `Disabled` skips the probe.
+
 ## Installation
 
 ```bash
@@ -41,7 +43,17 @@ await connection.ExecuteCoordinatedTransactionAsync(
 
 ## Configuration
 
-None.
+```csharp
+services.AddSqlServerCommitCoordination(options =>
+{
+    options.DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Strict;
+    options.DiagnosticProbeTimeout = TimeSpan.FromSeconds(5);
+    options.DiagnosticProbeConnectionFactory = ct =>
+        ValueTask.FromResult(new SqlConnection(connectionString));
+});
+```
+
+Default mode is `Warn`. Without a `DiagnosticProbeConnectionFactory`, startup continues but the probe state is marked `Degraded` so operators can see that diagnostic compatibility was not proven. Use `Strict` in environments where out-of-band SQL Server detection must be verified at startup.
 
 ## Dependencies
 
@@ -49,6 +61,7 @@ None.
 - `Microsoft.Data.SqlClient`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
+- `Microsoft.Extensions.Options`
 
 ## Side Effects
 

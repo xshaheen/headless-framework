@@ -130,13 +130,20 @@ internal sealed class OutboxMessageWriter(
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
 
-                var buffer = context.Coordinator.GetOrAdd(coordinator =>
-                    new MessageOutboxBuffer(
-                        coordinator,
-                        dispatcher,
-                        messagingOptions.Value.OutboxFlushTimeout,
-                        outboxBufferLogger
-                    )
+                var bufferState = new MessageOutboxBufferState(
+                    dispatcher,
+                    messagingOptions.Value.OutboxFlushTimeout,
+                    outboxBufferLogger
+                );
+                var buffer = context.Coordinator.GetOrAdd(
+                    bufferState,
+                    static (coordinator, state) =>
+                        new MessageOutboxBuffer(
+                            coordinator,
+                            state.Dispatcher,
+                            state.FlushTimeout,
+                            state.Logger
+                        )
                 );
                 buffer.Add(mediumMessage);
 
@@ -174,6 +181,12 @@ internal sealed class OutboxMessageWriter(
             throw;
         }
     }
+
+    private sealed record MessageOutboxBufferState(
+        IDispatcher Dispatcher,
+        TimeSpan FlushTimeout,
+        ILogger<MessageOutboxBuffer> Logger
+    );
 
     // The ambient coordinator + relational transaction captured once at publish time, carried through the pipeline so
     // the inner publish never re-reads the AsyncLocal Current after an await.

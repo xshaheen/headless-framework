@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.Data.SqlClient;
@@ -59,13 +61,13 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
         {
             case SqlAfterCommitTransaction:
             {
-                if (!_TryGetClientConnectionId(evt, out var key))
+                if (!TryGetClientConnectionId(evt, out var key))
                 {
                     return;
                 }
 
                 // The commit-after event can carry a "Rollback" operation in some flows; treat it as a rollback.
-                if (_GetProperty(evt.Value, "Operation") as string == "Rollback")
+                if (IsRollbackOperation(evt.Value))
                 {
                     _Drain(signalSource.SignalRolledBackAsync(key, CancellationToken.None).AsTask());
                 }
@@ -80,7 +82,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
             or SqlAfterRollbackTransaction
             or SqlBeforeCloseConnection:
             {
-                if (!_TryGetClientConnectionId(evt, out var key))
+                if (!TryGetClientConnectionId(evt, out var key))
                 {
                     return;
                 }
@@ -122,7 +124,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
             {
                 await Task.WhenAll(drains).WaitAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
@@ -162,7 +164,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
         );
     }
 
-    private static bool _TryGetClientConnectionId(KeyValuePair<string, object?> evt, out Guid clientConnectionId)
+    internal static bool TryGetClientConnectionId(KeyValuePair<string, object?> evt, out Guid clientConnectionId)
     {
         if (_GetProperty(evt.Value, "Connection") is SqlConnection sqlConnection)
         {
@@ -176,6 +178,11 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
         return false;
     }
 
+    internal static bool IsRollbackOperation(object? payload)
+    {
+        return _GetProperty(payload, "Operation") as string == "Rollback";
+    }
+
     private static object? _GetProperty(object? source, string propertyName)
     {
         if (source is null)
@@ -185,9 +192,9 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
 
         var type = source.GetType();
         var cache = _PropertyCache.GetValue(type, static _ => new ConcurrentPropertyCache());
-        var property = cache.GetOrAdd(propertyName, type);
+        var accessor = cache.GetOrAdd(propertyName, type);
 
-        return property?.GetValue(source);
+        return accessor?.Invoke(source);
     }
 
     [LoggerMessage(
@@ -207,17 +214,34 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
 
     private sealed class ConcurrentPropertyCache
     {
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, PropertyInfo?> _properties = new(
+        private readonly ConcurrentDictionary<string, Func<object, object?>?> _properties = new(
             StringComparer.Ordinal
         );
 
-        public PropertyInfo? GetOrAdd(string propertyName, Type type)
+        public Func<object, object?>? GetOrAdd(string propertyName, Type type)
         {
             return _properties.GetOrAdd(
                 propertyName,
-                static (name, t) => t.GetTypeInfo().GetDeclaredProperty(name),
+                static (name, t) => _CompileGetter(t, name),
                 type
             );
+        }
+
+        private static Func<object, object?>? _CompileGetter(Type type, string propertyName)
+        {
+            var property = type.GetTypeInfo().GetDeclaredProperty(propertyName);
+
+            if (property?.GetMethod is null)
+            {
+                return null;
+            }
+
+            var source = Expression.Parameter(typeof(object), "source");
+            var typedSource = Expression.Convert(source, type);
+            var propertyAccess = Expression.Property(typedSource, property);
+            var boxed = Expression.Convert(propertyAccess, typeof(object));
+
+            return Expression.Lambda<Func<object, object?>>(boxed, source).Compile();
         }
     }
 }

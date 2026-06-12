@@ -175,7 +175,10 @@ public static class CoordinatedTransactionExtensions
 
                     try
                     {
-                        await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+                        // CancellationToken.None: the commit is durable, so the post-commit drain must run to
+                        // completion rather than be aborted by a caller cancellation (which would log a spurious
+                        // fault even though the work drained). Matches the SqlServer inline-signal helper.
+                        await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {

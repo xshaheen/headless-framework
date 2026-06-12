@@ -2,6 +2,8 @@
 
 using System.Data;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.CommitCoordination.SqlServer;
 
@@ -131,9 +133,10 @@ public static class CoordinatedTransactionExtensions
     /// <summary>
     /// Shared body for every <c>ExecuteCoordinatedTransactionAsync</c> overload: opens the connection when
     /// closed, begins the transaction, enlists commit coordination, runs <paramref name="operation"/>, commits,
-    /// and closes the connection if it was opened here. SqlServer commit detection is out-of-band — the SqlClient
-    /// diagnostic raises <c>SignalCommittedAsync</c> within <c>CommitAsync</c> — so this helper does not signal
-    /// explicitly (contrast the PostgreSql inline helper, which must).
+    /// signals the scope, and closes the connection if it was opened here. SqlServer commit detection is
+    /// out-of-band — the SqlClient diagnostic raises <c>SignalCommittedAsync</c> within <c>CommitAsync</c> — but
+    /// this helper also signals explicitly so the drain still runs when the diagnostic is disabled or degraded;
+    /// when the diagnostic already claimed the scope the explicit signal is a logged no-op.
     /// </summary>
     private static async Task<TResult> _ExecuteCoreAsync<TResult>(
         SqlConnection connection,
@@ -158,14 +161,36 @@ public static class CoordinatedTransactionExtensions
             await using (transaction.ConfigureAwait(false))
             {
                 // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-                await using var _ = connection
-                    .EnlistCommitCoordination(transaction, services)
-                    .ConfigureAwait(false);
+                var scope = connection.EnlistCommitCoordination(transaction, services);
 
-                var result = await operation(connection, cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await using (scope.ConfigureAwait(false))
+                {
+                    var result = await operation(connection, cancellationToken).ConfigureAwait(false);
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-                return result;
+                    try
+                    {
+                        await scope
+                            .SignalAsync(CommitOutcome.Committed, CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // The transaction is ALREADY durably committed. The explicit signal is the degraded-mode
+                        // fallback (diagnostic disabled or missed); a drain fault here must not surface as a
+                        // caller failure — a retry would re-run the operation and double-apply. The enlisted work
+                        // is relay-recoverable, so log and return the committed result.
+                        services
+                            .GetService<ILoggerFactory>()
+                            ?.CreateLogger("Headless.CommitCoordination.SqlServer.CoordinatedTransaction")
+                            .LogError(
+                                ex,
+                                "Post-commit drain faulted after a successful SQL Server commit; the relay will recover any uncommitted work."
+                            );
+                    }
+
+                    return result;
+                }
             }
         }
         finally

@@ -20,7 +20,10 @@ public static class SetupCommitCoordination
         public IServiceCollection AddCommitCoordination()
         {
             services.TryAddSingleton<CommitScopeStack>();
-            services.TryAddSingleton<ICurrentCommitCoordinator>(sp => sp.GetRequiredService<CommitScopeStack>());
+            // Deliberately NOT TryAdd: Messaging's setup TryAdds a null-coordinator fallback, and single-service
+            // resolution returns the LAST descriptor — an unconditional registration guarantees the real
+            // coordinator wins regardless of which setup call the host invokes first.
+            services.AddSingleton<ICurrentCommitCoordinator>(sp => sp.GetRequiredService<CommitScopeStack>());
             services.TryAddSingleton<CommitScopeFactory>();
 
             return services;

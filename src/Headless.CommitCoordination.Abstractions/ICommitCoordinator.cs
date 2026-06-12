@@ -39,6 +39,17 @@ public interface ICommitCoordinator
         where TBuffer : class, ICommitWorkBuffer;
 
     /// <summary>
+    /// Gets or creates a typed, scope-local work buffer using caller-supplied factory state.
+    /// </summary>
+    /// <typeparam name="TBuffer">The buffer type.</typeparam>
+    /// <typeparam name="TState">The factory state type.</typeparam>
+    /// <param name="state">The state passed to <paramref name="factory" /> when the buffer is absent.</param>
+    /// <param name="factory">Factory used to create the buffer when it is absent.</param>
+    /// <returns>The existing or newly-created buffer.</returns>
+    TBuffer GetOrAdd<TBuffer, TState>(TState state, Func<ICommitCoordinator, TState, TBuffer> factory)
+        where TBuffer : class, ICommitWorkBuffer;
+
+    /// <summary>
     /// Attempts to get a provider capability attached by the scope owner.
     /// </summary>
     /// <typeparam name="TCapability">The capability type.</typeparam>

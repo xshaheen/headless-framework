@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -77,6 +78,24 @@ public sealed class MessagingBuilderTests
         provider.GetRequiredService<IQueue>().Should().NotBeNull();
         provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
         provider.GetRequiredService<IOutboxQueue>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_resolve_real_commit_coordinator_when_registered_after_messaging()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(_ => { });
+        services.AddCommitCoordination();
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<ICurrentCommitCoordinator>()
+            .Should()
+            .BeSameAs(provider.GetRequiredService<CommitScopeStack>());
     }
 
     [Fact]

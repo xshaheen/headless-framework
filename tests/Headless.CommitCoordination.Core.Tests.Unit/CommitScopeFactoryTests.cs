@@ -222,6 +222,43 @@ public sealed class CommitScopeFactoryTests
     }
 
     [Fact]
+    public async Task should_not_dispose_child_promoted_rollback_work_before_root_drain_reaches_it()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var services = new EmptyServiceProvider();
+        var rootDrainStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var unblockRootDrain = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var childRollbackRan = false;
+
+        await using var parent = factory.Begin(services);
+        parent.Coordinator.OnRollback(async (_, _) =>
+        {
+            rootDrainStarted.SetResult();
+            await unblockRootDrain.Task;
+        });
+
+        await using var child = factory.Begin(services);
+        child.Coordinator.OnRollback((_, _) =>
+        {
+            childRollbackRan = true;
+
+            return ValueTask.CompletedTask;
+        });
+
+        var drain = child.SignalAsync(CommitOutcome.RolledBack, CancellationToken.None);
+        await rootDrainStarted.Task;
+
+        await child.DisposeAsync();
+        childRollbackRan.Should().BeFalse("the root drain is still blocked before the child callback");
+
+        unblockRootDrain.SetResult();
+        await drain;
+
+        childRollbackRan.Should().BeTrue("child rollback work promoted to the root must survive child disposal");
+    }
+
+    [Fact]
     public async Task should_pop_ambient_once_and_not_re_signal_when_disposed_after_signaling()
     {
         var stack = new CommitScopeStack();
