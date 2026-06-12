@@ -83,9 +83,9 @@ public sealed class CommitCoordinatorTests
         var coordinator = new CommitCoordinator();
         using var cts = new CancellationTokenSource();
 
-        coordinator.OnCommit((_, _) =>
+        coordinator.OnCommit(async (_, _) =>
         {
-            cts.Cancel();
+            await cts.CancelAsync();
 
             throw new InvalidOperationException("callback failed");
         });

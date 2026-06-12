@@ -2,6 +2,8 @@
 
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.CommitCoordination.EntityFramework;
 
@@ -14,12 +16,19 @@ namespace Headless.CommitCoordination.EntityFramework;
 /// Keyed off <see cref="IDbTransactionInterceptor.TransactionCommitted" /> (true post-commit on explicit
 /// transactions), not <c>ISaveChangesInterceptor.SavedChanges</c> which fires before an explicit
 /// <c>CommitAsync</c>. The signal source silently ignores transactions it never attached, so this interceptor
-/// is a no-op for uncoordinated transactions.
+/// is a no-op for uncoordinated transactions. Drain faults never escape these edges: the transaction outcome is
+/// already durable when they fire, so a propagating fault would surface a phantom failure (and, inside an EF
+/// execution strategy, re-run the delegate and double-apply); faults are logged and the work is relay-recovered —
+/// mirroring the sync paths and the PostgreSql/SqlServer helper guards.
 /// </remarks>
 [PublicAPI]
-public sealed class CommitCoordinationTransactionInterceptor(EntityFrameworkCommitSignalSource signalSource)
-    : DbTransactionInterceptor
+public sealed partial class CommitCoordinationTransactionInterceptor(
+    EntityFrameworkCommitSignalSource signalSource,
+    ILogger<CommitCoordinationTransactionInterceptor>? logger = null
+) : DbTransactionInterceptor
 {
+    private readonly ILogger _logger = logger ?? NullLogger<CommitCoordinationTransactionInterceptor>.Instance;
+
     /// <inheritdoc />
     public override void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData)
     {
@@ -33,7 +42,16 @@ public sealed class CommitCoordinationTransactionInterceptor(EntityFrameworkComm
         CancellationToken cancellationToken = default
     )
     {
-        await signalSource.SignalCommittedAsync(transaction, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await signalSource.SignalCommittedAsync(transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The commit is ALREADY durable; the drain is acceleration. Propagating would fail the caller (or
+            // re-run an execution-strategy delegate) for committed work — log and let the relay recover.
+            LogPostCommitDrainFaulted(_logger, ex);
+        }
     }
 
     /// <inheritdoc />
@@ -49,6 +67,29 @@ public sealed class CommitCoordinationTransactionInterceptor(EntityFrameworkComm
         CancellationToken cancellationToken = default
     )
     {
-        await signalSource.SignalRolledBackAsync(transaction, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await signalSource.SignalRolledBackAsync(transaction, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The rollback already happened and the enlisted work is discarded either way; a rollback-callback
+            // fault must not replace the caller's rollback flow with a phantom error.
+            LogPostRollbackDrainFaulted(_logger, ex);
+        }
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Error,
+        Message = "Post-commit drain faulted after a durable EF Core commit; the relay will recover any uncommitted work."
+    )]
+    private static partial void LogPostCommitDrainFaulted(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Error,
+        Message = "Rollback drain faulted after an EF Core rollback; the enlisted work was already discarded."
+    )]
+    private static partial void LogPostRollbackDrainFaulted(ILogger logger, Exception exception);
 }

@@ -4,37 +4,71 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.CommitCoordination;
 
-internal sealed class TrackedCommitScope(
-    ICommitScope inner,
-    Action<ICommitScope> detach,
-    AsyncServiceScope? ownedServices = null
-) : ICommitScope
+internal sealed class TrackedCommitScope : ICommitScope
 {
+    private readonly ICommitScope _inner;
+    private readonly Action<ICommitScope> _detach;
+    private readonly AsyncServiceScope? _ownedServices;
+    private readonly bool _abandonCleanupTransferred;
     private readonly Lock _gate = new();
     private int _disposed;
     private int _signalStarted;
     private int _ownedServicesDisposed;
 
-    public ICommitCoordinator Coordinator => inner.Coordinator;
+    internal TrackedCommitScope(ICommitScope inner, Action<ICommitScope> detach, AsyncServiceScope? ownedServices = null)
+    {
+        _inner = inner;
+        _detach = detach;
+        _ownedServices = ownedServices;
+
+        if (ownedServices is not null && inner is CommitScope commitScope)
+        {
+            // A sync un-signalled Dispose offloads the rollback drain to the background; the drain resolves
+            // callbacks from the owned DI scope, so the drain — not Dispose's frame — must own its disposal.
+            commitScope.AbandonCleanup = _DisposeOwnedServices;
+            _abandonCleanupTransferred = true;
+        }
+    }
+
+    public ICommitCoordinator Coordinator => _inner.Coordinator;
 
     public async ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken)
     {
         ValueTask signal;
+        var claimedSignal = false;
 
         try
         {
             lock (_gate)
             {
-                Volatile.Write(ref _signalStarted, 1);
-                signal = inner.SignalAsync(outcome, cancellationToken);
+                var firstSignal = Interlocked.Exchange(ref _signalStarted, 1) == 0;
+
+                if (_inner is CommitScope commitScope)
+                {
+                    signal = commitScope.SignalAsync(outcome, cancellationToken, out claimedSignal);
+                }
+                else
+                {
+                    signal = _inner.SignalAsync(outcome, cancellationToken);
+                    claimedSignal = firstSignal;
+                }
             }
 
             await signal.ConfigureAwait(false);
         }
         finally
         {
-            detach(this);
-            await _DisposeOwnedServicesAsync().ConfigureAwait(false);
+            _detach(this);
+
+            // Only the call that claimed the scope-level signal latch owns the owned DI scope: its await spans the
+            // full drain, so disposal here is safely AFTER the drain. A redundant signal (e.g. the SqlServer
+            // helper's explicit signal after the diagnostic already claimed) no-ops on the latch and must not tear
+            // the services down under the winner's in-flight drain; when an un-signalled Dispose claimed the
+            // abandon drain instead, ownership was transferred to that drain's cleanup.
+            if (claimedSignal)
+            {
+                await _DisposeOwnedServicesAsync().ConfigureAwait(false);
+            }
         }
     }
 
@@ -49,14 +83,16 @@ internal sealed class TrackedCommitScope(
         {
             lock (_gate)
             {
-                inner.Dispose();
+                _inner.Dispose();
             }
         }
         finally
         {
-            detach(this);
+            _detach(this);
 
-            if (Volatile.Read(ref _signalStarted) == 0)
+            // When ownership was transferred, the inner scope's abandon path (offloaded drain or inline fallback)
+            // disposes the owned services; disposing here would race the background rollback drain.
+            if (Volatile.Read(ref _signalStarted) == 0 && !_abandonCleanupTransferred)
             {
                 _DisposeOwnedServices();
             }
@@ -76,12 +112,12 @@ internal sealed class TrackedCommitScope(
         {
             lock (_gate)
             {
-                innerDispose = inner.DisposeAsync();
+                innerDispose = _inner.DisposeAsync();
             }
         }
         catch
         {
-            detach(this);
+            _detach(this);
             throw;
         }
 
@@ -96,11 +132,12 @@ internal sealed class TrackedCommitScope(
         }
         finally
         {
-            detach(this);
+            _detach(this);
 
             // Re-read _signalStarted AFTER the inner dispose, not from a snapshot taken before it: a SignalAsync may
             // have started concurrently and claimed the drain, which owns these services for its lifetime and disposes
-            // them in its own finally. Only dispose here when no signal started; _ownedServicesDisposed is the final
+            // them in its own finally. Only dispose here when no signal started; the async abandon drain was awaited
+            // by the inner dispose above, so this runs after it. _ownedServicesDisposed is the final
             // double-dispose guard.
             if (Volatile.Read(ref _signalStarted) == 0)
             {
@@ -111,21 +148,21 @@ internal sealed class TrackedCommitScope(
 
     private void _DisposeOwnedServices()
     {
-        if (ownedServices is null || Interlocked.Exchange(ref _ownedServicesDisposed, 1) == 1)
+        if (_ownedServices is null || Interlocked.Exchange(ref _ownedServicesDisposed, 1) == 1)
         {
             return;
         }
 
-        ownedServices.Value.Dispose();
+        _ownedServices.Value.Dispose();
     }
 
     private async ValueTask _DisposeOwnedServicesAsync()
     {
-        if (ownedServices is null || Interlocked.Exchange(ref _ownedServicesDisposed, 1) == 1)
+        if (_ownedServices is null || Interlocked.Exchange(ref _ownedServicesDisposed, 1) == 1)
         {
             return;
         }
 
-        await ownedServices.Value.DisposeAsync().ConfigureAwait(false);
+        await _ownedServices.Value.DisposeAsync().ConfigureAwait(false);
     }
 }
