@@ -51,6 +51,23 @@ public sealed class HybridCacheOptions : CacheOptions
     public bool EnableAutoRecovery { get; set; }
 
     /// <summary>
+    /// Enables opt-in fire-and-forget distributed (L2) writes on additive write paths (the GetOrAdd factory
+    /// write-through, <see cref="ICache.UpsertAsync{T}"/>, and <see cref="ICache.UpsertAllAsync{T}"/>). When
+    /// <see langword="true"/>, the caller writes L1 synchronously and returns without awaiting the L2 write or
+    /// its invalidation publish; both run detached in the background. The caller's result never depends on the
+    /// L2 outcome, so this trades cross-instance write latency for tail-latency: a slow or briefly unavailable
+    /// L2 tier no longer blocks the caller. A failed background write is routed to the auto-recovery queue when
+    /// <see cref="EnableAutoRecovery"/> is on, otherwise it is logged and dropped (best-effort, matching the
+    /// fire-and-forget contract). Default is <see langword="false"/> (today's behavior: L2 writes are awaited).
+    /// </summary>
+    /// <remarks>
+    /// Only paths whose return value is independent of L2 are backgrounded. Removes, conditional/atomic ops
+    /// (TryInsert, TryReplace, Increment, SetIfHigher/Lower, CAS), set/list ops, and all reads stay synchronous
+    /// because their result depends on the L2 response or is correctness-sensitive.
+    /// </remarks>
+    public bool AllowBackgroundDistributedCacheOperations { get; set; }
+
+    /// <summary>
     /// Maximum number of pending recovery items (one per cache key). On overflow the item with the earliest
     /// expiry is evicted to admit the new one. Only used when <see cref="EnableAutoRecovery"/> is enabled.
     /// </summary>

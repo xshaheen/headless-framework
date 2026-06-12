@@ -422,6 +422,20 @@ public sealed partial class HybridCache(
 
         _logger.LogSettingKey(key, expiration);
 
+        // Background path: write L1 synchronously and detach the L2 write + publish. The caller's result no
+        // longer reflects the L2 response, so we optimistically populate L1 (the additive write succeeded
+        // locally) and return true. Capture every value the detached lambda needs before returning so it never
+        // races disposal. A failed background write routes to recovery (when enabled) or is logged and swallowed.
+        if (options.AllowBackgroundDistributedCacheOperations)
+        {
+            var localExpiration = _GetLocalExpiration(expiration);
+            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+
+            _RunDetached(() => _BackgroundScalarUpsertAsync(key, value, expiration), key);
+
+            return true;
+        }
+
         bool updated;
 
         try
@@ -459,6 +473,69 @@ public sealed partial class HybridCache(
             .ConfigureAwait(false);
 
         return updated;
+    }
+
+    /// <summary>
+    /// The detached L2 tail of a scalar <see cref="UpsertAsync{T}"/> when background distributed operations are
+    /// enabled. Runs with <see cref="CancellationToken.None"/>: the caller's token is gone once it returned, and
+    /// cancelling a fire-and-forget L2 write would only abandon it. On L2 failure it routes to auto-recovery when
+    /// enabled, otherwise logs and swallows (best-effort — the caller already succeeded against L1).
+    /// </summary>
+    private async Task _BackgroundScalarUpsertAsync<T>(string key, T? value, TimeSpan? expiration)
+    {
+        try
+        {
+            await l2Cache.UpsertAsync(key, value, expiration, CancellationToken.None).ConfigureAwait(false);
+            RecoveryQueue?.OnSuccessfulL2Operation(key);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+        {
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+
+            if (RecoveryQueue is not null)
+            {
+                // Same capture the synchronous degraded path uses: queue the failed L2 write for replay.
+                _QueueScalarUpsertRecovery(key, value, expiration);
+            }
+
+            // Auto-recovery off: best-effort, swallow. The caller already returned success (fire-and-forget).
+        }
+
+        await _PublishInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
+                CancellationToken.None,
+                queueOnFailure: true
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The detached L2 tail of a bulk <see cref="UpsertAllAsync{T}"/> when background distributed operations are
+    /// enabled. Bulk ops are not captured by auto-recovery (issue #440), so an L2 failure here is best-effort:
+    /// logged and swallowed. The publish runs regardless so peers still drop their stale L1 entries.
+    /// </summary>
+    private async Task _BackgroundBulkUpsertAsync<T>(
+        Dictionary<string, T> snapshot,
+        string[] keys,
+        TimeSpan? expiration
+    )
+    {
+        try
+        {
+            await l2Cache.UpsertAllAsync(snapshot, expiration, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+        {
+            _logger.LogFailedBulkL2CacheOperation(exception, snapshot.Count);
+        }
+
+        await _PublishInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = _instanceId, Keys = keys },
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -505,6 +582,23 @@ public sealed partial class HybridCache(
         }
 
         _logger.LogSettingKeys(value.Keys, expiration);
+
+        // Background path: write L1 synchronously and detach the L2 bulk write + publish. The caller no longer
+        // depends on the L2 outcome, so we optimistically populate L1 with every entry and report the full count.
+        // Bulk ops are not captured by auto-recovery (issue #440), so a failed background bulk write is purely
+        // best-effort: logged and swallowed. Snapshot the dictionary and key array before detaching so the
+        // background lambda owns immutable state and never observes a caller-side mutation.
+        if (options.AllowBackgroundDistributedCacheOperations)
+        {
+            var snapshot = new Dictionary<string, T>(value, StringComparer.Ordinal);
+            var keys = snapshot.Keys.ToArray();
+            var localExpiration = _GetLocalExpiration(expiration);
+            await LocalCache.UpsertAllAsync(snapshot, localExpiration, cancellationToken).ConfigureAwait(false);
+
+            _RunDetached(() => _BackgroundBulkUpsertAsync(snapshot, keys, expiration), keys.Length > 0 ? keys[0] : "");
+
+            return snapshot.Count;
+        }
 
         int setCount;
 
@@ -1379,6 +1473,51 @@ public sealed partial class HybridCache(
                 queueOnFailure: true
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Detaches the supplied background L2 work as fire-and-forget and attaches an observe-faulted continuation
+    /// so a fault can never become an unobserved task exception (host-crash safe on .NET's escalation policy).
+    /// The work itself is expected to handle its own L2/publish failures (recovery routing or best-effort log);
+    /// this continuation is the last-resort net for anything that still escapes — mirrors the coordinator's
+    /// <c>_ObserveFaultedTask</c> pattern. The lambda must capture every value it needs (key, value, message)
+    /// BEFORE calling this so it never touches disposal-racing state after the caller returns.
+    /// </summary>
+    private void _RunDetached(Func<Task> work, string key)
+    {
+        Task task;
+
+        try
+        {
+            task = work();
+        }
+        catch (Exception exception)
+        {
+            // A synchronous throw before the first await still must not surface to the (already-returned) caller.
+            _logger.LogBackgroundDistributedCacheOperationFailed(exception, key, exception.GetType().Name);
+            return;
+        }
+
+        if (task.IsCompletedSuccessfully)
+        {
+            return;
+        }
+
+        _ = task.ContinueWith(
+            (faulted, state) =>
+            {
+                var (logger, faultedKey) = ((ILogger, string))state!;
+                logger.LogBackgroundDistributedCacheOperationFailed(
+                    faulted.Exception!,
+                    faultedKey,
+                    faulted.Exception!.GetType().Name
+                );
+            },
+            (_logger, key),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default
+        );
     }
 
     private void _ThrowIfDisposed()

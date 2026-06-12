@@ -853,11 +853,20 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     /// <summary>When set, SetEntryAsync blocks on this gate (honoring the token) before writing.</summary>
     public TaskCompletionSource? WriteGate { get; set; }
 
+    /// <summary>
+    /// When set, the scalar UpsertAsync and bulk UpsertAllAsync block on this gate (honoring the token) before
+    /// writing, so tests can assert a caller returns before a backgrounded scalar/bulk L2 write completes.
+    /// </summary>
+    public TaskCompletionSource? UpsertGate { get; set; }
+
     /// <summary>Completed when a gated TryGetEntryAsync has started and is parked on the gate.</summary>
     public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>Completed when a gated SetEntryAsync has started and is parked on the gate.</summary>
     public TaskCompletionSource WriteStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Completed when a gated UpsertAsync/UpsertAllAsync has started and is parked on the gate.</summary>
+    public TaskCompletionSource UpsertStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public CacheEntryOptions? DefaultEntryOptions => null;
 
@@ -923,12 +932,21 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         CancellationToken cancellationToken = default
     ) => _cache.GetOrAddAsync(key, factory, options, cancellationToken);
 
-    public ValueTask<bool> UpsertAsync<T>(
+    public async ValueTask<bool> UpsertAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.UpsertAsync(key, value, expiration, cancellationToken);
+    )
+    {
+        if (UpsertGate is { } gate)
+        {
+            UpsertStarted.TrySetResult();
+            await gate.Task.WaitAsync(cancellationToken);
+        }
+
+        return await _cache.UpsertAsync(key, value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> UpsertEntryAsync<T>(
         string key,
@@ -937,11 +955,20 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         CancellationToken cancellationToken = default
     ) => _cache.UpsertEntryAsync(key, value, options, cancellationToken);
 
-    public ValueTask<int> UpsertAllAsync<T>(
+    public async ValueTask<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    ) => _cache.UpsertAllAsync(value, expiration, cancellationToken);
+    )
+    {
+        if (UpsertGate is { } gate)
+        {
+            UpsertStarted.TrySetResult();
+            await gate.Task.WaitAsync(cancellationToken);
+        }
+
+        return await _cache.UpsertAllAsync(value, expiration, cancellationToken);
+    }
 
     public ValueTask<bool> TryInsertAsync<T>(
         string key,

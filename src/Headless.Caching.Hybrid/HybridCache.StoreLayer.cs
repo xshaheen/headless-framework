@@ -121,6 +121,21 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
+        // Background path: the GetOrAdd factory write-through is the highest-value detach target. The factory
+        // already returned its value to the caller against L1, so the L2 mirror + peer publish add nothing to
+        // the caller's result. Write L1 synchronously (capturing the physical stamp the recovery replay verifies
+        // against), then detach the L2 write + recovery bookkeeping + publish under CancellationToken.None so a
+        // caller token going away cannot abandon the L2 mirror. The descriptor is already captured by value
+        // (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns immutable state.
+        if (options.AllowBackgroundDistributedCacheOperations)
+        {
+            var l1PhysicalStamp = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
+
+            _RunDetached(() => _SetEntryL2TailAsync(key, entry, l1PhysicalStamp), key);
+
+            return;
+        }
+
         var l2WriteSucceeded = false;
 
         if (l2Cache is IFactoryCacheStore l2Store)
@@ -157,8 +172,49 @@ public sealed partial class HybridCache
             }
         }
 
-        DateTime? l1PhysicalStamp = null;
+        var l1PhysicalStampSync = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
 
+        if (RecoveryQueue is not null)
+        {
+            if (l2WriteSucceeded)
+            {
+                RecoveryQueue.OnSuccessfulL2Operation(key);
+            }
+            else
+            {
+                // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
+                _QueueSetEntryRecovery(key, entry, l1PhysicalStampSync);
+            }
+        }
+
+        // Factory value-writes (cold-miss fresh write, soft-timeout background completion, eager refresh,
+        // conditional Modified) invalidate peers' L1 exactly like the explicit-upsert path. Metadata-only
+        // restamps (NotModified extension, fail-safe throttle, eager-refresh gate) are skipped: peers' cached
+        // bytes are still identical, so invalidating them would only force pointless L2 re-reads. The publish
+        // runs after the recovery bookkeeping so a queued publish-recovery item cannot be cleared by this
+        // write's own L2 success.
+        if (!entry.IsRestamp)
+        {
+            await _PublishInvalidationAsync(
+                    new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
+                    cancellationToken,
+                    queueOnFailure: true
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Writes the framed entry into L1 (bounded by the local ceiling), returning the physical stamp actually
+    /// written so the auto-recovery replay can detect that the L1 entry was later replaced. Shared by the
+    /// synchronous and background <see cref="_SetEntryCoreAsync{T}"/> flows so both write L1 identically.
+    /// </summary>
+    private async ValueTask<DateTime?> _WriteSetEntryToLocalAsync<T>(
+        string key,
+        CacheStoreEntryWrite<T> entry,
+        CancellationToken cancellationToken
+    )
+    {
         if (LocalCache is IFactoryCacheStore l1Store)
         {
             var l1Entry = new CacheStoreEntry<T>(
@@ -176,18 +232,63 @@ public sealed partial class HybridCache
                 Tags = entry.Tags,
             };
 
-            l1PhysicalStamp = await _SetLocalEntryAsync(l1Store, key, l1Entry, cancellationToken).ConfigureAwait(false);
+            return await _SetLocalEntryAsync(l1Store, key, l1Entry, cancellationToken).ConfigureAwait(false);
+        }
+
+        await LocalCache
+            .UpsertAsync(
+                key,
+                entry.IsNull ? default : entry.Value,
+                _GetLocalExpiration(entry.PhysicalExpiresAt.Subtract(_GetUtcNow())),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return null;
+    }
+
+    /// <summary>
+    /// The detached L2 tail of <see cref="_SetEntryCoreAsync{T}"/> when background distributed operations are
+    /// enabled: writes the framed entry to L2, runs the same recovery bookkeeping the synchronous path does
+    /// (route a failed write to replay when auto-recovery is on; otherwise the failure was already logged and is
+    /// swallowed), then publishes the peer invalidation. Runs under <see cref="CancellationToken.None"/> because
+    /// the caller's token is gone. <paramref name="l1PhysicalStamp"/> was captured from the synchronous L1 write.
+    /// </summary>
+    private async Task _SetEntryL2TailAsync<T>(string key, CacheStoreEntryWrite<T> entry, DateTime? l1PhysicalStamp)
+    {
+        var l2WriteSucceeded = false;
+
+        if (l2Cache is IFactoryCacheStore l2Store)
+        {
+            try
+            {
+                await l2Store.SetEntryAsync(key, in entry, CancellationToken.None).ConfigureAwait(false);
+                l2WriteSucceeded = true;
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+            {
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+            }
         }
         else
         {
-            await LocalCache
-                .UpsertAsync(
-                    key,
-                    entry.IsNull ? default : entry.Value,
-                    _GetLocalExpiration(entry.PhysicalExpiresAt.Subtract(_GetUtcNow())),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            var expiresIn = (
+                entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
+            ).Subtract(_GetUtcNow());
+
+            try
+            {
+                await l2Cache
+                    .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, CancellationToken.None)
+                    .ConfigureAwait(false);
+                l2WriteSucceeded = true;
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
+            {
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+            }
         }
 
         if (RecoveryQueue is not null)
@@ -198,22 +299,15 @@ public sealed partial class HybridCache
             }
             else
             {
-                // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
                 _QueueSetEntryRecovery(key, entry, l1PhysicalStamp);
             }
         }
 
-        // Factory value-writes (cold-miss fresh write, soft-timeout background completion, eager refresh,
-        // conditional Modified) invalidate peers' L1 exactly like the explicit-upsert path. Metadata-only
-        // restamps (NotModified extension, fail-safe throttle, eager-refresh gate) are skipped: peers' cached
-        // bytes are still identical, so invalidating them would only force pointless L2 re-reads. The publish
-        // runs after the recovery bookkeeping so a queued publish-recovery item cannot be cleared by this
-        // write's own L2 success.
         if (!entry.IsRestamp)
         {
             await _PublishInvalidationAsync(
                     new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
-                    cancellationToken,
+                    CancellationToken.None,
                     queueOnFailure: true
                 )
                 .ConfigureAwait(false);

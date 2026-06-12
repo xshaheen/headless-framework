@@ -129,4 +129,17 @@ internal static partial class HybridCacheLoggerExtensions
         Message = "Failed to perform a bulk L2 cache operation for {KeyCount} key(s); the failure is surfaced to the caller and is not auto-recovered in v1"
     )]
     public static partial void LogFailedBulkL2CacheOperation(this ILogger logger, Exception exception, int keyCount);
+
+    [LoggerMessage(
+        EventId = 16,
+        EventName = "BackgroundDistributedCacheOperationFailed",
+        Level = LogLevel.Error,
+        Message = "A backgrounded L2 cache operation faulted unexpectedly for key {Key} ({ExceptionType}); the caller already returned"
+    )]
+    public static partial void LogBackgroundDistributedCacheOperationFailed(
+        this ILogger logger,
+        Exception exception,
+        string key,
+        string exceptionType
+    );
 }
