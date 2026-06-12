@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Headless.CommitCoordination.PostgreSql;
@@ -170,7 +172,25 @@ public static class CoordinatedTransactionExtensions
                 {
                     var result = await operation(connection, cancellationToken).ConfigureAwait(false);
                     await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                    await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+
+                    try
+                    {
+                        await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // The transaction is ALREADY durably committed. The inline signal drives the dispatch
+                        // accelerator (drain); a fault here must not surface as a caller failure — a retry would
+                        // re-run the operation and double-apply. The enlisted work is relay-recoverable (durable
+                        // rows committed in-transaction + polling recovery), so log and return the committed result.
+                        services
+                            .GetService<ILoggerFactory>()
+                            ?.CreateLogger("Headless.CommitCoordination.PostgreSql.CoordinatedTransaction")
+                            .LogError(
+                                ex,
+                                "Post-commit drain faulted after a successful PostgreSQL commit; the relay will recover any uncommitted work."
+                            );
+                    }
 
                     return result;
                 }
