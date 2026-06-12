@@ -268,4 +268,65 @@ public sealed class HybridCacheBackgroundDistributedOperationsTests : TestBase
         // then — Remove was NOT backgrounded: the synchronous L2 failure propagates as today
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
+
+    [Fact]
+    public async Task should_return_before_gated_backplane_publish_when_flag_on()
+    {
+        // given — background distributed ops on; the BACKPLANE publish (not just the L2 write) is parked behind a
+        // gate. This pins the publish-timing half of the background tail distinctly from the L2-write timing the
+        // other tests cover: when the flag is on, the invalidation broadcast runs in the detached tail, so the
+        // caller must not block on it (FusionCache CanExecuteBackgroundBackplaneOperations analog — our framework
+        // backgrounds the publish together with the L2 write under the single flag rather than a separate one).
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var l2 = new InMemoryRemoteCacheAdapter(
+            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
+        );
+
+        var publishGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var publishStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                publishStarted.TrySetResult();
+                await publishGate.Task;
+            });
+
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions { AllowBackgroundDistributedCacheOperations = true },
+            timeProvider: _timeProvider
+        );
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int();
+
+        // when — the caller upserts; the L2 write and the publish both detach into the background tail
+        var updated = await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then — the caller already returned true and L1 holds the value while the backplane publish is still
+        // parked on the gate (the caller did not block on it). Awaiting UpsertAsync and observing the value
+        // before releasing the gate is the proof that the publish was detached, not inline.
+        updated.Should().BeTrue();
+        (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(value);
+        await publishStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        publishGate.Task.IsCompleted.Should().BeFalse("the caller returned before the gated publish completed");
+
+        // when — releasing the gate lets the background publish complete
+        publishGate.SetResult();
+        await _WaitUntilAsync(() => new ValueTask<bool>(publishGate.Task.IsCompleted));
+
+        // then — exactly one key invalidation was broadcast from the background tail
+        await publisher
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
 }

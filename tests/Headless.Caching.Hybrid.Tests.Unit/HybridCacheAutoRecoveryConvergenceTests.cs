@@ -286,6 +286,54 @@ public sealed class HybridCacheAutoRecoveryConvergenceTests : TestBase
         (await b.Cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
         (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task should_stay_divergent_when_auto_recovery_disabled_and_backplane_recovers_after_outage()
+    {
+        // given — the negative control for the convergence suite (FusionCache CanBeDisabled analog): auto-recovery
+        // is OFF on both nodes and the backplane is down. With L2 healthy, each write lands in the shared L2, but
+        // the publish that would drop the peer's stale L1 copy is lost.
+        await using var harness = new TwoNodeConvergenceHarness(static o => o.EnableAutoRecovery = false);
+        var (a, b) = (harness.A, harness.B);
+        harness.Bus.State = FakeBackplaneState.Down;
+
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // seed both nodes' L1 with an initial shared value so each holds a copy that a lost publish should evict
+        await a.Cache.UpsertAsync(key, "v-seed", _Ttl, AbortToken);
+        await b.Cache.GetOrAddAsync(key, _ => new ValueTask<string?>("v-seed"), _Ttl, AbortToken);
+        (await a.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-seed");
+        (await b.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-seed");
+
+        // when — A writes v-a then B writes v-b while the backplane is down; both L2 writes succeed (shared tier),
+        // but neither invalidation reaches the peer, and with auto-recovery off nothing is queued for replay.
+        await a.Cache.UpsertAsync(key, "v-a", _Ttl, AbortToken);
+        harness.Time.Advance(TimeSpan.FromSeconds(1));
+        await b.Cache.UpsertAsync(key, "v-b", _Ttl, AbortToken);
+
+        // then — no recovery queue exists at all (auto-recovery disabled), and each node serves its own stale L1
+        // copy: A still sees v-a (it never received B's invalidation), B still sees v-b.
+        a.Cache.RecoveryQueue.Should().BeNull("auto-recovery is disabled, so no replay machinery exists");
+        b.Cache.RecoveryQueue.Should().BeNull();
+        (await a.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-a");
+        (await b.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+
+        // when — the backplane comes back up and time advances well past any replay cadence
+        harness.Bus.State = FakeBackplaneState.Up;
+        harness.Time.Advance(_Delay);
+        harness.Time.Advance(_Delay);
+
+        // then — PINNED: disabled auto-recovery does NOT replay or republish, so the instances stay DIVERGENT.
+        // A keeps serving its stale L1 v-a, B keeps serving v-b, and the shared L2 holds only the last writer's
+        // value (v-b) — but no convergence is forced onto the divergent L1 copies.
+        a.Cache.RecoveryQueue.Should().BeNull();
+        b.Cache.RecoveryQueue.Should().BeNull();
+        (await a.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-a", "no republish ever evicted A's L1");
+        (await b.L1.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+        (await a.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-a", "A serves its divergent L1 copy");
+        (await b.Cache.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+        (await harness.SharedL2Backend.GetAsync<string>(key, AbortToken)).Value.Should().Be("v-b");
+    }
 }
 
 /// <summary>One node of the two-instance harness: the cache, its private L1, its L2 facade, and its log capture.</summary>

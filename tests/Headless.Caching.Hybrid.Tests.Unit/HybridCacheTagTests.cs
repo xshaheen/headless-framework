@@ -154,4 +154,51 @@ public sealed class HybridCacheTagTests : TestBase
             .BeTrue();
         cache.InvalidateCacheCalls.Should().Be(0);
     }
+
+    [Fact]
+    public async Task should_keep_tag_index_intact_when_removing_an_unused_tag()
+    {
+        // given — three keys all carrying the same tag set; the tag→key index now maps x/y/z to all three
+        // (FusionCache RemoveByTagDoesNotRemoveTaggingData analog).
+        var (cache, l1, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        string[] keys = ["foo", "bar", "baz"];
+        var tags = new[] { "x", "y", "z" };
+
+        foreach (var key in keys)
+        {
+            await cache.GetOrAddAsync(
+                key,
+                _ => ValueTask.FromResult<string?>("value"),
+                new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = tags },
+                AbortToken
+            );
+        }
+
+        // when — removing a tag that no key carries must be a pure no-op against the index, not a corruption.
+        var removedUnused = await cache.RemoveByTagAsync("blah", AbortToken);
+
+        // then — nothing was removed and every entry still resolves in both tiers.
+        removedUnused.Should().Be(0);
+
+        foreach (var key in keys)
+        {
+            (await l1.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue("no-op removal must not evict L1");
+            (await l2.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue("no-op removal must not evict L2");
+        }
+
+        // when — a later removal of a real, shared tag must still resolve every tagged key through the intact
+        // index (the no-op removal did not corrupt the tag→key mapping).
+        var removedReal = await cache.RemoveByTagAsync("y", AbortToken);
+
+        // then — all three keys, which share tag "y", are removed from both tiers.
+        removedReal.Should().Be(3);
+
+        foreach (var key in keys)
+        {
+            (await l1.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+            (await l2.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+        }
+    }
 }
