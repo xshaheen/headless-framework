@@ -200,6 +200,7 @@ public sealed partial class FactoryCacheCoordinator
     )
     {
 #pragma warning disable VSTHRD003 // This continuation intentionally races/observes the detached factory task.
+        var ctsTransferred = false;
         try
         {
             if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
@@ -228,12 +229,19 @@ public sealed partial class FactoryCacheCoordinator
             // later fault is logged rather than lost. Unlike the soft-timeout path there is no restamp: the
             // entry is still fresh and rides to its natural expiry.
             _ObserveFaultedTask(factoryTask, key);
+            // Defer disposal until the abandoned factory finishes so it never touches a disposed token source;
+            // ctsTransferred makes the synchronous finally skip disposal, mirroring the hard-timeout path.
+            CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
+            ctsTransferred = true;
             _logger.LogCacheFactoryTimedOut(key, "eager-ceiling", options.BackgroundFactoryCeiling);
         }
 #pragma warning restore VSTHRD003
         finally
         {
-            internalCts.Dispose();
+            if (!ctsTransferred)
+            {
+                internalCts.Dispose();
+            }
 
             if (distributedLease is not null)
             {

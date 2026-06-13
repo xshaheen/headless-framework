@@ -59,7 +59,11 @@ public sealed partial class HybridCache
             }
         }
 
-        CancellationTokenSource? operationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Only link to the caller token when it can actually fire; otherwise a plain source avoids the
+        // linked-registration allocation while still supporting the timeout-path CancelAsync below.
+        CancellationTokenSource? operationCts = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : new CancellationTokenSource();
         var operationTask = operation(operationCts.Token).AsTask();
 
         try

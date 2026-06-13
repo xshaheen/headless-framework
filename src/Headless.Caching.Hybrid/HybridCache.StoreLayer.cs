@@ -290,6 +290,20 @@ public sealed partial class HybridCache
 
         if (!skipL2 && l2WriteConditionFailed)
         {
+            // The conditional L2 write lost to a concurrent writer, but L1 on this node was already committed
+            // with our value (synchronous path, before this detached tail ran). Publish so peers drop their
+            // now-stale L1 — skip restamps, which do not change the value. The winning writer publishing too is
+            // harmless (idempotent invalidation); a stale peer until TTL is not.
+            if (!entry.IsRestamp)
+            {
+                await _PublishInvalidationAsync(
+                        new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
+                        CancellationToken.None,
+                        queueOnFailure: true
+                    )
+                    .ConfigureAwait(false);
+            }
+
             return;
         }
 

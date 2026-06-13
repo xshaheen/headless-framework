@@ -49,6 +49,7 @@ public sealed partial class FactoryCacheCoordinator
     )
     {
 #pragma warning disable VSTHRD003 // This continuation intentionally races/observes the transferred factory task.
+        var ctsTransferred = false;
         try
         {
             // No ceiling configured: let the detached factory run to completion, matching comparable caches.
@@ -95,13 +96,20 @@ public sealed partial class FactoryCacheCoordinator
             // The ceiling fired but the factory may ignore cancellation and keep running. Observe its task so a
             // later fault is logged rather than lost, mirroring the hard-timeout abandonment path.
             _ObserveFaultedTask(factoryTask, key);
+            // Defer disposal until the abandoned factory finishes so it never touches a disposed token source;
+            // ctsTransferred makes the synchronous finally skip disposal, mirroring the hard-timeout path.
+            CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
+            ctsTransferred = true;
             _logger.LogCacheFactoryTimedOut(key, "background-ceiling", options.BackgroundFactoryCeiling);
             await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
         }
 #pragma warning restore VSTHRD003
         finally
         {
-            internalCts.Dispose();
+            if (!ctsTransferred)
+            {
+                internalCts.Dispose();
+            }
 
             if (distributedLease is not null)
             {

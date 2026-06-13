@@ -341,6 +341,9 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                     {
                         if (_items.TryRemove(pair))
                         {
+                            // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
+                            // trusting a pointer that may now refer to a removed item.
+                            Volatile.Write(ref _minExpiryItem, null);
                             _logger.LogAutoRecoveryItemDroppedAfterRetries(
                                 exception,
                                 item.Key,
@@ -368,7 +371,12 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
 
                 // Conditional remove: a newer item (or this item's own residual publish) may have replaced this
                 // one mid-replay; keep that one.
-                _items.TryRemove(pair);
+                if (_items.TryRemove(pair))
+                {
+                    // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
+                    // trusting a pointer that may now refer to a removed item.
+                    Volatile.Write(ref _minExpiryItem, null);
+                }
 
                 if (outcome == HybridCacheRecoveryReplayOutcome.Replayed)
                 {
