@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -26,12 +28,57 @@ public static class SetupCachingDistributedLocks
         {
             setup.RegisterCrossCuttingExtension(services =>
             {
-                if (setupAction is not null)
+                if (setupAction is null)
                 {
-                    services.Configure(setupAction);
+                    services.AddOptions<CacheFactoryLockOptions, CacheFactoryLockOptionsValidator>();
+                }
+                else
+                {
+                    services.Configure<CacheFactoryLockOptions, CacheFactoryLockOptionsValidator>(setupAction);
                 }
 
-                services.AddOptions();
+                services.AddSingletonOptionValue<CacheFactoryLockOptions>();
+                services.TryAddSingleton<ICacheFactoryLockProvider, DistributedLockCacheFactoryLockProvider>();
+            });
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Registers <see cref="ICacheFactoryLockProvider"/> with service provider-aware configuration.
+        /// See <see cref="UseDistributedFactoryLock(HeadlessCachingSetupBuilder, Action{CacheFactoryLockOptions})"/>.
+        /// </summary>
+        /// <param name="setupAction">Configuration action with access to the service provider.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseDistributedFactoryLock(
+            Action<CacheFactoryLockOptions, IServiceProvider> setupAction
+        )
+        {
+            Argument.IsNotNull(setupAction);
+
+            setup.RegisterCrossCuttingExtension(services =>
+            {
+                services.Configure<CacheFactoryLockOptions, CacheFactoryLockOptionsValidator>(setupAction);
+                services.AddSingletonOptionValue<CacheFactoryLockOptions>();
+                services.TryAddSingleton<ICacheFactoryLockProvider, DistributedLockCacheFactoryLockProvider>();
+            });
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Registers <see cref="ICacheFactoryLockProvider"/>, binding <see cref="CacheFactoryLockOptions"/>
+        /// from configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind.</param>
+        /// <returns>The setup builder for chaining.</returns>
+        public HeadlessCachingSetupBuilder UseDistributedFactoryLock(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterCrossCuttingExtension(services =>
+            {
+                services.Configure<CacheFactoryLockOptions, CacheFactoryLockOptionsValidator>(configuration);
                 services.AddSingletonOptionValue<CacheFactoryLockOptions>();
                 services.TryAddSingleton<ICacheFactoryLockProvider, DistributedLockCacheFactoryLockProvider>();
             });
