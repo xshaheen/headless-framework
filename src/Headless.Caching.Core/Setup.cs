@@ -57,7 +57,7 @@ public static class SetupCachingCore
             );
         }
 
-        var (defaultRoleKey, defaultExtension) = setup.DefaultExtensions[0];
+        var (defaultRoleKey, defaultAction) = setup.DefaultExtensions[0];
 
         if (setup.TierExtensions.Any(tier => string.Equals(tier.RoleKey, defaultRoleKey, StringComparison.Ordinal)))
         {
@@ -75,26 +75,25 @@ public static class SetupCachingCore
             );
         }
 
-        var extensionTypeName = defaultExtension.GetType().FullName ?? "unknown";
-        services.AddSingleton(new CachingProviderRegistration(extensionTypeName));
+        services.AddSingleton(new CachingProviderRegistration(defaultRoleKey));
 
         services.AddCacheProvider();
 
-        foreach (var (_, extension) in setup.TierExtensions)
+        foreach (var (_, action) in setup.TierExtensions)
         {
-            extension.AddServices(services);
+            action(services);
         }
 
-        defaultExtension.AddServices(services);
+        defaultAction(services);
 
-        foreach (var (_, extension) in setup.NamedExtensions)
+        foreach (var (_, action) in setup.NamedExtensions)
         {
-            extension.AddServices(services);
+            action(services);
         }
 
-        foreach (var extension in setup.CrossCuttingExtensions)
+        foreach (var action in setup.CrossCuttingExtensions)
         {
-            extension.AddServices(services);
+            action(services);
         }
 
         return services;

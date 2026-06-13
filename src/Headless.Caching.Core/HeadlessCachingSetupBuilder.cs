@@ -23,32 +23,32 @@ public sealed class HeadlessCachingSetupBuilder
 
     internal IServiceCollection Services { get; }
 
-    internal List<(string RoleKey, ICacheProviderOptionsExtension Extension)> DefaultExtensions { get; } = [];
+    internal List<(string RoleKey, Action<IServiceCollection> Action)> DefaultExtensions { get; } = [];
 
-    internal List<(string RoleKey, ICacheProviderOptionsExtension Extension)> TierExtensions { get; } = [];
+    internal List<(string RoleKey, Action<IServiceCollection> Action)> TierExtensions { get; } = [];
 
-    internal List<(string Name, ICacheProviderOptionsExtension Extension)> NamedExtensions { get; } = [];
+    internal List<(string Name, Action<IServiceCollection> Action)> NamedExtensions { get; } = [];
 
-    internal List<ICacheProviderOptionsExtension> CrossCuttingExtensions { get; } = [];
+    internal List<Action<IServiceCollection>> CrossCuttingExtensions { get; } = [];
 
     /// <summary>Queues the default (unkeyed) cache provider contribution under its role key.</summary>
     /// <param name="roleKey">The reserved role key the default provider also aliases.</param>
-    /// <param name="extension">The provider's deferred service contribution.</param>
-    public void RegisterDefaultProvider(string roleKey, ICacheProviderOptionsExtension extension)
+    /// <param name="action">The provider's deferred service registration action.</param>
+    public void RegisterDefaultProvider(string roleKey, Action<IServiceCollection> action)
     {
         Argument.IsNotNullOrWhiteSpace(roleKey);
-        Argument.IsNotNull(extension);
+        Argument.IsNotNull(action);
 
-        DefaultExtensions.Add((roleKey, extension));
+        DefaultExtensions.Add((roleKey, action));
     }
 
     /// <summary>Queues a role-keyed tier provider contribution (e.g. the memory/remote tiers of a default hybrid).</summary>
     /// <param name="roleKey">One of the reserved role keys.</param>
-    /// <param name="extension">The provider's deferred service contribution.</param>
-    public void RegisterTierProvider(string roleKey, ICacheProviderOptionsExtension extension)
+    /// <param name="action">The provider's deferred service registration action.</param>
+    public void RegisterTierProvider(string roleKey, Action<IServiceCollection> action)
     {
         Argument.IsNotNullOrWhiteSpace(roleKey);
-        Argument.IsNotNull(extension);
+        Argument.IsNotNull(action);
 
         if (
             roleKey
@@ -72,16 +72,16 @@ public sealed class HeadlessCachingSetupBuilder
             throw new InvalidOperationException($"A tier provider is already registered for the role key '{roleKey}'.");
         }
 
-        TierExtensions.Add((roleKey, extension));
+        TierExtensions.Add((roleKey, action));
     }
 
     /// <summary>Queues a cross-cutting contribution (e.g. the distributed factory lock) applied after all providers.</summary>
-    /// <param name="extension">The deferred service contribution.</param>
-    public void RegisterCrossCuttingExtension(ICacheProviderOptionsExtension extension)
+    /// <param name="action">The deferred service registration action.</param>
+    public void RegisterCrossCuttingExtension(Action<IServiceCollection> action)
     {
-        Argument.IsNotNull(extension);
+        Argument.IsNotNull(action);
 
-        CrossCuttingExtensions.Add(extension);
+        CrossCuttingExtensions.Add(action);
     }
 
     /// <summary>
@@ -131,7 +131,7 @@ public sealed class HeadlessCachingSetupBuilder
             );
         }
 
-        NamedExtensions.Add((name, instance.Extension!));
+        NamedExtensions.Add((name, instance.Action!));
 
         return this;
     }

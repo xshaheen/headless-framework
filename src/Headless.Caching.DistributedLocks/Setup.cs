@@ -24,19 +24,17 @@ public static class SetupCachingDistributedLocks
             Action<CacheFactoryLockOptions>? setupAction = null
         )
         {
-            setup.RegisterCrossCuttingExtension(
-                new DelegatingCacheProviderOptionsExtension(services =>
+            setup.RegisterCrossCuttingExtension(services =>
+            {
+                if (setupAction is not null)
                 {
-                    if (setupAction is not null)
-                    {
-                        services.Configure(setupAction);
-                    }
+                    services.Configure(setupAction);
+                }
 
-                    services.AddOptions();
-                    services.AddSingletonOptionValue<CacheFactoryLockOptions>();
-                    services.TryAddSingleton<ICacheFactoryLockProvider, DistributedLockCacheFactoryLockProvider>();
-                })
-            );
+                services.AddOptions();
+                services.AddSingletonOptionValue<CacheFactoryLockOptions>();
+                services.TryAddSingleton<ICacheFactoryLockProvider, DistributedLockCacheFactoryLockProvider>();
+            });
 
             return setup;
         }

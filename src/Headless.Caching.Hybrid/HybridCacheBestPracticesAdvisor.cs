@@ -12,7 +12,8 @@ namespace Headless.Caching;
 /// </summary>
 internal sealed partial class HybridCacheBestPracticesAdvisor(
     HybridCacheOptions options,
-    ILogger<HybridCacheBestPracticesAdvisor> logger
+    ILogger<HybridCacheBestPracticesAdvisor> logger,
+    bool invalidationConsumerRegistered
 ) : IHostedLifecycleService
 {
     // AutoRecoveryDelay above this threshold produces a graveyard-sized replay lag.
@@ -45,6 +46,15 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
         if (o.EnableAutoRecovery && o.AutoRecoveryDelay > _AutoRecoveryDelayThreshold)
         {
             logger.LogAutoRecoveryDelayTooLarge(o.AutoRecoveryDelay, _AutoRecoveryDelayThreshold);
+        }
+
+        // Check 5 — messaging backplane is wired (IBus is present) but no consumer for
+        // CacheInvalidationMessage was registered. The hybrid cache publishes invalidations on every
+        // write/remove, but without a consumer those messages are never received by any instance —
+        // creating a silent one-way backplane where peers never evict their local L1 entries.
+        if (!invalidationConsumerRegistered)
+        {
+            logger.LogInvalidationConsumerNotRegistered();
         }
 
         var entry = o.DefaultEntryOptions;
@@ -97,6 +107,18 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
 
 internal static partial class HybridCacheBestPracticesAdvisorLogger
 {
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "InvalidationConsumerNotRegistered",
+        Level = LogLevel.Warning,
+        Message = "No consumer for CacheInvalidationMessage is registered. The hybrid cache publishes "
+            + "invalidation messages on every write and remove, but without a consumer those messages are "
+            + "never received — peers will never evict their local L1 entries (silent one-way backplane). "
+            + "Register HybridCacheInvalidationConsumer with Headless messaging, for example: "
+            + "services.ForMessage<CacheInvalidationMessage>(msg => msg.OnBus<HybridCacheInvalidationConsumer>())."
+    )]
+    public static partial void LogInvalidationConsumerNotRegistered(this ILogger logger);
+
     [LoggerMessage(
         EventId = 1,
         EventName = "AutoRecoveryDelayTooLarge",

@@ -35,7 +35,7 @@ public sealed class NamedHybridCacheTests : TestBase
 
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.AddNamed(
                 "tenant",
                 instance =>
@@ -78,7 +78,7 @@ public sealed class NamedHybridCacheTests : TestBase
 
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.AddNamed(
                 "tenant",
                 instance =>
@@ -117,7 +117,7 @@ public sealed class NamedHybridCacheTests : TestBase
 
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.AddNamed(
                 "tenant",
                 instance =>
@@ -196,7 +196,7 @@ public sealed class NamedHybridCacheTests : TestBase
         var services = _CreateBaseServices();
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.AddNamed(
                 "broken",
                 instance => instance.UseHybrid(options => options.LocalCacheName = "missing-tier")
@@ -222,7 +222,7 @@ public sealed class NamedHybridCacheTests : TestBase
         services.AddKeyedSingleton<ICache>("remote-only", new InMemoryRemoteCacheAdapter(l2Inner));
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.AddNamed(
                 "bad-shape",
                 instance => instance.UseHybrid(options => options.LocalCacheName = "remote-only")
@@ -264,7 +264,7 @@ public sealed class NamedHybridCacheTests : TestBase
 
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.AddNamed(
                 "tenant",
                 instance =>
@@ -331,7 +331,7 @@ public sealed class NamedHybridCacheTests : TestBase
 
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.AddNamed(
                 "tenant",
                 instance =>
@@ -367,9 +367,4 @@ public sealed class NamedHybridCacheTests : TestBase
 
     // Reserved-name rejection is owned by AddHeadlessCaching's AddNamed gate and is covered by
     // Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.
-
-    private sealed class NoOpCacheProviderOptionsExtension : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services) { }
-    }
 }

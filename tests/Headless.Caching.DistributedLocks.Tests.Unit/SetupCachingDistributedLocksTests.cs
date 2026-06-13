@@ -19,7 +19,7 @@ public sealed class SetupCachingDistributedLocksTests : TestBase
         // when
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.UseDistributedFactoryLock();
         });
         using var serviceProvider = services.BuildServiceProvider();
@@ -41,7 +41,7 @@ public sealed class SetupCachingDistributedLocksTests : TestBase
         // when
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.UseDistributedFactoryLock(options =>
             {
                 options.ResourcePrefix = "custom:";
@@ -69,17 +69,12 @@ public sealed class SetupCachingDistributedLocksTests : TestBase
         // when
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new NoOpCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.UseDistributedFactoryLock();
         });
         using var serviceProvider = services.BuildServiceProvider();
 
         // then — TryAdd semantics keep the caller's registration
         serviceProvider.GetRequiredService<ICacheFactoryLockProvider>().Should().BeSameAs(existing);
-    }
-
-    private sealed class NoOpCacheProviderOptionsExtension : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services) { }
     }
 }

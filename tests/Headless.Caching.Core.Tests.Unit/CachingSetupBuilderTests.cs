@@ -31,14 +31,8 @@ public sealed class CachingSetupBuilderTests
         var action = () =>
             services.AddHeadlessCaching(setup =>
             {
-                setup.RegisterDefaultProvider(
-                    CacheConstants.MemoryCacheProvider,
-                    new FakeCacheProviderOptionsExtension()
-                );
-                setup.RegisterDefaultProvider(
-                    CacheConstants.RemoteCacheProvider,
-                    new FakeCacheProviderOptionsExtension()
-                );
+                setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+                setup.RegisterDefaultProvider(CacheConstants.RemoteCacheProvider, static _ => { });
             });
 
         // then
@@ -51,16 +45,13 @@ public sealed class CachingSetupBuilderTests
         // given
         var services = new ServiceCollection();
         services.AddHeadlessCaching(setup =>
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new FakeCacheProviderOptionsExtension())
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { })
         );
 
         // when
         var action = () =>
             services.AddHeadlessCaching(setup =>
-                setup.RegisterDefaultProvider(
-                    CacheConstants.MemoryCacheProvider,
-                    new FakeCacheProviderOptionsExtension()
-                )
+                setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { })
             );
 
         // then
@@ -77,23 +68,11 @@ public sealed class CachingSetupBuilderTests
         // when
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterCrossCuttingExtension(new RecordingCacheProviderOptionsExtension(log, "cross-cutting"));
-            setup.AddNamed(
-                "orders",
-                instance => instance.RegisterProvider(new RecordingCacheProviderOptionsExtension(log, "named"))
-            );
-            setup.RegisterDefaultProvider(
-                CacheConstants.HybridCacheProvider,
-                new RecordingCacheProviderOptionsExtension(log, "default")
-            );
-            setup.RegisterTierProvider(
-                CacheConstants.MemoryCacheProvider,
-                new RecordingCacheProviderOptionsExtension(log, "tier-memory")
-            );
-            setup.RegisterTierProvider(
-                CacheConstants.RemoteCacheProvider,
-                new RecordingCacheProviderOptionsExtension(log, "tier-remote")
-            );
+            setup.RegisterCrossCuttingExtension(_ => log.Add("cross-cutting"));
+            setup.AddNamed("orders", instance => instance.RegisterProvider(_ => log.Add("named")));
+            setup.RegisterDefaultProvider(CacheConstants.HybridCacheProvider, _ => log.Add("default"));
+            setup.RegisterTierProvider(CacheConstants.MemoryCacheProvider, _ => log.Add("tier-memory"));
+            setup.RegisterTierProvider(CacheConstants.RemoteCacheProvider, _ => log.Add("tier-remote"));
         });
 
         // then
@@ -111,11 +90,8 @@ public sealed class CachingSetupBuilderTests
         var action = () =>
             services.AddHeadlessCaching(setup =>
             {
-                setup.RegisterDefaultProvider(
-                    CacheConstants.MemoryCacheProvider,
-                    new FakeCacheProviderOptionsExtension()
-                );
-                setup.RegisterTierProvider(CacheConstants.MemoryCacheProvider, new FakeCacheProviderOptionsExtension());
+                setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+                setup.RegisterTierProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             });
 
         // then
@@ -133,18 +109,9 @@ public sealed class CachingSetupBuilderTests
         var action = () =>
             services.AddHeadlessCaching(setup =>
             {
-                setup.RegisterDefaultProvider(
-                    CacheConstants.MemoryCacheProvider,
-                    new FakeCacheProviderOptionsExtension()
-                );
-                setup.AddNamed(
-                    "orders",
-                    instance => instance.RegisterProvider(new FakeCacheProviderOptionsExtension())
-                );
-                setup.AddNamed(
-                    "orders",
-                    instance => instance.RegisterProvider(new FakeCacheProviderOptionsExtension())
-                );
+                setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+                setup.AddNamed("orders", instance => instance.RegisterProvider(static _ => { }));
+                setup.AddNamed("orders", instance => instance.RegisterProvider(static _ => { }));
             });
 
         // then
@@ -164,10 +131,7 @@ public sealed class CachingSetupBuilderTests
         // when
         var action = () =>
             services.AddHeadlessCaching(setup =>
-                setup.AddNamed(
-                    reservedName,
-                    instance => instance.RegisterProvider(new FakeCacheProviderOptionsExtension())
-                )
+                setup.AddNamed(reservedName, instance => instance.RegisterProvider(static _ => { }))
             );
 
         // then
@@ -183,7 +147,7 @@ public sealed class CachingSetupBuilderTests
         // when
         var action = () =>
             services.AddHeadlessCaching(setup =>
-                setup.AddNamed(" ", instance => instance.RegisterProvider(new FakeCacheProviderOptionsExtension()))
+                setup.AddNamed(" ", instance => instance.RegisterProvider(static _ => { }))
             );
 
         // then
@@ -219,8 +183,8 @@ public sealed class CachingSetupBuilderTests
                     "orders",
                     instance =>
                     {
-                        instance.RegisterProvider(new FakeCacheProviderOptionsExtension());
-                        instance.RegisterProvider(new FakeCacheProviderOptionsExtension());
+                        instance.RegisterProvider(static _ => { });
+                        instance.RegisterProvider(static _ => { });
                     }
                 )
             );
@@ -236,10 +200,7 @@ public sealed class CachingSetupBuilderTests
         var services = new ServiceCollection();
 
         // when
-        var action = () =>
-            services.AddHeadlessCaching(setup =>
-                setup.RegisterTierProvider("custom", new FakeCacheProviderOptionsExtension())
-            );
+        var action = () => services.AddHeadlessCaching(setup => setup.RegisterTierProvider("custom", static _ => { }));
 
         // then
         action.Should().Throw<ArgumentException>().WithMessage("*'custom'*reserved role keys*");
@@ -252,10 +213,7 @@ public sealed class CachingSetupBuilderTests
         var services = new ServiceCollection();
 
         // when
-        var action = () =>
-            services.AddHeadlessCaching(setup =>
-                setup.RegisterTierProvider("memory", new FakeCacheProviderOptionsExtension())
-            );
+        var action = () => services.AddHeadlessCaching(setup => setup.RegisterTierProvider("memory", static _ => { }));
 
         // then
         action.Should().Throw<ArgumentException>().WithMessage("*'memory'*reserved role keys*");
@@ -271,8 +229,8 @@ public sealed class CachingSetupBuilderTests
         var action = () =>
             services.AddHeadlessCaching(setup =>
             {
-                setup.RegisterTierProvider(CacheConstants.MemoryCacheProvider, new FakeCacheProviderOptionsExtension());
-                setup.RegisterTierProvider(CacheConstants.MemoryCacheProvider, new FakeCacheProviderOptionsExtension());
+                setup.RegisterTierProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+                setup.RegisterTierProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             });
 
         // then
@@ -292,11 +250,8 @@ public sealed class CachingSetupBuilderTests
         var action = () =>
             services.AddHeadlessCaching(setup =>
             {
-                setup.RegisterDefaultProvider(
-                    CacheConstants.RemoteCacheProvider,
-                    new FakeCacheProviderOptionsExtension()
-                );
-                setup.RegisterTierProvider(CacheConstants.RemoteCacheProvider, new FakeCacheProviderOptionsExtension());
+                setup.RegisterDefaultProvider(CacheConstants.RemoteCacheProvider, static _ => { });
+                setup.RegisterTierProvider(CacheConstants.RemoteCacheProvider, static _ => { });
             });
 
         // then
@@ -314,10 +269,14 @@ public sealed class CachingSetupBuilderTests
         var services = new ServiceCollection();
         services.AddHeadlessCaching(setup =>
         {
-            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, new FakeCacheProviderOptionsExtension());
+            setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
             setup.AddNamed(
                 "orders",
-                instance => instance.RegisterProvider(new KeyedCacheRegisteringExtension(instance.Name, namedCache))
+                instance =>
+                {
+                    var name = instance.Name;
+                    instance.RegisterProvider(svc => svc.AddKeyedSingleton(name, namedCache));
+                }
             );
         });
         await using var provider = services.BuildServiceProvider();
@@ -327,21 +286,5 @@ public sealed class CachingSetupBuilderTests
 
         // then
         cacheProvider.GetCache("orders").Should().BeSameAs(namedCache);
-    }
-
-    private sealed class FakeCacheProviderOptionsExtension : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services) { }
-    }
-
-    private sealed class RecordingCacheProviderOptionsExtension(List<string> log, string id)
-        : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services) => log.Add(id);
-    }
-
-    private sealed class KeyedCacheRegisteringExtension(string name, ICache cache) : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services) => services.AddKeyedSingleton(name, cache);
     }
 }

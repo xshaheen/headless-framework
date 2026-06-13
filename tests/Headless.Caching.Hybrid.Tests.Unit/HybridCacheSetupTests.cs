@@ -28,7 +28,14 @@ public sealed class HybridCacheSetupTests : TestBase
         services.AddHeadlessCaching(setup =>
         {
             setup.AddMemoryTier();
-            setup.RegisterTierProvider(CacheConstants.RemoteCacheProvider, new RemoteTierExtension(remote));
+            setup.RegisterTierProvider(
+                CacheConstants.RemoteCacheProvider,
+                svc =>
+                {
+                    svc.AddSingleton<IRemoteCache>(remote);
+                    svc.AddKeyedSingleton<ICache>(CacheConstants.RemoteCacheProvider, remote);
+                }
+            );
             setup.UseHybrid();
         });
 
@@ -53,14 +60,5 @@ public sealed class HybridCacheSetupTests : TestBase
         await hybrid.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
         (await memoryTier.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
         (await l2Inner.GetAsync<string>("key", AbortToken)).Value.Should().Be("value");
-    }
-
-    private sealed class RemoteTierExtension(IRemoteCache remote) : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services)
-        {
-            services.AddSingleton(remote);
-            services.AddKeyedSingleton<ICache>(CacheConstants.RemoteCacheProvider, remote);
-        }
     }
 }

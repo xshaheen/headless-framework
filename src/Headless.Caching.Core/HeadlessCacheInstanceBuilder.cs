@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Caching;
 
@@ -19,17 +20,17 @@ public sealed class HeadlessCacheInstanceBuilder
     /// <summary>The cache instance name. Never a reserved role key.</summary>
     public string Name { get; }
 
-    internal ICacheProviderOptionsExtension? Extension { get; private set; }
+    internal Action<IServiceCollection>? Action { get; private set; }
 
     internal int RegistrationCount { get; private set; }
 
     /// <summary>Captures the provider contribution for this instance. Must be called exactly once.</summary>
-    /// <param name="extension">The provider's deferred service contribution.</param>
-    public void RegisterProvider(ICacheProviderOptionsExtension extension)
+    /// <param name="action">The provider's deferred service registration action.</param>
+    public void RegisterProvider(Action<IServiceCollection> action)
     {
-        Argument.IsNotNull(extension);
+        Argument.IsNotNull(action);
 
-        Extension = extension;
+        Action = action;
         RegistrationCount++;
     }
 }

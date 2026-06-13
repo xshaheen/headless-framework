@@ -26,7 +26,7 @@ public static class SetupInMemoryCache
         {
             setup.RegisterDefaultProvider(
                 CacheConstants.MemoryCacheProvider,
-                new DelegatingCacheProviderOptionsExtension(services =>
+                services =>
                 {
                     if (setupAction is null)
                     {
@@ -38,7 +38,7 @@ public static class SetupInMemoryCache
                     }
 
                     services._AddCacheCore(isDefault: true);
-                })
+                }
             );
 
             return setup;
@@ -56,11 +56,11 @@ public static class SetupInMemoryCache
 
             setup.RegisterDefaultProvider(
                 CacheConstants.MemoryCacheProvider,
-                new DelegatingCacheProviderOptionsExtension(services =>
+                services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
                     services._AddCacheCore(isDefault: true);
-                })
+                }
             );
 
             return setup;
@@ -78,11 +78,11 @@ public static class SetupInMemoryCache
 
             setup.RegisterDefaultProvider(
                 CacheConstants.MemoryCacheProvider,
-                new DelegatingCacheProviderOptionsExtension(services =>
+                services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration);
                     services._AddCacheCore(isDefault: true);
-                })
+                }
             );
 
             return setup;
@@ -99,7 +99,7 @@ public static class SetupInMemoryCache
         {
             setup.RegisterTierProvider(
                 CacheConstants.MemoryCacheProvider,
-                new DelegatingCacheProviderOptionsExtension(services =>
+                services =>
                 {
                     if (setupAction is null)
                     {
@@ -111,7 +111,7 @@ public static class SetupInMemoryCache
                     }
 
                     services._AddCacheCore(isDefault: false);
-                })
+                }
             );
 
             return setup;
@@ -129,11 +129,11 @@ public static class SetupInMemoryCache
 
             setup.RegisterTierProvider(
                 CacheConstants.MemoryCacheProvider,
-                new DelegatingCacheProviderOptionsExtension(services =>
+                services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
                     services._AddCacheCore(isDefault: false);
-                })
+                }
             );
 
             return setup;
@@ -151,11 +151,11 @@ public static class SetupInMemoryCache
 
             setup.RegisterTierProvider(
                 CacheConstants.MemoryCacheProvider,
-                new DelegatingCacheProviderOptionsExtension(services =>
+                services =>
                 {
                     services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration);
                     services._AddCacheCore(isDefault: false);
-                })
+                }
             );
 
             return setup;
@@ -177,13 +177,11 @@ public static class SetupInMemoryCache
 
             var name = instance.Name;
 
-            instance.RegisterProvider(
-                new DelegatingCacheProviderOptionsExtension(services =>
-                {
-                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
-                    services._AddNamedCacheCore(name);
-                })
-            );
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
+                services._AddNamedCacheCore(name);
+            });
 
             return instance;
         }
@@ -200,13 +198,11 @@ public static class SetupInMemoryCache
 
             var name = instance.Name;
 
-            instance.RegisterProvider(
-                new DelegatingCacheProviderOptionsExtension(services =>
-                {
-                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
-                    services._AddNamedCacheCore(name);
-                })
-            );
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction, name);
+                services._AddNamedCacheCore(name);
+            });
 
             return instance;
         }
@@ -223,13 +219,11 @@ public static class SetupInMemoryCache
 
             var name = instance.Name;
 
-            instance.RegisterProvider(
-                new DelegatingCacheProviderOptionsExtension(services =>
-                {
-                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration, name);
-                    services._AddNamedCacheCore(name);
-                })
-            );
+            instance.RegisterProvider(services =>
+            {
+                services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration, name);
+                services._AddNamedCacheCore(name);
+            });
 
             return instance;
         }
