@@ -302,6 +302,10 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             {
                 if (pair.Value.ExpiresAt <= now && _items.TryRemove(pair))
                 {
+                    // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather
+                    // than trusting a pointer that may now refer to a removed item. Volatile matches
+                    // the write pattern used by OnSuccessfulL2Operation and _TryRemoveConflicting.
+                    Volatile.Write(ref _minExpiryItem, null);
                     _logger.LogAutoRecoveryItemExpired(pair.Key, pair.Value.Kind);
                 }
             }

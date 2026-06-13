@@ -810,14 +810,22 @@ public sealed class RedisCache(
                 var (idx, _, val) = slidingOrLegacyHits[j];
                 var ttl = ttlResults[j];
 
-                if (ttl is null || ttl.Value <= TimeSpan.Zero)
+                // ttl == null  → Redis reports no expiry on the key (persistent / legacy-unframed entry that was
+                //                 written without a TTL). The key was confirmed present in pass 1, so null here
+                //                 means "no expiry", NOT "key missing". Emit as a hit with Expiration = null,
+                //                 matching GetExpirationAsync / GetAsync / InMemoryRemoteCacheAdapter contract.
+                //
+                // ttl.Value <= Zero → The key has a TTL but it has already elapsed (eviction race between pass 1
+                //                     and this probe). Treat as a miss and skip.
+                if (ttl is { Ticks: <= 0 })
                 {
-                    // Key already expired or no TTL set.
                     continue;
                 }
 
                 var cacheVal = val is null ? CacheValue<T>.Null : new CacheValue<T>(val, true);
 
+                // ttl is null  → persistent key, no expiry → Expiration = null (valid hit)
+                // ttl.Value > 0 → remaining TTL → Expiration = ttl
                 result[originalKeys[idx]] = new CacheValueWithExpiration<T>(cacheVal, ttl);
             }
         }
