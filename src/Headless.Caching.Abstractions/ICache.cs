@@ -272,16 +272,19 @@ public interface ICache
     #endregion
 }
 
+[PublicAPI]
 public interface IInMemoryCache : ICache
 {
     /// <summary>
-    /// Returns the keys currently indexed under <paramref name="tag"/>. The snapshot may be momentarily stale
-    /// under concurrent writes (an untagged overwrite can race the index update), so callers must treat the
-    /// result as advisory and verify live-entry membership before acting on individual keys.
+    /// Returns the cache's user-facing keys (with any configured <c>KeyPrefix</c> stripped) currently indexed
+    /// under <paramref name="tag"/>. The snapshot may be momentarily stale under concurrent writes (an untagged
+    /// overwrite can race the index update), so callers must treat the result as advisory and verify live-entry
+    /// membership before acting on individual keys.
     /// </summary>
     IReadOnlyCollection<string> GetTaggedKeys(string tag);
 }
 
+[PublicAPI]
 public interface IRemoteCache : ICache
 {
     /// <summary>

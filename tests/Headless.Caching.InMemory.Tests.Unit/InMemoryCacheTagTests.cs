@@ -151,4 +151,54 @@ public sealed class InMemoryCacheTagTests : TestBase
         // then
         removed.Should().Be(0);
     }
+
+    // --- Regression: GetTaggedKeys must strip KeyPrefix and return user-facing keys ---
+
+    [Fact]
+    public async Task should_return_unprefixed_keys_from_get_tagged_keys_when_key_prefix_is_set()
+    {
+        // Regression: before the fix, GetTaggedKeys returned internally-prefixed keys (e.g. "app:user-1")
+        // instead of the user-facing key ("user-1"). HybridCache's tag-invalidation handler then passed
+        // those prefixed strings to LocalCache.RemoveAsync, which prepended the prefix a second time
+        // ("app:app:user-1") — a key that never exists — making the removal a silent no-op.
+
+        // given
+        var options = new InMemoryCacheOptions { KeyPrefix = "app:" };
+        using var cache = _CreateCache(options);
+        var tag = Faker.Random.AlphaNumeric(8);
+
+        await cache.UpsertEntryAsync(
+            "user-1",
+            "value",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+
+        // when
+        var keys = cache.GetTaggedKeys(tag);
+
+        // then — must return the user-facing key, not the internal "app:user-1"
+        keys.Should().ContainSingle().Which.Should().Be("user-1");
+    }
+
+    [Fact]
+    public async Task should_return_plain_keys_from_get_tagged_keys_when_no_key_prefix()
+    {
+        // given — baseline: no prefix configured, tagged key is stored as-is
+        using var cache = _CreateCache();
+        var tag = Faker.Random.AlphaNumeric(8);
+
+        await cache.UpsertEntryAsync(
+            "user-1",
+            "value",
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+
+        // when
+        var keys = cache.GetTaggedKeys(tag);
+
+        // then
+        keys.Should().ContainSingle().Which.Should().Be("user-1");
+    }
 }

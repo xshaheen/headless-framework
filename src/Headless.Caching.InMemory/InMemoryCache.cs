@@ -1538,7 +1538,31 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(tag);
 
-        return _tagIndex.TryGetValue(tag, out var taggedKeys) ? (IReadOnlyCollection<string>)taggedKeys.Keys : [];
+        if (!_tagIndex.TryGetValue(tag, out var taggedKeys))
+        {
+            return [];
+        }
+
+        // The tag index is keyed by the internal (prefixed) keys; return the cache's user-facing keys by
+        // stripping the configured KeyPrefix, matching every other public key-returning method (e.g. _GetKeys).
+        // ConcurrentDictionary.Keys is already a point-in-time snapshot, so no extra copy is needed when unprefixed.
+        var stripLength = _keyPrefix.Length;
+
+        if (stripLength == 0)
+        {
+            // ConcurrentDictionary.Keys is a ReadOnlyCollection snapshot at runtime; the cast matches the
+            // declared return type.
+            return (IReadOnlyCollection<string>)taggedKeys.Keys;
+        }
+
+        var result = new List<string>(taggedKeys.Count);
+
+        foreach (var key in taggedKeys.Keys)
+        {
+            result.Add(key[stripLength..]);
+        }
+
+        return result;
     }
 
     /// <inheritdoc />

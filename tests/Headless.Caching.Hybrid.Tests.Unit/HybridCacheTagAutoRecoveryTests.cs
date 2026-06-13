@@ -138,6 +138,89 @@ public sealed class HybridCacheTagAutoRecoveryTests : TestBase
             .BeFalse("a newer tag invalidation must remove the stale L1 entry");
     }
 
+    // --- Regression: double-prefix bug when KeyPrefix is configured on L1 ---
+
+    [Fact]
+    public async Task should_remove_unprotected_l1_entry_when_key_prefix_is_set_on_l1()
+    {
+        // Regression: before the fix, GetTaggedKeys returned internally-prefixed keys (e.g. "app:key"). The
+        // tag-invalidation handler then passed those strings to LocalCache.RemoveAsync, which prepended the prefix
+        // a second time ("app:app:key") — a key that never exists — so the removal was a silent no-op. At the same
+        // time, HasNewerPendingItemThan also missed because the recovery queue stores unprefixed keys, making the
+        // protected key accidentally unprotected. Both bugs are fixed: GetTaggedKeys now strips the prefix, and the
+        // recovery-queue lookup therefore finds the right item.
+
+        // given — two keys share the same tag; only one has a queued recovery item; L1 has a non-empty KeyPrefix
+        var options = new HybridCacheOptions { EnableAutoRecovery = true, InstanceId = "instance-1" };
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true, KeyPrefix = "app:" });
+        var l2 = new TogglableRemoteCache(_timeProvider);
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
+        await using var _ = cache;
+
+        var tag = Faker.Random.AlphaNumeric(8);
+        var protectedKey = Faker.Random.AlphaNumeric(10);
+        var unprotectedKey = Faker.Random.AlphaNumeric(10);
+        var expiration = TimeSpan.FromMinutes(5);
+
+        // Write both keys while L2 is up so both land in L1 and L2
+        await cache.GetOrAddAsync(
+            protectedKey,
+            _ => new ValueTask<int?>(1),
+            new CacheEntryOptions { Duration = expiration, Tags = [tag] },
+            AbortToken
+        );
+        await cache.GetOrAddAsync(
+            unprotectedKey,
+            _ => new ValueTask<int?>(2),
+            new CacheEntryOptions { Duration = expiration, Tags = [tag] },
+            AbortToken
+        );
+
+        // Re-write protectedKey with L2 failing so a recovery item is queued
+        l2.FailWrites = true;
+        await cache.UpsertEntryAsync(
+            protectedKey,
+            10,
+            new CacheEntryOptions { Duration = expiration, Tags = [tag] },
+            AbortToken
+        );
+
+        cache.RecoveryQueue!.Count.Should().Be(1, "only protectedKey has a queued item");
+        (await l1.GetAsync<int>(protectedKey, AbortToken)).Value.Should().Be(10);
+        (await l1.GetAsync<int>(unprotectedKey, AbortToken)).HasValue.Should().BeTrue();
+
+        // when — a Tag invalidation arrives with an OLDER timestamp (older than protectedKey's recovery item)
+        var message = new CacheInvalidationMessage
+        {
+            InstanceId = "instance-2",
+            Tag = tag,
+            Timestamp = _timeProvider.GetUtcNow().AddSeconds(-1),
+        };
+
+        await cache.HandleInvalidationAsync(message, AbortToken);
+
+        // then — the protected key's L1 entry survives (its recovery item is newer than the invalidation)
+        (await l1.GetAsync<int>(protectedKey, AbortToken))
+            .HasValue.Should()
+            .BeTrue("protectedKey must survive: its recovery item is newer than the invalidation");
+
+        // and — the unprotected key's L1 entry is removed (no recovery item guards it).
+        // Pre-fix: RemoveAsync("app:unprotectedKey") re-prefixed to "app:app:unprotectedKey" -> silent no-op ->
+        // entry survived incorrectly. Post-fix: GetTaggedKeys returns "unprotectedKey" (unprefixed) -> RemoveAsync
+        // correctly removes "app:unprotectedKey" from the store.
+        (await l1.GetAsync<int>(unprotectedKey, AbortToken))
+            .HasValue.Should()
+            .BeFalse("unprotectedKey has no newer recovery item, so it must be removed despite the KeyPrefix");
+
+        // and — the recovery item for protectedKey is still in the queue
+        cache.RecoveryQueue.Count.Should().Be(1, "recovery item for protectedKey must survive");
+    }
+
     [Fact]
     public async Task should_remove_l1_entries_without_recovery_items_even_when_sibling_key_is_protected()
     {

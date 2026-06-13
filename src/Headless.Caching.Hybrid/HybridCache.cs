@@ -116,60 +116,33 @@ public sealed partial class HybridCache(
 
         if (!string.IsNullOrEmpty(message.Tag))
         {
-            if (RecoveryQueue is null)
+            // Bulk-remove is safe when there are no pending recovery items to protect: auto-recovery is off, or
+            // its queue is currently empty. Reading Count avoids the GetTaggedKeys snapshot + per-key walk on the
+            // common (no-outage) path.
+            if (RecoveryQueue is null || RecoveryQueue.Count == 0)
             {
-                // Auto-recovery is disabled: no queue to consult, bulk remove is safe.
                 await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
+                return;
             }
-            else
-            {
-                // Recovery-aware tag invalidation: a key whose pending recovery item is NEWER than this
-                // message won the race — its L1 entry holds the most-recent local intent and must not be
-                // wiped (the replay would find nothing, declare itself obsolete, and the value would be lost
-                // on every node). Remove only the keys WITHOUT a surviving newer item; skip the rest.
-                //
-                // GetTaggedKeys returns a snapshot of the tag index that may be momentarily stale under
-                // concurrent writes; RemoveAsync on each unprotected key has the same live-entry guard as
-                // the bulk RemoveByTagAsync path.
-                var taggedKeys = LocalCache.GetTaggedKeys(message.Tag);
 
-                if (taggedKeys.Count == 0)
+            // Recovery-aware tag invalidation: a key whose pending recovery item is NEWER than this message won
+            // the race — its L1 entry holds the most-recent local intent and must not be wiped (the replay would
+            // find nothing, declare itself obsolete, and the value would be lost on every node). Go per-key over a
+            // snapshot of the tag members (never bulk): a key tagged after the snapshot is simply absent from it,
+            // so its newer value is left untouched; keys with a surviving newer pending item are skipped, the rest
+            // removed. GetTaggedKeys returns the cache's user-facing (unprefixed) keys, matching both the recovery
+            // queue's keys and RemoveAsync's own prefixing.
+            var taggedKeys = LocalCache.GetTaggedKeys(message.Tag);
+
+            foreach (var key in taggedKeys)
+            {
+                if (RecoveryQueue.HasNewerPendingItemThan(key, message.Timestamp))
                 {
-                    // No indexed members: nothing to do.
+                    _logger.LogIgnoredStaleRemoteInvalidation(key);
                 }
                 else
                 {
-                    // Check once whether any key in the tag set is protected; if not, the bulk path is safe
-                    // and avoids iterating the full set twice.
-                    var hasProtectedKey = false;
-
-                    foreach (var key in taggedKeys)
-                    {
-                        if (RecoveryQueue.HasNewerPendingItemThan(key, message.Timestamp))
-                        {
-                            hasProtectedKey = true;
-                            break;
-                        }
-                    }
-
-                    if (!hasProtectedKey)
-                    {
-                        await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        foreach (var key in taggedKeys)
-                        {
-                            if (RecoveryQueue.HasNewerPendingItemThan(key, message.Timestamp))
-                            {
-                                _logger.LogIgnoredStaleRemoteInvalidation(key);
-                            }
-                            else
-                            {
-                                await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false);
-                            }
-                        }
-                    }
+                    await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false);
                 }
             }
 
