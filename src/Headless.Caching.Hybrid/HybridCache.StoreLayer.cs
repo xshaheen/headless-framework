@@ -167,52 +167,8 @@ public sealed partial class HybridCache
         // Per-call tier control: skip the L2 (distributed) write entirely. No recovery replay is queued (the skip
         // is intentional, not a failure), and the peer-invalidation publish below is skipped together with it —
         // a value that never reached L2 has no shared copy for peers to invalidate against.
-        var skipL2 = entry.SkipDistributedCacheWrite || !_IsDistributedCacheCircuitClosed();
-        var l2WriteSucceeded = false;
-        var l2WriteConditionFailed = false;
-
-        if (!skipL2)
-        {
-            var l2Entry = entry with { ExpectedConcurrencyStamp = null };
-
-            if (l2Cache is IFactoryCacheStore l2Store)
-            {
-                try
-                {
-                    // ExpectedConcurrencyStamp is store-local; an L1 stamp must not be applied to the L2 mirror.
-                    l2WriteSucceeded = await l2Store
-                        .SetEntryAsync(key, in l2Entry, cancellationToken)
-                        .ConfigureAwait(false);
-                    l2WriteConditionFailed = !l2WriteSucceeded;
-                }
-                catch (Exception exception)
-                    when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
-                {
-                    _OpenDistributedCacheCircuit(exception, key);
-                    _logger.LogFailedToWriteToL2Cache(exception, key);
-                }
-            }
-            else
-            {
-                var expiresIn = (
-                    entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
-                ).Subtract(_GetUtcNow());
-
-                try
-                {
-                    await l2Cache
-                        .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, cancellationToken)
-                        .ConfigureAwait(false);
-                    l2WriteSucceeded = true;
-                }
-                catch (Exception exception)
-                    when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
-                {
-                    _OpenDistributedCacheCircuit(exception, key);
-                    _logger.LogFailedToWriteToL2Cache(exception, key);
-                }
-            }
-        }
+        var (skipL2, l2WriteSucceeded, l2WriteConditionFailed) = await _WriteL2EntryAsync(entry, key, cancellationToken)
+            .ConfigureAwait(false);
 
         if (!skipL2 && l2WriteConditionFailed)
         {
@@ -324,51 +280,13 @@ public sealed partial class HybridCache
     {
         // Per-call tier control: skip the L2 write (and its recovery bookkeeping) when requested; the publish
         // below is kept as-is so peers still drop their stale L1.
-        var skipL2 = entry.SkipDistributedCacheWrite || !_IsDistributedCacheCircuitClosed();
-        var l2WriteSucceeded = false;
-        var l2WriteConditionFailed = false;
-
-        if (!skipL2)
-        {
-            var l2Entry = entry with { ExpectedConcurrencyStamp = null };
-
-            if (l2Cache is IFactoryCacheStore l2Store)
-            {
-                try
-                {
-                    l2WriteSucceeded = await l2Store
-                        .SetEntryAsync(key, in l2Entry, CancellationToken.None)
-                        .ConfigureAwait(false);
-                    l2WriteConditionFailed = !l2WriteSucceeded;
-                }
-                catch (Exception exception)
-                    when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
-                {
-                    _OpenDistributedCacheCircuit(exception, key);
-                    _logger.LogFailedToWriteToL2Cache(exception, key);
-                }
-            }
-            else
-            {
-                var expiresIn = (
-                    entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
-                ).Subtract(_GetUtcNow());
-
-                try
-                {
-                    await l2Cache
-                        .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, CancellationToken.None)
-                        .ConfigureAwait(false);
-                    l2WriteSucceeded = true;
-                }
-                catch (Exception exception)
-                    when (!FactoryCacheCoordinator.IsCallerCancellation(exception, CancellationToken.None))
-                {
-                    _OpenDistributedCacheCircuit(exception, key);
-                    _logger.LogFailedToWriteToL2Cache(exception, key);
-                }
-            }
-        }
+        // Runs under CancellationToken.None: the caller's token is gone (detached background path).
+        var (skipL2, l2WriteSucceeded, l2WriteConditionFailed) = await _WriteL2EntryAsync(
+                entry,
+                key,
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
 
         if (!skipL2 && l2WriteConditionFailed)
         {
@@ -434,6 +352,77 @@ public sealed partial class HybridCache
             await l1Store
                 .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken)
                 .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Dispatches the L2 write for a framed entry: evaluates the circuit, routes to
+    /// <see cref="IFactoryCacheStore"/> or <see cref="IRemoteCache"/>, trips the circuit on
+    /// unhandled exceptions, and returns whether the write was skipped, succeeded, or failed
+    /// with a condition mismatch.
+    /// </summary>
+    /// <remarks>
+    /// Caller-specific concerns (recovery-queue routing, peer-invalidation publish, L1 write) are
+    /// NOT handled here — each caller keeps those locally because they differ between
+    /// <see cref="_SetEntryCoreAsync{T}"/> and <see cref="_SetEntryL2TailAsync{T}"/>.
+    /// <para>
+    /// The <paramref name="ct"/> must be <see cref="CancellationToken.None"/> when called from the
+    /// detached background tail (<see cref="_SetEntryL2TailAsync{T}"/>); pass the caller's real token
+    /// from the synchronous path.
+    /// </para>
+    /// </remarks>
+    private async ValueTask<(bool SkipL2, bool Succeeded, bool ConditionFailed)> _WriteL2EntryAsync<T>(
+        CacheStoreEntryWrite<T> entry,
+        string key,
+        CancellationToken ct
+    )
+    {
+        var skipL2 = entry.SkipDistributedCacheWrite || !_IsDistributedCacheCircuitClosed();
+
+        if (skipL2)
+        {
+            return (SkipL2: true, Succeeded: false, ConditionFailed: false);
+        }
+
+        // ExpectedConcurrencyStamp is store-local; an L1 stamp must not be applied to the L2 mirror.
+        var l2Entry = entry with
+        {
+            ExpectedConcurrencyStamp = null,
+        };
+
+        if (l2Cache is IFactoryCacheStore l2Store)
+        {
+            try
+            {
+                var succeeded = await l2Store.SetEntryAsync(key, in l2Entry, ct).ConfigureAwait(false);
+                return (SkipL2: false, Succeeded: succeeded, ConditionFailed: !succeeded);
+            }
+            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, ct))
+            {
+                _OpenDistributedCacheCircuit(exception, key);
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+                return (SkipL2: false, Succeeded: false, ConditionFailed: false);
+            }
+        }
+        else
+        {
+            var expiresIn = (
+                entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
+            ).Subtract(_GetUtcNow());
+
+            try
+            {
+                await l2Cache
+                    .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, ct)
+                    .ConfigureAwait(false);
+                return (SkipL2: false, Succeeded: true, ConditionFailed: false);
+            }
+            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, ct))
+            {
+                _OpenDistributedCacheCircuit(exception, key);
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+                return (SkipL2: false, Succeeded: false, ConditionFailed: false);
+            }
         }
     }
 
