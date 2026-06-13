@@ -11,13 +11,39 @@ internal static class BenchmarkRunConfig
 {
     private static readonly string s_artifactsPath = Path.Combine("artifacts", "BenchmarkDotNet.Artifacts");
 
-    public static IConfig Create()
+    public static IConfig Create(string[] args)
     {
-        return ManualConfig
+        var config = ManualConfig
             .Create(DefaultConfig.Instance)
             .WithArtifactsPath(s_artifactsPath)
-            .AddJob(Job.Default.WithId("cache-comparison"))
             .AddDiagnoser(MemoryDiagnoser.Default)
             .AddExporter(MarkdownExporter.GitHub, HtmlExporter.Default);
+
+        if (!_HasExplicitJob(args))
+        {
+            config.AddJob(Job.Default.WithId("cache-comparison"));
+        }
+
+        return config;
+    }
+
+    private static bool _HasExplicitJob(string[] args)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            if (arg is "-j" or "--job")
+            {
+                return true;
+            }
+
+            if (arg.StartsWith("--job=", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

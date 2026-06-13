@@ -17,6 +17,15 @@ Run standalone memory providers only:
 dotnet run -c Release --project benchmarks/Headless.Caching.Benchmarks -- --filter '*MemoryOnlyCacheBenchmarks*'
 ```
 
+That command runs a full BenchmarkDotNet job for 64 memory-only cases
+(4 providers x 2 payload sizes x 2 key cardinalities x 4 operations), so it is
+intended for final comparison runs. For a fast smoke check, pass an explicit
+BenchmarkDotNet job:
+
+```bash
+dotnet run -c Release --project benchmarks/Headless.Caching.Benchmarks -- -j Dry --filter '*MemoryOnlyCacheBenchmarks.SetThenGetAsync*'
+```
+
 Run standalone distributed providers only:
 
 ```bash

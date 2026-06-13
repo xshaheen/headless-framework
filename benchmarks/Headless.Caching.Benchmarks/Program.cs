@@ -12,4 +12,4 @@ BenchmarkSwitcher
         typeof(FactoryCacheBenchmarks),
         typeof(FeatureCacheBenchmarks),
     ])
-    .Run(args, BenchmarkRunConfig.Create());
+    .Run(args, BenchmarkRunConfig.Create(args));
