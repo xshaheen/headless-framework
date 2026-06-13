@@ -65,10 +65,11 @@ public sealed partial class FactoryCacheCoordinator(
     {
         Argument.IsNotNull(factory);
 
-        // Wrap the simple factory in a struct adapter whose instance method becomes the delegate target.
-        // The struct is boxed once (for the delegate), but no compiler-generated display class is created:
-        // `factory` is stored in the struct, not captured into a closure, so per-call allocation drops from
-        // two heap objects (display class + async state machine) to one (async state machine only).
+        // Wrap the simple factory in a struct adapter whose instance method becomes the delegate target. The
+        // struct is boxed once when the delegate is formed, REPLACING the compiler-generated display class a
+        // capturing lambda would allocate — the heap-object count is unchanged, but the shape is explicit and
+        // carries no captured-variable lifetime hazards. (A truly zero-alloc fast path would require inlining
+        // the L1-hit check here before forming any delegate; not done.)
         var adapter = new SimpleFactoryAdapter<T>(factory);
         return GetOrAddAsync<T>(store, key, adapter.InvokeAsync, options, cancellationToken);
     }

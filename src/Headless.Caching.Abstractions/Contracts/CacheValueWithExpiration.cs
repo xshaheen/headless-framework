@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+// CA1815: equality is intentionally omitted. This is a transient carrier returned from bulk reads and consumed
+// field-by-field (Value, Expiration); it is never used as a dictionary key, set member, or compared for equality.
 #pragma warning disable CA1815 // Override equals and operator equals on value types
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
