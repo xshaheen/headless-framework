@@ -61,7 +61,7 @@ public interface ICache<T>
     ValueTask<bool> UpsertAsync(
         string cacheKey,
         T? cacheValue,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
@@ -78,21 +78,21 @@ public interface ICache<T>
 
     ValueTask<int> UpsertAllAsync(
         IDictionary<string, T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    ValueTask<bool> TryAddAsync(
+    ValueTask<bool> TryInsertAsync(
         string cacheKey,
         T? cacheValue,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     ValueTask<bool> TryReplaceAsync(
         string key,
         T? value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
@@ -100,14 +100,14 @@ public interface ICache<T>
         string key,
         T? expected,
         T? value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     ValueTask<long> SetAddAsync(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
@@ -127,7 +127,12 @@ public interface ICache<T>
 
     ValueTask<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    ValueTask<CacheValue<ICollection<T>>> GetSetAsync(string key, int? pageIndex = null, int pageSize = 100);
+    ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
+        string key,
+        int? pageIndex = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    );
 
     #endregion
 
@@ -138,7 +143,7 @@ public interface ICache<T>
     /// <summary>Logically expires the entry, preserving its fail-safe reserve. See <see cref="ICache.ExpireAsync"/>.</summary>
     ValueTask<bool> ExpireAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected);
+    ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected, CancellationToken cancellationToken = default);
 
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
@@ -183,7 +188,7 @@ public class Cache<T>(ICache cache) : ICache<T>
     public ValueTask<bool> UpsertAsync(
         string cacheKey,
         T? cacheValue,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -202,17 +207,17 @@ public class Cache<T>(ICache cache) : ICache<T>
 
     public ValueTask<int> UpsertAllAsync(
         IDictionary<string, T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
         return cache.UpsertAllAsync(value, expiration, cancellationToken);
     }
 
-    public ValueTask<bool> TryAddAsync(
+    public ValueTask<bool> TryInsertAsync(
         string cacheKey,
         T? cacheValue,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -222,7 +227,7 @@ public class Cache<T>(ICache cache) : ICache<T>
     public ValueTask<bool> TryReplaceAsync(
         string key,
         T? value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -233,7 +238,7 @@ public class Cache<T>(ICache cache) : ICache<T>
         string key,
         T? expected,
         T? value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -243,7 +248,7 @@ public class Cache<T>(ICache cache) : ICache<T>
     public ValueTask<long> SetAddAsync(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -271,9 +276,14 @@ public class Cache<T>(ICache cache) : ICache<T>
         return cache.GetAsync<T>(cacheKey, cancellationToken);
     }
 
-    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync(string key, int? pageIndex = null, int pageSize = 100)
+    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
+        string key,
+        int? pageIndex = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
     {
-        return cache.GetSetAsync<T>(key, pageIndex, pageSize);
+        return cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
     }
 
     public ValueTask<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)
@@ -286,9 +296,13 @@ public class Cache<T>(ICache cache) : ICache<T>
         return cache.ExpireAsync(cacheKey, cancellationToken);
     }
 
-    public ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected)
+    public ValueTask<bool> RemoveIfEqualAsync(
+        string cacheKey,
+        T? expected,
+        CancellationToken cancellationToken = default
+    )
     {
-        return cache.RemoveIfEqualAsync(cacheKey, expected);
+        return cache.RemoveIfEqualAsync(cacheKey, expected, cancellationToken);
     }
 
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)

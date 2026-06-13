@@ -75,7 +75,7 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask<bool> UpsertAsync(
         string cacheKey,
         T? cacheValue,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -98,7 +98,7 @@ public sealed class ScopedCache<T> : ICache<T>
     /// <inheritdoc />
     public ValueTask<int> UpsertAllAsync(
         IDictionary<string, T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -114,10 +114,10 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> TryAddAsync(
+    public ValueTask<bool> TryInsertAsync(
         string cacheKey,
         T? cacheValue,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -129,7 +129,7 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask<bool> TryReplaceAsync(
         string key,
         T? value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -142,7 +142,7 @@ public sealed class ScopedCache<T> : ICache<T>
         string key,
         T? expected,
         T? value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -154,7 +154,7 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask<long> SetAddAsync(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -226,10 +226,15 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
-    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync(string key, int? pageIndex = null, int pageSize = 100)
+    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
+        string key,
+        int? pageIndex = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
-        return _cache.GetSetAsync<T>(_ScopeKey(key), pageIndex, pageSize);
+        return _cache.GetSetAsync<T>(_ScopeKey(key), pageIndex, pageSize, cancellationToken);
     }
 
     #endregion
@@ -251,10 +256,14 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected)
+    public ValueTask<bool> RemoveIfEqualAsync(
+        string cacheKey,
+        T? expected,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(cacheKey);
-        return _cache.RemoveIfEqualAsync(_ScopeKey(cacheKey), expected);
+        return _cache.RemoveIfEqualAsync(_ScopeKey(cacheKey), expected, cancellationToken);
     }
 
     /// <inheritdoc />
