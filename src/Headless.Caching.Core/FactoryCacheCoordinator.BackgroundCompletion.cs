@@ -109,7 +109,7 @@ public sealed partial class FactoryCacheCoordinator
             }
 
             releaser.Dispose();
-            BackgroundCompletionFinished?.Invoke();
+            BackgroundOperationFinished?.Invoke();
         }
     }
 

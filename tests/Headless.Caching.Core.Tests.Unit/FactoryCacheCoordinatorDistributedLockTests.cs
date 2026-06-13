@@ -171,7 +171,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -267,7 +267,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         using var hold = _lockProvider.Hold(key);
         var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var factoryCalls = 0;
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 
@@ -301,7 +301,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
         var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var factoryCalls = 0;
         var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
 

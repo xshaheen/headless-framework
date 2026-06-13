@@ -39,9 +39,9 @@ public sealed partial class FactoryCacheCoordinator(
     [EditorBrowsable(EditorBrowsableState.Never)]
     internal Action? FactoryTimeoutTimerRegistered { get; set; }
 
-    /// <summary>Signals test code that a detached background completion has finished or abandoned its factory.</summary>
+    /// <summary>Signals test code that a detached background operation (soft-timeout completion or eager refresh) has finished or abandoned its factory.</summary>
     [EditorBrowsable(EditorBrowsableState.Never)]
-    internal Action? BackgroundCompletionFinished { get; set; }
+    internal Action? BackgroundOperationFinished { get; set; }
 
     /// <summary>Gets or creates a cache value by using the provider store primitive.</summary>
     /// <remarks>
@@ -65,13 +65,12 @@ public sealed partial class FactoryCacheCoordinator(
     {
         Argument.IsNotNull(factory);
 
-        return GetOrAddAsync<T>(
-            store,
-            key,
-            async (context, token) => context.Modified(await factory(token).ConfigureAwait(false)),
-            options,
-            cancellationToken
-        );
+        // Wrap the simple factory in a struct adapter whose instance method becomes the delegate target.
+        // The struct is boxed once (for the delegate), but no compiler-generated display class is created:
+        // `factory` is stored in the struct, not captured into a closure, so per-call allocation drops from
+        // two heap objects (display class + async state machine) to one (async state machine only).
+        var adapter = new SimpleFactoryAdapter<T>(factory);
+        return GetOrAddAsync<T>(store, key, adapter.InvokeAsync, options, cancellationToken);
     }
 
     /// <summary>
@@ -252,15 +251,17 @@ public sealed partial class FactoryCacheCoordinator(
             // can see the last-known-good value and its validators (conditional refresh) and mutate the options
             // and tags it will be written with (adaptive caching).
             var context = _CreateFactoryContext(key, entry, options, now);
-            var boundFactory = (CancellationToken token) => factory(context, token);
 
             var timeoutSelection = _SelectFactoryTimeout(options, staleCandidate, now, key);
             FactoryRunResult<CacheFactoryResult<T>> factoryResult;
 
             try
             {
+                // Pass context and factory as separate parameters so _RunFactoryWithTimeoutAsync can invoke
+                // factory(context, token) directly — no per-call closure allocation for the bound delegate.
                 factoryResult = await _RunFactoryWithTimeoutAsync(
-                        boundFactory,
+                        factory,
+                        context,
                         key,
                         timeoutSelection.Timeout,
                         cancelOnTimeout: timeoutSelection.Kind == FactoryTimeoutKind.Hard,
@@ -568,8 +569,11 @@ public sealed partial class FactoryCacheCoordinator(
         return new FactoryTimeoutSelection(FactoryTimeoutKind.None, Timeout.InfiniteTimeSpan);
     }
 
-    private async ValueTask<FactoryRunResult<T>> _RunFactoryWithTimeoutAsync<T>(
-        Func<CancellationToken, ValueTask<T?>> factory,
+    // `factory` and `context` are passed as separate parameters (rather than a pre-bound closure) so the caller
+    // does not allocate a display class on each cache miss — factory(context, token) is invoked inline here.
+    private async ValueTask<FactoryRunResult<CacheFactoryResult<T>>> _RunFactoryWithTimeoutAsync<T>(
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheFactoryContext<T> context,
         string key,
         TimeSpan timeout,
         bool cancelOnTimeout,
@@ -580,8 +584,8 @@ public sealed partial class FactoryCacheCoordinator(
         // interrupt the factory, so await it directly (the common default-options hot path); allocate nothing.
         if (timeout == Timeout.InfiniteTimeSpan && !cancellationToken.CanBeCanceled)
         {
-            var directValue = await factory(cancellationToken).ConfigureAwait(false);
-            return FactoryRunResult<T>.Completed(directValue);
+            var directValue = await factory(context, cancellationToken).ConfigureAwait(false);
+            return FactoryRunResult<CacheFactoryResult<T>>.Completed(directValue);
         }
 
         CancellationTokenSource? internalCts = new();
@@ -589,7 +593,7 @@ public sealed partial class FactoryCacheCoordinator(
 
         try
         {
-            var factoryTask = factory(internalCts.Token).AsTask();
+            var factoryTask = factory(context, internalCts.Token).AsTask();
             Task? callerCancellationTask = null;
 
             if (cancellationToken.CanBeCanceled)
@@ -619,7 +623,7 @@ public sealed partial class FactoryCacheCoordinator(
                     throw new OperationCanceledException(cancellationToken);
                 }
 
-                return FactoryRunResult<T>.Completed(await factoryTask.ConfigureAwait(false));
+                return FactoryRunResult<CacheFactoryResult<T>>.Completed(await factoryTask.ConfigureAwait(false));
             }
 
             using var delayCts = new CancellationTokenSource();
@@ -634,7 +638,7 @@ public sealed partial class FactoryCacheCoordinator(
             {
                 await delayCts.CancelAsync().ConfigureAwait(false);
                 var value = await factoryTask.ConfigureAwait(false);
-                return FactoryRunResult<T>.Completed(value);
+                return FactoryRunResult<CacheFactoryResult<T>>.Completed(value);
             }
 
             if (winner == callerCancellationTask)
@@ -658,13 +662,16 @@ public sealed partial class FactoryCacheCoordinator(
                 // branch. Defer CTS disposal until the factory finishes so it never touches a disposed token source.
                 CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
                 internalCts = null;
-                return FactoryRunResult<T>.TimedOut(factoryTask, internalCancellationTokenSource: null);
+                return FactoryRunResult<CacheFactoryResult<T>>.TimedOut(
+                    factoryTask,
+                    internalCancellationTokenSource: null
+                );
             }
 
             await delayCts.CancelAsync().ConfigureAwait(false);
             var transferredCts = internalCts;
             internalCts = null;
-            return FactoryRunResult<T>.TimedOut(factoryTask, transferredCts);
+            return FactoryRunResult<CacheFactoryResult<T>>.TimedOut(factoryTask, transferredCts);
         }
         finally
         {
@@ -777,6 +784,18 @@ public sealed partial class FactoryCacheCoordinator(
             Task<T?> runningTask,
             CancellationTokenSource? internalCancellationTokenSource
         ) => new(value: default, runningTask, internalCancellationTokenSource);
+    }
+
+    // Wraps a simple Func<CancellationToken, ValueTask<T?>> so the simple GetOrAddAsync overload can form a
+    // delegate from an instance method rather than a capturing lambda. The struct is boxed once (for the delegate
+    // target), but the compiler-generated display class and its factory capture are eliminated — one fewer heap
+    // object on every simple-factory cache miss.
+    private readonly struct SimpleFactoryAdapter<T>(Func<CancellationToken, ValueTask<T?>> factory)
+    {
+        public async ValueTask<CacheFactoryResult<T>> InvokeAsync(
+            CacheFactoryContext<T> context,
+            CancellationToken cancellationToken
+        ) => context.Modified(await factory(cancellationToken).ConfigureAwait(false));
     }
 }
 

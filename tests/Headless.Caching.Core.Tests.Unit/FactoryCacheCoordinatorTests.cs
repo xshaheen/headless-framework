@@ -822,7 +822,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -865,7 +865,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -913,7 +913,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1088,7 +1088,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -2732,7 +2732,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     private static Task _WaitForBackgroundFinished(FactoryCacheCoordinator coordinator)
     {
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        coordinator.BackgroundCompletionFinished = () => tcs.TrySetResult();
+        coordinator.BackgroundOperationFinished = () => tcs.TrySetResult();
         return tcs.Task;
     }
 
