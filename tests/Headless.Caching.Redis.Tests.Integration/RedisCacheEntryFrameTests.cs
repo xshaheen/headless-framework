@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers.Binary;
-using System.Reflection;
 using System.Text;
+using Headless.Caching;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -16,20 +16,6 @@ public sealed class RedisCacheEntryFrameTests
     private const byte _HasETagFlag = 1 << 5;
     private const byte _HasLastModifiedAtFlag = 1 << 6;
     private const byte _HasTagsFlag = 1 << 7;
-    private static readonly Type _FrameType = Type.GetType(
-        "Headless.Caching.RedisCacheEntryFrame, Headless.Caching.Redis",
-        throwOnError: true
-    )!;
-
-    private static readonly MethodInfo _EncodeMethod = _FrameType.GetMethod(
-        "Encode",
-        BindingFlags.Public | BindingFlags.Static
-    )!;
-
-    private static readonly MethodInfo _DecodeMethod = _FrameType.GetMethod(
-        "Decode",
-        BindingFlags.Public | BindingFlags.Static
-    )!;
 
     [Fact]
     public void should_round_trip_value_and_expiration_metadata()
@@ -375,53 +361,19 @@ public sealed class RedisCacheEntryFrameTests
         DateTime? lastModifiedAt = null,
         IReadOnlyCollection<string>? tags = null
     ) =>
-        (byte[])
-            _EncodeMethod.Invoke(
-                null,
-                [
-                    value,
-                    isNull,
-                    logicalExpiresAt,
-                    physicalExpiresAt,
-                    slidingExpiration,
-                    eagerRefreshAt,
-                    etag,
-                    lastModifiedAt,
-                    tags,
-                ]
-            )!;
+        RedisCacheEntryFrame.Encode(
+            value,
+            isNull,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            slidingExpiration,
+            eagerRefreshAt,
+            etag,
+            lastModifiedAt,
+            tags
+        );
 
     private static RedisValue _RedisValue(byte[] value) => value;
 
-    private static DecodedFrame _Decode(RedisValue value)
-    {
-        var decoded = _DecodeMethod.Invoke(null, [value])!;
-        var type = decoded.GetType();
-
-        return new DecodedFrame(
-            (bool)type.GetProperty("IsFramed")!.GetValue(decoded)!,
-            (bool)type.GetProperty("IsNull")!.GetValue(decoded)!,
-            (DateTime?)type.GetProperty("LogicalExpiresAt")!.GetValue(decoded),
-            (DateTime?)type.GetProperty("PhysicalExpiresAt")!.GetValue(decoded),
-            (TimeSpan?)type.GetProperty("SlidingExpiration")!.GetValue(decoded),
-            (DateTime?)type.GetProperty("EagerRefreshAt")!.GetValue(decoded),
-            (string?)type.GetProperty("ETag")!.GetValue(decoded),
-            (DateTime?)type.GetProperty("LastModifiedAt")!.GetValue(decoded),
-            (IReadOnlyCollection<string>?)type.GetProperty("Tags")!.GetValue(decoded),
-            (ReadOnlyMemory<byte>)type.GetProperty("ValueSegment")!.GetValue(decoded)!
-        );
-    }
-
-    private readonly record struct DecodedFrame(
-        bool IsFramed,
-        bool IsNull,
-        DateTime? LogicalExpiresAt,
-        DateTime? PhysicalExpiresAt,
-        TimeSpan? SlidingExpiration,
-        DateTime? EagerRefreshAt,
-        string? ETag,
-        DateTime? LastModifiedAt,
-        IReadOnlyCollection<string>? Tags,
-        ReadOnlyMemory<byte> ValueSegment
-    );
+    private static RedisCacheEntryFrame.DecodedFrame _Decode(RedisValue value) => RedisCacheEntryFrame.Decode(value);
 }

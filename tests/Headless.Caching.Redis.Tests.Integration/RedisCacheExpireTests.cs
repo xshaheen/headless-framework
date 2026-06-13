@@ -87,6 +87,34 @@ public sealed class RedisCacheExpireTests(RedisCacheFixture fixture) : RedisCach
     }
 
     [Fact]
+    public async Task should_remove_redis_key_when_expiring_a_sliding_entry()
+    {
+        // given — a sliding entry whose absolute Duration cap exceeds the idle window (Physical > Logical),
+        // but that surplus is the sliding cap, NOT a fail-safe reserve, so it must collapse to a removal.
+        await FlushAsync();
+        var key = Faker.Random.AlphaNumeric(10);
+        var prefix = key + ":";
+        var redisKey = prefix + key;
+        using var cache = CreateCache(prefix);
+
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(10),
+            SlidingExpiration = TimeSpan.FromMinutes(1),
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v"), options, AbortToken);
+
+        // when
+        var expired = await cache.ExpireAsync(key, AbortToken);
+
+        // then — succeeds, read misses, and the Redis key is gone (no phantom reserve manufactured)
+        expired.Should().BeTrue();
+        (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await Database.KeyExistsAsync(redisKey)).Should().BeFalse("a sliding entry is removed outright, not retained");
+    }
+
+    [Fact]
     public async Task should_return_false_when_expiring_an_absent_key()
     {
         // given

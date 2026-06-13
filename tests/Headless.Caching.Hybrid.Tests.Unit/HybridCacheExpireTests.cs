@@ -229,5 +229,74 @@ public sealed class HybridCacheExpireTests : TestBase
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
+
+        // and — an Expire item was enqueued in the recovery queue (not a Remove or SetEntry)
+        cache.RecoveryQueue!.Count.Should().Be(1);
+        cache.RecoveryQueue.GetKind(key).Should().Be(HybridCacheRecoveryKind.Expire);
+    }
+
+    [Fact]
+    public async Task should_replay_expire_against_l2_and_publish_expire_invalidation_on_recovery()
+    {
+        // given — a HybridCache with auto-recovery; the key exists in both tiers
+        using var l2 = new TogglableRemoteCache(_timeProvider);
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var recoveryDelay = TimeSpan.FromSeconds(5);
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions { EnableAutoRecovery = true, AutoRecoveryDelay = recoveryDelay },
+            timeProvider: _timeProvider
+        );
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int(1, 100);
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<int?>(value), TimeSpan.FromMinutes(5), AbortToken);
+
+        // confirm both tiers have the value before the outage
+        (await l2.GetAsync<int>(key, AbortToken))
+            .HasValue.Should()
+            .BeTrue();
+
+        // when — L2 fails; ExpireAsync queues the expiration for recovery
+        l2.FailWrites = true;
+        await cache.ExpireAsync(key, AbortToken);
+
+        // then — Expire item is enqueued
+        cache.RecoveryQueue!.Count.Should().Be(1);
+        cache.RecoveryQueue.GetKind(key).Should().Be(HybridCacheRecoveryKind.Expire);
+        var removeAttemptsBefore = l2.RemoveAttempts;
+
+        // when — L2 recovers and the recovery cadence elapses
+        l2.FailWrites = false;
+        _timeProvider.Advance(recoveryDelay);
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the replay called l2.ExpireAsync (RemoveAttempts incremented, not SetEntryAttempts)
+        l2.RemoveAttempts.Should().Be(removeAttemptsBefore + 1, "replay must call ExpireAsync on L2, not RemoveAsync");
+
+        // and — the L2 entry is logically gone after the replay
+        (await l2.GetAsync<int>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("the replayed ExpireAsync must remove the key from L2");
+
+        // and — a second invalidation was published with Expire=true (not Expire=false / plain remove)
+        await publisher
+            .Received(2)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Key == key && m.Expire),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+
+        // and — the queue drained
+        cache.RecoveryQueue.Count.Should().Be(0);
     }
 }
