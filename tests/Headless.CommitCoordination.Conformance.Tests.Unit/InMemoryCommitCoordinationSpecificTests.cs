@@ -212,11 +212,6 @@ public sealed class InMemoryCommitCoordinationSpecificTests
 
     private sealed record LogEntry(LogLevel Level, EventId EventId, string Message);
 
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType) => null;
-    }
-
     /// <summary>Minimal pumping single-threaded synchronization context for deadlock regression guards.</summary>
     private sealed class SingleThreadedSynchronizationContext : SynchronizationContext, IDisposable
     {

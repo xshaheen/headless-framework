@@ -150,6 +150,14 @@ public static class CoordinatedTransactionExtensions
         CancellationToken cancellationToken
     )
     {
+        // Resolve the post-commit-fault logger up front (fail loud here, at a safe point) rather than with a
+        // null-conditional inside the catch: a missing ILoggerFactory is a host misconfiguration, and surfacing it
+        // before any commit is safe, whereas resolving it inside the post-commit catch could throw after the
+        // transaction is already durable — exactly the caller-failure the catch exists to prevent.
+        var logger = services
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Headless.CommitCoordination.PostgreSql.CoordinatedTransaction");
+
         var shouldClose = connection.State == ConnectionState.Closed;
 
         if (shouldClose)
@@ -186,13 +194,10 @@ public static class CoordinatedTransactionExtensions
                         // accelerator (drain); a fault here must not surface as a caller failure — a retry would
                         // re-run the operation and double-apply. The enlisted work is relay-recoverable (durable
                         // rows committed in-transaction + polling recovery), so log and return the committed result.
-                        services
-                            .GetService<ILoggerFactory>()
-                            ?.CreateLogger("Headless.CommitCoordination.PostgreSql.CoordinatedTransaction")
-                            .LogError(
-                                ex,
-                                "Post-commit drain faulted after a successful PostgreSQL commit; the relay will recover any uncommitted work."
-                            );
+                        logger.LogError(
+                            ex,
+                            "Post-commit drain faulted after a successful PostgreSQL commit; the relay will recover any uncommitted work."
+                        );
                     }
 
                     return result;

@@ -113,6 +113,10 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
             return Root.GetOrAdd(state, factory);
         }
 
+        // Exclusive lock by design — NOT a ConcurrentDictionary. The buffer factory has a side effect (it registers
+        // an OnCommit/OnRollback callback on construction), so the get-or-create must be atomic: a lock-free
+        // double-create would register the callback twice and drain duplicate work. GetOrAdd is called once per
+        // buffer type per transaction (first enlist), not per work item, so the contention is negligible.
         lock (_gate)
         {
             _ThrowIfNotActive();
@@ -151,7 +155,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     {
         try
         {
-            await DrainAsync(claim, services, CancellationToken.None).ConfigureAwait(false);
+            await DrainAsync(claim, services).ConfigureAwait(false);
         }
         finally
         {
@@ -179,12 +183,14 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     /// Signals a terminal outcome: claims terminal state synchronously, then runs the asynchronous drain. A
     /// convenience composite over <see cref="TryClaimTerminal" /> + <see cref="DrainAsync" /> for owners that both
     /// claim and drain on the same thread (the in-process driven path). Out-of-band sources call the two halves
-    /// separately so the claim lands synchronously on the commit edge before the drain is scheduled.
+    /// separately so the claim lands synchronously on the commit edge before the drain is scheduled. Per D9 a claimed
+    /// drain always runs to completion, so there is no cancellation token: cancellation would risk abandoning
+    /// already-committed work.
     /// </summary>
-    internal ValueTask SignalAsync(CommitOutcome outcome, IServiceProvider services, CancellationToken cancellationToken)
+    internal ValueTask SignalAsync(CommitOutcome outcome, IServiceProvider services)
     {
         return TryClaimTerminal(outcome, out var claim)
-            ? DrainAsync(claim, services, cancellationToken)
+            ? DrainAsync(claim, services)
             : ValueTask.CompletedTask;
     }
 
@@ -258,13 +264,12 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     /// </summary>
     /// <param name="claim">The claim won from <see cref="TryClaimTerminal" />.</param>
     /// <param name="services">The service provider for the drain's <see cref="CommitContext" />.</param>
-    /// <param name="cancellationToken">Observed only after all work has drained.</param>
     /// <returns>The drain task.</returns>
-    internal static async ValueTask DrainAsync(
-        CommitTerminalClaim claim,
-        IServiceProvider services,
-        CancellationToken cancellationToken
-    )
+    /// <remarks>
+    /// There is intentionally no cancellation token: per D9 a claimed drain must run to completion — cancelling it
+    /// would abandon already-committed work. Each callback is invoked with <see cref="CancellationToken.None" />.
+    /// </remarks>
+    internal static async ValueTask DrainAsync(CommitTerminalClaim claim, IServiceProvider services)
     {
         var context = new CommitContext(claim.Coordinator._capabilities)
         {

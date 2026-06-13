@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Microsoft.Data.SqlClient;
 
 namespace Headless.CommitCoordination.SqlServer;
@@ -26,4 +27,15 @@ public sealed class SqlServerCommitCoordinationOptions
     /// Bounds the startup diagnostic self-probe.
     /// </summary>
     public TimeSpan DiagnosticProbeTimeout { get; set; } = TimeSpan.FromSeconds(5);
+}
+
+internal sealed class SqlServerCommitCoordinationOptionsValidator : AbstractValidator<SqlServerCommitCoordinationOptions>
+{
+    public SqlServerCommitCoordinationOptionsValidator()
+    {
+        // A non-positive timeout makes the probe CancellationTokenSource fire immediately, so the probe always
+        // "times out" — in Strict mode that fails startup, in Warn mode it permanently degrades health. Catch the
+        // misconfiguration at startup instead.
+        RuleFor(x => x.DiagnosticProbeTimeout).GreaterThan(TimeSpan.Zero);
+    }
 }

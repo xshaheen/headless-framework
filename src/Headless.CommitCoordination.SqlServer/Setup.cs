@@ -24,11 +24,16 @@ public static class SetupSqlServerCommitCoordination
         )
         {
             services.AddCommitCoordination();
-            var optionsBuilder = services.AddOptions<SqlServerCommitCoordinationOptions>();
 
             if (configure is not null)
             {
-                optionsBuilder.Configure(configure);
+                services.Configure<SqlServerCommitCoordinationOptions, SqlServerCommitCoordinationOptionsValidator>(
+                    configure
+                );
+            }
+            else
+            {
+                services.AddOptions<SqlServerCommitCoordinationOptions, SqlServerCommitCoordinationOptionsValidator>();
             }
 
             services.TryAddSingleton<SqlServerCommitDiagnosticProbeState>();

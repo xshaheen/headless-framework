@@ -21,8 +21,8 @@ public sealed class CommitCoordinatorTests
             return ValueTask.CompletedTask;
         });
 
-        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None);
-        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None);
+        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
 
         calls.Should().Be(1);
         coordinator.State.Should().Be(CommitCoordinatorState.Committed);
@@ -49,7 +49,7 @@ public sealed class CommitCoordinatorTests
             return ValueTask.CompletedTask;
         });
 
-        await coordinator.SignalAsync(CommitOutcome.RolledBack, new EmptyServiceProvider(), CancellationToken.None);
+        await coordinator.SignalAsync(CommitOutcome.RolledBack, new EmptyServiceProvider());
 
         commitCalls.Should().Be(0);
         rollbackCalls.Should().Be(1);
@@ -70,7 +70,7 @@ public sealed class CommitCoordinatorTests
             throw new NotSupportedException("second");
         });
 
-        var act = () => coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None).AsTask();
+        var act = () => coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider()).AsTask();
 
         var exception = await act.Should().ThrowAsync<AggregateException>();
         exception.Which.InnerExceptions.Should().HaveCount(2);
@@ -78,21 +78,21 @@ public sealed class CommitCoordinatorTests
     }
 
     [Fact]
-    public async Task should_not_mask_callback_faults_when_signal_token_is_canceled_after_terminal_claim()
+    public async Task should_run_drain_to_completion_and_surface_callback_faults_even_when_a_token_is_canceled_mid_drain()
     {
         var coordinator = new CommitCoordinator();
         using var cts = new CancellationTokenSource();
 
         coordinator.OnCommit(async (_, _) =>
         {
+            // Cancelling a token from inside the drain must not abandon the drain or suppress the fault (D9): the
+            // drain takes no cancellation token, so it always runs to completion and the callback fault propagates.
             await cts.CancelAsync();
 
             throw new InvalidOperationException("callback failed");
         });
 
-        var act = () => coordinator
-            .SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), cts.Token)
-            .AsTask();
+        var act = () => coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider()).AsTask();
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("callback failed");
         coordinator.State.Should().Be(CommitCoordinatorState.Committed);
@@ -103,7 +103,7 @@ public sealed class CommitCoordinatorTests
     {
         var coordinator = new CommitCoordinator();
 
-        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None);
+        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
 
         coordinator
             .Invoking(x => x.OnCommit((_, _) => ValueTask.CompletedTask))
@@ -127,7 +127,7 @@ public sealed class CommitCoordinatorTests
         {
         }
 
-        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None);
+        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
 
         calls.Should().Be(0);
     }
@@ -138,7 +138,7 @@ public sealed class CommitCoordinatorTests
         var coordinator = new CommitCoordinator();
         var buffer = coordinator.GetOrAdd(_ => new DisposableBuffer());
 
-        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None);
+        await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
 
         buffer.IsDisposed.Should().BeTrue();
     }
@@ -171,7 +171,7 @@ public sealed class CommitCoordinatorTests
         coordinator.GetOrAdd(_ => new ThrowingDisposableBuffer());
         coordinator.OnCommit((_, _) => throw new NotSupportedException("callback"));
 
-        var act = () => coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None).AsTask();
+        var act = () => coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider()).AsTask();
 
         var exception = await act.Should().ThrowAsync<AggregateException>();
         exception.Which.InnerExceptions.Should().ContainSingle(x => x.Message == "callback");
@@ -224,11 +224,7 @@ public sealed class CommitCoordinatorTests
             {
                 barrier.SignalAndWait();
 
-                await coordinator.SignalAsync(
-                    CommitOutcome.Committed,
-                    new EmptyServiceProvider(),
-                    CancellationToken.None
-                );
+                await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
             });
 
             await Task.WhenAll(tasks);
@@ -275,9 +271,4 @@ public sealed class CommitCoordinatorTests
     private interface ITestCapability : ICommitCapability;
 
     private sealed class TestCapability : ITestCapability;
-
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType) => null;
-    }
 }

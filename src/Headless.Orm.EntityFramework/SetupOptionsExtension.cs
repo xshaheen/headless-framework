@@ -45,8 +45,14 @@ public static class SetupOptionsExtension
     /// so an interceptor never runs twice per edge. Interceptors are expected to be registered as singletons
     /// (the framework's own are); a scoped <see cref="IInterceptor" /> combined with
     /// <c>optionsLifetime: ServiceLifetime.Singleton</c> is unsupported and fails scope validation.
+    /// <para>
+    /// <c>AddHeadlessDbContext</c> / <c>AddHeadlessIdentityDbContext</c> call this automatically. Consumers wiring a
+    /// plain <see cref="DbContext" /> via <c>AddDbContext</c> can call it from their options action
+    /// (<c>(sp, options) =&gt; options.UseX(...).AddDiRegisteredInterceptors(sp)</c>) to pick up package-registered
+    /// interceptors — e.g. the commit-coordination transaction interceptor — without hand-rolling the discovery.
+    /// </para>
     /// </remarks>
-    internal static DbContextOptionsBuilder AddDiRegisteredInterceptors(
+    public static DbContextOptionsBuilder AddDiRegisteredInterceptors(
         this DbContextOptionsBuilder optionsBuilder,
         IServiceProvider serviceProvider
     )

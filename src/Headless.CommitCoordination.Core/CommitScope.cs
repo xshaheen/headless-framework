@@ -32,7 +32,9 @@ internal sealed class CommitScope(
 
     public ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken)
     {
-        return SignalAsync(outcome, cancellationToken, out _);
+        // The token is part of the ICommitScope contract but does not govern the drain: per D9 a claimed drain always
+        // runs to completion (cancelling it would abandon already-committed work).
+        return SignalAsync(outcome, out _);
     }
 
     /// <summary>
@@ -40,7 +42,7 @@ internal sealed class CommitScope(
     /// out value is settled before the returned drain task is awaited; wrappers use it to decide resource ownership
     /// (only the claiming call's await spans the full drain).
     /// </summary>
-    internal ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken, out bool claimedSignal)
+    internal ValueTask SignalAsync(CommitOutcome outcome, out bool claimedSignal)
     {
         claimedSignal = _TryClaimSignal();
 
@@ -52,7 +54,7 @@ internal sealed class CommitScope(
         // Claim the terminal outcome synchronously (on this thread, e.g. the commit edge), then drain asynchronously.
         // The synchronous claim guarantees a racing Dispose observes the outcome and never rolls back committed work.
         return coordinator.TryClaimTerminal(outcome, out var claim)
-            ? CommitCoordinator.DrainAsync(claim, services, cancellationToken)
+            ? CommitCoordinator.DrainAsync(claim, services)
             : ValueTask.CompletedTask;
     }
 
@@ -127,7 +129,7 @@ internal sealed class CommitScope(
     {
         try
         {
-            await CommitCoordinator.DrainAsync(claim, services, CancellationToken.None).ConfigureAwait(false);
+            await CommitCoordinator.DrainAsync(claim, services).ConfigureAwait(false);
         }
         finally
         {

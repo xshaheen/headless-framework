@@ -33,11 +33,14 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
         probeCts.CancelAfter(currentOptions.DiagnosticProbeTimeout);
         var probeToken = probeCts.Token;
 
+        // Hoisted so the timeout catch can read whether a commit event arrived with an unreadable payload.
+        ProbeDiagnosticListener? listener = null;
+
         try
         {
             await using var connection = await factory(probeToken).ConfigureAwait(false);
             var shouldClose = connection.State == ConnectionState.Closed;
-            using var listener = new ProbeDiagnosticListener(connection);
+            listener = new ProbeDiagnosticListener(connection);
             using var subscription = DiagnosticListener.AllListeners.Subscribe(listener);
 
             if (shouldClose)
@@ -58,7 +61,8 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
                 await listener.WaitForCommitAsync(probeToken).ConfigureAwait(false);
 
                 return SqlServerCommitDiagnosticProbeResult.Success(
-                    "SQL Server commit diagnostic self-probe observed the expected commit diagnostic payload."
+                    "SQL Server commit diagnostic self-probe observed the expected commit diagnostic payload, including a "
+                        + "resolvable ClientConnectionId."
                 );
             }
             finally
@@ -73,10 +77,21 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
             !cancellationToken.IsCancellationRequested && probeCts.IsCancellationRequested
         )
         {
-            return SqlServerCommitDiagnosticProbeResult.Failure(
-                "SQL Server commit diagnostic self-probe timed out before observing the expected diagnostic payload.",
-                ex
-            );
+            // Distinguish payload-shape drift from a genuinely absent event: if the commit-after event fired for the
+            // probe transaction but ClientConnectionId could not be read from its payload, the SqlClient diagnostic
+            // contract has likely changed — out-of-band correlation would silently break. Surface that precisely
+            // instead of a generic timeout.
+            return listener?.UnresolvedPayloadType is { } payloadType
+                ? SqlServerCommitDiagnosticProbeResult.Failure(
+                    "SQL Server commit diagnostic self-probe observed the commit event but could not read "
+                        + $"ClientConnectionId from payload type '{payloadType}'; the SqlClient diagnostic payload "
+                        + "shape may have changed, which would disable out-of-band commit detection.",
+                    ex
+                )
+                : SqlServerCommitDiagnosticProbeResult.Failure(
+                    "SQL Server commit diagnostic self-probe timed out before observing the expected diagnostic payload.",
+                    ex
+                );
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -84,6 +99,11 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
                 "SQL Server commit diagnostic self-probe failed.",
                 ex
             );
+        }
+        finally
+        {
+            // Disposed here (not via `using`) because the listener is hoisted so the timeout catch can read it.
+            listener?.Dispose();
         }
     }
 
@@ -94,6 +114,12 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
     {
         private readonly TaskCompletionSource _committed = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly List<IDisposable> _subscriptions = [];
+
+        /// <summary>
+        /// Set when a commit-after event fired for this connection but its payload did not yield a ClientConnectionId
+        /// — the signature of a SqlClient diagnostic payload-shape change. Read after a probe timeout to report drift.
+        /// </summary>
+        public string? UnresolvedPayloadType { get; private set; }
 
         public void OnCompleted() { }
 
@@ -121,13 +147,25 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
         public void OnNext(KeyValuePair<string, object?> evt)
         {
             if (
-                evt.Key == SqlServerCommitDiagnosticObserver.SqlAfterCommitTransaction
-                && SqlServerCommitDiagnosticObserver.TryGetClientConnectionId(evt, out var key)
-                && key == connection.ClientConnectionId
-                && !SqlServerCommitDiagnosticObserver.IsRollbackOperation(evt.Value)
+                evt.Key != SqlServerCommitDiagnosticObserver.SqlAfterCommitTransaction
+                || SqlServerCommitDiagnosticObserver.IsRollbackOperation(evt.Value)
             )
             {
-                _committed.TrySetResult();
+                return;
+            }
+
+            if (SqlServerCommitDiagnosticObserver.TryGetClientConnectionId(evt, out var key))
+            {
+                if (key == connection.ClientConnectionId)
+                {
+                    _committed.TrySetResult();
+                }
+            }
+            else
+            {
+                // The commit-after event fired but its payload yielded no ClientConnectionId — record the payload
+                // type so a probe timeout can report payload-shape drift instead of a generic "event never fired".
+                UnresolvedPayloadType = evt.Value?.GetType().FullName ?? "<null>";
             }
         }
 

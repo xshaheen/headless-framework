@@ -284,58 +284,8 @@ public sealed class CommitScopeFactoryTests
         scope.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
     }
 
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public object? GetService(Type serviceType) => null;
-    }
-
     private sealed class DisposableBuffer : ICommitWorkBuffer, IDisposable
     {
         public void Dispose() { }
-    }
-
-    /// <summary>
-    /// Runs an action on a dedicated thread carrying a single-threaded <see cref="SynchronizationContext" /> whose
-    /// posted continuations are only pumped after the action returns. If the action blocks on an async continuation
-    /// posted to this context, the thread deadlocks and <see cref="Run" /> reports a timeout.
-    /// </summary>
-    private sealed class SingleThreadSynchronizationContext : SynchronizationContext
-    {
-        private readonly System.Collections.Concurrent.BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = [];
-
-        public override void Post(SendOrPostCallback d, object? state) => _queue.Add((d, state));
-
-        public static bool Run(Action action, TimeSpan timeout)
-        {
-            using var completed = new ManualResetEventSlim(false);
-            var context = new SingleThreadSynchronizationContext();
-
-            var thread = new Thread(() =>
-            {
-                SetSynchronizationContext(context);
-
-                try
-                {
-                    action();
-                }
-                finally
-                {
-                    completed.Set();
-                    context._queue.CompleteAdding();
-                }
-
-                foreach (var (callback, state) in context._queue.GetConsumingEnumerable())
-                {
-                    callback(state);
-                }
-            })
-            {
-                IsBackground = true,
-            };
-
-            thread.Start();
-
-            return completed.Wait(timeout);
-        }
     }
 }

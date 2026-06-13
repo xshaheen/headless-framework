@@ -17,7 +17,11 @@ public interface ICommitScope : IDisposable, IAsyncDisposable
     /// Signals the physical unit-of-work outcome.
     /// </summary>
     /// <param name="outcome">The terminal outcome.</param>
-    /// <param name="cancellationToken">The cancellation token for the signal operation.</param>
+    /// <param name="cancellationToken">
+    /// Accepted for API symmetry. It does <b>not</b> cancel the drain: once a terminal outcome is claimed, the drain
+    /// runs to completion so already-committed work is never abandoned (design decision D9). A cancelled token does
+    /// not prevent enlisted callbacks from running.
+    /// </param>
     /// <returns>A task representing signal completion.</returns>
     ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken);
 }

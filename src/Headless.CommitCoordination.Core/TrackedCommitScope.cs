@@ -45,7 +45,7 @@ internal sealed class TrackedCommitScope : ICommitScope
 
                 if (_inner is CommitScope commitScope)
                 {
-                    signal = commitScope.SignalAsync(outcome, cancellationToken, out claimedSignal);
+                    signal = commitScope.SignalAsync(outcome, out claimedSignal);
                 }
                 else
                 {

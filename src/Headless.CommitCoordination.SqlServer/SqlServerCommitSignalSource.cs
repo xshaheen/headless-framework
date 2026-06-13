@@ -20,6 +20,16 @@ namespace Headless.CommitCoordination.SqlServer;
 /// signal is missed, delayed, or disabled, deferred work must still be recoverable through the consumer's durable
 /// store and polling recovery (e.g. messaging's outbox rows committed in-transaction plus its retry sweep); this
 /// source only dispatches that work sooner. Correctness must never depend on the signal firing.
+/// <para>
+/// <b>Correlation boundary (known limitation).</b> Scopes are keyed by <c>ClientConnectionId</c>, and the signal path
+/// removes the entry by key (the dispose path is remove-if-equal). A live duplicate scope per key cannot occur — the
+/// <c>Attach</c> guard throws on a second live scope for the same key. The residual window is theoretical: a stale or
+/// duplicated commit diagnostic for an already-drained transaction, arriving after a successor reused the same pooled
+/// <c>ClientConnectionId</c>, could signal the successor early. Because the signal is acceleration-only and the
+/// successor's own durable rows govern correctness, the impact is bounded to early dispatch on the relay-recoverable
+/// path, never lost or duplicated durable work. Hardening this fully (a per-attach generation token in the key) is
+/// deferred — see plan decision D13.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public sealed partial class SqlServerCommitSignalSource(
