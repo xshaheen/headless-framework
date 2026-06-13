@@ -10,7 +10,6 @@ public class FactoryCacheBenchmarks
     private const int Seed = 5050;
     private readonly TimeSpan _expiration = TimeSpan.FromMinutes(1);
     private ICacheBenchmarkClient? _client;
-    private int _factoryCalls;
     private string _hotKey = "";
     private int _index;
 
@@ -63,13 +62,9 @@ public class FactoryCacheBenchmarks
             .ConfigureAwait(false);
     }
 
-    [Benchmark]
-    public int FactoryExecutions() => Volatile.Read(ref _factoryCalls);
-
     private ValueTask<BenchmarkPayload> _CreatePayloadAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Interlocked.Increment(ref _factoryCalls);
 
         return ValueTask.FromResult(Payload);
     }
