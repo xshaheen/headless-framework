@@ -647,6 +647,28 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
         CancellationToken cancellationToken = default
     ) => backend.GetAllAsync<T>(cacheKeys, cancellationToken);
 
+    public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var values = await backend.GetAllAsync<T>(cacheKeys, cancellationToken).ConfigureAwait(false);
+        var result = new Dictionary<string, CacheValueWithExpiration<T>>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (key, value) in values)
+        {
+            if (!value.HasValue)
+            {
+                continue;
+            }
+
+            var expiration = await backend.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+            result[key] = new CacheValueWithExpiration<T>(value, expiration);
+        }
+
+        return result;
+    }
+
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default

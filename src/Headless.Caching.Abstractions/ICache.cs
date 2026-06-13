@@ -282,4 +282,29 @@ public interface IInMemoryCache : ICache
     IReadOnlyCollection<string> GetTaggedKeys(string tag);
 }
 
-public interface IRemoteCache : ICache;
+public interface IRemoteCache : ICache
+{
+    /// <summary>
+    /// Reads multiple keys in one round-trip and returns each hit's value together with its remaining
+    /// logical expiration, so callers can mirror the value into a local tier without a separate per-key
+    /// expiration query. Keys not found in the remote store are omitted from the result.
+    /// </summary>
+    /// <remarks>
+    /// The expiration in each <see cref="CacheValueWithExpiration{T}"/> is the remaining logical TTL at
+    /// the moment the entry was read. For entries written without explicit logical-expiry metadata (legacy
+    /// payloads) the <see cref="CacheValueWithExpiration{T}.Expiration"/> is <see langword="null"/>.
+    /// Entries whose logical TTL has already elapsed are excluded from the result (treated as misses).
+    /// </remarks>
+    /// <typeparam name="T">The type of the cached values.</typeparam>
+    /// <param name="cacheKeys">The keys to look up.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A dictionary keyed by cache key containing the value and remaining logical expiration for every
+    /// key that was found and has not yet logically expired. Keys not present in the store are absent
+    /// from the dictionary.
+    /// </returns>
+    ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    );
+}

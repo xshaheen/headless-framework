@@ -121,6 +121,28 @@ internal sealed class InMemoryRemoteCacheAdapter(IInMemoryCache inMemoryCache) :
         CancellationToken cancellationToken = default
     ) => inMemoryCache.GetAllAsync<T>(cacheKeys, cancellationToken);
 
+    public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var values = await inMemoryCache.GetAllAsync<T>(cacheKeys, cancellationToken).ConfigureAwait(false);
+        var result = new Dictionary<string, CacheValueWithExpiration<T>>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (key, value) in values)
+        {
+            if (!value.HasValue)
+            {
+                continue;
+            }
+
+            var expiration = await inMemoryCache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+            result[key] = new CacheValueWithExpiration<T>(value, expiration);
+        }
+
+        return result;
+    }
+
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default

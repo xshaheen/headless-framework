@@ -143,6 +143,28 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
         CancellationToken cancellationToken = default
     ) => cache.GetAllAsync<T>(cacheKeys, cancellationToken);
 
+    public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var values = await cache.GetAllAsync<T>(cacheKeys, cancellationToken).ConfigureAwait(false);
+        var result = new Dictionary<string, CacheValueWithExpiration<T>>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (key, value) in values)
+        {
+            if (!value.HasValue)
+            {
+                continue;
+            }
+
+            var expiration = await cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+            result[key] = new CacheValueWithExpiration<T>(value, expiration);
+        }
+
+        return result;
+    }
+
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
@@ -349,6 +371,15 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
         CancellationToken cancellationToken = default
     ) => new((IDictionary<string, CacheValue<T>>)new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
 
+    public ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    ) =>
+        new(
+            (IDictionary<string, CacheValueWithExpiration<T>>)
+                new Dictionary<string, CacheValueWithExpiration<T>>(StringComparer.Ordinal)
+        );
+
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
@@ -553,6 +584,15 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         IEnumerable<string> keys,
         CancellationToken cancellationToken = default
     ) => new((IDictionary<string, CacheValue<T>>)new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
+
+    public ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    ) =>
+        new(
+            (IDictionary<string, CacheValueWithExpiration<T>>)
+                new Dictionary<string, CacheValueWithExpiration<T>>(StringComparer.Ordinal)
+        );
 
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
@@ -803,6 +843,30 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
         await _WaitReadGateAsync(cancellationToken);
 
         return await _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+    }
+
+    public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        var values = await _cache.GetAllAsync<T>(cacheKeys, cancellationToken).ConfigureAwait(false);
+        var result = new Dictionary<string, CacheValueWithExpiration<T>>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (key, value) in values)
+        {
+            if (!value.HasValue)
+            {
+                continue;
+            }
+
+            var expiration = await _cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+            result[key] = new CacheValueWithExpiration<T>(value, expiration);
+        }
+
+        return result;
     }
 
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
@@ -1122,6 +1186,30 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         await _WaitReadGateAsync(cancellationToken);
 
         return await _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+    }
+
+    public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        var values = await _cache.GetAllAsync<T>(cacheKeys, cancellationToken).ConfigureAwait(false);
+        var result = new Dictionary<string, CacheValueWithExpiration<T>>(values.Count, StringComparer.Ordinal);
+
+        foreach (var (key, value) in values)
+        {
+            if (!value.HasValue)
+            {
+                continue;
+            }
+
+            var expiration = await _cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+            result[key] = new CacheValueWithExpiration<T>(value, expiration);
+        }
+
+        return result;
     }
 
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(

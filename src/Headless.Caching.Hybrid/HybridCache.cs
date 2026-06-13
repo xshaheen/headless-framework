@@ -365,7 +365,7 @@ public sealed partial class HybridCache(
         var result = new Dictionary<string, CacheValue<T>>(localValues, StringComparer.Ordinal);
         var distributedRead = await _ReadFromL2Async(
                 missedKeys[0],
-                ct => l2Cache.GetAllAsync<T>(missedKeys, ct),
+                ct => l2Cache.GetAllWithExpirationAsync<T>(missedKeys, ct),
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
                 cancellationToken
@@ -386,51 +386,20 @@ public sealed partial class HybridCache(
         var distributedResults = distributedRead.Value!;
 
         // Mirror each L2 hit into L1 capped by its exact remaining L2 logical expiration (so the L1 copy never
-        // outlives L2 freshness). The bulk L2 read returns values only, so fetch the per-key expirations
-        // concurrently in one WhenAll rather than serially per key.
-        var hits = new List<KeyValuePair<string, CacheValue<T>>>(distributedResults.Count);
+        // outlives L2 freshness). The enriched bulk read returns value + expiration in one call — no separate
+        // per-key expiration round-trips needed.
         foreach (var kvp in distributedResults)
         {
-            result[kvp.Key] = kvp.Value;
-            if (kvp.Value is { HasValue: true, Value: not null })
+            result[kvp.Key] = kvp.Value.Value;
+
+            if (kvp.Value.Value is { HasValue: true, Value: not null })
             {
-                hits.Add(kvp);
+                var localExpiration = _GetLocalExpiration(kvp.Value.Expiration);
+                _logger.LogSettingLocalCacheKey(kvp.Key, localExpiration);
+                await LocalCache
+                    .UpsertAsync(kvp.Key, kvp.Value.Value.Value, localExpiration, cancellationToken)
+                    .ConfigureAwait(false);
             }
-        }
-
-        if (hits.Count == 0)
-        {
-            return result;
-        }
-
-        var expirationReads = await Task.WhenAll(
-                hits.Select(hit =>
-                    _ReadFromL2Async(
-                            hit.Key,
-                            ct => l2Cache.GetExpirationAsync(hit.Key, ct),
-                            _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
-                            DistributedCacheTimeoutKind.Soft,
-                            cancellationToken
-                        )
-                        .AsTask()
-                )
-            )
-            .ConfigureAwait(false);
-
-        var valuesToCache = new Dictionary<string, (T Value, TimeSpan? Expiration)>(StringComparer.Ordinal);
-        for (var i = 0; i < hits.Count; i++)
-        {
-            var expirationRead = expirationReads[i];
-            if (expirationRead.IsSuccess)
-            {
-                valuesToCache[hits[i].Key] = (hits[i].Value.Value!, _GetLocalExpiration(expirationRead.Value));
-            }
-        }
-
-        foreach (var (key, (value, localExpiration)) in valuesToCache)
-        {
-            _logger.LogSettingLocalCacheKey(key, localExpiration);
-            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
         }
 
         return result;

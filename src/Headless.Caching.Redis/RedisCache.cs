@@ -642,6 +642,189 @@ public sealed class RedisCache(
         }
     }
 
+    /// <inheritdoc/>
+    public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(cacheKeys);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var originalKeys = new List<string>();
+        var redisKeys = new List<RedisKey>();
+
+        foreach (var key in cacheKeys.Distinct(StringComparer.Ordinal))
+        {
+            Argument.IsNotNullOrEmpty(key);
+            originalKeys.Add(key);
+            redisKeys.Add(_GetKey(key));
+        }
+
+        if (redisKeys.Count is 0)
+        {
+            return ReadOnlyDictionary<string, CacheValueWithExpiration<T>>.Empty;
+        }
+
+        // One round-trip: fetch all raw values. For framed entries the logical expiration is embedded in the
+        // frame and decoded below without any additional network call. Sliding entries need the live Redis TTL
+        // (the frame's logical is just a lower bound); those are collected and fetched in a single pipelined
+        // batch — still O(1) network round-trips total.
+        RedisValue[] rawValues;
+
+        if (IsCluster)
+        {
+            // Cluster: batch by hash slot so each StringGetAsync covers one slot group.
+            var rawMap = new Dictionary<int, RedisValue>(redisKeys.Count);
+            var indexedPairs = originalKeys
+                .Select((k, i) => (Original: k, Redis: redisKeys[i], Index: i))
+                .GroupBy(x => options.ConnectionMultiplexer.HashSlot(x.Redis))
+                .ToList();
+
+            rawValues = new RedisValue[redisKeys.Count];
+
+            foreach (var slotGroup in indexedPairs)
+            {
+                var pairs = slotGroup.ToArray();
+                var slotKeys = pairs.Select(x => x.Redis).ToArray();
+                var slotValues = await _database.StringGetAsync(slotKeys, options.ReadMode).ConfigureAwait(false);
+
+                for (var i = 0; i < pairs.Length; i++)
+                {
+                    rawValues[pairs[i].Index] = slotValues[i];
+                }
+            }
+        }
+        else
+        {
+            rawValues = await _database.StringGetAsync([.. redisKeys], options.ReadMode).ConfigureAwait(false);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var result = new Dictionary<string, CacheValueWithExpiration<T>>(redisKeys.Count, StringComparer.Ordinal);
+
+        // First pass: decode value + expiration from the frame. Collect keys whose expiration requires a
+        // live TTL probe (sliding entries or non-framed legacy payloads).
+        List<(int Index, RedisKey RedisKey, T? Value)>? slidingOrLegacyHits = null;
+
+        for (var i = 0; i < originalKeys.Count; i++)
+        {
+            var rawValue = rawValues[i];
+
+            if (!rawValue.HasValue)
+            {
+                continue;
+            }
+
+            try
+            {
+                var frame = RedisCacheEntryFrame.Decode(rawValue);
+
+                if (frame.IsFramed)
+                {
+                    if (_IsExpired(frame.PhysicalExpiresAt, now))
+                    {
+                        continue;
+                    }
+
+                    if (frame.SlidingExpiration.HasValue)
+                    {
+                        // Sliding: logical expiry is maintained by TTL re-arms; the frame's LogicalExpiresAt is a
+                        // lower bound, not the live value. Collect for a single pipelined TTL batch below.
+                        if (!frame.IsNull)
+                        {
+                            var slidingValue = _DeserializeValueSegment<T>(frame.ValueSegment);
+                            (slidingOrLegacyHits ??= []).Add((i, redisKeys[i], slidingValue));
+                        }
+                        else
+                        {
+                            // Null-sentinel sliding entry: still needs live TTL.
+                            (slidingOrLegacyHits ??= []).Add((i, redisKeys[i], default));
+                        }
+
+                        continue;
+                    }
+
+                    if (_IsExpired(frame.LogicalExpiresAt, now))
+                    {
+                        continue;
+                    }
+
+                    TimeSpan? logicalRemaining = frame.LogicalExpiresAt?.Subtract(now);
+
+                    CacheValue<T> cacheValue;
+
+                    if (frame.IsNull)
+                    {
+                        cacheValue = CacheValue<T>.Null;
+                    }
+                    else
+                    {
+                        var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
+                        cacheValue = new CacheValue<T>(framedValue, true);
+                    }
+
+                    result[originalKeys[i]] = new CacheValueWithExpiration<T>(cacheValue, logicalRemaining);
+                }
+                else
+                {
+                    // Non-framed (legacy) entry: no embedded expiration metadata — needs live TTL probe.
+                    T? legacyValue;
+
+                    if (rawValue == _NullValue)
+                    {
+                        legacyValue = default;
+                    }
+                    else
+                    {
+                        legacyValue = _FromRedisValue<T>(rawValue);
+                    }
+
+                    (slidingOrLegacyHits ??= []).Add((i, redisKeys[i], legacyValue));
+                }
+            }
+            catch (Exception e)
+            {
+                _logger.LogDeserializationFailed(e, rawValue, typeof(T).FullName);
+                throw;
+            }
+        }
+
+        // Second pass (optional): pipeline all TTL probes in one batch execution — one network round-trip for
+        // all sliding/legacy entries regardless of count.
+        if (slidingOrLegacyHits is { Count: > 0 })
+        {
+            var batch = _database.CreateBatch();
+            var ttlTasks = new Task<TimeSpan?>[slidingOrLegacyHits.Count];
+
+            for (var j = 0; j < slidingOrLegacyHits.Count; j++)
+            {
+                ttlTasks[j] = batch.KeyTimeToLiveAsync(slidingOrLegacyHits[j].RedisKey, options.ReadMode);
+            }
+
+            batch.Execute();
+            var ttlResults = await Task.WhenAll(ttlTasks).ConfigureAwait(false);
+
+            for (var j = 0; j < slidingOrLegacyHits.Count; j++)
+            {
+                var (idx, _, val) = slidingOrLegacyHits[j];
+                var ttl = ttlResults[j];
+
+                if (ttl is null || ttl.Value <= TimeSpan.Zero)
+                {
+                    // Key already expired or no TTL set.
+                    continue;
+                }
+
+                var cacheVal = val is null ? CacheValue<T>.Null : new CacheValue<T>(val, true);
+
+                result[originalKeys[idx]] = new CacheValueWithExpiration<T>(cacheVal, ttl);
+            }
+        }
+
+        return result.AsReadOnly();
+    }
+
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default

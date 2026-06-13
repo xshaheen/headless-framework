@@ -758,6 +758,28 @@ public sealed class HybridCacheTests : TestBase
             CancellationToken ct = default
         ) => _cache.GetAllAsync<T>(keys, ct);
 
+        public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+            IEnumerable<string> cacheKeys,
+            CancellationToken ct = default
+        )
+        {
+            var values = await _cache.GetAllAsync<T>(cacheKeys, ct).ConfigureAwait(false);
+            var result = new Dictionary<string, CacheValueWithExpiration<T>>(values.Count, StringComparer.Ordinal);
+
+            foreach (var (key, value) in values)
+            {
+                if (!value.HasValue)
+                {
+                    continue;
+                }
+
+                var expiration = await _cache.GetExpirationAsync(key, ct).ConfigureAwait(false);
+                result[key] = new CacheValueWithExpiration<T>(value, expiration);
+            }
+
+            return result;
+        }
+
         public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
             string prefix,
             CancellationToken ct = default
@@ -1605,8 +1627,10 @@ public sealed class HybridCacheTests : TestBase
         // given — L1 holds one of the two requested keys; the L2 batch read for the misses throws
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = Substitute.For<IRemoteCache>();
-        l2.GetAllAsync<int>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
-            .Returns<IDictionary<string, CacheValue<int>>>(_ => throw new InvalidOperationException("L2 read failed"));
+        l2.GetAllWithExpirationAsync<int>(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns<IDictionary<string, CacheValueWithExpiration<int>>>(_ =>
+                throw new InvalidOperationException("L2 read failed")
+            );
 
         var publisher = Substitute.For<IBus>();
         publisher
