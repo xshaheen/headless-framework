@@ -86,6 +86,24 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     internal HybridCacheRecoveryKind? GetKind(string key) => _items.TryGetValue(key, out var item) ? item.Kind : null;
 
     /// <summary>
+    /// Returns <see langword="true"/> when a pending item exists for <paramref name="key"/> AND its
+    /// <see cref="RecoveryItem.EnqueuedAt"/> is strictly newer than <paramref name="messageTimestamp"/>.
+    /// Used by the Tag-invalidation branch of <see cref="HybridCache.HandleInvalidationAsync"/> to gate
+    /// per-key removal: a null timestamp is treated conservatively as "message is infinitely new" (drop nothing).
+    /// </summary>
+    internal bool HasNewerPendingItemThan(string key, DateTimeOffset? messageTimestamp)
+    {
+        if (!_items.TryGetValue(key, out var item))
+        {
+            return false;
+        }
+
+        // A null message timestamp means the sender did not stamp the message; treat it conservatively as
+        // infinitely new — the pending local item cannot be newer, so do not protect it.
+        return messageTimestamp is not null && item.EnqueuedAt > messageTimestamp.Value;
+    }
+
+    /// <summary>
     /// Default retention window for items without a natural expiry (removes, publishes, sets without TTL).
     /// </summary>
     internal TimeSpan DefaultRetention => _options.AutoRecoveryDelay * _options.AutoRecoveryMaxRetries;

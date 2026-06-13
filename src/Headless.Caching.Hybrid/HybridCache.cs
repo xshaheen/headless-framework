@@ -116,7 +116,63 @@ public sealed partial class HybridCache(
 
         if (!string.IsNullOrEmpty(message.Tag))
         {
-            await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
+            if (RecoveryQueue is null)
+            {
+                // Auto-recovery is disabled: no queue to consult, bulk remove is safe.
+                await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                // Recovery-aware tag invalidation: a key whose pending recovery item is NEWER than this
+                // message won the race — its L1 entry holds the most-recent local intent and must not be
+                // wiped (the replay would find nothing, declare itself obsolete, and the value would be lost
+                // on every node). Remove only the keys WITHOUT a surviving newer item; skip the rest.
+                //
+                // GetTaggedKeys returns a snapshot of the tag index that may be momentarily stale under
+                // concurrent writes; RemoveAsync on each unprotected key has the same live-entry guard as
+                // the bulk RemoveByTagAsync path.
+                var taggedKeys = LocalCache.GetTaggedKeys(message.Tag);
+
+                if (taggedKeys.Count == 0)
+                {
+                    // No indexed members: nothing to do.
+                }
+                else
+                {
+                    // Check once whether any key in the tag set is protected; if not, the bulk path is safe
+                    // and avoids iterating the full set twice.
+                    var hasProtectedKey = false;
+
+                    foreach (var key in taggedKeys)
+                    {
+                        if (RecoveryQueue.HasNewerPendingItemThan(key, message.Timestamp))
+                        {
+                            hasProtectedKey = true;
+                            break;
+                        }
+                    }
+
+                    if (!hasProtectedKey)
+                    {
+                        await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        foreach (var key in taggedKeys)
+                        {
+                            if (RecoveryQueue.HasNewerPendingItemThan(key, message.Timestamp))
+                            {
+                                _logger.LogIgnoredStaleRemoteInvalidation(key);
+                            }
+                            else
+                            {
+                                await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false);
+                            }
+                        }
+                    }
+                }
+            }
+
             return;
         }
 

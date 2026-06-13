@@ -1533,6 +1533,15 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
     }
 
     /// <inheritdoc />
+    public IReadOnlyCollection<string> GetTaggedKeys(string tag)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(tag);
+
+        return _tagIndex.TryGetValue(tag, out var taggedKeys) ? (IReadOnlyCollection<string>)taggedKeys.Keys : [];
+    }
+
+    /// <inheritdoc />
     public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
