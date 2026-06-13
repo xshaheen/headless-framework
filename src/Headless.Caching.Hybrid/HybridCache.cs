@@ -329,25 +329,45 @@ public sealed partial class HybridCache(
 
         var distributedResults = distributedRead.Value!;
 
-        var valuesToCache = new Dictionary<string, (T Value, TimeSpan? Expiration)>(StringComparer.Ordinal);
+        // Mirror each L2 hit into L1 capped by its exact remaining L2 logical expiration (so the L1 copy never
+        // outlives L2 freshness). The bulk L2 read returns values only, so fetch the per-key expirations
+        // concurrently in one WhenAll rather than serially per key.
+        var hits = new List<KeyValuePair<string, CacheValue<T>>>(distributedResults.Count);
         foreach (var kvp in distributedResults)
         {
             result[kvp.Key] = kvp.Value;
             if (kvp.Value is { HasValue: true, Value: not null })
             {
-                var expirationRead = await _ReadFromL2Async(
-                        kvp.Key,
-                        ct => l2Cache.GetExpirationAsync(kvp.Key, ct),
-                        _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
-                        DistributedCacheTimeoutKind.Soft,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
+                hits.Add(kvp);
+            }
+        }
 
-                if (expirationRead.IsSuccess)
-                {
-                    valuesToCache[kvp.Key] = (kvp.Value.Value, _GetLocalExpiration(expirationRead.Value));
-                }
+        if (hits.Count == 0)
+        {
+            return result;
+        }
+
+        var expirationReads = await Task.WhenAll(
+                hits.Select(hit =>
+                    _ReadFromL2Async(
+                            hit.Key,
+                            ct => l2Cache.GetExpirationAsync(hit.Key, ct),
+                            _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
+                            DistributedCacheTimeoutKind.Soft,
+                            cancellationToken
+                        )
+                        .AsTask()
+                )
+            )
+            .ConfigureAwait(false);
+
+        var valuesToCache = new Dictionary<string, (T Value, TimeSpan? Expiration)>(StringComparer.Ordinal);
+        for (var i = 0; i < hits.Count; i++)
+        {
+            var expirationRead = expirationReads[i];
+            if (expirationRead.IsSuccess)
+            {
+                valuesToCache[hits[i].Key] = (hits[i].Value.Value!, _GetLocalExpiration(expirationRead.Value));
             }
         }
 
