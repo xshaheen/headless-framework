@@ -52,6 +52,11 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     private int _isDisposed;
     private RecoveryItem? _replaying;
 
+    // Tracks the item with the earliest ExpiresAt so the queue-full eviction path avoids an O(N) scan.
+    // Maintained incrementally on every add inside _admissionLock; invalidated (set to null) when that tracked item
+    // is removed so the next queue-full add triggers a one-time O(N) re-scan to find the new minimum.
+    private RecoveryItem? _minExpiryItem;
+
     public HybridCacheRecoveryQueue(HybridCacheOptions options, TimeProvider timeProvider, ILogger logger)
     {
         _options = options;
@@ -139,6 +144,14 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                 if (victim is not null && victim.ExpiresAt < expiresAt)
                 {
                     _items.TryRemove(victim.Key, out _);
+
+                    // The minimum-expiry item is being evicted; invalidate the tracked pointer so the next
+                    // queue-full add re-scans for the new minimum rather than comparing against a stale reference.
+                    if (ReferenceEquals(_minExpiryItem, victim))
+                    {
+                        _minExpiryItem = null;
+                    }
+
                     _logger.LogAutoRecoveryItemEvicted(victim.Key, victim.Kind);
                 }
                 else
@@ -150,6 +163,13 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             }
 
             _items[key] = item;
+
+            // Maintain the incremental minimum-expiry pointer: cheap compare on every add, O(N) re-scan only
+            // after the tracked minimum is evicted (above) or removed via OnSuccessfulL2Operation/conflict.
+            if (_minExpiryItem is null || item.ExpiresAt < _minExpiryItem.ExpiresAt)
+            {
+                _minExpiryItem = item;
+            }
         }
 
         _logger.LogAutoRecoveryItemQueued(key, kind);
@@ -163,6 +183,10 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     {
         if (_items.TryRemove(key, out var item))
         {
+            // Conservatively invalidate the tracked minimum: we don't hold _admissionLock here, so we can't
+            // cheaply confirm whether this item was the minimum. Null forces a one-time re-scan on the next
+            // queue-full add. Volatile ensures the write is visible to threads entering Enqueue.
+            Volatile.Write(ref _minExpiryItem, null);
             _logger.LogAutoRecoveryItemSuperseded(key, item.Kind);
         }
     }
@@ -360,11 +384,29 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         }
 
         // Fire-and-forget: ProcessAsync never throws, and the _processing gate prevents overlapping passes.
-        _ = ProcessAsync(_disposeCts.Token);
+        // Attach a fault observer so an unexpected exception (e.g. from logger or TimeProvider) is logged
+        // rather than silently lost as an unobserved task fault.
+        var task = ProcessAsync(_disposeCts.Token);
+        _ = task.ContinueWith(
+            faulted => _logger.LogAutoRecoveryProcessUnexpectedFault(faulted.Exception!),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default
+        );
     }
 
     private RecoveryItem? _FindEarliestExpiry()
     {
+        // Fast path: the tracked pointer is valid (non-null) — return it without scanning.
+        // Called only under _admissionLock, so the pointer read is safe.
+        if (_minExpiryItem is not null)
+        {
+            return _minExpiryItem;
+        }
+
+        // Slow path (O(N)): triggered only when the previously-tracked minimum was removed or evicted outside
+        // the Enqueue hot path (OnSuccessfulL2Operation, conflict removal, expiry sweep). Re-scan once to find
+        // the new minimum and cache it for subsequent queue-full admissions.
         RecoveryItem? earliest = null;
 
         foreach (var item in _items.Values)
@@ -375,6 +417,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             }
         }
 
+        _minExpiryItem = earliest;
         return earliest;
     }
 
@@ -382,6 +425,9 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     {
         if (_items.TryRemove(pair))
         {
+            // Same conservative invalidation as OnSuccessfulL2Operation: no lock held here, so null to force
+            // a re-scan on the next queue-full admission rather than comparing against a potentially stale pointer.
+            Volatile.Write(ref _minExpiryItem, null);
             _logger.LogAutoRecoveryItemConflicted(pair.Key, pair.Value.Kind);
         }
     }
@@ -541,4 +587,12 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
         string key,
         HybridCacheRecoveryKind kind
     );
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "AutoRecoveryProcessUnexpectedFault",
+        Level = LogLevel.Error,
+        Message = "Auto-recovery background processing faulted unexpectedly; the recovery loop will resume on the next timer tick"
+    )]
+    public static partial void LogAutoRecoveryProcessUnexpectedFault(this ILogger logger, Exception exception);
 }

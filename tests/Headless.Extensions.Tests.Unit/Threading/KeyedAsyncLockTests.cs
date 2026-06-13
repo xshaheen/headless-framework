@@ -793,9 +793,18 @@ public sealed class KeyedAsyncLockTests : TestBase
 
     private static int _SemaphoreCount(KeyedAsyncLock keyedLock)
     {
-        var field = typeof(KeyedAsyncLock).GetField("_semaphores", BindingFlags.Instance | BindingFlags.NonPublic);
-        var semaphores = (System.Collections.IDictionary)field!.GetValue(keyedLock)!;
+        var shardsField = typeof(KeyedAsyncLock).GetField("_shards", BindingFlags.Instance | BindingFlags.NonPublic);
+        var shards = (Array)shardsField!.GetValue(keyedLock)!;
 
-        return semaphores.Count;
+        var total = 0;
+
+        foreach (var shard in shards)
+        {
+            var mapField = shard!.GetType().GetField("Map", BindingFlags.Instance | BindingFlags.NonPublic);
+            var map = (System.Collections.IDictionary)mapField!.GetValue(shard)!;
+            total += map.Count;
+        }
+
+        return total;
     }
 }

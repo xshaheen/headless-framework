@@ -53,6 +53,11 @@ public readonly record struct CacheEntryOptions
     /// immediately and starts a non-blocking background refresh, deduplicated per key. Eager refresh and sliding
     /// expiration are not supported together and are rejected by the factory coordinator.
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown at the start of a factory-backed operation when the value is set and is not strictly greater than
+    /// <c>0</c> or not strictly less than <c>1</c> — i.e. when it equals <c>0</c>, equals <c>1</c>, or falls
+    /// outside the open interval <c>(0, 1)</c>.
+    /// </exception>
     public float? EagerRefreshThreshold { get; init; }
 
     /// <summary>

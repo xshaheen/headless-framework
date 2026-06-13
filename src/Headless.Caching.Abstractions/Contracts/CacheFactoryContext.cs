@@ -58,8 +58,10 @@ public sealed class CacheFactoryContext<T>
     public CacheEntryOptions Options { get; set; }
 
     /// <summary>
-    /// Gets or sets the invalidation tags persisted with the entry. Initialized from the existing entry's tags;
-    /// mutations are persisted on both modified and not-modified writes.
+    /// Gets or sets the invalidation tags persisted with the entry. Initialized from the existing entry's tags when
+    /// one exists (carry-forward), or from <see cref="CacheEntryOptions.Tags"/> when the call supplies them (call
+    /// tags win over carried tags). Setting this to <see langword="null"/> inside the factory discards any carried
+    /// tags so the written entry has none. Mutations are persisted on both modified and not-modified writes.
     /// </summary>
     public IReadOnlyCollection<string>? Tags { get; set; }
 

@@ -14,6 +14,11 @@ namespace Headless.Threading;
 /// is automatically cleaned up when no longer in use.
 /// </para>
 /// <para>
+/// The dictionary is sharded into <see cref="_ShardCount"/> stripes to reduce contention under
+/// high key-cardinality workloads. Each acquire/release locks only the shard that owns the key
+/// rather than a single process-wide monitor.
+/// </para>
+/// <para>
 /// <b>Cache stampede protection example:</b>
 /// </para>
 /// <code>
@@ -41,8 +46,38 @@ namespace Headless.Threading;
 [PublicAPI]
 public sealed class KeyedAsyncLock : IDisposable
 {
-    private readonly Dictionary<string, RefCountedSemaphore> _semaphores = new(StringComparer.Ordinal);
+    // Power-of-two near ProcessorCount, clamped to [8, 64].
+    // Using a power of two lets shard selection reduce to a fast bitmask (hash & (_ShardCount-1))
+    // instead of a division, and avoids modulo bias.
+    private static readonly int _ShardCount = _ComputeShardCount();
+
+    private static int _ComputeShardCount()
+    {
+        // Round ProcessorCount up to the nearest power of two, then clamp.
+        var n = Environment.ProcessorCount;
+        var p = 1;
+
+        while (p < n)
+        {
+            p <<= 1;
+        }
+
+        return Math.Clamp(p, 8, 64);
+    }
+
+    private readonly Shard[] _shards;
     private bool _disposed;
+
+    /// <summary>Initializes a new <see cref="KeyedAsyncLock"/> instance.</summary>
+    public KeyedAsyncLock()
+    {
+        _shards = new Shard[_ShardCount];
+
+        for (var i = 0; i < _shards.Length; i++)
+        {
+            _shards[i] = new Shard();
+        }
+    }
 
     /// <summary>
     /// Asynchronously acquires a lock for the specified key.
@@ -215,66 +250,19 @@ public sealed class KeyedAsyncLock : IDisposable
         return null;
     }
 
-    private SemaphoreSlim _GetOrCreate(string key)
+    private Shard _GetShard(string key)
     {
-        lock (_semaphores)
-        {
-            if (_semaphores.TryGetValue(key, out var item))
-            {
-                ++item.RefCount;
-                return item.Semaphore;
-            }
-
-#pragma warning disable CA2000 // The SemaphoreSlim will be disposed when the RefCountedSemaphore is removed
-            var newItem = new RefCountedSemaphore(new SemaphoreSlim(1, 1));
-#pragma warning restore CA2000
-            _semaphores[key] = newItem;
-            return newItem.Semaphore;
-        }
+        // StringComparer.Ordinal matches the per-shard dictionary comparer, ensuring the same key
+        // always maps to the same shard regardless of the calling context.
+        var hash = StringComparer.Ordinal.GetHashCode(key);
+        return _shards[hash & (_ShardCount - 1)];
     }
 
-    private void _DecrementRefCount(string key)
-    {
-        lock (_semaphores)
-        {
-            if (!_semaphores.TryGetValue(key, out var item))
-            {
-                return;
-            }
+    private SemaphoreSlim _GetOrCreate(string key) => _GetShard(key).GetOrCreate(key);
 
-            --item.RefCount;
+    private void _DecrementRefCount(string key) => _GetShard(key).DecrementRefCount(key);
 
-            if (item.RefCount == 0)
-            {
-                _semaphores.Remove(key);
-                item.Semaphore.Dispose();
-            }
-        }
-    }
-
-    private void _Release(string key)
-    {
-        lock (_semaphores)
-        {
-            if (!_semaphores.TryGetValue(key, out var item))
-            {
-                return;
-            }
-
-            --item.RefCount;
-
-            if (item.RefCount == 0)
-            {
-                _semaphores.Remove(key);
-                item.Semaphore.Release();
-                item.Semaphore.Dispose();
-            }
-            else
-            {
-                item.Semaphore.Release();
-            }
-        }
-    }
+    private void _Release(string key) => _GetShard(key).Release(key);
 
     /// <summary>
     /// Disposes all semaphores held by this instance.
@@ -288,14 +276,9 @@ public sealed class KeyedAsyncLock : IDisposable
 
         _disposed = true;
 
-        lock (_semaphores)
+        foreach (var shard in _shards)
         {
-            foreach (var item in _semaphores.Values)
-            {
-                item.Semaphore.Dispose();
-            }
-
-            _semaphores.Clear();
+            shard.DisposeAll();
         }
     }
 
@@ -318,5 +301,86 @@ public sealed class KeyedAsyncLock : IDisposable
     {
         public int RefCount { get; set; } = 1;
         public SemaphoreSlim Semaphore { get; } = semaphore;
+    }
+
+    // Each shard owns its lock and dictionary; all bookkeeping happens inside the shard so the monitor stays a
+    // private field (never exposed), keeping lock-target analysis happy and scoping contention to the shard.
+    private sealed class Shard
+    {
+        // Lock is .NET 9+ and performs better than lock(object) on uncontended paths.
+        private readonly Lock _gate = new();
+
+        // Internal (not private) so the test suite can reflect the live count; never used as a lock target.
+        internal readonly Dictionary<string, RefCountedSemaphore> Map = new(StringComparer.Ordinal);
+
+        public SemaphoreSlim GetOrCreate(string key)
+        {
+            lock (_gate)
+            {
+                if (Map.TryGetValue(key, out var item))
+                {
+                    ++item.RefCount;
+                    return item.Semaphore;
+                }
+
+#pragma warning disable CA2000 // The SemaphoreSlim will be disposed when the RefCountedSemaphore is removed
+                var newItem = new RefCountedSemaphore(new SemaphoreSlim(1, 1));
+#pragma warning restore CA2000
+                Map[key] = newItem;
+                return newItem.Semaphore;
+            }
+        }
+
+        public void DecrementRefCount(string key)
+        {
+            lock (_gate)
+            {
+                if (!Map.TryGetValue(key, out var item))
+                {
+                    return;
+                }
+
+                if (--item.RefCount == 0)
+                {
+                    Map.Remove(key);
+                    item.Semaphore.Dispose();
+                }
+            }
+        }
+
+        public void Release(string key)
+        {
+            lock (_gate)
+            {
+                if (!Map.TryGetValue(key, out var item))
+                {
+                    return;
+                }
+
+                if (--item.RefCount == 0)
+                {
+                    Map.Remove(key);
+                    item.Semaphore.Release();
+                    item.Semaphore.Dispose();
+                }
+                else
+                {
+                    item.Semaphore.Release();
+                }
+            }
+        }
+
+        public void DisposeAll()
+        {
+            lock (_gate)
+            {
+                foreach (var item in Map.Values)
+                {
+                    item.Semaphore.Dispose();
+                }
+
+                Map.Clear();
+            }
+        }
     }
 }

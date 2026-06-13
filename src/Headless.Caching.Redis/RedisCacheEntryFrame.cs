@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Text;
 using Headless.Checks;
@@ -41,127 +42,158 @@ internal static class RedisCacheEntryFrame
     {
         var valueBytes = isNull ? [] : _ToBytes(value);
         var etagBytes = etag is null ? null : Encoding.UTF8.GetBytes(etag);
-        // An empty tag collection encodes as absent: there is no observable difference between "no tags"
-        // and "zero tags", and omitting the section keeps the frame minimal.
-        var tagBytes = tags is { Count: > 0 } ? EncodeTags(tags) : null;
-
         if (etagBytes is not null)
         {
             Argument.IsLessThanOrEqualTo(etagBytes.Length, ushort.MaxValue, paramName: nameof(etag));
         }
 
-        var payloadOffset = HeaderLength;
-        var flags = isNull ? NullFlag : (byte)0;
+        // An empty tag collection encodes as absent: there is no observable difference between "no tags"
+        // and "zero tags", and omitting the section keeps the frame minimal.
+        //
+        // For the transient scratch buffer used while building the tag section we rent from ArrayPool —
+        // it is fully consumed (CopyTo'd) inside this method and returned before we exit, so its lifetime
+        // is strictly contained. The main frame buffer is NOT pooled: StackExchange.Redis stores the
+        // RedisValue (and its backing byte[]) inside the queued Message object and reads it asynchronously
+        // when the socket write fires, so the buffer escapes this method and returning it to the pool would
+        // corrupt in-flight data.
+        byte[]? tagPooled = null;
+        int tagLength = 0;
 
-        if (logicalExpiresAt.HasValue)
+        if (tags is { Count: > 0 })
         {
-            flags |= HasLogicalExpiresAtFlag;
+            tagLength = _MeasureTagsLength(tags);
+            tagPooled = ArrayPool<byte>.Shared.Rent(tagLength);
         }
 
-        if (physicalExpiresAt.HasValue)
+        try
         {
-            flags |= HasPhysicalExpiresAtFlag;
-        }
+            var payloadOffset = HeaderLength;
+            var flags = isNull ? NullFlag : (byte)0;
 
-        if (slidingExpiration.HasValue)
+            if (logicalExpiresAt.HasValue)
+            {
+                flags |= HasLogicalExpiresAtFlag;
+            }
+
+            if (physicalExpiresAt.HasValue)
+            {
+                flags |= HasPhysicalExpiresAtFlag;
+            }
+
+            if (slidingExpiration.HasValue)
+            {
+                flags |= HasSlidingExpirationFlag;
+                payloadOffset += sizeof(long);
+            }
+
+            if (eagerRefreshAt.HasValue)
+            {
+                flags |= HasEagerRefreshAtFlag;
+                payloadOffset += sizeof(long);
+            }
+
+            if (lastModifiedAt.HasValue)
+            {
+                flags |= HasLastModifiedAtFlag;
+                payloadOffset += sizeof(long);
+            }
+
+            if (etagBytes is not null)
+            {
+                flags |= HasETagFlag;
+                payloadOffset += sizeof(ushort) + etagBytes.Length;
+            }
+
+            if (tagPooled is not null)
+            {
+                // Write the tag section into the pooled scratch buffer (slice to exact logical length to
+                // guard against the pool returning an oversized array).
+                _WriteTagsInto(tags!, tagPooled.AsSpan(0, tagLength));
+                flags |= HasTagsFlag;
+                payloadOffset += tagLength;
+            }
+
+            var buffer = new byte[payloadOffset + valueBytes.Length];
+            buffer[0] = Magic;
+            buffer[1] = Version;
+            buffer[2] = flags;
+
+            if (logicalExpiresAt.HasValue)
+            {
+                BinaryPrimitives.WriteInt64LittleEndian(
+                    buffer.AsSpan(3, sizeof(long)),
+                    _ToUnixTimeMilliseconds(logicalExpiresAt.Value)
+                );
+            }
+
+            if (physicalExpiresAt.HasValue)
+            {
+                BinaryPrimitives.WriteInt64LittleEndian(
+                    buffer.AsSpan(11, sizeof(long)),
+                    _ToUnixTimeMilliseconds(physicalExpiresAt.Value)
+                );
+            }
+
+            // Optional sections follow the fixed header in layout order: fixed-width fields first (sliding,
+            // eager-refresh, last-modified), then the var-length sections (etag, tags), then the value segment.
+            var offset = HeaderLength;
+
+            if (slidingExpiration.HasValue)
+            {
+                BinaryPrimitives.WriteInt64LittleEndian(
+                    buffer.AsSpan(offset, sizeof(long)),
+                    (long)slidingExpiration.Value.TotalMilliseconds
+                );
+                offset += sizeof(long);
+            }
+
+            if (eagerRefreshAt.HasValue)
+            {
+                BinaryPrimitives.WriteInt64LittleEndian(
+                    buffer.AsSpan(offset, sizeof(long)),
+                    _ToUnixTimeMilliseconds(eagerRefreshAt.Value)
+                );
+                offset += sizeof(long);
+            }
+
+            if (lastModifiedAt.HasValue)
+            {
+                BinaryPrimitives.WriteInt64LittleEndian(
+                    buffer.AsSpan(offset, sizeof(long)),
+                    _ToUnixTimeMilliseconds(lastModifiedAt.Value)
+                );
+                offset += sizeof(long);
+            }
+
+            if (etagBytes is not null)
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    buffer.AsSpan(offset, sizeof(ushort)),
+                    (ushort)etagBytes.Length
+                );
+                offset += sizeof(ushort);
+                etagBytes.CopyTo(buffer.AsSpan(offset));
+                offset += etagBytes.Length;
+            }
+
+            if (tagPooled is not null)
+            {
+                // Copy from the pooled scratch (exact logical length) into the frame buffer.
+                tagPooled.AsSpan(0, tagLength).CopyTo(buffer.AsSpan(offset));
+                offset += tagLength;
+            }
+
+            valueBytes.CopyTo(buffer.AsSpan(offset));
+
+            return buffer;
+        }
+        finally
         {
-            flags |= HasSlidingExpirationFlag;
-            payloadOffset += sizeof(long);
+            if (tagPooled is not null)
+            {
+                ArrayPool<byte>.Shared.Return(tagPooled);
+            }
         }
-
-        if (eagerRefreshAt.HasValue)
-        {
-            flags |= HasEagerRefreshAtFlag;
-            payloadOffset += sizeof(long);
-        }
-
-        if (lastModifiedAt.HasValue)
-        {
-            flags |= HasLastModifiedAtFlag;
-            payloadOffset += sizeof(long);
-        }
-
-        if (etagBytes is not null)
-        {
-            flags |= HasETagFlag;
-            payloadOffset += sizeof(ushort) + etagBytes.Length;
-        }
-
-        if (tagBytes is not null)
-        {
-            flags |= HasTagsFlag;
-            payloadOffset += tagBytes.Length;
-        }
-
-        var buffer = new byte[payloadOffset + valueBytes.Length];
-        buffer[0] = Magic;
-        buffer[1] = Version;
-        buffer[2] = flags;
-
-        if (logicalExpiresAt.HasValue)
-        {
-            BinaryPrimitives.WriteInt64LittleEndian(
-                buffer.AsSpan(3, sizeof(long)),
-                _ToUnixTimeMilliseconds(logicalExpiresAt.Value)
-            );
-        }
-
-        if (physicalExpiresAt.HasValue)
-        {
-            BinaryPrimitives.WriteInt64LittleEndian(
-                buffer.AsSpan(11, sizeof(long)),
-                _ToUnixTimeMilliseconds(physicalExpiresAt.Value)
-            );
-        }
-
-        // Optional sections follow the fixed header in layout order: fixed-width fields first (sliding,
-        // eager-refresh, last-modified), then the var-length sections (etag, tags), then the value segment.
-        var offset = HeaderLength;
-
-        if (slidingExpiration.HasValue)
-        {
-            BinaryPrimitives.WriteInt64LittleEndian(
-                buffer.AsSpan(offset, sizeof(long)),
-                (long)slidingExpiration.Value.TotalMilliseconds
-            );
-            offset += sizeof(long);
-        }
-
-        if (eagerRefreshAt.HasValue)
-        {
-            BinaryPrimitives.WriteInt64LittleEndian(
-                buffer.AsSpan(offset, sizeof(long)),
-                _ToUnixTimeMilliseconds(eagerRefreshAt.Value)
-            );
-            offset += sizeof(long);
-        }
-
-        if (lastModifiedAt.HasValue)
-        {
-            BinaryPrimitives.WriteInt64LittleEndian(
-                buffer.AsSpan(offset, sizeof(long)),
-                _ToUnixTimeMilliseconds(lastModifiedAt.Value)
-            );
-            offset += sizeof(long);
-        }
-
-        if (etagBytes is not null)
-        {
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(offset, sizeof(ushort)), (ushort)etagBytes.Length);
-            offset += sizeof(ushort);
-            etagBytes.CopyTo(buffer.AsSpan(offset));
-            offset += etagBytes.Length;
-        }
-
-        if (tagBytes is not null)
-        {
-            tagBytes.CopyTo(buffer.AsSpan(offset));
-            offset += tagBytes.Length;
-        }
-
-        valueBytes.CopyTo(buffer.AsSpan(offset));
-
-        return buffer;
     }
 
     public static DecodedFrame Decode(RedisValue value)
@@ -261,9 +293,21 @@ internal static class RedisCacheEntryFrame
     /// </summary>
     internal static byte[] EncodeTags(IReadOnlyCollection<string> tags)
     {
+        var length = _MeasureTagsLength(tags);
+        var buffer = new byte[length];
+        _WriteTagsInto(tags, buffer.AsSpan());
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// Measures the exact number of bytes required to encode <paramref name="tags"/> in the tag-section wire
+    /// format (u16le count + per-tag u16le-length-prefixed UTF-8). Used to size a buffer before writing.
+    /// </summary>
+    private static int _MeasureTagsLength(IReadOnlyCollection<string> tags)
+    {
         Argument.IsLessThanOrEqualTo(tags.Count, ushort.MaxValue, paramName: nameof(tags));
 
-        // First pass: measure total byte count using GetByteCount to avoid allocating per-tag byte[] arrays.
         var length = sizeof(ushort); // u16le tag count prefix
 
         foreach (var tag in tags)
@@ -273,21 +317,27 @@ internal static class RedisCacheEntryFrame
             length += sizeof(ushort) + tagByteCount; // per-tag: u16le length prefix + UTF-8 bytes
         }
 
-        var buffer = new byte[length];
-        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(0, sizeof(ushort)), (ushort)tags.Count);
+        return length;
+    }
+
+    /// <summary>
+    /// Writes the tag-section wire encoding into <paramref name="destination"/>, which must be exactly
+    /// <see cref="_MeasureTagsLength"/> bytes long (or a correctly-sized slice of a pooled buffer).
+    /// </summary>
+    private static void _WriteTagsInto(IReadOnlyCollection<string> tags, Span<byte> destination)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(destination[..sizeof(ushort)], (ushort)tags.Count);
         var offset = sizeof(ushort);
 
-        // Second pass: encode each tag directly into the pre-sized destination buffer.
+        // Encode each tag directly into the pre-sized destination span.
         foreach (var tag in tags)
         {
             // Write the UTF-8 bytes into the buffer starting after the per-tag length prefix slot,
             // then back-fill the prefix with the actual byte count written.
-            var written = Encoding.UTF8.GetBytes(tag, buffer.AsSpan(offset + sizeof(ushort)));
-            BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(offset, sizeof(ushort)), (ushort)written);
+            var written = Encoding.UTF8.GetBytes(tag, destination[(offset + sizeof(ushort))..]);
+            BinaryPrimitives.WriteUInt16LittleEndian(destination.Slice(offset, sizeof(ushort)), (ushort)written);
             offset += sizeof(ushort) + written;
         }
-
-        return buffer;
     }
 
     private static bool _TryReadInt64(byte[] bytes, bool present, ref int offset, out long value)
