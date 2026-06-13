@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.PostgreSql;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
@@ -18,10 +19,11 @@ public sealed class PostgreSqlCommitSignalSourceTests
         );
         var calls = 0;
         var key = new object();
+        using var provider = new ServiceCollection().BuildServiceProvider();
         var scope = source.Attach(
             new CommitCoordinatorBindings
             {
-                Services = new EmptyServiceProvider(),
+                Services = provider,
                 ProviderTransactionKey = key,
             },
             CancellationToken.None
@@ -53,10 +55,11 @@ public sealed class PostgreSqlCommitSignalSourceTests
             NullLogger<PostgreSqlCommitSignalSource>.Instance
         );
         var key = new object();
+        using var provider = new ServiceCollection().BuildServiceProvider();
         using var first = source.Attach(
             new CommitCoordinatorBindings
             {
-                Services = new EmptyServiceProvider(),
+                Services = provider,
                 ProviderTransactionKey = key,
             },
             CancellationToken.None
@@ -66,7 +69,7 @@ public sealed class PostgreSqlCommitSignalSourceTests
             .Invoking(x => x.Attach(
                 new CommitCoordinatorBindings
                 {
-                    Services = new EmptyServiceProvider(),
+                    Services = provider,
                     ProviderTransactionKey = key,
                 },
                 CancellationToken.None
@@ -76,8 +79,40 @@ public sealed class PostgreSqlCommitSignalSourceTests
             .WithMessage("A PostgreSQL commit coordination scope is already attached for this provider transaction key.");
     }
 
-    private sealed class EmptyServiceProvider : IServiceProvider
+    [Fact]
+    public async Task should_keep_owned_service_scope_alive_until_drain_resolves_scoped_services()
     {
-        public object? GetService(Type serviceType) => null;
+        var source = new PostgreSqlCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<PostgreSqlCommitSignalSource>.Instance
+        );
+        var services = new ServiceCollection();
+        services.AddScoped<ScopedMarker>();
+        await using var provider = services.BuildServiceProvider();
+        await using var callerScope = provider.CreateAsyncScope();
+        var key = new object();
+        ScopedMarker? marker = null;
+
+        var scope = source.Attach(
+            new CommitCoordinatorBindings { Services = callerScope.ServiceProvider, ProviderTransactionKey = key },
+            CancellationToken.None
+        );
+
+        scope.Coordinator.OnCommit((context, _) =>
+        {
+            // The drain resolves from the source's OWNED child scope, not the caller's — so disposing the caller's
+            // scope first must not strand the drain (mirrors the SqlServer owned-scope guarantee).
+            marker = context.Services.GetRequiredService<ScopedMarker>();
+
+            return ValueTask.CompletedTask;
+        });
+
+        await callerScope.DisposeAsync();
+        await source.SignalCommittedAsync(key, CancellationToken.None);
+        await scope.DisposeAsync();
+
+        marker.Should().NotBeNull();
     }
+
+    private sealed class ScopedMarker;
 }

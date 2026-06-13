@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Headless.CommitCoordination;
 using Headless.Checks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -35,13 +36,28 @@ public sealed partial class PostgreSqlCommitSignalSource(
         Argument.IsNotNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var scope = scopeFactory.Begin(bindings.Services, bindings.Capabilities);
+        // Own a child DI scope (as the SqlServer source does): a sync un-signalled Dispose offloads the rollback
+        // drain to the background, where callbacks resolve from this scope's services — not the caller's request
+        // scope, which may already be disposed by the time the background drain runs.
+        var ownedServices = bindings.Services.CreateAsyncScope();
+        ICommitScope scope;
+
+        try
+        {
+            scope = scopeFactory.Begin(ownedServices.ServiceProvider, bindings.Capabilities);
+        }
+        catch
+        {
+            ownedServices.Dispose();
+            throw;
+        }
 
         if (bindings.ProviderTransactionKey is not null)
         {
             var trackedScope = new TrackedCommitScope(
                 scope,
-                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self))
+                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self)),
+                ownedServices
             );
 
             if (!_scopes.TryAdd(bindings.ProviderTransactionKey, trackedScope))
@@ -55,6 +71,10 @@ public sealed partial class PostgreSqlCommitSignalSource(
             }
 
             scope = trackedScope;
+        }
+        else
+        {
+            scope = new TrackedCommitScope(scope, static _ => { }, ownedServices);
         }
 
         return scope;

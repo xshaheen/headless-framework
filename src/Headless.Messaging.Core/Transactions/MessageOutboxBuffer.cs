@@ -11,17 +11,20 @@ internal sealed partial class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMes
 {
     private readonly IDispatcher _dispatcher;
     private readonly TimeSpan _flushTimeout;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<MessageOutboxBuffer> _logger;
 
     public MessageOutboxBuffer(
         ICommitCoordinator coordinator,
         IDispatcher dispatcher,
         TimeSpan flushTimeout,
+        TimeProvider timeProvider,
         ILogger<MessageOutboxBuffer> logger
     )
     {
         _dispatcher = dispatcher;
         _flushTimeout = flushTimeout;
+        _timeProvider = timeProvider;
         _logger = logger;
         coordinator.OnCommit(FlushAsync);
     }
@@ -33,7 +36,7 @@ internal sealed partial class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMes
         // drain — and the request thread, DI scope, and DB connection — indefinitely. Bound it with an
         // independent timeout: messages are already durably stored in-transaction, so any not dispatched
         // before the deadline are recovered by the relay sweep (dispatch is acceleration, not correctness).
-        using var timeoutCts = new CancellationTokenSource(_flushTimeout);
+        using var timeoutCts = new CancellationTokenSource(_flushTimeout, _timeProvider);
 
         try
         {

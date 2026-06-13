@@ -346,20 +346,17 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
 
     private void _SetTerminal(CommitCoordinatorState terminalState)
     {
-        var state = State;
-
-        if (state is CommitCoordinatorState.Committed or CommitCoordinatorState.RolledBack)
+        // First-wins via a single CAS, mirroring the root path's transition authority: two concurrent child signals
+        // (e.g. a child commit racing a child rollback) cannot both write, so the child's terminal state — which
+        // gates DisposePromotedRegistrations and _ThrowIfNotActive — is never torn by an interleaved read-modify-write.
+        if (Interlocked.CompareExchange(ref _state, (int)terminalState, (int)CommitCoordinatorState.Active) != (int)CommitCoordinatorState.Active)
         {
             LogIgnoredRacingSignal(
                 _logger,
-                state,
+                State,
                 terminalState == CommitCoordinatorState.Committed ? CommitOutcome.Committed : CommitOutcome.RolledBack
             );
-
-            return;
         }
-
-        Volatile.Write(ref _state, (int)terminalState);
     }
 
     private static Dictionary<Type, ICommitCapability> _CreateCapabilityMap(IEnumerable<ICommitCapability>? capabilities)

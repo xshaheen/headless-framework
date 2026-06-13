@@ -133,6 +133,7 @@ internal sealed class OutboxMessageWriter(
                 var bufferState = new MessageOutboxBufferState(
                     dispatcher,
                     messagingOptions.Value.OutboxFlushTimeout,
+                    timeProvider,
                     outboxBufferLogger
                 );
                 var buffer = context.Coordinator.GetOrAdd(
@@ -142,6 +143,7 @@ internal sealed class OutboxMessageWriter(
                             coordinator,
                             state.Dispatcher,
                             state.FlushTimeout,
+                            state.TimeProvider,
                             state.Logger
                         )
                 );
@@ -182,9 +184,10 @@ internal sealed class OutboxMessageWriter(
         }
     }
 
-    private sealed record MessageOutboxBufferState(
+    private readonly record struct MessageOutboxBufferState(
         IDispatcher Dispatcher,
         TimeSpan FlushTimeout,
+        TimeProvider TimeProvider,
         ILogger<MessageOutboxBuffer> Logger
     );
 
