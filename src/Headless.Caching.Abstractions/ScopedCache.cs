@@ -295,5 +295,147 @@ public sealed class ScopedCache<T> : ICache<T>
         return _cache.SetRemoveAsync(_ScopeKey(key), value, expiration, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNull(cacheKeys);
+        var scoped = new List<string>();
+
+        foreach (var key in cacheKeys)
+        {
+            scoped.Add(_ScopeKey(key));
+        }
+
+        return _cache.RemoveAllAsync(scoped, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// This is NOT scope-isolated: <c>FlushAsync</c> clears the entire underlying cache, not just the
+    /// entries belonging to this scope. To remove only scoped entries, use <see cref="RemoveByPrefixAsync"/>
+    /// with an empty prefix instead.
+    /// </remarks>
+    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    {
+        return _cache.FlushAsync(cancellationToken);
+    }
+
+    #endregion
+
+    #region Management
+
+    /// <inheritdoc />
+    public ValueTask<double> IncrementAsync(
+        string key,
+        double amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.IncrementAsync(_ScopeKey(key), amount, expiration, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<long> IncrementAsync(
+        string key,
+        long amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.IncrementAsync(_ScopeKey(key), amount, expiration, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<double> SetIfHigherAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.SetIfHigherAsync(_ScopeKey(key), value, expiration, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<long> SetIfHigherAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.SetIfHigherAsync(_ScopeKey(key), value, expiration, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<double> SetIfLowerAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.SetIfLowerAsync(_ScopeKey(key), value, expiration, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<long> SetIfLowerAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.SetIfLowerAsync(_ScopeKey(key), value, expiration, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var scopePrefix = _Prefix();
+        var results = await _cache
+            .GetAllKeysByPrefixAsync($"{scopePrefix}{prefix}", cancellationToken)
+            .ConfigureAwait(false);
+
+        var unscoped = new List<string>(results.Count);
+
+        foreach (var key in results)
+        {
+            unscoped.Add(key[scopePrefix.Length..]);
+        }
+
+        return unscoped;
+    }
+
+    /// <inheritdoc />
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    {
+        return _cache.GetCountAsync($"{_Prefix()}{prefix}", cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.ExistsAsync(_ScopeKey(key), cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(key);
+        return _cache.GetExpirationAsync(_ScopeKey(key), cancellationToken);
+    }
+
     #endregion
 }

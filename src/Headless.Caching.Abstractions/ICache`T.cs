@@ -2,6 +2,7 @@
 
 namespace Headless.Caching;
 
+[PublicAPI]
 public interface ICache<T>
 {
     /// <summary>
@@ -157,9 +158,77 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Removes all cached items for the specified cache keys.</summary>
+    ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
+
+    /// <summary>Flush all cached items.</summary>
+    ValueTask FlushAsync(CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region Management
+
+    ValueTask<double> IncrementAsync(
+        string key,
+        double amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    ValueTask<long> IncrementAsync(
+        string key,
+        long amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    ValueTask<double> SetIfHigherAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    ValueTask<long> SetIfHigherAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    ValueTask<double> SetIfLowerAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    ValueTask<long> SetIfLowerAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Gets all keys by prefix.</summary>
+    ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Gets the count of cached items, optionally filtered by key prefix.</summary>
+    ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
+
+    /// <summary>Checks if the key exists in the cache.</summary>
+    ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the remaining expiration of the specified cache key.</summary>
+    ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default);
+
     #endregion
 }
 
+[PublicAPI]
 public class Cache<T>(ICache cache) : ICache<T>
 {
     /// <inheritdoc />
@@ -324,12 +393,97 @@ public class Cache<T>(ICache cache) : ICache<T>
     {
         return cache.SetRemoveAsync(key, value, expiration, cancellationToken);
     }
+
+    public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    {
+        return cache.RemoveAllAsync(cacheKeys, cancellationToken);
+    }
+
+    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    {
+        return cache.FlushAsync(cancellationToken);
+    }
+
+    public ValueTask<double> IncrementAsync(
+        string key,
+        double amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.IncrementAsync(key, amount, expiration, cancellationToken);
+    }
+
+    public ValueTask<long> IncrementAsync(
+        string key,
+        long amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.IncrementAsync(key, amount, expiration, cancellationToken);
+    }
+
+    public ValueTask<double> SetIfHigherAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    }
+
+    public ValueTask<long> SetIfHigherAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+    }
+
+    public ValueTask<double> SetIfLowerAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    }
+
+    public ValueTask<long> SetIfLowerAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+    }
+
+    public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
+    }
+
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    {
+        return cache.GetCountAsync(prefix, cancellationToken);
+    }
+
+    public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return cache.ExistsAsync(key, cancellationToken);
+    }
+
+    public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+    {
+        return cache.GetExpirationAsync(key, cancellationToken);
+    }
 }
-
-public interface IRemoteCache<T> : ICache<T>;
-
-public interface IInMemoryCache<T> : ICache<T>;
-
-public sealed class RemoteCache<T>(IRemoteCache cache) : Cache<T>(cache), IRemoteCache<T>;
-
-public sealed class InMemoryCache<T>(IInMemoryCache cache) : Cache<T>(cache), IInMemoryCache<T>;

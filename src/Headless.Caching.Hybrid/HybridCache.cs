@@ -255,15 +255,7 @@ public sealed partial class HybridCache(
         _logger.LogLocalCacheMiss(key);
         var l2Read = await _ReadFromL2Async(
                 key,
-                async ct =>
-                {
-                    var value = await l2Cache.GetAsync<T>(key, ct).ConfigureAwait(false);
-                    var expiration = value.HasValue
-                        ? await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false)
-                        : null;
-
-                    return (Value: value, Expiration: expiration);
-                },
+                ct => l2Cache.GetWithExpirationAsync<T>(key, ct),
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
                 cancellationToken
@@ -520,11 +512,14 @@ public sealed partial class HybridCache(
                 async ct =>
                 {
                     var value = await l2Cache.GetSetAsync<T>(key, pageIndex, pageSize, ct).ConfigureAwait(false);
-                    var expiration = value.HasValue
-                        ? await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false)
-                        : null;
 
-                    return (Value: value, Expiration: expiration);
+                    if (!value.HasValue)
+                    {
+                        return new CacheValueWithExpiration<ICollection<T>>(value, null);
+                    }
+
+                    var expiration = await l2Cache.GetExpirationAsync(key, ct).ConfigureAwait(false);
+                    return new CacheValueWithExpiration<ICollection<T>>(value, expiration);
                 },
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,

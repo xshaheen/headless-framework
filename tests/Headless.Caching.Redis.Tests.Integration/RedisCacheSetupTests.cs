@@ -92,9 +92,8 @@ public sealed class RedisCacheSetupTests(RedisCacheFixture fixture)
             .Should()
             .BeSameAs(defaultCache);
 
-        // then - the generic adapters resolve over the default cache
+        // then - the generic adapter resolves over the default cache
         host.Services.GetRequiredService<ICache<RedisCacheSetupTests>>().Should().NotBeNull();
-        host.Services.GetRequiredService<IRemoteCache<RedisCacheSetupTests>>().Should().NotBeNull();
 
         await host.StopAsync(TestContext.Current.CancellationToken);
     }

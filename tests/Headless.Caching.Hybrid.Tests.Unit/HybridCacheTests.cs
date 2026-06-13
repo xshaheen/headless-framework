@@ -758,6 +758,22 @@ public sealed class HybridCacheTests : TestBase
             CancellationToken ct = default
         ) => _cache.GetAllAsync<T>(keys, ct);
 
+        public async ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+            string key,
+            CancellationToken ct = default
+        )
+        {
+            var value = await _cache.GetAsync<T>(key, ct).ConfigureAwait(false);
+
+            if (!value.HasValue)
+            {
+                return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+            }
+
+            var expiration = await _cache.GetExpirationAsync(key, ct).ConfigureAwait(false);
+            return new CacheValueWithExpiration<T>(value, expiration);
+        }
+
         public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
             IEnumerable<string> cacheKeys,
             CancellationToken ct = default

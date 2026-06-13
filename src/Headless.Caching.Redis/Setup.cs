@@ -303,7 +303,6 @@ public static class SetupRedisCache
             services.AddInitializerHostedService<RedisCacheScriptsInitializer>();
             services.TryAddSingleton<IRemoteCache, RedisCache>();
             services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
-            services.TryAddSingleton(typeof(IRemoteCache<>), typeof(RemoteCache<>));
 
             if (!isDefault)
             {

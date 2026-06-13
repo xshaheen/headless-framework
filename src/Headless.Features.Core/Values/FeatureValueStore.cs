@@ -38,7 +38,7 @@ public sealed class FeatureValueStore(
     IFeatureDefinitionManager featureDefinitionManager,
     IFeatureValueRecordRepository repository,
     IGuidGenerator guidGenerator,
-    IRemoteCache<FeatureValueCacheItem> cache
+    ICache cache
 ) : IFeatureValueStore
 {
     private readonly TimeSpan _cacheExpiration = 5.Hours();
@@ -51,7 +51,7 @@ public sealed class FeatureValueStore(
     )
     {
         var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
-        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken);
+        var existValueCacheItem = await cache.GetAsync<FeatureValueCacheItem>(cacheKey, cancellationToken);
 
         if (existValueCacheItem.HasValue)
         {
@@ -90,8 +90,8 @@ public sealed class FeatureValueStore(
         }
 
         await cache.UpsertAsync(
-            cacheKey: FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
-            cacheValue: new FeatureValueCacheItem(featureValue.Value),
+            key: FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            value: new FeatureValueCacheItem(featureValue.Value),
             expiration: _cacheExpiration,
             cancellationToken: cancellationToken
         );

@@ -288,6 +288,32 @@ public interface IInMemoryCache : ICache
 public interface IRemoteCache : ICache
 {
     /// <summary>
+    /// Reads a single key in one round-trip and returns the hit's value together with its remaining
+    /// logical expiration, so callers can mirror the value into a local tier without a separate
+    /// expiration query. When the key is not found the returned <see cref="CacheValueWithExpiration{T}.Value"/>
+    /// will have <see cref="CacheValue{T}.HasValue"/> equal to <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// The expiration in the returned <see cref="CacheValueWithExpiration{T}"/> is the remaining logical TTL at
+    /// the moment the entry was read. For entries written without explicit logical-expiry metadata (legacy
+    /// payloads) the <see cref="CacheValueWithExpiration{T}.Expiration"/> is <see langword="null"/>.
+    /// Entries whose logical TTL has already elapsed are treated as misses.
+    /// </remarks>
+    /// <typeparam name="T">The type of the cached value.</typeparam>
+    /// <param name="key">The cache key to look up.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A <see cref="CacheValueWithExpiration{T}"/> containing the value and remaining logical expiration
+    /// when the key is found and has not yet logically expired; otherwise a result whose
+    /// <see cref="CacheValueWithExpiration{T}.Value"/> has <see cref="CacheValue{T}.HasValue"/> equal to
+    /// <see langword="false"/>.
+    /// </returns>
+    ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Reads multiple keys in one round-trip and returns each hit's value together with its remaining
     /// logical expiration, so callers can mirror the value into a local tier without a separate per-key
     /// expiration query. Keys not found in the remote store are omitted from the result.

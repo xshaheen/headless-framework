@@ -986,6 +986,99 @@ public sealed class RedisCache(
         return frame.LogicalExpiresAt?.Subtract(now);
     }
 
+    /// <inheritdoc/>
+    public async ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var redisKey = _GetKey(key);
+        var rawValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+
+        if (!rawValue.HasValue)
+        {
+            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+        }
+
+        try
+        {
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+            var frame = RedisCacheEntryFrame.Decode(rawValue);
+
+            if (frame.IsFramed)
+            {
+                if (_IsExpired(frame.PhysicalExpiresAt, now))
+                {
+                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                }
+
+                if (frame.SlidingExpiration.HasValue)
+                {
+                    // Sliding: logical expiry is maintained by TTL re-arms; the frame's LogicalExpiresAt is a
+                    // lower bound. Re-arm and fetch the live TTL with a single extra round-trip (unavoidable for
+                    // sliding — the live TTL IS the expiration). Rearm is best-effort (fires-and-ignores errors).
+                    await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
+
+                    var ttl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
+
+                    if (ttl is { Ticks: <= 0 })
+                    {
+                        return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                    }
+
+                    CacheValue<T> slidingValue = frame.IsNull
+                        ? CacheValue<T>.Null
+                        : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), true);
+
+                    return new CacheValueWithExpiration<T>(slidingValue, ttl);
+                }
+
+                if (_IsExpired(frame.LogicalExpiresAt, now))
+                {
+                    return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+                }
+
+                TimeSpan? logicalRemaining = frame.LogicalExpiresAt?.Subtract(now);
+
+                CacheValue<T> cacheValue = frame.IsNull
+                    ? CacheValue<T>.Null
+                    : new CacheValue<T>(_DeserializeValueSegment<T>(frame.ValueSegment), true);
+
+                return new CacheValueWithExpiration<T>(cacheValue, logicalRemaining);
+            }
+
+            // Non-framed (legacy/raw) entry: value is present but carries no logical expiry metadata.
+            // Fall back to the live server TTL for the expiration component.
+            CacheValue<T> legacyValue;
+
+            if (rawValue == _NullValue)
+            {
+                legacyValue = CacheValue<T>.Null;
+            }
+            else
+            {
+                legacyValue = new CacheValue<T>(_FromRedisValue<T>(rawValue), true);
+            }
+
+            var legacyTtl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
+
+            if (legacyTtl is { Ticks: <= 0 })
+            {
+                return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+            }
+
+            return new CacheValueWithExpiration<T>(legacyValue, legacyTtl);
+        }
+        catch (Exception e)
+        {
+            _logger.LogDeserializationFailed(e, rawValue, typeof(T).FullName);
+            throw;
+        }
+    }
+
     public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
         int? pageIndex = null,

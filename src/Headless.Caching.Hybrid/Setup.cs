@@ -274,7 +274,12 @@ public static class SetupHybridCache
     {
         if (name is null)
         {
-            return provider.GetRequiredService<TTier>();
+            return provider.GetService<TTier>()
+                ?? throw new InvalidOperationException(
+                    $"HybridCache requires a {typeof(TTier).Name} tier, but none is registered. "
+                        + $"Register a remote tier (for example {registrationHint}), or set "
+                        + $"{nameof(HybridCacheOptions)}.{optionName} to a named instance."
+                );
         }
 
         var cache =

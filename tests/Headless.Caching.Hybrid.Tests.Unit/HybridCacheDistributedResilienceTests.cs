@@ -193,7 +193,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
 
         // then — Hybrid probes L2 again and promotes the recovered value
         recoveredRead.Value.Should().Be(42);
-        l2.ReadAttempts.Should().Be(3, "the value read and its expiration lookup both hit L2 after the circuit closes");
+        l2.ReadAttempts.Should().Be(2, "value + expiration are now fused into a single GetWithExpirationAsync call");
         (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(42);
     }
 

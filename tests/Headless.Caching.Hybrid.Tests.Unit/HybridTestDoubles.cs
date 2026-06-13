@@ -9,20 +9,6 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
 {
     public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;
 
-    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-        string key,
-        Func<CancellationToken, ValueTask<T?>> factory,
-        CacheEntryOptions options,
-        CancellationToken cancellationToken = default
-    ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
-
-    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-        string key,
-        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
-        CacheEntryOptions options,
-        CancellationToken cancellationToken = default
-    ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
-
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
         ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, cancellationToken);
 
@@ -46,6 +32,20 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
             now,
             cancellationToken
         );
+
+    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
+
+    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
 
     public ValueTask<bool> UpsertAsync<T>(
         string key,
@@ -142,6 +142,22 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     ) => cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+
+    public async ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var value = await cache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+
+        if (!value.HasValue)
+        {
+            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+        }
+
+        var expiration = await cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+        return new CacheValueWithExpiration<T>(value, expiration);
+    }
 
     public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
         IEnumerable<string> cacheKeys,
@@ -371,6 +387,11 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
         CancellationToken cancellationToken = default
     ) => new((IDictionary<string, CacheValue<T>>)new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
 
+    public ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    ) => new(new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null));
+
     public ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
@@ -584,6 +605,11 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         IEnumerable<string> keys,
         CancellationToken cancellationToken = default
     ) => new((IDictionary<string, CacheValue<T>>)new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
+
+    public ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    ) => new(new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null));
 
     public ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
         IEnumerable<string> cacheKeys,
@@ -843,6 +869,24 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
         await _WaitReadGateAsync(cancellationToken);
 
         return await _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+    }
+
+    public async ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        var value = await _cache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+
+        if (!value.HasValue)
+        {
+            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+        }
+
+        var expiration = await _cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+        return new CacheValueWithExpiration<T>(value, expiration);
     }
 
     public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
@@ -1186,6 +1230,24 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         await _WaitReadGateAsync(cancellationToken);
 
         return await _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+    }
+
+    public async ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        var value = await _cache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+
+        if (!value.HasValue)
+        {
+            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, null);
+        }
+
+        var expiration = await _cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+        return new CacheValueWithExpiration<T>(value, expiration);
     }
 
     public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(

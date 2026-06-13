@@ -17,8 +17,7 @@ public static class SetupInMemoryCache
     {
         /// <summary>
         /// Uses the in-memory cache as the default (unkeyed) <see cref="ICache"/>. Also registers the
-        /// <see cref="CacheConstants.MemoryCacheProvider"/> role key and an <see cref="IRemoteCache"/>
-        /// adapter over the same store for single-node hosts.
+        /// <see cref="CacheConstants.MemoryCacheProvider"/> role key.
         /// </summary>
         /// <param name="setupAction">Optional configuration for <see cref="InMemoryCacheOptions"/>.</param>
         /// <returns>The setup builder for chaining.</returns>
@@ -255,7 +254,6 @@ public static class SetupInMemoryCache
             services.AddSingletonOptionValue<InMemoryCacheOptions>();
             services.TryAddSingleton<IInMemoryCache, InMemoryCache>();
             services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
-            services.TryAddSingleton(typeof(IInMemoryCache<>), typeof(InMemoryCache<>));
 
             if (!isDefault)
             {
@@ -268,15 +266,6 @@ public static class SetupInMemoryCache
             {
                 services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IInMemoryCache>());
                 services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, x => x.GetRequiredService<ICache>());
-                // Remote cache adapter
-                services.TryAddSingleton<IRemoteCache>(provider => new InMemoryRemoteCacheAdapter(
-                    provider.GetRequiredService<IInMemoryCache>()
-                ));
-                services.TryAddSingleton(typeof(IRemoteCache<>), typeof(RemoteCache<>));
-                services.AddKeyedSingleton(
-                    CacheConstants.RemoteCacheProvider,
-                    x => x.GetRequiredService<IRemoteCache>()
-                );
             }
 
             return services;

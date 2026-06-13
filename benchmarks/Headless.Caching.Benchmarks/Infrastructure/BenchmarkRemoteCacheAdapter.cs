@@ -138,6 +138,19 @@ internal sealed class BenchmarkRemoteCacheAdapter(Headless.Caching.ICache cache)
         return result;
     }
 
+    public async ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var value = await cache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+        var expiration = value.HasValue
+            ? await cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        return new CacheValueWithExpiration<T>(value, expiration);
+    }
+
     public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
