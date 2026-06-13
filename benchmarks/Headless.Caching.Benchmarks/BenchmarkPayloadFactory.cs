@@ -2,6 +2,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using Headless.Checks;
 
 namespace Headless.Caching.Benchmarks;
 
@@ -9,10 +10,7 @@ internal static class BenchmarkPayloadFactory
 {
     public static BenchmarkPayload Create(int sizeBytes, int seed)
     {
-        if (sizeBytes <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(sizeBytes), sizeBytes, "Payload size must be positive.");
-        }
+        Argument.IsPositive(sizeBytes);
 
         var random = new Random(seed);
         var bytes = new byte[sizeBytes];
