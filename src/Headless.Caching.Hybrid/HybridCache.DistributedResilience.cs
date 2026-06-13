@@ -92,11 +92,16 @@ public sealed partial class HybridCache
                 }
             }
 
+            // Timeout fired: abandon the operation the same way whether or not the caller also cancelled — cancel
+            // its token, observe its eventual fault, and defer disposal until it completes, so the synchronous
+            // finally below never disposes the CTS while the operation still holds its token.
+            await operationCts.CancelAsync().ConfigureAwait(false);
+            _ObserveAbandonedL2Read(operationTask, key);
+            CacheDetachedTask.DisposeAfter(operationCts, operationTask);
+            operationCts = null;
+
             cancellationToken.ThrowIfCancellationRequested();
 
-            await operationCts.CancelAsync().ConfigureAwait(false);
-            _DisposeAfter(operationCts, operationTask);
-            operationCts = null;
             _logger.LogDistributedCacheReadTimedOut(key, timeout, timeoutKind.ToString());
 
             return DistributedCacheReadResult<T>.TimedOut();
@@ -127,13 +132,14 @@ public sealed partial class HybridCache
         }
     }
 
-    private static void _DisposeAfter(CancellationTokenSource cts, Task task)
+    // Observe an abandoned L2 read (the timeout fired and we stopped awaiting it) so its eventual fault is logged
+    // rather than surfacing as an unobserved-task exception.
+    private void _ObserveAbandonedL2Read(Task task, string key)
     {
         _ = task.ContinueWith(
-            static (_, state) => ((CancellationTokenSource)state!).Dispose(),
-            cts,
+            faulted => _logger.LogFailedToReadFromL2Cache(faulted.Exception!, key),
             CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
+            TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
         );
     }

@@ -25,7 +25,7 @@ public static class SetupCachingDistributedLocks
         )
         {
             setup.RegisterCrossCuttingExtension(
-                new CachingDistributedLocksOptionsExtension(services =>
+                new DelegatingCacheProviderOptionsExtension(services =>
                 {
                     if (setupAction is not null)
                     {
@@ -40,11 +40,5 @@ public static class SetupCachingDistributedLocks
 
             return setup;
         }
-    }
-
-    private sealed class CachingDistributedLocksOptionsExtension(Action<IServiceCollection> apply)
-        : ICacheProviderOptionsExtension
-    {
-        public void AddServices(IServiceCollection services) => apply(services);
     }
 }

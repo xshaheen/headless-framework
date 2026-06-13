@@ -321,7 +321,7 @@ public sealed partial class HybridCache(
             if (distributedRead.Exception is { } exception)
             {
                 _logger.LogFailedBulkL2CacheOperation(exception, missedKeys.Count);
-                throw exception;
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
             }
 
             return result;
@@ -1229,14 +1229,25 @@ public sealed partial class HybridCache(
             RecoveryQueue?.OnSuccessfulL2Operation(key);
         }
         catch (Exception exception)
-            when (RecoveryQueue is not null
-                && !FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
-            // Degraded mode: L1 is removed below, the L2 removal is queued for replay, and we conservatively
-            // report (and publish) the removal because the L2 state is unknown.
+            // Trip the breaker on a configured-breaker or recovery-enabled L2 failure so concurrent callers stop
+            // hammering the down L2 — independent of auto-recovery, matching UpsertAllAsync. (No-op when the
+            // breaker duration is zero.)
             _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
+
+            if (RecoveryQueue is null)
+            {
+                // No recovery queue to replay the removal: surface the failure so the caller knows the L2 remove
+                // may not have applied.
+                throw;
+            }
+
+            // Degraded mode: L1 is removed below, the L2 removal is queued for replay, and we conservatively
+            // report (and publish) the removal because the L2 state is unknown.
             _QueueRemoveRecovery(key);
             removed = true;
         }
@@ -1272,14 +1283,25 @@ public sealed partial class HybridCache(
             RecoveryQueue?.OnSuccessfulL2Operation(key);
         }
         catch (Exception exception)
-            when (RecoveryQueue is not null
-                && !FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
-            // Degraded mode: L1 is expired below, the L2 expiration is queued for replay, and we conservatively
-            // report (and publish) the expiration because the L2 state is unknown — mirrors RemoveAsync.
+            // Trip the breaker on a configured-breaker or recovery-enabled L2 failure so concurrent callers stop
+            // hammering the down L2 — independent of auto-recovery, mirrors RemoveAsync. (No-op when the breaker
+            // duration is zero.)
             _OpenDistributedCacheCircuit(exception, key);
             _logger.LogFailedToWriteToL2Cache(exception, key);
+
+            if (RecoveryQueue is null)
+            {
+                // No recovery queue to replay the expiration: surface the failure so the caller knows the L2
+                // expire may not have applied.
+                throw;
+            }
+
+            // Degraded mode: L1 is expired below, the L2 expiration is queued for replay, and we conservatively
+            // report (and publish) the expiration because the L2 state is unknown — mirrors RemoveAsync.
             _QueueExpireRecovery(key);
             expired = true;
         }

@@ -11,6 +11,7 @@ namespace Headless.Caching;
 /// services on the global keyed-service namespace. Named cache instances must not use a reserved name —
 /// <c>setup.AddNamed(…)</c> rejects them with <see cref="ArgumentException"/>.
 /// </summary>
+[PublicAPI]
 public static class CacheConstants
 {
     public const string RemoteCacheProvider = "Headless.Caching:Remote";

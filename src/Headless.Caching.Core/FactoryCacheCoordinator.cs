@@ -614,7 +614,7 @@ public sealed partial class FactoryCacheCoordinator(
                     _ObserveFaultedTask(factoryTask, key);
                     // Defer disposal until the abandoned factory finishes so a non-cooperative factory never
                     // touches a disposed token source; null out so the finally does not dispose it under the factory.
-                    _DisposeAfter(internalCts, factoryTask);
+                    CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
                     internalCts = null;
                     throw new OperationCanceledException(cancellationToken);
                 }
@@ -646,7 +646,7 @@ public sealed partial class FactoryCacheCoordinator(
                 _ObserveFaultedTask(factoryTask, key);
                 // Defer disposal until the abandoned factory finishes so it never touches a disposed token source;
                 // null out so the finally does not dispose it while the factory still holds the token.
-                _DisposeAfter(internalCts, factoryTask);
+                CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
                 internalCts = null;
                 throw new OperationCanceledException(cancellationToken);
             }
@@ -656,7 +656,7 @@ public sealed partial class FactoryCacheCoordinator(
                 await internalCts.CancelAsync().ConfigureAwait(false);
                 // The factory is abandoned but may keep running; the caller observes its fault at the hard-timeout
                 // branch. Defer CTS disposal until the factory finishes so it never touches a disposed token source.
-                _DisposeAfter(internalCts, factoryTask);
+                CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
                 internalCts = null;
                 return FactoryRunResult<T>.TimedOut(factoryTask, internalCancellationTokenSource: null);
             }
@@ -724,20 +724,6 @@ public sealed partial class FactoryCacheCoordinator(
                 _logger.LogCacheBackgroundCompletionFailed(faulted.Exception!, key, faulted.Exception!.GetType().Name),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
-            TaskScheduler.Default
-        );
-    }
-
-    // Dispose a transferred internal CTS only after the detached factory completes, so a still-running,
-    // non-cooperative factory never touches a disposed token source (e.g. via Token.WaitHandle). Cancellation
-    // has already signalled the factory; disposal only frees the timer, which can wait until the token is released.
-    private static void _DisposeAfter(CancellationTokenSource cts, Task task)
-    {
-        _ = task.ContinueWith(
-            static (_, state) => ((CancellationTokenSource)state!).Dispose(),
-            cts,
-            CancellationToken.None,
-            TaskContinuationOptions.None,
             TaskScheduler.Default
         );
     }
