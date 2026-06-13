@@ -171,4 +171,47 @@ public sealed class ScopedCacheTests : TestBase
         result.Should().ContainKey("ns:key1");
         result.Should().ContainKey("ns:key2");
     }
+
+    [Fact]
+    public async Task should_scope_key_for_options_based_upsert()
+    {
+        // given
+        var sut = _CreateSut();
+        var options = new CacheEntryOptions { Duration = _DefaultExpiration };
+
+        _currentScope = "scope-a";
+        await sut.UpsertEntryAsync("key", "value-a", options, AbortToken);
+
+        // when / then — only the writing scope sees the entry
+        var resultA = await sut.GetAsync("key", AbortToken);
+        resultA.HasValue.Should().BeTrue();
+        resultA.Value.Should().Be("value-a");
+
+        _currentScope = "scope-b";
+        (await sut.GetAsync("key", AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_scope_tags_for_remove_by_tag()
+    {
+        // given — tags are documented as NOT scope-isolated: only keys are scoped
+        var sut = _CreateSut();
+        var options = new CacheEntryOptions { Duration = _DefaultExpiration, Tags = ["shared-tag"] };
+
+        _currentScope = "scope-a";
+        await sut.UpsertEntryAsync("key", "value-a", options, AbortToken);
+
+        _currentScope = "scope-b";
+        await sut.UpsertEntryAsync("key", "value-b", options, AbortToken);
+
+        // when — removing from scope-b takes down BOTH scopes' tagged entries
+        var removed = await sut.RemoveByTagAsync("shared-tag", AbortToken);
+
+        // then
+        removed.Should().Be(2);
+        (await sut.GetAsync("key", AbortToken)).HasValue.Should().BeFalse();
+
+        _currentScope = "scope-a";
+        (await sut.GetAsync("key", AbortToken)).HasValue.Should().BeFalse();
+    }
 }

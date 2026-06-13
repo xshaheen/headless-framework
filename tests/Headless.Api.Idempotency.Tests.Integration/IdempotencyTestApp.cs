@@ -63,7 +63,7 @@ internal static class IdempotencyTestApp
         builder.Services.AddScoped<ICurrentUser>(_ => userState.CurrentForRequest());
 
         // In-memory cache (no Redis dependency for v1)
-        builder.Services.AddInMemoryCache();
+        builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 
         // Optional in-memory distributed-lock provider for WaitAndReplay tests. Built on a
         // SemaphoreSlim-per-resource map; the production wiring (DistributedLock in
@@ -458,9 +458,18 @@ internal static class IdempotencyTestApp
     {
         private static InvalidOperationException _Boom() => new("simulated cache outage");
 
+        public CacheEntryOptions? DefaultEntryOptions => null;
+
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T?>> factory,
+            CacheEntryOptions options,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
+
+        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+            string key,
+            Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
             CacheEntryOptions options,
             CancellationToken cancellationToken = default
         ) => throw _Boom();
@@ -469,6 +478,13 @@ internal static class IdempotencyTestApp
             string key,
             T? value,
             TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
+
+        public ValueTask<bool> UpsertEntryAsync<T>(
+            string key,
+            T? value,
+            CacheEntryOptions options,
             CancellationToken cancellationToken = default
         ) => throw _Boom();
 
@@ -584,6 +600,8 @@ internal static class IdempotencyTestApp
 
         public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
 
+        public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+
         public ValueTask<bool> RemoveIfEqualAsync<T>(
             string key,
             T? expected,
@@ -596,6 +614,9 @@ internal static class IdempotencyTestApp
         ) => throw _Boom();
 
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+            throw _Boom();
+
+        public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
             throw _Boom();
 
         public ValueTask<long> SetRemoveAsync<T>(

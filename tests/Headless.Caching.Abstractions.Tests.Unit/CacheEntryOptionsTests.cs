@@ -17,6 +17,7 @@ public sealed class CacheEntryOptionsTests
 
         // then
         options.Duration.Should().Be(duration);
+        options.SlidingExpiration.Should().BeNull();
         options.IsFailSafeEnabled.Should().BeFalse();
         options.FailSafeMaxDuration.Should().Be(CacheEntryOptions.DefaultFailSafeMaxDuration);
         options.FailSafeThrottleDuration.Should().Be(CacheEntryOptions.DefaultFailSafeThrottleDuration);
@@ -58,6 +59,7 @@ public sealed class CacheEntryOptionsTests
         options.IsFailSafeEnabled.Should().BeFalse();
         options.FailSafeMaxDuration.Should().Be(TimeSpan.FromDays(1));
         options.FailSafeThrottleDuration.Should().Be(TimeSpan.FromSeconds(30));
+        options.SlidingExpiration.Should().BeNull();
     }
 
     [Fact]
@@ -82,6 +84,23 @@ public sealed class CacheEntryOptionsTests
         options.IsFailSafeEnabled.Should().BeTrue();
         options.FailSafeMaxDuration.Should().Be(maxDuration);
         options.FailSafeThrottleDuration.Should().Be(throttleDuration);
+    }
+
+    [Fact]
+    public void should_round_trip_sliding_expiration()
+    {
+        // given
+        var slidingExpiration = TimeSpan.FromMinutes(2);
+
+        // when
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(10),
+            SlidingExpiration = slidingExpiration,
+        };
+
+        // then
+        options.SlidingExpiration.Should().Be(slidingExpiration);
     }
 
     private static CacheEntryOptions _CreateOptions(CacheEntryOptions options) => options;

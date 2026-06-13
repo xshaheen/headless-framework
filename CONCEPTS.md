@@ -57,6 +57,48 @@ A coordination provider that can offer a server clock plus a linearizable livene
 and is therefore eligible to drive failover. A provider that cannot is degraded/unsupported for
 failover even if it can serve approximate dashboard views.
 
+## Messaging (lanes / classification / delivery)
+
+### Relationships
+
+A **message type** carries exactly one **Marker** (`IEvent` or `ICommand`), which fixes its **Lane**.
+The lane selects the publish surface (`IBus` for events, `IQueue` for commands). **Delivery mode** is
+orthogonal to lane: it decides whether a publish goes through storage or straight to transport.
+
+### Lane
+The semantic channel of a message: bus (broadcast — every subscriber group gets a copy) or queue
+(point-to-point — competing consumers, one worker per message). Under the type-intent model a type
+belongs to exactly one lane, fixed by its Marker. *Avoid:* "intent" in new writing — intent was the
+late-bound era's name for the per-registration/per-call lane choice.
+
+### Type-intent model
+The decided messaging model (2026-06-10): the message type determines the lane via Markers enforced
+by generic constraints (`where T : IEvent` / `where T : ICommand`); one type → one lane; cross-lane
+use is a compile error. Supersedes Late-bound intent.
+
+### Late-bound intent
+The superseded model where the lane was chosen per registration (`OnBus`/`OnQueue`) and per publish
+call, independent of the message type — the same type could traverse both lanes. Root cause of the
+#344 cross-intent leak.
+
+### Marker
+One of the empty contract interfaces `IEvent`/`ICommand` (both extending a common `IMessage`) whose
+presence classifies a message type. A type is valid when assignable to exactly one of the two after
+walking its full base-type and interface graph — derived aliases (`IDomainEvent : IEvent`) are
+allowed; a graph reaching both markers is a boot error. Unowned external types are wrapped in owned
+marker-bearing records — never convention-classified (no predicate/attribute/builder classification
+exists).
+
+### Delivery mode
+The per-call durability choice on publish/enqueue: `Auto`, `Durable`, `TransportDirect`. Auto, the
+default, follows the framework transaction accessor (the only source of ambient durability —
+`Transaction.Current` alone does not count): recognized transaction present → outbox (row persisted
+in that transaction, dispatched post-commit); absent → direct to transport. Durable forces
+store-first regardless of transaction state. TransportDirect bypasses storage even inside a
+transaction — an explicit, diagnostically-logged escape from atomicity. `Delay` requires storage:
+under Auto it upgrades the call to durable; with explicit TransportDirect it is an error; dispatch
+timing is best-effort (not-before semantics).
+
 ## Flagged ambiguities
 
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that

@@ -88,4 +88,68 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     [Fact]
     public override Task should_not_serve_stale_when_caller_cancels() =>
         base.should_not_serve_stale_when_caller_cancels();
+
+    [Fact]
+    public override Task should_return_stale_on_soft_timeout_and_refresh_in_background() =>
+        base.should_return_stale_on_soft_timeout_and_refresh_in_background();
+
+    [Fact]
+    public override Task should_throw_cache_factory_timeout_when_hard_timeout_fires_without_fallback() =>
+        base.should_throw_cache_factory_timeout_when_hard_timeout_fires_without_fallback();
+
+    [Fact]
+    public override Task should_serve_stale_when_hard_timeout_fires_with_fallback() =>
+        base.should_serve_stale_when_hard_timeout_fires_with_fallback();
+
+    [Fact]
+    public override Task should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock() =>
+        base.should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock();
+
+    [Fact]
+    public override Task should_eager_refresh_before_expiration() => base.should_eager_refresh_before_expiration();
+
+    [Fact]
+    public override Task should_not_stampede_eager_refresh_across_concurrent_readers() =>
+        base.should_not_stampede_eager_refresh_across_concurrent_readers();
+
+    [Fact]
+    public override Task should_keep_sliding_entry_alive_when_read_within_idle_window() =>
+        base.should_keep_sliding_entry_alive_when_read_within_idle_window();
+
+    [Fact]
+    public override Task should_expire_sliding_entry_at_absolute_duration_cap() =>
+        base.should_expire_sliding_entry_at_absolute_duration_cap();
+
+    [Fact]
+    public override Task should_not_rearm_sliding_entry_when_metadata_is_read() =>
+        base.should_not_rearm_sliding_entry_when_metadata_is_read();
+
+    [Fact]
+    public override Task should_not_rearm_non_sliding_entry() => base.should_not_rearm_non_sliding_entry();
+
+    [Fact]
+    public override Task should_extend_entry_when_conditional_factory_reports_not_modified() =>
+        base.should_extend_entry_when_conditional_factory_reports_not_modified();
+
+    [Fact]
+    public override Task should_replace_entry_when_conditional_factory_reports_modified() =>
+        base.should_replace_entry_when_conditional_factory_reports_modified();
+
+    [Fact]
+    public override Task should_remove_entries_by_tag() => base.should_remove_entries_by_tag();
+
+    [Fact]
+    public override Task should_remove_entry_via_any_of_its_tags() => base.should_remove_entry_via_any_of_its_tags();
+
+    [Fact]
+    public override Task should_not_remove_recreated_entry_without_tag() =>
+        base.should_not_remove_recreated_entry_without_tag();
+
+    [Fact]
+    public override Task should_tag_entries_via_conditional_context_and_tagged_upsert() =>
+        base.should_tag_entries_via_conditional_context_and_tagged_upsert();
+
+    [Fact]
+    public override Task should_honor_failsafe_options_in_tagged_upsert() =>
+        base.should_honor_failsafe_options_in_tagged_upsert();
 }

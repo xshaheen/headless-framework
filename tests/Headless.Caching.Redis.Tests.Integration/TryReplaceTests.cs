@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
+
 namespace Tests;
 
 public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
@@ -169,6 +171,41 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
         // Re-upsert the identical value at a later instant so the header bytes (physical timestamp) drift
         await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
         await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.TryReplaceIfEqualAsync(key, value, newValue, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().BeTrue();
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+        cached.Value.Should().Be(newValue);
+    }
+
+    [Fact]
+    public async Task should_replace_if_equal_when_frame_carries_all_optional_metadata_sections()
+    {
+        // given — a frame with every optional section present (sliding, eager-refresh, last-modified,
+        // etag, tags) so the CAS script has to skip the full variable-length chain to reach the value.
+        await FlushAsync();
+        using var cache = CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Lorem.Sentence();
+        var newValue = Faker.Lorem.Sentence();
+        var now = DateTime.UtcNow;
+        var entry = new CacheStoreEntryWrite<string>
+        {
+            Value = value,
+            IsNull = false,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(10),
+            SlidingExpiration = TimeSpan.FromMinutes(5),
+            EagerRefreshAt = now.AddMinutes(4),
+            ETag = "W/\"v42\"",
+            LastModifiedAt = now.AddMinutes(-30),
+            Tags = ["tenant:1", "products"],
+        };
+        await store.SetEntryAsync(key, in entry, AbortToken);
 
         // when
         var result = await cache.TryReplaceIfEqualAsync(key, value, newValue, TimeSpan.FromMinutes(5), AbortToken);

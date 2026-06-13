@@ -1,5 +1,7 @@
+using System.Reflection;
 using Headless.Testing.Tests;
 using Headless.Threading;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Threading;
 
@@ -17,6 +19,65 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         // then
         releaser.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void try_lock_should_acquire_free_lock_and_observe_held_lock()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when — first try wins, second observes the lock as held
+        using var first = keyedLock.TryLock("key1");
+        using var second = keyedLock.TryLock("key1");
+
+        // then
+        first.Should().NotBeNull();
+        second.Should().BeNull();
+    }
+
+    [Fact]
+    public void try_lock_should_reacquire_after_release()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var first = keyedLock.TryLock("key1");
+        first.Should().NotBeNull();
+
+        // when
+        first!.Dispose();
+        using var second = keyedLock.TryLock("key1");
+
+        // then
+        second.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task try_lock_should_observe_lock_held_by_async_acquisition()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        using var asyncHeld = await keyedLock.LockAsync("key1", AbortToken);
+
+        // when
+        using var attempt = keyedLock.TryLock("key1");
+
+        // then
+        attempt.Should().BeNull();
+    }
+
+    [Fact]
+    public void try_lock_should_not_interfere_across_keys()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        using var first = keyedLock.TryLock("key1");
+
+        // when
+        using var other = keyedLock.TryLock("key2");
+
+        // then
+        other.Should().NotBeNull();
     }
 
     [Fact]
@@ -348,6 +409,149 @@ public sealed class KeyedAsyncLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_acquire_timeout_lock_for_uncontended_key()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+
+        // when
+        using var releaser = await keyedLock.LockAsync(
+            "timeout-key",
+            TimeSpan.FromSeconds(5),
+            timeProvider,
+            AbortToken
+        );
+
+        // then
+        releaser.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_acquire_timeout_lock_when_holder_releases_before_timeout()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        var holder = await keyedLock.LockAsync("contended-timeout-key", AbortToken);
+        var waiter = keyedLock.LockAsync("contended-timeout-key", TimeSpan.FromSeconds(5), timeProvider, AbortToken);
+
+        // when
+        holder.Dispose();
+        using var releaser = await waiter;
+
+        // then
+        releaser.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_return_null_when_timeout_elapses_before_lock_acquired()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        using var holder = await keyedLock.LockAsync("timeout-elapsed-key", AbortToken);
+
+        // when
+        var waiter = keyedLock.LockAsync("timeout-elapsed-key", TimeSpan.FromSeconds(5), timeProvider, AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var releaser = await waiter;
+
+        // then
+        releaser.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_cleanup_ref_count_when_timeout_elapses_before_lock_acquired()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        var holder = await keyedLock.LockAsync("timeout-cleanup-key", AbortToken);
+
+        // when
+        var waiter = keyedLock.LockAsync("timeout-cleanup-key", TimeSpan.FromSeconds(5), timeProvider, AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var timedOut = await waiter;
+        holder.Dispose();
+
+        // then
+        timedOut.Should().BeNull();
+
+        using (await keyedLock.LockAsync("timeout-cleanup-key", AbortToken))
+        {
+            // Success - timed-out waiter did not leak a ref count or semaphore acquisition.
+        }
+    }
+
+    [Fact]
+    public async Task should_wait_unbounded_when_timeout_is_infinite()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        var holder = await keyedLock.LockAsync("infinite-timeout-key", AbortToken);
+        var waiter = keyedLock.LockAsync("infinite-timeout-key", Timeout.InfiniteTimeSpan, timeProvider, AbortToken);
+
+        // when
+        timeProvider.Advance(TimeSpan.FromHours(1));
+        waiter.IsCompleted.Should().BeFalse();
+
+        holder.Dispose();
+        using var releaser = await waiter;
+
+        // then
+        releaser.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_throw_when_timeout_waiter_is_cancelled()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        using var holder = await keyedLock.LockAsync("timeout-cancel-key", AbortToken);
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var waiter = keyedLock.LockAsync("timeout-cancel-key", TimeSpan.FromSeconds(5), timeProvider, cts.Token);
+        await cts.CancelAsync();
+
+        // then
+        var act = async () => await waiter;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_cleanup_ref_count_when_timeout_and_caller_cancellation_race()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        var holder = await keyedLock.LockAsync("timeout-cancel-race-key", AbortToken);
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var waiter = keyedLock.LockAsync("timeout-cancel-race-key", TimeSpan.FromSeconds(5), timeProvider, cts.Token);
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        await cts.CancelAsync();
+
+        try
+        {
+            _ = await waiter;
+        }
+        catch (OperationCanceledException)
+        {
+            // The assertion below is about lock cleanup; either timeout-null or caller cancellation is valid here.
+        }
+
+        holder.Dispose();
+
+        // then
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_cleanup_ref_count_on_cancellation()
     {
         // given
@@ -532,5 +736,75 @@ public sealed class KeyedAsyncLockTests : TestBase
         // Clean up the releaser (should be safe even after parent disposed)
         var act2 = releaser3.Dispose;
         act2.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task should_return_null_on_timeout_when_caller_token_is_not_cancellable()
+    {
+        // given — CancellationToken.None cannot be cancelled, so the single-CTS path is taken
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        using var holder = await keyedLock.LockAsync("non-cancellable-timeout-key", AbortToken);
+
+        // when
+        var waiter = keyedLock.LockAsync(
+            "non-cancellable-timeout-key",
+            TimeSpan.FromSeconds(5),
+            timeProvider,
+            CancellationToken.None
+        );
+
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var releaser = await waiter;
+
+        // then
+        releaser.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_cleanup_ref_count_on_timeout_when_caller_token_is_not_cancellable()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        var holder = await keyedLock.LockAsync("non-cancellable-timeout-cleanup-key", AbortToken);
+
+        // when
+        var waiter = keyedLock.LockAsync(
+            "non-cancellable-timeout-cleanup-key",
+            TimeSpan.FromSeconds(5),
+            timeProvider,
+            CancellationToken.None
+        );
+
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        var timedOut = await waiter;
+        holder.Dispose();
+
+        // then — no leaked ref count after the non-cancellable-token timeout path
+        timedOut.Should().BeNull();
+        _SemaphoreCount(keyedLock).Should().Be(0);
+
+        using (await keyedLock.LockAsync("non-cancellable-timeout-cleanup-key", AbortToken))
+        {
+            // reacquisition succeeds — semaphore was properly cleaned up
+        }
+    }
+
+    private static int _SemaphoreCount(KeyedAsyncLock keyedLock)
+    {
+        var shardsField = typeof(KeyedAsyncLock).GetField("_shards", BindingFlags.Instance | BindingFlags.NonPublic);
+        var shards = (Array)shardsField!.GetValue(keyedLock)!;
+
+        var total = 0;
+
+        foreach (var shard in shards)
+        {
+            var mapField = shard!.GetType().GetField("Map", BindingFlags.Instance | BindingFlags.NonPublic);
+            var map = (System.Collections.IDictionary)mapField!.GetValue(shard)!;
+            total += map.Count;
+        }
+
+        return total;
     }
 }

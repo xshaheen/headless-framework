@@ -15,9 +15,16 @@ namespace Headless.Caching;
 public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
-    private readonly PriorityQueue<string, long> _expirationQueue = new();
-    private readonly Lock _expirationLock = new();
-    private readonly ConcurrentQueue<string> _lruQueue = new();
+
+    // Reverse tag index: tag -> set of prefixed keys whose entry carried the tag when written. Memberships may
+    // be momentarily stale (an untagged overwrite races the index update), so RemoveByTagAsync always verifies
+    // against the LIVE entry's tags before removing. Empty per-tag sets are intentionally not pruned: removing
+    // a set instance races a concurrent writer adding to that same instance and would lose its membership; the
+    // residue is bounded by the process-lifetime distinct-tag cardinality.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _tagIndex = new(
+        StringComparer.Ordinal
+    );
+
     private readonly AsyncLock _lock = new();
     private readonly FactoryCacheCoordinator _coordinator;
     private readonly CancellationTokenSource _disposedCts = new();
@@ -35,6 +42,13 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
     private readonly int _maxEvictionsPerCompaction;
     private readonly int _evictionSampleSize;
     private long _currentMemorySize;
+
+    // Soonest known physical/sliding expiry tick across all live entries — a monotone lower bound, not exact.
+    // Writers lower it via CAS on the hot path (lock-free, no allocation); the maintenance sweep recomputes the
+    // true minimum of survivors. long.MaxValue means "no expiring entry tracked". This lets _DoMaintenanceAsync
+    // skip the O(live-N) scan entirely until something is actually due, so steady-state memory is bounded by
+    // live entries (not write volume) and background work is proportional to expiry events.
+    private long _nextExpiryTicks = long.MaxValue;
     private long _lastMaintenanceTicks;
     private int _maintenanceRunning;
     private int _isDisposed;
@@ -42,11 +56,20 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
     /// <summary>Gets the current memory size in bytes used by the cache.</summary>
     public long CurrentMemorySize => Interlocked.Read(ref _currentMemorySize);
 
-    public InMemoryCache(TimeProvider timeProvider, InMemoryCacheOptions options, ILogger<InMemoryCache>? logger = null)
+    /// <inheritdoc />
+    public CacheEntryOptions? DefaultEntryOptions { get; }
+
+    public InMemoryCache(
+        TimeProvider timeProvider,
+        InMemoryCacheOptions options,
+        ILogger<InMemoryCache>? logger = null,
+        ICacheFactoryLockProvider? factoryLockProvider = null
+    )
     {
         _logger = logger ?? NullLogger<InMemoryCache>.Instance;
-        _coordinator = new FactoryCacheCoordinator(timeProvider, _logger);
+        _coordinator = new FactoryCacheCoordinator(timeProvider, _logger, factoryLockProvider);
         _timeProvider = timeProvider;
+        DefaultEntryOptions = options.DefaultEntryOptions;
         _keyPrefix = options.KeyPrefix ?? "";
         _maxItems = options.MaxItems;
         _shouldClone = options.CloneValues;
@@ -72,6 +95,23 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
     public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(factory);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
     )
@@ -127,6 +167,25 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         );
 
         return _SetInternalAsync(key, entry);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await ((IFactoryCacheStore)this)
+            .UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken)
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     public async ValueTask<int> UpsertAllAsync<T>(
@@ -244,6 +303,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         var wasReplaced = false;
         long sizeDelta = 0;
+        IReadOnlySet<string>? previousTags = null;
 
         // Use atomic TryUpdate to avoid TOCTOU race condition
         _memory.TryUpdate(
@@ -252,6 +312,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             {
                 wasReplaced = false;
                 sizeDelta = 0;
+                previousTags = null;
 
                 if (existingEntry.IsExpired)
                 {
@@ -260,6 +321,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
                 sizeDelta = entrySize - existingEntry.Size;
                 wasReplaced = true;
+                previousTags = existingEntry.Tags;
 
                 return new CacheEntry(
                     value,
@@ -276,7 +338,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         {
             if (sizeDelta != 0)
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
-            _TrackUpdate(prefixedKey, expiresAt);
+            _TrackUpdate(expiresAt);
+            _UpdateTagIndex(prefixedKey, previousTags, currentTags: null);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -317,6 +380,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         var wasExpectedValue = false;
         long sizeDelta = 0;
+        IReadOnlySet<string>? previousTags = null;
 
         _memory.TryUpdate(
             key,
@@ -324,6 +388,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             {
                 wasExpectedValue = false;
                 sizeDelta = 0;
+                previousTags = null;
 
                 if (existingEntry.IsExpired)
                 {
@@ -339,6 +404,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
                 sizeDelta = newSize - existingEntry.Size;
                 wasExpectedValue = true;
+                previousTags = existingEntry.Tags;
 
                 return new CacheEntry(
                     value,
@@ -355,7 +421,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         {
             if (sizeDelta != 0)
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
-            _TrackUpdate(key, expiresAt);
+            _TrackUpdate(expiresAt);
+            _UpdateTagIndex(key, previousTags, currentTags: null);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -441,7 +508,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        _TrackUpdate(key, expiresAt);
+        _TrackUpdate(expiresAt);
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -526,7 +593,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        _TrackUpdate(key, expiresAt);
+        _TrackUpdate(expiresAt);
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -618,7 +685,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        _TrackUpdate(key, expiresAt);
+        _TrackUpdate(expiresAt);
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -710,7 +777,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        _TrackUpdate(key, expiresAt);
+        _TrackUpdate(expiresAt);
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -802,7 +869,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        _TrackUpdate(key, expiresAt);
+        _TrackUpdate(expiresAt);
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -894,7 +961,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        _TrackUpdate(key, expiresAt);
+        _TrackUpdate(expiresAt);
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -1000,7 +1067,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
-            _TrackUpdate(key, committed.PhysicalExpiresAt);
+            _TrackUpdate(committed.PhysicalExpiresAt);
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -1081,7 +1148,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
-            _TrackUpdate(key, committed.PhysicalExpiresAt);
+            _TrackUpdate(committed.PhysicalExpiresAt);
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -1108,18 +1175,25 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         if (existingEntry.IsExpired)
         {
-            _RemoveExpiredKey(key);
+            _TryRemoveExpiredEntry(key, existingEntry);
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
         if (existingEntry.IsLogicallyExpired)
         {
+            if (existingEntry.SlidingExpiration.HasValue)
+            {
+                _TryRemoveExpiredEntry(key, existingEntry);
+            }
+
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
         try
         {
             var value = existingEntry.GetValue<T>();
+            _TryRearmSlidingEntry(key, existingEntry, _timeProvider.GetUtcNow().UtcDateTime);
+
             return new ValueTask<CacheValue<T>>(new CacheValue<T>(value, hasValue: true));
         }
         catch (Exception ex) when (!_shouldThrowOnSerializationError)
@@ -1319,7 +1393,63 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         }
 
         Interlocked.Add(ref _currentMemorySize, -entry.Size);
+        _UntagEntry(key, entry);
         return new ValueTask<bool>(!entry.IsExpired);
+    }
+
+    public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+
+        if (!_memory.TryGetValue(key, out var existingEntry))
+        {
+            return new ValueTask<bool>(false);
+        }
+
+        if (existingEntry.IsExpired)
+        {
+            _TryRemoveExpiredEntry(key, existingEntry);
+            return new ValueTask<bool>(false);
+        }
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // Reserve-preservation fork. Physical > Logical is overloaded: it is produced both by a fail-safe write
+        // (FailSafeMaxDuration extends physical) and by a sliding entry whose absolute Duration cap exceeds its
+        // idle window. Only the former is a fail-safe parachute worth keeping — sliding × fail-safe is mutually
+        // exclusive, so a sliding entry's surplus physical span is just its cap, not a reserve, and must collapse.
+        var hasFailSafeReserve =
+            existingEntry.SlidingExpiration is null && existingEntry.PhysicalExpiresAt > existingEntry.LogicalExpiresAt;
+
+        if (hasFailSafeReserve)
+        {
+            // Logically expire in place: normal reads miss, but the physical reserve survives so a later
+            // GetOrAddAsync whose factory fails (fail-safe) can still serve the stale value. Optimistic single
+            // swap, matching _TryRearmSlidingEntry's fire-and-forget posture: a lost race means a concurrent
+            // writer already produced a newer state, which satisfies the caller's intent to expire what they saw.
+            var expiredEntry = existingEntry.WithLogicalExpiration(now);
+
+            if (_memory.TryUpdate(key, expiredEntry, existingEntry))
+            {
+                _TrackUpdate(expiredEntry.TrackedExpiresAt);
+            }
+
+            return new ValueTask<bool>(true);
+        }
+
+        // No reserve to preserve: removing avoids manufacturing a phantom reserve that headless's per-call
+        // fail-safe model could later resurrect. Mirror RemoveAsync's size/tag bookkeeping.
+        if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
+        {
+            Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
+            _UntagEntry(key, existingEntry);
+        }
+
+        return new ValueTask<bool>(true);
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
@@ -1345,6 +1475,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
             {
                 Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
+                _UntagEntry(key, existingEntry);
                 wasRemoved = true;
                 break;
             }
@@ -1367,9 +1498,12 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         {
             Argument.IsNotNullOrEmpty(key);
 
-            if (_memory.TryRemove(_GetKey(key), out var entry))
+            var prefixedKey = _GetKey(key);
+
+            if (_memory.TryRemove(prefixedKey, out var entry))
             {
                 Interlocked.Add(ref _currentMemorySize, -entry.Size);
+                _UntagEntry(prefixedKey, entry);
                 removed++;
             }
         }
@@ -1393,9 +1527,92 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 if (_memory.TryRemove(key, out var removedEntry))
                 {
                     Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                    _UntagEntry(key, removedEntry);
                     removed++;
                 }
             }
+        }
+
+        return new ValueTask<int>(removed);
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> GetTaggedKeys(string tag)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(tag);
+
+        if (!_tagIndex.TryGetValue(tag, out var taggedKeys))
+        {
+            return [];
+        }
+
+        // The tag index is keyed by the internal (prefixed) keys; return the cache's user-facing keys by
+        // stripping the configured KeyPrefix, matching every other public key-returning method (e.g. _GetKeys).
+        // ConcurrentDictionary.Keys is already a point-in-time snapshot, so no extra copy is needed when unprefixed.
+        var stripLength = _keyPrefix.Length;
+
+        if (stripLength == 0)
+        {
+            // ConcurrentDictionary.Keys is a ReadOnlyCollection snapshot at runtime; the cast matches the
+            // declared return type.
+            return (IReadOnlyCollection<string>)taggedKeys.Keys;
+        }
+
+        var result = new List<string>(taggedKeys.Count);
+
+        foreach (var key in taggedKeys.Keys)
+        {
+            result.Add(key[stripLength..]);
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc />
+    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(tag);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_tagIndex.TryGetValue(tag, out var taggedKeys))
+        {
+            return new ValueTask<int>(0);
+        }
+
+        var removed = 0;
+
+        foreach (var key in taggedKeys.Keys)
+        {
+            if (!_memory.TryGetValue(key, out var entry))
+            {
+                taggedKeys.TryRemove(key, out _);
+                continue;
+            }
+
+            // Version-pinned guard: only remove when the LIVE entry still carries the tag. A key overwritten
+            // by an untagged write (or re-created after expiry) keeps a stale index membership which is
+            // cleaned up here instead of removing the new entry.
+            if (entry.Tags is null || !entry.Tags.Contains(tag))
+            {
+                taggedKeys.TryRemove(key, out _);
+                continue;
+            }
+
+            if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
+            {
+                Interlocked.Add(ref _currentMemorySize, -entry.Size);
+                _UntagEntry(key, entry);
+
+                if (!entry.IsExpired)
+                {
+                    removed++;
+                }
+            }
+
+            // A failed CAS removal means a concurrent write replaced the entry; the replacement may or may
+            // not carry the tag, so keep the membership for the live-entry check on the next invalidation.
         }
 
         return new ValueTask<int>(removed);
@@ -1537,7 +1754,9 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
         _memory.Clear();
+        _tagIndex.Clear();
         Interlocked.Exchange(ref _currentMemorySize, 0);
+        Interlocked.Exchange(ref _nextExpiryTicks, long.MaxValue);
         return ValueTask.CompletedTask;
     }
 
@@ -1553,14 +1772,9 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         }
 
         _memory.Clear();
-
-        lock (_expirationLock)
-        {
-            _expirationQueue.Clear();
-        }
-
-        _lruQueue.Clear();
+        _tagIndex.Clear();
         Interlocked.Exchange(ref _currentMemorySize, 0);
+        Interlocked.Exchange(ref _nextExpiryTicks, long.MaxValue);
         _coordinator.Dispose();
         _disposedCts.Cancel();
         _disposedCts.Dispose();
@@ -1606,17 +1820,23 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 IsNull: value is null,
                 Value: value,
                 LogicalExpiresAt: existingEntry.LogicalExpiresAt,
-                PhysicalExpiresAt: existingEntry.PhysicalExpiresAt
+                PhysicalExpiresAt: existingEntry.PhysicalExpiresAt,
+                SlidingExpiration: existingEntry.SlidingExpiration
             )
+            {
+                EagerRefreshAt = existingEntry.EagerRefreshAt,
+                ETag = existingEntry.ETag,
+                LastModifiedAt = existingEntry.LastModifiedAt,
+                Tags = existingEntry.Tags,
+                ConcurrencyStamp = existingEntry.InstanceNumber.ToString(CultureInfo.InvariantCulture),
+            }
         );
     }
 
-    async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+    // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
+    ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,
-        T? value,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
+        in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1625,25 +1845,66 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        return _SetEntryCoreWithResultAsync(key, entry);
+    }
+
+    private async ValueTask<bool> _SetEntryCoreWithResultAsync<T>(string key, CacheStoreEntryWrite<T> entry)
+    {
         key = _GetKey(key);
-        var entrySize = _CalculateEntrySize(value);
+        var entrySize = _CalculateEntrySize(entry.Value);
 
         if (!_ValidateEntrySize(entrySize))
         {
-            return;
+            return false;
         }
 
-        var entry = new CacheEntry(
-            isNull ? default : value,
-            logicalExpiresAt,
-            physicalExpiresAt,
+        var cacheEntry = new CacheEntry(
+            entry.IsNull ? default : entry.Value,
+            entry.LogicalExpiresAt,
+            entry.PhysicalExpiresAt,
+            entry.SlidingExpiration,
             _timeProvider,
             _shouldClone,
             _shouldThrowOnSerializationError,
-            entrySize
+            entrySize,
+            tags: entry.Tags,
+            eagerRefreshAt: entry.EagerRefreshAt,
+            etag: entry.ETag,
+            lastModifiedAt: entry.LastModifiedAt
         );
 
-        await _SetInternalAsync(key, entry).ConfigureAwait(false);
+        if (entry.ExpectedConcurrencyStamp is { } expectedStamp)
+        {
+            return await _SetInternalIfStampMatchesAsync(key, cacheEntry, expectedStamp).ConfigureAwait(false);
+        }
+
+        return await _SetInternalAsync(key, cacheEntry).ConfigureAwait(false);
+    }
+
+    ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+
+        // The live entry carries the authoritative sliding/physical/logical metadata, so re-arm against it
+        // directly. _TryRearmSlidingEntry applies the same throttle + value-equality TryUpdate the direct
+        // GetAsync path uses; the slidingExpiration/physicalExpiresAt parameters are needed only by stores
+        // (Redis) whose metadata is not co-located with the value.
+        if (_memory.TryGetValue(key, out var existingEntry))
+        {
+            _TryRearmSlidingEntry(key, existingEntry, now);
+        }
+
+        return ValueTask.CompletedTask;
     }
 
     private void _ThrowIfDisposed()
@@ -1651,17 +1912,26 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         Ensure.NotDisposed(Volatile.Read(ref _isDisposed) != 0, this);
     }
 
-    private void _TrackUpdate(string key, DateTime? expiresAt)
+    // Lower the soonest-expiry hint if this write expires before any currently-tracked entry. Lock-free CAS on
+    // the hot write path; no key is recorded because LRU access ticks already live on the entry
+    // (CacheEntry.LastAccessTicks) and eviction samples the live dictionary directly.
+    private void _TrackUpdate(DateTime? expiresAt)
     {
-        if (expiresAt.HasValue)
+        if (!expiresAt.HasValue)
         {
-            lock (_expirationLock)
-            {
-                _expirationQueue.Enqueue(key, expiresAt.Value.Ticks);
-            }
+            return;
         }
 
-        _lruQueue.Enqueue(key);
+        var ticks = expiresAt.Value.Ticks;
+        long current;
+
+        while ((current = Volatile.Read(ref _nextExpiryTicks)) > ticks)
+        {
+            if (Interlocked.CompareExchange(ref _nextExpiryTicks, ticks, current) == current)
+            {
+                break;
+            }
+        }
     }
 
     private string _GetKey(string key)
@@ -1688,6 +1958,112 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         if (_memory.TryRemove(key, out var removedEntry))
         {
             Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+            _UntagEntry(key, removedEntry);
+        }
+    }
+
+    private void _TryRemoveExpiredEntry(string key, CacheEntry entry)
+    {
+        if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
+        {
+            Interlocked.Add(ref _currentMemorySize, -entry.Size);
+            _UntagEntry(key, entry);
+        }
+    }
+
+    // Registers the committed entry's tags and drops the replaced entry's tags that no longer apply. The index
+    // may be momentarily stale under write races; RemoveByTagAsync's live-entry check absorbs that.
+    private void _UpdateTagIndex(string key, IReadOnlySet<string>? previousTags, IReadOnlySet<string>? currentTags)
+    {
+        if (previousTags is null && currentTags is null)
+        {
+            return;
+        }
+
+        if (currentTags is not null)
+        {
+            foreach (var tag in currentTags)
+            {
+                var taggedKeys = _tagIndex.GetOrAdd(
+                    tag,
+                    static _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal)
+                );
+
+                taggedKeys[key] = 0;
+            }
+        }
+
+        if (previousTags is not null)
+        {
+            foreach (var tag in previousTags)
+            {
+                if (currentTags is not null && currentTags.Contains(tag))
+                {
+                    continue;
+                }
+
+                if (_tagIndex.TryGetValue(tag, out var taggedKeys))
+                {
+                    taggedKeys.TryRemove(key, out _);
+                }
+            }
+        }
+    }
+
+    private void _UntagEntry(string key, CacheEntry entry)
+    {
+        if (entry.Tags is null)
+        {
+            return;
+        }
+
+        foreach (var tag in entry.Tags)
+        {
+            if (_tagIndex.TryGetValue(tag, out var taggedKeys))
+            {
+                taggedKeys.TryRemove(key, out _);
+            }
+        }
+    }
+
+    private void _TryRearmSlidingEntry(string key, CacheEntry entry, DateTime now)
+    {
+        if (
+            entry.SlidingExpiration is not { } slidingExpiration
+            || entry.LogicalExpiresAt is not { } logicalExpiresAt
+            || entry.PhysicalExpiresAt is not { } physicalExpiresAt
+        )
+        {
+            return;
+        }
+
+        if (physicalExpiresAt <= now)
+        {
+            return;
+        }
+
+        var remaining = logicalExpiresAt - now;
+        // Re-arm once roughly half the idle window has elapsed. Exact integer halving (no lossy double cast).
+        var rearmThreshold = TimeSpan.FromTicks(slidingExpiration.Ticks / 2);
+
+        if (remaining > rearmThreshold)
+        {
+            return;
+        }
+
+        var rearmedLogicalExpiresAt = _Min(now.Add(slidingExpiration), physicalExpiresAt);
+
+        if (rearmedLogicalExpiresAt <= logicalExpiresAt)
+        {
+            return;
+        }
+
+        var rearmedEntry = entry.WithLogicalExpiration(rearmedLogicalExpiresAt);
+
+        if (_memory.TryUpdate(key, rearmedEntry, entry))
+        {
+            _TrackUpdate(rearmedEntry.TrackedExpiresAt);
+            _ = _StartMaintenanceAsync();
         }
     }
 
@@ -1701,6 +2077,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         var wasUpdated = true;
         long sizeDelta = 0;
+        CacheEntry? previousEntry = null;
 
         if (addOnly)
         {
@@ -1709,16 +2086,19 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 _ =>
                 {
                     sizeDelta = entry.Size;
+                    previousEntry = null;
                     return entry;
                 },
                 (_, existingEntry) =>
                 {
                     wasUpdated = false;
+                    previousEntry = null;
 
                     if (existingEntry.IsExpired)
                     {
                         sizeDelta = entry.Size - existingEntry.Size;
                         wasUpdated = true;
+                        previousEntry = existingEntry;
                         return entry;
                     }
 
@@ -1733,11 +2113,13 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 _ =>
                 {
                     sizeDelta = entry.Size;
+                    previousEntry = null;
                     return entry;
                 },
                 (_, existingEntry) =>
                 {
                     sizeDelta = entry.Size - existingEntry.Size;
+                    previousEntry = existingEntry;
                     return entry;
                 }
             );
@@ -1750,12 +2132,61 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         if (wasUpdated)
         {
-            _TrackUpdate(key, entry.PhysicalExpiresAt);
+            _TrackUpdate(entry.TrackedExpiresAt);
+            _UpdateTagIndex(key, previousEntry?.Tags, entry.Tags);
         }
 
         await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
 
         return wasUpdated;
+    }
+
+    private async ValueTask<bool> _SetInternalIfStampMatchesAsync(string key, CacheEntry entry, string expectedStamp)
+    {
+        if (entry.IsExpired)
+        {
+            return false;
+        }
+
+        if (!_memory.TryGetValue(key, out var existingEntry) || existingEntry.IsExpired)
+        {
+            if (existingEntry is not null)
+            {
+                _TryRemoveExpiredEntry(key, existingEntry);
+            }
+
+            return false;
+        }
+
+        if (
+            !string.Equals(
+                existingEntry.InstanceNumber.ToString(CultureInfo.InvariantCulture),
+                expectedStamp,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return false;
+        }
+
+        if (!_memory.TryUpdate(key, entry, existingEntry))
+        {
+            return false;
+        }
+
+        var sizeDelta = entry.Size - existingEntry.Size;
+
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
+
+        _TrackUpdate(entry.TrackedExpiresAt);
+        _UpdateTagIndex(key, existingEntry.Tags, entry.Tags);
+
+        await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
+
+        return true;
     }
 
     private bool ShouldCompact =>
@@ -1827,6 +2258,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                     if (_memory.TryRemove(keyToRemove, out var removedEntry))
                     {
                         Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                        _UntagEntry(keyToRemove, removedEntry);
                         removalCount++;
                     }
                     else
@@ -1844,74 +2276,37 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
     private string? _FindLeastRecentlyUsedOrLargest()
     {
-        // Sample-based selection from the head of the FIFO queue.
-        // This is O(K) where K is sample size, much better than O(N).
-
+        // Sample up to K live entries straight from the source-of-truth dictionary (Redis-style approximate
+        // LRU/size eviction). The entry carries its own LastAccessTicks/Size, so no access-ordered side queue is
+        // needed; O(K) per call, repeated by the compaction loop until the cache is back under its limit.
         var isMemoryConstrained = _maxMemorySize.HasValue && Interlocked.Read(ref _currentMemorySize) > _maxMemorySize;
         (string? Key, long LastAccessTicks, long InstanceNumber, long Size) best = (null, long.MaxValue, 0, 0);
 
-        var sampledKeys = new List<string>(_evictionSampleSize);
+        var sampled = 0;
 
-        // Dequeue up to K candidates
-        for (var i = 0; i < _evictionSampleSize; i++)
+        foreach (var (key, entry) in _memory)
         {
-            if (_lruQueue.TryDequeue(out var key))
+            var isBetter = isMemoryConstrained
+                // When memory constrained: prefer larger items, breaking ties by LRU then instance age.
+                ? entry.Size > best.Size
+                    || (entry.Size == best.Size && entry.LastAccessTicks < best.LastAccessTicks)
+                    || (
+                        entry.Size == best.Size
+                        && entry.LastAccessTicks == best.LastAccessTicks
+                        && entry.InstanceNumber < best.InstanceNumber
+                    )
+                // Standard LRU, breaking ties by instance age.
+                : entry.LastAccessTicks < best.LastAccessTicks
+                    || (entry.LastAccessTicks == best.LastAccessTicks && entry.InstanceNumber < best.InstanceNumber);
+
+            if (isBetter)
             {
-                if (_memory.TryGetValue(key, out var entry))
-                {
-                    sampledKeys.Add(key);
-
-                    var isBetter = false;
-
-                    if (isMemoryConstrained)
-                    {
-                        // When memory constrained: prefer larger items, breaking ties by LRU
-                        if (
-                            entry.Size > best.Size
-                            || (entry.Size == best.Size && entry.LastAccessTicks < best.LastAccessTicks)
-                            || (
-                                entry.Size == best.Size
-                                && entry.LastAccessTicks == best.LastAccessTicks
-                                && entry.InstanceNumber < best.InstanceNumber
-                            )
-                        )
-                        {
-                            isBetter = true;
-                        }
-                    }
-                    else
-                    {
-                        // Standard LRU
-                        if (
-                            entry.LastAccessTicks < best.LastAccessTicks
-                            || (
-                                entry.LastAccessTicks == best.LastAccessTicks
-                                && entry.InstanceNumber < best.InstanceNumber
-                            )
-                        )
-                        {
-                            isBetter = true;
-                        }
-                    }
-
-                    if (isBetter)
-                    {
-                        best = (key, entry.LastAccessTicks, entry.InstanceNumber, entry.Size);
-                    }
-                }
+                best = (key, entry.LastAccessTicks, entry.InstanceNumber, entry.Size);
             }
-            else
+
+            if (++sampled >= _evictionSampleSize)
             {
                 break;
-            }
-        }
-
-        // Put back the ones we didn't pick
-        foreach (var key in sampledKeys)
-        {
-            if (key != best.Key)
-            {
-                _lruQueue.Enqueue(key);
             }
         }
 
@@ -1922,52 +2317,16 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
     {
         try
         {
-            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-            var nowTicks = utcNow.Ticks;
+            var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
 
             try
             {
-                // Prune some stale items from the LRU queue to prevent memory growth
-                for (var i = 0; i < 100; i++)
+                // Skip the O(live-N) scan unless an entry is actually due. The hint is a lower bound, so a sweep
+                // runs only once the soonest tracked expiry has passed — keeping maintenance proportional to
+                // expiry events, not to cache size or write volume.
+                if (Volatile.Read(ref _nextExpiryTicks) <= nowTicks)
                 {
-                    if (_lruQueue.TryDequeue(out var key))
-                    {
-                        if (_memory.ContainsKey(key))
-                        {
-                            _lruQueue.Enqueue(key);
-                        }
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-
-                while (true)
-                {
-                    string? key;
-                    long expiresAtTicks;
-
-                    lock (_expirationLock)
-                    {
-                        if (!_expirationQueue.TryPeek(out key, out expiresAtTicks) || expiresAtTicks > nowTicks)
-                        {
-                            break;
-                        }
-
-                        _expirationQueue.Dequeue();
-                    }
-
-                    if (key is not null && _memory.TryGetValue(key, out var entry))
-                    {
-                        if (entry.PhysicalExpiresAt.HasValue && entry.PhysicalExpiresAt.Value.Ticks <= expiresAtTicks)
-                        {
-                            if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
-                            {
-                                Interlocked.Add(ref _currentMemorySize, -entry.Size);
-                            }
-                        }
-                    }
+                    _SweepExpiredEntries(nowTicks);
                 }
             }
             catch (Exception e)
@@ -1984,6 +2343,51 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         {
             Interlocked.Exchange(ref _maintenanceRunning, 0);
         }
+    }
+
+    // Single pass over the live entries: evict the physically/sliding-expired and recompute the soonest
+    // surviving expiry to re-arm the hint. Gated by _DoMaintenanceAsync so it only runs when something is due.
+    private void _SweepExpiredEntries(long nowTicks)
+    {
+        var soonest = long.MaxValue;
+
+        foreach (var (key, entry) in _memory)
+        {
+            if (entry.ShouldRemoveAt(nowTicks))
+            {
+                if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
+                {
+                    Interlocked.Add(ref _currentMemorySize, -entry.Size);
+                    _UntagEntry(key, entry);
+                }
+
+                continue;
+            }
+
+            if (entry.TrackedExpiresAt is { } tracked && tracked.Ticks < soonest)
+            {
+                soonest = tracked.Ticks;
+            }
+        }
+
+        // Re-arm the hint. A hint still <= now is the stale pre-sweep value of an entry we just removed: raise it
+        // to the soonest survivor so the next sweep is deferred. A hint already > now was lowered by a writer to
+        // a live entry added during the scan: keep the smaller of the two so that entry is never starved of a
+        // sweep. The CAS retries if a writer moves the hint mid-update; writers only ever lower, so convergence
+        // is monotone.
+        long current;
+        long target;
+
+        do
+        {
+            current = Volatile.Read(ref _nextExpiryTicks);
+            target = current <= nowTicks ? soonest : Math.Min(current, soonest);
+
+            if (target == current)
+            {
+                break;
+            }
+        } while (Interlocked.CompareExchange(ref _nextExpiryTicks, target, current) != current);
     }
 
     private long _CalculateEntrySize(object? value)
@@ -2074,6 +2478,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 value,
                 logicalExpiresAt: expiresAt,
                 physicalExpiresAt: expiresAt,
+                slidingExpiration: null,
                 timeProvider,
                 shouldClone,
                 shouldThrowOnSerializationError,
@@ -2084,12 +2489,16 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             object? value,
             DateTime? logicalExpiresAt,
             DateTime? physicalExpiresAt,
+            TimeSpan? slidingExpiration,
             TimeProvider timeProvider,
             bool shouldClone,
             bool shouldThrowOnSerializationError = true,
             long size = 0,
             LastFactoryError? lastFactoryError = null,
-            IReadOnlySet<string>? tags = null
+            IReadOnlyCollection<string>? tags = null,
+            DateTime? eagerRefreshAt = null,
+            string? etag = null,
+            DateTime? lastModifiedAt = null
         )
         {
             _timeProvider = timeProvider;
@@ -2101,15 +2510,24 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             _lastAccessTicks = utcNow.Ticks;
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
+            SlidingExpiration = slidingExpiration;
             LastFactoryError = lastFactoryError;
             Tags = tags is { Count: > 0 } ? tags.ToFrozenSet(StringComparer.Ordinal) : null;
+            EagerRefreshAt = eagerRefreshAt;
+            ETag = etag;
+            LastModifiedAt = lastModifiedAt;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
 
         /// <summary>Private constructor used by <see cref="WithExpiration"/> to share the already-cloned
         /// value without re-cloning.</summary>
-        private CacheEntry(CacheEntry prototype, DateTime? logicalExpiresAt, DateTime? physicalExpiresAt)
+        private CacheEntry(
+            CacheEntry prototype,
+            DateTime? logicalExpiresAt,
+            DateTime? physicalExpiresAt,
+            TimeSpan? slidingExpiration
+        )
         {
             _timeProvider = prototype._timeProvider;
             _shouldClone = prototype._shouldClone;
@@ -2118,8 +2536,12 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             _lastAccessTicks = _timeProvider.GetUtcNow().Ticks;
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
+            SlidingExpiration = slidingExpiration;
             LastFactoryError = prototype.LastFactoryError;
             Tags = prototype.Tags;
+            EagerRefreshAt = prototype.EagerRefreshAt;
+            ETag = prototype.ETag;
+            LastModifiedAt = prototype.LastModifiedAt;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
@@ -2130,9 +2552,19 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         internal DateTime? PhysicalExpiresAt { get; }
 
+        internal TimeSpan? SlidingExpiration { get; }
+
+        internal DateTime? TrackedExpiresAt => SlidingExpiration.HasValue ? LogicalExpiresAt : PhysicalExpiresAt;
+
         internal LastFactoryError? LastFactoryError { get; }
 
         internal IReadOnlySet<string>? Tags { get; }
+
+        internal DateTime? EagerRefreshAt { get; }
+
+        internal string? ETag { get; }
+
+        internal DateTime? LastModifiedAt { get; }
 
         // Expired at the exact tick (expiresAt <= now): align with the Core (IsFresh/IsPhysicallyPresent),
         // Redis (_IsExpired), and the eviction maintenance loop conventions so every provider and the
@@ -2142,6 +2574,18 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         internal bool IsLogicallyExpired =>
             LogicalExpiresAt.HasValue && LogicalExpiresAt <= _timeProvider.GetUtcNow().UtcDateTime;
+
+        internal bool ShouldRemoveAt(long expiresAtTicks)
+        {
+            if (PhysicalExpiresAt.HasValue && PhysicalExpiresAt.Value.Ticks <= expiresAtTicks)
+            {
+                return true;
+            }
+
+            return SlidingExpiration.HasValue
+                && LogicalExpiresAt.HasValue
+                && LogicalExpiresAt.Value.Ticks <= expiresAtTicks;
+        }
 
         internal long LastAccessTicks => Interlocked.Read(ref _lastAccessTicks);
 
@@ -2167,7 +2611,11 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         /// <summary>Returns a new entry that shares this entry's value but has a different
         /// expiration. Used by writers that only need to refresh the TTL.</summary>
         internal CacheEntry WithExpiration(DateTime? expiresAt) =>
-            new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt);
+            new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt, slidingExpiration: null);
+
+        /// <summary>Returns a new entry that shares this entry's value but only moves logical expiration.</summary>
+        internal CacheEntry WithLogicalExpiration(DateTime logicalExpiresAt) =>
+            new(this, logicalExpiresAt, PhysicalExpiresAt, SlidingExpiration);
 
         public T? GetValue<T>() => _ConvertValue<T>(ReadValue());
 
@@ -2310,6 +2758,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         return hasInfinite ? null : max;
     }
+
+    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 
     #endregion
 }

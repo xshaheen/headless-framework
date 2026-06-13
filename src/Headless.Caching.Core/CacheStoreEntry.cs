@@ -10,18 +10,56 @@ namespace Headless.Caching;
 /// <param name="Value">The cached value.</param>
 /// <param name="LogicalExpiresAt">The timestamp after which normal reads treat the entry as stale.</param>
 /// <param name="PhysicalExpiresAt">The timestamp after which the entry is no longer retained.</param>
+/// <param name="SlidingExpiration">The optional idle window used to re-arm logical expiration on value reads.</param>
 [PublicAPI]
 public readonly record struct CacheStoreEntry<T>(
     bool Found,
     bool IsNull,
     T? Value,
     DateTime? LogicalExpiresAt,
-    DateTime? PhysicalExpiresAt
+    DateTime? PhysicalExpiresAt,
+    TimeSpan? SlidingExpiration
 )
 {
+    /// <summary>Gets the optional timestamp after which a fresh read may trigger an eager background refresh.</summary>
+    public DateTime? EagerRefreshAt { get; init; }
+
+    /// <summary>Gets the optional opaque entity tag the factory associated with the cached value.</summary>
+    public string? ETag { get; init; }
+
+    /// <summary>Gets the optional timestamp at which the cached value was last modified at its origin.</summary>
+    public DateTime? LastModifiedAt { get; init; }
+
+    /// <summary>Gets the optional invalidation tags associated with the cached value.</summary>
+    public IReadOnlyCollection<string>? Tags { get; init; }
+
+    /// <summary>
+    /// Gets an opaque store-owned stamp identifying the exact physical entry snapshot that was read.
+    /// </summary>
+    /// <remarks>
+    /// The coordinator copies this stamp to <see cref="CacheStoreEntryWrite{T}.ExpectedConcurrencyStamp"/> for
+    /// factory writes derived from an existing physical entry, so a late factory cannot resurrect a removed
+    /// entry or clobber a concurrent writer. The value is provider-specific and must only be treated as an
+    /// equality token.
+    /// </remarks>
+    public string? ConcurrencyStamp { get; init; }
+
+    /// <summary>
+    /// Gets whether the store is asking the coordinator to serve this physically-present stale entry without
+    /// running the factory because a lower tier degraded during the read.
+    /// </summary>
+    public bool ServeStaleImmediately { get; init; }
+
     /// <summary>Gets an entry representing a store miss.</summary>
     public static CacheStoreEntry<T> NotFound { get; } =
-        new(Found: false, IsNull: false, Value: default, LogicalExpiresAt: null, PhysicalExpiresAt: null);
+        new(
+            Found: false,
+            IsNull: false,
+            Value: default,
+            LogicalExpiresAt: null,
+            PhysicalExpiresAt: null,
+            SlidingExpiration: null
+        );
 }
 
 /// <summary>Shared expiration predicates over <see cref="CacheStoreEntry{T}"/> used by Core and providers.</summary>

@@ -52,7 +52,7 @@ Jobs cron-expression caching uses the host application's optional default `Headl
 
 ```csharp
 var redis = ConnectionMultiplexer.Connect("localhost:6379");
-builder.Services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
+builder.Services.AddHeadlessCaching(setup => setup.UseRedis(options => options.ConnectionMultiplexer = redis));
 
 builder.Services
     .AddHeadlessJobs()

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
 using System.Text;
 using Headless.Checks;
 using Headless.Redis;
@@ -31,16 +32,28 @@ public sealed class RedisCache(
     TimeProvider timeProvider,
     RedisCacheOptions options,
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
-    ILogger<RedisCache>? logger = null
+    ILogger<RedisCache>? logger = null,
+    ICacheFactoryLockProvider? factoryLockProvider = null
 ) : IRemoteCache, IFactoryCacheStore, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
 
+    /// <summary>
+    /// Reserved namespace segment for the reverse tag index: tag hashes live at
+    /// <c>{KeyPrefix}__cache_tag__:{tag}</c>. Cache entries must not be stored under keys starting with this
+    /// segment. See <see cref="CacheTaggedSetScriptDefinition"/> for the index contract.
+    /// </summary>
+    private const string _TagNamespace = "__cache_tag__:";
+
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
-    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger);
+
+    /// <inheritdoc />
+    public CacheEntryOptions? DefaultEntryOptions { get; } = options.DefaultEntryOptions;
+
+    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger, factoryLockProvider);
 
     private volatile bool _supportsMsetEx;
     private volatile bool _supportsMsetExChecked;
@@ -48,6 +61,22 @@ public sealed class RedisCache(
     private readonly IDatabase _database = options.ConnectionMultiplexer.GetDatabase();
 
     private bool IsCluster => _isClusterLazy.Value;
+
+    // Tag operations touch the tag reverse-index hash and the tagged entry keys together; on Redis Cluster those
+    // span hash slots, which a single Lua script cannot do (CROSSSLOT). Fail fast with a clear message instead of
+    // surfacing a raw RedisServerException. A cluster-safe design is tracked in issue #438.
+    private void _EnsureTaggingClusterSupported()
+    {
+        if (IsCluster)
+        {
+            throw new NotSupportedException(
+                "Redis cache tag operations (tagged writes and RemoveByTagAsync) are not supported on Redis "
+                    + "Cluster: the tag reverse-index and tagged entries span hash slots, which a single Lua "
+                    + "script cannot touch. Use a standalone or replicated Redis deployment for tagging, or omit "
+                    + "tags when connected to a cluster."
+            );
+        }
+    }
 
     private static bool _CheckIsCluster(IConnectionMultiplexer connectionMultiplexer)
     {
@@ -80,6 +109,22 @@ public sealed class RedisCache(
         return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(factory);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
+    }
+
     #region Update
 
     public async ValueTask<bool> UpsertAsync<T>(
@@ -94,6 +139,24 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         return await _SetInternalAsync(_GetKey(key), value, expiration).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await ((IFactoryCacheStore)this)
+            .UpsertEntryAsync(key, value, options, timeProvider, cancellationToken)
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     public async ValueTask<int> UpsertAllAsync<T>(
@@ -511,7 +574,7 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
-        return _RedisValueToCacheValue<T>(redisValue);
+        return await _RedisValueToCacheValueAsync<T>(_GetKey(key), redisValue).ConfigureAwait(false);
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
@@ -553,7 +616,12 @@ public sealed class RedisCache(
 
                 for (var i = 0; i < pairs.Length; i++)
                 {
-                    result[pairs[i].Original] = _RedisValueToCacheValue<T>(values[i]);
+                    result[pairs[i].Original] = await _RedisValueToCacheValueAsync<T>(
+                            pairs[i].Redis,
+                            values[i],
+                            rearm: false
+                        )
+                        .ConfigureAwait(false);
                 }
             }
 
@@ -566,11 +634,203 @@ public sealed class RedisCache(
 
             for (var i = 0; i < originalKeys.Count; i++)
             {
-                result[originalKeys[i]] = _RedisValueToCacheValue<T>(values[i]);
+                result[originalKeys[i]] = await _RedisValueToCacheValueAsync<T>(redisKeys[i], values[i], rearm: false)
+                    .ConfigureAwait(false);
             }
 
             return result.AsReadOnly();
         }
+    }
+
+    /// <inheritdoc/>
+    public async ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(cacheKeys);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var originalKeys = new List<string>();
+        var redisKeys = new List<RedisKey>();
+
+        foreach (var key in cacheKeys.Distinct(StringComparer.Ordinal))
+        {
+            Argument.IsNotNullOrEmpty(key);
+            originalKeys.Add(key);
+            redisKeys.Add(_GetKey(key));
+        }
+
+        if (redisKeys.Count is 0)
+        {
+            return ReadOnlyDictionary<string, CacheValueWithExpiration<T>>.Empty;
+        }
+
+        // One round-trip: fetch all raw values. For framed entries the logical expiration is embedded in the
+        // frame and decoded below without any additional network call. Sliding entries need the live Redis TTL
+        // (the frame's logical is just a lower bound); those are collected and fetched in a single pipelined
+        // batch — still O(1) network round-trips total.
+        RedisValue[] rawValues;
+
+        if (IsCluster)
+        {
+            // Cluster: batch by hash slot so each StringGetAsync covers one slot group.
+            var rawMap = new Dictionary<int, RedisValue>(redisKeys.Count);
+            var indexedPairs = originalKeys
+                .Select((k, i) => (Original: k, Redis: redisKeys[i], Index: i))
+                .GroupBy(x => options.ConnectionMultiplexer.HashSlot(x.Redis))
+                .ToList();
+
+            rawValues = new RedisValue[redisKeys.Count];
+
+            foreach (var slotGroup in indexedPairs)
+            {
+                var pairs = slotGroup.ToArray();
+                var slotKeys = pairs.Select(x => x.Redis).ToArray();
+                var slotValues = await _database.StringGetAsync(slotKeys, options.ReadMode).ConfigureAwait(false);
+
+                for (var i = 0; i < pairs.Length; i++)
+                {
+                    rawValues[pairs[i].Index] = slotValues[i];
+                }
+            }
+        }
+        else
+        {
+            rawValues = await _database.StringGetAsync([.. redisKeys], options.ReadMode).ConfigureAwait(false);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var result = new Dictionary<string, CacheValueWithExpiration<T>>(redisKeys.Count, StringComparer.Ordinal);
+
+        // First pass: decode value + expiration from the frame. Collect keys whose expiration requires a
+        // live TTL probe (sliding entries or non-framed legacy payloads).
+        List<(int Index, RedisKey RedisKey, T? Value)>? slidingOrLegacyHits = null;
+
+        for (var i = 0; i < originalKeys.Count; i++)
+        {
+            var rawValue = rawValues[i];
+
+            if (!rawValue.HasValue)
+            {
+                continue;
+            }
+
+            try
+            {
+                var frame = RedisCacheEntryFrame.Decode(rawValue);
+
+                if (frame.IsFramed)
+                {
+                    if (_IsExpired(frame.PhysicalExpiresAt, now))
+                    {
+                        continue;
+                    }
+
+                    if (frame.SlidingExpiration.HasValue)
+                    {
+                        // Sliding: logical expiry is maintained by TTL re-arms; the frame's LogicalExpiresAt is a
+                        // lower bound, not the live value. Collect for a single pipelined TTL batch below.
+                        if (!frame.IsNull)
+                        {
+                            var slidingValue = _DeserializeValueSegment<T>(frame.ValueSegment);
+                            (slidingOrLegacyHits ??= []).Add((i, redisKeys[i], slidingValue));
+                        }
+                        else
+                        {
+                            // Null-sentinel sliding entry: still needs live TTL.
+                            (slidingOrLegacyHits ??= []).Add((i, redisKeys[i], default));
+                        }
+
+                        continue;
+                    }
+
+                    if (_IsExpired(frame.LogicalExpiresAt, now))
+                    {
+                        continue;
+                    }
+
+                    TimeSpan? logicalRemaining = frame.LogicalExpiresAt?.Subtract(now);
+
+                    CacheValue<T> cacheValue;
+
+                    if (frame.IsNull)
+                    {
+                        cacheValue = CacheValue<T>.Null;
+                    }
+                    else
+                    {
+                        var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
+                        cacheValue = new CacheValue<T>(framedValue, true);
+                    }
+
+                    result[originalKeys[i]] = new CacheValueWithExpiration<T>(cacheValue, logicalRemaining);
+                }
+                else
+                {
+                    // Non-framed (legacy) entry: no embedded expiration metadata — needs live TTL probe.
+                    T? legacyValue;
+
+                    if (rawValue == _NullValue)
+                    {
+                        legacyValue = default;
+                    }
+                    else
+                    {
+                        legacyValue = _FromRedisValue<T>(rawValue);
+                    }
+
+                    (slidingOrLegacyHits ??= []).Add((i, redisKeys[i], legacyValue));
+                }
+            }
+            catch (Exception e)
+            {
+                _logger.LogDeserializationFailed(e, rawValue, typeof(T).FullName);
+                throw;
+            }
+        }
+
+        // Second pass (optional): pipeline all TTL probes in one batch execution — one network round-trip for
+        // all sliding/legacy entries regardless of count.
+        if (slidingOrLegacyHits is { Count: > 0 })
+        {
+            var batch = _database.CreateBatch();
+            var ttlTasks = new Task<TimeSpan?>[slidingOrLegacyHits.Count];
+
+            for (var j = 0; j < slidingOrLegacyHits.Count; j++)
+            {
+                ttlTasks[j] = batch.KeyTimeToLiveAsync(slidingOrLegacyHits[j].RedisKey, options.ReadMode);
+            }
+
+            batch.Execute();
+            var ttlResults = await Task.WhenAll(ttlTasks).ConfigureAwait(false);
+
+            for (var j = 0; j < slidingOrLegacyHits.Count; j++)
+            {
+                var (idx, _, val) = slidingOrLegacyHits[j];
+                var ttl = ttlResults[j];
+
+                // ttl == null  → Redis reports no expiry on the key (persistent / legacy-unframed entry that was
+                //                 written without a TTL). The key was confirmed present in pass 1, so null here
+                //                 means "no expiry", NOT "key missing". Emit as a hit with Expiration = null,
+                //                 matching GetExpirationAsync / GetAsync / InMemoryRemoteCacheAdapter contract.
+                //
+                // ttl.Value <= Zero → The key has a TTL but it has already elapsed (eviction race between pass 1
+                //                     and this probe). Treat as a miss and skip.
+                if (ttl is { Ticks: <= 0 })
+                {
+                    continue;
+                }
+
+                var cacheVal = val is null ? CacheValue<T>.Null : new CacheValue<T>(val, true);
+
+                // ttl is null  → persistent key, no expiry → Expiration = null (valid hit)
+                // ttl.Value > 0 → remaining TTL → Expiration = ttl
+                result[originalKeys[idx]] = new CacheValueWithExpiration<T>(cacheVal, ttl);
+            }
+        }
+
+        return result.AsReadOnly();
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
@@ -708,6 +968,16 @@ public sealed class RedisCache(
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
+        if (_IsExpired(frame.PhysicalExpiresAt, now))
+        {
+            return null;
+        }
+
+        if (frame.SlidingExpiration.HasValue)
+        {
+            return await _database.KeyTimeToLiveAsync(_GetKey(key)).ConfigureAwait(false);
+        }
+
         if (_IsExpired(frame.LogicalExpiresAt, now))
         {
             return null;
@@ -773,6 +1043,71 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         return await _database.KeyDeleteAsync(_GetKey(key)).ConfigureAwait(false);
+    }
+
+    public async ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var redisKey = _GetKey(key);
+        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+
+        if (!redisValue.HasValue)
+        {
+            return false;
+        }
+
+        var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+        // A non-framed (legacy/raw) key carries no logical metadata, so there is no fail-safe reserve to preserve:
+        // logical expiration collapses to removal, the same fork the framed no-reserve branch takes below.
+        if (!frame.IsFramed)
+        {
+            return await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        if (_IsExpired(frame.PhysicalExpiresAt, now))
+        {
+            await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+            return false;
+        }
+
+        // Physical > Logical is overloaded (fail-safe extension vs sliding's absolute cap); only the former, on a
+        // non-sliding entry, is a parachute worth keeping — mirror InMemoryCache.ExpireAsync exactly.
+        var hasFailSafeReserve =
+            frame.SlidingExpiration is null
+            && frame is { LogicalExpiresAt: { } logical, PhysicalExpiresAt: { } physical }
+            && physical > logical;
+
+        if (!hasFailSafeReserve)
+        {
+            return await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+        }
+
+        // Re-stamp the logical expiry to now while preserving the physical reserve and the key's server TTL
+        // (KeepTtl). Reads now miss; a later failing fail-safe factory can still serve the stale value. The eager
+        // stamp is cleared — a logically-expired entry must route the next caller through the factory, not eager
+        // refresh. Last-writer-wins under a concurrent fresh write, consistent with the sliding re-arm RMW.
+        var reStamped = RedisCacheEntryFrame.Encode(
+            (byte[])frame.ValueSegment.ToArray(),
+            frame.IsNull,
+            logicalExpiresAt: now,
+            physicalExpiresAt: frame.PhysicalExpiresAt,
+            slidingExpiration: null,
+            eagerRefreshAt: null,
+            etag: frame.ETag,
+            lastModifiedAt: frame.LastModifiedAt,
+            tags: frame.Tags
+        );
+
+        await _database
+            .StringSetAsync(redisKey, reStamped, expiry: null, keepTtl: true, when: When.Exists)
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
@@ -871,6 +1206,13 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
+        return (int)await _RemoveByPatternAsync($"{_GetKey(prefix)}*", cancellationToken).ConfigureAwait(false);
+    }
+
+    // Scans every primary node for keys matching the pattern and UNLINKs them in batches. Shared by
+    // RemoveByPrefixAsync (the instance prefix plus the caller's prefix) and FlushAsync (the instance prefix only).
+    private async ValueTask<long> _RemoveByPatternAsync(string pattern, CancellationToken cancellationToken)
+    {
         var endpoints = options.ConnectionMultiplexer.GetEndPoints();
 
         if (endpoints.Length is 0)
@@ -893,9 +1235,7 @@ public sealed class RedisCache(
             var keys = new List<RedisKey>();
 
             await foreach (
-                var key in server
-                    .KeysAsync(pattern: $"{_GetKey(prefix)}*", pageSize: _BatchSize)
-                    .WithCancellation(cancellationToken)
+                var key in server.KeysAsync(pattern: pattern, pageSize: _BatchSize).WithCancellation(cancellationToken)
             )
             {
                 keys.Add(key);
@@ -913,7 +1253,55 @@ public sealed class RedisCache(
             }
         }
 
-        return (int)deleted;
+        return deleted;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Not supported on Redis Cluster: the tag hash and the tagged keys span hash slots.
+    /// <para>
+    /// Processes tag members in batches of up to <see cref="RedisCacheOptions.MaxMembersPerTagRemoval"/>
+    /// per Lua call and loops in C# until the tag hash is fully drained, so removal is always complete
+    /// regardless of tag cardinality. The returned count is the total across all batches.
+    /// </para>
+    /// </remarks>
+    public async ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(tag);
+        cancellationToken.ThrowIfCancellationRequested();
+        _EnsureTaggingClusterSupported();
+
+        var tagHashKey = (RedisKey)_GetTagHashKey(tag);
+        var scriptArgs = new
+        {
+            tagHash = tagHashKey,
+            headerLen = RedisCacheEntryFrame.HeaderLength,
+            maxMembers = options.MaxMembersPerTagRemoval,
+        };
+
+        var totalRemoved = 0;
+
+        // Loop until the Lua script reports no remaining members. Each invocation processes a bounded
+        // batch so no single script call blocks Redis for an unbounded duration (large tag sets).
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = await scriptsLoader
+                .EvaluateAsync(_database, CacheRemoveByTagScriptDefinition.Instance, scriptArgs, cancellationToken)
+                .ConfigureAwait(false);
+
+            var resultArray = (RedisResult[])result!;
+            totalRemoved += (int)resultArray[0];
+            var hasRemaining = (int)resultArray[1] == 1;
+
+            if (!hasRemaining)
+            {
+                break;
+            }
+        }
+
+        return totalRemoved;
     }
 
     public async ValueTask<long> SetRemoveAsync<T>(
@@ -961,7 +1349,10 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        await options.ConnectionMultiplexer.FlushAllAsync().ConfigureAwait(false);
+        // Clear only this cache instance's keyspace (its KeyPrefix), not the whole Redis database: a shared Redis
+        // may host other caches and application data. When no KeyPrefix is configured the pattern is "*", which
+        // clears the database — unavoidable for an unprefixed cache, and documented as such.
+        await _RemoveByPatternAsync($"{_keyPrefix}*", cancellationToken).ConfigureAwait(false);
     }
 
     #endregion
@@ -1014,7 +1405,11 @@ public sealed class RedisCache(
         return serializer.Deserialize<T>((byte[])redisValue!);
     }
 
-    private CacheValue<T> _RedisValueToCacheValue<T>(RedisValue redisValue)
+    private async ValueTask<CacheValue<T>> _RedisValueToCacheValueAsync<T>(
+        RedisKey redisKey,
+        RedisValue redisValue,
+        bool rearm = true
+    )
     {
         if (!redisValue.HasValue)
         {
@@ -1029,9 +1424,20 @@ public sealed class RedisCache(
             {
                 var now = timeProvider.GetUtcNow().UtcDateTime;
 
-                if (_IsExpired(frame.PhysicalExpiresAt, now) || _IsExpired(frame.LogicalExpiresAt, now))
+                if (
+                    _IsExpired(frame.PhysicalExpiresAt, now)
+                    || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
+                )
                 {
                     return CacheValue<T>.NoValue;
+                }
+
+                // Bulk reads (GetAllAsync) skip re-arm: re-arming here issues one KeyTimeToLive + KeyExpire per
+                // sliding key, turning a single batched StringGet into N sequential round trips. Single-key reads
+                // still re-arm so idle-window semantics hold on the hot path.
+                if (rearm)
+                {
+                    await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
                 }
 
                 if (frame.IsNull)
@@ -1116,7 +1522,8 @@ public sealed class RedisCache(
             valueSegment,
             isNull: value is null,
             logicalExpiresAt: expiresAt,
-            physicalExpiresAt: expiresAt
+            physicalExpiresAt: expiresAt,
+            slidingExpiration: null
         );
     }
 
@@ -1131,12 +1538,10 @@ public sealed class RedisCache(
         return _TryGetEntryAsync<T>(key);
     }
 
-    async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+    // Non-async forwarder: `in` parameters are not allowed on async methods, so copy the descriptor by value.
+    ValueTask<bool> IFactoryCacheStore.SetEntryAsync<T>(
         string key,
-        T? value,
-        bool isNull,
-        DateTime logicalExpiresAt,
-        DateTime physicalExpiresAt,
+        in CacheStoreEntryWrite<T> entry,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1144,19 +1549,155 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var expiresIn = physicalExpiresAt.Subtract(timeProvider.GetUtcNow().UtcDateTime);
+        return _SetEntryCoreAsync(key, entry);
+    }
+
+    private async ValueTask<bool> _SetEntryCoreAsync<T>(string key, CacheStoreEntryWrite<T> entry)
+    {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var expiresIn = (entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt).Subtract(
+            now
+        );
         var redisKey = _GetKey(key);
 
         if (expiresIn <= TimeSpan.Zero)
         {
+            if (entry.ExpectedConcurrencyStamp is { } expiredExpectedStamp)
+            {
+                if (!_TryDecodeConcurrencyStamp(expiredExpectedStamp, out var expiredExpectedValue))
+                {
+                    return false;
+                }
+
+                var current = await _database.StringGetAsync(redisKey).ConfigureAwait(false);
+
+                if (current != expiredExpectedValue)
+                {
+                    return false;
+                }
+            }
+
             await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
-            return;
+            return true;
         }
 
-        var valueSegment = isNull ? RedisValue.EmptyString : _ToRedisValue(value);
-        var redisValue = RedisCacheEntryFrame.Encode(valueSegment, isNull, logicalExpiresAt, physicalExpiresAt);
+        var valueSegment = entry.IsNull ? RedisValue.EmptyString : _ToRedisValue(entry.Value);
+        var redisValue = RedisCacheEntryFrame.Encode(
+            valueSegment,
+            entry.IsNull,
+            entry.LogicalExpiresAt,
+            entry.PhysicalExpiresAt,
+            entry.SlidingExpiration,
+            entry.EagerRefreshAt,
+            entry.ETag,
+            entry.LastModifiedAt,
+            entry.Tags
+        );
 
-        await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
+        var hasTags = entry.Tags is { Count: > 0 };
+        var hasRemovedTags = entry.RemovedTags is { Count: > 0 };
+        var hasExpectedStamp = entry.ExpectedConcurrencyStamp is not null;
+        var expectedValue = RedisValue.EmptyString;
+
+        if (hasExpectedStamp && !_TryDecodeConcurrencyStamp(entry.ExpectedConcurrencyStamp!, out expectedValue))
+        {
+            return false;
+        }
+
+        // Untagged writes with no prior tags keep the plain SET path: zero hot-path regression.
+        if (!hasTags && !hasRemovedTags && !hasExpectedStamp)
+        {
+            await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
+            return true;
+        }
+
+        _EnsureTaggingClusterSupported();
+
+        // Tagged write: one atomic script does the SET plus the reverse-tag-index reconciliation (HSET the
+        // current tags with the physical-expiry version, GT-extend the tag hash TTLs, HDEL dropped tags).
+        var keyTtlMs = _ToPositiveMilliseconds(expiresIn);
+        var tagTtlMs = Math.Max(_ToPositiveMilliseconds(entry.PhysicalExpiresAt.Subtract(now)), keyTtlMs);
+        var physicalMs = RedisCacheEntryFrame.ToUnixTimeMilliseconds(entry.PhysicalExpiresAt);
+
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                CacheTaggedSetScriptDefinition.Instance,
+                new
+                {
+                    key = (RedisKey)redisKey,
+                    value = (RedisValue)redisValue,
+                    expectedValue = hasExpectedStamp ? expectedValue : RedisValue.EmptyString,
+                    keyTtlMs,
+                    tagTtlMs,
+                    physicalMs = (RedisValue)physicalMs.ToString(CultureInfo.InvariantCulture),
+                    tags = hasTags ? (RedisValue)RedisCacheEntryFrame.EncodeTags(entry.Tags!) : RedisValue.EmptyString,
+                    removedTags = hasRemovedTags
+                        ? (RedisValue)RedisCacheEntryFrame.EncodeTags(entry.RemovedTags!)
+                        : RedisValue.EmptyString,
+                    tagPrefix = (RedisValue)string.Concat(_keyPrefix, _TagNamespace),
+                },
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        return (int)result == 1;
+    }
+
+    private static string _ToConcurrencyStamp(RedisValue value) =>
+        string.Concat("b64:", Convert.ToBase64String((byte[])value!));
+
+    private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
+    {
+        const string Prefix = "b64:";
+
+        if (!stamp.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            value = RedisValue.Null;
+            return false;
+        }
+
+        try
+        {
+            value = Convert.FromBase64String(stamp[Prefix.Length..]);
+            return true;
+        }
+        catch (FormatException)
+        {
+            value = RedisValue.Null;
+            return false;
+        }
+    }
+
+    private string _GetTagHashKey(string tag) => string.Concat(_keyPrefix, _TagNamespace, tag);
+
+    private static long _ToPositiveMilliseconds(TimeSpan duration)
+    {
+        var milliseconds = (long)Math.Ceiling(duration.TotalMilliseconds);
+        return milliseconds < 1 ? 1 : milliseconds;
+    }
+
+    async ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // No embedded logical lower bound on this path (the coordinator drops it for sliding entries, since it
+        // goes stale after a metadata-only re-arm), so the throttle reads the live key TTL.
+        await _RearmSlidingTtlAsync(
+                _GetKey(key),
+                slidingExpiration,
+                physicalExpiresAt,
+                now,
+                embeddedLogicalExpiresAt: null
+            )
+            .ConfigureAwait(false);
     }
 
     private async ValueTask<CacheStoreEntry<T>> _TryGetEntryAsync<T>(string key)
@@ -1169,6 +1710,7 @@ public sealed class RedisCache(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var concurrencyStamp = _ToConcurrencyStamp(redisValue);
         var frame = RedisCacheEntryFrame.Decode(redisValue);
 
         if (frame.IsFramed)
@@ -1184,9 +1726,22 @@ public sealed class RedisCache(
                 Found: true,
                 IsNull: frame.IsNull,
                 Value: value,
-                LogicalExpiresAt: frame.LogicalExpiresAt,
-                PhysicalExpiresAt: frame.PhysicalExpiresAt
-            );
+                // For sliding entries the embedded logical timestamp goes stale after a metadata-only re-arm
+                // (KeyExpire bumps the key TTL but does not rewrite the frame), so reporting it would make the
+                // coordinator treat a live, recently-touched key as logically expired and spuriously re-run the
+                // factory. Drop it and let freshness rely on key existence + the physical cap, mirroring the
+                // other sliding read paths (_RedisValueToCacheValueAsync, _RedisValueIsLogicallyPresent).
+                LogicalExpiresAt: frame.SlidingExpiration.HasValue ? null : frame.LogicalExpiresAt,
+                PhysicalExpiresAt: frame.PhysicalExpiresAt,
+                SlidingExpiration: frame.SlidingExpiration
+            )
+            {
+                EagerRefreshAt = frame.EagerRefreshAt,
+                ETag = frame.ETag,
+                LastModifiedAt = frame.LastModifiedAt,
+                Tags = frame.Tags,
+                ConcurrencyStamp = concurrencyStamp,
+            };
         }
 
         if (redisValue == _NullValue)
@@ -1196,8 +1751,12 @@ public sealed class RedisCache(
                 IsNull: true,
                 Value: default,
                 LogicalExpiresAt: null,
-                PhysicalExpiresAt: null
-            );
+                PhysicalExpiresAt: null,
+                SlidingExpiration: null
+            )
+            {
+                ConcurrencyStamp = concurrencyStamp,
+            };
         }
 
         return new CacheStoreEntry<T>(
@@ -1205,8 +1764,12 @@ public sealed class RedisCache(
             IsNull: false,
             Value: _FromRedisValue<T>(redisValue),
             LogicalExpiresAt: null,
-            PhysicalExpiresAt: null
-        );
+            PhysicalExpiresAt: null,
+            SlidingExpiration: null
+        )
+        {
+            ConcurrencyStamp = concurrencyStamp,
+        };
     }
 
     private bool _RedisValueIsLogicallyPresent(RedisValue redisValue)
@@ -1224,10 +1787,82 @@ public sealed class RedisCache(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        return !_IsExpired(frame.PhysicalExpiresAt, now) && !_IsExpired(frame.LogicalExpiresAt, now);
+        return !_IsExpired(frame.PhysicalExpiresAt, now)
+            && (frame.SlidingExpiration.HasValue || !_IsExpired(frame.LogicalExpiresAt, now));
+    }
+
+    private ValueTask _TryRearmSlidingEntryAsync(
+        RedisKey redisKey,
+        RedisCacheEntryFrame.DecodedFrame frame,
+        DateTime now
+    )
+    {
+        if (
+            frame.SlidingExpiration is not { } slidingExpiration
+            || frame.PhysicalExpiresAt is not { } physicalExpiresAt
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        // The frame's embedded logical is a lower bound on the live key TTL (a metadata-only re-arm only ever
+        // pushes the TTL out, never the frame), so the shared helper can use it to skip the KeyTimeToLive probe
+        // when at least half the window still remains.
+        return _RearmSlidingTtlAsync(redisKey, slidingExpiration, physicalExpiresAt, now, frame.LogicalExpiresAt);
+    }
+
+    private async ValueTask _RearmSlidingTtlAsync(
+        RedisKey redisKey,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        DateTime? embeddedLogicalExpiresAt
+    )
+    {
+        var remainingToCap = physicalExpiresAt - now;
+
+        if (remainingToCap <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        // Re-arm once roughly half the idle window has elapsed. Exact integer halving (no lossy double cast).
+        var rearmThreshold = TimeSpan.FromTicks(slidingExpiration.Ticks / 2);
+
+        // Fast path: when the (lower-bound) embedded logical already proves more than half the window remains,
+        // the live TTL — which can only be larger — does too, so skip both the re-arm and its round trip.
+        if (embeddedLogicalExpiresAt is { } embeddedLogical && embeddedLogical - now > rearmThreshold)
+        {
+            return;
+        }
+
+        try
+        {
+            // The TTL probe is part of the best-effort re-arm: keep it inside the catch so a transient Redis
+            // error during the probe degrades to "skip the re-arm" instead of failing a value read that the
+            // caller has already satisfied.
+            var ttl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
+
+            if (ttl.HasValue && ttl.Value > rearmThreshold)
+            {
+                return;
+            }
+
+            var expiresIn = _Min(slidingExpiration, remainingToCap);
+            await _database.KeyExpireAsync(redisKey, expiresIn).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogSlidingExpirationRearmFailed(exception, redisKey.ToString());
+            }
+        }
     }
 
     private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt.HasValue && expiresAt.Value <= now;
+
+    private static TimeSpan _Min(TimeSpan left, TimeSpan right) => left <= right ? left : right;
 
     private T? _DeserializeValueSegment<T>(ReadOnlyMemory<byte> segment)
     {
@@ -1236,6 +1871,21 @@ public sealed class RedisCache(
         if (typeof(T) == typeof(string))
         {
             return (T?)(object)Encoding.UTF8.GetString(segment.Span);
+        }
+
+        // Avoid copying segment into a new byte[] via ToArray(). If the backing store is a managed array
+        // (the common path — RedisValue is decoded into byte[] by StackExchange.Redis), wrap it directly
+        // in a non-writable MemoryStream at the right offset and length. Fall back to the copy path for
+        // exotic memory types where TryGetArray returns false (e.g. NativeMemoryManager).
+        if (MemoryMarshal.TryGetArray(segment, out var arraySegment))
+        {
+            var stream = new MemoryStream(
+                arraySegment.Array!,
+                arraySegment.Offset,
+                arraySegment.Count,
+                writable: false
+            );
+            return serializer.Deserialize<T>(stream);
         }
 
         return serializer.Deserialize<T>(segment.ToArray());
@@ -1506,4 +2156,12 @@ internal static partial class RedisCacheLog
         Message = "Removed {ExpiredValues} expired values for key: {Key}"
     )]
     public static partial void LogExpiredValuesRemoved(this ILogger logger, long expiredValues, string key);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "SlidingExpirationRearmFailed",
+        Level = LogLevel.Debug,
+        Message = "Unable to re-arm sliding expiration for cache key {Key}; the value will still be returned."
+    )]
+    public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
 }

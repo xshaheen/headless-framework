@@ -36,6 +36,9 @@ public sealed class ScopedCache<T> : ICache<T>
         _scopeProvider = scopeProvider;
     }
 
+    /// <inheritdoc />
+    public CacheEntryOptions? DefaultEntryOptions => _cache.DefaultEntryOptions;
+
     private string _Prefix() => $"{_scopeProvider()}:";
 
     private string _ScopeKey(string key) => $"{_Prefix()}{key}";
@@ -53,13 +56,26 @@ public sealed class ScopedCache<T> : ICache<T>
         return _cache.GetOrAddAsync(_ScopeKey(key), factory, options, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public ValueTask<CacheValue<T>> GetOrAddAsync(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+
+        return _cache.GetOrAddAsync(_ScopeKey(key), factory, options, cancellationToken);
+    }
+
     #region Update
 
     /// <inheritdoc />
     public ValueTask<bool> UpsertAsync(
         string cacheKey,
         T? cacheValue,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -68,9 +84,21 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
+    public ValueTask<bool> UpsertEntryAsync(
+        string cacheKey,
+        T? cacheValue,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(cacheKey);
+        return _cache.UpsertEntryAsync(_ScopeKey(cacheKey), cacheValue, options, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public ValueTask<int> UpsertAllAsync(
         IDictionary<string, T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -86,10 +114,10 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> TryAddAsync(
+    public ValueTask<bool> TryInsertAsync(
         string cacheKey,
         T? cacheValue,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -101,7 +129,7 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask<bool> TryReplaceAsync(
         string key,
         T? value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -114,7 +142,7 @@ public sealed class ScopedCache<T> : ICache<T>
         string key,
         T? expected,
         T? value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -126,7 +154,7 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask<long> SetAddAsync(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
@@ -198,10 +226,15 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
-    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync(string key, int? pageIndex = null, int pageSize = 100)
+    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
+        string key,
+        int? pageIndex = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
-        return _cache.GetSetAsync<T>(_ScopeKey(key), pageIndex, pageSize);
+        return _cache.GetSetAsync<T>(_ScopeKey(key), pageIndex, pageSize, cancellationToken);
     }
 
     #endregion
@@ -216,16 +249,38 @@ public sealed class ScopedCache<T> : ICache<T>
     }
 
     /// <inheritdoc />
-    public ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected)
+    public ValueTask<bool> ExpireAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(cacheKey);
-        return _cache.RemoveIfEqualAsync(_ScopeKey(cacheKey), expected);
+        return _cache.ExpireAsync(_ScopeKey(cacheKey), cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<bool> RemoveIfEqualAsync(
+        string cacheKey,
+        T? expected,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(cacheKey);
+        return _cache.RemoveIfEqualAsync(_ScopeKey(cacheKey), expected, cancellationToken);
     }
 
     /// <inheritdoc />
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
         return _cache.RemoveByPrefixAsync($"{_Prefix()}{prefix}", cancellationToken);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Tags are NOT scope-isolated: only keys are scoped, so a tag invalidation removes every tagged entry in
+    /// the underlying cache regardless of scope. Scope-isolate tags by embedding the scope in the tag value
+    /// when per-scope invalidation is required.
+    /// </remarks>
+    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        return _cache.RemoveByTagAsync(tag, cancellationToken);
     }
 
     /// <inheritdoc />

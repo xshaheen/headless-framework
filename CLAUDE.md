@@ -92,21 +92,23 @@ Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — the
 
 **DI Registration (Setup classes):**
 
-Every provider package exposes a single static `Setup{Provider}` class in `Setup.cs` at the package root, following this shape:
+Every provider package exposes a single static `Setup{Provider}` class in `Setup.cs` at the package root. Multi-provider features follow the unified setup builder pattern (see `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md`): the feature's Core package owns the root `AddHeadless{Feature}(Action<Headless{Feature}SetupBuilder>)` entry plus the provider gates, and each provider package contributes `Use{Provider}` extension members on the builder:
 
 ```csharp
 public static class SetupRedisCache
 {
-    extension(IServiceCollection services) // C# 14 extension members
+    extension(HeadlessCachingSetupBuilder setup) // C# 14 extension members
     {
-        public IServiceCollection AddRedisCache(IConfiguration configuration, ...) { ... }
-        public IServiceCollection AddRedisCache(Action<TOptions> setupAction, ...) { ... }
-        public IServiceCollection AddRedisCache(Action<TOptions, IServiceProvider> setupAction, ...) { ... }
-
-        private IServiceCollection _AddCacheCore(...) { /* shared wiring */ }
+        public HeadlessCachingSetupBuilder UseRedis(IConfiguration configuration) { ... }
+        public HeadlessCachingSetupBuilder UseRedis(Action<TOptions> setupAction) { ... }
+        public HeadlessCachingSetupBuilder UseRedis(Action<TOptions, IServiceProvider> setupAction) { ... }
     }
+
+    private static IServiceCollection _AddCacheCore(...) { /* shared wiring */ }
 }
 ```
+
+Single-backend packages with no provider choice keep plain `Add{Feature}` extensions on `IServiceCollection` (same overload trio).
 
 - Name the shared private helper `_Add{Feature}Core`.
 
