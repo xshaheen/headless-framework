@@ -9,7 +9,7 @@ namespace Headless.Caching.Benchmarks;
 
 internal static class BenchmarkRunConfig
 {
-    private static readonly string s_artifactsPath = Path.Combine("artifacts", "BenchmarkDotNet.Artifacts");
+    private static readonly string s_artifactsPath = Path.Combine("artifacts", "benchmark", "caching");
 
     public static IConfig Create(string[] args)
     {
