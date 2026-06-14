@@ -2,7 +2,7 @@
 
 ## Problem Solved
 
-Provides EF Core commit coordination registration points.
+Bridges EF Core's transaction commit/rollback edges to commit coordination, so work buffered inside a transaction — outbox dispatch, durable jobs — drains atomically on commit and is discarded on rollback. It also closes the interceptor-attach footgun (EF Core does not auto-discover DI-registered interceptors) and surfaces a mis-wire loudly at startup.
 
 ## Key Features
 
@@ -31,11 +31,11 @@ dotnet add package Headless.CommitCoordination.EntityFramework
 ```csharp
 services.AddEntityFrameworkCommitCoordination();
 
-// REQUIRED for plain AddDbContext: EF Core does NOT auto-discover IInterceptor registrations from
-// the application container — without them the commit edge is never observed and coordinated work
-// silently drains as rollback. Use the AddDiRegisteredInterceptors(sp) helper (from
-// Headless.Orm.EntityFramework) to pick up every DI-registered interceptor and skip ones the options
-// action already added. (AddHeadlessDbContext / AddHeadlessIdentityDbContext call it automatically.)
+// A plain AddDbContext must attach the commit interceptor to its options — EF Core does NOT auto-discover
+// IInterceptor registrations, so without it the commit edge is never observed and coordinated work silently
+// drains as rollback. Two equivalent ways: the inline AddDiRegisteredInterceptors(sp) shown here, or a one-time
+// services.AddDiRegisteredInterceptorsConfiguration<MyDbContext>() (both from Headless.Orm.EntityFramework).
+// AddHeadlessDbContext / AddHeadlessIdentityDbContext and the messaging EF storage path do this for you.
 services.AddDbContext<MyDbContext>(
     (sp, options) => options.UseNpgsql(connectionString).AddDiRegisteredInterceptors(sp));
 
