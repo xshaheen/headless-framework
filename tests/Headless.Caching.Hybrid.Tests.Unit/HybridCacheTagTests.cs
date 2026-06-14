@@ -64,6 +64,56 @@ public sealed class HybridCacheTagTests : TestBase
     }
 
     [Fact]
+    public async Task should_seed_l2_tag_marker_when_receiving_foreign_tag_invalidation()
+    {
+        // given — a peer's tag invalidation arrives over the backplane (a different instance id)
+        var (cache, _, l2, _) = _CreateCache();
+        await using var _ = cache;
+        var tag = Faker.Random.AlphaNumeric(8);
+        var at = _timeProvider.GetUtcNow();
+
+        // when
+        await cache.HandleInvalidationAsync(
+            new CacheInvalidationMessage
+            {
+                InstanceId = "other-instance",
+                Tag = tag,
+                Timestamp = at,
+            },
+            AbortToken
+        );
+
+        // then — the receiver pushes the marker into the L2 marker cache (no L2 round-trip, no refresh-window
+        // wait), matching FusionCache's payload-carrying backplane optimization.
+        var adapter = (InMemoryRemoteCacheAdapter)l2;
+        adapter.SeededTagMarkers.Should().ContainSingle().Which.Should().Be((tag, at));
+    }
+
+    [Fact]
+    public async Task should_seed_l2_clear_marker_when_receiving_foreign_clear()
+    {
+        // given — a peer's logical clear arrives over the backplane
+        var (cache, _, l2, _) = _CreateCache();
+        await using var _ = cache;
+        var at = _timeProvider.GetUtcNow();
+
+        // when
+        await cache.HandleInvalidationAsync(
+            new CacheInvalidationMessage
+            {
+                InstanceId = "other-instance",
+                Clear = true,
+                Timestamp = at,
+            },
+            AbortToken
+        );
+
+        // then — the clear generation is pushed into the L2 marker cache immediately
+        var adapter = (InMemoryRemoteCacheAdapter)l2;
+        adapter.SeededClearMarkers.Should().ContainSingle().Which.Should().Be(at);
+    }
+
+    [Fact]
     public async Task should_publish_clear_when_clearing()
     {
         // given

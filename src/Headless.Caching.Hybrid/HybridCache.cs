@@ -114,6 +114,14 @@ public sealed partial class HybridCache(
             // locally re-created entry with a newer birth time is naturally not invalidated by this marker, so no
             // recovery-aware walk is needed.
             await LocalCache.ClearAsync(ct).ConfigureAwait(false);
+            // Push the marker into the L2 local cache too (when it caches markers): without this, an L1-miss
+            // read on this peer would fall through to L2 and observe the clear only after L2's refresh window.
+            // The notification already carries the timestamp, so no L2 round-trip is needed (FusionCache pattern).
+            if (l2Cache is IRemoteTagMarkerCache l2Markers)
+            {
+                l2Markers.SeedClearMarker(message.Timestamp ?? _timeProvider.GetUtcNow());
+            }
+
             return;
         }
 
@@ -129,6 +137,14 @@ public sealed partial class HybridCache(
             // pending recovery write that landed after this invalidation carries a newer CreatedAt and is not
             // invalidated by the older marker — the previous recovery-aware GetTaggedKeys walk is unnecessary.
             await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
+            // Push the marker into the L2 local cache too (when it caches markers) so an L1-miss read on this peer
+            // observes the invalidation immediately rather than after L2's refresh window. The notification carries
+            // the timestamp, so no L2 round-trip is needed (FusionCache's payload-carrying-backplane optimization).
+            if (l2Cache is IRemoteTagMarkerCache l2Markers)
+            {
+                l2Markers.SeedTagMarker(message.Tag, message.Timestamp ?? _timeProvider.GetUtcNow());
+            }
+
             return;
         }
 

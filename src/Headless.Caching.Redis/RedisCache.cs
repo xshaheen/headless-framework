@@ -37,7 +37,7 @@ public sealed class RedisCache(
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null,
     ICacheFactoryLockProvider? factoryLockProvider = null
-) : IRemoteCache, IFactoryCacheStore, IDisposable
+) : IRemoteCache, IFactoryCacheStore, IRemoteTagMarkerCache, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";
@@ -1440,6 +1440,44 @@ public sealed class RedisCache(
             .ConfigureAwait(false);
 
         Interlocked.Exchange(ref _clearMarkerMs, nowMs);
+        Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
+    }
+
+    /// <inheritdoc />
+    public void SeedTagMarker(string tag, DateTimeOffset invalidatedAt)
+    {
+        Argument.IsNotNullOrEmpty(tag);
+
+        // A backplane peer learned this tag was invalidated at invalidatedAt; stamp our local copy fresh so the
+        // next read observes it without waiting for the refresh window (mirrors RemoveByTagAsync's own-read stamp).
+        // Raise-only: never lower a marker we already know to be newer.
+        var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
+        var ticks = _StopwatchTicks();
+
+        _markerCache.AddOrUpdate(
+            tag,
+            static (_, state) => (state.ms, state.ticks),
+            static (_, existing, state) =>
+                existing.MarkerMs >= state.ms ? (existing.MarkerMs, state.ticks) : (state.ms, state.ticks),
+            (ms, ticks)
+        );
+    }
+
+    /// <inheritdoc />
+    public void SeedClearMarker(DateTimeOffset invalidatedAt)
+    {
+        var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
+
+        // Raise-only CAS: a stale push must not lower a newer clear generation this node already observed.
+        long current;
+        while ((current = Interlocked.Read(ref _clearMarkerMs)) < ms)
+        {
+            if (Interlocked.CompareExchange(ref _clearMarkerMs, ms, current) == current)
+            {
+                break;
+            }
+        }
+
         Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
     }
 

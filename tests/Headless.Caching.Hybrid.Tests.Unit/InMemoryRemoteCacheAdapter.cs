@@ -5,8 +5,21 @@ using Headless.Caching;
 namespace Tests;
 
 /// <summary>Simple adapter to use InMemoryCache as IRemoteCache for testing.</summary>
-internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteCache, IFactoryCacheStore
+internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
+    : IRemoteCache,
+        IFactoryCacheStore,
+        IRemoteTagMarkerCache
 {
+    /// <summary>Records backplane marker pushes so tests can assert the hybrid receiver seeds the L2 marker cache.</summary>
+    public List<(string Tag, DateTimeOffset At)> SeededTagMarkers { get; } = [];
+
+    /// <summary>Records clear-generation pushes received from the backplane receiver.</summary>
+    public List<DateTimeOffset> SeededClearMarkers { get; } = [];
+
+    public void SeedTagMarker(string tag, DateTimeOffset invalidatedAt) => SeededTagMarkers.Add((tag, invalidatedAt));
+
+    public void SeedClearMarker(DateTimeOffset invalidatedAt) => SeededClearMarkers.Add(invalidatedAt);
+
     public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;
 
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
