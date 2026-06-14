@@ -6,7 +6,24 @@ namespace Headless.Caching;
 
 public sealed partial class HybridCache
 {
-    private void _QueueScalarUpsertRecovery<T>(string key, T? value, TimeSpan? expiration)
+    /// <summary>
+    /// Reads back the L1 physical-expiry stamp for a key just written by a scalar upsert, so a queued recovery
+    /// item can verify (at replay time) that the L1 entry it captured is still the one in the store. Returns
+    /// <see langword="null"/> when L1 does not expose the entry store (the replay then falls back to a
+    /// presence-only check) — symmetric with how <see cref="_QueueSetEntryRecovery{T}"/> consumes its stamp.
+    /// </summary>
+    private async ValueTask<DateTime?> _CaptureLocalPhysicalStampAsync<T>(string key, CancellationToken ct)
+    {
+        if (LocalCache is not IFactoryCacheStore l1Store)
+        {
+            return null;
+        }
+
+        var current = await l1Store.TryGetEntryAsync<T>(key, ct).ConfigureAwait(false);
+        return current.Found ? current.PhysicalExpiresAt : null;
+    }
+
+    private void _QueueScalarUpsertRecovery<T>(string key, T? value, TimeSpan? expiration, DateTime? l1PhysicalStamp)
     {
         var queue = RecoveryQueue!;
         var now = _timeProvider.GetUtcNow();
@@ -20,14 +37,27 @@ public sealed partial class HybridCache
             deadline,
             async ct =>
             {
-                // L1 is the source of truth: if the entry is gone, the queued write is obsolete. A surviving
-                // queued item implies no newer single-key write went through this instance (newer ops replace
-                // or clear it), and foreign writes drop it via the invalidation conflict check.
-                var current = await LocalCache.GetAsync<T>(key, ct).ConfigureAwait(false);
-
-                if (!current.HasValue)
+                // L1 is the source of truth: only replay if the L1 entry still exists and carries the exact
+                // physical stamp this write produced — a different stamp means a newer local write landed and
+                // the queued write is obsolete. Mirrors _QueueSetEntryRecovery's stamp-aware guard; when L1 does
+                // not expose the entry store the stamp is null and we fall back to the presence-only check.
+                if (LocalCache is IFactoryCacheStore l1Store && l1PhysicalStamp.HasValue)
                 {
-                    return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    var current = await l1Store.TryGetEntryAsync<T>(key, ct).ConfigureAwait(false);
+
+                    if (!current.Found || current.PhysicalExpiresAt != l1PhysicalStamp)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
+                }
+                else
+                {
+                    var current = await LocalCache.GetAsync<T>(key, ct).ConfigureAwait(false);
+
+                    if (!current.HasValue)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
                 }
 
                 TimeSpan? remaining = expiration.HasValue ? deadline - _timeProvider.GetUtcNow() : null;

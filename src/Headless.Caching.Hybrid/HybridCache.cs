@@ -134,6 +134,10 @@ public sealed partial class HybridCache(
             // queue's keys and RemoveAsync's own prefixing.
             var taggedKeys = LocalCache.GetTaggedKeys(message.Tag);
 
+            // Partition the snapshot into skip (newer pending recovery item wins) vs remove, preserving the
+            // per-key skip log, then remove the survivors in a single bulk call instead of a sequential walk.
+            var removeList = new List<string>(taggedKeys.Count);
+
             foreach (var key in taggedKeys)
             {
                 if (RecoveryQueue.HasNewerPendingItemThan(key, message.Timestamp))
@@ -142,8 +146,13 @@ public sealed partial class HybridCache(
                 }
                 else
                 {
-                    await LocalCache.RemoveAsync(key, ct).ConfigureAwait(false);
+                    removeList.Add(key);
                 }
+            }
+
+            if (removeList.Count > 0)
+            {
+                await LocalCache.RemoveAllAsync(removeList, ct).ConfigureAwait(false);
             }
 
             return;
@@ -329,7 +338,10 @@ public sealed partial class HybridCache(
 
         var result = new Dictionary<string, CacheValue<T>>(localValues, StringComparer.Ordinal);
         var distributedRead = await _ReadFromL2Async(
-                missedKeys[0],
+                // Diagnostic-only label: _ReadFromL2Async uses this key solely for timeout/circuit log fields, not
+                // for the read itself (the read is the delegate below). A synthetic bulk marker keeps the logs from
+                // looking single-key.
+                $"[bulk:{missedKeys.Count}]",
                 ct => l2Cache.GetAllWithExpirationAsync<T>(missedKeys, ct),
                 _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
                 DistributedCacheTimeoutKind.Soft,
@@ -339,16 +351,23 @@ public sealed partial class HybridCache(
 
         if (!distributedRead.IsSuccess)
         {
+            // Include a small key sample so operators can identify the affected keys without a single-key flood.
+            var keySample = string.Join(", ", missedKeys.Take(5));
+
             if (distributedRead.Exception is { } exception)
             {
                 // Degrade to the partial L1 result, mirroring the single-key GetAsync contract:
                 // an L2 read fault is logged then swallowed so callers always get a best-effort response.
-                _logger.LogFailedBulkL2CacheOperation(exception, missedKeys.Count);
+                _logger.LogFailedBulkL2CacheOperationWithSample(exception, missedKeys.Count, keySample);
             }
             else
             {
                 // Timeout or circuit-open: same degrade contract, but no exception to attach to the log entry.
-                _logger.LogBulkDistributedCacheReadDegraded(missedKeys.Count, distributedRead.Status.ToString());
+                _logger.LogBulkDistributedCacheReadDegradedWithSample(
+                    missedKeys.Count,
+                    distributedRead.Status.ToString(),
+                    keySample
+                );
             }
 
             return result;
@@ -358,7 +377,10 @@ public sealed partial class HybridCache(
 
         // Mirror each L2 hit into L1 capped by its exact remaining L2 logical expiration (so the L1 copy never
         // outlives L2 freshness). The enriched bulk read returns value + expiration in one call — no separate
-        // per-key expiration round-trips needed.
+        // per-key expiration round-trips needed. Collect the hits first, then fan the L1 upserts out in parallel
+        // (each carries its own capped expiration, so a single shared-expiration batch call cannot be used).
+        List<Task>? localUpserts = null;
+
         foreach (var kvp in distributedResults)
         {
             result[kvp.Key] = kvp.Value.Value;
@@ -367,10 +389,15 @@ public sealed partial class HybridCache(
             {
                 var localExpiration = _GetLocalExpiration(kvp.Value.Expiration);
                 _logger.LogSettingLocalCacheKey(kvp.Key, localExpiration);
-                await LocalCache
-                    .UpsertAsync(kvp.Key, kvp.Value.Value.Value, localExpiration, cancellationToken)
-                    .ConfigureAwait(false);
+                (localUpserts ??= []).Add(
+                    LocalCache.UpsertAsync(kvp.Key, kvp.Value.Value.Value, localExpiration, cancellationToken).AsTask()
+                );
             }
+        }
+
+        if (localUpserts is not null)
+        {
+            await Task.WhenAll(localUpserts).ConfigureAwait(false);
         }
 
         return result;
@@ -711,4 +738,33 @@ public sealed partial class HybridCache(
     }
 
     #endregion
+}
+
+internal static partial class HybridCacheLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 21,
+        EventName = "FailedBulkL2CacheOperationWithSample",
+        Level = LogLevel.Warning,
+        Message = "Failed to perform a bulk L2 cache operation for {KeyCount} key(s); degrading to partial L1 result (sample: {KeySample})"
+    )]
+    public static partial void LogFailedBulkL2CacheOperationWithSample(
+        this ILogger logger,
+        Exception exception,
+        int keyCount,
+        string keySample
+    );
+
+    [LoggerMessage(
+        EventId = 22,
+        EventName = "BulkDistributedCacheReadDegradedWithSample",
+        Level = LogLevel.Warning,
+        Message = "Bulk L2 cache read for {KeyCount} key(s) did not complete ({Reason}); degrading to partial L1 result (sample: {KeySample})"
+    )]
+    public static partial void LogBulkDistributedCacheReadDegradedWithSample(
+        this ILogger logger,
+        int keyCount,
+        string reason,
+        string keySample
+    );
 }

@@ -44,6 +44,9 @@ public sealed partial class HybridCache
         }
 
         bool updated;
+        // Set when the degraded path must queue the L2 write for replay. The queueing is deferred until after the
+        // L1 write below so the captured physical stamp reflects the entry this upsert actually committed.
+        var queueScalarRecovery = false;
 
         if (!_IsDistributedCacheCircuitClosed())
         {
@@ -65,10 +68,7 @@ public sealed partial class HybridCache
                 // amplifying an unhealthy L2 and let the caller succeed against L1 for this additive write.
                 _OpenDistributedCacheCircuit(exception, key);
                 _logger.LogFailedToWriteToL2Cache(exception, key);
-                if (RecoveryQueue is not null)
-                {
-                    _QueueScalarUpsertRecovery(key, value, expiration);
-                }
+                queueScalarRecovery = RecoveryQueue is not null;
 
                 updated = true;
             }
@@ -78,6 +78,13 @@ public sealed partial class HybridCache
         {
             var localExpiration = _GetLocalExpiration(expiration);
             await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
+
+            if (queueScalarRecovery)
+            {
+                // Capture the just-written L1 physical stamp so the replay guard can detect a newer local write.
+                var stamp = await _CaptureLocalPhysicalStampAsync<T>(key, cancellationToken).ConfigureAwait(false);
+                _QueueScalarUpsertRecovery(key, value, expiration, stamp);
+            }
         }
         else
         {
@@ -103,11 +110,14 @@ public sealed partial class HybridCache
     /// </summary>
     private async Task _BackgroundScalarUpsertAsync<T>(string key, T? value, TimeSpan? expiration)
     {
+        // L1 was already written synchronously before this detached tail ran, so its physical stamp is captured
+        // here (once) to gate any recovery replay against a newer local write — symmetric with the set-entry path.
         if (!_IsDistributedCacheCircuitClosed())
         {
             if (RecoveryQueue is not null)
             {
-                _QueueScalarUpsertRecovery(key, value, expiration);
+                var stamp = await _CaptureLocalPhysicalStampAsync<T>(key, CancellationToken.None).ConfigureAwait(false);
+                _QueueScalarUpsertRecovery(key, value, expiration, stamp);
             }
         }
         else
@@ -126,7 +136,9 @@ public sealed partial class HybridCache
                 if (RecoveryQueue is not null)
                 {
                     // Same capture the synchronous degraded path uses: queue the failed L2 write for replay.
-                    _QueueScalarUpsertRecovery(key, value, expiration);
+                    var stamp = await _CaptureLocalPhysicalStampAsync<T>(key, CancellationToken.None)
+                        .ConfigureAwait(false);
+                    _QueueScalarUpsertRecovery(key, value, expiration, stamp);
                 }
 
                 // Auto-recovery off: best-effort, swallow. The caller already returned success (fire-and-forget).

@@ -271,8 +271,10 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
 
     /// <summary>
     /// Runs one processing pass: skipped while behind the failure barrier, drops expired items, then replays
-    /// pending items in dictionary-enumeration order. The pass stops at the first replay failure and arms the
-    /// barrier so a sustained outage does not turn into a retry storm. Never throws (cancellation included).
+    /// pending items in dictionary-enumeration order. A replay failure increments that item's retry count (and
+    /// drops it at the cap) and arms the barrier so the NEXT pass is delayed, but the current pass continues to
+    /// the remaining items — a single poison item never starves the healthy ones behind it. Never throws
+    /// (cancellation included).
     /// </summary>
     /// <remarks>
     /// Per-tick snapshot+sort (ToArray+OrderBy) is intentionally avoided: ConcurrentDictionary's lock-free
@@ -357,12 +359,16 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                         _logger.LogAutoRecoveryReplayFailed(exception, item.Key, item.Kind, item.RetryCount);
                     }
 
+                    // Arm the failure barrier so the NEXT pass is delayed (a sustained outage must not turn into a
+                    // retry storm), but keep processing the rest of THIS pass: a single poison/failing item must
+                    // not starve healthy items queued behind it. Convergence is timestamp-driven, so replaying the
+                    // remaining items now is safe regardless of order.
                     Volatile.Write(
                         ref _barrierUntilTicks,
                         (_timeProvider.GetUtcNow() + _options.AutoRecoveryDelay).UtcTicks
                     );
 
-                    return;
+                    continue;
                 }
                 finally
                 {
