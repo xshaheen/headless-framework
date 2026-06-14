@@ -59,9 +59,10 @@ flowchart TB
 
 - R8. Default `DeliveryMode.Auto` uses the framework transaction accessor as the only source of truth for ambient durability. With an active framework-recognized transaction, the call writes an outbox row into that transaction and dispatches only after commit; without one, the call sends directly to the transport with no storage row.
 - R8a. Presence of `System.Transactions.Transaction.Current` alone does not imply outbox semantics unless it is recognized by the framework transaction accessor.
-- R8b. When `Auto` resolves to transport-direct while `System.Transactions.Transaction.Current` is non-null but unrecognized, a structured diagnostic event records that an ambient transaction was present and not honored — the accidental atomicity gap is as observable as the intentional one (R10).
+- R8b. When `Auto` resolves to transport-direct while `System.Transactions.Transaction.Current` is non-null but unrecognized, a structured diagnostic event records that an ambient transaction was present and not honored, throttled to once per unique call site (or sampled) so high-throughput paths stay quiet. This detection covers `System.Transactions` only: ambient provider-native transactions (raw `DbTransaction`, EF `BeginTransaction` without the outbox integration) are structurally undetectable from the publish path and remain silent — a stated contract boundary, documented per R18.
 - R9. `DeliveryMode.Durable` forces store-first regardless of transaction state (in a transaction: same-transaction row; outside: standalone row, then dispatched with retry).
-- R10. `DeliveryMode.TransportDirect` forces transport-direct even inside a transaction — an explicit escape from atomicity. When used while a framework-recognized transaction is active, a structured diagnostic event records that atomicity was intentionally bypassed. For framework-internal publishers that declare `TransportDirect` by design (R17), this diagnostic is emitted once at boot or sampled, not per call.
+- R10. `DeliveryMode.TransportDirect` forces transport-direct even inside a transaction — an explicit escape from atomicity. When used while a framework-recognized transaction is active, a structured diagnostic event records that atomicity was intentionally bypassed.
+- R10a. A public registration-level declaration (on the message type's `ForMessage<T>` configuration) marks a type as bypassing atomicity by design; for declared types the R10 and R8b diagnostics downgrade to boot-time or sampled emission instead of per-call. Framework-internal publishers (R17) consume this same public mechanism — no internal special case.
 - R11. `Delay` requires storage: under `Auto` with no transaction it upgrades the call to durable; combined with explicit `TransportDirect` it is an argument error. If durable scheduling is unavailable for the configured provider, the call fails synchronously before writing or sending anything. `Delay` means the message is not eligible for dispatch until the delay elapses; exact dispatch time is best-effort (dispatcher polling/backoff). The current silent-ignore of `Delay` on direct publishes is removed.
 - R12. `PublishOptions`/`EnqueueOptions` remain separate records and gain the `Delivery` member.
 
@@ -83,7 +84,7 @@ flowchart TB
 
 **Adoption**
 
-- R17. Internal consumers of messaging migrate to the marker model — the verified inventory: Caching.Hybrid invalidation (`IBus`, publishing with explicit `Delivery = TransportDirect` to preserve today's fire-and-forget semantics; accepted trade-off: pre-commit invalidation, identical to current behavior), Permissions.Core's dynamic permission store (`IBus`), DistributedLocks.Core and its Redis/InMemory setups (optional `IOutboxBus` → `IBus`), and Orm.EntityFramework.Messaging's outbox integration-event dispatcher + publish invoker cache (`IOutboxBus` → `IBus`; ambient `Auto` preserves its transactional semantics).
+- R17. Internal consumers of messaging migrate to the marker model, each with an explicit `Delivery` decision — the verified inventory: Caching.Hybrid invalidation (`IBus`, explicit `TransportDirect` — preserves today's fire-and-forget semantics; accepted trade-off: pre-commit invalidation, identical to current behavior), Permissions.Core's dynamic permission store (`IBus`, `Auto` — intentional: change notifications gain outbox atomicity inside recognized transactions, direct otherwise as today), DistributedLocks.Core and its Redis/InMemory setups (optional `IOutboxBus` → `IBus`, explicit `Durable` — preserves today's store-first wake-up durability across broker outages), and Orm.EntityFramework.Messaging's outbox integration-event dispatcher + publish invoker cache (`IOutboxBus` → `IBus`, explicit `Durable` — same-transaction row when the accessor recognizes the transaction, store-first otherwise; fails safe instead of silently direct when the accessor is not flowing). Also in inventory: Headless.Messaging.Testing's `MessagingTestHarness` (public `OutboxBus`/`OutboxQueue` accessors collapse into the existing bus/queue properties) and the Messaging.Storage.{PostgreSql,SqlServer} circular-reference guards (re-key `IsUsingType<IOutboxBus/IOutboxQueue>` detection to `IBus`/`IQueue`).
 - R17a. `IIntegrationEvent` (Headless.Domain) extends `IEvent`, classifying integration events as bus-lane so the reflection-built publish invokers satisfy R4's constraint.
 - R18. Doc surfaces (`docs/llms/messaging.md`, affected package READMEs) are updated per `docs/authoring/AUTHORING.md`. Docs state the lane meaning explicitly: `IEvent` = broadcast/pub-sub lane, `ICommand` = point-to-point/work-queue lane — not DDD's domain-event/command vocabulary. A "domain command that should also broadcast" is modeled as two message types. Docs also list exactly which transaction integrations the framework accessor recognizes; all others do not trigger outbox semantics under `Auto` (R8a/R8b).
 
@@ -106,6 +107,13 @@ flowchart TB
 - AE13. **Covers R2, R15a.** Given `interface IIntegrationMessage : IEvent, ICommand` and `record Bad(…) : IIntegrationMessage`, when the host boots, then validation fails naming `Bad` and both marker paths.
 - AE14. **Covers R16.** Given `UserRegistered : IEvent`, when it is published, then the wire intent header is stamped with the bus lane.
 - AE15. **Covers R17, R17a.** Given a concrete type implementing `IIntegrationEvent`, when the EF outbox integration-event dispatcher publishes it, then it dispatches without a compile-time or classification error.
+- AE16. **Covers R6a.** Given `class AllMessagesConsumer : IConsume<IMessage>`, when the host boots, then startup fails with a named error identifying the consumer and `IMessage` as assignable to neither lane.
+- AE17. **Covers R15b.** Given a null payload published as `PublishAsync<OrderPlaced>(null)`, when runtime validation runs, then classification uses the static generic argument and succeeds.
+- AE18. **Covers R15b.** Given a base event type whose runtime payload is a derived type classified to the other lane, when published, then the call fails at runtime before any storage write or transport send.
+- AE19. **Covers R11.** Given no ambient transaction, default delivery, a non-null `Delay`, and a provider without durable scheduling, when a command is enqueued, then the call fails synchronously and neither a storage row nor a transport send occurs.
+- AE20. **Covers R14.** Given explicit registration `ForMessage<OrderPlaced>(m => m.Consumer<OrderPlacedHandler>())` where `OrderPlaced : IEvent`, when the host boots, then the consumer is registered on the bus lane.
+- AE21. **Covers R17.** Given an ambient framework transaction, when Caching.Hybrid publishes an invalidation, then no storage row is written and the transport receives it before commit.
+- AE22. **Covers R8b.** Given a non-null but unrecognized `System.Transactions.Transaction.Current`, when an event is published under `Auto`, then it goes transport-direct and the not-honored diagnostic is emitted.
 
 ---
 
@@ -124,6 +132,7 @@ flowchart TB
 - The ambient-transaction mechanism (`IOutboxTransactionAccessor` + writer branching) already exists and carries the `Auto`/outbox behavior; this work re-fronts it, not rebuilds it.
 - Dual-lane same-type registration has no internal consumers (verified 2026-06-10); removing it breaks only one unit test.
 - Message storage remains required by the consume pipeline; `Auto`'s direct path removes the storage write from the publish hot path only.
+- Transaction integrations recognized by `IOutboxTransactionAccessor` today: only the EF Core outbox integration (`Orm.EntityFramework.Messaging` attaches its transaction to the accessor). This list is the authoritative input for R18's doc obligation; additions require explicitly extending it, not open-ended discovery during implementation.
 
 ---
 
@@ -131,7 +140,8 @@ flowchart TB
 
 **Deferred to planning**
 
-- Where the contracts surface lives — markers and `DeliveryMode` placed together as one decision (new contracts package vs `Headless.Messaging.Abstractions`, by dependency weight; `DeliveryMode` may sit one layer up with the options records if the markers go in a leaner package). Member names are settled: `Auto`, `Durable`, `TransportDirect`.
+- Where the contracts surface lives — markers and `DeliveryMode` placed together as one decision (new contracts package vs `Headless.Messaging.Abstractions`, by dependency weight; `DeliveryMode` may sit one layer up with the options records if the markers go in a leaner package). Member names are settled: `Auto`, `Durable`, `TransportDirect`. Hard constraint: R17a makes `Headless.Domain` (currently zero project references) a consumer of the marker surface, and `Headless.Messaging.Abstractions` today references `Headless.Checks` — satisfying R1 means either a new leaf contracts package or stripping that reference.
+- Interface/abstract consumed types (R6a) vs name-keyed routing: routing maps concrete type → message name, so an `IConsume<IOrderEvent>` consumer would subscribe under the interface's name and never receive derived-type envelopes. Decide: define polymorphic delivery, or narrow R6a to concrete consumed types (or explicit name mappings) for v1. *(From 2026-06-10 review, adversarial.)*
 - Whether the scanning entry points keep the `ForMessagesFromAssembly*` names or rename to consumer-centric names.
 - Exact error codes/wording for R2/R11/R15 errors (`g:snake_case` descriptor space).
 - How `Durable`-outside-transaction interacts with the dispatcher's existing retry/backoff configuration.
