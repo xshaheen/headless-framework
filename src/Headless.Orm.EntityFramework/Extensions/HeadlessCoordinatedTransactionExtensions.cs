@@ -63,7 +63,9 @@ public static class HeadlessCoordinatedTransactionExtensions
 
                     // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's
                     // publishes. An AsyncLocal push inside an async helper would not propagate to this delegate.
-                    await using var _ = state.Context.Database.EnlistCommitCoordination(transaction, state.Services);
+                    await using var _ = state
+                        .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                        .ConfigureAwait(false);
 
                     await state.Operation(state.Context, ct).ConfigureAwait(false);
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
@@ -97,7 +99,9 @@ public static class HeadlessCoordinatedTransactionExtensions
                         .Context.Database.BeginTransactionAsync(state.Isolation, ct)
                         .ConfigureAwait(false);
 
-                    await using var _ = state.Context.Database.EnlistCommitCoordination(transaction, state.Services);
+                    await using var _ = state
+                        .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                        .ConfigureAwait(false);
 
                     await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
@@ -138,7 +142,9 @@ public static class HeadlessCoordinatedTransactionExtensions
                         .Context.Database.BeginTransactionAsync(state.Isolation, ct)
                         .ConfigureAwait(false);
 
-                    await using var _ = state.Context.Database.EnlistCommitCoordination(transaction, state.Services);
+                    await using var _ = state
+                        .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                        .ConfigureAwait(false);
 
                     var result = await state.Operation(state.Context, ct).ConfigureAwait(false);
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
@@ -174,7 +180,9 @@ public static class HeadlessCoordinatedTransactionExtensions
                         .Context.Database.BeginTransactionAsync(state.Isolation, ct)
                         .ConfigureAwait(false);
 
-                    await using var _ = state.Context.Database.EnlistCommitCoordination(transaction, state.Services);
+                    await using var _ = state
+                        .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                        .ConfigureAwait(false);
 
                     var result = await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
