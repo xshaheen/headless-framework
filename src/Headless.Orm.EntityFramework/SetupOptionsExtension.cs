@@ -61,7 +61,7 @@ public static class SetupOptionsExtension
 
         var missing = serviceProvider
             .GetServices<IInterceptor>()
-            .Where(interceptor => existing is null || !existing.Any(e => ReferenceEquals(e, interceptor)))
+            .Where(interceptor => existing?.Any(e => ReferenceEquals(e, interceptor)) != true)
             .ToArray();
 
         if (missing.Length > 0)
