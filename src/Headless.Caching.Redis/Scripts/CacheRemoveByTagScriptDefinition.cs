@@ -65,15 +65,17 @@ internal sealed class CacheRemoveByTagScriptDefinition : RedisScriptDefinition
               if recordedMs ~= nil
                 and string.len(header) >= headerLen
                 and string.byte(header, 1) == 255
-                and string.byte(header, 2) == 2
+                and string.byte(header, 2) == 3
               then
                 local flags = string.byte(header, 3)
 
                 -- HasPhysicalExpiresAtFlag = 0x04
                 if math.floor(flags / 4) % 2 == 1 then
-                  -- u64le physical expiry at bytes 12..19 (1-based); Unix ms fits Lua's 53-bit doubles.
+                  -- u64le physical expiry at fixed bytes 12..19 (1-based); Unix ms fits Lua's 53-bit doubles.
+                  -- Use the literal field end (19), not headerLen: v3 appends an 8-byte CreatedAt slot after
+                  -- physical, so headerLen (27) would over-read CreatedAt bytes into the physical value.
                   local physicalMs = 0
-                  for b = headerLen, 12, -1 do
+                  for b = 19, 12, -1 do
                     physicalMs = physicalMs * 256 + string.byte(header, b)
                   end
 

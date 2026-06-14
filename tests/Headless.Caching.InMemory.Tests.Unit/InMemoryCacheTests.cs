@@ -79,6 +79,7 @@ public sealed class InMemoryCacheTests : TestBase
                 typeof(DateTime?),
                 typeof(string),
                 typeof(DateTime?),
+                typeof(DateTime?),
                 typeof(long),
             ],
             modifiers: null
@@ -98,6 +99,7 @@ public sealed class InMemoryCacheTests : TestBase
             false,
             true,
             0L,
+            null,
             null,
             null,
             null,

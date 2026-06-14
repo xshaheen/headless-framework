@@ -247,6 +247,8 @@ public sealed partial class FactoryCacheCoordinator
             LastModifiedAt = staleCandidate.LastModifiedAt,
             Tags = staleCandidate.Tags,
             ExpectedConcurrencyStamp = staleCandidate.ConcurrencyStamp,
+            // Throttle restamp preserves the reserve's original birth time (not a new write).
+            CreatedAt = staleCandidate.CreatedAt,
             IsRestamp = true,
         };
 

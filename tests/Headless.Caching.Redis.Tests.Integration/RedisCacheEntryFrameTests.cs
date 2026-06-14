@@ -9,8 +9,8 @@ namespace Tests;
 
 public sealed class RedisCacheEntryFrameTests
 {
-    private const int _HeaderLength = 19;
-    private const int _SlidingHeaderLength = 27;
+    private const int _HeaderLength = 27;
+    private const int _SlidingHeaderLength = 35;
     private const byte _HasSlidingExpirationFlag = 1 << 3;
     private const byte _HasEagerRefreshAtFlag = 1 << 4;
     private const byte _HasETagFlag = 1 << 5;
@@ -137,6 +137,39 @@ public sealed class RedisCacheEntryFrameTests
         decoded.ETag.Should().Be("W/\"42\"");
         decoded.EagerRefreshAt.Should().BeNull();
         decoded.Tags.Should().BeNull();
+        decoded.ValueSegment.ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
+    }
+
+    [Fact]
+    public void should_round_trip_created_at_in_fixed_v3_slot()
+    {
+        var createdAt = new DateTime(2026, 06, 02, 09, 45, 10, 500, DateTimeKind.Utc);
+
+        var encoded = _Encode(
+            "value",
+            isNull: false,
+            logicalExpiresAt: null,
+            physicalExpiresAt: null,
+            createdAt: createdAt
+        );
+        var decoded = _Decode(encoded);
+
+        // CreatedAt is an always-present v3 fixed-header field at offset 19 (no flag bit).
+        BinaryPrimitives
+            .ReadInt64LittleEndian(encoded.AsSpan(19, sizeof(long)))
+            .Should()
+            .Be(new DateTimeOffset(createdAt).ToUnixTimeMilliseconds());
+        decoded.CreatedAt.Should().Be(createdAt);
+        decoded.ValueSegment.ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
+    }
+
+    [Fact]
+    public void should_decode_absent_created_at_as_null()
+    {
+        var encoded = _Encode("value", isNull: false, logicalExpiresAt: null, physicalExpiresAt: null);
+        var decoded = _Decode(encoded);
+
+        decoded.CreatedAt.Should().BeNull();
         decoded.ValueSegment.ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
     }
 
@@ -316,12 +349,12 @@ public sealed class RedisCacheEntryFrameTests
     }
 
     [Fact]
-    public void should_emit_version_two_frames()
+    public void should_emit_version_three_frames()
     {
         var encoded = _Encode("value", isNull: false, logicalExpiresAt: null, physicalExpiresAt: null);
 
         encoded[0].Should().Be(0xFF);
-        encoded[1].Should().Be(0x02);
+        encoded[1].Should().Be(0x03);
     }
 
     [Fact]
@@ -343,7 +376,7 @@ public sealed class RedisCacheEntryFrameTests
     {
         var bytes = new byte[_HeaderLength];
         bytes[0] = 0xFF;
-        bytes[1] = 0x03;
+        bytes[1] = 0x04;
 
         var decoded = _Decode(_RedisValue(bytes));
 
@@ -359,7 +392,8 @@ public sealed class RedisCacheEntryFrameTests
         DateTime? eagerRefreshAt = null,
         string? etag = null,
         DateTime? lastModifiedAt = null,
-        IReadOnlyCollection<string>? tags = null
+        IReadOnlyCollection<string>? tags = null,
+        DateTime? createdAt = null
     ) =>
         RedisCacheEntryFrame.Encode(
             value,
@@ -370,7 +404,8 @@ public sealed class RedisCacheEntryFrameTests
             eagerRefreshAt,
             etag,
             lastModifiedAt,
-            tags
+            tags,
+            createdAt
         );
 
     private static RedisValue _RedisValue(byte[] value) => value;

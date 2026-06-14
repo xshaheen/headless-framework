@@ -30,6 +30,14 @@ public readonly record struct CacheStoreEntry<T>(
     /// <summary>Gets the optional timestamp at which the cached value was last modified at its origin.</summary>
     public DateTime? LastModifiedAt { get; init; }
 
+    /// <summary>
+    /// Gets the optional UTC timestamp at which this entry's value was first created (its birth time). A re-stamp
+    /// (a conditional <c>NotModified</c> extension or a fail-safe throttle restamp) preserves the original
+    /// <see cref="CreatedAt"/>; only a genuine new value write sets it afresh. <see langword="null"/> for legacy
+    /// or unframed entries written before the timestamp existed. No read-time verdict consumes it yet.
+    /// </summary>
+    public DateTime? CreatedAt { get; init; }
+
     /// <summary>Gets the optional invalidation tags associated with the cached value.</summary>
     public IReadOnlyCollection<string>? Tags { get; init; }
 

@@ -9,9 +9,9 @@ namespace Tests;
 
 public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
 {
-    private const int _HeaderLength = 19;
+    private const int _HeaderLength = 27;
     private const byte _Magic = 0xFF;
-    private const byte _Version = 0x02;
+    private const byte _Version = 0x03;
     private const byte _NullFlag = 1 << 0;
     private const byte _HasPhysicalExpiresAtFlag = 1 << 2;
     private const byte _HasSlidingExpirationFlag = 1 << 3;
@@ -115,7 +115,8 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
         var stored = await _GetRawBytesAsync(key);
         var ttl = await _Database().KeyTimeToLiveAsync(key);
         (stored[2] & _HasSlidingExpirationFlag).Should().Be(_HasSlidingExpirationFlag);
-        stored.AsSpan(27).ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
+        // Value follows the fixed v3 header (27) plus the 8-byte sliding section = offset 35.
+        stored.AsSpan(35).ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
         ttl.Should().NotBeNull();
         ttl!.Value.Should().BeCloseTo(options.SlidingExpiration.Value, TimeSpan.FromSeconds(2));
     }

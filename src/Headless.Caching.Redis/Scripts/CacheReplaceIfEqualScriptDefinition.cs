@@ -30,18 +30,18 @@ internal sealed class CacheReplaceIfEqualScriptDefinition : RedisScriptDefinitio
               string.len(currentVal) >= headerLen
               and string.byte(currentVal, 1) == 255
 
-            if hasMagic and string.byte(currentVal, 2) ~= 2 then
+            if hasMagic and string.byte(currentVal, 2) ~= 3 then
               return redis.error_reply('ERR unsupported cache frame version')
             end
 
-            local isFramed = hasMagic and string.byte(currentVal, 2) == 2
+            local isFramed = hasMagic and string.byte(currentVal, 2) == 3
 
             if isFramed then
               local flags = string.byte(currentVal, 3)
               local currentIsNull = flags % 2 == 1
               local len = string.len(currentVal)
 
-              -- Skip the optional v2 sections in frame layout order (sliding 0x08, eager-refresh 0x10,
+              -- Skip the optional v3 sections in frame layout order (sliding 0x08, eager-refresh 0x10,
               -- last-modified 0x40 fixed 8B each, then etag 0x20 and tags 0x80 as u16le-length-prefixed
               -- UTF-8) to find where the value segment starts.
               local valueStart = headerLen

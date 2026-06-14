@@ -459,6 +459,11 @@ public sealed partial class FactoryCacheCoordinator(
         var now = _GetUtcNow();
         var stamps = CacheEntryStamps.Compute(options, now);
 
+        // A NotModified extension re-stamps the existing value rather than producing a new one, so it must keep the
+        // original birth time: carry the source entry's CreatedAt forward (falling back to now only if the source
+        // had none, e.g. a legacy/unframed reserve). A genuine new value write stamps CreatedAt = now.
+        var createdAt = result.IsNotModified ? sourceEntry.CreatedAt ?? stamps.CreatedAt : stamps.CreatedAt;
+
         var entry = new CacheStoreEntryWrite<T>
         {
             Value = value,
@@ -469,6 +474,7 @@ public sealed partial class FactoryCacheCoordinator(
             EagerRefreshAt = stamps.EagerRefreshAt,
             ETag = eTag,
             LastModifiedAt = lastModifiedAt,
+            CreatedAt = createdAt,
             Tags = context.Tags,
             RemovedTags = CacheEntryStamps.ComputeRemovedTags(previousTags, context.Tags),
             ExpectedConcurrencyStamp = sourceEntry.ConcurrencyStamp,

@@ -29,11 +29,11 @@ internal sealed class CacheRemoveIfEqualScriptDefinition : RedisScriptDefinition
               string.len(currentVal) >= headerLen
               and string.byte(currentVal, 1) == 255
 
-            if hasMagic and string.byte(currentVal, 2) ~= 2 then
+            if hasMagic and string.byte(currentVal, 2) ~= 3 then
               return redis.error_reply('ERR unsupported cache frame version')
             end
 
-            local isFramed = hasMagic and string.byte(currentVal, 2) == 2
+            local isFramed = hasMagic and string.byte(currentVal, 2) == 3
 
             if isFramed then
               local flags = string.byte(currentVal, 3)

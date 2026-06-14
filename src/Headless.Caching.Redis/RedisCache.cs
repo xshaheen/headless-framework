@@ -1213,7 +1213,9 @@ public sealed class RedisCache(
             eagerRefreshAt: null,
             etag: frame.ETag,
             lastModifiedAt: frame.LastModifiedAt,
-            tags: frame.Tags
+            tags: frame.Tags,
+            // Logical-expire-in-place is a re-stamp, not a new value: preserve the entry's original birth time.
+            createdAt: frame.CreatedAt
         );
 
         // Honor the contract ("true when an entry was found and expired"): When.Exists returns false if the key
@@ -1753,7 +1755,8 @@ public sealed class RedisCache(
             entry.EagerRefreshAt,
             entry.ETag,
             entry.LastModifiedAt,
-            entry.Tags
+            entry.Tags,
+            createdAt: entry.CreatedAt
         );
 
         var hasTags = entry.Tags is { Count: > 0 };
@@ -1901,6 +1904,7 @@ public sealed class RedisCache(
                 EagerRefreshAt = frame.EagerRefreshAt,
                 ETag = frame.ETag,
                 LastModifiedAt = frame.LastModifiedAt,
+                CreatedAt = frame.CreatedAt,
                 Tags = frame.Tags,
                 ConcurrencyStamp = concurrencyStamp,
             };

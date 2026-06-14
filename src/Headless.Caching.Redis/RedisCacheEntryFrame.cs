@@ -10,10 +10,21 @@ namespace Headless.Caching;
 
 internal static class RedisCacheEntryFrame
 {
-    public const int HeaderLength = 19;
+    // Fixed header layout (v3): [0] Magic, [1] Version, [2] flags, [3..10] logical, [11..18] physical,
+    // [19..26] CreatedAt. The flags byte is full at 8 bits, so CreatedAt has no flag of its own: it is an
+    // always-present fixed field in v3 (presence implied by version), with CreatedAtAbsentSentinel meaning
+    // "no birth time recorded" (legacy/unframed source). Optional sections (sliding, eager, last-modified,
+    // etag, tags) follow the fixed header at HeaderLength.
+    public const int HeaderLength = 27;
+
+    private const int _CreatedAtOffset = 19;
+
+    // Sentinel written into the always-present CreatedAt slot when no birth time is known. long.MinValue is far
+    // outside the valid Unix-millisecond range the codec accepts, so it can never collide with a real timestamp.
+    internal const long CreatedAtAbsentSentinel = long.MinValue;
 
     internal const byte Magic = 0xFF;
-    internal const byte Version = 0x02;
+    internal const byte Version = 0x03;
     internal const byte NullFlag = 1 << 0;
     internal const byte HasLogicalExpiresAtFlag = 1 << 1;
     internal const byte HasPhysicalExpiresAtFlag = 1 << 2;
@@ -37,7 +48,8 @@ internal static class RedisCacheEntryFrame
         DateTime? eagerRefreshAt = null,
         string? etag = null,
         DateTime? lastModifiedAt = null,
-        IReadOnlyCollection<string>? tags = null
+        IReadOnlyCollection<string>? tags = null,
+        DateTime? createdAt = null
     )
     {
         var valueBytes = isNull ? [] : _ToBytes(value);
@@ -133,6 +145,13 @@ internal static class RedisCacheEntryFrame
                     _ToUnixTimeMilliseconds(physicalExpiresAt.Value)
                 );
             }
+
+            // CreatedAt is an always-present v3 fixed field (no flag bit left). Write the birth time, or the
+            // absent-sentinel when none is known, so decode can distinguish a real timestamp from "unset".
+            BinaryPrimitives.WriteInt64LittleEndian(
+                buffer.AsSpan(_CreatedAtOffset, sizeof(long)),
+                createdAt.HasValue ? _ToUnixTimeMilliseconds(createdAt.Value) : CreatedAtAbsentSentinel
+            );
 
             // Optional sections follow the fixed header in layout order: fixed-width fields first (sliding,
             // eager-refresh, last-modified), then the var-length sections (etag, tags), then the value segment.
@@ -230,6 +249,11 @@ internal static class RedisCacheEntryFrame
         var logicalMs = hasLogical ? BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(3, sizeof(long))) : 0L;
         var physicalMs = hasPhysical ? BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(11, sizeof(long))) : 0L;
 
+        // CreatedAt occupies a fixed v3 slot in the header (always present, gated by version not a flag). The
+        // HeaderLength guard above already proved these bytes exist. The absent-sentinel decodes back to null.
+        var createdAtMs = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(_CreatedAtOffset, sizeof(long)));
+        var hasCreatedAt = createdAtMs != CreatedAtAbsentSentinel;
+
         var offset = HeaderLength;
 
         if (!_TryReadInt64(bytes, hasSliding, ref offset, out var slidingMs))
@@ -267,6 +291,7 @@ internal static class RedisCacheEntryFrame
             || (hasSliding && slidingMs <= 0)
             || (hasEagerRefresh && _IsOutOfRange(eagerRefreshMs))
             || (hasLastModified && _IsOutOfRange(lastModifiedMs))
+            || (hasCreatedAt && _IsOutOfRange(createdAtMs))
         )
         {
             return DecodedFrame.Unframed;
@@ -282,6 +307,7 @@ internal static class RedisCacheEntryFrame
             ETag: etag,
             LastModifiedAt: hasLastModified ? _FromUnixTimeMilliseconds(lastModifiedMs) : null,
             Tags: decodedTags is { Length: > 0 } ? decodedTags : null,
+            CreatedAt: hasCreatedAt ? _FromUnixTimeMilliseconds(createdAtMs) : null,
             ValueSegment: bytes.AsMemory(offset)
         );
     }
@@ -449,6 +475,7 @@ internal static class RedisCacheEntryFrame
         string? ETag,
         DateTime? LastModifiedAt,
         IReadOnlyCollection<string>? Tags,
+        DateTime? CreatedAt,
         ReadOnlyMemory<byte> ValueSegment
     )
     {
@@ -463,6 +490,7 @@ internal static class RedisCacheEntryFrame
                 ETag: null,
                 LastModifiedAt: null,
                 Tags: null,
+                CreatedAt: null,
                 ValueSegment: ReadOnlyMemory<byte>.Empty
             );
     }

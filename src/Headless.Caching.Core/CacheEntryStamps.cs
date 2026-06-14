@@ -15,11 +15,13 @@ namespace Headless.Caching;
 /// <param name="LogicalExpiresAt">The timestamp after which normal reads treat the entry as stale (UTC).</param>
 /// <param name="PhysicalExpiresAt">The timestamp after which the entry is no longer retained (UTC).</param>
 /// <param name="EagerRefreshAt">The optional timestamp after which a fresh read may trigger an eager background refresh (UTC).</param>
+/// <param name="CreatedAt">The timestamp at which a fresh value write is created (its birth time, UTC). A re-stamp preserves the source entry's original value instead of using this one.</param>
 [PublicAPI]
 public readonly record struct CacheEntryStamps(
     DateTime LogicalExpiresAt,
     DateTime PhysicalExpiresAt,
-    DateTime? EagerRefreshAt
+    DateTime? EagerRefreshAt,
+    DateTime CreatedAt
 )
 {
     /// <summary>Computes the fresh-write stamps for <paramref name="options"/> at <paramref name="now"/>.</summary>
@@ -54,7 +56,7 @@ public readonly record struct CacheEntryStamps(
             eagerRefreshAt = now.AddTicks((long)(effectiveDuration.Ticks * (double)eagerRefreshThreshold));
         }
 
-        return new CacheEntryStamps(logicalExpiresAt, physicalExpiresAt, eagerRefreshAt);
+        return new CacheEntryStamps(logicalExpiresAt, physicalExpiresAt, eagerRefreshAt, CreatedAt: now);
     }
 
     /// <summary>

@@ -1831,6 +1831,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 EagerRefreshAt = existingEntry.EagerRefreshAt,
                 ETag = existingEntry.ETag,
                 LastModifiedAt = existingEntry.LastModifiedAt,
+                CreatedAt = existingEntry.CreatedAt,
                 Tags = existingEntry.Tags,
                 ConcurrencyStamp = existingEntry.ConcurrencyStamp,
             }
@@ -1874,7 +1875,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             tags: entry.Tags,
             eagerRefreshAt: entry.EagerRefreshAt,
             etag: entry.ETag,
-            lastModifiedAt: entry.LastModifiedAt
+            lastModifiedAt: entry.LastModifiedAt,
+            createdAt: entry.CreatedAt
         );
 
         if (entry.ExpectedConcurrencyStamp is { } expectedStamp)
@@ -2544,6 +2546,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             DateTime? eagerRefreshAt = null,
             string? etag = null,
             DateTime? lastModifiedAt = null,
+            DateTime? createdAt = null,
             long nowTicksOverride = -1
         )
         {
@@ -2562,6 +2565,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             EagerRefreshAt = eagerRefreshAt;
             ETag = etag;
             LastModifiedAt = lastModifiedAt;
+            CreatedAt = createdAt;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
             // Precompute the immutable concurrency stamp once at construction so warm-hit reads and CAS
@@ -2591,6 +2595,9 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             EagerRefreshAt = prototype.EagerRefreshAt;
             ETag = prototype.ETag;
             LastModifiedAt = prototype.LastModifiedAt;
+            // A WithExpiration/WithLogicalExpiration copy is a re-stamp (TTL/logical move only), so the entry's
+            // original birth time is preserved rather than reset.
+            CreatedAt = prototype.CreatedAt;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
             ConcurrencyStamp = InstanceNumber.ToString(CultureInfo.InvariantCulture);
@@ -2619,6 +2626,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         internal string? ETag { get; }
 
         internal DateTime? LastModifiedAt { get; }
+
+        internal DateTime? CreatedAt { get; }
 
         // Expired at the exact tick (expiresAt <= now): align with the Core (IsFresh/IsPhysicallyPresent),
         // Redis (_IsExpired), and the eviction maintenance loop conventions so every provider and the
