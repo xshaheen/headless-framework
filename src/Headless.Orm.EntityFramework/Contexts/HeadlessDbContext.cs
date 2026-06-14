@@ -9,13 +9,16 @@ using Microsoft.Extensions.Logging;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Internal contract shared by the Headless DbContext bases (<see cref="HeadlessDbContext"/> and the Identity
-/// context) so the runtime, save pipeline, factory, and disposal infrastructure operate against either base
-/// without a common class — the Identity context must derive from <c>IdentityDbContext</c>, so a marker
-/// interface is the only shared seam. Exposes the tenant/schema the runtime reads and the per-call service
-/// scope the factory hands in.
+/// Capability seam shared by the Headless DbContext bases (<see cref="HeadlessDbContext"/> and the Identity
+/// context) so the runtime, save pipeline, factory, disposal infrastructure, and coordinated-transaction
+/// helpers operate against either base without a common class — the Identity context must derive from
+/// <c>IdentityDbContext</c>, so this interface is the only shared seam. Exposes the tenant/schema the runtime
+/// reads and the per-call service scope the factory hands in. Implemented explicitly by both bases, so it does
+/// not widen their public surface; it is public so capability-based extensions (e.g.
+/// <c>ExecuteCoordinatedTransactionAsync</c>) can target any Headless-managed context.
 /// </summary>
-internal interface IHeadlessDbContext
+[PublicAPI]
+public interface IHeadlessDbContext
 {
     string? DefaultSchema { get; }
 
@@ -89,9 +92,11 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
 
     public string? TenantId => _runtime.TenantId;
 
-    // The IHeadlessDbContext seam is internal, so satisfy it through explicit (non-overridable)
-    // implementations that delegate to the public members — keeps the public surface intact while avoiding
-    // an externally-overridable member bound to an internal interface (CA2119).
+    // The IHeadlessDbContext seam is implemented explicitly (non-overridable) so it stays off this context's
+    // public surface and avoids an externally-overridable member bound to the seam (CA2119). CA1033 (explicit
+    // member not visible to derived types) is intentional: derived contexts never call these — the framework
+    // runtime/save pipeline and coordinated-transaction helpers reach them through the interface.
+#pragma warning disable CA1033
     string? IHeadlessDbContext.DefaultSchema => DefaultSchema;
 
     string? IHeadlessDbContext.TenantId => TenantId;
@@ -103,6 +108,7 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         get => _ownedScope;
         set => _ownedScope = value;
     }
+#pragma warning restore CA1033
 
     public override int SaveChanges()
     {

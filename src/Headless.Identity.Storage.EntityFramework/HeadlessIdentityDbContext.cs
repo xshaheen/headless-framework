@@ -76,9 +76,11 @@ public abstract class HeadlessIdentityDbContext<
     // Disposed alongside the context so factory-created contexts don't leak per-call scopes.
     private IServiceScope? _ownedScope;
 
-    // The IHeadlessDbContext seam is internal, so satisfy it through explicit (non-overridable)
-    // implementations that delegate to the public members — keeps the public surface intact while avoiding
-    // an externally-overridable member bound to an internal interface (CA2119).
+    // The IHeadlessDbContext seam is implemented explicitly (non-overridable) so it stays off this context's
+    // public surface and avoids an externally-overridable member bound to the seam (CA2119). CA1033 (explicit
+    // member not visible to derived types) is intentional: derived contexts never call these — the framework
+    // runtime/save pipeline and coordinated-transaction helpers reach them through the interface.
+#pragma warning disable CA1033
     string? IHeadlessDbContext.DefaultSchema => DefaultSchema;
 
     string? IHeadlessDbContext.TenantId => TenantId;
@@ -90,6 +92,7 @@ public abstract class HeadlessIdentityDbContext<
         get => _ownedScope;
         set => _ownedScope = value;
     }
+#pragma warning restore CA1033
 
     protected HeadlessIdentityDbContext(HeadlessDbContextServices services, DbContextOptions options)
         : base(options)
