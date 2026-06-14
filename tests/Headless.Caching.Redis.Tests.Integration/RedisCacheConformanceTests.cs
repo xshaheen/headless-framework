@@ -152,4 +152,16 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     [Fact]
     public override Task should_honor_failsafe_options_in_tagged_upsert() =>
         base.should_honor_failsafe_options_in_tagged_upsert();
+
+    [Fact]
+    public override Task should_serve_tag_invalidated_entry_as_failsafe_reserve() =>
+        base.should_serve_tag_invalidated_entry_as_failsafe_reserve();
+
+    [Fact]
+    public override Task should_logically_clear_with_clear_async_preserving_reserves() =>
+        base.should_logically_clear_with_clear_async_preserving_reserves();
+
+    [Fact]
+    public override Task should_physically_wipe_with_flush_async_dropping_reserves() =>
+        base.should_physically_wipe_with_flush_async_dropping_reserves();
 }

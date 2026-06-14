@@ -706,13 +706,16 @@ public abstract class CacheConformanceTestsBase : TestBase
             AbortToken
         );
 
-        var removed = await cache.RemoveByTagAsync(firstTag, AbortToken);
+        // Advance so the invalidation marker is strictly newer than the entries' birth times (Family-2 compares
+        // CreatedAt against the marker; with a frozen test clock they would otherwise tie).
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(firstTag, AbortToken);
 
         var cachedA = await cache.GetAsync<string>(keyA, AbortToken);
         var cachedB = await cache.GetAsync<string>(keyB, AbortToken);
         var cachedC = await cache.GetAsync<string>(keyC, AbortToken);
 
-        removed.Should().Be(2);
+        // Logical invalidation: every entry carrying firstTag now reads as a miss; entries without it are intact.
         cachedA.HasValue.Should().BeFalse();
         cachedB.HasValue.Should().BeFalse();
         cachedC.HasValue.Should().BeTrue();
@@ -734,10 +737,10 @@ public abstract class CacheConformanceTestsBase : TestBase
             AbortToken
         );
 
-        var removed = await cache.RemoveByTagAsync(secondTag, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(secondTag, AbortToken);
         var cached = await cache.GetAsync<string>(key, AbortToken);
 
-        removed.Should().Be(1);
         cached.HasValue.Should().BeFalse();
     }
 
@@ -760,10 +763,10 @@ public abstract class CacheConformanceTestsBase : TestBase
         await cache.RemoveAsync(key, AbortToken);
         await cache.UpsertAsync(key, "recreated", TimeSpan.FromMinutes(10), AbortToken);
 
-        var removed = await cache.RemoveByTagAsync(tag, AbortToken);
+        await cache.RemoveByTagAsync(tag, AbortToken);
         var cached = await cache.GetAsync<string>(key, AbortToken);
 
-        removed.Should().Be(0);
+        // Version-pinned: the re-created entry has a newer birth time than the tag marker, so it survives.
         cached.HasValue.Should().BeTrue();
         cached.Value.Should().Be("recreated");
     }
@@ -794,11 +797,11 @@ public abstract class CacheConformanceTestsBase : TestBase
             AbortToken
         );
 
-        var removed = await cache.RemoveByTagAsync(tag, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
         var conditionalCached = await cache.GetAsync<string>(conditionalKey, AbortToken);
         var upsertCached = await cache.GetAsync<string>(upsertKey, AbortToken);
 
-        removed.Should().Be(2);
         conditionalCached.HasValue.Should().BeFalse();
         upsertCached.HasValue.Should().BeFalse();
     }
@@ -833,6 +836,128 @@ public abstract class CacheConformanceTestsBase : TestBase
         result.HasValue.Should().BeTrue();
         result.Value.Should().Be("value");
         result.IsStale.Should().BeTrue();
+    }
+
+    public virtual async Task should_serve_tag_invalidated_entry_as_failsafe_reserve()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(30),
+            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+            Tags = [tag],
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        // Logical tag invalidation demotes the entry to a fail-safe reserve: a direct read misses, but a
+        // GetOrAddAsync whose factory fails still serves the stale value (the reserve was preserved, not deleted).
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        var directRead = await cache.GetAsync<string>(key, AbortToken);
+        directRead.HasValue.Should().BeFalse();
+
+        var result = await cache.GetOrAddAsync<string>(
+            key,
+            _ => throw new InvalidOperationException("downstream unavailable"),
+            options,
+            AbortToken
+        );
+
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be("value");
+        result.IsStale.Should().BeTrue();
+    }
+
+    public virtual async Task should_logically_clear_with_clear_async_preserving_reserves()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var taggedKey = Faker.Random.AlphaNumeric(10);
+        var untaggedKey = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var failSafe = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(30),
+            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+        };
+
+        await cache.GetOrAddAsync(
+            taggedKey,
+            _ => ValueTask.FromResult<string?>("tagged"),
+            failSafe with
+            {
+                Tags = [tag],
+            },
+            AbortToken
+        );
+        await cache.GetOrAddAsync(untaggedKey, _ => ValueTask.FromResult<string?>("untagged"), failSafe, AbortToken);
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+        await cache.ClearAsync(AbortToken);
+
+        // Both tagged and untagged entries read as misses after a logical clear.
+        (await cache.GetAsync<string>(taggedKey, AbortToken))
+            .HasValue.Should()
+            .BeFalse();
+        (await cache.GetAsync<string>(untaggedKey, AbortToken)).HasValue.Should().BeFalse();
+
+        // ...but their fail-safe reserves are preserved: a failing factory still serves the stale value.
+        var stale = await cache.GetOrAddAsync<string>(
+            untaggedKey,
+            _ => throw new InvalidOperationException("downstream unavailable"),
+            failSafe,
+            AbortToken
+        );
+
+        stale.HasValue.Should().BeTrue();
+        stale.Value.Should().Be("untagged");
+        stale.IsStale.Should().BeTrue();
+
+        // A re-created entry (newer birth time) is unaffected by the earlier clear marker.
+        await cache.UpsertAsync(taggedKey, "recreated", TimeSpan.FromMinutes(5), AbortToken);
+        var recreated = await cache.GetAsync<string>(taggedKey, AbortToken);
+        recreated.HasValue.Should().BeTrue();
+        recreated.Value.Should().Be("recreated");
+    }
+
+    public virtual async Task should_physically_wipe_with_flush_async_dropping_reserves()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var failSafe = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(30),
+            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), failSafe, AbortToken);
+
+        // Physical wipe: unlike ClearAsync, no reserve survives, so a failing factory cannot serve a stale value.
+        await cache.FlushAsync(AbortToken);
+
+        (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+
+        var act = async () =>
+            await cache.GetOrAddAsync<string>(
+                key,
+                _ => throw new InvalidOperationException("downstream unavailable"),
+                failSafe,
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
     // Fail-safe keeps the entry physically retained past its logical expiry, so a stale last-known-good value

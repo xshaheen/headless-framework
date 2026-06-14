@@ -13,13 +13,18 @@ public abstract class RedisCacheTestBase(RedisCacheFixture fixture) : TestBase
 {
     protected RedisCacheFixture Fixture { get; } = fixture;
 
-    protected RedisCache CreateCache(string? keyPrefix = null)
+    protected RedisCache CreateCache(string? keyPrefix = null, TimeSpan? tagMarkerRefreshWindow = null)
     {
         var options = new RedisCacheOptions
         {
             ConnectionMultiplexer = Fixture.ConnectionMultiplexer,
             KeyPrefix = keyPrefix ?? "",
         };
+
+        if (tagMarkerRefreshWindow is { } window)
+        {
+            options.TagMarkerRefreshWindow = window;
+        }
 
         var logger = LoggerFactory.CreateLogger<RedisCache>();
         return new RedisCache(new SystemJsonSerializer(), TimeProvider.System, options, Fixture.ScriptsLoader, logger);

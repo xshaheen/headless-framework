@@ -51,14 +51,33 @@ public sealed class HybridCacheTagTests : TestBase
         );
 
         // when
-        var removed = await cache.RemoveByTagAsync(tag, AbortToken);
+        await cache.RemoveByTagAsync(tag, AbortToken);
 
-        // then — the invalidation is published with the tag, and the L2 count is returned
-        removed.Should().Be(1);
+        // then — the invalidation is published with the tag
         await publisher
             .Received(1)
             .PublishAsync(
-                Arg.Is<CacheInvalidationMessage>(m => m.Tag == tag && m.Key == null && !m.FlushAll),
+                Arg.Is<CacheInvalidationMessage>(m => m.Tag == tag && m.Key == null && !m.FlushAll && !m.Clear),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_publish_clear_when_clearing()
+    {
+        // given
+        var (cache, _, _, publisher) = _CreateCache();
+        await using var _ = cache;
+
+        // when
+        await cache.ClearAsync(AbortToken);
+
+        // then — a Clear message is published (distinct from FlushAll)
+        await publisher
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Clear && !m.FlushAll && m.Tag == null && m.Key == null),
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -81,7 +100,8 @@ public sealed class HybridCacheTagTests : TestBase
             AbortToken
         );
 
-        // when
+        // when (advance so the marker postdates the entry's birth time)
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
         await cache.RemoveByTagAsync(tag, AbortToken);
 
         // then
@@ -115,14 +135,43 @@ public sealed class HybridCacheTagTests : TestBase
             Tag = tag,
         };
 
-        // when
+        // when (advance so the receiver's marker bump postdates the entry)
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
         await cache.HandleInvalidationAsync(message, AbortToken);
 
-        // then — only the local tier is invalidated by the consumer path
+        // then — only the local tier is invalidated by the consumer path (L1 marker bump)
         (await l1.GetAsync<string>(key, AbortToken))
             .HasValue.Should()
             .BeFalse();
         cache.InvalidateCacheCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_logically_clear_l1_when_clear_invalidation_received()
+    {
+        // given
+        var options = new HybridCacheOptions { InstanceId = "instance-1" };
+        var (cache, l1, _, _) = _CreateCache(options);
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.GetOrAddAsync(
+            key,
+            _ => ValueTask.FromResult<string?>("value"),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+
+        var message = new CacheInvalidationMessage { InstanceId = "instance-2", Clear = true };
+
+        // when (advance so the clear marker postdates the entry)
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.HandleInvalidationAsync(message, AbortToken);
+
+        // then — the local tier is logically cleared (even though the entry carried no tag)
+        (await l1.GetAsync<string>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse();
     }
 
     [Fact]
@@ -156,10 +205,9 @@ public sealed class HybridCacheTagTests : TestBase
     }
 
     [Fact]
-    public async Task should_keep_tag_index_intact_when_removing_an_unused_tag()
+    public async Task should_only_invalidate_entries_carrying_the_removed_tag()
     {
-        // given — three keys all carrying the same tag set; the tag→key index now maps x/y/z to all three
-        // (FusionCache RemoveByTagDoesNotRemoveTaggingData analog).
+        // given — three keys all carrying the same tag set.
         var (cache, l1, l2, _) = _CreateCache();
         await using var _ = cache;
 
@@ -176,11 +224,8 @@ public sealed class HybridCacheTagTests : TestBase
             );
         }
 
-        // when — removing a tag that no key carries must be a pure no-op against the index, not a corruption.
-        var removedUnused = await cache.RemoveByTagAsync("blah", AbortToken);
-
-        // then — nothing was removed and every entry still resolves in both tiers.
-        removedUnused.Should().Be(0);
+        // when — invalidating a tag that no key carries must leave every entry intact.
+        await cache.RemoveByTagAsync("blah", AbortToken);
 
         foreach (var key in keys)
         {
@@ -188,12 +233,9 @@ public sealed class HybridCacheTagTests : TestBase
             (await l2.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue("no-op removal must not evict L2");
         }
 
-        // when — a later removal of a real, shared tag must still resolve every tagged key through the intact
-        // index (the no-op removal did not corrupt the tag→key mapping).
-        var removedReal = await cache.RemoveByTagAsync("y", AbortToken);
-
-        // then — all three keys, which share tag "y", are removed from both tiers.
-        removedReal.Should().Be(3);
+        // when — invalidating a real, shared tag logically invalidates every entry carrying it on both tiers.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync("y", AbortToken);
 
         foreach (var key in keys)
         {

@@ -616,8 +616,9 @@ internal static class IdempotencyTestApp
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
             throw _Boom();
 
-        public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
-            throw _Boom();
+        public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask ClearAsync(CancellationToken cancellationToken = default) => throw _Boom();
 
         public ValueTask<long> SetRemoveAsync<T>(
             string key,

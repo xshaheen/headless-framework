@@ -209,7 +209,10 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
 
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => new(0);
 
-    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) => new(0);
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+        ValueTask.CompletedTask;
+
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,

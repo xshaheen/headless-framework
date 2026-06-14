@@ -746,8 +746,10 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
         backend.RemoveByPrefixAsync(prefix, cancellationToken);
 
-    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
         backend.RemoveByTagAsync(tag, cancellationToken);
+
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default) => backend.ClearAsync(cancellationToken);
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,

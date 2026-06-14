@@ -834,8 +834,10 @@ public sealed class HybridCacheTests : TestBase
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken ct = default) =>
             _cache.RemoveByPrefixAsync(prefix, ct);
 
-        public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken ct = default) =>
+        public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default) =>
             _cache.RemoveByTagAsync(tag, ct);
+
+        public ValueTask ClearAsync(CancellationToken ct = default) => _cache.ClearAsync(ct);
 
         public ValueTask<long> SetRemoveAsync<T>(
             string key,

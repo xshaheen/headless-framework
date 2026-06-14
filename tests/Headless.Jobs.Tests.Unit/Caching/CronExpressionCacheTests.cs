@@ -564,8 +564,10 @@ public sealed class CronExpressionCacheTests
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+        public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public ValueTask ClearAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public ValueTask<long> SetRemoveAsync<T>(
             string key,

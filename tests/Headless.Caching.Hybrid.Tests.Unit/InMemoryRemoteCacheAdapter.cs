@@ -230,8 +230,10 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
         cache.RemoveByPrefixAsync(prefix, cancellationToken);
 
-    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
         cache.RemoveByTagAsync(tag, cancellationToken);
+
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default) => cache.ClearAsync(cancellationToken);
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
