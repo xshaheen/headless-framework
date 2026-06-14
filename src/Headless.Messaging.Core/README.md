@@ -70,10 +70,12 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 
 // Publish broadcast messages with the transactional outbox (reliable delivery).
-// EnlistCommitCoordination (from Headless.CommitCoordination.EntityFramework) makes the open transaction the
-// ambient commit coordinator, so the outbox writer stores rows INSIDE it; the EF transaction interceptor
-// dispatches them post-commit and discards them on rollback. The enlist is synchronous on purpose — it must
-// run in the caller's frame so the ambient scope flows to the publish below.
+// NOTE: on the EF storage path (setup.UseEntityFramework<TContext>()) the outbox is on by default and the
+// commit interceptor is attached for you — see "Transactional Outbox (Atomic Publish)" above. The manual
+// EnlistCommitCoordination below is the raw-ADO / advanced seam: it makes the open transaction the ambient
+// commit coordinator so the outbox writer stores rows INSIDE it; the EF transaction interceptor dispatches
+// them post-commit and discards them on rollback. The enlist is synchronous on purpose — it must run in the
+// caller's frame so the ambient scope flows to the publish below.
 public sealed class OrderService(IOutboxBus bus, AppDbContext dbContext, IServiceProvider services)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
@@ -96,6 +98,16 @@ public sealed class ImportService(IQueue queue)
     }
 }
 ```
+
+## Transactional Outbox (Atomic Publish)
+
+The transactional outbox is **on by default on the EF storage path**. When the host selects EF-context storage with `setup.UseEntityFramework<TContext>()`, a `PublishAsync(...)` inside a coordinated transaction writes its outbox row in the same DB transaction and is discarded on rollback — zero consumer wiring. The EF storage setup auto-registers commit coordination and a DI-registered `IDbContextOptionsConfiguration<TContext>` that attaches the commit-coordination interceptor to the consumer's `DbContext`, even a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`.
+
+- Opt out with `setup.WithoutTransactionalOutbox()` to restore non-transactional immediate dispatch.
+- A startup self-probe (`CommitInterceptorStartupGate<TContext>`) commits an empty transaction and asserts the interceptor fired. On a mis-wire it logs a loud warning by default; set `CommitInterceptorProbeMode.Strict` via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitInterceptorProbeMode.Strict)` to fail startup instead.
+- On by default applies **only** to the EF-context path. The raw-ADO storage paths (`setup.UsePostgreSql(connString)` / `setup.UseSqlServer(connString)`, no `DbContext`) are unchanged and stay explicit opt-in: register `AddPostgreSqlCommitCoordination()`/`AddSqlServerCommitCoordination()` and use the `EnlistCommitCoordination` / `ExecuteCoordinatedTransactionAsync` helpers (shown in Quick Start below). There is no `DbContext` to attach an interceptor to on those paths.
+
+The write is atomic with the business data; delivery is still at-least-once, so consumers must be idempotent (see [Retry Policy](#retry-policy)). See `Headless.CommitCoordination.EntityFramework` for the interceptor attachment and probe details.
 
 ## Defaults And Telemetry
 
