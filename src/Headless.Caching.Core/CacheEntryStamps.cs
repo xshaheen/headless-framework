@@ -159,41 +159,6 @@ public readonly record struct CacheEntryStamps(
         }
     }
 
-    /// <summary>
-    /// Computes the tags present on <paramref name="previousTags"/> but absent from <paramref name="currentTags"/>
-    /// (ordinal). Stores that maintain a reverse tag index use the result to drop stale memberships atomically
-    /// with the write. Returns <see langword="null"/> when nothing was dropped.
-    /// </summary>
-    /// <param name="previousTags">The tags carried by the previous physically-retained entry, if any.</param>
-    /// <param name="currentTags">The tags carried by the write replacing it, if any.</param>
-    public static IReadOnlyCollection<string>? ComputeRemovedTags(
-        IReadOnlyCollection<string>? previousTags,
-        IReadOnlyCollection<string>? currentTags
-    )
-    {
-        if (previousTags is not { Count: > 0 })
-        {
-            return null;
-        }
-
-        if (currentTags is not { Count: > 0 })
-        {
-            return previousTags;
-        }
-
-        List<string>? removed = null;
-
-        foreach (var previousTag in previousTags)
-        {
-            if (!currentTags.Contains(previousTag, StringComparer.Ordinal))
-            {
-                (removed ??= []).Add(previousTag);
-            }
-        }
-
-        return removed;
-    }
-
     private static void _ValidateOptionalTimeout(TimeSpan timeout, string paramName)
     {
         if (timeout == Timeout.InfiniteTimeSpan)

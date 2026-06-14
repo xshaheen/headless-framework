@@ -344,7 +344,6 @@ public sealed partial class FactoryCacheCoordinator(
                     context,
                     factoryResult.Value,
                     sourceEntry: entry,
-                    previousTags: entry.Tags,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -417,7 +416,6 @@ public sealed partial class FactoryCacheCoordinator(
         CacheFactoryContext<T> context,
         CacheFactoryResult<T> result,
         CacheStoreEntry<T> sourceEntry,
-        IReadOnlyCollection<string>? previousTags,
         CancellationToken cancellationToken
     )
     {
@@ -476,7 +474,6 @@ public sealed partial class FactoryCacheCoordinator(
             LastModifiedAt = lastModifiedAt,
             CreatedAt = createdAt,
             Tags = context.Tags,
-            RemovedTags = CacheEntryStamps.ComputeRemovedTags(previousTags, context.Tags),
             ExpectedConcurrencyStamp = sourceEntry.ConcurrencyStamp,
             // A NotModified extension re-stamps the existing value: peers' cached bytes stay valid, so
             // multi-tier stores must not broadcast an invalidation for it.

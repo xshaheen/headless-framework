@@ -61,11 +61,10 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
         var entry = _store.GetEntry("key");
         entry.Should().NotBeNull();
         entry!.Tags.Should().BeEquivalentTo("t1", "t2");
-        _store.LastRemovedTags.Should().BeNull();
     }
 
     [Fact]
-    public async Task should_prefer_options_tags_over_existing_entry_tags_and_report_removed_tags()
+    public async Task should_prefer_options_tags_over_existing_entry_tags()
     {
         // given — a logically-expired but physically-present entry carrying old tags
         var now = _timeProvider.GetUtcNow().UtcDateTime;
@@ -94,11 +93,10 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
                 AbortToken
             );
 
-        // then — call-provided tags win, and the dropped tag is reported for index reconciliation
+        // then — call-provided tags win over the existing entry's tags
         observedContextTags.Should().BeEquivalentTo("kept-tag", "new-tag");
         var entry = _store.GetEntry("key");
         entry!.Tags.Should().BeEquivalentTo("kept-tag", "new-tag");
-        _store.LastRemovedTags.Should().BeEquivalentTo("old-tag");
     }
 
     [Fact]
@@ -126,11 +124,10 @@ public sealed class FactoryCacheCoordinatorTagTests : TestBase
                 AbortToken
             );
 
-        // then — the restamped entry keeps its tags and nothing was dropped
+        // then — the restamped entry keeps its tags
         result.Value.Should().Be("value");
         var entry = _store.GetEntry("key");
         entry!.Tags.Should().BeEquivalentTo("keep-me");
-        _store.LastRemovedTags.Should().BeNull();
     }
 
     [Fact]

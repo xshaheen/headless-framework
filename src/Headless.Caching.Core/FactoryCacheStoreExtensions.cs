@@ -12,9 +12,8 @@ public static class FactoryCacheStoreExtensions
     /// <summary>
     /// Performs a direct options-based upsert: validates <paramref name="options"/> with the same rules as the
     /// factory coordinator, computes the fresh-write stamps once via <see cref="CacheEntryStamps.Compute"/>, and
-    /// persists the entry with its <see cref="CacheEntryOptions.Tags"/>. The write is preceded by one entry read
-    /// so dropped tags can be reconciled against provider reverse tag indexes — a documented non-hot-path cost;
-    /// callers that need none of the per-entry option semantics should use the plain TTL upsert instead.
+    /// persists the entry with its <see cref="CacheEntryOptions.Tags"/>. Callers that need none of the per-entry
+    /// option semantics should use the plain TTL upsert instead.
     /// </summary>
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="store">The provider store.</param>
@@ -39,13 +38,8 @@ public static class FactoryCacheStoreExtensions
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Read-before-write so a tag the previous entry carried but this write drops is removed from the
-        // provider's reverse tag index together with the write.
-        var existing = await store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
-
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var stamps = CacheEntryStamps.Compute(options, now);
-        var previousTags = existing.IsPhysicallyPresent(now) ? existing.Tags : null;
 
         var entry = new CacheStoreEntryWrite<T>
         {
@@ -59,7 +53,6 @@ public static class FactoryCacheStoreExtensions
             // (Family-2 version-pinning compares CreatedAt against the newest applicable marker).
             CreatedAt = stamps.CreatedAt,
             Tags = options.Tags,
-            RemovedTags = CacheEntryStamps.ComputeRemovedTags(previousTags, options.Tags),
             // Per-call tier-write control for the direct upsert path. Hybrid honors these; single-tier providers
             // ignore the descriptor fields.
             SkipMemoryCacheWrite = options.SkipMemoryCacheWrite,

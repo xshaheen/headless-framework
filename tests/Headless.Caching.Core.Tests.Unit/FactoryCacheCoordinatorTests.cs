@@ -2817,8 +2817,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     // FusionCache: CanHandleEagerRefreshWithTagsAsync.
     // Tags supplied by the eager-refresh factory persist on the rewritten entry. (FusionCache then removes via
     // RemoveByTagAsync; that operation lives on ICache, not the FactoryCacheCoordinator store primitive, so this
-    // port asserts tag persistence and the RemovedTags bookkeeping the coordinator emits — the removal itself is
-    // covered at the ICache/hybrid level, not here.)
+    // port asserts tag persistence only — the removal itself is covered at the ICache/hybrid level, not here.)
     [Fact]
     public async Task should_persist_eager_refresh_factory_tags_on_rewritten_entry()
     {
@@ -2851,12 +2850,11 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         );
         await backgroundFinished;
 
-        // then — the rewritten entry carries the new tags; the dropped tags are reported for the store's reverse index
+        // then — the rewritten entry carries the new tags
         result.Value.Should().Be("old");
         var entry = _store.GetEntry(key)!;
         entry.Value.Should().Be("fresh");
         entry.Tags.Should().BeEquivalentTo("c", "d");
-        _store.LastRemovedTags.Should().BeEquivalentTo("a", "b");
     }
 
     // FusionCache: CanAccessCacheKeyInsideFactoryAsync.

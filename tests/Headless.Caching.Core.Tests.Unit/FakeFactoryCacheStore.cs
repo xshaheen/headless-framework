@@ -171,15 +171,10 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 Tags: entry.Tags,
                 ConcurrencyStamp: Guid.NewGuid().ToString("N")
             );
-
-            LastRemovedTags = entry.RemovedTags;
         }
 
         return new ValueTask<bool>(true);
     }
-
-    /// <summary>The <see cref="CacheStoreEntryWrite{T}.RemovedTags"/> carried by the most recent write.</summary>
-    public IReadOnlyCollection<string>? LastRemovedTags { get; private set; }
 
     public ValueTask TryRearmSlidingAsync(
         string key,

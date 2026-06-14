@@ -133,7 +133,7 @@ public sealed partial class FactoryCacheCoordinator
             }
 
             ownsReleaser = false;
-            await _StartEagerFactoryAsync(store, key, context, factory, options, entry.Tags, releaser, distributedLease)
+            await _StartEagerFactoryAsync(store, key, context, factory, options, releaser, distributedLease)
                 .ConfigureAwait(false);
         }
         finally
@@ -157,7 +157,6 @@ public sealed partial class FactoryCacheCoordinator
         CacheFactoryContext<T> context,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
-        IReadOnlyCollection<string>? previousTags,
         IDisposable releaser,
         IAsyncDisposable? distributedLease
     )
@@ -173,7 +172,6 @@ public sealed partial class FactoryCacheCoordinator
                 factoryTask,
                 internalCts,
                 options,
-                previousTags,
                 releaser,
                 distributedLease
             )
@@ -196,7 +194,6 @@ public sealed partial class FactoryCacheCoordinator
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheEntryOptions options,
-        IReadOnlyCollection<string>? previousTags,
         IDisposable releaser,
         IAsyncDisposable? distributedLease
     )
@@ -215,7 +212,7 @@ public sealed partial class FactoryCacheCoordinator
                     options,
                     key,
                     ceilingLabel: "eager-ceiling",
-                    () => _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts, previousTags)
+                    () => _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts)
                 )
                 .ConfigureAwait(false);
         }
@@ -242,8 +239,7 @@ public sealed partial class FactoryCacheCoordinator
         string key,
         CacheFactoryContext<T> context,
         Task<CacheFactoryResult<T>> factoryTask,
-        CancellationTokenSource internalCts,
-        IReadOnlyCollection<string>? previousTags
+        CancellationTokenSource internalCts
     )
     {
 #pragma warning disable VSTHRD003 // This continuation deliberately observes the detached eager factory task.
@@ -259,7 +255,6 @@ public sealed partial class FactoryCacheCoordinator
                         context,
                         result,
                         sourceEntry: CacheStoreEntry<T>.NotFound,
-                        previousTags,
                         CancellationToken.None
                     )
                     .ConfigureAwait(false);

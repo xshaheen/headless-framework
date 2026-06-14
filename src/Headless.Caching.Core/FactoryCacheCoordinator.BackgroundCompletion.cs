@@ -169,7 +169,6 @@ public sealed partial class FactoryCacheCoordinator
                         context,
                         result,
                         sourceEntry: staleCandidate,
-                        previousTags: staleCandidate.Tags,
                         CancellationToken.None
                     )
                     .ConfigureAwait(false);
