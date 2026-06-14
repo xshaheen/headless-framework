@@ -2,6 +2,7 @@
 
 using System.Text.RegularExpressions;
 using Headless.Checks;
+using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.SqlServer;
 
@@ -48,6 +49,11 @@ public partial class SqlServerEntityFrameworkMessagingOptions
     /// </summary>
     [GeneratedRegex(@"^[a-zA-Z_@#][a-zA-Z0-9_@#$]{0,127}$", RegexOptions.None, 100)]
     private static partial Regex _ValidIdentifier();
+
+    /// <summary>
+    /// Gets or sets the maximum length for the Owner column. Default is <see cref="DataStorageConstants.OwnerColumnMaxLength"/>.
+    /// </summary>
+    public int OwnerColumnMaxLength { get; set; } = DataStorageConstants.OwnerColumnMaxLength;
 
     /// <summary>
     /// EF DbContext

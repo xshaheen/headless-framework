@@ -89,11 +89,13 @@ public sealed class PostgresFencingConcurrentInitTests(PostgresDistributedLockFi
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddPostgresDistributedLocks(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.KeyPrefix = $"fence-init:{Faker.Random.AlphaNumeric(6)}:";
-        });
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = fixture.ConnectionString;
+                options.KeyPrefix = $"fence-init:{Faker.Random.AlphaNumeric(6)}:";
+            })
+        );
 
         return services.BuildServiceProvider();
     }

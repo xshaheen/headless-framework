@@ -16,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -40,7 +41,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             setup.ForMessage<TestMessage>(message => message.MessageName("events.orders").OnBus<TestBusConsumer>());
         });
 
-        var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
         metadata.IntentType.Should().Be(IntentType.Bus);
         metadata.MessageName.Should().Be("events.orders");
@@ -56,7 +57,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             setup.ForMessage<TestMessage>(message => message.MessageName("jobs.orders").OnQueue<TestQueueConsumer>());
         });
 
-        var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
 
         metadata.IntentType.Should().Be(IntentType.Queue);
         metadata.MessageName.Should().Be("jobs.orders");
@@ -397,6 +398,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
+            new ConsumerRegistry(),
             new NullCurrentTenant()
         );
 

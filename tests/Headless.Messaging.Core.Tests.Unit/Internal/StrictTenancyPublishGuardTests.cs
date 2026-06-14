@@ -175,7 +175,8 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     )
     {
         var options = new MessagingOptions { TenantContextRequired = tenantContextRequired };
-        options.WithMessageNameMapping(typeof(TestMessage), "test.messageName");
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "test.messageName");
 
         var resolvedTenant = currentTenant ?? new StubCurrentTenant(ambientTenantId);
 
@@ -183,6 +184,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             Options.Create(options),
+            registry,
             resolvedTenant
         );
     }

@@ -87,14 +87,8 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         // The acquire command uses SET LOCAL to set statement/lock timeouts; inside a transaction those persist to the
         // end of the transaction, so we wrap in a savepoint we can roll back (except on a transaction-scoped success,
         // where rolling back would release the lock).
-        var needsSavePoint = await _ShouldDefineSavePointAsync(connection).ConfigureAwait(false);
-
-        if (needsSavePoint)
-        {
-            using var setSavePointCommand = connection.CreateCommand();
-            setSavePointCommand.SetCommandText("SAVEPOINT " + savePointName);
-            await setSavePointCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+        var savePointDefined = await _DefineSavePointIfNeededAsync(connection, savePointName, cancellationToken)
+            .ConfigureAwait(false);
 
         using var acquireCommand = _CreateAcquireCommand(connection, key, timeout);
 
@@ -171,7 +165,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         async ValueTask _RollBackTransactionTimeoutVariablesIfNeededAsync(bool acquired)
         {
             if (
-                needsSavePoint
+                savePointDefined
                 // For a transaction-scoped success we can't roll back the savepoint (it would release the lock). Leaking
                 // the savepoint is fine: an internally-owned transaction cleans it up on disposal, and an externally-owned
                 // transaction must keep it or lose the lock.
@@ -308,36 +302,42 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         }
     }
 
-    private static async ValueTask<bool> _ShouldDefineSavePointAsync(DatabaseConnection connection)
+    private static async ValueTask<bool> _DefineSavePointIfNeededAsync(
+        DatabaseConnection connection,
+        string savePointName,
+        CancellationToken cancellationToken
+    )
     {
-        // Internally-owned: a savepoint is only needed when a transaction has been opened.
-        if (!connection.IsExternallyOwned)
+        // For internally-owned connections, HasTransaction is authoritative; without one,
+        // SET LOCAL cannot escape the acquire command.
+        if (!connection.IsExternallyOwned && !connection.HasTransaction)
         {
-            return connection.HasTransaction;
+            return false;
         }
 
-        // Externally-owned with a visible transaction came through the transactional API: needs a savepoint.
+        using var setSavePointCommand = connection.CreateCommand();
+        setSavePointCommand.SetCommandText("SAVEPOINT " + savePointName);
+
         if (connection.HasTransaction)
         {
+            await setSavePointCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
             return true;
         }
 
-        // Externally-owned with no visible transaction might still be inside one we can't see. The only way to detect it
-        // is to try to begin a new transaction.
+        // Npgsql does not expose a public read-only flag for an externally-owned connection's active transaction.
+        // SAVEPOINT is the exact boundary we need, so classify only PostgreSQL's "no active transaction" state.
+        // Cancellation before this returns is clean: no savepoint or SET LOCAL state has been established yet.
         try
         {
-            await connection.BeginTransactionAsync(CancellationToken.None).ConfigureAwait(false);
+            await setSavePointCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.NoActiveSqlTransaction)
         {
-            // Already in a transaction => needs a savepoint.
-            return true;
+            return false;
         }
 
-        await connection.DisposeTransactionAsync().ConfigureAwait(false);
-
-        // No transaction => no savepoint.
-        return false;
+        return true;
     }
 
     private static async ValueTask _RestoreTimeoutSettingsIfNeededAsync(

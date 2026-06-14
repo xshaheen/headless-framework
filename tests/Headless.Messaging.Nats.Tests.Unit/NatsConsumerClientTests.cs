@@ -99,10 +99,7 @@ public sealed class NatsConsumerClientTests : TestBase
     public void BuildStreamSubjects_should_add_wildcard_only_for_sharded_message_names()
     {
         NatsConsumerClient
-            .BuildStreamSubjects(
-                ["orders.created"],
-                new HashSet<string>(StringComparer.Ordinal) { "orders.created" }
-            )
+            .BuildStreamSubjects(["orders.created"], new HashSet<string>(StringComparer.Ordinal) { "orders.created" })
             .Should()
             .BeEquivalentTo(["orders.created", "orders.created.>"]);
     }

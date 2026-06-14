@@ -86,14 +86,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
 
         // when
-        await new FactoryCacheCoordinator(_timeProvider, logger)
-            .GetOrAddAsync<string>(
-                _store,
-                key,
-                _ => throw new InvalidOperationException("downstream unavailable"),
-                _CreateOptions(isFailSafeEnabled: true),
-                AbortToken
-            );
+        await new FactoryCacheCoordinator(_timeProvider, logger).GetOrAddAsync<string>(
+            _store,
+            key,
+            _ => throw new InvalidOperationException("downstream unavailable"),
+            _CreateOptions(isFailSafeEnabled: true),
+            AbortToken
+        );
 
         // then
         var logged = logger
@@ -301,13 +300,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(
-                _store,
-                key,
-                _ => ValueTask.FromResult<string?>(null),
-                _CreateOptions(),
-                AbortToken
-            );
+            .GetOrAddAsync<string>(_store, key, _ => ValueTask.FromResult<string?>(null), _CreateOptions(), AbortToken);
 
         // then
         result.HasValue.Should().BeTrue();
@@ -449,7 +442,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
 
-        using var callerCts = new CancellationTokenSource();   // not cancelled
+        using var callerCts = new CancellationTokenSource(); // not cancelled
         using var internalCts = new CancellationTokenSource(); // simulates a downstream / internal timeout
 
         // when — factory throws an OCE bound to an *internal* token, not the caller's

@@ -28,6 +28,8 @@
     <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Redis.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Pulsar.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Nats.Tests.Unit" />
@@ -43,6 +45,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />

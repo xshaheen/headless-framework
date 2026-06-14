@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -16,7 +17,8 @@ internal sealed class InMemoryDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     ISerializer serializer,
     IGuidGenerator guidGenerator,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    INodeMembership nodeMembership
 ) : IDataStorage
 {
     public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
@@ -101,6 +103,7 @@ internal sealed class InMemoryDataStorage(
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
             current.LockedUntil = utcLockedUntil;
+            current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
             current.Retries = message.Retries;
             current.Content = serializer.Serialize(message.Origin);
             updated = true;
@@ -113,7 +116,15 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
-    ) => _LeaseAsync(PublishedMessages, message, lockedUntil, timeProvider, cancellationToken);
+    ) =>
+        _LeaseAsync(
+            PublishedMessages,
+            message,
+            lockedUntil,
+            timeProvider,
+            nodeMembership.GetOwnerTag(),
+            cancellationToken
+        );
 
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
@@ -154,6 +165,7 @@ internal sealed class InMemoryDataStorage(
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
             current.LockedUntil = utcLockedUntil;
+            current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
             current.Retries = message.Retries;
             current.Content = serializer.Serialize(message.Origin);
             current.ExceptionInfo = message.ExceptionInfo;
@@ -167,7 +179,15 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
-    ) => _LeaseAsync(ReceivedMessages, message, lockedUntil, timeProvider, cancellationToken);
+    ) =>
+        _LeaseAsync(
+            ReceivedMessages,
+            message,
+            lockedUntil,
+            timeProvider,
+            nodeMembership.GetOwnerTag(),
+            cancellationToken
+        );
 
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
@@ -189,6 +209,7 @@ internal sealed class InMemoryDataStorage(
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             LockedUntil = null,
+            Owner = null,
             Retries = 0,
         };
 
@@ -204,6 +225,7 @@ internal sealed class InMemoryDataStorage(
             ExpiresAt = stored.ExpiresAt,
             NextRetryAt = stored.NextRetryAt,
             LockedUntil = stored.LockedUntil,
+            Owner = stored.Owner,
             StatusName = StatusName.Scheduled,
             Version = messagingOptions.Value.Version,
         };
@@ -324,6 +346,7 @@ internal sealed class InMemoryDataStorage(
                 existing.ExpiresAt = expiresAt;
                 existing.NextRetryAt = null;
                 existing.LockedUntil = null;
+                existing.Owner = null;
                 existing.Content = content;
                 existing.ExceptionInfo = exceptionInfo;
 
@@ -344,6 +367,7 @@ internal sealed class InMemoryDataStorage(
                 ExpiresAt = expiresAt,
                 NextRetryAt = null,
                 LockedUntil = null,
+                Owner = null,
                 StatusName = StatusName.Failed,
                 ExceptionInfo = exceptionInfo,
                 Version = version,
@@ -428,6 +452,7 @@ internal sealed class InMemoryDataStorage(
                             ExpiresAt = existing.ExpiresAt,
                             NextRetryAt = existing.NextRetryAt,
                             LockedUntil = existing.LockedUntil,
+                            Owner = existing.Owner,
                             Retries = existing.Retries,
                             ExceptionInfo = existing.ExceptionInfo,
                         }
@@ -460,6 +485,7 @@ internal sealed class InMemoryDataStorage(
                     existing.ExpiresAt = null;
                     existing.NextRetryAt = initialNextRetryAt;
                     existing.LockedUntil = null;
+                    existing.Owner = null;
                     existing.StatusName = StatusName.Scheduled;
                     existing.ExceptionInfo = null;
                 }
@@ -475,6 +501,7 @@ internal sealed class InMemoryDataStorage(
                         ExpiresAt = existing.ExpiresAt,
                         NextRetryAt = existing.NextRetryAt,
                         LockedUntil = existing.LockedUntil,
+                        Owner = existing.Owner,
                         Retries = existing.Retries,
                     }
                 );
@@ -525,6 +552,7 @@ internal sealed class InMemoryDataStorage(
             ExpiresAt = null,
             NextRetryAt = initialNextRetryAt,
             LockedUntil = null,
+            Owner = null,
             Retries = 0,
         };
 
@@ -541,6 +569,7 @@ internal sealed class InMemoryDataStorage(
             ExpiresAt = mdMessage.ExpiresAt,
             NextRetryAt = mdMessage.NextRetryAt,
             LockedUntil = mdMessage.LockedUntil,
+            Owner = mdMessage.Owner,
             StatusName = StatusName.Scheduled,
             Version = version,
         };
@@ -598,11 +627,27 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(_ClaimMessagesOfNeedRetry(PublishedMessages, cancellationToken));
     }
 
+    public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(_ReclaimDeadOwners(PublishedMessages, liveOwners, cancellationToken));
+    }
+
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
         return ValueTask.FromResult(_ClaimMessagesOfNeedRetry(ReceivedMessages, cancellationToken));
+    }
+
+    public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(_ReclaimDeadOwners(ReceivedMessages, liveOwners, cancellationToken));
     }
 
     private IEnumerable<MediumMessage> _ClaimMessagesOfNeedRetry(
@@ -662,6 +707,7 @@ internal sealed class InMemoryDataStorage(
                 // rejected by the `NextRetryAt is null` guard). The redundant terminal-status
                 // block was unreachable and has been removed.
                 candidate.LockedUntil = newLease;
+                candidate.Owner = nodeMembership.GetOwnerTag();
                 claimed.Add(_ToSnapshot(candidate));
             }
         }
@@ -685,6 +731,7 @@ internal sealed class InMemoryDataStorage(
             ExpiresAt = m.ExpiresAt,
             NextRetryAt = m.NextRetryAt,
             LockedUntil = m.LockedUntil,
+            Owner = m.Owner,
             Retries = m.Retries,
             ExceptionInfo = m.ExceptionInfo,
             IntentType = m.IntentType,
@@ -695,6 +742,7 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         TimeProvider timeProvider,
+        string? owner,
         CancellationToken cancellationToken
     )
     {
@@ -723,9 +771,62 @@ internal sealed class InMemoryDataStorage(
 
             var utcLockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
             current.LockedUntil = utcLockedUntil;
+            current.Owner = owner;
             message.LockedUntil = utcLockedUntil;
+            message.Owner = owner;
             return ValueTask.FromResult(true);
         }
+    }
+
+    private int _ReclaimDeadOwners(
+        ConcurrentDictionary<Guid, MemoryMessage> messages,
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Empty liveOwners is a no-op (IDataStorage contract) — an empty set would otherwise reclaim
+        // every leased owned row, matching the PostgreSQL/SqlServer guards.
+        if (liveOwners.Count == 0)
+        {
+            return 0;
+        }
+
+        // Always build an Ordinal HashSet so the owner comparison matches the PostgreSQL/SqlServer
+        // exact-string semantics. The previous `as ISet<string>` fast path was both dead (the sole
+        // caller passes a string[]) and a latent trap (a non-Ordinal ISet would silently diverge).
+        var liveOwnerSet = new HashSet<string>(liveOwners, StringComparer.Ordinal);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var reclaimed = 0;
+
+        foreach (var message in messages.Values)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            lock (message)
+            {
+                if (message.Owner is null || liveOwnerSet.Contains(message.Owner))
+                {
+                    continue;
+                }
+
+                if ((message.StatusName is StatusName.Succeeded or StatusName.Failed) && message.NextRetryAt is null)
+                {
+                    continue;
+                }
+
+                if (message.LockedUntil is null || message.LockedUntil <= now)
+                {
+                    continue;
+                }
+
+                message.LockedUntil = now;
+                reclaimed++;
+            }
+        }
+
+        return reclaimed;
     }
 
     public ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)

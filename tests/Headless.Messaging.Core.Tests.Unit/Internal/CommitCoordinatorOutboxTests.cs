@@ -161,15 +161,14 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
     private static MessagePublishRequestFactory _CreatePublishRequestFactory()
     {
-        var options = new MessagingOptions
-        {
-            MessageNameMappings = { [typeof(CoordinatorMessage)] = "coordinator.message" },
-        };
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(CoordinatorMessage), "coordinator.message");
 
         return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            Options.Create(options),
+            Options.Create(new MessagingOptions()),
+            registry,
             new NullCurrentTenant()
         );
     }

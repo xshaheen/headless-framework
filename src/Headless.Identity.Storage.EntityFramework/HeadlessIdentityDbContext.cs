@@ -160,7 +160,7 @@ public abstract class HeadlessIdentityDbContext<
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        _runtime.ConfigureConventions(configurationBuilder);
+        HeadlessDbContextRuntime.ConfigureConventions(configurationBuilder);
     }
 
     protected override void OnModelCreating(ModelBuilder builder)

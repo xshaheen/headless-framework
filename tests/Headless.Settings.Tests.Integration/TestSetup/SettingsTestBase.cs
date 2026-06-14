@@ -54,7 +54,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         // Lock Storage
         services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
         // Resource Lock
-        services.AddRedisDistributedLock(static _ => { });
+        services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
         // Messages
         services.AddHeadlessMessaging(setup =>
         {

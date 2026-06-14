@@ -139,7 +139,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             _initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            TimeProvider.System
+            TimeProvider.System,
+            NodeMembership
         );
     }
 
@@ -265,6 +266,35 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
         base.should_handle_concurrent_state_updates_to_same_row();
 
+    [Fact]
+    public override Task should_reclaim_published_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_published_retry_row_owned_by_dead_node();
+
+    [Fact]
+    public override Task should_reclaim_received_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_received_retry_row_owned_by_dead_node();
+
+    [Fact]
+    public override Task should_stamp_owner_on_claim() => base.should_stamp_owner_on_claim();
+
+    [Fact]
+    public override Task should_not_reclaim_rows_of_live_or_restarted_incarnation() =>
+        base.should_not_reclaim_rows_of_live_or_restarted_incarnation();
+
+    [Fact]
+    public override Task should_not_reclaim_terminal_rows() => base.should_not_reclaim_terminal_rows();
+
+    [Fact]
+    public override Task should_be_inert_when_no_dead_owners_passed() =>
+        base.should_be_inert_when_no_dead_owners_passed();
+
+    [Fact]
+    public override Task should_not_reclaim_rows_with_null_owner() => base.should_not_reclaim_rows_with_null_owner();
+
+    [Fact]
+    public override Task should_reclaim_dead_owner_rows_idempotently() =>
+        base.should_reclaim_dead_owner_rows_idempotently();
+
     #endregion
 
     #region SQL Server-Specific Tests
@@ -300,6 +330,33 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             """
         );
         result.Should().Be(tableName);
+    }
+
+    [Theory]
+    [InlineData("Published")]
+    [InlineData("Received")]
+    public async Task should_create_owner_column_with_shared_width(string tableName)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var dataType = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'messaging' AND TABLE_NAME = @TableName AND COLUMN_NAME = 'Owner'
+            """,
+            new { TableName = tableName }
+        );
+        var maxLength = await connection.QueryFirstOrDefaultAsync<int?>(
+            """
+            SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'messaging' AND TABLE_NAME = @TableName AND COLUMN_NAME = 'Owner'
+            """,
+            new { TableName = tableName }
+        );
+
+        dataType.Should().Be("nvarchar");
+        maxLength.Should().Be(DataStorageConstants.OwnerColumnMaxLength);
     }
 
     [Fact]
@@ -384,6 +441,55 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             .NotBeNull("the retry-pickup index must be a filtered index, not a full nonclustered index")
             .And.Contain("NextRetryAt", "the filter must reference NextRetryAt")
             .And.Contain("IS NOT NULL", "the filter must exclude rows with NULL NextRetryAt");
+    }
+
+    [Theory]
+    [InlineData("Received", "IX_messaging_Received_Owner_NotNull")]
+    [InlineData("Published", "IX_messaging_Published_Owner_NotNull")]
+    public async Task should_key_owner_filtered_index_on_owner_with_not_null_filter(string tableName, string indexName)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var columns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT c.name
+                FROM sys.indexes i
+                JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                JOIN sys.objects o ON o.object_id = i.object_id
+                JOIN sys.schemas s ON s.schema_id = o.schema_id
+                WHERE s.name = N'messaging'
+                  AND o.name = @TableName
+                  AND i.name = @IndexName
+                  AND ic.is_included_column = 0
+                ORDER BY ic.key_ordinal;
+                """,
+                new { TableName = tableName, IndexName = indexName }
+            )
+        ).ToList();
+
+        columns.Should().BeEquivalentTo(["Owner"], opts => opts.WithStrictOrdering());
+
+        var filterDefinition = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT i.filter_definition
+            FROM sys.indexes i
+            JOIN sys.objects o ON o.object_id = i.object_id
+            JOIN sys.schemas s ON s.schema_id = o.schema_id
+            WHERE s.name = N'messaging'
+              AND o.name = @TableName
+              AND i.name = @IndexName;
+            """,
+            new { TableName = tableName, IndexName = indexName }
+        );
+
+        filterDefinition
+            .Should()
+            .NotBeNull("the owner reclaim index must be filtered, not a full nonclustered index")
+            .And.Contain("Owner", "the filter must reference Owner")
+            .And.Contain("IS NOT NULL", "the filter must exclude rows without a Coordination owner");
     }
 
     #endregion

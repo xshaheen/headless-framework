@@ -153,7 +153,8 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             _initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
-            TimeProvider.System
+            TimeProvider.System,
+            NodeMembership
         );
     }
 
@@ -279,6 +280,35 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
         base.should_handle_concurrent_state_updates_to_same_row();
 
+    [Fact]
+    public override Task should_reclaim_published_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_published_retry_row_owned_by_dead_node();
+
+    [Fact]
+    public override Task should_reclaim_received_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_received_retry_row_owned_by_dead_node();
+
+    [Fact]
+    public override Task should_stamp_owner_on_claim() => base.should_stamp_owner_on_claim();
+
+    [Fact]
+    public override Task should_not_reclaim_rows_of_live_or_restarted_incarnation() =>
+        base.should_not_reclaim_rows_of_live_or_restarted_incarnation();
+
+    [Fact]
+    public override Task should_not_reclaim_terminal_rows() => base.should_not_reclaim_terminal_rows();
+
+    [Fact]
+    public override Task should_be_inert_when_no_dead_owners_passed() =>
+        base.should_be_inert_when_no_dead_owners_passed();
+
+    [Fact]
+    public override Task should_not_reclaim_rows_with_null_owner() => base.should_not_reclaim_rows_with_null_owner();
+
+    [Fact]
+    public override Task should_reclaim_dead_owner_rows_idempotently() =>
+        base.should_reclaim_dead_owner_rows_idempotently();
+
     #endregion
 
     #region PostgreSQL-Specific Tests
@@ -355,6 +385,33 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         dataType.Should().Be("timestamp with time zone");
     }
 
+    [Theory]
+    [InlineData("published")]
+    [InlineData("received")]
+    public async Task should_create_owner_column_with_shared_width(string table)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var dataType = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT data_type FROM information_schema.columns
+            WHERE table_schema = 'messaging' AND table_name = @Table AND column_name = 'Owner'
+            """,
+            new { Table = table }
+        );
+        var maxLength = await connection.QueryFirstOrDefaultAsync<int?>(
+            """
+            SELECT character_maximum_length FROM information_schema.columns
+            WHERE table_schema = 'messaging' AND table_name = @Table AND column_name = 'Owner'
+            """,
+            new { Table = table }
+        );
+
+        dataType.Should().Be("character varying");
+        maxLength.Should().Be(DataStorageConstants.OwnerColumnMaxLength);
+    }
+
     // -------------------------------------------------------------------------
     // EXPLAIN ANALYZE — verify the retry-pickup query plans use the partial
     // index (idx_*_next_retry). A regression to a full sequential scan would
@@ -406,6 +463,48 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             new { IndexName = indexName }
         );
         predicate.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
+    }
+
+    [Theory]
+    [InlineData("idx_received_Owner_not_null")]
+    [InlineData("idx_published_Owner_not_null")]
+    public async Task should_key_owner_index_on_owner_with_not_null_filter(string indexName)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var columns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_class c ON c.oid = i.indexrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                WHERE n.nspname = 'messaging'
+                  AND c.relname = @IndexName
+                  AND k.ord <= i.indnkeyatts
+                ORDER BY k.ord;
+                """,
+                new { IndexName = indexName }
+            )
+        ).ToList();
+
+        columns.Should().BeEquivalentTo(["Owner"], opts => opts.WithStrictOrdering());
+
+        var predicate = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT pg_get_expr(i.indpred, i.indrelid, true)
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'messaging' AND c.relname = @IndexName;
+            """,
+            new { IndexName = indexName }
+        );
+
+        predicate.Should().NotBeNull().And.Contain("Owner").And.Contain("IS NOT NULL");
     }
 
     [Theory]

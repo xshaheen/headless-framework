@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 
 namespace Headless.Messaging;
@@ -19,10 +21,12 @@ namespace Headless.Messaging;
 /// This freeze-on-first-read pattern ensures zero-allocation reads at runtime.
 /// </para>
 /// </remarks>
-public sealed class ConsumerRegistry : IConsumerRegistry
+internal sealed class ConsumerRegistry : IConsumerRegistry
 {
     private readonly Lock _lock = new();
+    private readonly Dictionary<Type, string> _messageNameMappings = [];
     private List<ConsumerMetadata>? _consumers = [];
+    private bool MessageRegistrationsDrained { get; set; }
 
     // volatile is required by the double-checked locking in GetAll: the unsynchronized first
     // read must observe a fully-published reference (not a partially-initialized AsReadOnly
@@ -61,6 +65,38 @@ public sealed class ConsumerRegistry : IConsumerRegistry
             }
 
             _consumers!.Add(metadata);
+        }
+    }
+
+    /// <summary>
+    /// Registers a raw message-name mapping for a message type.
+    /// </summary>
+    internal void RegisterMessageName(Type messageType, string messageName)
+    {
+        Argument.IsNotNull(messageType);
+        MessagingOptions.ValidateMessageName(messageName);
+
+        lock (_lock)
+        {
+            if (_frozen != null)
+            {
+                throw new InvalidOperationException(
+                    "Cannot register message-name mappings after the registry has been frozen. "
+                        + "Ensure all mappings are registered during configuration before the application starts."
+                );
+            }
+
+            if (
+                _messageNameMappings.TryGetValue(messageType, out var existingMessageName)
+                && !string.Equals(existingMessageName, messageName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Message type {messageType.Name} is already mapped to messageName '{existingMessageName}'. Cannot map to '{messageName}'."
+                );
+            }
+
+            _messageNameMappings[messageType] = messageName;
         }
     }
 
@@ -171,6 +207,34 @@ public sealed class ConsumerRegistry : IConsumerRegistry
         return all.Where(m => m.MessageType == messageType).ToList().AsReadOnly();
     }
 
+    public bool TryGetRawMessageName(Type messageType, [NotNullWhen(true)] out string? messageName)
+    {
+        Argument.IsNotNull(messageType);
+
+        if (_frozen != null)
+        {
+            return _messageNameMappings.TryGetValue(messageType, out messageName);
+        }
+
+        lock (_lock)
+        {
+            return _messageNameMappings.TryGetValue(messageType, out messageName);
+        }
+    }
+
+    internal IReadOnlyDictionary<Type, string> GetMessageNameMappings()
+    {
+        if (_frozen != null)
+        {
+            return _messageNameMappings;
+        }
+
+        lock (_lock)
+        {
+            return new Dictionary<Type, string>(_messageNameMappings);
+        }
+    }
+
     /// <summary>
     /// Finds a consumer by consumer type and message type without freezing the registry.
     /// Used internally during setup to resolve group names for deferred registrations.
@@ -205,6 +269,32 @@ public sealed class ConsumerRegistry : IConsumerRegistry
         lock (_lock)
         {
             return _consumers?.Any(m => m.MessageType == messageType) ?? false;
+        }
+    }
+
+    internal bool HasCompletedMessageRegistrationDrain
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return MessageRegistrationsDrained;
+            }
+        }
+    }
+
+    internal void MarkMessageRegistrationDrainCompleted()
+    {
+        lock (_lock)
+        {
+            if (_frozen != null)
+            {
+                throw new InvalidOperationException(
+                    "Cannot drain message registrations after the registry has been frozen."
+                );
+            }
+
+            MessageRegistrationsDrained = true;
         }
     }
 

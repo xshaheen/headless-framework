@@ -15,8 +15,9 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseAzureServiceBus(asb => asb.PartitionKey(static message => message.TenantId));
-        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
-            .HeaderContributions.Single();
+        var contribution = (
+            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+        ).HeaderContributions.Single();
 
         contribution.HeaderName.Should().Be(AzureServiceBusHeaders.PartitionKey);
         contribution.Selector(new TestMessage("tenant-a")).Should().Be("tenant-a");
@@ -28,8 +29,9 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseAzureServiceBus(asb => asb.PartitionKey(static _ => new string('x', 129)));
-        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
-            .HeaderContributions.Single();
+        var contribution = (
+            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+        ).HeaderContributions.Single();
 
         var act = () => contribution.Selector(new TestMessage("tenant-a"));
 

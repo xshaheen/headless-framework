@@ -36,6 +36,7 @@ public sealed class MessagePublishRequestFactoryTests
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             Options.Create(options),
+            new ConsumerRegistry(),
             new NullCurrentTenant()
         );
     }

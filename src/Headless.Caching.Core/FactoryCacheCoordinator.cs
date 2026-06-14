@@ -10,8 +10,7 @@ namespace Headless.Caching;
 
 /// <summary>Coordinates factory-backed cache operations across cache providers.</summary>
 [PublicAPI]
-public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? logger = null)
-    : IDisposable
+public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? logger = null) : IDisposable
 {
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly KeyedAsyncLock _keyedLock = new();
@@ -101,7 +100,14 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             var physicalExpiresAt = now.Add(physicalDuration);
 
             await store
-                .SetEntryAsync(key, value, isNull: value is null, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+                .SetEntryAsync(
+                    key,
+                    value,
+                    isNull: value is null,
+                    logicalExpiresAt,
+                    physicalExpiresAt,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return new CacheValue<T>(value, hasValue: true);

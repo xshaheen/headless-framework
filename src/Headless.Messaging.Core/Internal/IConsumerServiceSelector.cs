@@ -123,6 +123,11 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
             return [];
         }
 
+        // Defensive fallback: in a hosted app the bootstrapper has already drained synchronously (before any
+        // processor started), so this is a no-op. It performs the first drain only in manual/test hosts that
+        // bypass the bootstrapper. See DrainPendingMessageRegistrations for the threading invariant it relies on.
+        _DrainPendingMessageRegistrations();
+
         var results = new List<ConsumerExecutorDescriptor>();
         var metadata = registry.GetAll();
 
@@ -153,6 +158,11 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         }
 
         return results;
+    }
+
+    private void _DrainPendingMessageRegistrations()
+    {
+        SetupMessaging.DrainPendingMessageRegistrations(_serviceProvider, _messagingOptions);
     }
 
     private string _GetGroupName(ConsumerMetadata metadata)

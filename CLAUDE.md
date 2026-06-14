@@ -66,8 +66,8 @@ This repo's abstraction-plus-provider pattern (`Headless.<Feature>.Abstractions`
 
 Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — they pin configuration, results directories, and parallelism consistently. `make help` lists everything; `make` alone prints it.
 
-- **Setup**: `make bootstrap` (restores tools + packages). `make tools`, `make restore` individually.
-- **Build**: `make build` (incremental, errors-only), `make rebuild` (no incremental), `make build-project PROJECT=src/.../X.csproj`.
+- **Setup**: run `make bootstrap` when initializing a fresh clone or new worktree; it restores tools, packages, and git hooks. Use `make tools` and `make restore` individually only when you need a narrower setup step. Use `make restore-project PROJECT=src/.../X.csproj` for a project-scoped restore.
+- **Build**: `make build` (incremental, errors-only), `make rebuild` (no incremental), `make build-project PROJECT=src/.../X.csproj`. Prefer `build-project` when the work is scoped to a specified project; it restores only the selected project graph before building and does not restore the full solution.
 - **Format**: `make format` (CSharpier write), `make format-check` (verify only).
 - **Test**: `make test` (build + run all). `make test-fast` / `make test-project-fast` skip restore/build when outputs exist. Scope with `make test-project TEST_PROJECT=…`, `test-class CLASS='*ClockTests'`, `test-method METHOD=…`, `test-namespace`, `test-trait`, `test-query`. Group runs: `test-unit`, `test-integration` (needs Docker).
 - **Coverage**: `make coverage` (Cobertura), `coverage-html`, `coverage-json` (Summary.json), `coverage-open`.

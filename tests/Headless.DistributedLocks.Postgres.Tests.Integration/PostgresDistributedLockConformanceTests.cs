@@ -22,11 +22,13 @@ public sealed class PostgresDistributedLockConformanceTests : DistributedLockTes
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddPostgresDistributedLocks(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.KeyPrefix = $"conformance:{Faker.Random.AlphaNumeric(6)}:";
-        });
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = fixture.ConnectionString;
+                options.KeyPrefix = $"conformance:{Faker.Random.AlphaNumeric(6)}:";
+            })
+        );
 
         _services = services.BuildServiceProvider();
         _provider = _services.GetRequiredService<IDistributedLock>();

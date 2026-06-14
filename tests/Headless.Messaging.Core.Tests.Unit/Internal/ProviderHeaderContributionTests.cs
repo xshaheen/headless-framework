@@ -190,12 +190,14 @@ public sealed class ProviderHeaderContributionTests
 
     private static MessagePublishRequestFactory _CreateFactory(MessageRegistration registration)
     {
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.message" } };
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "test.message");
 
         return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            Options.Create(options),
+            Options.Create(new MessagingOptions()),
+            registry,
             new NullCurrentTenant(),
             new MessageMetadataRegistry([registration])
         );
@@ -216,13 +218,13 @@ public sealed class ProviderHeaderContributionTests
         : IProviderHeaderContributions
     {
         public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
-            [new ProviderHeaderContribution(headerName, message => selector((TestMessage)message))];
+        [new ProviderHeaderContribution(headerName, message => selector((TestMessage)message))];
     }
 
     private sealed class OtherProviderConfig(string headerName, Func<TestMessage, string?> selector)
         : IProviderHeaderContributions
     {
         public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
-            [new ProviderHeaderContribution(headerName, message => selector((TestMessage)message))];
+        [new ProviderHeaderContribution(headerName, message => selector((TestMessage)message))];
     }
 }

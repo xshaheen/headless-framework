@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -46,7 +47,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
-            TimeProvider.System
+            TimeProvider.System,
+            new NullNodeMembership()
         );
 
         await base.InitializeAsync();

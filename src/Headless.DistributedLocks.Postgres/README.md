@@ -6,7 +6,7 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 
 ## Key Features
 
-- `AddPostgresDistributedLocks(...)` registers `IDistributedLock` and `IDistributedReadWriteLock`.
+- `UsePostgreSql(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
 - `PostgresAdvisoryLockKey` maps strings, `long`, and `(int, int)` keys onto PostgreSQL advisory key spaces.
 - Session-scoped mutex locks use `pg_try_advisory_lock` and release with `pg_advisory_unlock`.
 - Reader-writer locks use PostgreSQL shared and exclusive advisory locks.
@@ -33,11 +33,11 @@ dotnet add package Headless.DistributedLocks.Postgres
 ## Quick Start
 
 ```csharp
-builder.Services.AddPostgresDistributedLocks(options =>
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
 {
     options.ConnectionString = builder.Configuration.GetConnectionString("Postgres");
     options.KeyPrefix = "distributed-lock:";
-});
+}));
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",

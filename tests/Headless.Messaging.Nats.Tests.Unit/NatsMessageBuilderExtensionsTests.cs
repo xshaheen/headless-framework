@@ -14,8 +14,9 @@ public sealed class NatsMessageBuilderExtensionsTests
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseNats(nats => nats.SubjectShard(static message => message.TenantId));
-        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
-            .HeaderContributions.Single();
+        var contribution = (
+            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+        ).HeaderContributions.Single();
 
         contribution.HeaderName.Should().Be(NatsMessagingHeaders.SubjectShard);
         contribution.Selector(new TestMessage("tenant-a")).Should().Be("tenant-a");
@@ -33,8 +34,9 @@ public sealed class NatsMessageBuilderExtensionsTests
     {
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
         builder.UseNats(nats => nats.SubjectShard(_ => shard));
-        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
-            .HeaderContributions.Single();
+        var contribution = (
+            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+        ).HeaderContributions.Single();
 
         var act = () => contribution.Selector(new TestMessage("tenant-a"));
 

@@ -46,8 +46,12 @@ public sealed class CorrelationPrecedenceTests
     public void should_reject_correlation_values_with_control_characters(string correlationId, string source)
     {
         // given
-        var accessor = source == "ambient" ? new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext(correlationId) } : null;
-        var factory = source == "selector" ? _CreateFactory(selector: _ => correlationId) : _CreateFactory(accessor: accessor);
+        var accessor =
+            source == "ambient"
+                ? new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext(correlationId) }
+                : null;
+        var factory =
+            source == "selector" ? _CreateFactory(selector: _ => correlationId) : _CreateFactory(accessor: accessor);
         var options = source == "explicit" ? new PublishOptions { CorrelationId = correlationId } : null;
 
         // when
@@ -143,7 +147,10 @@ public sealed class CorrelationPrecedenceTests
             new TestMessage("selector-correlation"),
             new PublishOptions
             {
-                Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TraceParent] = traceParent },
+                Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.TraceParent] = traceParent,
+                },
             }
         );
 
@@ -172,15 +179,26 @@ public sealed class CorrelationPrecedenceTests
         IConsumeContextAccessor? accessor = null
     )
     {
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.message" } };
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "test.message");
         var registrations = selector is null
             ? Array.Empty<MessageRegistration>()
-            : [new MessageRegistration(typeof(TestMessage), null, message => selector((TestMessage)message), new Dictionary<Type, object>(), [])];
+            :
+            [
+                new MessageRegistration(
+                    typeof(TestMessage),
+                    null,
+                    message => selector((TestMessage)message),
+                    new Dictionary<Type, object>(),
+                    []
+                ),
+            ];
 
         return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            Options.Create(options),
+            Options.Create(new MessagingOptions()),
+            registry,
             new NullCurrentTenant(),
             new MessageMetadataRegistry(registrations),
             accessor

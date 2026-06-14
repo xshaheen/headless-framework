@@ -7,6 +7,7 @@ using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -26,7 +27,7 @@ public sealed class MessagingBuilderTests
         );
 
         using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
 
         // then
         var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
@@ -150,7 +151,7 @@ public sealed class MessagingBuilderTests
         });
 
         using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
 
         // then
         registry.GetAll().Single().Group.Should().Be("shared-group");
@@ -177,7 +178,7 @@ public sealed class MessagingBuilderTests
         });
 
         using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
 
         // then
         var handlerId = MessagingConventions.GetDefaultHandlerId(typeof(TestOrderConsumer), typeof(TestOrderMessage));
@@ -232,6 +233,7 @@ public sealed class MessagingBuilderTests
         );
 
         using var provider = services.BuildServiceProvider();
+        provider.GetDrainedConsumerRegistry();
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then

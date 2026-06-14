@@ -11,11 +11,14 @@ Provides an authoritative SQL Server membership provider for multi-instance apps
 - Atomic incarnation allocation under `UPDLOCK, HOLDLOCK`.
 - Equality heartbeat guard rejects stale and impossible incarnations.
 - Liveness classification uses `SYSUTCDATETIME()`.
+- Bounded jittered retry for SQL Server deadlock victim error `1205` during guarded membership writes.
 - DDL initialization uses `sp_getapplock`.
 
 ## Design Notes
 
 The provider intentionally avoids `MERGE`. Explicit locking keeps the generation guard and liveness row update readable and testable.
+
+Guarded membership writes intentionally keep `SERIALIZABLE` transactions plus generation-first `UPDLOCK, HOLDLOCK` access. Under a large concurrent startup, SQL Server can still choose one writer as deadlock victim (`1205`); the provider retries that rolled-back transaction with a short bounded jittered Polly policy. The retry is SQL Server-specific and does not lower isolation or serialize the hot path with `sp_getapplock`.
 
 ## Installation
 
@@ -50,6 +53,7 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `C
 - `Headless.Coordination.Core.Database`
 - `Headless.Hosting`
 - `Microsoft.Data.SqlClient`
+- `Polly.Core`
 
 ## Side Effects
 

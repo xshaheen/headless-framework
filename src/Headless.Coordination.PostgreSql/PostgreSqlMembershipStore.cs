@@ -110,23 +110,19 @@ internal sealed class PostgreSqlMembershipStore(
 
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection
-            .BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = _CreateCommand(connection, sql, (NpgsqlTransaction)transaction);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", descriptor.Identity.NodeId.Value);
         command.Parameters.AddWithValue("Incarnation", descriptor.Identity.Incarnation.Value);
         command.Parameters.AddWithValue("HostName", (object?)descriptor.HostName ?? DBNull.Value);
-        command.Parameters.Add(new NpgsqlParameter("Endpoints", NpgsqlDbType.Jsonb)
-        {
-            Value = SerializeDictionary(descriptor.Endpoints),
-        });
+        command.Parameters.Add(
+            new NpgsqlParameter("Endpoints", NpgsqlDbType.Jsonb) { Value = SerializeDictionary(descriptor.Endpoints) }
+        );
         command.Parameters.AddWithValue("Role", (object?)descriptor.Role ?? DBNull.Value);
-        command.Parameters.Add(new NpgsqlParameter("Metadata", NpgsqlDbType.Jsonb)
-        {
-            Value = SerializeDictionary(descriptor.Metadata),
-        });
+        command.Parameters.Add(
+            new NpgsqlParameter("Metadata", NpgsqlDbType.Jsonb) { Value = SerializeDictionary(descriptor.Metadata) }
+        );
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

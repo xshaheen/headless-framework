@@ -403,11 +403,14 @@ Stores membership in SQL Server with guarded update/insert statements and server
 - Atomic incarnation allocation under `UPDLOCK, HOLDLOCK`.
 - Heartbeat guard rejects stale or impossible incarnations.
 - Liveness classification uses `SYSUTCDATETIME()`.
+- Guarded membership writes retry SQL Server deadlock victim error `1205` with a bounded jittered Polly policy.
 - DDL initialization uses `sp_getapplock`.
 
 ### Design Notes
 
 The provider intentionally avoids `MERGE`. Explicit locking keeps the generation guard and liveness row update readable and testable.
+
+Membership writes intentionally keep `SERIALIZABLE` transactions plus generation-first `UPDLOCK, HOLDLOCK` access. Under a large concurrent startup, SQL Server can still choose one writer as deadlock victim (`1205`); the provider retries the whole rolled-back transaction. This retry is SQL Server-specific and does not apply to PostgreSQL or Redis providers, whose membership write paths use different concurrency primitives.
 
 ### Installation
 

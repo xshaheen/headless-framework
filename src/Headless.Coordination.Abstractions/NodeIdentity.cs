@@ -53,9 +53,6 @@ public readonly record struct NodeIdentity(NodeId NodeId, NodeIncarnation Incarn
 
     public override string ToString()
     {
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"{NodeId}{_Separator}{Incarnation.Value}"
-        );
+        return string.Create(CultureInfo.InvariantCulture, $"{NodeId}{_Separator}{Incarnation.Value}");
     }
 }

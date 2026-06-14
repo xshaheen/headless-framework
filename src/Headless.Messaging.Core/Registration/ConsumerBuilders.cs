@@ -56,8 +56,8 @@ internal sealed class QueueConsumerBuilder<TConsumer>(MessageConsumerRegistratio
     where TConsumer : class;
 
 internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumerRegistrationBuilder registration)
-    : IConsumerBuilderBase<TConsumer, TBuilder>
-        , IConsumerProviderConfigBuilder
+    : IConsumerBuilderBase<TConsumer, TBuilder>,
+        IConsumerProviderConfigBuilder
     where TConsumer : class
     where TBuilder : class, IConsumerBuilderBase<TConsumer, TBuilder>
 {
@@ -85,7 +85,8 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
         return _Self;
     }
 
-    void IConsumerProviderConfigBuilder.SetConsumerProviderConfig(object config) => registration.SetProviderConfig(config);
+    void IConsumerProviderConfigBuilder.SetConsumerProviderConfig(object config) =>
+        registration.SetProviderConfig(config);
 
     // The concrete builder always implements TBuilder, so this is a safe self-cast that keeps
     // the lane interface flowing through the fluent chain without duplicating the four methods.

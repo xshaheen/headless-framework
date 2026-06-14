@@ -20,13 +20,8 @@ public readonly record struct CacheStoreEntry<T>(
 )
 {
     /// <summary>Gets an entry representing a store miss.</summary>
-    public static CacheStoreEntry<T> NotFound { get; } = new(
-        Found: false,
-        IsNull: false,
-        Value: default,
-        LogicalExpiresAt: null,
-        PhysicalExpiresAt: null
-    );
+    public static CacheStoreEntry<T> NotFound { get; } =
+        new(Found: false, IsNull: false, Value: default, LogicalExpiresAt: null, PhysicalExpiresAt: null);
 }
 
 /// <summary>Shared expiration predicates over <see cref="CacheStoreEntry{T}"/> used by Core and providers.</summary>

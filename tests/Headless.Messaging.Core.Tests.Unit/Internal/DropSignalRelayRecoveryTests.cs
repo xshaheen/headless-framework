@@ -98,12 +98,14 @@ public sealed class DropSignalRelayRecoveryTests : TestBase
 
     private static MessagePublishRequestFactory _CreatePublishRequestFactory()
     {
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(RelayMessage)] = "relay.message" } };
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(RelayMessage), "relay.message");
 
         return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            Options.Create(options),
+            Options.Create(new MessagingOptions()),
+            registry,
             new NullCurrentTenant()
         );
     }

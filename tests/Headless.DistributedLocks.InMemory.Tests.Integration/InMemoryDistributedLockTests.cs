@@ -12,7 +12,11 @@ public sealed class InMemoryDistributedLockTests : DistributedLockTestsBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddInMemoryDistributedLock(static options => options.KeyPrefix = Options.KeyPrefix);
+        services.AddHeadlessDistributedLocks(setup =>
+        {
+            setup.ConfigureOptions(static options => options.KeyPrefix = Options.KeyPrefix);
+            setup.UseInMemory();
+        });
 
         return services.BuildServiceProvider().GetRequiredService<IDistributedLock>();
     }

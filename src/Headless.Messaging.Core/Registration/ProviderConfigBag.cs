@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
 using System.Collections.ObjectModel;
+using Headless.Checks;
 
 namespace Headless.Messaging;
 

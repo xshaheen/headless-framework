@@ -26,8 +26,8 @@ public sealed class NodeIdProviderTests : TestBase
     public async Task should_use_pod_name_and_namespace_when_configured_id_is_absent()
     {
         // given
-        var provider = _CreateProvider(
-            env: name => name switch
+        var provider = _CreateProvider(env: name =>
+            name switch
             {
                 "POD_NAME" => "orders-7d",
                 "POD_NAMESPACE" => "prod",
@@ -46,8 +46,8 @@ public sealed class NodeIdProviderTests : TestBase
     public async Task should_use_pod_name_without_namespace_when_namespace_is_absent()
     {
         // given
-        var provider = _CreateProvider(
-            env: name => name switch
+        var provider = _CreateProvider(env: name =>
+            name switch
             {
                 "POD_NAME" => "orders-7d",
                 "POD_NAMESPACE" => null,

@@ -4,7 +4,10 @@ using System.Data;
 using Headless.Serializer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Retry;
 
 namespace Headless.Coordination.SqlServer;
 
@@ -12,9 +15,14 @@ namespace Headless.Coordination.SqlServer;
 internal sealed class SqlServerMembershipStore(
     IOptions<SqlServerCoordinationOptions> providerOptions,
     IOptions<CoordinationOptions> coordinationOptions,
-    [FromKeyedServices(CoordinationOptions.JsonSerializerServiceKey)] IJsonSerializer serializer
+    [FromKeyedServices(CoordinationOptions.JsonSerializerServiceKey)] IJsonSerializer serializer,
+    TimeProvider timeProvider,
+    ILogger<SqlServerMembershipStore> logger
 ) : DatabaseMembershipStoreBase(coordinationOptions.Value, serializer)
 {
+    private const int _MaxDeadlockRetryAttempts = 2;
+    private readonly ResiliencePipeline _deadlockRetryPipeline = _BuildDeadlockRetryPipeline(timeProvider, logger);
+
     protected override async ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
         NodeId nodeId,
@@ -61,19 +69,29 @@ internal sealed class SqlServerMembershipStore(
             SELECT TOP (1) [value] FROM @allocated;
             """;
 
-        await using var connection = options.CreateConnection();
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = (SqlTransaction)await connection
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+        return await _ExecuteWithDeadlockRetryAsync(
+                "AllocateIncarnation",
+                async ct =>
+                {
+                    await using var connection = options.CreateConnection();
+                    await connection.OpenAsync(ct).ConfigureAwait(false);
+                    await using var transaction = (SqlTransaction)
+                        await connection.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+                    await using var command = _CreateCommand(connection, sql, transaction);
+                    command.Parameters.AddWithValue("ClusterName", clusterName);
+                    command.Parameters.AddWithValue("NodeId", nodeId.Value);
+
+                    var value = Convert.ToInt64(
+                        await command.ExecuteScalarAsync(ct).ConfigureAwait(false),
+                        CultureInfo.InvariantCulture
+                    );
+                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+                    return new NodeIncarnation(value);
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, sql, transaction);
-        command.Parameters.AddWithValue("ClusterName", clusterName);
-        command.Parameters.AddWithValue("NodeId", nodeId.Value);
-
-        var value = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        return new NodeIncarnation(value);
     }
 
     protected override async ValueTask UpsertDescriptorCoreAsync(
@@ -156,22 +174,29 @@ internal sealed class SqlServerMembershipStore(
             END;
             """;
 
-        await using var connection = providerOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = (SqlTransaction)await connection
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
-            .ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, sql, transaction);
-        command.Parameters.AddWithValue("ClusterName", clusterName);
-        command.Parameters.AddWithValue("NodeId", descriptor.Identity.NodeId.Value);
-        command.Parameters.AddWithValue("Incarnation", descriptor.Identity.Incarnation.Value);
-        command.Parameters.AddWithValue("HostName", (object?)descriptor.HostName ?? DBNull.Value);
-        command.Parameters.AddWithValue("Endpoints", SerializeDictionary(descriptor.Endpoints));
-        command.Parameters.AddWithValue("Role", (object?)descriptor.Role ?? DBNull.Value);
-        command.Parameters.AddWithValue("Metadata", SerializeDictionary(descriptor.Metadata));
+        await _ExecuteWithDeadlockRetryAsync(
+                "UpsertDescriptor",
+                async ct =>
+                {
+                    await using var connection = providerOptions.Value.CreateConnection();
+                    await connection.OpenAsync(ct).ConfigureAwait(false);
+                    await using var transaction = (SqlTransaction)
+                        await connection.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+                    await using var command = _CreateCommand(connection, sql, transaction);
+                    command.Parameters.AddWithValue("ClusterName", clusterName);
+                    command.Parameters.AddWithValue("NodeId", descriptor.Identity.NodeId.Value);
+                    command.Parameters.AddWithValue("Incarnation", descriptor.Identity.Incarnation.Value);
+                    command.Parameters.AddWithValue("HostName", (object?)descriptor.HostName ?? DBNull.Value);
+                    command.Parameters.AddWithValue("Endpoints", SerializeDictionary(descriptor.Endpoints));
+                    command.Parameters.AddWithValue("Role", (object?)descriptor.Role ?? DBNull.Value);
+                    command.Parameters.AddWithValue("Metadata", SerializeDictionary(descriptor.Metadata));
 
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     protected override async ValueTask<bool> HeartbeatCoreAsync(
@@ -225,21 +250,28 @@ internal sealed class SqlServerMembershipStore(
             SELECT CAST(1 AS bit);
             """;
 
-        await using var connection = providerOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = (SqlTransaction)await connection
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+        return await _ExecuteWithDeadlockRetryAsync(
+                "Heartbeat",
+                async ct =>
+                {
+                    await using var connection = providerOptions.Value.CreateConnection();
+                    await connection.OpenAsync(ct).ConfigureAwait(false);
+                    await using var transaction = (SqlTransaction)
+                        await connection.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+                    await using var command = _CreateCommand(connection, sql, transaction);
+                    command.Parameters.AddWithValue("ClusterName", clusterName);
+                    command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
+                    command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
+
+                    var accepted = (bool)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false))!;
+                    await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+                    // Retention pruning runs once per tick on the read path; the heartbeat path no longer prunes.
+                    return accepted;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, sql, transaction);
-        command.Parameters.AddWithValue("ClusterName", clusterName);
-        command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
-        command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
-
-        var accepted = (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        // Retention pruning runs once per tick on the read path; the heartbeat path no longer prunes.
-        return accepted;
     }
 
     protected override async ValueTask LeaveCoreAsync(
@@ -374,5 +406,113 @@ internal sealed class SqlServerMembershipStore(
     {
         return (long)Math.Ceiling(value.TotalMilliseconds);
     }
+
+    private async ValueTask _ExecuteWithDeadlockRetryAsync(
+        string operationName,
+        Func<CancellationToken, ValueTask> action,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await _deadlockRetryPipeline
+                .ExecuteAsync(static async (action, ct) => await action(ct), action, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (SqlException ex) when (_IsDeadlockVictim(ex))
+        {
+            logger.LogSqlServerMembershipDeadlock(operationName, ex);
+
+            throw;
+        }
+    }
+
+    private async ValueTask<TResult> _ExecuteWithDeadlockRetryAsync<TResult>(
+        string operationName,
+        Func<CancellationToken, ValueTask<TResult>> action,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await _deadlockRetryPipeline
+                .ExecuteAsync(
+                    static async (action, ct) => await action(ct).ConfigureAwait(false),
+                    action,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (SqlException ex) when (_IsDeadlockVictim(ex))
+        {
+            logger.LogSqlServerMembershipDeadlock(operationName, ex);
+
+            throw;
+        }
+    }
+
+    private static ResiliencePipeline _BuildDeadlockRetryPipeline(TimeProvider timeProvider, ILogger logger)
+    {
+        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+            .AddRetry(
+                new RetryStrategyOptions
+                {
+                    ShouldHandle = static args => new ValueTask<bool>(
+                        args.Outcome.Exception is SqlException ex && _IsDeadlockVictim(ex)
+                    ),
+                    MaxRetryAttempts = _MaxDeadlockRetryAttempts,
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = TimeSpan.FromMilliseconds(50),
+                    MaxDelay = TimeSpan.FromMilliseconds(500),
+                    UseJitter = true,
+                    OnRetry = args =>
+                    {
+                        logger.LogSqlServerMembershipDeadlockRetry(
+                            args.AttemptNumber + 1,
+                            _MaxDeadlockRetryAttempts + 1,
+                            args.RetryDelay,
+                            args.Outcome.Exception
+                        );
+
+                        return default;
+                    },
+                }
+            )
+            .Build();
+    }
+
+    private static bool _IsDeadlockVictim(SqlException exception)
+    {
+        return exception.Number == 1205;
+    }
 }
 #pragma warning restore CA2100
+
+internal static partial class SqlServerMembershipStoreLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "SqlServerMembershipDeadlockRetry",
+        Level = LogLevel.Warning,
+        Message = "SQL Server coordination membership write hit deadlock victim error 1205; retrying attempt {AttemptNumber}/{MaxAttempts} after {Delay}."
+    )]
+    public static partial void LogSqlServerMembershipDeadlockRetry(
+        this ILogger logger,
+        int attemptNumber,
+        int maxAttempts,
+        TimeSpan delay,
+        Exception? exception
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "SqlServerMembershipDeadlock",
+        Level = LogLevel.Error,
+        Message = "SQL Server coordination membership operation {OperationName} exhausted deadlock victim retries."
+    )]
+    public static partial void LogSqlServerMembershipDeadlock(
+        this ILogger logger,
+        string operationName,
+        Exception exception
+    );
+}

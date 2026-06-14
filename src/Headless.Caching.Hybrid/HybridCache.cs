@@ -1112,7 +1112,8 @@ public sealed class HybridCache(
                     .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
                 _logger.LogFailedToWriteToL2Cache(exception, key);
             }
@@ -1127,7 +1128,8 @@ public sealed class HybridCache(
                     .UpsertAsync(key, isNull ? default : value, expiresIn, cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
                 _logger.LogFailedToWriteToL2Cache(exception, key);
             }
@@ -1171,7 +1173,9 @@ public sealed class HybridCache(
         }
 
         var now = _GetUtcNow();
-        var localCeiling = options.DefaultLocalExpiration.HasValue ? now.Add(options.DefaultLocalExpiration.Value) : (DateTime?)null;
+        var localCeiling = options.DefaultLocalExpiration.HasValue
+            ? now.Add(options.DefaultLocalExpiration.Value)
+            : (DateTime?)null;
 
         // Legacy/unframed L2 entries carry no expiration metadata. Promote them into L1 bounded by the local
         // ceiling so they cannot pin process memory indefinitely; without a configured ceiling there is no finite
@@ -1184,14 +1188,25 @@ public sealed class HybridCache(
             }
 
             await l1Store
-                .SetEntryAsync(key, entry.Value, entry.IsNull, localCeiling.Value, localCeiling.Value, cancellationToken)
+                .SetEntryAsync(
+                    key,
+                    entry.Value,
+                    entry.IsNull,
+                    localCeiling.Value,
+                    localCeiling.Value,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return;
         }
 
-        var logicalExpiresAt = localCeiling.HasValue ? _Min(entry.LogicalExpiresAt.Value, localCeiling.Value) : entry.LogicalExpiresAt.Value;
-        var physicalExpiresAt = localCeiling.HasValue ? _Min(entry.PhysicalExpiresAt.Value, localCeiling.Value) : entry.PhysicalExpiresAt.Value;
+        var logicalExpiresAt = localCeiling.HasValue
+            ? _Min(entry.LogicalExpiresAt.Value, localCeiling.Value)
+            : entry.LogicalExpiresAt.Value;
+        var physicalExpiresAt = localCeiling.HasValue
+            ? _Min(entry.PhysicalExpiresAt.Value, localCeiling.Value)
+            : entry.PhysicalExpiresAt.Value;
 
         await l1Store
             .SetEntryAsync(key, entry.Value, entry.IsNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)

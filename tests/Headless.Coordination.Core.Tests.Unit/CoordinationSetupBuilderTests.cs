@@ -2,6 +2,8 @@
 
 using Headless.Coordination;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -57,8 +59,47 @@ public sealed class CoordinationSetupBuilderTests
         action.Should().Throw<InvalidOperationException>().WithMessage("*Multiple providers*");
     }
 
+    [Fact]
+    public void should_use_coordination_membership_when_coordination_is_registered_before_messaging()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
+        // when
+        services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
+        services.AddHeadlessMessaging(_ => { });
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<INodeMembership>().Should().BeOfType<MembershipService>();
+    }
+
+    [Fact]
+    public void should_use_coordination_membership_when_messaging_is_registered_before_coordination()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
+        // when
+        services.AddHeadlessMessaging(_ => { });
+        services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<INodeMembership>().Should().BeOfType<MembershipService>();
+    }
+
     private sealed class FakeCoordinationProviderOptionsExtension : ICoordinationProviderOptionsExtension
     {
-        public void AddServices(IServiceCollection services) { }
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddCoordinationCore<FakeMembershipStore>();
+        }
     }
 }
