@@ -50,10 +50,12 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.UseDashboard(d => d.WithNoAuth());
 });
 
-// Commit coordination: makes "write to the DB and publish in one transaction" atomic. PostgreSQL is an INLINE
-// (caller-driven) signal source — Npgsql exposes no commit diagnostic — so raw enlistment must call
-// SignalAsync(Committed) after committing. AddEntityFrameworkCommitCoordination registers the EF interceptor used
-// by the DbContext-based helper (which signals on the EF commit edge for you).
+// Commit coordination — registered EXPLICITLY here because this demo uses the RAW PostgreSQL storage path
+// (setup.UsePostgreSql(connString) above), not the EF-context path. On the EF-context path
+// (setup.UseEntityFramework<TContext>(), as the SQL Server demo uses) the transactional outbox is ON BY DEFAULT and
+// none of this is needed. PostgreSQL is an INLINE (caller-driven) signal source — Npgsql exposes no commit
+// diagnostic — so raw enlistment must call SignalAsync(Committed) after committing. AddEntityFrameworkCommitCoordination
+// registers the EF interceptor used by the DbContext-based helper (which signals on the EF commit edge for you).
 builder.Services.AddPostgreSqlCommitCoordination();
 builder.Services.AddEntityFrameworkCommitCoordination();
 

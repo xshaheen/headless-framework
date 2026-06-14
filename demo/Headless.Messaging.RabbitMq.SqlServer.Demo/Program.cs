@@ -1,24 +1,20 @@
 using Dapper;
 using Demo;
-using Headless.CommitCoordination;
-using Headless.CommitCoordination.EntityFramework;
 using Headless.CommitCoordination.SqlServer;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure services
 //docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=yourStrong(!)Password" -e "MSSQL_PID=Evaluation" -p 1433:1433 \
 // --name sqlpreview --hostname sqlpreview -d mcr.microsoft.com/mssql/server:2022-preview-ubuntu-22.04
-builder.Services.AddDbContext<AppDbContext>(
-    // AddInterceptors wires the DI-registered commit-coordination EF interceptor into the context options —
-    // EF Core does not auto-discover IInterceptor registrations, so the EF commit edge would otherwise go unobserved.
-    (sp, opt) => opt.UseSqlServer(AppDbContext.ConnectionString).AddInterceptors(sp.GetServices<IInterceptor>())
-);
+// Plain AddDbContext — no AddInterceptors needed: because messaging uses the EF storage path
+// (setup.UseEntityFramework<AppDbContext>() below), the transactional outbox is ON BY DEFAULT and the
+// commit-coordination interceptor is auto-attached to this context's options.
+builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlServer(AppDbContext.ConnectionString));
 
 //builder.Services
 //    .AddSingleton<IConsumerServiceSelector, TypedConsumerServiceSelector>()
@@ -63,11 +59,11 @@ builder.Services.AddHeadlessMessaging(setup =>
     //setup.Options.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
 });
 
-// Commit coordination: makes "write to the DB and publish in one transaction" atomic. SqlServer uses out-of-band
-// commit detection (a SqlClient diagnostic listener, started by a hosted service), so no manual signal is needed.
-// AddEntityFrameworkCommitCoordination registers the EF interceptor used by the DbContext-based helper.
+// The EF-storage path already enabled the transactional outbox (commit coordination + EF interceptor) by default,
+// so the /coordinated/ef, /coordinated/rollback, and /coordinated/delay endpoints need no extra wiring. This single
+// call is only for the raw-ADO /coordinated/adonet endpoint, which enlists a raw SqlConnection via the SqlServer
+// out-of-band diagnostic signal source.
 builder.Services.AddSqlServerCommitCoordination();
-builder.Services.AddEntityFrameworkCommitCoordination();
 
 builder.Services.AddControllers();
 
