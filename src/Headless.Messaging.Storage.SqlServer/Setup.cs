@@ -80,44 +80,37 @@ public static class SetupSqlServerMessaging
         }
 
         // On-by-default transactional outbox: when the consumer chose the EF-context storage path
-        // (UseEntityFramework<TContext>(), so DbContextType is non-null) and did NOT opt out via
-        // WithoutTransactionalOutbox(), auto-wire commit coordination so a publish inside a coordinated
-        // transaction is atomic with the DB write (outbox row written in that transaction, discarded on
-        // rollback) with zero consumer wiring. AddCommitCoordination (called transitively by
-        // AddEntityFrameworkCommitCoordination) registers ICurrentCommitCoordinator via an unconditional
-        // AddSingleton, so it wins over messaging's TryAddSingleton<MessagingNullCommitCoordinator> fallback
-        // regardless of registration order. The raw-ADO path (UseSqlServer(connString), DbContextType null)
-        // is intentionally untouched — it has no DbContext to attach the interceptor to and stays opt-in.
-        // (SqlServer's out-of-band SqlClient diagnostic is NOT started here; the EF path detects commits via
-        // the EF interceptor, so the process-wide diagnostic is never forced on EF-storage consumers.)
+        // (UseEntityFramework<TContext>(), so DbContextType is non-null) and left EnableTransactionalOutbox at its
+        // default (true), auto-wire commit coordination so a publish inside a coordinated transaction is atomic with
+        // the DB write (outbox row written in that transaction, discarded on rollback) with zero consumer wiring.
+        // AddCommitCoordination (called transitively by AddEntityFrameworkCommitCoordination) registers
+        // ICurrentCommitCoordinator via an unconditional AddSingleton, so it wins over messaging's
+        // TryAddSingleton<MessagingNullCommitCoordinator> fallback regardless of registration order. The raw-ADO
+        // path (UseSqlServer(connString), DbContextType null) is intentionally untouched — it has no DbContext to
+        // attach the interceptor to and stays opt-in. (SqlServer's out-of-band SqlClient diagnostic is NOT started
+        // here; the EF path detects commits via the EF interceptor, so the process-wide diagnostic is never forced
+        // on EF-storage consumers.)
         private void _AddTransactionalOutbox(IServiceCollection services)
         {
-            var dbContextType = _ResolveDbContextType();
+            // DbContextType / EnableTransactionalOutbox are set inside the captured configure action (only the EF
+            // overload sets DbContextType), so materialize a throwaway options instance to read them without
+            // depending on the DI-built options.
+            var probe = new SqlServerOptions();
+            configure(probe);
 
-            if (dbContextType is null)
+            if (probe.DbContextType is null)
             {
-                return; // raw-ADO path — never auto-register.
+                return; // raw-ADO path (UseSqlServer(connString)) — never auto-register.
             }
 
-            var optedOut = services.Any(d => d.ServiceType == typeof(TransactionalOutboxOptOutMarker));
-
-            if (optedOut)
+            if (!probe.EnableTransactionalOutbox)
             {
-                return;
+                return; // consumer opted out via UseEntityFramework<T>(o => o.EnableTransactionalOutbox = false).
             }
 
             // Wire commit coordination + the interceptor-attach config + the startup self-probe gate (which fails
             // loud — Warn by default, Strict opt-in — if the interceptor is enabled but not firing for this context).
-            services.AddCommitCoordinationWithStartupGate(dbContextType);
-        }
-
-        private Type? _ResolveDbContextType()
-        {
-            // DbContextType is set inside the captured configure action (only the EF overload sets it),
-            // so materialize a throwaway options instance to read it without depending on the DI-built options.
-            var probe = new SqlServerOptions();
-            configure(probe);
-            return probe.DbContextType;
+            services.AddCommitCoordinationWithStartupGate(probe.DbContextType);
         }
     }
 }

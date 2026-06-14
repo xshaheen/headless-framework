@@ -71,20 +71,6 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         return this;
     }
 
-    /// <summary>
-    /// Opts out of the on-by-default transactional outbox for the EF-context storage path
-    /// (<c>UseEntityFramework&lt;TContext&gt;()</c>). By default, choosing an EF storage context enables atomic
-    /// publish-in-transaction (the outbox row is written in the consumer's transaction and discarded on rollback);
-    /// call this to restore non-transactional immediate dispatch instead. Order-independent relative to
-    /// <c>UseEntityFramework</c>. No effect on the raw-ADO storage paths, which are not transactional by default.
-    /// </summary>
-    /// <returns>The builder, for chaining.</returns>
-    public MessagingSetupBuilder WithoutTransactionalOutbox()
-    {
-        Services.TryAddSingleton<TransactionalOutboxOptOutMarker>();
-        return this;
-    }
-
     /// <inheritdoc />
     public IMessagingBuilder UseConventions(Action<MessagingConventions> configure)
     {

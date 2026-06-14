@@ -71,11 +71,10 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        // when — EF path but explicitly opted out
+        // when — EF path but explicitly opted out via the per-storage flag
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseEntityFramework<TestMessagingDbContext>();
-            setup.WithoutTransactionalOutbox();
+            setup.UseEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalOutbox = false);
         });
 
         await using var provider = services.BuildServiceProvider();
