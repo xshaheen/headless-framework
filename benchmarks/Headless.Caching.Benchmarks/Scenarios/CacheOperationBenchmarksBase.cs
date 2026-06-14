@@ -12,6 +12,8 @@ public abstract class CacheOperationBenchmarksBase
     private ICacheBenchmarkClient? _client;
     private BenchmarkPayload? _payload;
     private string[] _keys = [];
+    private string[] _missingKeys = [];
+    private string[] _removeKeys = [];
     private int _index;
 
     protected abstract string ProviderId { get; }
@@ -29,6 +31,11 @@ public abstract class CacheOperationBenchmarksBase
         _client = CacheBenchmarkClientFactory.Create(ProviderId, prefix);
         _payload = BenchmarkPayloadFactory.Create(PayloadSize, Seed);
         _keys = Enumerable.Range(0, KeyCardinality).Select(i => $"common:{i}").ToArray();
+
+        // Bounded working sets so the miss/remove loops measure steady-state op cost rather than accumulating an
+        // unbounded key space across the millions of invocations BenchmarkDotNet runs per iteration.
+        _missingKeys = Enumerable.Range(0, KeyCardinality).Select(i => $"missing:{i}").ToArray();
+        _removeKeys = Enumerable.Range(0, KeyCardinality).Select(i => $"remove:{i}").ToArray();
 
         foreach (var key in _keys)
         {
@@ -55,13 +62,13 @@ public abstract class CacheOperationBenchmarksBase
     [Benchmark(Baseline = true)]
     public async ValueTask<BenchmarkPayload?> HotGetAsync()
     {
-        return await Client.GetAsync(_NextKey(), CancellationToken.None).ConfigureAwait(false);
+        return await Client.GetAsync(_Next(_keys), CancellationToken.None).ConfigureAwait(false);
     }
 
     [Benchmark]
     public async ValueTask SetThenGetAsync()
     {
-        var key = _NextKey();
+        var key = _Next(_keys);
         await Client.SetAsync(key, Payload, _expiration, CancellationToken.None).ConfigureAwait(false);
         await Client.GetAsync(key, CancellationToken.None).ConfigureAwait(false);
     }
@@ -69,13 +76,13 @@ public abstract class CacheOperationBenchmarksBase
     [Benchmark]
     public async ValueTask<BenchmarkPayload?> MissGetAsync()
     {
-        return await Client.GetAsync($"missing:{_index++}", CancellationToken.None).ConfigureAwait(false);
+        return await Client.GetAsync(_Next(_missingKeys), CancellationToken.None).ConfigureAwait(false);
     }
 
     [Benchmark]
     public async ValueTask RemoveAsync()
     {
-        var key = $"remove:{_index++}";
+        var key = _Next(_removeKeys);
         await Client.SetAsync(key, Payload, _expiration, CancellationToken.None).ConfigureAwait(false);
         await Client.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
     }
@@ -85,9 +92,8 @@ public abstract class CacheOperationBenchmarksBase
 
     private BenchmarkPayload Payload => _payload ?? throw new InvalidOperationException("Payload was not initialized.");
 
-    private string _NextKey()
+    private string _Next(string[] keys)
     {
-        var keys = _keys;
         var index = Math.Abs(_index++ % keys.Length);
 
         return keys[index];
