@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Headless.CommitCoordination.EntityFramework;
 
@@ -67,6 +68,29 @@ public static class SetupEntityFrameworkCommitCoordination
             var implementationType = typeof(CommitCoordinationOptionsConfiguration<>).MakeGenericType(dbContextType);
 
             services.TryAddEnumerable(ServiceDescriptor.Singleton(serviceType, implementationType));
+
+            return services;
+        }
+
+        /// <summary>
+        /// Registers the startup self-probe (<see cref="CommitInterceptorStartupGate{TContext}"/>) for the given
+        /// <paramref name="dbContextType"/>. It verifies — before any hosted service runs — that the commit
+        /// interceptor actually fires for that context, and surfaces a mis-wire loudly per
+        /// <see cref="CommitInterceptorProbeOptions"/> (Warn by default, Strict opt-in). The probe is side-effect
+        /// free (commits an empty transaction; no consumer data is mutated).
+        /// </summary>
+        /// <param name="dbContextType">The runtime <see cref="DbContext"/> type to probe.</param>
+        /// <returns>The service collection.</returns>
+        public IServiceCollection AddCommitInterceptorStartupGate(Type dbContextType)
+        {
+            Argument.IsNotNull(dbContextType);
+
+            services.AddOptions<CommitInterceptorProbeOptions>();
+
+            // MakeGenericType enforces the `where TContext : DbContext` constraint at runtime. Registered as
+            // IHostedService; the host detects the IHostedLifecycleService hooks and runs StartingAsync first.
+            var gateType = typeof(CommitInterceptorStartupGate<>).MakeGenericType(dbContextType);
+            services.TryAddEnumerable(ServiceDescriptor.Singleton(typeof(IHostedService), gateType));
 
             return services;
         }
