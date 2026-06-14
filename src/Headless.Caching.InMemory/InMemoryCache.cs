@@ -16,14 +16,17 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
 
-    // Reverse tag index: tag -> set of prefixed keys whose entry carried the tag when written. Memberships may
-    // be momentarily stale (an untagged overwrite races the index update), so RemoveByTagAsync always verifies
-    // against the LIVE entry's tags before removing. Empty per-tag sets are intentionally not pruned: removing
-    // a set instance races a concurrent writer adding to that same instance and would lose its membership; the
-    // residue is bounded by the process-lifetime distinct-tag cardinality.
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _tagIndex = new(
-        StringComparer.Ordinal
-    );
+    // Family-2 logical tag-version invalidation: tag -> last-invalidation UTC marker. RemoveByTagAsync bumps the
+    // marker (O(1), no member enumeration); reads treat an entry as invalidated when its CreatedAt predates the
+    // newest applicable marker (CacheTagInvalidation.IsInvalidated). Markers are never pruned: the residue is
+    // bounded by the process-lifetime distinct-tag cardinality, and a re-created entry (newer CreatedAt) is
+    // naturally not invalidated by an older marker.
+    private readonly ConcurrentDictionary<string, DateTime> _tagMarkers = new(StringComparer.Ordinal);
+
+    // Global logical clear-generation marker (UTC ticks; 0 = never cleared). ClearAsync bumps it; every read
+    // compares the entry's CreatedAt against it. Stored as ticks so it can be read/written atomically via
+    // Interlocked without tearing a DateTime.
+    private long _clearGenerationTicks;
 
     private readonly AsyncLock _lock = new();
     private readonly FactoryCacheCoordinator _coordinator;
@@ -307,7 +310,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         var wasReplaced = false;
         long sizeDelta = 0;
-        IReadOnlySet<string>? previousTags = null;
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
 
         // Use atomic TryUpdate to avoid TOCTOU race condition
         _memory.TryUpdate(
@@ -316,7 +319,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             {
                 wasReplaced = false;
                 sizeDelta = 0;
-                previousTags = null;
 
                 if (existingEntry.IsExpired)
                 {
@@ -325,15 +327,19 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
                 sizeDelta = entrySize - existingEntry.Size;
                 wasReplaced = true;
-                previousTags = existingEntry.Tags;
 
                 return new CacheEntry(
                     value,
-                    expiresAt,
+                    logicalExpiresAt: expiresAt,
+                    physicalExpiresAt: expiresAt,
+                    slidingExpiration: null,
                     _timeProvider,
                     _shouldClone,
                     _shouldThrowOnSerializationError,
-                    entrySize
+                    entrySize,
+                    // Direct write stamps a fresh birth time so a prior tag/clear marker does not invalidate it.
+                    createdAt: new DateTime(nowTicks, DateTimeKind.Utc),
+                    nowTicksOverride: nowTicks
                 );
             }
         );
@@ -343,7 +349,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             if (sizeDelta != 0)
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             _TrackUpdate(expiresAt);
-            _UpdateTagIndex(prefixedKey, previousTags, currentTags: null);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -384,7 +389,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         var wasExpectedValue = false;
         long sizeDelta = 0;
-        IReadOnlySet<string>? previousTags = null;
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
 
         _memory.TryUpdate(
             key,
@@ -392,7 +397,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             {
                 wasExpectedValue = false;
                 sizeDelta = 0;
-                previousTags = null;
 
                 if (existingEntry.IsExpired)
                 {
@@ -408,15 +412,19 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
                 sizeDelta = newSize - existingEntry.Size;
                 wasExpectedValue = true;
-                previousTags = existingEntry.Tags;
 
                 return new CacheEntry(
                     value,
-                    expiresAt,
+                    logicalExpiresAt: expiresAt,
+                    physicalExpiresAt: expiresAt,
+                    slidingExpiration: null,
                     _timeProvider,
                     _shouldClone,
                     _shouldThrowOnSerializationError,
-                    newSize
+                    newSize,
+                    // Direct write stamps a fresh birth time so a prior tag/clear marker does not invalidate it.
+                    createdAt: new DateTime(nowTicks, DateTimeKind.Utc),
+                    nowTicksOverride: nowTicks
                 );
             }
         );
@@ -426,7 +434,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             if (sizeDelta != 0)
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             _TrackUpdate(expiresAt);
-            _UpdateTagIndex(key, previousTags, currentTags: null);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -1193,6 +1200,13 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
+        // Logical tag/clear invalidation: a direct read of a tag-invalidated entry is a miss. The physically
+        // present reserve is left in place so the coordinator's TryGetEntryAsync can still serve it stale.
+        if (_IsTagInvalidated(existingEntry))
+        {
+            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
+        }
+
         try
         {
             var value = existingEntry.GetValue<T>();
@@ -1259,7 +1273,9 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return new ValueTask<bool>(false);
         }
 
-        return new ValueTask<bool>(!existingEntry.IsExpired && !existingEntry.IsLogicallyExpired);
+        return new ValueTask<bool>(
+            !existingEntry.IsExpired && !existingEntry.IsLogicallyExpired && !_IsTagInvalidated(existingEntry)
+        );
     }
 
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
@@ -1291,7 +1307,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return new ValueTask<TimeSpan?>((TimeSpan?)null);
         }
 
-        if (existingEntry.IsExpired || existingEntry.IsLogicallyExpired)
+        if (existingEntry.IsExpired || existingEntry.IsLogicallyExpired || _IsTagInvalidated(existingEntry))
         {
             return new ValueTask<TimeSpan?>((TimeSpan?)null);
         }
@@ -1397,7 +1413,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         }
 
         Interlocked.Add(ref _currentMemorySize, -entry.Size);
-        _UntagEntry(key, entry);
         return new ValueTask<bool>(!entry.IsExpired);
     }
 
@@ -1446,11 +1461,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         }
 
         // No reserve to preserve: removing avoids manufacturing a phantom reserve that headless's per-call
-        // fail-safe model could later resurrect. Mirror RemoveAsync's size/tag bookkeeping.
+        // fail-safe model could later resurrect. Mirror RemoveAsync's size bookkeeping.
         if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
         {
             Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
-            _UntagEntry(key, existingEntry);
         }
 
         return new ValueTask<bool>(true);
@@ -1479,7 +1493,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
             {
                 Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
-                _UntagEntry(key, existingEntry);
                 wasRemoved = true;
                 break;
             }
@@ -1507,7 +1520,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             if (_memory.TryRemove(prefixedKey, out var entry))
             {
                 Interlocked.Add(ref _currentMemorySize, -entry.Size);
-                _UntagEntry(prefixedKey, entry);
                 removed++;
             }
         }
@@ -1531,7 +1543,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 if (_memory.TryRemove(key, out var removedEntry))
                 {
                     Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
-                    _UntagEntry(key, removedEntry);
                     removed++;
                 }
             }
@@ -1541,86 +1552,76 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
     }
 
     /// <inheritdoc />
-    public IReadOnlyCollection<string> GetTaggedKeys(string tag)
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(tag);
-
-        if (!_tagIndex.TryGetValue(tag, out var taggedKeys))
-        {
-            return [];
-        }
-
-        // The tag index is keyed by the internal (prefixed) keys; return the cache's user-facing keys by
-        // stripping the configured KeyPrefix, matching every other public key-returning method (e.g. _GetKeys).
-        // ConcurrentDictionary.Keys is already a point-in-time snapshot, so no extra copy is needed when unprefixed.
-        var stripLength = _keyPrefix.Length;
-
-        if (stripLength == 0)
-        {
-            // ConcurrentDictionary.Keys is a ReadOnlyCollection snapshot at runtime; the cast matches the
-            // declared return type.
-            return (IReadOnlyCollection<string>)taggedKeys.Keys;
-        }
-
-        var result = new List<string>(taggedKeys.Count);
-
-        foreach (var key in taggedKeys.Keys)
-        {
-            result.Add(key[stripLength..]);
-        }
-
-        return result;
-    }
-
-    /// <inheritdoc />
-    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(tag);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_tagIndex.TryGetValue(tag, out var taggedKeys))
+        // O(1) logical invalidation: stamp the per-tag marker to now. No member enumeration. Reads compare each
+        // entry's CreatedAt against this marker; physically present reserves survive for fail-safe serving.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _tagMarkers.AddOrUpdate(tag, now, (_, existing) => now > existing ? now : existing);
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // O(1) logical clear: bump the global clear-generation marker. Entries born before it read as misses and
+        // demote to fail-safe reserves; physical reserves are preserved (unlike FlushAsync's physical wipe).
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
+
+        // Monotone bump only (never move the generation backwards under a racing clock or concurrent caller).
+        long current;
+        do
         {
-            return new ValueTask<int>(0);
+            current = Interlocked.Read(ref _clearGenerationTicks);
+            if (nowTicks <= current)
+            {
+                break;
+            }
+        } while (Interlocked.CompareExchange(ref _clearGenerationTicks, nowTicks, current) != current);
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Computes the newest invalidation marker applicable to <paramref name="entry"/> — the max of the global
+    /// clear-generation marker and every per-tag marker the entry carries — or <see langword="null"/> when none
+    /// applies. Untagged entries pay only the single clear-generation read.
+    /// </summary>
+    private DateTime? _NewestMarkerFor(CacheEntry entry)
+    {
+        DateTime? newest = null;
+
+        var clearTicks = Interlocked.Read(ref _clearGenerationTicks);
+        if (clearTicks != 0)
+        {
+            newest = new DateTime(clearTicks, DateTimeKind.Utc);
         }
 
-        var removed = 0;
-
-        foreach (var key in taggedKeys.Keys)
+        if (entry.Tags is { Count: > 0 } tags)
         {
-            if (!_memory.TryGetValue(key, out var entry))
+            foreach (var tag in tags)
             {
-                taggedKeys.TryRemove(key, out _);
-                continue;
-            }
-
-            // Version-pinned guard: only remove when the LIVE entry still carries the tag. A key overwritten
-            // by an untagged write (or re-created after expiry) keeps a stale index membership which is
-            // cleaned up here instead of removing the new entry.
-            if (entry.Tags is null || !entry.Tags.Contains(tag))
-            {
-                taggedKeys.TryRemove(key, out _);
-                continue;
-            }
-
-            if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
-            {
-                Interlocked.Add(ref _currentMemorySize, -entry.Size);
-                _UntagEntry(key, entry);
-
-                if (!entry.IsExpired)
+                if (_tagMarkers.TryGetValue(tag, out var marker) && (newest is null || marker > newest.Value))
                 {
-                    removed++;
+                    newest = marker;
                 }
             }
-
-            // A failed CAS removal means a concurrent write replaced the entry; the replacement may or may
-            // not carry the tag, so keep the membership for the live-entry check on the next invalidation.
         }
 
-        return new ValueTask<int>(removed);
+        return newest;
     }
+
+    /// <summary>Returns whether <paramref name="entry"/> is logically invalidated by a tag or clear marker.</summary>
+    private bool _IsTagInvalidated(CacheEntry entry) =>
+        CacheTagInvalidation.IsInvalidated(entry.CreatedAt, _NewestMarkerFor(entry));
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
@@ -1758,7 +1759,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
         _memory.Clear();
-        _tagIndex.Clear();
+        // Physical wipe also resets the logical invalidation markers: no entry survives to be invalidated, so the
+        // markers and clear generation can drop with the keyspace.
+        _tagMarkers.Clear();
+        Interlocked.Exchange(ref _clearGenerationTicks, 0);
         Interlocked.Exchange(ref _currentMemorySize, 0);
         Interlocked.Exchange(ref _nextExpiryTicks, long.MaxValue);
         return ValueTask.CompletedTask;
@@ -1776,7 +1780,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         }
 
         _memory.Clear();
-        _tagIndex.Clear();
+        _tagMarkers.Clear();
+        Interlocked.Exchange(ref _clearGenerationTicks, 0);
         Interlocked.Exchange(ref _currentMemorySize, 0);
         Interlocked.Exchange(ref _nextExpiryTicks, long.MaxValue);
         _coordinator.Dispose();
@@ -1818,14 +1823,28 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
         }
 
+        // Logical tag/clear invalidation: demote the entry to logically-expired-but-physically-present so the
+        // coordinator re-runs the factory but can still serve this reserve stale when the factory fails. Clamp
+        // LogicalExpiresAt to now (and drop sliding so it is not re-armed/treated fresh) while keeping the
+        // physical reserve intact.
+        var logicalExpiresAt = existingEntry.LogicalExpiresAt;
+        var slidingExpiration = existingEntry.SlidingExpiration;
+
+        if (_IsTagInvalidated(existingEntry))
+        {
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
+            logicalExpiresAt = logicalExpiresAt.HasValue && logicalExpiresAt.Value < now ? logicalExpiresAt : now;
+            slidingExpiration = null;
+        }
+
         return new ValueTask<CacheStoreEntry<T>>(
             new CacheStoreEntry<T>(
                 Found: true,
                 IsNull: value is null,
                 Value: value,
-                LogicalExpiresAt: existingEntry.LogicalExpiresAt,
+                LogicalExpiresAt: logicalExpiresAt,
                 PhysicalExpiresAt: existingEntry.PhysicalExpiresAt,
-                SlidingExpiration: existingEntry.SlidingExpiration
+                SlidingExpiration: slidingExpiration
             )
             {
                 EagerRefreshAt = existingEntry.EagerRefreshAt,
@@ -1964,7 +1983,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         if (_memory.TryRemove(key, out var removedEntry))
         {
             Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
-            _UntagEntry(key, removedEntry);
         }
     }
 
@@ -1973,62 +1991,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
         {
             Interlocked.Add(ref _currentMemorySize, -entry.Size);
-            _UntagEntry(key, entry);
-        }
-    }
-
-    // Registers the committed entry's tags and drops the replaced entry's tags that no longer apply. The index
-    // may be momentarily stale under write races; RemoveByTagAsync's live-entry check absorbs that.
-    private void _UpdateTagIndex(string key, IReadOnlySet<string>? previousTags, IReadOnlySet<string>? currentTags)
-    {
-        if (previousTags is null && currentTags is null)
-        {
-            return;
-        }
-
-        if (currentTags is not null)
-        {
-            foreach (var tag in currentTags)
-            {
-                var taggedKeys = _tagIndex.GetOrAdd(
-                    tag,
-                    static _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal)
-                );
-
-                taggedKeys[key] = 0;
-            }
-        }
-
-        if (previousTags is not null)
-        {
-            foreach (var tag in previousTags)
-            {
-                if (currentTags is not null && currentTags.Contains(tag))
-                {
-                    continue;
-                }
-
-                if (_tagIndex.TryGetValue(tag, out var taggedKeys))
-                {
-                    taggedKeys.TryRemove(key, out _);
-                }
-            }
-        }
-    }
-
-    private void _UntagEntry(string key, CacheEntry entry)
-    {
-        if (entry.Tags is null)
-        {
-            return;
-        }
-
-        foreach (var tag in entry.Tags)
-        {
-            if (_tagIndex.TryGetValue(tag, out var taggedKeys))
-            {
-                taggedKeys.TryRemove(key, out _);
-            }
         }
     }
 
@@ -2088,7 +2050,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         var wasUpdated = true;
         long sizeDelta = 0;
-        CacheEntry? previousEntry = null;
 
         if (addOnly)
         {
@@ -2097,19 +2058,16 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 _ =>
                 {
                     sizeDelta = entry.Size;
-                    previousEntry = null;
                     return entry;
                 },
                 (_, existingEntry) =>
                 {
                     wasUpdated = false;
-                    previousEntry = null;
 
                     if (existingEntry.IsExpired)
                     {
                         sizeDelta = entry.Size - existingEntry.Size;
                         wasUpdated = true;
-                        previousEntry = existingEntry;
                         return entry;
                     }
 
@@ -2124,13 +2082,11 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 _ =>
                 {
                     sizeDelta = entry.Size;
-                    previousEntry = null;
                     return entry;
                 },
                 (_, existingEntry) =>
                 {
                     sizeDelta = entry.Size - existingEntry.Size;
-                    previousEntry = existingEntry;
                     return entry;
                 }
             );
@@ -2144,7 +2100,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         if (wasUpdated)
         {
             _TrackUpdate(entry.TrackedExpiresAt);
-            _UpdateTagIndex(key, previousEntry?.Tags, entry.Tags);
         }
 
         // Compaction is the only async work; await it only under memory/count pressure. Otherwise dispatch the
@@ -2194,7 +2149,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         }
 
         _TrackUpdate(entry.TrackedExpiresAt);
-        _UpdateTagIndex(key, existingEntry.Tags, entry.Tags);
 
         await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
 
@@ -2278,7 +2232,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                     if (_memory.TryRemove(keyToRemove, out var removedEntry))
                     {
                         Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
-                        _UntagEntry(keyToRemove, removedEntry);
                         removalCount++;
                     }
                     else
@@ -2392,7 +2345,6 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
                 {
                     Interlocked.Add(ref _currentMemorySize, -entry.Size);
-                    _UntagEntry(key, entry);
                     removalCount++;
                 }
 
@@ -2529,6 +2481,12 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 shouldClone,
                 shouldThrowOnSerializationError,
                 size,
+                // Direct-write paths (Upsert/TryInsert/UpsertAll/Increment/SetAdd/SetIf*) flow through this
+                // constructor: stamp a birth time so a prior tag/clear marker does not invalidate the new value.
+                createdAt: new DateTime(
+                    nowTicksOverride >= 0 ? nowTicksOverride : timeProvider.GetUtcNow().UtcDateTime.Ticks,
+                    DateTimeKind.Utc
+                ),
                 nowTicksOverride: nowTicksOverride
             ) { }
 

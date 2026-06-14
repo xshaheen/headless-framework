@@ -278,7 +278,7 @@ public sealed class ScopedCache<T> : ICache<T>
     /// the underlying cache regardless of scope. Scope-isolate tags by embedding the scope in the tag value
     /// when per-scope invalidation is required.
     /// </remarks>
-    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         return _cache.RemoveByTagAsync(tag, cancellationToken);
     }
@@ -318,6 +318,17 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask FlushAsync(CancellationToken cancellationToken = default)
     {
         return _cache.FlushAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// This is NOT scope-isolated: <c>ClearAsync</c> logically clears the entire underlying cache, not just the
+    /// entries belonging to this scope. To remove only scoped entries, use <see cref="RemoveByPrefixAsync"/>
+    /// with an empty prefix instead.
+    /// </remarks>
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    {
+        return _cache.ClearAsync(cancellationToken);
     }
 
     #endregion

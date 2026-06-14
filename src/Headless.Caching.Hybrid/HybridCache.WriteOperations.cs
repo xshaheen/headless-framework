@@ -911,24 +911,40 @@ public sealed partial class HybridCache
     }
 
     /// <inheritdoc />
-    public async ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    public async ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(tag);
         cancellationToken.ThrowIfCancellationRequested();
 
         // Publish FIRST (matching the write-path ordering rationale: minimize the window in which another
-        // instance re-populates its L1 from a not-yet-invalidated L2), then invalidate L2, then our own L1.
+        // instance re-populates its L1 from a not-yet-invalidated L2), then bump the L2 marker, then our own L1.
         await _PublishInvalidationAsync(
                 new CacheInvalidationMessage { InstanceId = _instanceId, Tag = tag },
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        var removed = await l2Cache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
+        await l2Cache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
         await LocalCache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
+    }
 
-        return removed;
+    /// <inheritdoc />
+    public async ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Logical clear: bump the L2 then L1 clear-generation markers and broadcast so peers bump theirs.
+        // Publish first for the same ordering rationale as RemoveByTagAsync. Reserves are preserved on all tiers.
+        await _PublishInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = _instanceId, Clear = true },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await l2Cache.ClearAsync(cancellationToken).ConfigureAwait(false);
+        await LocalCache.ClearAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

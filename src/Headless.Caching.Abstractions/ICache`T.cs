@@ -148,8 +148,11 @@ public interface ICache<T>
 
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes exactly the entries that currently carry <paramref name="tag"/>. See <see cref="ICache.RemoveByTagAsync"/>.</summary>
-    ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
+    /// <summary>Logically invalidates entries carrying <paramref name="tag"/> in O(1). See <see cref="ICache.RemoveByTagAsync"/>.</summary>
+    ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
+
+    /// <summary>Logically clears the cache in O(1), preserving fail-safe reserves. See <see cref="ICache.ClearAsync"/>.</summary>
+    ValueTask ClearAsync(CancellationToken cancellationToken = default);
 
     ValueTask<long> SetRemoveAsync(
         string key,
@@ -379,9 +382,14 @@ public class Cache<T>(ICache cache) : ICache<T>
         return cache.RemoveByPrefixAsync(prefix, cancellationToken);
     }
 
-    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         return cache.RemoveByTagAsync(tag, cancellationToken);
+    }
+
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    {
+        return cache.ClearAsync(cancellationToken);
     }
 
     public ValueTask<long> SetRemoveAsync(

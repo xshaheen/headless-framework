@@ -248,6 +248,7 @@ public sealed partial class HybridCache
                 EagerRefreshAt = entry.EagerRefreshAt,
                 ETag = entry.ETag,
                 LastModifiedAt = entry.LastModifiedAt,
+                CreatedAt = entry.CreatedAt,
                 Tags = entry.Tags,
             };
 
@@ -494,6 +495,9 @@ public sealed partial class HybridCache
                 EagerRefreshAt = entry.EagerRefreshAt,
                 ETag = entry.ETag,
                 LastModifiedAt = entry.LastModifiedAt,
+                // Carry the birth time into L1 so Family-2 tag/clear markers version-pin the local copy correctly
+                // (a null CreatedAt would bias the promoted entry to invalidated under any marker).
+                CreatedAt = entry.CreatedAt,
                 Tags = entry.Tags,
             };
 
@@ -519,6 +523,9 @@ public sealed partial class HybridCache
             EagerRefreshAt = entry.EagerRefreshAt,
             ETag = entry.ETag,
             LastModifiedAt = entry.LastModifiedAt,
+            // Carry the birth time into L1 so Family-2 tag/clear markers version-pin the local copy correctly
+            // (a null CreatedAt would bias the promoted entry to invalidated under any marker).
+            CreatedAt = entry.CreatedAt,
             Tags = entry.Tags,
         };
 

@@ -35,6 +35,14 @@ public sealed record CacheInvalidationMessage
     public bool FlushAll { get; init; }
 
     /// <summary>
+    /// When true, LOGICALLY clear the cache on receivers by bumping their local clear-generation marker
+    /// (<see cref="ICache.ClearAsync"/>): every entry born before the bump reads as a miss but its fail-safe
+    /// physical reserve is preserved. Distinct from <see cref="FlushAll"/> (a physical wipe). Mutually exclusive
+    /// with <see cref="Key"/>, <see cref="Keys"/>, <see cref="Prefix"/>, <see cref="Tag"/>, and <see cref="FlushAll"/>.
+    /// </summary>
+    public bool Clear { get; init; }
+
+    /// <summary>
     /// When true, the <see cref="Key"/>/<see cref="Keys"/> targets are LOGICALLY expired on receivers rather than
     /// removed: each entry becomes stale (normal reads miss) but its fail-safe physical reserve is preserved, so a
     /// later failing factory can still serve the stale value. Only meaningful with <see cref="Key"/> or

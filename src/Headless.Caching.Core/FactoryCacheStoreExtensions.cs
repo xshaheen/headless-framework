@@ -55,6 +55,9 @@ public static class FactoryCacheStoreExtensions
             PhysicalExpiresAt = stamps.PhysicalExpiresAt,
             SlidingExpiration = options.SlidingExpiration,
             EagerRefreshAt = stamps.EagerRefreshAt,
+            // Stamp the birth time so a prior tag/clear marker does not logically invalidate this fresh write
+            // (Family-2 version-pinning compares CreatedAt against the newest applicable marker).
+            CreatedAt = stamps.CreatedAt,
             Tags = options.Tags,
             RemovedTags = CacheEntryStamps.ComputeRemovedTags(previousTags, options.Tags),
             // Per-call tier-write control for the direct upsert path. Hybrid honors these; single-tier providers

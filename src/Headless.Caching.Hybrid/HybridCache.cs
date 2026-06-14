@@ -108,6 +108,15 @@ public sealed partial class HybridCache(
             return;
         }
 
+        if (message.Clear)
+        {
+            // Logical clear: O(1) L1 clear-generation marker bump. Reserves are preserved (unlike FlushAll). A
+            // locally re-created entry with a newer birth time is naturally not invalidated by this marker, so no
+            // recovery-aware walk is needed.
+            await LocalCache.ClearAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
         if (!string.IsNullOrEmpty(message.Prefix))
         {
             await LocalCache.RemoveByPrefixAsync(message.Prefix, ct).ConfigureAwait(false);
@@ -116,45 +125,10 @@ public sealed partial class HybridCache(
 
         if (!string.IsNullOrEmpty(message.Tag))
         {
-            // Bulk-remove is safe when there are no pending recovery items to protect: auto-recovery is off, or
-            // its queue is currently empty. Reading Count avoids the GetTaggedKeys snapshot + per-key walk on the
-            // common (no-outage) path.
-            if (RecoveryQueue is null || RecoveryQueue.Count == 0)
-            {
-                await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
-                return;
-            }
-
-            // Recovery-aware tag invalidation: a key whose pending recovery item is NEWER than this message won
-            // the race — its L1 entry holds the most-recent local intent and must not be wiped (the replay would
-            // find nothing, declare itself obsolete, and the value would be lost on every node). Go per-key over a
-            // snapshot of the tag members (never bulk): a key tagged after the snapshot is simply absent from it,
-            // so its newer value is left untouched; keys with a surviving newer pending item are skipped, the rest
-            // removed. GetTaggedKeys returns the cache's user-facing (unprefixed) keys, matching both the recovery
-            // queue's keys and RemoveAsync's own prefixing.
-            var taggedKeys = LocalCache.GetTaggedKeys(message.Tag);
-
-            // Partition the snapshot into skip (newer pending recovery item wins) vs remove, preserving the
-            // per-key skip log, then remove the survivors in a single bulk call instead of a sequential walk.
-            var removeList = new List<string>(taggedKeys.Count);
-
-            foreach (var key in taggedKeys)
-            {
-                if (RecoveryQueue.HasNewerPendingItemThan(key, message.Timestamp))
-                {
-                    _logger.LogIgnoredStaleRemoteInvalidation(key);
-                }
-                else
-                {
-                    removeList.Add(key);
-                }
-            }
-
-            if (removeList.Count > 0)
-            {
-                await LocalCache.RemoveAllAsync(removeList, ct).ConfigureAwait(false);
-            }
-
+            // O(1) L1 tag-marker bump. Family-2 logical invalidation is version-pinned by entry birth time, so a
+            // pending recovery write that landed after this invalidation carries a newer CreatedAt and is not
+            // invalidated by the older marker — the previous recovery-aware GetTaggedKeys walk is unnecessary.
+            await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
             return;
         }
 

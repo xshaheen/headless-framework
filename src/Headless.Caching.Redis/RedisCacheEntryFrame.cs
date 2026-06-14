@@ -2,6 +2,7 @@
 
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using Headless.Checks;
 using StackExchange.Redis;
@@ -447,6 +448,27 @@ internal static class RedisCacheEntryFrame
 
     /// <summary>Converts a (UTC) timestamp to the Unix-millisecond representation stored in the frame header.</summary>
     internal static long ToUnixTimeMilliseconds(DateTime value) => _ToUnixTimeMilliseconds(value);
+
+    /// <summary>Converts a Unix-millisecond marker value back to its UTC timestamp.</summary>
+    internal static DateTime FromUnixTimeMilliseconds(long value) => _FromUnixTimeMilliseconds(value);
+
+    /// <summary>
+    /// Parses an invalidation-marker Unix-millisecond string written by <c>RemoveByTagAsync</c>/<c>ClearAsync</c>
+    /// into its Unix-ms long, or <see langword="null"/> when the value is absent or unparseable/out-of-range.
+    /// </summary>
+    internal static long? TryParseMarkerMs(RedisValue value)
+    {
+        if (
+            !value.HasValue
+            || !long.TryParse((string?)value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ms)
+            || _IsOutOfRange(ms)
+        )
+        {
+            return null;
+        }
+
+        return ms;
+    }
 
     private static long _ToUnixTimeMilliseconds(DateTime value)
     {

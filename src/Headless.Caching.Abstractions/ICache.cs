@@ -75,9 +75,8 @@ public interface ICache
     /// Sets a value as a direct write honoring the full <see cref="CacheEntryOptions"/> semantics: the entry is
     /// stamped exactly like a fresh factory write (fail-safe extends physical retention, an eager-refresh
     /// threshold stamps the eager point, sliding expiration clamps the logical lifetime) and
-    /// <see cref="CacheEntryOptions.Tags"/> are persisted for later <see cref="RemoveByTagAsync"/> invalidation.
-    /// Options are validated with the same rules as <c>GetOrAddAsync</c>. This method performs a
-    /// read-before-write to reconcile provider tag indexes, so prefer
+    /// <see cref="CacheEntryOptions.Tags"/> are persisted on the entry for later <see cref="RemoveByTagAsync"/>
+    /// logical invalidation. Options are validated with the same rules as <c>GetOrAddAsync</c>. Prefer
     /// <see cref="UpsertAsync{T}(string, T, TimeSpan?, CancellationToken)"/> on hot paths that need none of the
     /// per-entry option semantics. (Named distinctly because the <see cref="TimeSpan"/>-to-options implicit
     /// conversion would otherwise make every bare-<see cref="TimeSpan"/> upsert ambiguous.)
@@ -248,15 +247,29 @@ public interface ICache
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes exactly the entries that CURRENTLY carry <paramref name="tag"/> (assigned via
-    /// <see cref="CacheEntryOptions.Tags"/> or <see cref="CacheFactoryContext{T}.Tags"/>). A key that expired or
-    /// was re-created without the tag is NOT removed: tag memberships are pinned to the entry version, so a
-    /// later untagged write over the same key invalidates the stale membership instead of removing the new entry.
+    /// Logically invalidates every entry that carries <paramref name="tag"/> in O(1) by writing a per-tag
+    /// invalidation marker (a timestamp), without enumerating members. On the next read, an entry whose birth
+    /// time (<c>CreatedAt</c>) predates the marker is treated as a miss by direct reads and demoted to a
+    /// fail-safe reserve by the factory coordinator (so a failing factory can still serve it stale). A key
+    /// re-created after the marker (a newer birth time) is NOT invalidated, so tag memberships remain pinned to
+    /// the entry version. The marker is per-tier; the physical TTL backstops staleness if a marker is lost. On a
+    /// two-tier cache the marker is bumped on both tiers and propagated to other instances.
     /// </summary>
     /// <param name="tag">The invalidation tag.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The number of entries removed.</returns>
-    ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
+    ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// LOGICALLY clears the cache in O(1) by bumping a single reserved clear-generation marker: every entry born
+    /// before the bump is treated as a miss by direct reads and demoted to a fail-safe reserve by the factory
+    /// coordinator, so a failing factory can still serve stale values (the fail-safe reserves are preserved).
+    /// This is the logical counterpart of <see cref="FlushAsync"/>, which physically wipes the store (no reserves
+    /// survive). Prefer <see cref="ClearAsync"/> when you want fail-safe coverage to outlive the clear; use
+    /// <see cref="FlushAsync"/> to reclaim memory/keyspace. The marker is per-tier and, on a two-tier cache, is
+    /// bumped on both tiers and propagated to other instances. A re-created entry (newer birth time) is unaffected.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask ClearAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Remove some values from set.</summary>
     ValueTask<long> SetRemoveAsync<T>(
@@ -273,16 +286,7 @@ public interface ICache
 }
 
 [PublicAPI]
-public interface IInMemoryCache : ICache
-{
-    /// <summary>
-    /// Returns the cache's user-facing keys (with any configured <c>KeyPrefix</c> stripped) currently indexed
-    /// under <paramref name="tag"/>. The snapshot may be momentarily stale under concurrent writes (an untagged
-    /// overwrite can race the index update), so callers must treat the result as advisory and verify live-entry
-    /// membership before acting on individual keys.
-    /// </summary>
-    IReadOnlyCollection<string> GetTaggedKeys(string tag);
-}
+public interface IInMemoryCache : ICache;
 
 [PublicAPI]
 public interface IRemoteCache : ICache
