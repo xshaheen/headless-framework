@@ -9,6 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Headless.CommitCoordination.EntityFramework\Headless.CommitCoordination.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
   </ItemGroup>
 </Project>
