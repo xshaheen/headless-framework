@@ -729,7 +729,13 @@ public sealed partial class FactoryCacheCoordinator(
     {
         _ = task.ContinueWith(
             faulted =>
-                _logger.LogCacheBackgroundCompletionFailed(faulted.Exception!, key, faulted.Exception!.GetType().Name),
+                // Log the inner exception's type, not the AggregateException wrapper a faulted Task carries, so the
+                // {ExceptionType} field matches the bare-exception call sites in the Observe* completion paths.
+                _logger.LogCacheBackgroundCompletionFailed(
+                    faulted.Exception!,
+                    key,
+                    (faulted.Exception!.InnerException ?? faulted.Exception!).GetType().Name
+                ),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
