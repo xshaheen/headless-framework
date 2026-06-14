@@ -199,20 +199,7 @@ public sealed class RedisCache(
         if (IsCluster)
         {
             var successCount = 0;
-            var slotBuckets = new Dictionary<int, List<KeyValuePair<RedisKey, RedisValue>>>();
-
-            foreach (var pair in pairs)
-            {
-                var slot = options.ConnectionMultiplexer.HashSlot(pair.Key);
-
-                if (!slotBuckets.TryGetValue(slot, out var bucket))
-                {
-                    bucket = [];
-                    slotBuckets[slot] = bucket;
-                }
-
-                bucket.Add(pair);
-            }
+            var slotBuckets = _GroupBySlot(pairs, static pair => pair.Key);
 
             foreach (var bucket in slotBuckets.Values)
             {
@@ -618,21 +605,14 @@ public sealed class RedisCache(
         {
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
 
-            // Group by hash slot without LINQ: avoids Lookup allocation + per-group materialization.
-            var slotBuckets = new Dictionary<int, List<(string Original, RedisKey Redis)>>();
+            var pairs = new (string Original, RedisKey Redis)[originalKeys.Count];
 
             for (var i = 0; i < originalKeys.Count; i++)
             {
-                var slot = options.ConnectionMultiplexer.HashSlot(redisKeys[i]);
-
-                if (!slotBuckets.TryGetValue(slot, out var bucket))
-                {
-                    bucket = [];
-                    slotBuckets[slot] = bucket;
-                }
-
-                bucket.Add((originalKeys[i], redisKeys[i]));
+                pairs[i] = (originalKeys[i], redisKeys[i]);
             }
+
+            var slotBuckets = _GroupBySlot(pairs, static pair => pair.Redis);
 
             foreach (var bucket in slotBuckets.Values)
             {
@@ -708,20 +688,15 @@ public sealed class RedisCache(
             // Cluster: batch by hash slot so each StringGetAsync covers one slot group.
             // Manual Dictionary grouping avoids LINQ Lookup allocation + per-group materialization.
             rawValues = new RedisValue[redisKeys.Count];
-            var slotBuckets = new Dictionary<int, List<(RedisKey Redis, int Index)>>();
+
+            var indexedKeys = new (RedisKey Redis, int Index)[redisKeys.Count];
 
             for (var i = 0; i < redisKeys.Count; i++)
             {
-                var slot = options.ConnectionMultiplexer.HashSlot(redisKeys[i]);
-
-                if (!slotBuckets.TryGetValue(slot, out var bucket))
-                {
-                    bucket = [];
-                    slotBuckets[slot] = bucket;
-                }
-
-                bucket.Add((redisKeys[i], i));
+                indexedKeys[i] = (redisKeys[i], i);
             }
+
+            var slotBuckets = _GroupBySlot(indexedKeys, static entry => entry.Redis);
 
             foreach (var bucket in slotBuckets.Values)
             {
@@ -1241,11 +1216,12 @@ public sealed class RedisCache(
             tags: frame.Tags
         );
 
-        await _database
+        // Honor the contract ("true when an entry was found and expired"): When.Exists returns false if the key
+        // was evicted between the GET above and this SET (its physical TTL elapsed, or a concurrent RemoveAsync),
+        // so surface the actual outcome rather than an unconditional true.
+        return await _database
             .StringSetAsync(redisKey, reStamped, expiry: null, keepTtl: true, when: When.Exists)
             .ConfigureAwait(false);
-
-        return true;
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
@@ -1304,21 +1280,7 @@ public sealed class RedisCache(
         {
             foreach (var batch in redisKeys.Chunk(_BatchSize))
             {
-                // Manual slot grouping avoids LINQ Lookup allocation + per-group materialization.
-                var slotBuckets = new Dictionary<int, List<RedisKey>>();
-
-                foreach (var key in batch)
-                {
-                    var slot = options.ConnectionMultiplexer.HashSlot(key);
-
-                    if (!slotBuckets.TryGetValue(slot, out var bucket))
-                    {
-                        bucket = [];
-                        slotBuckets[slot] = bucket;
-                    }
-
-                    bucket.Add(key);
-                }
+                var slotBuckets = _GroupBySlot(batch, static key => key);
 
                 foreach (var (slot, bucket) in slotBuckets)
                 {
@@ -1448,6 +1410,7 @@ public sealed class RedisCache(
         var batchSize = options.MaxMembersPerTagRemoval;
         var iterationBudget = (int)Math.Ceiling((double)(initialSize * 4 + batchSize) / batchSize);
         var iterations = 0;
+        var drained = false;
 
         // Loop until the Lua script reports no remaining members. Each invocation processes a bounded
         // batch so no single script call blocks Redis for an unbounded duration (large tag sets).
@@ -1466,13 +1429,28 @@ public sealed class RedisCache(
 
             if (!hasRemaining)
             {
+                // The script drained every prunable member (a batch that pruned nothing — e.g. only fail-safe
+                // reserves remain — also reports no-remaining), so the sweep is complete regardless of how many
+                // iterations it took. This is the natural, successful exit even when it lands on the last budgeted
+                // iteration; only a budget cut-off with work still pending counts as incomplete.
+                drained = true;
                 break;
             }
         }
 
-        if (iterations >= iterationBudget)
+        if (!drained)
         {
-            _logger.LogRemoveByTagBudgetExceeded(tag, iterationBudget, totalRemoved);
+            // The budget was spent before the tag hash drained: members were re-added under concurrent writes
+            // faster than the sweep could remove them. Probe the live hash length — best-effort; it may have
+            // drifted again by the time it is read. Only surface the typed, retryable signal when members
+            // genuinely remain, so a tag that happened to drain exactly at the budget edge is not a false alarm.
+            var remaining = (int)await _database.HashLengthAsync(tagHashKey).ConfigureAwait(false);
+
+            if (remaining > 0)
+            {
+                _logger.LogRemoveByTagBudgetExceeded(tag, iterationBudget, totalRemoved);
+                throw new CacheTagRemovalIncompleteException(tag, totalRemoved, remaining);
+            }
         }
 
         return totalRemoved;
@@ -1523,9 +1501,19 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Clear only this cache instance's keyspace (its KeyPrefix), not the whole Redis database: a shared Redis
-        // may host other caches and application data. When no KeyPrefix is configured the pattern is "*", which
-        // clears the database — unavoidable for an unprefixed cache, and documented as such.
+        // Empty prefix = dedicated-DB mode: this cache owns the whole Redis database, so flush it atomically with
+        // a single FLUSHDB instead of an O(N), non-atomic SCAN+UNLINK sweep over every key. FLUSHDB runs on the
+        // db connection bound to _database (no IServer/allowAdmin needed — the connection's admin flag only gates
+        // SE.Redis's typed IServer admin methods, not a direct command), matching how this type already issues
+        // server-scoped work via the database/server APIs.
+        if (_keyPrefix.Length is 0)
+        {
+            await _database.ExecuteAsync("FLUSHDB").ConfigureAwait(false);
+            return;
+        }
+
+        // Prefixed cache: clear only this instance's keyspace (its KeyPrefix), not the whole Redis database, since
+        // a shared Redis may host other caches and application data.
         await _RemoveByPatternAsync($"{_keyPrefix}*", cancellationToken).ConfigureAwait(false);
     }
 
@@ -2220,21 +2208,7 @@ public sealed class RedisCache(
 
         if (isCluster)
         {
-            // Manual slot grouping avoids LINQ Lookup allocation + per-group materialization.
-            var slotBuckets = new Dictionary<int, List<RedisKey>>();
-
-            foreach (var key in keys)
-            {
-                var slot = options.ConnectionMultiplexer.HashSlot(key);
-
-                if (!slotBuckets.TryGetValue(slot, out var bucket))
-                {
-                    bucket = [];
-                    slotBuckets[slot] = bucket;
-                }
-
-                bucket.Add(key);
-            }
+            var slotBuckets = _GroupBySlot(keys, static key => key);
 
             foreach (var bucket in slotBuckets.Values)
             {
@@ -2248,6 +2222,31 @@ public sealed class RedisCache(
         }
 
         return deleted;
+    }
+
+    // Groups items into per-Redis-cluster-hash-slot buckets, preserving input order within each bucket. Used by
+    // the cluster paths of the batch operations to split a multi-key command into one command per slot (a single
+    // MGET/MSET/DEL/UNLINK cannot span slots on Redis Cluster). Manual Dictionary grouping is used over LINQ
+    // GroupBy/ToLookup to avoid the Lookup allocation and per-group materialization on these hot paths.
+    private Dictionary<int, List<T>> _GroupBySlot<T>(IReadOnlyList<T> items, Func<T, RedisKey> keySelector)
+    {
+        var slotBuckets = new Dictionary<int, List<T>>();
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var slot = options.ConnectionMultiplexer.HashSlot(keySelector(item));
+
+            if (!slotBuckets.TryGetValue(slot, out var bucket))
+            {
+                bucket = [];
+                slotBuckets[slot] = bucket;
+            }
+
+            bucket.Add(item);
+        }
+
+        return slotBuckets;
     }
 
     private async Task<long> _SafeDatabaseSizeAsync(IServer server)
