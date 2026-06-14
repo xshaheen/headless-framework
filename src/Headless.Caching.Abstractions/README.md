@@ -16,8 +16,8 @@ Provides a provider-agnostic caching API so applications can switch between memo
   - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
   - Set operations (SetAdd, SetRemove, GetSet)
   - Tag invalidation (`UpsertEntryAsync` with `CacheEntryOptions.Tags`, `RemoveByTagAsync` returning the removed count)
-- `IInMemoryCache` - marker interface for in-memory implementations.
-- `IRemoteCache` - marker interface for remote implementations. Adds `GetWithExpirationAsync<T>` for single-round-trip value-plus-TTL reads.
+- `IInMemoryCache` - in-memory (L1) tier contract; adds `GetTaggedKeys` (live tag reverse-index enumeration, feasible only in-process).
+- `IRemoteCache` - remote (L2) tier contract; adds `GetAllWithExpirationAsync<T>` / `GetWithExpirationAsync<T>` for single-round-trip value-plus-TTL reads (a remote store doesn't expose its TTL locally the way an in-memory tier does).
 - `ICache<T>` - strongly typed convenience facade over the default `ICache`, exposing the full `ICache` surface (scalar reads/writes, bulk, prefix, atomic numeric ops `IncrementAsync`/`SetIfHigherAsync`/`SetIfLowerAsync`, `GetAllKeysByPrefixAsync`, `GetCountAsync`, `ExistsAsync`, `GetExpirationAsync`, `RemoveAllAsync`, `FlushAsync`) bound to a fixed type parameter. For a specific tier use the untyped `IRemoteCache`/`IInMemoryCache` (method-level generics) or `ICacheProvider.GetCache(name)`. Typed tier wrappers (`IRemoteCache<T>`, `IInMemoryCache<T>`) do not exist.
 - `ICacheProvider` - resolves named cache instances and the reserved role keys (`CacheConstants.{Memory,Remote,Hybrid}CacheProvider` — `Headless.Caching:{Memory,Remote,Hybrid}`).
 - `CacheValue<T>` - cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
