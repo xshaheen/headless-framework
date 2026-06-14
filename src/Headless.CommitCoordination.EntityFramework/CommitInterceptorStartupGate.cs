@@ -31,8 +31,16 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
 ) : IHostedLifecycleService
     where TContext : DbContext
 {
+    private int _probeRan;
+
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
+        // Run-once guard: a single boot must probe at most once even if the lifecycle hook is re-entered.
+        if (Interlocked.Exchange(ref _probeRan, 1) == 1)
+        {
+            return;
+        }
+
         var mode = options.Value.Mode;
 
         if (mode == CommitInterceptorProbeMode.Disabled)
@@ -71,10 +79,12 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
 
             committedObserved = observed;
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Inconclusive — the database was unreachable or the probe transaction could not run. Reachability and
-            // schema readiness are the storage initializer's concern; the host is allowed to start.
+            // Inconclusive — the database was unreachable, a retrying execution strategy rejected the
+            // user-initiated transaction, or the probe transaction could not otherwise run. None of these is the
+            // mis-wire signal (that is carried by committedObserved == false, evaluated below and surfaced per
+            // mode), so the host is allowed to start. Cancellation propagates so cooperative shutdown is honored.
             LogProbeInconclusive(logger, typeof(TContext).FullName, ex);
             return;
         }

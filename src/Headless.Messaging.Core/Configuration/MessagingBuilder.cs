@@ -85,7 +85,7 @@ public class MessageQueueMarkerService(string name)
 /// outbox for the EF-context messaging storage path (via <c>WithoutTransactionalOutbox()</c>). When present, the
 /// EF storage extension skips auto-registering commit coordination, restoring non-transactional immediate dispatch.
 /// </summary>
-public sealed class TransactionalOutboxOptOutMarker;
+internal sealed class TransactionalOutboxOptOutMarker;
 
 /// <summary>
 /// Provides a fluent API for fine-grained configuration of messaging services within a dependency injection container.

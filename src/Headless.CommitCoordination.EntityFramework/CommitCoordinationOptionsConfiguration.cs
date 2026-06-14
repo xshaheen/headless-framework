@@ -37,7 +37,7 @@ internal sealed class CommitCoordinationOptionsConfiguration<TContext>(IEnumerab
 
         var missing = _interceptors
             .OfType<CommitCoordinationTransactionInterceptor>()
-            .Where(interceptor => existing is null || !existing.Any(e => ReferenceEquals(e, interceptor)))
+            .Where(interceptor => existing?.Any(e => ReferenceEquals(e, interceptor)) != true)
             .ToArray();
 
         if (missing.Length > 0)

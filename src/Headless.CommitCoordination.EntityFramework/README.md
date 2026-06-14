@@ -58,6 +58,9 @@ None.
 - `Headless.CommitCoordination.Core`
 - `Microsoft.EntityFrameworkCore.Relational`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Hosting.Abstractions` — required by the startup gate (`CommitInterceptorStartupGate<TContext>`)
+- `Microsoft.Extensions.Logging.Abstractions` — required by the startup gate
+- `Microsoft.Extensions.Options` — required by `CommitInterceptorProbeOptions`
 
 ## Side Effects
 
