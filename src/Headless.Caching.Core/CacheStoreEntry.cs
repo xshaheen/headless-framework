@@ -86,6 +86,8 @@ public static class CacheStoreEntryExtensions
     /// <param name="entry">The entry snapshot to evaluate.</param>
     /// <param name="now">The current UTC timestamp (from <see cref="TimeProvider.GetUtcNow"/>); expirations are UTC.</param>
     /// <returns><see langword="true"/> when the entry is found and not physically expired.</returns>
-    public static bool IsPhysicallyPresent<T>(this CacheStoreEntry<T> entry, DateTime now) =>
-        entry.Found && (!entry.PhysicalExpiresAt.HasValue || entry.PhysicalExpiresAt.Value > now);
+    public static bool IsPhysicallyPresent<T>(this CacheStoreEntry<T> entry, DateTime now)
+    {
+        return entry.Found && (!entry.PhysicalExpiresAt.HasValue || entry.PhysicalExpiresAt.Value > now);
+    }
 }

@@ -87,11 +87,13 @@ public sealed class CacheFactoryContext<T>
     /// <param name="value">The new value to cache.</param>
     /// <param name="eTag">The optional opaque entity tag describing the new value.</param>
     /// <param name="lastModifiedAt">The optional origin last-modified timestamp of the new value.</param>
-    public CacheFactoryResult<T> Modified(T? value, string? eTag = null, DateTime? lastModifiedAt = null) =>
-        new()
+    public CacheFactoryResult<T> Modified(T? value, string? eTag = null, DateTime? lastModifiedAt = null)
+    {
+        return new()
         {
             Value = value,
             ETag = eTag,
             LastModifiedAt = lastModifiedAt,
         };
+    }
 }

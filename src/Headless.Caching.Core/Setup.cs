@@ -59,7 +59,7 @@ public static class SetupCachingCore
 
         var (defaultRoleKey, defaultAction) = setup.DefaultExtensions[0];
 
-        if (setup.TierExtensions.Any(tier => string.Equals(tier.RoleKey, defaultRoleKey, StringComparison.Ordinal)))
+        if (setup.TierExtensions.Exists(tier => string.Equals(tier.RoleKey, defaultRoleKey, StringComparison.Ordinal)))
         {
             throw new InvalidOperationException(
                 $"The role key '{defaultRoleKey}' is claimed by both the default cache provider and a tier "

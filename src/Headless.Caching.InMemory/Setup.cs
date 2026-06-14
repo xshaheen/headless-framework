@@ -27,15 +27,7 @@ public static class SetupInMemoryCache
                 CacheConstants.MemoryCacheProvider,
                 services =>
                 {
-                    if (setupAction is null)
-                    {
-                        services.AddOptions<InMemoryCacheOptions, InMemoryCacheOptionsValidator>();
-                    }
-                    else
-                    {
-                        services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
-                    }
-
+                    services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
                     services._AddCacheCore(isDefault: true);
                 }
             );
