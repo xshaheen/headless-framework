@@ -10,7 +10,8 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 
 - Full `IRemoteCache` implementation using StackExchange.Redis.
 - Can serve as the default `ICache` (`setup.UseRedis(...)`) or as the remote tier of a default hybrid (`setup.AddRedisTier(...)`).
-- Supports strongly typed `IRemoteCache<T>`.
+- `GetWithExpirationAsync<T>` returns the cached value and its remaining TTL in one round-trip; used internally by `Headless.Caching.Hybrid` to avoid a double L2 read.
+- Supports strongly typed `ICache<T>` (the single typed facade; `IRemoteCache<T>` is not registered).
 - Named cache instances via `setup.AddNamed(name, i => i.UseRedis(...))`, each owning its own scripts loader bound to its own multiplexer.
 - Prefix-based key management. `FlushAsync` clears only this cache's `KeyPrefix` (scan + `UNLINK`), not the whole Redis database — a shared Redis keeps its other keyspaces. (An unprefixed cache has nothing to scope to, so it still clears the database.)
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower).
@@ -42,7 +43,7 @@ Note the section order is positional (sliding, eager, last-modified, etag, tags)
 
 Tagged entries maintain a reverse tag index in the reserved namespace `{KeyPrefix}__cache_tag__:{tag}`: each tag is a Redis HASH whose fields are the full prefixed cache keys carrying the tag and whose values are the entry's `PhysicalExpiresAt` Unix-millisecond stamp — the entry "version" that pins memberships. A tagged write runs one atomic Lua script that SETs the framed value, HSETs the current tags with the version, extends each tag hash TTL with greater-than semantics (the index TTL is only ever extended, so it outlives its longest-lived member and is never shortened by a short-lived write), and HDELs memberships for tags the write drops. Untagged writes with no prior tags keep the plain `SET` path — zero hot-path regression. `RemoveByTagAsync` walks the tag hash and UNLINKs an entry only when its live header (magic, version, physical stamp) matches the recorded version; a key that expired, was plain-`SET` overwritten, or was re-created without the tag carries a different stamp and has its stale membership dropped instead. Consumers must not store cache entries under keys starting with `{KeyPrefix}__cache_tag__:`. The tag scripts construct hash key names from the tag prefix, so the touched keys do not hash to one slot: tag invalidation is NOT supported on Redis Cluster (standalone/replicated deployments are unaffected).
 
-`RemoveByTagAsync` processes tag members in batches of `MaxMembersPerTagRemoval` (default `1000`) per Lua call and loops in C# until the tag hash is fully drained, so the operation is always complete regardless of tag cardinality. The returned count is the total number of entries removed across all batches. Each Lua call is bounded to prevent long-running scripts on tags with very large membership sets.
+`RemoveByTagAsync` processes tag members in batches of `MaxMembersPerTagRemoval` (default `50`) per Lua call and loops in C# until the tag hash is fully drained, so the operation is always complete regardless of tag cardinality. The returned count is the total number of entries removed across all batches. Each Lua call is bounded to prevent long-running scripts on tags with very large membership sets. The default is conservative because each batch member requires a `GETRANGE` header read (for version-pin verification), so per-EVALSHA latency grows linearly with batch size. The C# loop is also iteration-budgeted (derived from the initial `HLEN`) to prevent unbounded spinning under sustained concurrent writes to a hot tag; a warning is logged if the budget is reached.
 
 Null scalar values are represented by a header flag with an empty value segment. The literal string `"@@NULL"` is a normal cacheable string when written through Redis cache APIs. Raw legacy keys containing `"@@NULL"` still read as null. Atomic counters remain raw Redis-native numeric strings so Redis can perform native atomic arithmetic; their read path falls back to the raw value codec.
 
@@ -102,7 +103,7 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 | `KeyPrefix` | `""` | Prefix for all cache keys (and the tag-index namespace). |
 | `DefaultEntryOptions` | `null` | Default `CacheEntryOptions` for the option-less `GetOrAddAsync` extension overloads; when `null` those overloads throw. |
 | `ReadMode` | `CommandFlags.None` | StackExchange.Redis command flags applied to read operations (e.g. `PreferReplica`). |
-| `MaxMembersPerTagRemoval` | `1000` | Maximum tag-hash members processed per Lua call during `RemoveByTagAsync`. The C# caller loops until the hash is fully drained, so removal is always complete. Decrease to keep individual Lua scripts shorter; increase to reduce round-trips on large tags. Must be greater than zero. |
+| `MaxMembersPerTagRemoval` | `50` | Maximum tag-hash members processed per Lua call during `RemoveByTagAsync`. The C# caller loops until the hash is fully drained, so removal is always complete. Default is conservative because each batch member requires a `GETRANGE` header read; decrease to keep individual scripts shorter, increase to reduce round-trips on large tags at the cost of higher per-script latency. Must be greater than zero. |
 
 ## Dependencies
 
@@ -118,7 +119,7 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 - Registers `IRemoteCache` as singleton (`setup.UseRedis(...)` and `setup.AddRedisTier(...)`).
 - Registers `ICache` as singleton when used as the default provider (`setup.UseRedis(...)`).
 - Registers a keyed `ICache` under the `CacheConstants.RemoteCacheProvider` role key (`Headless.Caching:Remote`).
-- Registers `IRemoteCache<T>` and `ICache<T>` as singletons.
+- Registers `ICache<T>` as singleton when used as the default provider.
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.
 - `setup.AddNamed(name, i => i.UseRedis(...))` registers a keyed `ICache` under the instance name with a per-instance scripts loader and initializer bound to that instance's multiplexer.

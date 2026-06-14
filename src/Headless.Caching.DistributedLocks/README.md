@@ -8,11 +8,11 @@ The per-key factory lock in `Headless.Caching.Core` is process-local: with N app
 
 ## Key Features
 
-- `setup.UseDistributedFactoryLock()` — a cross-cutting extension on the `AddHeadlessCaching` setup builder — registers `ICacheFactoryLockProvider` backed by the application's `IDistributedLock` registration (any `Headless.DistributedLocks.*` provider).
+- `setup.UseDistributedFactoryLock()` — a cross-cutting extension on the `AddHeadlessCaching` setup builder — registers `ICacheFactoryLockProvider` backed by the application's `IDistributedLock` registration (any `Headless.DistributedLocks.*` provider). Three overload shapes: parameterless, `Action<CacheFactoryLockOptions>`, and `Action<CacheFactoryLockOptions, IServiceProvider>`.
 - Per-entry opt-in through `CacheEntryOptions.UseDistributedFactoryLock`; entries that do not set it pay zero cost.
 - Lock resources are namespaced with a configurable prefix (default `cache:factory:`) so cache locks never collide with other lock consumers on the same backend.
 - The seam timeout maps directly onto `DistributedLockAcquireOptions.AcquireTimeout`: `TimeSpan.Zero` is a single try-once attempt (used by eager refresh), `Timeout.InfiniteTimeSpan` waits unboundedly, and a finite value bounds the wait.
-- Optional lease TTL override (`TimeUntilExpires`) as the backstop that frees the key when a node dies mid-factory.
+- Optional lease TTL override (`TimeUntilExpires`) as the backstop that frees the key when a node dies mid-factory; must be a finite positive value when set — the validator rejects zero, negative, or `Timeout.InfiniteTimeSpan` at startup.
 
 ## Design Notes
 
@@ -23,6 +23,7 @@ The per-key factory lock in `Headless.Caching.Core` is process-local: with N app
 - Lock release is best-effort: a failed release is logged and the lease TTL is the backstop, so a release failure never masks the cache operation's outcome. Keep `TimeUntilExpires` (or the lock provider's default lease) comfortably above the slowest expected factory run.
 - A throwing acquire (lock backend down, as opposed to `null` = held elsewhere) degrades through fail-safe: with `IsFailSafeEnabled` and a usable stale reserve the coordinator serves the stale value, restamps the throttle so per-call retries stop hammering the down backend, and logs a warning. Without a usable reserve the exception propagates; caller cancellation always propagates as cancellation. The eager-refresh path's non-blocking acquire is best-effort instead — a throwing acquire there is logged and the still-fresh entry stays untouched.
 - Use it when the factory is expensive enough (slow query, paid API call) to outweigh a distributed lock round-trip per cold refresh. For cheap factories, per-node single-flight is already enough — N small duplicated calls are cheaper than N lock round-trips on every miss.
+- `TimeUntilExpires`, when set, must be finite and positive. A lease TTL must be able to expire so a crashed holder cannot permanently block all nodes from refreshing the cache entry.
 
 ## Installation
 
@@ -75,7 +76,7 @@ Enabling `CacheEntryOptions.UseDistributedFactoryLock` without calling `setup.Us
 | Option | Default | Description |
 | --- | --- | --- |
 | `ResourcePrefix` | `"cache:factory:"` | Prefix prepended to the cache key to form the distributed lock resource name; override to namespace cache locks away from other lock consumers sharing the backend. |
-| `TimeUntilExpires` | `null` | Lease TTL applied to each acquired factory lock; `null` uses the distributed lock provider's default lease duration. The TTL frees the key when a node dies mid-factory. |
+| `TimeUntilExpires` | `null` | Lease TTL applied to each acquired factory lock; `null` uses the distributed lock provider's default lease duration. The TTL frees the key when a node dies mid-factory. When set, must be a finite positive value — zero, negative, or `Timeout.InfiniteTimeSpan` are rejected at startup because an infinite or zero-duration lease cannot release a crashed holder. |
 
 ```csharp
 builder.Services.AddHeadlessCaching(setup =>

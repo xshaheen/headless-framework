@@ -14,7 +14,6 @@ Provides process-local caching through the unified `ICache` abstraction, suitabl
 - Named cache instances via `setup.AddNamed(name, i => i.UseInMemory(...))`, resolvable as keyed `ICache` services or through `ICacheProvider`.
 - Automatic memory management with configurable limits (`MaxItems` plus LRU eviction).
 - Tag invalidation through an in-process reverse tag index with live-entry verification.
-- Can act as an `IRemoteCache` adapter for single-instance scenarios.
 - Optional value cloning for isolation.
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
@@ -106,7 +105,6 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 - Registers `IInMemoryCache` as singleton (`setup.UseInMemory(...)` and `setup.AddMemoryTier(...)`).
 - Registers `ICache` as singleton when used as the default provider (`setup.UseInMemory(...)`).
 - Registers a keyed `ICache` under the `CacheConstants.MemoryCacheProvider` role key (`Headless.Caching:Memory`).
-- Registers `IRemoteCache` adapter (plus `IRemoteCache<T>` and the `CacheConstants.RemoteCacheProvider` role key) when used as the default provider.
-- Registers `ICache<T>` and `IInMemoryCache<T>` as singletons.
+- Registers `ICache<T>` as singleton when used as the default provider.
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - `setup.AddNamed(name, i => i.UseInMemory(...))` registers a keyed `ICache` under the instance name with its own options.
