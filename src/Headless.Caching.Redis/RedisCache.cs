@@ -37,7 +37,7 @@ public sealed class RedisCache(
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null,
     ICacheFactoryLockProvider? factoryLockProvider = null
-) : IRemoteCache, IFactoryCacheStore, IRemoteTagMarkerCache, IDisposable
+) : IRemoteCache, IFactoryCacheStore, ISeedableTagMarkerCache, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";

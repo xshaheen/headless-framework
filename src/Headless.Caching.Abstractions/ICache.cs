@@ -285,9 +285,22 @@ public interface ICache
     #endregion
 }
 
+/// <summary>
+/// The in-memory (local / L1) tier contract. Carries no members beyond <see cref="ICache"/>: it is a deliberate
+/// tier marker, not a behavioral extension. Multi-tier composition (for example the hybrid cache resolving its
+/// L1 tier) selects the in-memory tier by this type, distinctly from <see cref="IRemoteCache"/> — both are
+/// <see cref="ICache"/>, so the marker is what disambiguates them in DI. Do not remove it for being empty: a
+/// hybrid host depends on this type to resolve the local tier.
+/// </summary>
 [PublicAPI]
 public interface IInMemoryCache : ICache;
 
+/// <summary>
+/// The distributed (remote / L2) tier contract. Extends <see cref="ICache"/> with single round-trip
+/// value-plus-expiration reads (used to mirror entries into a faster local tier) and also serves as the tier
+/// marker that multi-tier composition (the hybrid cache resolving its L2 tier) selects distinctly from
+/// <see cref="IInMemoryCache"/>.
+/// </summary>
 [PublicAPI]
 public interface IRemoteCache : ICache
 {

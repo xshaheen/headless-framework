@@ -8,7 +8,7 @@ namespace Tests;
 internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
     : IRemoteCache,
         IFactoryCacheStore,
-        IRemoteTagMarkerCache
+        ISeedableTagMarkerCache
 {
     /// <summary>Records backplane marker pushes so tests can assert the hybrid receiver seeds the L2 marker cache.</summary>
     public List<(string Tag, DateTimeOffset At)> SeededTagMarkers { get; } = [];
