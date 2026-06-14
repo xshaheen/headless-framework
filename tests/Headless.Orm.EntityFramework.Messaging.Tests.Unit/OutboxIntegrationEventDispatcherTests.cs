@@ -108,10 +108,8 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // given — an empty list must short-circuit without publishing anything.
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
-
         // when
-        await dispatcher.DispatchAsync([], transaction, TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync([], TestContext.Current.CancellationToken);
 
         // then
         bus.Published.Should().BeEmpty();
@@ -124,11 +122,10 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // coordinator. The dispatcher only fans the events out to the bus; it does not touch the transaction.
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1"), new PaymentCaptured("payment-1")];
 
         // when
-        await dispatcher.DispatchAsync(events, transaction, TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
 
         // then
         bus.Published.Should().HaveCount(2);
@@ -142,11 +139,10 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // given
         var bus = new ThrowingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, transaction, TestContext.Current.CancellationToken);
+        var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("Publish failed");
@@ -159,13 +155,12 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // ThrowIfCancellationRequested on the first iteration, so nothing is published.
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
         // when
-        var act = async () => await dispatcher.DispatchAsync(events, transaction, cts.Token);
+        var act = async () => await dispatcher.DispatchAsync(events, cts.Token);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -178,11 +173,10 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // given
         var bus = new RecordingOutboxBus();
         var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
-        dispatcher.Dispatch(events, transaction);
+        dispatcher.Dispatch(events);
 
         // then
         bus.Published.Should().ContainSingle();

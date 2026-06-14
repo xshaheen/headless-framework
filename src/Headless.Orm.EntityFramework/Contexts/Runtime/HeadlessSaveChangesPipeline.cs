@@ -299,9 +299,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
                     .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
                     .ToArray();
 
-                await dispatcher
-                    .DispatchAsync(integrationEvents, transaction, state.CancellationToken)
-                    .ConfigureAwait(false);
+                await dispatcher.DispatchAsync(integrationEvents, state.CancellationToken).ConfigureAwait(false);
             }
 
             if (commitTransaction)
@@ -377,7 +375,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
                     .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
                     .ToArray();
 
-                dispatcher.Dispatch(integrationEvents, transaction);
+                dispatcher.Dispatch(integrationEvents);
             }
 
             if (commitTransaction)

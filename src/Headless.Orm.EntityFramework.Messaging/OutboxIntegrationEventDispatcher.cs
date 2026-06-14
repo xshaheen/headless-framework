@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Domain;
 using Headless.Messaging;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.EntityFramework;
 
@@ -26,15 +25,10 @@ internal sealed class OutboxIntegrationEventDispatcher(
 {
     public async Task DispatchAsync(
         IReadOnlyList<IIntegrationEvent> integrationEvents,
-        // currentTransaction is unused — the coordinated transaction the pipeline opened makes the commit
-        // coordinator ambient, so the outbox writer enlists without this dispatcher touching the transaction.
-        // The parameter stays for the IHeadlessOutboxDispatcher contract.
-        IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     )
     {
         Argument.IsNotNull(integrationEvents);
-        Argument.IsNotNull(currentTransaction);
 
         if (integrationEvents.Count == 0)
         {
@@ -51,8 +45,6 @@ internal sealed class OutboxIntegrationEventDispatcher(
 
     // Single contained sync-over-async: IOutboxBus only exposes an async publish, and the EF sync save path
     // calls this. No synchronization context is present on the EF save path, so blocking here cannot deadlock.
-    public void Dispatch(
-        IReadOnlyList<IIntegrationEvent> integrationEvents,
-        IDbContextTransaction currentTransaction
-    ) => DispatchAsync(integrationEvents, currentTransaction, CancellationToken.None).GetAwaiter().GetResult();
+    public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents) =>
+        DispatchAsync(integrationEvents, CancellationToken.None).GetAwaiter().GetResult();
 }
