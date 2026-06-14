@@ -203,37 +203,19 @@ public sealed partial class FactoryCacheCoordinator
         var ctsTransferred = false;
         try
         {
-            if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
-            {
-                await _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts, previousTags)
-                    .ConfigureAwait(false);
-                return;
-            }
-
-            using var ceilingCts = new CancellationTokenSource();
-            var ceilingTask = Task.Delay(options.BackgroundFactoryCeiling, _timeProvider, ceilingCts.Token);
-            BackgroundCompletionCeilingTimerRegistered?.Invoke();
-
-            var winner = await Task.WhenAny(factoryTask, ceilingTask).ConfigureAwait(false);
-
-            if (winner == factoryTask)
-            {
-                await ceilingCts.CancelAsync().ConfigureAwait(false);
-                await _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts, previousTags)
-                    .ConfigureAwait(false);
-                return;
-            }
-
-            await internalCts.CancelAsync().ConfigureAwait(false);
-            // The ceiling fired but the factory may ignore cancellation and keep running. Observe its task so a
-            // later fault is logged rather than lost. Unlike the soft-timeout path there is no restamp: the
-            // entry is still fresh and rides to its natural expiry.
-            _ObserveFaultedTask(factoryTask, key);
-            // Defer disposal until the abandoned factory finishes so it never touches a disposed token source;
-            // ctsTransferred makes the synchronous finally skip disposal, mirroring the hard-timeout path.
-            CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
-            ctsTransferred = true;
-            _logger.LogCacheFactoryTimedOut(key, "eager-ceiling", options.BackgroundFactoryCeiling);
+            // Race the detached factory against the ceiling. Returns true only when the ceiling fired and the
+            // factory was abandoned (CTS deferred-disposed), in which case the finally must skip CTS disposal.
+            // Unlike the soft-timeout path there is no ceiling-fired consequence here: the entry is still fresh
+            // and rides to its natural expiry, so nothing runs after a true return.
+            ctsTransferred = await _RunCeilingRaceAsync(
+                    factoryTask,
+                    internalCts,
+                    options,
+                    key,
+                    ceilingLabel: "eager-ceiling",
+                    () => _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts, previousTags)
+                )
+                .ConfigureAwait(false);
         }
 #pragma warning restore VSTHRD003
         finally
@@ -282,7 +264,11 @@ public sealed partial class FactoryCacheCoordinator
                 _logger.LogEagerRefreshSucceeded(key);
             }
         }
+        // Genuine failures only. When internalCts fired this OperationCanceledException is OUR deliberate ceiling
+        // abandonment (the ceiling-fired path already logged eager-ceiling), not a refresh failure, so the filter
+        // excludes it from the failure log.
         catch (Exception exception)
+            when (exception is not OperationCanceledException || !internalCts.IsCancellationRequested)
         {
             // The entry is still fresh; failure only means the proactive refresh is lost. Natural expiry and
             // fail-safe (when enabled) take over from here, so log and move on without touching the entry.

@@ -25,11 +25,15 @@ public sealed partial class FactoryCacheCoordinator(
     private readonly ILogger _logger = logger ?? NullLogger<FactoryCacheCoordinator>.Instance;
     private readonly ICacheFactoryLockProvider? _factoryLockProvider = factoryLockProvider;
     private const int _MaxInertWarningKeys = 1024;
+
+    // Re-emit the "cap reached" notice once every this many post-cap suppressed occurrences so the misconfiguration
+    // stays observable on a long-lived coordinator instead of being logged exactly once and then going silent.
+    private const int _InertCapReLogInterval = 1024;
     private readonly ConcurrentDictionary<string, byte> _softTimeoutInertWarnings = new(StringComparer.Ordinal);
 
-    // Guards a single "cap reached" notice for the coordinator's lifetime: 0 = not yet logged, 1 = logged. The
-    // per-key inert warnings are capped at _MaxInertWarningKeys; without this notice the suppression would be silent.
-    private int _softTimeoutInertCapLogged;
+    // Counts inert keys suppressed after the per-key warning set hit _MaxInertWarningKeys. Drives the periodic
+    // cap-reached re-log (every _InertCapReLogInterval). Interlocked-incremented on the timeout-selection hot path.
+    private long _softTimeoutInertCapSuppressed;
 
     /// <summary>Signals test code that a detached background completion has registered its ceiling timer.</summary>
     [EditorBrowsable(EditorBrowsableState.Never)]
@@ -129,7 +133,7 @@ public sealed partial class FactoryCacheCoordinator(
             return _ToCacheValue(entry, isStale: false);
         }
 
-        if (entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now))
+        if (_ShouldServeStaleImmediately(options, entry, now))
         {
             return _ToCacheValue(entry, isStale: true);
         }
@@ -166,7 +170,7 @@ public sealed partial class FactoryCacheCoordinator(
                     return _ToCacheValue(entry, isStale: false);
                 }
 
-                if (entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now))
+                if (_ShouldServeStaleImmediately(options, entry, now))
                 {
                     return _ToCacheValue(entry, isStale: true);
                 }
@@ -236,7 +240,7 @@ public sealed partial class FactoryCacheCoordinator(
                         return _ToCacheValue(entry, isStale: false);
                     }
 
-                    if (entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now))
+                    if (_ShouldServeStaleImmediately(options, entry, now))
                     {
                         return _ToCacheValue(entry, isStale: true);
                     }
@@ -315,6 +319,10 @@ public sealed partial class FactoryCacheCoordinator(
                 }
 
                 _ObserveFaultedTask(factoryResult.RunningTask, key);
+                // A non-cooperative factory may ignore the hard-timeout cancellation and later complete
+                // successfully; its result is discarded (the caller already moved on). Log that at Debug so the
+                // wasted work is visible. Disjoint with the fault observer (different continuation predicates).
+                _ObserveDiscardedSuccess(factoryResult.RunningTask, key);
 
                 now = _GetUtcNow();
 
@@ -473,7 +481,15 @@ public sealed partial class FactoryCacheCoordinator(
             SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
         };
 
-        _ = await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+        var persisted = await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+
+        if (!persisted)
+        {
+            // CAS lost: a concurrent write changed the entry under the lock between our read and this set. Best-effort
+            // by design — the freshly computed value still goes to the caller and the next read recomputes; we only
+            // surface the loss for observability and never retry (a retry would re-run the factory under the lock).
+            _logger.LogCacheFactoryWriteLostToConcurrentWrite(key);
+        }
 
         return new CacheValue<T>(value, hasValue: true);
     }
@@ -513,6 +529,15 @@ public sealed partial class FactoryCacheCoordinator(
     private static bool _IsStaleCandidate<T>(CacheStoreEntry<T> entry, DateTime now) =>
         entry.IsPhysicallyPresent(now) && entry.PhysicalExpiresAt.HasValue;
 
+    // Serve-stale-immediately: with fail-safe enabled and a usable stale reserve, an entry flagged
+    // ServeStaleImmediately is returned without contending for the factory lock. Deduped across the three
+    // GetOrAddAsync re-check points (pre-lock, under-lock, after distributed-lock acquire).
+    private static bool _ShouldServeStaleImmediately<T>(
+        CacheEntryOptions options,
+        CacheStoreEntry<T> entry,
+        DateTime now
+    ) => entry.ServeStaleImmediately && options.IsFailSafeEnabled && _IsStaleCandidate(entry, now);
+
     // Soft timeout governs the waiter wait only when a stale reserve can be served on elapse; otherwise the
     // waiter is bounded by LockTimeout (default Timeout.InfiniteTimeSpan), and on elapse with no stale reserve
     // the waiter degrades to a miss. This mirrors FusionCache's GetAppropriateMemoryLockTimeout: a stale + fail-safe
@@ -544,14 +569,18 @@ public sealed partial class FactoryCacheCoordinator(
             {
                 _logger.LogCacheSoftTimeoutInert(key, options.FactorySoftTimeout);
             }
-            // Once the per-key warnings are capped, further inert keys are silently suppressed; emit exactly one
-            // notice (Interlocked guard) so the suppression is observable instead of looking like the warning stopped.
-            else if (
-                _softTimeoutInertWarnings.Count >= _MaxInertWarningKeys
-                && Interlocked.CompareExchange(ref _softTimeoutInertCapLogged, 1, 0) == 0
-            )
+            // Once the per-key warnings are capped, further inert keys are silently suppressed. Re-emit the cap
+            // notice every _InertCapReLogInterval suppressed occurrences (not once-only) so the misconfiguration
+            // stays observable over a long-lived service. Allocation-free: a single Interlocked.Increment with a
+            // modulo check on the hot timeout-selection path.
+            else if (_softTimeoutInertWarnings.Count >= _MaxInertWarningKeys)
             {
-                _logger.LogCacheSoftTimeoutInertCapReached(_MaxInertWarningKeys);
+                var suppressed = Interlocked.Increment(ref _softTimeoutInertCapSuppressed);
+
+                if (suppressed % _InertCapReLogInterval == 1)
+                {
+                    _logger.LogCacheSoftTimeoutInertCapReached(_MaxInertWarningKeys, suppressed);
+                }
             }
         }
 
@@ -742,6 +771,24 @@ public sealed partial class FactoryCacheCoordinator(
         );
     }
 
+    // Companion to _ObserveFaultedTask: when a hard-timed-out, non-cooperative factory ignores cancellation and
+    // later completes successfully, the result is discarded (the caller already returned). The OnlyOnRanToCompletion
+    // predicate is disjoint from the fault observer's OnlyOnFaulted, so both can be attached without interfering.
+    private void _ObserveDiscardedSuccess(Task task, string key)
+    {
+        _ = task.ContinueWith(
+            static (_, state) =>
+            {
+                var (logger, cacheKey) = ((ILogger, string))state!;
+                logger.LogCacheFactoryDiscardedSuccess(cacheKey);
+            },
+            (_logger, key),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnRanToCompletion,
+            TaskScheduler.Default
+        );
+    }
+
     // The validation rules live in CacheEntryStamps so the coordinator and the providers' direct
     // options-based upserts always agree; keep this thin wrapper for call-site brevity.
     private static void _ValidateOptions(CacheEntryOptions options) => CacheEntryStamps.ValidateOptions(options);
@@ -879,10 +926,10 @@ internal static partial class FactoryCacheCoordinatorLog
         EventId = 14,
         EventName = "CacheSoftTimeoutInertCapReached",
         Level = LogLevel.Warning,
-        Message = "Cache soft-timeout inert-warning suppression cap reached ({Cap} keys); further per-key inert "
-            + "warnings are suppressed for this coordinator's lifetime."
+        Message = "Cache soft-timeout inert-warning suppression cap reached ({Cap} keys); {SuppressedCount} further "
+            + "inert keys have been suppressed. This notice re-emits periodically while the misconfiguration persists."
     )]
-    public static partial void LogCacheSoftTimeoutInertCapReached(this ILogger logger, int cap);
+    public static partial void LogCacheSoftTimeoutInertCapReached(this ILogger logger, int cap, long suppressedCount);
 
     [LoggerMessage(
         EventId = 8,
@@ -950,4 +997,22 @@ internal static partial class FactoryCacheCoordinatorLog
         string key,
         string exceptionType
     );
+
+    [LoggerMessage(
+        EventId = 15,
+        EventName = "CacheFactoryWriteLostToConcurrentWrite",
+        Level = LogLevel.Debug,
+        Message = "Cache factory result for key {Key} was not persisted: a concurrent write changed the entry under "
+            + "the lock; the value was returned to the caller and the next read will recompute."
+    )]
+    public static partial void LogCacheFactoryWriteLostToConcurrentWrite(this ILogger logger, string key);
+
+    [LoggerMessage(
+        EventId = 16,
+        EventName = "CacheFactoryDiscardedSuccess",
+        Level = LogLevel.Debug,
+        Message = "Cache factory for key {Key} completed after a hard timeout but its result was discarded; the "
+            + "factory ignored cancellation and the wasted work was thrown away."
+    )]
+    public static partial void LogCacheFactoryDiscardedSuccess(this ILogger logger, string key);
 }

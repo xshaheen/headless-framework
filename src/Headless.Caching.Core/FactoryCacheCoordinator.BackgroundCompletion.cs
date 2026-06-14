@@ -52,56 +52,33 @@ public sealed partial class FactoryCacheCoordinator
         var ctsTransferred = false;
         try
         {
-            // No ceiling configured: let the detached factory run to completion, matching comparable caches.
-            if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
+            // Race the detached factory against the ceiling. Returns true only when the ceiling fired and the
+            // factory was abandoned (CTS deferred-disposed), in which case the finally must skip CTS disposal.
+            ctsTransferred = await _RunCeilingRaceAsync(
+                    factoryTask,
+                    internalCts,
+                    options,
+                    key,
+                    ceilingLabel: "background-ceiling",
+                    () =>
+                        _ObserveBackgroundFactoryAsync(
+                            store,
+                            key,
+                            context,
+                            factoryTask,
+                            internalCts,
+                            staleCandidate,
+                            options
+                        )
+                )
+                .ConfigureAwait(false);
+
+            if (ctsTransferred)
             {
-                await _ObserveBackgroundFactoryAsync(
-                        store,
-                        key,
-                        context,
-                        factoryTask,
-                        internalCts,
-                        staleCandidate,
-                        options
-                    )
-                    .ConfigureAwait(false);
-
-                return;
+                // Ceiling-fired consequence (background only): restamp the stale reserve's throttle window so the
+                // abandoned factory's elapse does not let callers immediately re-hammer it.
+                await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
             }
-
-            using var ceilingCts = new CancellationTokenSource();
-            var ceilingTask = Task.Delay(options.BackgroundFactoryCeiling, _timeProvider, ceilingCts.Token);
-            BackgroundCompletionCeilingTimerRegistered?.Invoke();
-
-            var winner = await Task.WhenAny(factoryTask, ceilingTask).ConfigureAwait(false);
-
-            if (winner == factoryTask)
-            {
-                await ceilingCts.CancelAsync().ConfigureAwait(false);
-                await _ObserveBackgroundFactoryAsync(
-                        store,
-                        key,
-                        context,
-                        factoryTask,
-                        internalCts,
-                        staleCandidate,
-                        options
-                    )
-                    .ConfigureAwait(false);
-
-                return;
-            }
-
-            await internalCts.CancelAsync().ConfigureAwait(false);
-            // The ceiling fired but the factory may ignore cancellation and keep running. Observe its task so a
-            // later fault is logged rather than lost, mirroring the hard-timeout abandonment path.
-            _ObserveFaultedTask(factoryTask, key);
-            // Defer disposal until the abandoned factory finishes so it never touches a disposed token source;
-            // ctsTransferred makes the synchronous finally skip disposal, mirroring the hard-timeout path.
-            CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
-            ctsTransferred = true;
-            _logger.LogCacheFactoryTimedOut(key, "background-ceiling", options.BackgroundFactoryCeiling);
-            await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
         }
 #pragma warning restore VSTHRD003
         finally
@@ -119,6 +96,54 @@ public sealed partial class FactoryCacheCoordinator
             releaser.Dispose();
             BackgroundOperationFinished?.Invoke();
         }
+    }
+
+    // Shared ceiling race for the two detached-completion paths (soft-timeout background completion and eager
+    // refresh). Runs the WhenAny(factory, ceiling) state machine and the abandon+DisposeAfter bookkeeping so both
+    // callers stay bit-for-bit identical on the CTS-lifetime-sensitive path. Returns whether the ceiling fired and
+    // the CTS was transferred to deferred disposal (the caller's finally must then skip its own CTS disposal).
+    // Callers differ only in the observe action (passed as observeFactory) and the ceiling-fired consequence (run
+    // by the caller after this returns true) and the ceilingLabel ("background-ceiling" vs "eager-ceiling").
+    private async Task<bool> _RunCeilingRaceAsync<T>(
+        Task<CacheFactoryResult<T>> factoryTask,
+        CancellationTokenSource internalCts,
+        CacheEntryOptions options,
+        string key,
+        string ceilingLabel,
+        Func<Task> observeFactory
+    )
+    {
+#pragma warning disable VSTHRD003 // This continuation intentionally races/observes the transferred factory task.
+        // No ceiling configured: let the detached factory run to completion, matching comparable caches.
+        if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
+        {
+            await observeFactory().ConfigureAwait(false);
+            return false;
+        }
+
+        using var ceilingCts = new CancellationTokenSource();
+        var ceilingTask = Task.Delay(options.BackgroundFactoryCeiling, _timeProvider, ceilingCts.Token);
+        BackgroundCompletionCeilingTimerRegistered?.Invoke();
+
+        var winner = await Task.WhenAny(factoryTask, ceilingTask).ConfigureAwait(false);
+
+        if (winner == factoryTask)
+        {
+            await ceilingCts.CancelAsync().ConfigureAwait(false);
+            await observeFactory().ConfigureAwait(false);
+            return false;
+        }
+
+        await internalCts.CancelAsync().ConfigureAwait(false);
+        // The ceiling fired but the factory may ignore cancellation and keep running. Observe its task so a
+        // later fault is logged rather than lost, mirroring the hard-timeout abandonment path.
+        _ObserveFaultedTask(factoryTask, key);
+        // Defer disposal until the abandoned factory finishes so it never touches a disposed token source;
+        // the returned true makes the caller's synchronous finally skip disposal, mirroring the hard-timeout path.
+        CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
+        _logger.LogCacheFactoryTimedOut(key, ceilingLabel, options.BackgroundFactoryCeiling);
+        return true;
+#pragma warning restore VSTHRD003
     }
 
     private async Task _ObserveBackgroundFactoryAsync<T>(
@@ -151,7 +176,11 @@ public sealed partial class FactoryCacheCoordinator
                 _logger.LogCacheBackgroundCompletionSucceeded(key);
             }
         }
+        // Genuine failures only. When internalCts fired this OperationCanceledException is OUR deliberate ceiling
+        // abandonment (the ceiling-fired path already logged background-ceiling), not a factory failure, so it must
+        // not be logged as a failure nor trigger the restamp-on-failure path; the filter excludes that case.
         catch (Exception exception)
+            when (exception is not OperationCanceledException || !internalCts.IsCancellationRequested)
         {
             _logger.LogCacheBackgroundCompletionFailed(exception, key, exception.GetType().Name);
             await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
