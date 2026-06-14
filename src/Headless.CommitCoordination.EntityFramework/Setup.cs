@@ -59,7 +59,7 @@ public static class SetupEntityFrameworkCommitCoordination
         /// </remarks>
         /// <param name="dbContextType">The runtime <see cref="DbContext"/> type to configure.</param>
         /// <returns>The service collection.</returns>
-        public IServiceCollection AddCommitCoordinationDbContextConfiguration(Type dbContextType)
+        internal IServiceCollection AddCommitCoordinationDbContextConfiguration(Type dbContextType)
         {
             Argument.IsNotNull(dbContextType);
 
@@ -81,7 +81,7 @@ public static class SetupEntityFrameworkCommitCoordination
         /// </summary>
         /// <param name="dbContextType">The runtime <see cref="DbContext"/> type to probe.</param>
         /// <returns>The service collection.</returns>
-        public IServiceCollection AddCommitInterceptorStartupGate(Type dbContextType)
+        internal IServiceCollection AddCommitInterceptorStartupGate(Type dbContextType)
         {
             Argument.IsNotNull(dbContextType);
 
@@ -104,7 +104,7 @@ public static class SetupEntityFrameworkCommitCoordination
         /// </summary>
         /// <param name="dbContextType">The runtime <see cref="DbContext"/> type to wire.</param>
         /// <returns>The service collection.</returns>
-        public IServiceCollection AddCommitCoordinationWithStartupGate(Type dbContextType)
+        internal IServiceCollection AddCommitCoordinationWithStartupGate(Type dbContextType)
         {
             Argument.IsNotNull(dbContextType);
 
