@@ -197,7 +197,9 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         }
 
         // then — the enlisted row rolled back with the transaction.
-        (await _CountPublishedContainingAsync(marker)).Should().Be(0);
+        (await _CountPublishedContainingAsync(marker))
+            .Should()
+            .Be(0);
     }
 
     [Fact]
@@ -225,7 +227,9 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         }
 
         // then — the enlisted row committed atomically with the transaction.
-        (await _CountPublishedContainingAsync(marker)).Should().Be(1);
+        (await _CountPublishedContainingAsync(marker))
+            .Should()
+            .Be(1);
     }
 
     #region Setup

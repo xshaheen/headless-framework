@@ -31,12 +31,14 @@ public sealed class SqlServerCommitSignalSourceTests
 
         await using (scope)
         {
-            scope.Coordinator.OnCommit((_, _) =>
-            {
-                calls++;
+            scope.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    calls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             await source.SignalCommittedAsync(key, CancellationToken.None);
         }
@@ -60,20 +62,18 @@ public sealed class SqlServerCommitSignalSourceTests
         ScopedMarker? marker = null;
 
         var scope = source.Attach(
-            new CommitCoordinatorBindings
-            {
-                Services = callerScope.ServiceProvider,
-                ProviderTransactionKey = key,
-            },
+            new CommitCoordinatorBindings { Services = callerScope.ServiceProvider, ProviderTransactionKey = key },
             CancellationToken.None
         );
 
-        scope.Coordinator.OnCommit((context, _) =>
-        {
-            marker = context.Services.GetRequiredService<ScopedMarker>();
+        scope.Coordinator.OnCommit(
+            (context, _) =>
+            {
+                marker = context.Services.GetRequiredService<ScopedMarker>();
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await callerScope.DisposeAsync();
         await source.SignalCommittedAsync(key, CancellationToken.None);
@@ -122,12 +122,14 @@ public sealed class SqlServerCommitSignalSourceTests
 
         await using (scope)
         {
-            scope.Coordinator.OnCommit((_, _) =>
-            {
-                committed.SetResult();
+            scope.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    committed.SetResult();
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             // Fire the synthetic SqlClient commit-after event the observer reflects over.
             observer.OnNext(
@@ -170,18 +172,22 @@ public sealed class SqlServerCommitSignalSourceTests
 
         await using (scope)
         {
-            scope.Coordinator.OnCommit((_, _) =>
-            {
-                Interlocked.Increment(ref commits);
+            scope.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref commits);
 
-                return ValueTask.CompletedTask;
-            });
-            scope.Coordinator.OnRollback((_, _) =>
-            {
-                rolledBack.SetResult();
+                    return ValueTask.CompletedTask;
+                }
+            );
+            scope.Coordinator.OnRollback(
+                (_, _) =>
+                {
+                    rolledBack.SetResult();
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             // Same commit-after event key, but the payload carries a "Rollback" operation — the observer must treat
             // it as a rollback edge, not a commit.
@@ -230,26 +236,22 @@ public sealed class SqlServerCommitSignalSourceTests
         var key = new object();
         using var provider = new ServiceCollection().BuildServiceProvider();
         using var scope = source.Attach(
-            new CommitCoordinatorBindings
-            {
-                Services = provider,
-                ProviderTransactionKey = key,
-            },
+            new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
             CancellationToken.None
         );
 
         source
-            .Invoking(x => x.Attach(
-                new CommitCoordinatorBindings
-                {
-                    Services = provider,
-                    ProviderTransactionKey = key,
-                },
-                CancellationToken.None
-            ))
+            .Invoking(x =>
+                x.Attach(
+                    new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
+                    CancellationToken.None
+                )
+            )
             .Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("A SQL Server commit coordination scope is already attached for this provider transaction key.");
+            .WithMessage(
+                "A SQL Server commit coordination scope is already attached for this provider transaction key."
+            );
     }
 
     [Fact]
@@ -273,12 +275,14 @@ public sealed class SqlServerCommitSignalSourceTests
                 new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
                 CancellationToken.None
             );
-            first.Coordinator.OnCommit((_, _) =>
-            {
-                Interlocked.Increment(ref firstCommits);
+            first.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref firstCommits);
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             // Commit removes the predecessor from the registry (synchronous TryRemove) but does NOT dispose it.
             await source.SignalCommittedAsync(key, CancellationToken.None);
@@ -289,12 +293,14 @@ public sealed class SqlServerCommitSignalSourceTests
             new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
             CancellationToken.None
         );
-        second.Coordinator.OnCommit((_, _) =>
-        {
-            Interlocked.Increment(ref secondCommits);
+        second.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                Interlocked.Increment(ref secondCommits);
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         // Disposing the predecessor must NOT evict the successor that now owns the key (remove-if-equal).
         await first.DisposeAsync();

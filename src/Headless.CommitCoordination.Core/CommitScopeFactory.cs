@@ -23,10 +23,7 @@ internal sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitC
     /// <param name="services">The service provider captured for callback drain.</param>
     /// <param name="capabilities">Capabilities attached when a new root is opened.</param>
     /// <returns>The opened scope.</returns>
-    public ICommitScope Begin(
-        IServiceProvider services,
-        IEnumerable<ICommitCapability>? capabilities = null
-    )
+    public ICommitScope Begin(IServiceProvider services, IEnumerable<ICommitCapability>? capabilities = null)
     {
         Argument.IsNotNull(services);
 
@@ -43,10 +40,7 @@ internal sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitC
     /// <param name="services">The service provider captured for callback drain.</param>
     /// <param name="capabilities">Capabilities attached to the new root.</param>
     /// <returns>The opened scope.</returns>
-    public ICommitScope BeginNew(
-        IServiceProvider services,
-        IEnumerable<ICommitCapability>? capabilities = null
-    )
+    public ICommitScope BeginNew(IServiceProvider services, IEnumerable<ICommitCapability>? capabilities = null)
     {
         Argument.IsNotNull(services);
 

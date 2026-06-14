@@ -30,21 +30,19 @@ public sealed class CommitCoordinationTransactionInterceptorTests : IDisposable
         var ran = false;
 
         var scope = signalSource.Attach(
-            new CommitCoordinatorBindings
-            {
-                Services = _services,
-                ProviderTransactionKey = transaction,
-            },
+            new CommitCoordinatorBindings { Services = _services, ProviderTransactionKey = transaction },
             CancellationToken.None
         );
 
-        scope.Coordinator.OnCommit(async (_, _) =>
-        {
-            // Posts the continuation back to the captured SynchronizationContext; the sync interceptor override
-            // would deadlock here unless it offloads the drain off the committing thread.
-            await Task.Yield();
-            ran = true;
-        });
+        scope.Coordinator.OnCommit(
+            async (_, _) =>
+            {
+                // Posts the continuation back to the captured SynchronizationContext; the sync interceptor override
+                // would deadlock here unless it offloads the drain off the committing thread.
+                await Task.Yield();
+                ran = true;
+            }
+        );
 
         var interceptor = new CommitCoordinationTransactionInterceptor(signalSource);
 
@@ -53,7 +51,11 @@ public sealed class CommitCoordinationTransactionInterceptorTests : IDisposable
             TimeSpan.FromSeconds(10)
         );
 
-        completed.Should().BeTrue("the sync TransactionCommitted override must offload the drain off the captured SynchronizationContext");
+        completed
+            .Should()
+            .BeTrue(
+                "the sync TransactionCommitted override must offload the drain off the captured SynchronizationContext"
+            );
         SpinWait.SpinUntil(() => ran, TimeSpan.FromSeconds(5)).Should().BeTrue();
     }
 
@@ -68,23 +70,17 @@ public sealed class CommitCoordinationTransactionInterceptorTests : IDisposable
         );
         var key = new object();
         using var first = signalSource.Attach(
-            new CommitCoordinatorBindings
-            {
-                Services = _services,
-                ProviderTransactionKey = key,
-            },
+            new CommitCoordinatorBindings { Services = _services, ProviderTransactionKey = key },
             CancellationToken.None
         );
 
         signalSource
-            .Invoking(x => x.Attach(
-                new CommitCoordinatorBindings
-                {
-                    Services = _services,
-                    ProviderTransactionKey = key,
-                },
-                CancellationToken.None
-            ))
+            .Invoking(x =>
+                x.Attach(
+                    new CommitCoordinatorBindings { Services = _services, ProviderTransactionKey = key },
+                    CancellationToken.None
+                )
+            )
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("An EF Core commit coordination scope is already attached for this provider transaction key.");

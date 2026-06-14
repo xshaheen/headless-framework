@@ -138,7 +138,12 @@ public sealed class IsTransactionalPropagationTests : TestBase
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .StoreMessageAsync(Arg.Any<string>(), Arg.Any<MediumMessage>(), Arg.Any<object?>(), Arg.Any<CancellationToken>())
+            .StoreMessageAsync(
+                Arg.Any<string>(),
+                Arg.Any<MediumMessage>(),
+                Arg.Any<object?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(call =>
             {
                 var content = ((MediumMessage)call[1]).Origin;

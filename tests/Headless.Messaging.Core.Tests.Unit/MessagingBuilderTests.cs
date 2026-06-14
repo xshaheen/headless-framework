@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.DistributedLocks;
 using Headless.CommitCoordination;
+using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -94,7 +94,8 @@ public sealed class MessagingBuilderTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<ICurrentCommitCoordinator>()
+        provider
+            .GetRequiredService<ICurrentCommitCoordinator>()
             .Should()
             .BeSameAs(provider.GetRequiredService<CommitScopeStack>());
     }

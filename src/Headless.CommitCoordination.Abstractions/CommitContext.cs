@@ -16,9 +16,7 @@ public sealed class CommitContext
     /// Initializes a new instance of the <see cref="CommitContext" /> class.
     /// </summary>
     public CommitContext()
-        : this(new Dictionary<Type, ICommitCapability>())
-    {
-    }
+        : this(new Dictionary<Type, ICommitCapability>()) { }
 
     internal CommitContext(IReadOnlyDictionary<Type, ICommitCapability> capabilities)
     {

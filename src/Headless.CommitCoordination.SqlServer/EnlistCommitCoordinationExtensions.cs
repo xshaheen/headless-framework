@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Checks;
+using Headless.CommitCoordination;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 

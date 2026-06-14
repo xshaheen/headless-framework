@@ -29,7 +29,8 @@ public sealed class SqlServerCommitCoordinationOptions
     public TimeSpan DiagnosticProbeTimeout { get; set; } = TimeSpan.FromSeconds(5);
 }
 
-internal sealed class SqlServerCommitCoordinationOptionsValidator : AbstractValidator<SqlServerCommitCoordinationOptions>
+internal sealed class SqlServerCommitCoordinationOptionsValidator
+    : AbstractValidator<SqlServerCommitCoordinationOptions>
 {
     public SqlServerCommitCoordinationOptionsValidator()
     {

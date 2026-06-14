@@ -44,12 +44,14 @@ public sealed class SqlServerCommitDiagnosticObserverTests
 
         await using (scope)
         {
-            scope.Coordinator.OnCommit(async (_, _) =>
-            {
-                await gate.Task;
+            scope.Coordinator.OnCommit(
+                async (_, _) =>
+                {
+                    await gate.Task;
 
-                throw new OperationCanceledException();
-            });
+                    throw new OperationCanceledException();
+                }
+            );
 
             // Track a pending drain (the commit callback is parked on the gate).
             observer.OnNext(
@@ -104,7 +106,9 @@ public sealed class SqlServerCommitDiagnosticObserverTests
         var wait = observer.WaitForDrainsAsync(cts.Token);
         await cts.CancelAsync();
 
-        await wait.Invoking(async x => await x.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken))
+        await wait.Invoking(async x =>
+                await x.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+            )
             .Should()
             .ThrowAsync<OperationCanceledException>();
 

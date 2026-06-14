@@ -21,22 +21,20 @@ public sealed class PostgreSqlCommitSignalSourceTests
         var key = new object();
         using var provider = new ServiceCollection().BuildServiceProvider();
         var scope = source.Attach(
-            new CommitCoordinatorBindings
-            {
-                Services = provider,
-                ProviderTransactionKey = key,
-            },
+            new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
             CancellationToken.None
         );
 
         await using (scope)
         {
-            scope.Coordinator.OnCommit((_, _) =>
-            {
-                calls++;
+            scope.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    calls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             await source.SignalCommittedAsync(key, CancellationToken.None);
 
@@ -57,26 +55,22 @@ public sealed class PostgreSqlCommitSignalSourceTests
         var key = new object();
         using var provider = new ServiceCollection().BuildServiceProvider();
         using var first = source.Attach(
-            new CommitCoordinatorBindings
-            {
-                Services = provider,
-                ProviderTransactionKey = key,
-            },
+            new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
             CancellationToken.None
         );
 
         source
-            .Invoking(x => x.Attach(
-                new CommitCoordinatorBindings
-                {
-                    Services = provider,
-                    ProviderTransactionKey = key,
-                },
-                CancellationToken.None
-            ))
+            .Invoking(x =>
+                x.Attach(
+                    new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
+                    CancellationToken.None
+                )
+            )
             .Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("A PostgreSQL commit coordination scope is already attached for this provider transaction key.");
+            .WithMessage(
+                "A PostgreSQL commit coordination scope is already attached for this provider transaction key."
+            );
     }
 
     [Fact]
@@ -98,14 +92,16 @@ public sealed class PostgreSqlCommitSignalSourceTests
             CancellationToken.None
         );
 
-        scope.Coordinator.OnCommit((context, _) =>
-        {
-            // The drain resolves from the source's OWNED child scope, not the caller's — so disposing the caller's
-            // scope first must not strand the drain (mirrors the SqlServer owned-scope guarantee).
-            marker = context.Services.GetRequiredService<ScopedMarker>();
+        scope.Coordinator.OnCommit(
+            (context, _) =>
+            {
+                // The drain resolves from the source's OWNED child scope, not the caller's — so disposing the caller's
+                // scope first must not strand the drain (mirrors the SqlServer owned-scope guarantee).
+                marker = context.Services.GetRequiredService<ScopedMarker>();
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await callerScope.DisposeAsync();
         await source.SignalCommittedAsync(key, CancellationToken.None);

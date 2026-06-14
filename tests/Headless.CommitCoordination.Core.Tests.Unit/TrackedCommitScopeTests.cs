@@ -19,20 +19,22 @@ public sealed class TrackedCommitScopeTests
         var releaseDrain = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Exception? drainResolveFailure = null;
 
-        tracked.Coordinator.OnCommit(async (context, _) =>
-        {
-            drainEntered.SetResult();
-            await releaseDrain.Task;
+        tracked.Coordinator.OnCommit(
+            async (context, _) =>
+            {
+                drainEntered.SetResult();
+                await releaseDrain.Task;
 
-            try
-            {
-                context.Services.GetRequiredService<Marker>();
+                try
+                {
+                    context.Services.GetRequiredService<Marker>();
+                }
+                catch (Exception ex)
+                {
+                    drainResolveFailure = ex;
+                }
             }
-            catch (Exception ex)
-            {
-                drainResolveFailure = ex;
-            }
-        });
+        );
 
         var claimingSignal = tracked.SignalAsync(CommitOutcome.Committed, CancellationToken.None).AsTask();
         await drainEntered.Task;
@@ -60,23 +62,25 @@ public sealed class TrackedCommitScopeTests
         var drainFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Exception? drainResolveFailure = null;
 
-        tracked.Coordinator.OnRollback((context, _) =>
-        {
-            try
+        tracked.Coordinator.OnRollback(
+            (context, _) =>
             {
-                context.Services.GetRequiredService<Marker>();
-            }
-            catch (Exception ex)
-            {
-                drainResolveFailure = ex;
-            }
-            finally
-            {
-                drainFinished.SetResult();
-            }
+                try
+                {
+                    context.Services.GetRequiredService<Marker>();
+                }
+                catch (Exception ex)
+                {
+                    drainResolveFailure = ex;
+                }
+                finally
+                {
+                    drainFinished.SetResult();
+                }
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
 #pragma warning disable VSTHRD103 // the synchronous Dispose path (offloaded drain) is the behavior under test
         tracked.Dispose();
@@ -100,11 +104,13 @@ public sealed class TrackedCommitScopeTests
         var drainEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseDrain = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        tracked.Coordinator.OnCommit(async (_, _) =>
-        {
-            drainEntered.SetResult();
-            await releaseDrain.Task;
-        });
+        tracked.Coordinator.OnCommit(
+            async (_, _) =>
+            {
+                drainEntered.SetResult();
+                await releaseDrain.Task;
+            }
+        );
 
         var claimingSignal = tracked.SignalAsync(CommitOutcome.Committed, CancellationToken.None).AsTask();
         await drainEntered.Task;

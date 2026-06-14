@@ -140,7 +140,8 @@ public sealed class SqlServerCoordinatedTransactionFixture(SqlServerCommitCoordi
                 throw new InvalidOperationException("The helper did not attach IRelationalCommitContext.");
             }
 
-            var transaction = (SqlTransaction?)relational.Transaction
+            var transaction =
+                (SqlTransaction?)relational.Transaction
                 ?? throw new InvalidOperationException("The relational capability exposed no live transaction.");
 
             await using var command = new SqlCommand(

@@ -41,10 +41,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         // The diagnostic only routes after AllListeners.Subscribe runs. Start the hosted service in setup so the
         // subscription is live before the first commit; AllListeners.Subscribe replays the already-registered
         // SqlClientDiagnosticListener synchronously, so the observer is wired the moment StartAsync returns.
-        _diagnostic = _services
-            .GetServices<IHostedService>()
-            .OfType<SqlServerCommitDiagnosticHostedService>()
-            .Single();
+        _diagnostic = _services.GetServices<IHostedService>().OfType<SqlServerCommitDiagnosticHostedService>().Single();
 
         await _diagnostic.StartAsync(TestContext.Current.CancellationToken);
     }
@@ -74,15 +71,17 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
 
         await using (scope)
         {
-            scope.Coordinator.OnCommit((_, _) =>
-            {
-                // A single commit can surface both WriteTransactionCommitAfter and WriteConnectionCloseBefore; the
-                // coordinator's first-wins (Active->terminal CompareExchange) collapses them to a single drain.
-                Interlocked.Increment(ref commitCount);
-                drained.TrySetResult();
+            scope.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    // A single commit can surface both WriteTransactionCommitAfter and WriteConnectionCloseBefore; the
+                    // coordinator's first-wins (Active->terminal CompareExchange) collapses them to a single drain.
+                    Interlocked.Increment(ref commitCount);
+                    drained.TrySetResult();
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             await _DoTrivialWriteAsync(connection, tx, ct);
 
@@ -115,20 +114,24 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
 
         await using (scope)
         {
-            scope.Coordinator.OnCommit((_, _) =>
-            {
-                Interlocked.Increment(ref commitCount);
+            scope.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    Interlocked.Increment(ref commitCount);
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             // Cannot await a commit callback that must never fire; await the rollback edge deterministically instead.
-            scope.Coordinator.OnRollback((_, _) =>
-            {
-                rolledBack.TrySetResult();
+            scope.Coordinator.OnRollback(
+                (_, _) =>
+                {
+                    rolledBack.TrySetResult();
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             await _DoTrivialWriteAsync(connection, tx, ct);
 
@@ -159,15 +162,19 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
 
         await using (scope)
         {
-            scope.Coordinator.OnCommit((context, _) =>
-            {
-                // CommitContext.Services must resolve a scoped service during the drain.
-                resolvedProbe = context.Services.GetRequiredService<ScopedProbe>() is not null;
-                relationalContextSeen = context.TryGetCapability<IRelationalCommitContext>(out IRelationalCommitContext? _);
-                drained.TrySetResult();
+            scope.Coordinator.OnCommit(
+                (context, _) =>
+                {
+                    // CommitContext.Services must resolve a scoped service during the drain.
+                    resolvedProbe = context.Services.GetRequiredService<ScopedProbe>() is not null;
+                    relationalContextSeen = context.TryGetCapability<IRelationalCommitContext>(
+                        out IRelationalCommitContext? _
+                    );
+                    drained.TrySetResult();
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             await _DoTrivialWriteAsync(connection, tx, ct);
 
@@ -202,13 +209,15 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
 
             await using (scope1)
             {
-                scope1.Coordinator.OnCommit((_, _) =>
-                {
-                    Interlocked.Increment(ref firstCount);
-                    firstDrained.TrySetResult();
+                scope1.Coordinator.OnCommit(
+                    (_, _) =>
+                    {
+                        Interlocked.Increment(ref firstCount);
+                        firstDrained.TrySetResult();
 
-                    return ValueTask.CompletedTask;
-                });
+                        return ValueTask.CompletedTask;
+                    }
+                );
 
                 await _WriteProbeAsync(connection, tx1, "#commit_probe_first", ct);
                 await tx1.CommitAsync(ct);
@@ -223,13 +232,15 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
 
             await using (scope2)
             {
-                scope2.Coordinator.OnCommit((_, _) =>
-                {
-                    Interlocked.Increment(ref secondCount);
-                    secondDrained.TrySetResult();
+                scope2.Coordinator.OnCommit(
+                    (_, _) =>
+                    {
+                        Interlocked.Increment(ref secondCount);
+                        secondDrained.TrySetResult();
 
-                    return ValueTask.CompletedTask;
-                });
+                        return ValueTask.CompletedTask;
+                    }
+                );
 
                 await _WriteProbeAsync(connection, tx2, "#commit_probe_second", ct);
                 await tx2.CommitAsync(ct);
@@ -237,8 +248,14 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
             }
         }
 
-        Volatile.Read(ref firstCount).Should().Be(1, "the first transaction's work drains exactly once on its own commit");
-        Volatile.Read(ref secondCount).Should().Be(1, "the second transaction's work drains exactly once on its own commit, never on the first");
+        Volatile
+            .Read(ref firstCount)
+            .Should()
+            .Be(1, "the first transaction's work drains exactly once on its own commit");
+        Volatile
+            .Read(ref secondCount)
+            .Should()
+            .Be(1, "the second transaction's work drains exactly once on its own commit, never on the first");
     }
 
     private static async Task _DoTrivialWriteAsync(SqlConnection connection, SqlTransaction tx, CancellationToken ct)
@@ -246,7 +263,12 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         await _WriteProbeAsync(connection, tx, "#commit_probe", ct);
     }
 
-    private static async Task _WriteProbeAsync(SqlConnection connection, SqlTransaction tx, string probe, CancellationToken ct)
+    private static async Task _WriteProbeAsync(
+        SqlConnection connection,
+        SqlTransaction tx,
+        string probe,
+        CancellationToken ct
+    )
     {
         // A real statement inside the tx so the commit/rollback is a genuine durable edge, not a no-op the provider
         // might elide. A session-scoped temp table is dropped automatically when the connection closes; distinct

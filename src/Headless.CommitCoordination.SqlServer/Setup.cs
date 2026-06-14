@@ -39,9 +39,7 @@ public static class SetupSqlServerCommitCoordination
             services.TryAddSingleton<SqlServerCommitDiagnosticProbeState>();
             services.TryAddSingleton<ISqlServerCommitDiagnosticProbe, SqlServerCommitDiagnosticProbe>();
             services.TryAddSingleton<SqlServerCommitSignalSource>();
-            services.TryAddSingleton<ICommitSignalSource>(sp =>
-                sp.GetRequiredService<SqlServerCommitSignalSource>()
-            );
+            services.TryAddSingleton<ICommitSignalSource>(sp => sp.GetRequiredService<SqlServerCommitSignalSource>());
             services.TryAddSingleton<SqlServerCommitDiagnosticObserver>();
             services.TryAddSingleton<SqlServerCommitDiagnosticListenerObserver>();
 

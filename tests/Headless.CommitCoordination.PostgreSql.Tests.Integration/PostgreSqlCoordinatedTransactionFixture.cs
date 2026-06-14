@@ -98,7 +98,8 @@ public sealed class PostgreSqlCoordinatedTransactionFixture
                 throw new InvalidOperationException("The helper did not attach IRelationalCommitContext.");
             }
 
-            var transaction = (NpgsqlTransaction?)relational.Transaction
+            var transaction =
+                (NpgsqlTransaction?)relational.Transaction
                 ?? throw new InvalidOperationException("The relational capability exposed no live transaction.");
 
             await using var command = new NpgsqlCommand(

@@ -23,4 +23,3 @@ public enum SqlServerCommitDiagnosticProbeMode
     /// </summary>
     Strict = 2,
 }
-

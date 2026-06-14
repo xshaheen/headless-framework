@@ -78,9 +78,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
 
                 break;
             }
-            case SqlErrorCommitTransaction
-            or SqlAfterRollbackTransaction
-            or SqlBeforeCloseConnection:
+            case SqlErrorCommitTransaction or SqlAfterRollbackTransaction or SqlBeforeCloseConnection:
             {
                 if (!TryGetClientConnectionId(evt, out var key))
                 {
@@ -96,11 +94,11 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
 
     internal static bool IsSupportedEvent(string eventName)
     {
-        return eventName is
-            SqlAfterCommitTransaction
-            or SqlErrorCommitTransaction
-            or SqlAfterRollbackTransaction
-            or SqlBeforeCloseConnection;
+        return eventName
+            is SqlAfterCommitTransaction
+                or SqlErrorCommitTransaction
+                or SqlAfterRollbackTransaction
+                or SqlBeforeCloseConnection;
     }
 
     internal async Task WaitForDrainsAsync(CancellationToken cancellationToken)
@@ -214,17 +212,11 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
 
     private sealed class ConcurrentPropertyCache
     {
-        private readonly ConcurrentDictionary<string, Func<object, object?>?> _properties = new(
-            StringComparer.Ordinal
-        );
+        private readonly ConcurrentDictionary<string, Func<object, object?>?> _properties = new(StringComparer.Ordinal);
 
         public Func<object, object?>? GetOrAdd(string propertyName, Type type)
         {
-            return _properties.GetOrAdd(
-                propertyName,
-                static (name, t) => _CompileGetter(t, name),
-                type
-            );
+            return _properties.GetOrAdd(propertyName, static (name, t) => _CompileGetter(t, name), type);
         }
 
         private static Func<object, object?>? _CompileGetter(Type type, string propertyName)

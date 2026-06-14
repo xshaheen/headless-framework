@@ -13,13 +13,15 @@ public sealed class CommitCoordinatorTests
         var coordinator = new CommitCoordinator();
         var calls = 0;
 
-        coordinator.OnCommit((context, _) =>
-        {
-            context.Outcome.Should().Be(CommitOutcome.Committed);
-            calls++;
+        coordinator.OnCommit(
+            (context, _) =>
+            {
+                context.Outcome.Should().Be(CommitOutcome.Committed);
+                calls++;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
         await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
@@ -35,19 +37,23 @@ public sealed class CommitCoordinatorTests
         var commitCalls = 0;
         var rollbackCalls = 0;
 
-        coordinator.OnCommit((_, _) =>
-        {
-            commitCalls++;
+        coordinator.OnCommit(
+            (_, _) =>
+            {
+                commitCalls++;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
-        coordinator.OnRollback((_, _) =>
-        {
-            rollbackCalls++;
+        coordinator.OnRollback(
+            (_, _) =>
+            {
+                rollbackCalls++;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await coordinator.SignalAsync(CommitOutcome.RolledBack, new EmptyServiceProvider());
 
@@ -63,12 +69,14 @@ public sealed class CommitCoordinatorTests
         var secondRan = false;
 
         coordinator.OnCommit((_, _) => throw new InvalidOperationException("first"));
-        coordinator.OnCommit((_, _) =>
-        {
-            secondRan = true;
+        coordinator.OnCommit(
+            (_, _) =>
+            {
+                secondRan = true;
 
-            throw new NotSupportedException("second");
-        });
+                throw new NotSupportedException("second");
+            }
+        );
 
         var act = () => coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider()).AsTask();
 
@@ -83,14 +91,16 @@ public sealed class CommitCoordinatorTests
         var coordinator = new CommitCoordinator();
         using var cts = new CancellationTokenSource();
 
-        coordinator.OnCommit(async (_, _) =>
-        {
-            // Cancelling a token from inside the drain must not abandon the drain or suppress the fault (D9): the
-            // drain takes no cancellation token, so it always runs to completion and the callback fault propagates.
-            await cts.CancelAsync();
+        coordinator.OnCommit(
+            async (_, _) =>
+            {
+                // Cancelling a token from inside the drain must not abandon the drain or suppress the fault (D9): the
+                // drain takes no cancellation token, so it always runs to completion and the callback fault propagates.
+                await cts.CancelAsync();
 
-            throw new InvalidOperationException("callback failed");
-        });
+                throw new InvalidOperationException("callback failed");
+            }
+        );
 
         var act = () => coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider()).AsTask();
 
@@ -118,14 +128,16 @@ public sealed class CommitCoordinatorTests
         var coordinator = new CommitCoordinator();
         var calls = 0;
 
-        using (coordinator.OnCommit((_, _) =>
-        {
-            calls++;
+        using (
+            coordinator.OnCommit(
+                (_, _) =>
+                {
+                    calls++;
 
-            return ValueTask.CompletedTask;
-        }))
-        {
-        }
+                    return ValueTask.CompletedTask;
+                }
+            )
+        ) { }
 
         await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
 
@@ -204,12 +216,14 @@ public sealed class CommitCoordinatorTests
 
                     try
                     {
-                        coordinator.OnCommit((_, _) =>
-                        {
-                            Interlocked.Increment(ref drained);
+                        coordinator.OnCommit(
+                            (_, _) =>
+                            {
+                                Interlocked.Increment(ref drained);
 
-                            return ValueTask.CompletedTask;
-                        });
+                                return ValueTask.CompletedTask;
+                            }
+                        );
 
                         Interlocked.Increment(ref accepted);
                     }

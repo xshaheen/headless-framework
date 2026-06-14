@@ -2,8 +2,8 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using Headless.CommitCoordination;
 using Headless.Checks;
+using Headless.CommitCoordination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -65,7 +65,8 @@ public sealed partial class SqlServerCommitSignalSource(
             // entry and a later transaction reuses the same key, this scope's disposal must not evict the successor.
             var trackedScope = new TrackedCommitScope(
                 scope,
-                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self)),
+                self =>
+                    _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self)),
                 ownedServices
             );
 
@@ -148,5 +149,4 @@ public sealed partial class SqlServerCommitSignalSource(
         Message = "A SQL Server commit coordination scope is already attached for provider transaction key {ProviderTransactionKey}."
     )]
     private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
-
 }

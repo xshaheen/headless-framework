@@ -15,8 +15,7 @@ public sealed class DurableWorkBufferTests
 
         var act = () => buffer.EnlistAsync("job-1", CancellationToken.None).AsTask();
 
-        await act
-            .Should()
+        await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("Durable commit work requires IRelationalCommitContext.");
     }

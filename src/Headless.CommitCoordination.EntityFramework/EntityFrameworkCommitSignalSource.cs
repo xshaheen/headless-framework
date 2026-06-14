@@ -2,8 +2,8 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using Headless.CommitCoordination;
 using Headless.Checks;
+using Headless.CommitCoordination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -50,7 +50,8 @@ public sealed partial class EntityFrameworkCommitSignalSource(
             // same DbTransaction key (improbable but cheap to guard) is never evicted by this scope's disposal.
             var trackedScope = new TrackedCommitScope(
                 scope,
-                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self)),
+                self =>
+                    _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self)),
                 ownedServices
             );
 

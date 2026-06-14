@@ -44,9 +44,7 @@ public abstract class CoordinatedTransactionConformanceTests<TFixture>(TFixture 
         );
 
         var winner = await Task.WhenAny(drained.Task, Task.Delay(_DrainTimeout, AbortToken));
-        winner
-            .Should()
-            .BeSameAs(drained.Task, "a committed coordinated transaction must drain buffered OnCommit work");
+        winner.Should().BeSameAs(drained.Task, "a committed coordinated transaction must drain buffered OnCommit work");
 
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(1, "the committed probe row must be durable");
     }
@@ -88,6 +86,8 @@ public abstract class CoordinatedTransactionConformanceTests<TFixture>(TFixture 
         thrown!.Message.Should().Be("conformance-rollback");
 
         (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0, "the rolled-back probe row must not be durable");
-        drained.Task.IsCompleted.Should().BeFalse("a rolled-back coordinated transaction must discard buffered OnCommit work");
+        drained
+            .Task.IsCompleted.Should()
+            .BeFalse("a rolled-back coordinated transaction must discard buffered OnCommit work");
     }
 }

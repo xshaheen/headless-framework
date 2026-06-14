@@ -10,7 +10,8 @@ namespace Headless.CommitCoordination.SqlServer;
 /// as it appears in <see cref="DiagnosticListener.AllListeners" />.
 /// </summary>
 internal sealed class SqlServerCommitDiagnosticListenerObserver(SqlServerCommitDiagnosticObserver observer)
-    : IObserver<DiagnosticListener>, IDisposable
+    : IObserver<DiagnosticListener>,
+        IDisposable
 {
     private readonly Lock _gate = new();
     private List<IDisposable> _subscriptions = [];

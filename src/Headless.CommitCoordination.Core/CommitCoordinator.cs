@@ -96,8 +96,9 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     {
         Argument.IsNotNull(factory);
 
-        return GetOrAdd<TBuffer, Func<ICommitCoordinator, TBuffer>>(factory, static (coordinator, create) =>
-            create(coordinator)
+        return GetOrAdd<TBuffer, Func<ICommitCoordinator, TBuffer>>(
+            factory,
+            static (coordinator, create) => create(coordinator)
         );
     }
 
@@ -189,9 +190,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     /// </summary>
     internal ValueTask SignalAsync(CommitOutcome outcome, IServiceProvider services)
     {
-        return TryClaimTerminal(outcome, out var claim)
-            ? DrainAsync(claim, services)
-            : ValueTask.CompletedTask;
+        return TryClaimTerminal(outcome, out var claim) ? DrainAsync(claim, services) : ValueTask.CompletedTask;
     }
 
     /// <summary>
@@ -224,13 +223,15 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
             return false;
         }
 
-        var terminalState = outcome == CommitOutcome.Committed
-            ? CommitCoordinatorState.Committed
-            : CommitCoordinatorState.RolledBack;
+        var terminalState =
+            outcome == CommitOutcome.Committed ? CommitCoordinatorState.Committed : CommitCoordinatorState.RolledBack;
 
         // The claim is the single state-transition authority: it moves Active -> terminal atomically so no other path
         // (not even the drain) writes _state. A drain fault therefore can never strand the coordinator mid-transition.
-        if (Interlocked.CompareExchange(ref _state, (int)terminalState, (int)CommitCoordinatorState.Active) != (int)CommitCoordinatorState.Active)
+        if (
+            Interlocked.CompareExchange(ref _state, (int)terminalState, (int)CommitCoordinatorState.Active)
+            != (int)CommitCoordinatorState.Active
+        )
         {
             // First terminal signal already won (D10): a second signal — e.g. EF TransactionCommitted racing the
             // SqlClient diagnostic, or a Dispose racing a Rollback — is an ignored no-op, surfaced so provider
@@ -354,7 +355,10 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         // First-wins via a single CAS, mirroring the root path's transition authority: two concurrent child signals
         // (e.g. a child commit racing a child rollback) cannot both write, so the child's terminal state — which
         // gates DisposePromotedRegistrations and _ThrowIfNotActive — is never torn by an interleaved read-modify-write.
-        if (Interlocked.CompareExchange(ref _state, (int)terminalState, (int)CommitCoordinatorState.Active) != (int)CommitCoordinatorState.Active)
+        if (
+            Interlocked.CompareExchange(ref _state, (int)terminalState, (int)CommitCoordinatorState.Active)
+            != (int)CommitCoordinatorState.Active
+        )
         {
             LogIgnoredRacingSignal(
                 _logger,
@@ -364,7 +368,9 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         }
     }
 
-    private static Dictionary<Type, ICommitCapability> _CreateCapabilityMap(IEnumerable<ICommitCapability>? capabilities)
+    private static Dictionary<Type, ICommitCapability> _CreateCapabilityMap(
+        IEnumerable<ICommitCapability>? capabilities
+    )
     {
         var map = new Dictionary<Type, ICommitCapability>();
 
@@ -392,10 +398,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         return map;
     }
 
-    private static async ValueTask _DisposeBuffersAsync(
-        List<ICommitWorkBuffer> buffers,
-        List<Exception> exceptions
-    )
+    private static async ValueTask _DisposeBuffersAsync(List<ICommitWorkBuffer> buffers, List<Exception> exceptions)
     {
         foreach (var buffer in buffers)
         {
@@ -466,10 +469,6 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         CommitOutcome signal
     );
 
-    [LoggerMessage(
-        EventId = 2,
-        Level = LogLevel.Error,
-        Message = "A commit coordination background drain faulted."
-    )]
+    [LoggerMessage(EventId = 2, Level = LogLevel.Error, Message = "A commit coordination background drain faulted.")]
     private static partial void LogBackgroundDrainFaulted(ILogger logger, Exception? exception);
 }

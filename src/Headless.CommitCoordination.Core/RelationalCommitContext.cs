@@ -8,10 +8,8 @@ namespace Headless.CommitCoordination;
 /// Default relational commit capability backed by provider-owned connection and transaction delegates.
 /// </summary>
 [PublicAPI]
-public sealed class RelationalCommitContext(
-    Func<DbConnection?> connection,
-    Func<DbTransaction?> transaction
-) : IRelationalCommitContext
+public sealed class RelationalCommitContext(Func<DbConnection?> connection, Func<DbTransaction?> transaction)
+    : IRelationalCommitContext
 {
     /// <inheritdoc />
     public DbConnection? Connection => connection();

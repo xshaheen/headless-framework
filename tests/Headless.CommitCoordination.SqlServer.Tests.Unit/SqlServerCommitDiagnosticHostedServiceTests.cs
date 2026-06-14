@@ -23,7 +23,10 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
         services.AddSqlServerCommitCoordination();
 
         await using var provider = services.BuildServiceProvider();
-        var hostedService = provider.GetServices<IHostedService>().OfType<SqlServerCommitDiagnosticHostedService>().Single();
+        var hostedService = provider
+            .GetServices<IHostedService>()
+            .OfType<SqlServerCommitDiagnosticHostedService>()
+            .Single();
 
         await hostedService.StartAsync(TestContext.Current.CancellationToken);
         await hostedService.StopAsync(TestContext.Current.CancellationToken);
@@ -42,10 +45,7 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
         var service = _CreateService(
             probe,
             state,
-            new SqlServerCommitCoordinationOptions
-            {
-                DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Disabled,
-            }
+            new SqlServerCommitCoordinationOptions { DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Disabled }
         );
 
         await service.StartAsync(TestContext.Current.CancellationToken);
@@ -84,10 +84,7 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
         var service = _CreateService(
             probe,
             state,
-            new SqlServerCommitCoordinationOptions
-            {
-                DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Strict,
-            }
+            new SqlServerCommitCoordinationOptions { DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Strict }
         );
 
         await service
@@ -142,8 +139,7 @@ public sealed class SqlServerCommitDiagnosticHostedServiceTests
         );
     }
 
-    private sealed class RecordingProbe(SqlServerCommitDiagnosticProbeResult result)
-        : ISqlServerCommitDiagnosticProbe
+    private sealed class RecordingProbe(SqlServerCommitDiagnosticProbeResult result) : ISqlServerCommitDiagnosticProbe
     {
         public int Calls { get; private set; }
 

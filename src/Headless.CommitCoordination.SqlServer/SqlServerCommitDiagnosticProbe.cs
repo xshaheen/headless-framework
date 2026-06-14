@@ -73,9 +73,8 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
                 }
             }
         }
-        catch (OperationCanceledException ex) when (
-            !cancellationToken.IsCancellationRequested && probeCts.IsCancellationRequested
-        )
+        catch (OperationCanceledException ex)
+            when (!cancellationToken.IsCancellationRequested && probeCts.IsCancellationRequested)
         {
             // Distinguish payload-shape drift from a genuinely absent event: if the commit-after event fired for the
             // probe transaction but ClientConnectionId could not be read from its payload, the SqlClient diagnostic
@@ -95,10 +94,7 @@ internal sealed class SqlServerCommitDiagnosticProbe(IOptions<SqlServerCommitCoo
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return SqlServerCommitDiagnosticProbeResult.Failure(
-                "SQL Server commit diagnostic self-probe failed.",
-                ex
-            );
+            return SqlServerCommitDiagnosticProbeResult.Failure("SQL Server commit diagnostic self-probe failed.", ex);
         }
         finally
         {

@@ -37,12 +37,14 @@ public sealed class CommitScopeFactoryTests
 
         await using (var child = factory.Begin(services))
         {
-            child.Coordinator.OnCommit((_, _) =>
-            {
-                calls++;
+            child.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    calls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             await child.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
         }
@@ -94,12 +96,14 @@ public sealed class CommitScopeFactoryTests
         var calls = 0;
 
         await using var parent = factory.Begin(services);
-        parent.Coordinator.OnCommit((_, _) =>
-        {
-            calls++;
+        parent.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                calls++;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await using (var child = factory.Begin(services))
         {
@@ -120,12 +124,14 @@ public sealed class CommitScopeFactoryTests
 
         await using (var scope = factory.Begin(services))
         {
-            scope.Coordinator.OnCommit((_, _) =>
-            {
-                calls++;
+            scope.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    calls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
         }
 
         calls.Should().Be(0);
@@ -141,12 +147,14 @@ public sealed class CommitScopeFactoryTests
 
         using (var scope = factory.Begin(services))
         {
-            scope.Coordinator.OnRollback((_, _) =>
-            {
-                calls++;
+            scope.Coordinator.OnRollback(
+                (_, _) =>
+                {
+                    calls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
         }
 
         SpinWait.SpinUntil(() => calls == 1, TimeSpan.FromSeconds(5)).Should().BeTrue();
@@ -166,18 +174,22 @@ public sealed class CommitScopeFactoryTests
             {
                 using var scope = factory.Begin(services);
 
-                scope.Coordinator.OnRollback(async (_, _) =>
-                {
-                    // Posts the continuation back to the captured SynchronizationContext; a sync-over-async drain
-                    // on the disposing thread would deadlock here unless the drain is offloaded.
-                    await Task.Yield();
-                    ran = true;
-                });
+                scope.Coordinator.OnRollback(
+                    async (_, _) =>
+                    {
+                        // Posts the continuation back to the captured SynchronizationContext; a sync-over-async drain
+                        // on the disposing thread would deadlock here unless the drain is offloaded.
+                        await Task.Yield();
+                        ran = true;
+                    }
+                );
             },
             TimeSpan.FromSeconds(10)
         );
 
-        completed.Should().BeTrue("sync Dispose must offload the rollback drain off the captured SynchronizationContext");
+        completed
+            .Should()
+            .BeTrue("sync Dispose must offload the rollback drain off the captured SynchronizationContext");
         SpinWait.SpinUntil(() => ran, TimeSpan.FromSeconds(5)).Should().BeTrue();
     }
 
@@ -192,17 +204,21 @@ public sealed class CommitScopeFactoryTests
         var rolledBack = false;
 
         var scope = factory.Begin(services);
-        scope.Coordinator.OnCommit(async (_, _) =>
-        {
-            await gate.Task;
-            committed = true;
-        });
-        scope.Coordinator.OnRollback((_, _) =>
-        {
-            rolledBack = true;
+        scope.Coordinator.OnCommit(
+            async (_, _) =>
+            {
+                await gate.Task;
+                committed = true;
+            }
+        );
+        scope.Coordinator.OnRollback(
+            (_, _) =>
+            {
+                rolledBack = true;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         // Claim the commit and start the drain; it blocks on the gate, so the drain is still in flight.
         var drain = scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
@@ -232,19 +248,23 @@ public sealed class CommitScopeFactoryTests
         var childRollbackRan = false;
 
         await using var parent = factory.Begin(services);
-        parent.Coordinator.OnRollback(async (_, _) =>
-        {
-            rootDrainStarted.SetResult();
-            await unblockRootDrain.Task;
-        });
+        parent.Coordinator.OnRollback(
+            async (_, _) =>
+            {
+                rootDrainStarted.SetResult();
+                await unblockRootDrain.Task;
+            }
+        );
 
         await using var child = factory.Begin(services);
-        child.Coordinator.OnRollback((_, _) =>
-        {
-            childRollbackRan = true;
+        child.Coordinator.OnRollback(
+            (_, _) =>
+            {
+                childRollbackRan = true;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         var drain = child.SignalAsync(CommitOutcome.RolledBack, CancellationToken.None);
         await rootDrainStarted.Task;
@@ -267,12 +287,14 @@ public sealed class CommitScopeFactoryTests
         var commits = 0;
 
         var scope = factory.Begin(services);
-        scope.Coordinator.OnCommit((_, _) =>
-        {
-            Interlocked.Increment(ref commits);
+        scope.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                Interlocked.Increment(ref commits);
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
         stack.Current.Should().NotBeNull("the ambient frame is owned by disposal, not by the signal");

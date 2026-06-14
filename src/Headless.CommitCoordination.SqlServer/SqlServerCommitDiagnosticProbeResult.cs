@@ -13,4 +13,3 @@ internal readonly record struct SqlServerCommitDiagnosticProbeResult(
     public static SqlServerCommitDiagnosticProbeResult Failure(string message, Exception? exception = null) =>
         new(false, message, exception);
 }
-

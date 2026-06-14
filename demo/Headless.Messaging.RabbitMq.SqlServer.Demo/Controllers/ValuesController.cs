@@ -32,7 +32,10 @@ public class ValuesController(IOutboxBus producer, IServiceProvider services) : 
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await producer.PublishAsync(new Person { Name = "Bar", Age = 42 }, new PublishOptions { MessageName = MessageName });
+        await producer.PublishAsync(
+            new Person { Name = "Bar", Age = 42 },
+            new PublishOptions { MessageName = MessageName }
+        );
 
         return Ok();
     }

@@ -33,4 +33,3 @@ public enum SqlServerCommitDiagnosticProbeStatus
     /// </summary>
     Failed = 4,
 }
-

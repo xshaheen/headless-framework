@@ -15,7 +15,11 @@ internal sealed class TrackedCommitScope : ICommitScope
     private int _signalStarted;
     private int _ownedServicesDisposed;
 
-    internal TrackedCommitScope(ICommitScope inner, Action<ICommitScope> detach, AsyncServiceScope? ownedServices = null)
+    internal TrackedCommitScope(
+        ICommitScope inner,
+        Action<ICommitScope> detach,
+        AsyncServiceScope? ownedServices = null
+    )
     {
         _inner = inner;
         _detach = detach;

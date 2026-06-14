@@ -6,4 +6,3 @@ internal interface ISqlServerCommitDiagnosticProbe
 {
     ValueTask<SqlServerCommitDiagnosticProbeResult> ProbeAsync(CancellationToken cancellationToken);
 }
-

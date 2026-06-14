@@ -2,11 +2,8 @@
 
 namespace Headless.CommitCoordination;
 
-internal sealed class CommitScope(
-    CommitCoordinator coordinator,
-    IServiceProvider services,
-    IDisposable ambientHandle
-) : ICommitScope
+internal sealed class CommitScope(CommitCoordinator coordinator, IServiceProvider services, IDisposable ambientHandle)
+    : ICommitScope
 {
     private int _signaled;
     private int _disposed;

@@ -56,9 +56,7 @@ public sealed class CommitCoordinationInterceptorWiringTests
 
         drained
             .Should()
-            .BeTrue(
-                "AddHeadlessDbContext must wire DI-registered interceptors so the commit edge is observed"
-            );
+            .BeTrue("AddHeadlessDbContext must wire DI-registered interceptors so the commit edge is observed");
         (await harness.CountRowsAsync()).Should().Be(1);
     }
 
@@ -155,8 +153,10 @@ public sealed class CommitCoordinationInterceptorWiringTests
     }
 }
 
-public sealed class WiringTestDbContext(HeadlessDbContextServices services, DbContextOptions<WiringTestDbContext> options)
-    : HeadlessDbContext(services, options)
+public sealed class WiringTestDbContext(
+    HeadlessDbContextServices services,
+    DbContextOptions<WiringTestDbContext> options
+) : HeadlessDbContext(services, options)
 {
     public required DbSet<WiringRow> Rows { get; set; }
 

@@ -22,9 +22,7 @@ public static class SetupPostgreSqlCommitCoordination
         {
             services.AddCommitCoordination();
             services.TryAddSingleton<PostgreSqlCommitSignalSource>();
-            services.TryAddSingleton<ICommitSignalSource>(sp =>
-                sp.GetRequiredService<PostgreSqlCommitSignalSource>()
-            );
+            services.TryAddSingleton<ICommitSignalSource>(sp => sp.GetRequiredService<PostgreSqlCommitSignalSource>());
 
             return services;
         }

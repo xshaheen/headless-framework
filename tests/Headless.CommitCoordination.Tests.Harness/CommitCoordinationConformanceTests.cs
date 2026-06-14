@@ -20,13 +20,15 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
         await using var scope = await fixture.BeginScopeAsync(AbortToken);
         var calls = 0;
 
-        scope.Coordinator.OnCommit((context, _) =>
-        {
-            context.Outcome.Should().Be(CommitOutcome.Committed);
-            calls++;
+        scope.Coordinator.OnCommit(
+            (context, _) =>
+            {
+                context.Outcome.Should().Be(CommitOutcome.Committed);
+                calls++;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await scope.SignalAsync(CommitOutcome.Committed, AbortToken);
         await scope.SignalAsync(CommitOutcome.Committed, AbortToken);
@@ -39,12 +41,14 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
         await using var scope = await fixture.BeginScopeAsync(AbortToken);
         var calls = 0;
 
-        scope.Coordinator.OnCommit((_, _) =>
-        {
-            calls++;
+        scope.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                calls++;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await scope.SignalAsync(CommitOutcome.RolledBack, AbortToken);
 
@@ -72,12 +76,14 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
         await using (var child = factory.Begin(fixture.Services))
         {
-            child.Coordinator.OnCommit((_, _) =>
-            {
-                calls++;
+            child.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    calls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             // Child commit signal only marks the child; the root drives the actual drain.
             await child.SignalAsync(CommitOutcome.Committed, AbortToken);
@@ -101,21 +107,25 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
         var rootCalls = 0;
         var childCalls = 0;
 
-        root.Coordinator.OnCommit((_, _) =>
-        {
-            rootCalls++;
+        root.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                rootCalls++;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await using (var child = factory.Begin(fixture.Services))
         {
-            child.Coordinator.OnCommit((_, _) =>
-            {
-                childCalls++;
+            child.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    childCalls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
 
             await child.SignalAsync(CommitOutcome.RolledBack, AbortToken);
         }
@@ -134,12 +144,14 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
         await using (var child = factory.Begin(fixture.Services))
         {
-            child.Coordinator.OnCommit((_, _) =>
-            {
-                calls++;
+            child.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    calls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
         }
 
         await root.SignalAsync(CommitOutcome.RolledBack, AbortToken);
@@ -176,13 +188,15 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
         CancellationToken? observedToken = null;
 
         scope.Coordinator.OnCommit((_, _) => throw new InvalidOperationException("boom"));
-        scope.Coordinator.OnCommit((_, token) =>
-        {
-            secondRan = true;
-            observedToken = token;
+        scope.Coordinator.OnCommit(
+            (_, token) =>
+            {
+                secondRan = true;
+                observedToken = token;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         var act = () => scope.SignalAsync(CommitOutcome.Committed, AbortToken).AsTask();
 
@@ -202,12 +216,14 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
         await using (var scope = factory.Begin(fixture.Services))
         {
-            scope.Coordinator.OnCommit((_, _) =>
-            {
-                calls++;
+            scope.Coordinator.OnCommit(
+                (_, _) =>
+                {
+                    calls++;
 
-                return ValueTask.CompletedTask;
-            });
+                    return ValueTask.CompletedTask;
+                }
+            );
         }
 
         calls.Should().Be(0);

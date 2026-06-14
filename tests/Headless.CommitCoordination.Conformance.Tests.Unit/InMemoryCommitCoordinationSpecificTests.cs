@@ -31,12 +31,14 @@ public sealed class InMemoryCommitCoordinationSpecificTests
         await using var root = factory.Begin(_Services);
         var rootCalls = 0;
 
-        root.Coordinator.OnCommit((_, _) =>
-        {
-            rootCalls++;
+        root.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                rootCalls++;
 
-            return ValueTask.CompletedTask;
-        });
+                return ValueTask.CompletedTask;
+            }
+        );
 
         await using (var child = factory.Begin(_Services))
         {
@@ -84,13 +86,14 @@ public sealed class InMemoryCommitCoordinationSpecificTests
     public async Task should_throw_at_enlist_when_durable_work_lacks_relational_capability_and_policy_is_throw()
     {
         var coordinator = new CommitCoordinator();
-        var durable = coordinator.GetOrAdd(c =>
-            new RecordingDurableWorkBuffer(c, DurableWorkProviderMismatchPolicy.Throw));
+        var durable = coordinator.GetOrAdd(c => new RecordingDurableWorkBuffer(
+            c,
+            DurableWorkProviderMismatchPolicy.Throw
+        ));
 
         var act = () => durable.EnlistAsync("row-1", CancellationToken.None).AsTask();
 
-        await act
-            .Should()
+        await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("Durable commit work requires IRelationalCommitContext.");
     }
@@ -99,8 +102,10 @@ public sealed class InMemoryCommitCoordinationSpecificTests
     public async Task should_tolerate_missing_relational_capability_when_durable_policy_is_warn()
     {
         var coordinator = new CommitCoordinator();
-        var durable = coordinator.GetOrAdd(c =>
-            new RecordingDurableWorkBuffer(c, DurableWorkProviderMismatchPolicy.Warn));
+        var durable = coordinator.GetOrAdd(c => new RecordingDurableWorkBuffer(
+            c,
+            DurableWorkProviderMismatchPolicy.Warn
+        ));
 
         await durable.EnlistAsync("row-1", CancellationToken.None);
 
@@ -125,12 +130,14 @@ public sealed class InMemoryCommitCoordinationSpecificTests
 
                 await using var scope = factory.Begin(_Services);
 
-                scope.Coordinator.OnCommit(async (_, ct) =>
-                {
-                    // Force a real continuation back onto the captured context.
-                    await Task.Yield();
-                    await Task.Delay(1, ct);
-                });
+                scope.Coordinator.OnCommit(
+                    async (_, ct) =>
+                    {
+                        // Force a real continuation back onto the captured context.
+                        await Task.Yield();
+                        await Task.Delay(1, ct);
+                    }
+                );
 
                 await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
                 completed = true;

@@ -32,7 +32,10 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await producer.EnqueueAsync(new KafkaMessage(DateTime.UtcNow), new EnqueueOptions { MessageName = MessageName });
+        await producer.EnqueueAsync(
+            new KafkaMessage(DateTime.UtcNow),
+            new EnqueueOptions { MessageName = MessageName }
+        );
 
         return Ok();
     }
@@ -76,7 +79,11 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
                 )
             );
 
-            await producer.EnqueueAsync(new KafkaMessage(DateTime.UtcNow), new EnqueueOptions { MessageName = MessageName }, ct);
+            await producer.EnqueueAsync(
+                new KafkaMessage(DateTime.UtcNow),
+                new EnqueueOptions { MessageName = MessageName },
+                ct
+            );
 
             await transaction.CommitAsync(ct);
             await scope.SignalAsync(CommitOutcome.Committed, ct); // REQUIRED on PostgreSQL (inline signal source)
@@ -100,7 +107,11 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
                 ((AppDbContext)ctx).Persons.Add(person);
                 await ctx.SaveChangesAsync(ct);
 
-                await producer.EnqueueAsync(new KafkaMessage(DateTime.UtcNow), new EnqueueOptions { MessageName = MessageName }, ct);
+                await producer.EnqueueAsync(
+                    new KafkaMessage(DateTime.UtcNow),
+                    new EnqueueOptions { MessageName = MessageName },
+                    ct
+                );
             },
             services,
             cancellationToken: HttpContext.RequestAborted
@@ -115,7 +126,11 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     [Route("~/coordinated/rollback")]
     public async Task<IActionResult> CoordinatedRollback([FromServices] AppDbContext dbContext)
     {
-        var person = new Person { Name = $"rollback-{Random.Shared.Next(1000, 9999)}", Age = Random.Shared.Next(10, 99) };
+        var person = new Person
+        {
+            Name = $"rollback-{Random.Shared.Next(1000, 9999)}",
+            Age = Random.Shared.Next(10, 99),
+        };
 
         try
         {
@@ -125,7 +140,11 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
                     ((AppDbContext)ctx).Persons.Add(person);
                     await ctx.SaveChangesAsync(ct);
 
-                    await producer.EnqueueAsync(new KafkaMessage(DateTime.UtcNow), new EnqueueOptions { MessageName = MessageName }, ct);
+                    await producer.EnqueueAsync(
+                        new KafkaMessage(DateTime.UtcNow),
+                        new EnqueueOptions { MessageName = MessageName },
+                        ct
+                    );
 
                     throw new InvalidOperationException("Simulated failure after the buffered enqueue.");
                 },
@@ -174,7 +193,9 @@ public sealed class KafkaMessageConsumer : IConsume<KafkaMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<KafkaMessage> context, CancellationToken cancellationToken)
     {
-        Console.WriteLine($@"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}");
+        Console.WriteLine(
+            $@"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}"
+        );
         return ValueTask.CompletedTask;
     }
 }

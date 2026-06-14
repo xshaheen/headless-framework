@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Headless.Checks;
+using Headless.CommitCoordination;
 
 namespace Headless.CommitCoordination.InMemory;
 

@@ -178,9 +178,7 @@ public static class CoordinatedTransactionExtensions
 
                     try
                     {
-                        await scope
-                            .SignalAsync(CommitOutcome.Committed, CancellationToken.None)
-                            .ConfigureAwait(false);
+                        await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {

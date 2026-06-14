@@ -28,8 +28,7 @@ public sealed class SqlServerCommitDiagnosticProbeState
 
     internal void MarkSkipped(string message) => _Set(SqlServerCommitDiagnosticProbeStatus.Skipped, message, null);
 
-    internal void MarkSucceeded(string message) =>
-        _Set(SqlServerCommitDiagnosticProbeStatus.Succeeded, message, null);
+    internal void MarkSucceeded(string message) => _Set(SqlServerCommitDiagnosticProbeStatus.Succeeded, message, null);
 
     internal void MarkDegraded(string message, Exception? exception = null) =>
         _Set(SqlServerCommitDiagnosticProbeStatus.Degraded, message, exception);
@@ -47,4 +46,3 @@ public sealed class SqlServerCommitDiagnosticProbeState
         }
     }
 }
-

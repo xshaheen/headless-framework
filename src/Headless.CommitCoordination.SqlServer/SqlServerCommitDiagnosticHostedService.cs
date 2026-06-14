@@ -126,20 +126,12 @@ internal sealed partial class SqlServerCommitDiagnosticHostedService : IHostedSe
         Level = LogLevel.Warning,
         Message = "SQL Server commit coordination diagnostic self-probe is degraded: {Message}"
     )]
-    private static partial void LogDiagnosticProbeDegraded(
-        ILogger logger,
-        Exception? exception,
-        string message
-    );
+    private static partial void LogDiagnosticProbeDegraded(ILogger logger, Exception? exception, string message);
 
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Error,
         Message = "SQL Server commit coordination diagnostic self-probe failed in strict mode: {Message}"
     )]
-    private static partial void LogDiagnosticProbeFailedStrict(
-        ILogger logger,
-        Exception? exception,
-        string message
-    );
+    private static partial void LogDiagnosticProbeFailedStrict(ILogger logger, Exception? exception, string message);
 }
