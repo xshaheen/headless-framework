@@ -272,7 +272,7 @@ Provides EF Core commit coordination registration points.
 
 - `EntityFrameworkCommitSignalSource`.
 - DI extension `AddEntityFrameworkCommitCoordination()`.
-- `DbContext.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call resilient coordinated transaction (plain `DbContext`; pass the request scope). `HeadlessDbContext` has a scope-free overload in `Headless.Orm.EntityFramework`.
+- `DbContext.ExecuteCoordinatedTransactionAsync(operation, services, …)` — single-call resilient coordinated transaction (plain `DbContext`; pass the request scope). `HeadlessDbContext` and `HeadlessIdentityDbContext` (any `IHeadlessDbContext`) have a scope-free overload in `Headless.Orm.EntityFramework`.
 - Auto-attach of DI-registered interceptors to a consumer's own `DbContext` options via `IDbContextOptionsConfiguration<TContext>` (EF Core 9+). The public helper `services.AddDiRegisteredInterceptorsConfiguration<TContext>()` (in `Headless.Orm.EntityFramework`, namespace `Headless.EntityFramework`) registers a configuration that runs against every `DbContext<TContext>` options build — including a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`. `options.AddDiRegisteredInterceptors(sp)` remains the explicit per-options-action form.
 - Startup gate `CommitInterceptorStartupGate<TContext>` with `CommitInterceptorProbeMode` (`Disabled` / `Warn` / `Strict`, default `Warn`) configured through `CommitInterceptorProbeOptions`.
 
