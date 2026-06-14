@@ -237,6 +237,15 @@ The only deltas from shipping code: `DiagnosticProbeMode` becomes `HeadlessValid
 
 > The snippet above is only the *run path*. A real Tier-2 gate that opens connections also needs the teardown the shipping SqlServer service has — `StopAsync`/`DisposeAsync` (mirrored by a synchronous `Dispose`) that drain in-flight work, using `CancellationToken.None` on the disposal path so a cancelled host shutdown still flushes. Don't copy just the probe body.
 
+### Tier-2 exception — a correctness-adjacent gate stays `Warn` in all envs (real, `CommitInterceptorStartupGate.cs`)
+
+`CommitInterceptorStartupGate<TContext>` opens a real transaction at boot (an empty commit through the context's execution strategy), so by the I/O test it is **Tier-2**. Yet it deliberately defaults to a flat `Warn` in **all** environments — *not* the Tier-2 `Off`-in-prod default above — and it is correct to do so. Two properties separate it from the SqlServer diagnostic:
+
+- **What it verifies has production value.** The SqlServer diagnostic checks a *library-compatibility regression* (SqlClient still emitting the out-of-band payloads), a dev/CI concern with no per-boot prod relevance → `Off` in prod. This gate checks that the **transactional outbox is actually wired** for the consumer's `DbContext`; a mis-wire in production silently drops publish/commit atomicity. That is exactly a prod-relevant signal, so suppressing it in prod would hide the failure where it matters most.
+- **`Warn` carries no rollout hazard.** The "transient-blip aborts the rolling deploy" hazard that drives Tier-2 to `Off`-in-prod only exists under `Strict`. This gate's default is `Warn` (log + continue) and its probe treats any infra failure — unreachable DB, retrying-strategy rejection, unresolvable context — as *inconclusive* and lets the host start. The only residual prod cost is one empty-commit round-trip at boot, which is negligible.
+
+So the tier taxonomy classifies by *cost/IO*, but the env-default is ultimately a function of **whether the check is correctness-adjacent**. Tier-2 gates whose signal has prod value (outbox atomicity here) may legitimately run `Warn`-everywhere; reserve `Off`-in-prod for purely dev/CI diagnostics. Do not "correct" this gate to `Off`-in-prod to match the generic Tier-2 rule.
+
 ## Related
 
 - [`best-practices/storage-initializer-lifecycle-correctness.md`](../best-practices/storage-initializer-lifecycle-correctness.md) — concrete Tier-1 correctness-gate instances (the EF `*ValidationStartupGate` files) and the fail-closed-on-misconfig rationale. **Primary sibling.**
