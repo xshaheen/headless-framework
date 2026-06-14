@@ -94,5 +94,25 @@ public static class SetupEntityFrameworkCommitCoordination
 
             return services;
         }
+
+        /// <summary>
+        /// Wires the full transactional-outbox stack for <paramref name="dbContextType"/> in one call: the EF commit
+        /// signal source (<see cref="AddEntityFrameworkCommitCoordination"/>), the interceptor-attach options
+        /// configuration (<see cref="AddCommitCoordinationDbContextConfiguration"/>), and the startup self-probe gate
+        /// (<see cref="AddCommitInterceptorStartupGate"/>). Callers own the enable/opt-out policy (EF-context vs
+        /// raw-ADO path, consumer opt-out) and call this only once that policy resolves to "wire it".
+        /// </summary>
+        /// <param name="dbContextType">The runtime <see cref="DbContext"/> type to wire.</param>
+        /// <returns>The service collection.</returns>
+        public IServiceCollection AddCommitCoordinationWithStartupGate(Type dbContextType)
+        {
+            Argument.IsNotNull(dbContextType);
+
+            services.AddEntityFrameworkCommitCoordination();
+            services.AddCommitCoordinationDbContextConfiguration(dbContextType);
+            services.AddCommitInterceptorStartupGate(dbContextType);
+
+            return services;
+        }
     }
 }

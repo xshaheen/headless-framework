@@ -106,12 +106,9 @@ public static class SetupSqlServerMessaging
                 return;
             }
 
-            services.AddEntityFrameworkCommitCoordination();
-            services.AddCommitCoordinationDbContextConfiguration(dbContextType);
-
-            // Startup self-probe: fail loud (Warn by default, Strict opt-in) if the interceptor is enabled but not
-            // firing for this DbContext — turning the silent "outbox enabled but mis-wired" footgun into a boot signal.
-            services.AddCommitInterceptorStartupGate(dbContextType);
+            // Wire commit coordination + the interceptor-attach config + the startup self-probe gate (which fails
+            // loud — Warn by default, Strict opt-in — if the interceptor is enabled but not firing for this context).
+            services.AddCommitCoordinationWithStartupGate(dbContextType);
         }
 
         private Type? _ResolveDbContextType()

@@ -50,41 +50,61 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
 
         bool committedObserved;
 
-        await using var scope = serviceProvider.CreateAsyncScope();
-        var context = scope.ServiceProvider.GetRequiredService<TContext>();
-
         try
         {
-            await using var transaction = await context
-                .Database.BeginTransactionAsync(cancellationToken)
-                .ConfigureAwait(false);
+            await using var scope = serviceProvider.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<TContext>();
 
-            var observed = false;
-
-            // Enlist synchronously in this frame so the ambient coordinator flows to the OnCommit registration.
-            using (var commitScope = context.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider))
-            {
-                commitScope.Coordinator.OnCommit(
-                    (_, _) =>
+            // Run the probe through the context's execution strategy: a retrying strategy (EnableRetryOnFailure)
+            // rejects a user-initiated BeginTransaction unless the whole unit runs through the strategy. Resolving
+            // the context inside the try also keeps an unresolvable context (e.g. factory-only registration) on the
+            // inconclusive path below instead of aborting host startup.
+            committedObserved = await context
+                .Database.CreateExecutionStrategy()
+                .ExecuteAsync(
+                    async ct =>
                     {
-                        observed = true;
-                        return ValueTask.CompletedTask;
-                    }
-                );
+                        await using var transaction = await context
+                            .Database.BeginTransactionAsync(ct)
+                            .ConfigureAwait(false);
 
-                // Empty transaction: commits no rows. If the interceptor is attached it observes this commit edge and
-                // signals the scope committed (draining the observer); if not, the dispose below drains as rollback.
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
+                        var observed = false;
 
-            committedObserved = observed;
+                        // Enlist synchronously in this frame so the ambient coordinator flows to the commit edge.
+                        using (
+                            var commitScope = context.Database.EnlistCommitCoordination(
+                                transaction,
+                                scope.ServiceProvider
+                            )
+                        )
+                        {
+                            commitScope.Coordinator.OnCommit(
+                                (_, _) =>
+                                {
+                                    observed = true;
+                                    return ValueTask.CompletedTask;
+                                }
+                            );
+
+                            // Empty transaction: commits no rows. If the interceptor is attached it observes this
+                            // commit edge and signals the scope committed (draining the observer); if not, the
+                            // dispose below drains as rollback and the observer never runs.
+                            await transaction.CommitAsync(ct).ConfigureAwait(false);
+                        }
+
+                        return observed;
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Inconclusive — the database was unreachable, a retrying execution strategy rejected the
-            // user-initiated transaction, or the probe transaction could not otherwise run. None of these is the
-            // mis-wire signal (that is carried by committedObserved == false, evaluated below and surfaced per
-            // mode), so the host is allowed to start. Cancellation propagates so cooperative shutdown is honored.
+            // Inconclusive — the context could not be resolved (e.g. factory-only registration), the database was
+            // unreachable, a retrying execution strategy still could not run the probe, or the probe transaction
+            // could not otherwise complete. None of these is the mis-wire signal (carried by
+            // committedObserved == false, evaluated below and surfaced per mode), so the host is allowed to start.
+            // Cancellation propagates so cooperative shutdown is honored.
             LogProbeInconclusive(logger, typeof(TContext).FullName, ex);
             return;
         }
