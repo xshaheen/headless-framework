@@ -197,6 +197,134 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(42);
     }
 
+    [Fact]
+    public async Task should_rethrow_l2_read_exception_on_direct_get_when_enabled()
+    {
+        // given
+        var timeProvider = TimeProvider.System;
+        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new GatedRemoteCache(timeProvider) { ReadFault = new InvalidOperationException("l2 read down") };
+        var cache = _CreateCache(
+            l1,
+            l2,
+            new HybridCacheOptions { ReThrowDistributedCacheExceptions = true },
+            timeProvider
+        );
+        await using var _ = cache;
+
+        // when
+        var act = async () => await cache.GetAsync<int>(Faker.Random.AlphaNumeric(10), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("l2 read down");
+    }
+
+    [Fact]
+    public async Task should_swallow_l2_read_exception_on_direct_get_by_default()
+    {
+        // given
+        var timeProvider = TimeProvider.System;
+        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new GatedRemoteCache(timeProvider) { ReadFault = new InvalidOperationException("l2 read down") };
+        var cache = _CreateCache(l1, l2, new HybridCacheOptions(), timeProvider);
+        await using var _ = cache;
+
+        // when — default policy degrades an L2 read fault to a miss
+        var result = await cache.GetAsync<int>(Faker.Random.AlphaNumeric(10), AbortToken);
+
+        // then
+        result.HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_rethrow_l2_write_exception_on_factory_write_when_enabled()
+    {
+        // given
+        var timeProvider = TimeProvider.System;
+        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new GatedRemoteCache(timeProvider)
+        {
+            WriteFault = new InvalidOperationException("l2 write down"),
+        };
+        var cache = _CreateCache(
+            l1,
+            l2,
+            new HybridCacheOptions { ReThrowDistributedCacheExceptions = true },
+            timeProvider
+        );
+        await using var _ = cache;
+
+        // when — the factory produces a value but the L2 store-write faults
+        var act = async () =>
+            await cache.GetOrAddAsync<int>(
+                Faker.Random.AlphaNumeric(10),
+                _ => new ValueTask<int>(42),
+                TimeSpan.FromMinutes(5),
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("l2 write down");
+    }
+
+    [Fact]
+    public async Task should_rethrow_backplane_exception_on_write_when_enabled()
+    {
+        // given
+        var timeProvider = TimeProvider.System;
+        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new GatedRemoteCache(timeProvider);
+        var cache = new HybridCache(
+            l1,
+            l2,
+            _FaultingPublisher("backplane down"),
+            new HybridCacheOptions { ReThrowBackplaneExceptions = true },
+            timeProvider: timeProvider
+        );
+        await using var _ = cache;
+
+        // when
+        var act = async () =>
+            await cache.UpsertAsync(Faker.Random.AlphaNumeric(10), 7, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("backplane down");
+    }
+
+    [Fact]
+    public async Task should_swallow_backplane_exception_on_write_by_default()
+    {
+        // given
+        var timeProvider = TimeProvider.System;
+        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new GatedRemoteCache(timeProvider);
+        var cache = new HybridCache(
+            l1,
+            l2,
+            _FaultingPublisher("backplane down"),
+            new HybridCacheOptions(),
+            timeProvider: timeProvider
+        );
+        await using var _ = cache;
+
+        // when — default policy keeps a publish failure non-fatal (eventual consistency)
+        var act = async () =>
+            await cache.UpsertAsync(Faker.Random.AlphaNumeric(10), 7, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+    }
+
+    private static IBus _FaultingPublisher(string message)
+    {
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException(new InvalidOperationException(message)));
+
+        return publisher;
+    }
+
     private HybridCache _CreateCache(
         IInMemoryCache l1,
         IRemoteCache l2,

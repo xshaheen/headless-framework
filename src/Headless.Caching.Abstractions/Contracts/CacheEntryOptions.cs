@@ -48,6 +48,16 @@ public readonly record struct CacheEntryOptions
     public TimeSpan? SlidingExpiration { get; init; }
 
     /// <summary>
+    /// Gets the maximum random duration added to <see cref="Duration"/> on each write to desynchronize the expiry
+    /// of entries created together (anti-stampede): without it, a batch of entries written in the same burst all
+    /// expire at the same instant and trigger a synchronized factory stampede on the next read wave. The actual
+    /// offset is sampled uniformly in <c>[0, JitterMaxDuration)</c> per write and is applied to the entry's
+    /// logical, physical, and eager spans alike, so it never breaks the <c>physical &gt;= logical</c> invariant the
+    /// engine relies on. Defaults to <see cref="TimeSpan.Zero"/> (no jitter). Must be zero or positive.
+    /// </summary>
+    public TimeSpan JitterMaxDuration { get; init; }
+
+    /// <summary>
     /// Gets the optional eager-refresh point as a fraction of <see cref="Duration"/>, exclusive between 0 and 1.
     /// When set, a fresh `GetOrAddAsync` hit past <c>createdAt + Duration × threshold</c> returns the cached value
     /// immediately and starts a non-blocking background refresh, deduplicated per key. Eager refresh and sliding

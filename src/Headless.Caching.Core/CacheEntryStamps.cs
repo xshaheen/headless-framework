@@ -27,10 +27,19 @@ public readonly record struct CacheEntryStamps(
     /// <param name="now">The current UTC timestamp.</param>
     public static CacheEntryStamps Compute(CacheEntryOptions options, DateTime now)
     {
-        var logicalExpiresAt = now.Add(options.Duration);
+        // Anti-stampede jitter: spread mass-expiry by extending Duration by a random [0, JitterMaxDuration). The
+        // jittered span MUST be the single Duration source for every derived stamp below (logical, physical, eager)
+        // or the physical >= logical invariant breaks for a non-fail-safe entry. When JitterMaxDuration is Zero the
+        // jitter is Zero, so effectiveDuration == options.Duration and behavior is unchanged.
+        var effectiveDuration =
+            options.JitterMaxDuration > TimeSpan.Zero
+                ? options.Duration + new TimeSpan(Random.Shared.NextInt64(options.JitterMaxDuration.Ticks))
+                : options.Duration;
+
+        var logicalExpiresAt = now.Add(effectiveDuration);
         var physicalDuration = options.IsFailSafeEnabled
-            ? _Max(options.Duration, options.FailSafeMaxDuration)
-            : options.Duration;
+            ? _Max(effectiveDuration, options.FailSafeMaxDuration)
+            : effectiveDuration;
         var physicalExpiresAt = now.Add(physicalDuration);
 
         if (options.SlidingExpiration is { } slidingExpiration)
@@ -42,7 +51,7 @@ public readonly record struct CacheEntryStamps(
 
         if (options.EagerRefreshThreshold is { } eagerRefreshThreshold)
         {
-            eagerRefreshAt = now.AddTicks((long)(options.Duration.Ticks * (double)eagerRefreshThreshold));
+            eagerRefreshAt = now.AddTicks((long)(effectiveDuration.Ticks * (double)eagerRefreshThreshold));
         }
 
         return new CacheEntryStamps(logicalExpiresAt, physicalExpiresAt, eagerRefreshAt);
@@ -56,6 +65,7 @@ public readonly record struct CacheEntryStamps(
     public static void ValidateOptions(CacheEntryOptions options)
     {
         Argument.IsPositive(options.Duration);
+        Argument.IsPositiveOrZero(options.JitterMaxDuration);
 
         if (options.SlidingExpiration is { } configuredSlidingExpiration)
         {

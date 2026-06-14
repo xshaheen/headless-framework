@@ -415,6 +415,12 @@ public sealed partial class HybridCache
             {
                 _OpenDistributedCacheCircuit(exception, key);
                 _logger.LogFailedToWriteToL2Cache(exception, key);
+
+                if (options.ReThrowDistributedCacheExceptions)
+                {
+                    throw;
+                }
+
                 return (SkipL2: false, Succeeded: false, ConditionFailed: false);
             }
         }
@@ -435,6 +441,12 @@ public sealed partial class HybridCache
             {
                 _OpenDistributedCacheCircuit(exception, key);
                 _logger.LogFailedToWriteToL2Cache(exception, key);
+
+                if (options.ReThrowDistributedCacheExceptions)
+                {
+                    throw;
+                }
+
                 return (SkipL2: false, Succeeded: false, ConditionFailed: false);
             }
         }

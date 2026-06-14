@@ -92,6 +92,37 @@ public sealed class HybridCacheOptions : CacheOptions
     public TimeSpan DistributedCacheCircuitBreakerDuration { get; set; } = TimeSpan.Zero;
 
     /// <summary>
+    /// When <see langword="true"/>, a non-cancellation distributed (L2) read or factory-write failure is
+    /// re-thrown to the caller instead of being logged and degraded. Defaults to <see langword="false"/>
+    /// (today's behavior: L2 faults degrade — reads fall back to L1 or a miss, factory writes fall back to L1
+    /// with optional recovery queueing).
+    /// </summary>
+    /// <remarks>
+    /// Scope: governs the central L2 read chokepoint (direct <see cref="ICache.GetAsync{T}"/>,
+    /// <c>GetAllAsync</c>, <c>ExistsAsync</c>, <c>GetExpirationAsync</c>, <c>GetSetAsync</c>) and the
+    /// factory/<c>UpsertEntryAsync</c> store-write chokepoint. It does NOT change three things: a
+    /// timeout or open circuit still degrades (no exception to re-throw); a sliding re-arm hiccup stays
+    /// best-effort (never fails a successful read); and a <c>GetOrAddAsync</c> store-read
+    /// fault still falls through to the factory (cache-aside semantics — the read is treated as a miss).
+    /// The scalar additive-write degraded paths remain governed by <see cref="EnableAutoRecovery"/> /
+    /// <see cref="DistributedCacheCircuitBreakerDuration"/>; with neither configured they already propagate.
+    /// </remarks>
+    public bool ReThrowDistributedCacheExceptions { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, a non-cancellation failure publishing a cache-invalidation message to the
+    /// backplane is re-thrown to the caller after the failure is logged (and, when
+    /// <see cref="EnableAutoRecovery"/> is on, queued for replay). Defaults to <see langword="false"/>
+    /// (today's behavior: publish failures are non-fatal — peers may hold stale L1 until their TTL elapses).
+    /// </summary>
+    /// <remarks>
+    /// A publish runs on both synchronous write paths (where the re-throw surfaces to the caller) and detached
+    /// background paths (where it is observed and logged by the fire-and-forget fault net). Enabling this trades
+    /// the eventual-consistency guarantee for fail-loud visibility into backplane outages.
+    /// </remarks>
+    public bool ReThrowBackplaneExceptions { get; set; }
+
+    /// <summary>
     /// Maximum number of pending recovery items (one per cache key). On overflow the item with the earliest
     /// expiry is evicted to admit the new one. Only used when <see cref="EnableAutoRecovery"/> is enabled.
     /// </summary>

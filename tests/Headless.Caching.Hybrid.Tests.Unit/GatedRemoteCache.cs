@@ -26,6 +26,12 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     /// </summary>
     public TaskCompletionSource? UpsertGate { get; set; }
 
+    /// <summary>When set, every read (TryGetEntryAsync, GetWithExpirationAsync, …) throws this before the gate.</summary>
+    public Exception? ReadFault { get; set; }
+
+    /// <summary>When set, the factory-store SetEntryAsync throws this before the gate.</summary>
+    public Exception? WriteFault { get; set; }
+
     /// <summary>Completed when a gated TryGetEntryAsync has started and is parked on the gate.</summary>
     public TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -50,6 +56,11 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
     {
         ReadAttempts++;
 
+        if (ReadFault is { } fault)
+        {
+            throw fault;
+        }
+
         if (ReadGate is { } gate)
         {
             ReadStarted.TrySetResult();
@@ -70,6 +81,11 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         CancellationToken cancellationToken
     )
     {
+        if (WriteFault is { } fault)
+        {
+            throw fault;
+        }
+
         if (WriteGate is { } gate)
         {
             WriteStarted.TrySetResult();

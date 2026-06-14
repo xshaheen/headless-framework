@@ -602,6 +602,14 @@ public sealed partial class HybridCache(
             {
                 _QueuePublishRecovery(message);
             }
+
+            // Fail loud after the log + recovery queueing: self-healing still happens (the queued item replays),
+            // but the caller is also informed of the backplane outage. On detached background publish paths this
+            // re-throw is observed and logged by the fire-and-forget fault net rather than surfacing to a caller.
+            if (options.ReThrowBackplaneExceptions)
+            {
+                throw;
+            }
         }
     }
 

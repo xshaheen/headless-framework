@@ -55,6 +55,12 @@ public sealed partial class HybridCache
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
                 _OpenDistributedCacheCircuit(exception, key);
+
+                if (options.ReThrowDistributedCacheExceptions)
+                {
+                    throw;
+                }
+
                 return DistributedCacheReadResult<T>.Failed(exception);
             }
         }
@@ -91,6 +97,11 @@ public sealed partial class HybridCache
                     operationCts?.Dispose();
                     operationCts = null;
                     _OpenDistributedCacheCircuit(exception, key);
+
+                    if (options.ReThrowDistributedCacheExceptions)
+                    {
+                        throw;
+                    }
 
                     return DistributedCacheReadResult<T>.Failed(exception);
                 }
