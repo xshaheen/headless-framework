@@ -23,9 +23,15 @@ public sealed class RedisCacheOptions : CacheOptions
     /// work keeps each Lua invocation bounded and prevents long-running scripts on tags with
     /// very large membership sets.
     /// </para>
+    /// <para>
+    /// The default of 50 is intentionally conservative: each member requires a <c>GETRANGE</c>
+    /// header read to verify the version stamp, so per-EVALSHA latency grows linearly with
+    /// batch size. Smaller batches keep individual script calls short; the C# loop ensures
+    /// completeness regardless of tag cardinality.
+    /// </para>
     /// <para>The total count returned by <c>RemoveByTagAsync</c> is the sum across all batches.</para>
     /// </remarks>
-    public int MaxMembersPerTagRemoval { get; set; } = 1000;
+    public int MaxMembersPerTagRemoval { get; set; } = 50;
 }
 
 internal sealed class RedisCacheOptionsValidator : AbstractValidator<RedisCacheOptions>

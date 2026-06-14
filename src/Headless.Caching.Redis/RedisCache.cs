@@ -199,10 +199,24 @@ public sealed class RedisCache(
         if (IsCluster)
         {
             var successCount = 0;
+            var slotBuckets = new Dictionary<int, List<KeyValuePair<RedisKey, RedisValue>>>();
 
-            foreach (var slotGroup in pairs.GroupBy(p => options.ConnectionMultiplexer.HashSlot(p.Key)))
+            foreach (var pair in pairs)
             {
-                var count = await _SetAllInternalAsync(slotGroup.ToArray(), expiration).ConfigureAwait(false);
+                var slot = options.ConnectionMultiplexer.HashSlot(pair.Key);
+
+                if (!slotBuckets.TryGetValue(slot, out var bucket))
+                {
+                    bucket = [];
+                    slotBuckets[slot] = bucket;
+                }
+
+                bucket.Add(pair);
+            }
+
+            foreach (var bucket in slotBuckets.Values)
+            {
+                var count = await _SetAllInternalAsync([.. bucket], expiration).ConfigureAwait(false);
                 successCount += count;
             }
 
@@ -604,20 +618,37 @@ public sealed class RedisCache(
         {
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
 
-            foreach (
-                var hashSlotGroup in originalKeys
-                    .Select((k, i) => (Original: k, Redis: redisKeys[i]))
-                    .GroupBy(x => options.ConnectionMultiplexer.HashSlot(x.Redis))
-            )
-            {
-                var pairs = hashSlotGroup.ToArray();
-                var hashSlotRedisKeys = pairs.Select(x => x.Redis).ToArray();
-                var values = await _database.StringGetAsync(hashSlotRedisKeys, options.ReadMode).ConfigureAwait(false);
+            // Group by hash slot without LINQ: avoids Lookup allocation + per-group materialization.
+            var slotBuckets = new Dictionary<int, List<(string Original, RedisKey Redis)>>();
 
-                for (var i = 0; i < pairs.Length; i++)
+            for (var i = 0; i < originalKeys.Count; i++)
+            {
+                var slot = options.ConnectionMultiplexer.HashSlot(redisKeys[i]);
+
+                if (!slotBuckets.TryGetValue(slot, out var bucket))
                 {
-                    result[pairs[i].Original] = await _RedisValueToCacheValueAsync<T>(
-                            pairs[i].Redis,
+                    bucket = [];
+                    slotBuckets[slot] = bucket;
+                }
+
+                bucket.Add((originalKeys[i], redisKeys[i]));
+            }
+
+            foreach (var bucket in slotBuckets.Values)
+            {
+                var slotKeys = new RedisKey[bucket.Count];
+
+                for (var i = 0; i < bucket.Count; i++)
+                {
+                    slotKeys[i] = bucket[i].Redis;
+                }
+
+                var values = await _database.StringGetAsync(slotKeys, options.ReadMode).ConfigureAwait(false);
+
+                for (var i = 0; i < bucket.Count; i++)
+                {
+                    result[bucket[i].Original] = await _RedisValueToCacheValueAsync<T>(
+                            bucket[i].Redis,
                             values[i],
                             rearm: false
                         )
@@ -675,23 +706,37 @@ public sealed class RedisCache(
         if (IsCluster)
         {
             // Cluster: batch by hash slot so each StringGetAsync covers one slot group.
-            var rawMap = new Dictionary<int, RedisValue>(redisKeys.Count);
-            var indexedPairs = originalKeys
-                .Select((k, i) => (Original: k, Redis: redisKeys[i], Index: i))
-                .GroupBy(x => options.ConnectionMultiplexer.HashSlot(x.Redis))
-                .ToList();
-
+            // Manual Dictionary grouping avoids LINQ Lookup allocation + per-group materialization.
             rawValues = new RedisValue[redisKeys.Count];
+            var slotBuckets = new Dictionary<int, List<(RedisKey Redis, int Index)>>();
 
-            foreach (var slotGroup in indexedPairs)
+            for (var i = 0; i < redisKeys.Count; i++)
             {
-                var pairs = slotGroup.ToArray();
-                var slotKeys = pairs.Select(x => x.Redis).ToArray();
+                var slot = options.ConnectionMultiplexer.HashSlot(redisKeys[i]);
+
+                if (!slotBuckets.TryGetValue(slot, out var bucket))
+                {
+                    bucket = [];
+                    slotBuckets[slot] = bucket;
+                }
+
+                bucket.Add((redisKeys[i], i));
+            }
+
+            foreach (var bucket in slotBuckets.Values)
+            {
+                var slotKeys = new RedisKey[bucket.Count];
+
+                for (var i = 0; i < bucket.Count; i++)
+                {
+                    slotKeys[i] = bucket[i].Redis;
+                }
+
                 var slotValues = await _database.StringGetAsync(slotKeys, options.ReadMode).ConfigureAwait(false);
 
-                for (var i = 0; i < pairs.Length; i++)
+                for (var i = 0; i < bucket.Count; i++)
                 {
-                    rawValues[pairs[i].Index] = slotValues[i];
+                    rawValues[bucket[i].Index] = slotValues[i];
                 }
             }
         }
@@ -1259,9 +1304,25 @@ public sealed class RedisCache(
         {
             foreach (var batch in redisKeys.Chunk(_BatchSize))
             {
-                foreach (var hashSlotGroup in batch.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
+                // Manual slot grouping avoids LINQ Lookup allocation + per-group materialization.
+                var slotBuckets = new Dictionary<int, List<RedisKey>>();
+
+                foreach (var key in batch)
                 {
-                    var hashSlotKeys = hashSlotGroup.ToArray();
+                    var slot = options.ConnectionMultiplexer.HashSlot(key);
+
+                    if (!slotBuckets.TryGetValue(slot, out var bucket))
+                    {
+                        bucket = [];
+                        slotBuckets[slot] = bucket;
+                    }
+
+                    bucket.Add(key);
+                }
+
+                foreach (var (slot, bucket) in slotBuckets)
+                {
+                    var hashSlotKeys = bucket.ToArray();
 
                     try
                     {
@@ -1270,7 +1331,7 @@ public sealed class RedisCache(
                     }
                     catch (Exception e)
                     {
-                        _logger.LogUnableToDeleteHashSlotKeys(e, hashSlotGroup.Key, hashSlotKeys);
+                        _logger.LogUnableToDeleteHashSlotKeys(e, slot, hashSlotKeys);
                     }
                 }
             }
@@ -1357,6 +1418,12 @@ public sealed class RedisCache(
     /// per Lua call and loops in C# until the tag hash is fully drained, so removal is always complete
     /// regardless of tag cardinality. The returned count is the total across all batches.
     /// </para>
+    /// <para>
+    /// This operation is <em>point-in-time best-effort</em>: a key re-added to the tag during the sweep
+    /// may survive if the concurrent write races ahead of the final batch. The version-pinning check in
+    /// the Lua script prevents incorrectly deleting freshly re-created keys; it does not prevent new
+    /// additions from being missed.
+    /// </para>
     /// </remarks>
     public async ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
@@ -1374,11 +1441,20 @@ public sealed class RedisCache(
 
         var totalRemoved = 0;
 
+        // Derive an iteration budget from the tag's current cardinality plus generous slack (×4) to
+        // absorb concurrent writes. This bounds the loop under sustained concurrent tag writes —
+        // without a cap, a hot tag could spin issuing unbounded EVALSHA round-trips indefinitely.
+        var initialSize = await _database.HashLengthAsync(tagHashKey).ConfigureAwait(false);
+        var batchSize = options.MaxMembersPerTagRemoval;
+        var iterationBudget = (int)Math.Ceiling((double)(initialSize * 4 + batchSize) / batchSize);
+        var iterations = 0;
+
         // Loop until the Lua script reports no remaining members. Each invocation processes a bounded
         // batch so no single script call blocks Redis for an unbounded duration (large tag sets).
-        while (true)
+        while (iterations < iterationBudget)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            iterations++;
 
             var result = await scriptsLoader
                 .EvaluateAsync(_database, CacheRemoveByTagScriptDefinition.Instance, scriptArgs, cancellationToken)
@@ -1392,6 +1468,11 @@ public sealed class RedisCache(
             {
                 break;
             }
+        }
+
+        if (iterations >= iterationBudget)
+        {
+            _logger.LogRemoveByTagBudgetExceeded(tag, iterationBudget, totalRemoved);
         }
 
         return totalRemoved;
@@ -2139,9 +2220,25 @@ public sealed class RedisCache(
 
         if (isCluster)
         {
-            foreach (var slotGroup in keys.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
+            // Manual slot grouping avoids LINQ Lookup allocation + per-group materialization.
+            var slotBuckets = new Dictionary<int, List<RedisKey>>();
+
+            foreach (var key in keys)
             {
-                var count = await _database.KeyDeleteAsync(slotGroup.ToArray()).ConfigureAwait(false);
+                var slot = options.ConnectionMultiplexer.HashSlot(key);
+
+                if (!slotBuckets.TryGetValue(slot, out var bucket))
+                {
+                    bucket = [];
+                    slotBuckets[slot] = bucket;
+                }
+
+                bucket.Add(key);
+            }
+
+            foreach (var bucket in slotBuckets.Values)
+            {
+                var count = await _database.KeyDeleteAsync([.. bucket]).ConfigureAwait(false);
                 deleted += count;
             }
         }
@@ -2257,4 +2354,17 @@ internal static partial class RedisCacheLog
         Message = "Unable to re-arm sliding expiration for cache key {Key}; the value will still be returned."
     )]
     public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "RemoveByTagBudgetExceeded",
+        Level = LogLevel.Warning,
+        Message = "RemoveByTagAsync for tag '{Tag}' hit the iteration budget ({Budget} batches) and stopped early after removing {TotalRemoved} entries; keys re-added during the sweep may not have been removed."
+    )]
+    public static partial void LogRemoveByTagBudgetExceeded(
+        this ILogger logger,
+        string tag,
+        int budget,
+        int totalRemoved
+    );
 }

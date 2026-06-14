@@ -19,6 +19,10 @@ internal sealed class DistributedLockCacheFactoryLockProvider(
 ) : ICacheFactoryLockProvider
 {
     private readonly IDistributedLock _distributedLock = Argument.IsNotNull(distributedLock);
+
+    // Options are bound once at startup (snapshot value, matching the cache stack's AddSingletonOptionValue
+    // convention) — the provider is a singleton and the factory-lock settings are not hot-reloadable. Switch the
+    // injection to IOptionsMonitor<CacheFactoryLockOptions> if live reconfiguration is ever required.
     private readonly CacheFactoryLockOptions _options = Argument.IsNotNull(options);
 
     public async ValueTask<IAsyncDisposable?> TryAcquireAsync(

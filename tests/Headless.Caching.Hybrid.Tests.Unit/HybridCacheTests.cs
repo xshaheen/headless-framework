@@ -1638,7 +1638,7 @@ public sealed class HybridCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_propagate_exception_when_get_all_l2_read_fails_mid_batch()
+    public async Task should_degrade_to_partial_l1_result_when_get_all_l2_read_fails_mid_batch()
     {
         // given — L1 holds one of the two requested keys; the L2 batch read for the misses throws
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
@@ -1665,12 +1665,61 @@ public sealed class HybridCacheTests : TestBase
         await l1.UpsertAsync("batch-get-1", 1, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var act = async () => await cache.GetAllAsync<int>(["batch-get-1", "batch-get-2"], AbortToken);
+        var result = await cache.GetAllAsync<int>(["batch-get-1", "batch-get-2"], AbortToken);
 
-        // then — PINNED: the L2 batch-read failure propagates; there is no partial result (the L1 hits are not
-        // returned alongside the failure) and nothing is queued.
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        // then — L2 read failure degrades to the partial L1 result (mirrors single-key GetAsync contract):
+        // the L1 hit is returned, the L2 miss key comes back as NoValue, and nothing is queued.
+        result.Should().ContainKey("batch-get-1");
+        result["batch-get-1"].HasValue.Should().BeTrue();
+        result["batch-get-1"].Value.Should().Be(1);
+        result.Should().ContainKey("batch-get-2");
+        result["batch-get-2"].HasValue.Should().BeFalse("L2 failed before producing a value for this key");
         cache.RecoveryQueue!.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_degrade_to_partial_l1_result_when_get_all_l2_read_times_out()
+    {
+        // given — L1 holds one of the two requested keys; the L2 batch read parks indefinitely (soft timeout fires)
+        var timeProvider = TimeProvider.System;
+        var softTimeout = TimeSpan.FromMilliseconds(50);
+        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new GatedRemoteCache(timeProvider)
+        {
+            ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions
+            {
+                DistributedCacheSoftTimeout = softTimeout,
+                DistributedCacheHardTimeout = TimeSpan.FromSeconds(5),
+            },
+            timeProvider: timeProvider
+        );
+        await using var __ = cache;
+
+        await l1.UpsertAsync("batch-get-1", 1, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when — the soft timeout fires while the L2 read is parked
+        var task = cache.GetAllAsync<int>(["batch-get-1", "batch-get-2"], AbortToken).AsTask();
+        await l2.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var result = await task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then — degraded to partial L1 result without throwing; L2 miss key is NoValue
+        result.Should().ContainKey("batch-get-1");
+        result["batch-get-1"].HasValue.Should().BeTrue();
+        result["batch-get-1"].Value.Should().Be(1);
+        result.Should().ContainKey("batch-get-2");
+        result["batch-get-2"].HasValue.Should().BeFalse("L2 timed out before returning a value for this key");
+        l2.ReadAttempts.Should().Be(1);
     }
 
     #endregion

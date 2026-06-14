@@ -341,8 +341,14 @@ public sealed partial class HybridCache(
         {
             if (distributedRead.Exception is { } exception)
             {
+                // Degrade to the partial L1 result, mirroring the single-key GetAsync contract:
+                // an L2 read fault is logged then swallowed so callers always get a best-effort response.
                 _logger.LogFailedBulkL2CacheOperation(exception, missedKeys.Count);
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+            }
+            else
+            {
+                // Timeout or circuit-open: same degrade contract, but no exception to attach to the log entry.
+                _logger.LogBulkDistributedCacheReadDegraded(missedKeys.Count, distributedRead.Status.ToString());
             }
 
             return result;

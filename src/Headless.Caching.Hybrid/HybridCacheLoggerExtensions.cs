@@ -126,9 +126,17 @@ internal static partial class HybridCacheLoggerExtensions
         EventId = 15,
         EventName = "FailedBulkL2CacheOperation",
         Level = LogLevel.Warning,
-        Message = "Failed to perform a bulk L2 cache operation for {KeyCount} key(s); the failure is surfaced to the caller and is not auto-recovered in v1"
+        Message = "Failed to perform a bulk L2 cache operation for {KeyCount} key(s); degrading to partial L1 result"
     )]
     public static partial void LogFailedBulkL2CacheOperation(this ILogger logger, Exception exception, int keyCount);
+
+    [LoggerMessage(
+        EventId = 20,
+        EventName = "BulkDistributedCacheReadDegraded",
+        Level = LogLevel.Warning,
+        Message = "Bulk L2 cache read for {KeyCount} key(s) did not complete ({Reason}); degrading to partial L1 result"
+    )]
+    public static partial void LogBulkDistributedCacheReadDegraded(this ILogger logger, int keyCount, string reason);
 
     [LoggerMessage(
         EventId = 16,
