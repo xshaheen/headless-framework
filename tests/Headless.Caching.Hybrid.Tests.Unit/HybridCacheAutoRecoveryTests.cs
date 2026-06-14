@@ -184,19 +184,20 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         await cache.GetOrAddAsync("key-2", _ => new ValueTask<int?>(2), TimeSpan.FromMinutes(5), AbortToken);
         l2.SetEntryAttempts.Should().Be(2);
 
-        // when — the first pass runs: it must stop at the first failure (single attempt, not two)
+        // when — the first pass runs: it attempts every queued item (continue-on-failure), so both items
+        // are replayed in one pass — a single poison item must not starve the rest of the queue.
         _timeProvider.Advance(_Delay);
         await cache.RecoveryQueue!.ProcessAsync(AbortToken);
-        l2.SetEntryAttempts.Should().Be(3, "the pass stops at the first replay failure");
+        l2.SetEntryAttempts.Should().Be(4, "the pass attempts every queued item, not just the first");
 
         // and — another pass before the barrier elapses must not attempt anything
         await cache.RecoveryQueue.ProcessAsync(AbortToken);
-        l2.SetEntryAttempts.Should().Be(3, "no replay attempt is allowed before the barrier elapses");
+        l2.SetEntryAttempts.Should().Be(4, "no replay attempt is allowed before the barrier elapses");
 
-        // and — once the barrier elapses, replay is attempted again
+        // and — once the barrier elapses, both items are attempted again
         _timeProvider.Advance(_Delay);
         await cache.RecoveryQueue.ProcessAsync(AbortToken);
-        l2.SetEntryAttempts.Should().Be(4);
+        l2.SetEntryAttempts.Should().Be(6);
     }
 
     [Fact]

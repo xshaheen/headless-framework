@@ -1815,6 +1815,57 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         entry.EagerRefreshAt.Should().NotBeNull();
     }
 
+    // #7 — eager-refresh gate-write CAS-lost branch (_RunEagerRefreshAsync: `if (!gateCommitted) return;`).
+    // A concurrent writer wins the gate's compare-and-swap, so the gate write returns false (not an exception).
+    // The refresh must abort BEFORE the factory runs, leave the entry fresh and re-triggerable (EagerRefreshAt
+    // still stamped), and release the per-key lock so a later eager trigger can acquire it again.
+    [Fact]
+    public async Task should_abort_eager_refresh_without_factory_when_gate_write_loses_cas()
+    {
+        // given — a fresh entry past its eager point; the first gate write loses the CAS race
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var eagerRefreshAt = now.AddSeconds(-1);
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: eagerRefreshAt);
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryCalls = 0;
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        // Fail only the gate write; never the factory result-write (which must not be reached here).
+        _store.SetEntryCommitOverride = (_, calls) => calls != 1;
+
+        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("fresh");
+        }
+
+        // when — the triggering caller returns the still-fresh value; the detached refresh aborts at the gate
+        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        await backgroundFinished;
+
+        // then — the factory never ran, the entry stays fresh with its eager stamp intact, and the gate write
+        // was the only SetEntry attempt (the result-write was never reached).
+        result.Value.Should().Be("old");
+        result.IsStale.Should().BeFalse();
+        factoryCalls.Should().Be(0);
+        _store.SetEntryCalls.Should().Be(1);
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("old");
+        entry.EagerRefreshAt.Should().Be(eagerRefreshAt, "the CAS-lost gate write must leave the entry re-triggerable");
+
+        // and — the per-key lock was released: a second eager trigger acquires it and runs its gate write.
+        var secondBackgroundFinished = _WaitForBackgroundFinished(coordinator);
+        _store.SetEntryCommitOverride = null;
+        var secondResult = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        await secondBackgroundFinished;
+
+        secondResult.Value.Should().Be("old");
+        factoryCalls.Should().Be(1, "the released lock let a later trigger run the refresh");
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
     [Fact]
     public async Task should_clear_eager_stamp_before_factory_starts()
     {

@@ -1722,6 +1722,58 @@ public sealed class HybridCacheTests : TestBase
         l2.ReadAttempts.Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_log_bulk_read_degraded_without_exception_when_get_all_l2_read_times_out()
+    {
+        // given — L1 holds one of the two requested keys; the L2 batch read parks indefinitely so the soft timeout
+        // fires. This drives the no-exception degrade arm specifically (LogBulkDistributedCacheReadDegraded), as
+        // opposed to the exception arm (LogFailedBulkL2CacheOperation) covered by the mid-batch-throw test above.
+        var timeProvider = TimeProvider.System;
+        var softTimeout = TimeSpan.FromMilliseconds(50);
+        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new GatedRemoteCache(timeProvider)
+        {
+            ReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var logger = new RecordingHybridCacheLogger();
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions
+            {
+                DistributedCacheSoftTimeout = softTimeout,
+                DistributedCacheHardTimeout = TimeSpan.FromSeconds(5),
+            },
+            logger: logger,
+            timeProvider: timeProvider
+        );
+        await using var __ = cache;
+
+        await l1.UpsertAsync("batch-get-1", 1, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when — the soft timeout fires while the L2 read is parked
+        var task = cache.GetAllAsync<int>(["batch-get-1", "batch-get-2"], AbortToken).AsTask();
+        await l2.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var result = await task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then — degraded to the partial L1 result without throwing: the L1 hit is present, the L2-missed key absent
+        result["batch-get-1"].HasValue.Should().BeTrue();
+        result["batch-get-1"].Value.Should().Be(1);
+        result["batch-get-2"].HasValue.Should().BeFalse("L2 timed out before returning a value for this key");
+
+        // and — the status-log (no-exception) degrade arm fired (EventId 22), not the exception arm (EventId 21)
+        logger
+            .Entries.Should()
+            .Contain(e => e.Event.Id == 22, "the timeout/circuit-open arm logs without an exception");
+        logger.Entries.Should().NotContain(e => e.Event.Id == 21, "no exception arm should fire on a clean timeout");
+    }
+
     #endregion
 
     #region Cancellation During L2 Phases

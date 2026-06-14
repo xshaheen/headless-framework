@@ -125,6 +125,74 @@ public sealed class HybridCacheExpireTests : TestBase
     }
 
     [Fact]
+    public async Task should_logically_expire_each_peer_l1_key_preserving_reserve_when_receiving_bulk_expire_invalidation()
+    {
+        // given — two fail-safe entries (Physical > Logical, non-sliding) planted directly into the local L1, so
+        // each reserve is unambiguously present. This exercises the Keys[] + Expire=true bulk branch, which loops
+        // LocalCache.ExpireAsync per key (logical expiration) rather than RemoveAllAsync (hard removal).
+        var (cache, l1, _, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key1 = Faker.Random.AlphaNumeric(10);
+        var key2 = Faker.Random.AlphaNumeric(10);
+        var staleValue1 = Faker.Random.Int(1, 100);
+        var staleValue2 = Faker.Random.Int(101, 200);
+        var options = _FailSafeOptions();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        foreach (var (key, staleValue) in new[] { (key1, staleValue1), (key2, staleValue2) })
+        {
+            await ((IFactoryCacheStore)l1).SetEntryAsync(
+                key,
+                new CacheStoreEntryWrite<int>
+                {
+                    Value = staleValue,
+                    IsNull = false,
+                    LogicalExpiresAt = now.AddMinutes(1),
+                    PhysicalExpiresAt = now.AddHours(1),
+                },
+                AbortToken
+            );
+        }
+
+        // when — a peer broadcasts a bulk Expire invalidation for both keys (different InstanceId so not self-skipped)
+        var message = new CacheInvalidationMessage
+        {
+            InstanceId = "instance-2",
+            Keys = [key1, key2],
+            Expire = true,
+        };
+        await cache.HandleInvalidationAsync(message, AbortToken);
+
+        // then — each key was logically EXPIRED, not hard-removed: plain reads miss, but each fail-safe reserve
+        // survives and is served (stale) by a failing factory, with its own original value.
+        (await l1.GetAsync<int>(key1, AbortToken))
+            .HasValue.Should()
+            .BeFalse();
+        (await l1.GetAsync<int>(key2, AbortToken)).HasValue.Should().BeFalse();
+
+        var result1 = await cache.GetOrAddAsync<int>(
+            key1,
+            _ => throw new InvalidOperationException("upstream unavailable"),
+            options,
+            AbortToken
+        );
+        result1.HasValue.Should().BeTrue();
+        result1.Value.Should().Be(staleValue1);
+        result1.IsStale.Should().BeTrue("the bulk Expire receive path preserves each peer L1 reserve");
+
+        var result2 = await cache.GetOrAddAsync<int>(
+            key2,
+            _ => throw new InvalidOperationException("upstream unavailable"),
+            options,
+            AbortToken
+        );
+        result2.HasValue.Should().BeTrue();
+        result2.Value.Should().Be(staleValue2);
+        result2.IsStale.Should().BeTrue("the bulk Expire receive path preserves each peer L1 reserve");
+    }
+
+    [Fact]
     public async Task should_remove_peer_l1_without_reserve_when_receiving_non_expire_invalidation()
     {
         // given — same fail-safe entry planted directly into L1, contrasted against a plain (Remove) invalidation

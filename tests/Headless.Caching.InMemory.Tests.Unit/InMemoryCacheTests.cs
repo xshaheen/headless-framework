@@ -79,6 +79,7 @@ public sealed class InMemoryCacheTests : TestBase
                 typeof(DateTime?),
                 typeof(string),
                 typeof(DateTime?),
+                typeof(long),
             ],
             modifiers: null
         );
@@ -102,6 +103,7 @@ public sealed class InMemoryCacheTests : TestBase
             null,
             null,
             null,
+            -1L,
         ]);
         memory.GetType().GetProperty("Item")!.SetValue(memory, entry, [key]);
     }

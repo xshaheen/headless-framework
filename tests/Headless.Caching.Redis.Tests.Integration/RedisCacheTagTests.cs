@@ -161,6 +161,84 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     }
 
     [Fact]
+    public async Task should_preserve_failsafe_reserve_and_remove_fresh_member_on_remove_by_tag()
+    {
+        // given — two tagged fail-safe members under the same tag:
+        //   • reserveKey: written then ExpireAsync'd → logical<=now while physical>now (a fail-safe reserve)
+        //   • freshKey:   logically fresh (a normal tagged member that RemoveByTag must unlink)
+        // RemoveByTag's Lua skips unlinking the reserve (so a later failing fail-safe factory can still serve
+        // it) but unlinks the fresh member. Each lives under its own key prefix so the raw Redis key is
+        // addressable, while a single shared tag prefix lets one RemoveByTag span both.
+        await FlushAsync();
+        var sharedPrefix = $"{Faker.Random.AlphaNumeric(8)}:";
+        var tag = Faker.Random.AlphaNumeric(8);
+        var tagHashKey = $"{sharedPrefix}{_TagNamespace}{tag}";
+
+        using var cache = CreateCache(sharedPrefix);
+        var failSafeOptions = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(1),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(5),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(1),
+            Tags = [tag],
+        };
+
+        var reserveKey = Faker.Random.AlphaNumeric(10);
+        var freshKey = Faker.Random.AlphaNumeric(10);
+        var reserveRedisKey = $"{sharedPrefix}{reserveKey}";
+        var freshRedisKey = $"{sharedPrefix}{freshKey}";
+
+        // reserve member: written via fail-safe (physical = 5m), then logically expired into a reserve
+        await cache.GetOrAddAsync(
+            reserveKey,
+            _ => ValueTask.FromResult<string?>("reserve"),
+            failSafeOptions,
+            AbortToken
+        );
+        var reserveExpired = await cache.ExpireAsync(reserveKey, AbortToken);
+        reserveExpired.Should().BeTrue();
+
+        // fresh member: logically fresh, fail-safe so its physical stamp matches the recorded tag version
+        await cache.GetOrAddAsync(freshKey, _ => ValueTask.FromResult<string?>("fresh"), failSafeOptions, AbortToken);
+
+        // both are physically present, both recorded in the tag hash, and the reserve already reads as a miss
+        (await _Database.KeyExistsAsync(reserveRedisKey))
+            .Should()
+            .BeTrue();
+        (await _Database.KeyExistsAsync(freshRedisKey)).Should().BeTrue();
+        (await _Database.HashExistsAsync(tagHashKey, reserveRedisKey)).Should().BeTrue();
+        (await _Database.HashExistsAsync(tagHashKey, freshRedisKey)).Should().BeTrue();
+        (await cache.GetAsync<string>(reserveKey, AbortToken)).HasValue.Should().BeFalse();
+
+        // when
+        var removed = await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // then — only the fresh member was unlinked; the reserve survived
+        removed.Should().Be(1);
+        (await _Database.KeyExistsAsync(freshRedisKey)).Should().BeFalse("a logically-fresh tagged member is removed");
+        (await _Database.KeyExistsAsync(reserveRedisKey))
+            .Should()
+            .BeTrue("a fail-safe reserve must survive RemoveByTag");
+
+        // and — the reserve stays tag-discoverable (its membership was NOT pruned)
+        (await _Database.HashExistsAsync(tagHashKey, reserveRedisKey))
+            .Should()
+            .BeTrue("the reserve membership must be retained so it remains tag-discoverable");
+
+        // and — a failing fail-safe factory still serves the stale value from the preserved reserve
+        var result = await cache.GetOrAddAsync<string>(
+            reserveKey,
+            _ => throw new InvalidOperationException("downstream unavailable"),
+            failSafeOptions,
+            AbortToken
+        );
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be("reserve");
+        result.IsStale.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_return_zero_for_unknown_tag()
     {
         // given

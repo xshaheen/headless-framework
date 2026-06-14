@@ -128,4 +128,31 @@ public sealed class RedisCacheExpireTests(RedisCacheFixture fixture) : RedisCach
         // then
         expired.Should().BeFalse();
     }
+
+    /// <summary>
+    /// Finding #3 — return contract: ExpireAsync returns the actual StringSet(When.Exists) outcome on the
+    /// fail-safe re-stamp branch (true when the key still exists and is logically expired in place), rather
+    /// than the previous unconditional true.
+    /// </summary>
+    [Fact]
+    public async Task should_return_true_and_logically_expire_an_existing_failsafe_key()
+    {
+        // given — an existing fail-safe entry whose physical reserve outlives its logical lifetime
+        await FlushAsync();
+        var key = Faker.Random.AlphaNumeric(10);
+        var prefix = key + ":";
+        var redisKey = prefix + key;
+        using var cache = CreateCache(prefix);
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v"), _FailSafeOptions(), AbortToken);
+
+        // when — the key exists, so the When.Exists StringSet succeeds
+        var expired = await cache.ExpireAsync(key, AbortToken);
+
+        // then — true (from the successful StringSet), the entry is logically expired, but the reserve survives
+        expired.Should().BeTrue();
+        (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await cache.GetExpirationAsync(key, AbortToken)).Should().BeNull();
+        (await Database.KeyExistsAsync(redisKey)).Should().BeTrue();
+    }
 }
