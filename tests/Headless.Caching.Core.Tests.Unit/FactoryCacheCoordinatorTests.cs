@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections;
-using System.Reflection;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -279,6 +277,132 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // then
         result.Value.Should().Be("stale");
         result.IsStale.Should().BeTrue();
+    }
+
+    // #5a — PRE-LOCK: store signals ServeStaleImmediately on the first read; the coordinator must return the
+    // stale value without acquiring the local lock and without invoking the factory.
+    [Fact]
+    public async Task should_serve_stale_immediately_without_factory_when_flagged_on_first_read()
+    {
+        // given — a logically-expired but physically-present entry with ServeStaleImmediately=true
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5), serveStaleImmediately: true);
+        var factoryCalls = 0;
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ =>
+                {
+                    factoryCalls++;
+                    return ValueTask.FromResult<string?>("fresh");
+                },
+                _CreateOptions(isFailSafeEnabled: true),
+                AbortToken
+            );
+
+        // then — stale value returned, factory never invoked, only 1 store read (the pre-lock path)
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        factoryCalls.Should().Be(0);
+        _store.TryGetEntryCalls.Should().Be(1);
+    }
+
+    // #5b — UNDER-LOCK: the first store read returns a plain stale entry (no flag); the coordinator acquires the
+    // local lock and re-reads. The second read returns ServeStaleImmediately=true, so the factory must not run.
+    [Fact]
+    public async Task should_serve_stale_immediately_without_factory_when_flagged_on_under_lock_read()
+    {
+        // given — first read: stale without the flag; second read (under-lock): stale with the flag
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        _store.TryGetEntryOverride = (_, calls) =>
+            calls == 2
+                ? new FakeFactoryCacheStore.Entry(
+                    Value: "stale",
+                    IsNull: false,
+                    LogicalExpiresAt: now.AddSeconds(-1),
+                    PhysicalExpiresAt: now.AddMinutes(5),
+                    SlidingExpiration: null,
+                    ServeStaleImmediately: true
+                )
+                : null;
+        var factoryCalls = 0;
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ =>
+                {
+                    factoryCalls++;
+                    return ValueTask.FromResult<string?>("fresh");
+                },
+                _CreateOptions(isFailSafeEnabled: true),
+                AbortToken
+            );
+
+        // then — factory skipped; exactly 2 store reads (pre-lock + under-lock)
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        factoryCalls.Should().Be(0);
+        _store.TryGetEntryCalls.Should().Be(2);
+    }
+
+    // #5c — POST-DISTRIBUTED-LOCK: same scenario but UseDistributedFactoryLock=true. After acquiring the
+    // distributed lock the coordinator does a third store read; if that read sets ServeStaleImmediately the
+    // factory must still not run.
+    [Fact]
+    public async Task should_serve_stale_immediately_without_factory_when_flagged_on_post_distributed_lock_read()
+    {
+        // given — reads 1 and 2 return plain stale; read 3 (post-distributed-lock) returns the flag
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        _store.TryGetEntryOverride = (_, calls) =>
+            calls >= 2
+                ? new FakeFactoryCacheStore.Entry(
+                    Value: "stale",
+                    IsNull: false,
+                    LogicalExpiresAt: now.AddSeconds(-1),
+                    PhysicalExpiresAt: now.AddMinutes(5),
+                    SlidingExpiration: null,
+                    ServeStaleImmediately: calls == 3
+                )
+                : null;
+        var lockProvider = new FakeCacheFactoryLockProvider();
+        var coordinator = new FactoryCacheCoordinator(
+            _timeProvider,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<FactoryCacheCoordinator>.Instance,
+            lockProvider
+        );
+        var factoryCalls = 0;
+
+        // when
+        var result = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            _ =>
+            {
+                factoryCalls++;
+                return ValueTask.FromResult<string?>("fresh");
+            },
+            _CreateOptions(isFailSafeEnabled: true, useDistributedFactoryLock: true),
+            AbortToken
+        );
+
+        // then — factory skipped; 3 store reads (pre-lock, under-lock, post-distributed-lock)
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        factoryCalls.Should().Be(0);
+        _store.TryGetEntryCalls.Should().Be(3);
+        lockProvider.AcquireSuccesses.Should().Be(1);
+        lockProvider.Releases.Should().Be(1);
     }
 
     [Fact]
@@ -2712,19 +2836,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         observedKey.Should().Be(key);
     }
 
-    // Reaches into the fake's private entry map to model an actor that bypasses the coordinator (e.g. a direct
-    // RemoveAsync on the provider) while a factory is in flight. Kept here (not on the fake) because only these
-    // interleaving tests need it.
-    private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key)
-    {
-        var field = typeof(FakeFactoryCacheStore).GetField(
-            "_entries",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        );
-        field.Should().NotBeNull("FakeFactoryCacheStore's private entry map moved — update _RemoveEntryDirectly");
-        var entries = (IDictionary)field!.GetValue(store)!;
-        entries.Remove(key);
-    }
+    // Models an actor that bypasses the coordinator (e.g. a direct RemoveAsync on the provider) while a factory
+    // is in flight. Kept here (not on the fake) because only these interleaving tests need it.
+    private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key) => store.RemoveEntry(key);
 
     private FactoryCacheCoordinator _CreateCoordinator() =>
         new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
@@ -2760,7 +2874,8 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         TimeSpan? backgroundFactoryCeiling = null,
         TimeSpan? lockTimeout = null,
         TimeSpan? slidingExpiration = null,
-        float? eagerRefreshThreshold = null
+        float? eagerRefreshThreshold = null,
+        bool useDistributedFactoryLock = false
     ) =>
         new()
         {
@@ -2774,6 +2889,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             FactoryHardTimeout = factoryHardTimeout ?? Timeout.InfiniteTimeSpan,
             BackgroundFactoryCeiling = backgroundFactoryCeiling ?? Timeout.InfiniteTimeSpan,
             LockTimeout = lockTimeout ?? Timeout.InfiniteTimeSpan,
+            UseDistributedFactoryLock = useDistributedFactoryLock,
         };
 
     private static Func<CancellationToken, ValueTask<string?>> _FactoryReturns(string value) =>

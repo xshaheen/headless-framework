@@ -346,6 +346,45 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _lockProvider.AcquireAttempts.Should().Be(0);
     }
 
+    // #11 — SkipCacheRead bypasses all store reads including the post-distributed-lock re-check; the factory
+    // must run even though a fresh entry exists, and the distributed lock must be acquired and released.
+    [Fact]
+    public async Task should_run_factory_under_distributed_lock_when_skip_cache_read_is_set_despite_fresh_entry()
+    {
+        // given — a fresh cached value; SkipCacheRead forces the factory to run regardless
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "cached", now.AddMinutes(5), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var factoryCalls = 0;
+
+        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("fresh");
+        }
+
+        // when
+        var result = await coordinator.GetOrAddAsync(
+            _store,
+            key,
+            Factory,
+            _CreateOptions(skipCacheRead: true),
+            AbortToken
+        );
+
+        // then — factory ran exactly once; distributed lock acquired and released; new value persisted
+        result.Value.Should().Be("fresh");
+        result.IsStale.Should().BeFalse();
+        factoryCalls.Should().Be(1);
+        _lockProvider.AcquireSuccesses.Should().Be(1);
+        _lockProvider.Releases.Should().Be(1);
+        _lockProvider.IsHeld(key).Should().BeFalse();
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+        // no store reads: SkipCacheRead bypasses all three read checkpoints
+        _store.TryGetEntryCalls.Should().Be(0);
+    }
+
     [Fact]
     public async Task should_serve_stale_without_running_factory_and_log_warning_when_lock_acquire_throws_with_fail_safe()
     {
@@ -545,7 +584,8 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         TimeSpan? backgroundFactoryCeiling = null,
         TimeSpan? lockTimeout = null,
         float? eagerRefreshThreshold = null,
-        bool useDistributedFactoryLock = true
+        bool useDistributedFactoryLock = true,
+        bool skipCacheRead = false
     ) =>
         new()
         {
@@ -558,5 +598,6 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
             BackgroundFactoryCeiling = backgroundFactoryCeiling ?? Timeout.InfiniteTimeSpan,
             LockTimeout = lockTimeout ?? Timeout.InfiniteTimeSpan,
             UseDistributedFactoryLock = useDistributedFactoryLock,
+            SkipCacheRead = skipCacheRead,
         };
 }
