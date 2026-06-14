@@ -212,16 +212,15 @@ public static class SetupIdentityEntityFramework
             // HeadlessDbContext registration.
             services.AddHeadlessDbContextServices(configureHeadlessOptions);
 
+            // Parity with AddHeadlessDbContext: attach DI-registered interceptors (e.g. commit coordination) via a
+            // registered IDbContextOptionsConfiguration<TDbContext> so they also reach a consumer's own plain
+            // AddDbContext<TDbContext>, not only this registration. EF Core does not auto-discover DI interceptors.
+            services.AddDiRegisteredInterceptorsConfiguration<TDbContext>();
+
             services.AddDbContext<TDbContext>(
                 (serviceProvider, optionsBuilder) =>
                 {
                     optionsAction?.Invoke(serviceProvider, optionsBuilder);
-
-                    // Parity with AddHeadlessDbContext: EF Core does not auto-discover IInterceptor
-                    // registrations from the application container; apply them here so package-registered
-                    // interceptors (e.g. commit coordination) fire for Identity contexts too.
-                    optionsBuilder.AddDiRegisteredInterceptors(serviceProvider);
-
                     optionsBuilder.AddHeadlessExtension();
                 },
                 contextLifetime,
