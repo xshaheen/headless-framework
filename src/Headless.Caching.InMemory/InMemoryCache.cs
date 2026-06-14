@@ -147,8 +147,11 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return new ValueTask<bool>(false);
         }
 
+        // Single clock read reused for the expiry, the entry's last-access stamp, and maintenance scheduling —
+        // the hot write path previously fetched the clock three times.
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
+            ? new DateTime(nowTicks, DateTimeKind.Utc).Add(expiration.Value)
             : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
@@ -163,10 +166,11 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             _timeProvider,
             _shouldClone,
             _shouldThrowOnSerializationError,
-            entrySize
+            entrySize,
+            nowTicksOverride: nowTicks
         );
 
-        return _SetInternalAsync(key, entry);
+        return _SetInternalAsync(key, entry, nowTicks: nowTicks);
     }
 
     /// <inheritdoc />
@@ -457,24 +461,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         long sizeDelta = 0;
         double resultValue = 0;
 
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(amount);
-                sizeDelta = size;
-                resultValue = amount;
-
-                return new CacheEntry(
-                    amount,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
+        // Manual CAS loop (no capturing factory delegates). Retries on lost races exactly like AddOrUpdate.
+        while (true)
+        {
+            if (_memory.TryGetValue(key, out var existingEntry))
             {
                 double? currentValue = null;
 
@@ -489,10 +479,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
                 var computedValue = currentValue.HasValue ? currentValue.Value + amount : amount;
                 var computedSize = _CalculateEntrySize(computedValue);
-                sizeDelta = computedSize - existingEntry.Size;
-                resultValue = computedValue;
-
-                return new CacheEntry(
+                var newEntry = new CacheEntry(
                     computedValue,
                     expiresAt,
                     _timeProvider,
@@ -500,8 +487,34 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                     _shouldThrowOnSerializationError,
                     computedSize
                 );
+
+                if (_memory.TryUpdate(key, newEntry, existingEntry))
+                {
+                    sizeDelta = computedSize - existingEntry.Size;
+                    resultValue = computedValue;
+                    break;
+                }
             }
-        );
+            else
+            {
+                var size = _CalculateEntrySize(amount);
+                var newEntry = new CacheEntry(
+                    amount,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
+
+                if (_memory.TryAdd(key, newEntry))
+                {
+                    sizeDelta = size;
+                    resultValue = amount;
+                    break;
+                }
+            }
+        }
 
         if (sizeDelta != 0)
         {
@@ -542,24 +555,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         long sizeDelta = 0;
         long resultValue = 0;
 
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(amount);
-                sizeDelta = size;
-                resultValue = amount;
-
-                return new CacheEntry(
-                    amount,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
+        // Manual CAS loop (no capturing factory delegates). Retries on lost races exactly like AddOrUpdate.
+        while (true)
+        {
+            if (_memory.TryGetValue(key, out var existingEntry))
             {
                 long? currentValue = null;
 
@@ -574,10 +573,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
                 var computedValue = currentValue.HasValue ? currentValue.Value + amount : amount;
                 var computedSize = _CalculateEntrySize(computedValue);
-                sizeDelta = computedSize - existingEntry.Size;
-                resultValue = computedValue;
-
-                return new CacheEntry(
+                var newEntry = new CacheEntry(
                     computedValue,
                     expiresAt,
                     _timeProvider,
@@ -585,8 +581,34 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                     _shouldThrowOnSerializationError,
                     computedSize
                 );
+
+                if (_memory.TryUpdate(key, newEntry, existingEntry))
+                {
+                    sizeDelta = computedSize - existingEntry.Size;
+                    resultValue = computedValue;
+                    break;
+                }
             }
-        );
+            else
+            {
+                var size = _CalculateEntrySize(amount);
+                var newEntry = new CacheEntry(
+                    amount,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
+
+                if (_memory.TryAdd(key, newEntry))
+                {
+                    sizeDelta = size;
+                    resultValue = amount;
+                    break;
+                }
+            }
+        }
 
         if (sizeDelta != 0)
         {
@@ -627,24 +649,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         long sizeDelta = 0;
         double difference = 0;
 
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(value);
-                sizeDelta = size;
-                difference = value;
-
-                return new CacheEntry(
-                    value,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
+        // Manual CAS loop (no capturing factory delegates). Retries on lost races exactly like AddOrUpdate.
+        while (true)
+        {
+            if (_memory.TryGetValue(key, out var existingEntry))
             {
                 double? currentValue = null;
 
@@ -657,13 +665,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                     // Type conversion failed - treat as if no current value
                 }
 
+                CacheEntry newEntry;
+                double localDifference;
+                long localSizeDelta;
+
                 if (currentValue.HasValue && currentValue.Value < value)
                 {
-                    difference = value - currentValue.Value;
                     var computedSize = _CalculateEntrySize(value);
-                    sizeDelta = computedSize - existingEntry.Size;
-
-                    return new CacheEntry(
+                    newEntry = new CacheEntry(
                         value,
                         expiresAt,
                         _timeProvider,
@@ -671,14 +680,43 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                         _shouldThrowOnSerializationError,
                         computedSize
                     );
+                    localDifference = value - currentValue.Value;
+                    localSizeDelta = computedSize - existingEntry.Size;
+                }
+                else
+                {
+                    newEntry = existingEntry.WithExpiration(expiresAt);
+                    localDifference = 0;
+                    localSizeDelta = 0;
                 }
 
-                difference = 0;
-                sizeDelta = 0;
-
-                return existingEntry.WithExpiration(expiresAt);
+                if (_memory.TryUpdate(key, newEntry, existingEntry))
+                {
+                    difference = localDifference;
+                    sizeDelta = localSizeDelta;
+                    break;
+                }
             }
-        );
+            else
+            {
+                var size = _CalculateEntrySize(value);
+                var newEntry = new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
+
+                if (_memory.TryAdd(key, newEntry))
+                {
+                    difference = value;
+                    sizeDelta = size;
+                    break;
+                }
+            }
+        }
 
         if (sizeDelta != 0)
         {
@@ -719,24 +757,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         long sizeDelta = 0;
         long difference = 0;
 
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(value);
-                sizeDelta = size;
-                difference = value;
-
-                return new CacheEntry(
-                    value,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
+        // Manual CAS loop (no capturing factory delegates). Retries on lost races exactly like AddOrUpdate.
+        while (true)
+        {
+            if (_memory.TryGetValue(key, out var existingEntry))
             {
                 long? currentValue = null;
 
@@ -749,13 +773,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                     // Type conversion failed - treat as if no current value
                 }
 
+                CacheEntry newEntry;
+                long localDifference;
+                long localSizeDelta;
+
                 if (currentValue.HasValue && currentValue.Value < value)
                 {
-                    difference = value - currentValue.Value;
                     var computedSize = _CalculateEntrySize(value);
-                    sizeDelta = computedSize - existingEntry.Size;
-
-                    return new CacheEntry(
+                    newEntry = new CacheEntry(
                         value,
                         expiresAt,
                         _timeProvider,
@@ -763,14 +788,43 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                         _shouldThrowOnSerializationError,
                         computedSize
                     );
+                    localDifference = value - currentValue.Value;
+                    localSizeDelta = computedSize - existingEntry.Size;
+                }
+                else
+                {
+                    newEntry = existingEntry.WithExpiration(expiresAt);
+                    localDifference = 0;
+                    localSizeDelta = 0;
                 }
 
-                difference = 0;
-                sizeDelta = 0;
-
-                return existingEntry.WithExpiration(expiresAt);
+                if (_memory.TryUpdate(key, newEntry, existingEntry))
+                {
+                    difference = localDifference;
+                    sizeDelta = localSizeDelta;
+                    break;
+                }
             }
-        );
+            else
+            {
+                var size = _CalculateEntrySize(value);
+                var newEntry = new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
+
+                if (_memory.TryAdd(key, newEntry))
+                {
+                    difference = value;
+                    sizeDelta = size;
+                    break;
+                }
+            }
+        }
 
         if (sizeDelta != 0)
         {
@@ -811,24 +865,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         long sizeDelta = 0;
         double difference = 0;
 
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(value);
-                sizeDelta = size;
-                difference = value;
-
-                return new CacheEntry(
-                    value,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
+        // Manual CAS loop (no capturing factory delegates). Retries on lost races exactly like AddOrUpdate.
+        while (true)
+        {
+            if (_memory.TryGetValue(key, out var existingEntry))
             {
                 double? currentValue = null;
 
@@ -841,13 +881,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                     // Type conversion failed - treat as if no current value
                 }
 
+                CacheEntry newEntry;
+                double localDifference;
+                long localSizeDelta;
+
                 if (currentValue.HasValue && currentValue.Value > value)
                 {
-                    difference = currentValue.Value - value;
                     var computedSize = _CalculateEntrySize(value);
-                    sizeDelta = computedSize - existingEntry.Size;
-
-                    return new CacheEntry(
+                    newEntry = new CacheEntry(
                         value,
                         expiresAt,
                         _timeProvider,
@@ -855,14 +896,43 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                         _shouldThrowOnSerializationError,
                         computedSize
                     );
+                    localDifference = currentValue.Value - value;
+                    localSizeDelta = computedSize - existingEntry.Size;
+                }
+                else
+                {
+                    newEntry = existingEntry.WithExpiration(expiresAt);
+                    localDifference = 0;
+                    localSizeDelta = 0;
                 }
 
-                difference = 0;
-                sizeDelta = 0;
-
-                return existingEntry.WithExpiration(expiresAt);
+                if (_memory.TryUpdate(key, newEntry, existingEntry))
+                {
+                    difference = localDifference;
+                    sizeDelta = localSizeDelta;
+                    break;
+                }
             }
-        );
+            else
+            {
+                var size = _CalculateEntrySize(value);
+                var newEntry = new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
+
+                if (_memory.TryAdd(key, newEntry))
+                {
+                    difference = value;
+                    sizeDelta = size;
+                    break;
+                }
+            }
+        }
 
         if (sizeDelta != 0)
         {
@@ -903,24 +973,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         long sizeDelta = 0;
         long difference = 0;
 
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(value);
-                sizeDelta = size;
-                difference = value;
-
-                return new CacheEntry(
-                    value,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
+        // Manual CAS loop (no capturing factory delegates). Retries on lost races exactly like AddOrUpdate.
+        while (true)
+        {
+            if (_memory.TryGetValue(key, out var existingEntry))
             {
                 long? currentValue = null;
 
@@ -933,13 +989,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                     // Type conversion failed - treat as if no current value
                 }
 
+                CacheEntry newEntry;
+                long localDifference;
+                long localSizeDelta;
+
                 if (currentValue.HasValue && currentValue.Value > value)
                 {
-                    difference = currentValue.Value - value;
                     var computedSize = _CalculateEntrySize(value);
-                    sizeDelta = computedSize - existingEntry.Size;
-
-                    return new CacheEntry(
+                    newEntry = new CacheEntry(
                         value,
                         expiresAt,
                         _timeProvider,
@@ -947,14 +1004,43 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                         _shouldThrowOnSerializationError,
                         computedSize
                     );
+                    localDifference = currentValue.Value - value;
+                    localSizeDelta = computedSize - existingEntry.Size;
+                }
+                else
+                {
+                    newEntry = existingEntry.WithExpiration(expiresAt);
+                    localDifference = 0;
+                    localSizeDelta = 0;
                 }
 
-                difference = 0;
-                sizeDelta = 0;
-
-                return existingEntry.WithExpiration(expiresAt);
+                if (_memory.TryUpdate(key, newEntry, existingEntry))
+                {
+                    difference = localDifference;
+                    sizeDelta = localSizeDelta;
+                    break;
+                }
             }
-        );
+            else
+            {
+                var size = _CalculateEntrySize(value);
+                var newEntry = new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
+
+                if (_memory.TryAdd(key, newEntry))
+                {
+                    difference = value;
+                    sizeDelta = size;
+                    break;
+                }
+            }
+        }
 
         if (sizeDelta != 0)
         {
@@ -1019,20 +1105,17 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 entrySize
             );
             long sizeDelta = 0;
+            CacheEntry committed;
 
-            var committed = _memory.AddOrUpdate(
-                key,
-                _ =>
-                {
-                    sizeDelta = entrySize;
-                    return entry;
-                },
-                (existingKey, existingEntry) =>
+            // Manual CAS loop (no capturing factory delegates). Retries on lost races exactly like AddOrUpdate.
+            while (true)
+            {
+                if (_memory.TryGetValue(key, out var existingEntry))
                 {
                     if (existingEntry.PeekValue() is not IDictionary<string, DateTime?> dictionary)
                     {
                         throw new InvalidOperationException(
-                            $"Unable to add value for key: {existingKey}. Cache value does not contain a set"
+                            $"Unable to add value for key: {key}. Cache value does not contain a set"
                         );
                     }
 
@@ -1049,9 +1132,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                         : expiresAt.Value > currentMax.Value ? expiresAt.Value
                         : currentMax.Value;
                     var newSize = _CalculateEntrySize(updatedDict);
-                    sizeDelta = newSize - existingEntry.Size;
-
-                    return new CacheEntry(
+                    var newEntry = new CacheEntry(
                         updatedDict,
                         newExpiresAt,
                         _timeProvider,
@@ -1059,8 +1140,21 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                         _shouldThrowOnSerializationError,
                         newSize
                     );
+
+                    if (_memory.TryUpdate(key, newEntry, existingEntry))
+                    {
+                        sizeDelta = newSize - existingEntry.Size;
+                        committed = newEntry;
+                        break;
+                    }
                 }
-            );
+                else if (_memory.TryAdd(key, entry))
+                {
+                    sizeDelta = entrySize;
+                    committed = entry;
+                    break;
+                }
+            }
 
             if (sizeDelta != 0)
             {
@@ -1100,20 +1194,17 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 entrySize
             );
             long sizeDelta = 0;
+            CacheEntry committed;
 
-            var committed = _memory.AddOrUpdate(
-                key,
-                _ =>
-                {
-                    sizeDelta = entrySize;
-                    return entry;
-                },
-                (existingKey, existingEntry) =>
+            // Manual CAS loop (no capturing factory delegates). Retries on lost races exactly like AddOrUpdate.
+            while (true)
+            {
+                if (_memory.TryGetValue(key, out var existingEntry))
                 {
                     if (existingEntry.PeekValue() is not IDictionary<object, DateTime?> dictionary)
                     {
                         throw new InvalidOperationException(
-                            $"Unable to add value for key: {existingKey}. Cache value does not contain a set"
+                            $"Unable to add value for key: {key}. Cache value does not contain a set"
                         );
                     }
 
@@ -1130,9 +1221,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                         : expiresAt.Value > currentMax.Value ? expiresAt.Value
                         : currentMax.Value;
                     var newSize = _CalculateEntrySize(updatedDict);
-                    sizeDelta = newSize - existingEntry.Size;
-
-                    return new CacheEntry(
+                    var newEntry = new CacheEntry(
                         updatedDict,
                         newExpiresAt,
                         _timeProvider,
@@ -1140,8 +1229,21 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                         _shouldThrowOnSerializationError,
                         newSize
                     );
+
+                    if (_memory.TryUpdate(key, newEntry, existingEntry))
+                    {
+                        sizeDelta = newSize - existingEntry.Size;
+                        committed = newEntry;
+                        break;
+                    }
                 }
-            );
+                else if (_memory.TryAdd(key, entry))
+                {
+                    sizeDelta = entrySize;
+                    committed = entry;
+                    break;
+                }
+            }
 
             if (sizeDelta != 0)
             {
@@ -1828,7 +1930,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 ETag = existingEntry.ETag,
                 LastModifiedAt = existingEntry.LastModifiedAt,
                 Tags = existingEntry.Tags,
-                ConcurrencyStamp = existingEntry.InstanceNumber.ToString(CultureInfo.InvariantCulture),
+                ConcurrencyStamp = existingEntry.ConcurrencyStamp,
             }
         );
     }
@@ -2067,7 +2169,12 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         }
     }
 
-    private async ValueTask<bool> _SetInternalAsync(string key, CacheEntry entry, bool addOnly = false)
+    private async ValueTask<bool> _SetInternalAsync(
+        string key,
+        CacheEntry entry,
+        bool addOnly = false,
+        long nowTicks = -1
+    )
     {
         if (entry.IsExpired)
         {
@@ -2079,50 +2186,34 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         long sizeDelta = 0;
         CacheEntry? previousEntry = null;
 
-        if (addOnly)
+        // Manual CAS loop instead of AddOrUpdate(key, addFactory, updateFactory): the factory delegates would
+        // capture the mutable locals above, forcing a closure + two delegate allocations on every write. This
+        // loop captures nothing and is the dominant per-write allocation cut on the hot path. Semantics:
+        // addOnly => insert only when absent or the incumbent is expired (resurrect); otherwise unconditional set.
+        while (true)
         {
-            _memory.AddOrUpdate(
-                key,
-                _ =>
-                {
-                    sizeDelta = entry.Size;
-                    previousEntry = null;
-                    return entry;
-                },
-                (_, existingEntry) =>
+            if (_memory.TryGetValue(key, out var existingEntry))
+            {
+                if (addOnly && !existingEntry.IsExpired)
                 {
                     wasUpdated = false;
                     previousEntry = null;
-
-                    if (existingEntry.IsExpired)
-                    {
-                        sizeDelta = entry.Size - existingEntry.Size;
-                        wasUpdated = true;
-                        previousEntry = existingEntry;
-                        return entry;
-                    }
-
-                    return existingEntry;
+                    break;
                 }
-            );
-        }
-        else
-        {
-            _memory.AddOrUpdate(
-                key,
-                _ =>
-                {
-                    sizeDelta = entry.Size;
-                    previousEntry = null;
-                    return entry;
-                },
-                (_, existingEntry) =>
+
+                if (_memory.TryUpdate(key, entry, existingEntry))
                 {
                     sizeDelta = entry.Size - existingEntry.Size;
                     previousEntry = existingEntry;
-                    return entry;
+                    break;
                 }
-            );
+            }
+            else if (_memory.TryAdd(key, entry))
+            {
+                sizeDelta = entry.Size;
+                previousEntry = null;
+                break;
+            }
         }
 
         if (sizeDelta != 0)
@@ -2136,7 +2227,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             _UpdateTagIndex(key, previousEntry?.Tags, entry.Tags);
         }
 
-        await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
+        // Compaction is the only async work; await it only under memory/count pressure. Otherwise dispatch the
+        // background sweep synchronously so the common write completes without an async suspension.
+        if (ShouldCompact)
+        {
+            await _CompactAsync().ConfigureAwait(false);
+        }
+
+        _ScheduleMaintenance(nowTicks >= 0 ? nowTicks : _timeProvider.GetUtcNow().UtcDateTime.Ticks);
 
         return wasUpdated;
     }
@@ -2158,13 +2256,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return false;
         }
 
-        if (
-            !string.Equals(
-                existingEntry.InstanceNumber.ToString(CultureInfo.InvariantCulture),
-                expectedStamp,
-                StringComparison.Ordinal
-            )
-        )
+        if (!string.Equals(existingEntry.ConcurrencyStamp, expectedStamp, StringComparison.Ordinal))
         {
             return false;
         }
@@ -2203,33 +2295,41 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return;
         }
 
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
 
         if (compactImmediately)
         {
             await _CompactAsync().ConfigureAwait(false);
         }
 
-        if (Volatile.Read(ref _maintenanceRunning) != 0)
+        _ScheduleMaintenance(nowTicks);
+    }
+
+    // Synchronous, allocation-free maintenance dispatch: claim the throttle slot via CAS and spawn the
+    // background sweep. Takes a pre-fetched timestamp so the hot write path neither re-reads the clock nor
+    // awaits an async wrapper when no compaction is needed.
+    private void _ScheduleMaintenance(long nowTicks)
+    {
+        if (_disposedCts.IsCancellationRequested || Volatile.Read(ref _maintenanceRunning) != 0)
         {
             return;
         }
 
-        // Use Interlocked.CompareExchange to ensure only one thread spawns maintenance
-        var utcNowTicks = utcNow.Ticks;
         var lastTicks = Volatile.Read(ref _lastMaintenanceTicks);
-        var thresholdTicks = _maintenanceIntervalTicks;
 
-        if (utcNowTicks - lastTicks > thresholdTicks)
+        if (nowTicks - lastTicks <= _maintenanceIntervalTicks)
         {
-            // Atomically try to claim the maintenance slot
-            if (Interlocked.CompareExchange(ref _lastMaintenanceTicks, utcNowTicks, lastTicks) == lastTicks)
-            {
-                if (Interlocked.CompareExchange(ref _maintenanceRunning, 1, 0) == 0)
-                {
-                    _ = Task.Run(_DoMaintenanceAsync, _disposedCts.Token);
-                }
-            }
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastMaintenanceTicks, nowTicks, lastTicks) != lastTicks)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _maintenanceRunning, 1, 0) == 0)
+        {
+            _ = Task.Run(_DoMaintenanceAsync, _disposedCts.Token);
         }
     }
 
@@ -2347,18 +2447,33 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
     // Single pass over the live entries: evict the physically/sliding-expired and recompute the soonest
     // surviving expiry to re-arm the hint. Gated by _DoMaintenanceAsync so it only runs when something is due.
+    // Eviction is capped at _maxEvictionsPerCompaction per sweep so a simultaneous burst of N tagged entries
+    // expiring cannot turn one tick into an O(N x tags) untag storm (#15). When the cap is hit the remainder is
+    // left for the next maintenance tick, which is forced to run promptly by arming the hint to now (see below).
     private void _SweepExpiredEntries(long nowTicks)
     {
         var soonest = long.MaxValue;
+        var removalCount = 0;
+        var capReached = false;
 
         foreach (var (key, entry) in _memory)
         {
             if (entry.ShouldRemoveAt(nowTicks))
             {
+                if (removalCount >= _maxEvictionsPerCompaction)
+                {
+                    // Per-sweep eviction cap reached with expired work still pending. Abort the scan: the
+                    // soonest-survivor recomputation is now incomplete (entries past this point are unscanned),
+                    // so we must not trust `soonest`. Force an immediate follow-up tick to continue the sweep.
+                    capReached = true;
+                    break;
+                }
+
                 if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
                 {
                     Interlocked.Add(ref _currentMemorySize, -entry.Size);
                     _UntagEntry(key, entry);
+                    removalCount++;
                 }
 
                 continue;
@@ -2370,18 +2485,28 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             }
         }
 
-        // Re-arm the hint. A hint still <= now is the stale pre-sweep value of an entry we just removed: raise it
-        // to the soonest survivor so the next sweep is deferred. A hint already > now was lowered by a writer to
-        // a live entry added during the scan: keep the smaller of the two so that entry is never starved of a
-        // sweep. The CAS retries if a writer moves the hint mid-update; writers only ever lower, so convergence
-        // is monotone.
+        // Re-arm the hint.
+        //
+        // Capped sweep: the scan aborted early, `soonest` is incomplete, and expired work is known to remain.
+        // Arm the target to `nowTicks` so the next maintenance tick's (_nextExpiryTicks <= now) gate passes and
+        // resumes the sweep, instead of deferring to a far-future survivor we may not have observed.
+        //
+        // Full sweep: use the soonest survivor.
+        //
+        // For either target: a hint still <= now is the stale pre-sweep value of an entry we just removed: raise
+        // it (full sweep) or hold it at now (capped) so the next sweep is scheduled correctly. A hint already
+        // > now was lowered by a writer to a live entry added during the scan: keep the smaller of the two so that
+        // entry is never starved of a sweep. The CAS retries if a writer moves the hint mid-update; writers only
+        // ever lower, so convergence is monotone.
+        var sweepResult = capReached ? nowTicks : soonest;
+
         long current;
         long target;
 
         do
         {
             current = Volatile.Read(ref _nextExpiryTicks);
-            target = current <= nowTicks ? soonest : Math.Min(current, soonest);
+            target = current <= nowTicks ? sweepResult : Math.Min(current, sweepResult);
 
             if (target == current)
             {
@@ -2472,7 +2597,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             TimeProvider timeProvider,
             bool shouldClone,
             bool shouldThrowOnSerializationError = true,
-            long size = 0
+            long size = 0,
+            long nowTicksOverride = -1
         )
             : this(
                 value,
@@ -2482,7 +2608,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 timeProvider,
                 shouldClone,
                 shouldThrowOnSerializationError,
-                size
+                size,
+                nowTicksOverride: nowTicksOverride
             ) { }
 
         internal CacheEntry(
@@ -2498,7 +2625,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             IReadOnlyCollection<string>? tags = null,
             DateTime? eagerRefreshAt = null,
             string? etag = null,
-            DateTime? lastModifiedAt = null
+            DateTime? lastModifiedAt = null,
+            long nowTicksOverride = -1
         )
         {
             _timeProvider = timeProvider;
@@ -2506,8 +2634,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             _shouldThrowOnSerializationError = shouldThrowOnSerializationError;
             _cacheValue = _shouldClone ? _DeepClone(value) : value;
 
-            var utcNow = _timeProvider.GetUtcNow();
-            _lastAccessTicks = utcNow.Ticks;
+            // Reuse the caller's already-fetched timestamp when supplied (hot write path), else read the clock.
+            _lastAccessTicks = nowTicksOverride >= 0 ? nowTicksOverride : _timeProvider.GetUtcNow().Ticks;
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
             SlidingExpiration = slidingExpiration;
@@ -2518,6 +2646,9 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             LastModifiedAt = lastModifiedAt;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
+            // Precompute the immutable concurrency stamp once at construction so warm-hit reads and CAS
+            // comparisons reuse the same string instead of allocating on every non-miss read (#23).
+            ConcurrencyStamp = InstanceNumber.ToString(CultureInfo.InvariantCulture);
         }
 
         /// <summary>Private constructor used by <see cref="WithExpiration"/> to share the already-cloned
@@ -2544,9 +2675,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             LastModifiedAt = prototype.LastModifiedAt;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
+            ConcurrencyStamp = InstanceNumber.ToString(CultureInfo.InvariantCulture);
         }
 
         internal long InstanceNumber { get; }
+
+        /// <summary>Immutable concurrency stamp (<see cref="InstanceNumber"/> formatted invariantly),
+        /// computed once at construction. Used for warm-hit reads and CAS comparisons.</summary>
+        internal string ConcurrencyStamp { get; }
 
         internal DateTime? LogicalExpiresAt { get; }
 
