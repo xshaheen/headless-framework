@@ -33,7 +33,9 @@ public sealed class HeadlessCacheInstanceBuilder
 
         if (SerializerFactory is not null)
         {
-            throw new InvalidOperationException($"A serializer is already configured for named cache instance '{Name}'.");
+            throw new InvalidOperationException(
+                $"A serializer is already configured for named cache instance '{Name}'."
+            );
         }
 
         SerializerFactory = serializerFactory;
