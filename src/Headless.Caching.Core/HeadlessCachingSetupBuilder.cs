@@ -50,22 +50,18 @@ public sealed class HeadlessCachingSetupBuilder
         Argument.IsNotNullOrWhiteSpace(roleKey);
         Argument.IsNotNull(action);
 
-        if (
-            roleKey
-            is not (
-                CacheConstants.MemoryCacheProvider
-                or CacheConstants.RemoteCacheProvider
-                or CacheConstants.HybridCacheProvider
-            )
-        )
-        {
-            throw new ArgumentException(
-                $"The tier role key '{roleKey}' is not one of the reserved role keys "
-                    + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
-                    + $"'{CacheConstants.HybridCacheProvider}').",
-                nameof(roleKey)
-            );
-        }
+        Argument.IsOneOf(
+            roleKey,
+            (ReadOnlySpan<string>)
+                [
+                    CacheConstants.MemoryCacheProvider,
+                    CacheConstants.RemoteCacheProvider,
+                    CacheConstants.HybridCacheProvider,
+                ],
+            message: $"The tier role key '{roleKey}' is not one of the reserved role keys "
+                + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
+                + $"'{CacheConstants.HybridCacheProvider}')."
+        );
 
         if (TierExtensions.Any(tier => string.Equals(tier.RoleKey, roleKey, StringComparison.Ordinal)))
         {

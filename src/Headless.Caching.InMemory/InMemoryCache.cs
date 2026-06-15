@@ -256,8 +256,11 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return new ValueTask<bool>(false);
         }
 
+        // Single clock read reused for the expiry, the entry's birth/last-access stamp, and maintenance
+        // scheduling — mirrors UpsertAsync so the add-only write path fetches the clock once, not three times.
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
         var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
+            ? new DateTime(nowTicks, DateTimeKind.Utc).Add(expiration.Value)
             : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
@@ -272,10 +275,11 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             _timeProvider,
             _shouldClone,
             _shouldThrowOnSerializationError,
-            entrySize
+            entrySize,
+            nowTicksOverride: nowTicks
         );
 
-        return _SetInternalAsync(key, entry, addOnly: true);
+        return _SetInternalAsync(key, entry, addOnly: true, nowTicks: nowTicks);
     }
 
     public async ValueTask<bool> TryReplaceAsync<T>(

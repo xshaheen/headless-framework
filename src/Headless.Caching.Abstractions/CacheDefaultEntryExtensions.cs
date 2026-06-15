@@ -33,7 +33,12 @@ public static class CacheDefaultEntryExtensions
     {
         Argument.IsNotNull(cache);
 
-        return cache.GetOrAddAsync(key, factory, _GetRequiredDefaultEntryOptions(cache), cancellationToken);
+        return cache.GetOrAddAsync(
+            key,
+            factory,
+            _GetRequiredDefaultEntryOptions(cache.DefaultEntryOptions, cache.GetType().Name),
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -58,7 +63,12 @@ public static class CacheDefaultEntryExtensions
     {
         Argument.IsNotNull(cache);
 
-        return cache.GetOrAddAsync(key, factory, _GetRequiredDefaultEntryOptions(cache), cancellationToken);
+        return cache.GetOrAddAsync(
+            key,
+            factory,
+            _GetRequiredDefaultEntryOptions(cache.DefaultEntryOptions, cache.GetType().Name),
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -83,7 +93,12 @@ public static class CacheDefaultEntryExtensions
     {
         Argument.IsNotNull(cache);
 
-        return cache.GetOrAddAsync(key, factory, _GetRequiredDefaultEntryOptions(cache), cancellationToken);
+        return cache.GetOrAddAsync(
+            key,
+            factory,
+            _GetRequiredDefaultEntryOptions(cache.DefaultEntryOptions, cache.GetType().Name),
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -108,25 +123,22 @@ public static class CacheDefaultEntryExtensions
     {
         Argument.IsNotNull(cache);
 
-        return cache.GetOrAddAsync(key, factory, _GetRequiredDefaultEntryOptions(cache), cancellationToken);
+        return cache.GetOrAddAsync(
+            key,
+            factory,
+            _GetRequiredDefaultEntryOptions(cache.DefaultEntryOptions, cache.GetType().Name),
+            cancellationToken
+        );
     }
 
-    private static CacheEntryOptions _GetRequiredDefaultEntryOptions(ICache cache)
+    private static CacheEntryOptions _GetRequiredDefaultEntryOptions(
+        CacheEntryOptions? defaultEntryOptions,
+        string typeName
+    )
     {
-        return cache.DefaultEntryOptions
+        return defaultEntryOptions
             ?? throw new InvalidOperationException(
-                $"The cache instance ({cache.GetType().Name}) has no {nameof(ICache.DefaultEntryOptions)} configured, "
-                    + "so the GetOrAddAsync overloads without CacheEntryOptions cannot be used. Configure the default at "
-                    + "registration (for example: options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) }) "
-                    + "or call the GetOrAddAsync overload that takes CacheEntryOptions explicitly."
-            );
-    }
-
-    private static CacheEntryOptions _GetRequiredDefaultEntryOptions<T>(ICache<T> cache)
-    {
-        return cache.DefaultEntryOptions
-            ?? throw new InvalidOperationException(
-                $"The cache instance ({cache.GetType().Name}) has no {nameof(ICache<T>.DefaultEntryOptions)} configured, "
+                $"The cache instance ({typeName}) has no {nameof(ICache.DefaultEntryOptions)} configured, "
                     + "so the GetOrAddAsync overloads without CacheEntryOptions cannot be used. Configure the default at "
                     + "registration (for example: options.DefaultEntryOptions = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) }) "
                     + "or call the GetOrAddAsync overload that takes CacheEntryOptions explicitly."

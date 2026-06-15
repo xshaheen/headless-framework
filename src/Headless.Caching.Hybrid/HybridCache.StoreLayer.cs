@@ -182,36 +182,15 @@ public sealed partial class HybridCache
             return false;
         }
 
-        if (RecoveryQueue is not null && !skipL2)
-        {
-            if (l2WriteSucceeded)
-            {
-                RecoveryQueue.OnSuccessfulL2Operation(key);
-            }
-            else
-            {
-                // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
-                _QueueSetEntryRecovery(key, entry, localWriteSync.PhysicalStamp);
-            }
-        }
-
-        // Factory value-writes (cold-miss fresh write, soft-timeout background completion, eager refresh,
-        // conditional Modified) invalidate peers' L1 exactly like the explicit-upsert path. Metadata-only
-        // restamps (NotModified extension, fail-safe throttle, eager-refresh gate) are skipped: peers' cached
-        // bytes are still identical, so invalidating them would only force pointless L2 re-reads. The publish is
-        // kept as-is for the tier-skip flags (it does not depend on skipL2): a fresh value here means peers'
-        // cached copies are stale, so they must still drop their L1 even when this node wrote only one tier. The
-        // publish runs after the recovery bookkeeping so a queued publish-recovery item cannot be cleared by this
-        // write's own L2 success.
-        if (!entry.IsRestamp)
-        {
-            await _PublishInvalidationAsync(
-                    new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
-                    cancellationToken,
-                    queueOnFailure: true
-                )
-                .ConfigureAwait(false);
-        }
+        await _ApplyL2WriteRecoveryAndPublishAsync(
+                key,
+                entry,
+                skipL2,
+                l2WriteSucceeded,
+                localWriteSync.PhysicalStamp,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         return true;
     }
@@ -308,6 +287,43 @@ public sealed partial class HybridCache
             return;
         }
 
+        await _ApplyL2WriteRecoveryAndPublishAsync(
+                key,
+                entry,
+                skipL2,
+                l2WriteSucceeded,
+                l1PhysicalStamp,
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Shared tail of the synchronous (<see cref="_SetEntryCoreAsync{T}"/>) and detached-background
+    /// (<see cref="_SetEntryL2TailAsync{T}"/>) write paths once the L2 write outcome is known and L1 is committed:
+    /// routes a failed L2 write to the recovery queue (or records success), then publishes the peer invalidation.
+    /// The two callers differ only in the physical stamp source (their own L1 write) and the token (the caller's
+    /// token vs <see cref="CancellationToken.None"/> on the detached path); the divergent condition-failed handling
+    /// stays in each caller. The publish runs <em>after</em> the recovery bookkeeping so a queued publish-recovery
+    /// item cannot be cleared by this write's own L2 success.
+    /// </summary>
+    /// <remarks>
+    /// Factory value-writes (cold-miss fresh write, soft-timeout background completion, eager refresh, conditional
+    /// Modified) invalidate peers' L1 exactly like the explicit-upsert path. Metadata-only restamps (NotModified
+    /// extension, fail-safe throttle, eager-refresh gate) are skipped: peers' cached bytes are identical, so
+    /// invalidating them would only force pointless L2 re-reads. The publish does not depend on
+    /// <paramref name="skipL2"/>: a fresh value means peers' copies are stale, so they must drop their L1 even when
+    /// this node wrote only one tier.
+    /// </remarks>
+    private async ValueTask _ApplyL2WriteRecoveryAndPublishAsync<T>(
+        string key,
+        CacheStoreEntryWrite<T> entry,
+        bool skipL2,
+        bool l2WriteSucceeded,
+        DateTime? l1PhysicalStamp,
+        CancellationToken cancellationToken
+    )
+    {
         if (RecoveryQueue is not null && !skipL2)
         {
             if (l2WriteSucceeded)
@@ -316,6 +332,7 @@ public sealed partial class HybridCache
             }
             else
             {
+                // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
                 _QueueSetEntryRecovery(key, entry, l1PhysicalStamp);
             }
         }
@@ -324,7 +341,7 @@ public sealed partial class HybridCache
         {
             await _PublishInvalidationAsync(
                     new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
-                    CancellationToken.None,
+                    cancellationToken,
                     queueOnFailure: true
                 )
                 .ConfigureAwait(false);
