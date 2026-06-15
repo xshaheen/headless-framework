@@ -96,8 +96,12 @@ public sealed class SqlServerCommitSignalSourceTests
         var committed = source.SignalCommittedAsync(new object(), CancellationToken.None);
         var rolledBack = source.SignalRolledBackAsync(new object(), CancellationToken.None);
 
-        committed.IsCompletedSuccessfully.Should().BeTrue("the uncoordinated-key fast-path returns a completed ValueTask");
-        rolledBack.IsCompletedSuccessfully.Should().BeTrue("the uncoordinated-key fast-path returns a completed ValueTask");
+        committed
+            .IsCompletedSuccessfully.Should()
+            .BeTrue("the uncoordinated-key fast-path returns a completed ValueTask");
+        rolledBack
+            .IsCompletedSuccessfully.Should()
+            .BeTrue("the uncoordinated-key fast-path returns a completed ValueTask");
 
         await committed;
         await rolledBack;

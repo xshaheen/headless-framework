@@ -136,12 +136,11 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then — fails loud with an actionable wiring error and writes no outbox row.
-        (await act.Should().ThrowAsync<InvalidOperationException>())
-            .WithMessage("*not enlisted in commit coordination*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
+            "*not enlisted in commit coordination*"
+        );
         await transaction.RollbackAsync(TestContext.Current.CancellationToken);
-        (await _CountPublishedContainingAsync(marker))
-            .Should()
-            .Be(0);
+        (await _CountPublishedContainingAsync(marker)).Should().Be(0);
     }
 
     [Fact]

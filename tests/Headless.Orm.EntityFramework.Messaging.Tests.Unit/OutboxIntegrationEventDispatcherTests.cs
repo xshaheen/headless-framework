@@ -116,7 +116,11 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given — an empty list must short-circuit without publishing anything.
         var bus = new RecordingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         // when
         await dispatcher.DispatchAsync([], TestContext.Current.CancellationToken);
 
@@ -130,7 +134,11 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // given — the pipeline opened a coordinated transaction, so the outbox writer enlists on the ambient
         // coordinator. The dispatcher only fans the events out to the bus; it does not touch the transaction.
         var bus = new RecordingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1"), new PaymentCaptured("payment-1")];
 
         // when
@@ -147,7 +155,11 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given
         var bus = new ThrowingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
@@ -163,7 +175,11 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // given — a pre-cancelled token with a non-empty event list. The per-event loop trips
         // ThrowIfCancellationRequested on the first iteration, so nothing is published.
         var bus = new RecordingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -181,7 +197,11 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given
         var bus = new RecordingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
@@ -201,15 +221,20 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var bus = new RecordingOutboxBus();
         var coordinator = Substitute.For<ICurrentCommitCoordinator>();
         coordinator.Current.Returns((ICommitCoordinator?)null);
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, coordinator, new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            coordinator,
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
         var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
 
         // then — fails loud and publishes nothing
-        (await act.Should().ThrowAsync<InvalidOperationException>())
-            .WithMessage("*not enlisted in commit coordination*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
+            "*not enlisted in commit coordination*"
+        );
         bus.Published.Should().BeEmpty();
     }
 

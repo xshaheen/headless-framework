@@ -236,7 +236,9 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
         // Single fault rethrown as the original type (via ExceptionDispatchInfo); the later message still dispatched.
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("broker down");
-        dispatched.Should().Contain(ok.StorageId, "a single message's broker fault must not abandon the rest of the buffer");
+        dispatched
+            .Should()
+            .Contain(ok.StorageId, "a single message's broker fault must not abandon the rest of the buffer");
     }
 
     [Fact]
@@ -278,7 +280,9 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         var act = async () => await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
 
         // Two faults aggregate; the interleaved good message still dispatched.
-        (await act.Should().ThrowAsync<AggregateException>()).Which.InnerExceptions.Should().HaveCount(2);
+        (await act.Should().ThrowAsync<AggregateException>())
+            .Which.InnerExceptions.Should()
+            .HaveCount(2);
         dispatched.Should().Contain(ok.StorageId);
     }
 
