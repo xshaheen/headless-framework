@@ -23,57 +23,15 @@ public sealed partial class EntityFrameworkCommitSignalSource(
     private readonly ConcurrentDictionary<object, ICommitScope> _scopes = new();
 
     /// <inheritdoc />
-    public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken)
-    {
-        Argument.IsNotNull(bindings);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // Own a DI scope for the post-commit drain so callbacks resolving scoped services (CommitContext.Services)
-        // outlive the request and the EF interceptor's off-thread drain — matching SqlServerCommitSignalSource. The
-        // scope is disposed by TrackedCommitScope after the drain (signal path) or on un-signalled dispose.
-        var ownedServices = bindings.Services.CreateAsyncScope();
-        ICommitScope scope;
-
-        try
-        {
-            scope = scopeFactory.Begin(ownedServices.ServiceProvider, bindings.Capabilities);
-        }
-        catch
-        {
-            ownedServices.Dispose();
-            throw;
-        }
-
-        if (bindings.ProviderTransactionKey is not null)
-        {
-            // Remove-if-equal: a tracked scope only ever evicts its OWN entry, so a successor transaction reusing the
-            // same DbTransaction key (improbable but cheap to guard) is never evicted by this scope's disposal.
-            var trackedScope = new TrackedCommitScope(
-                scope,
-                self =>
-                    _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self)),
-                ownedServices
-            );
-
-            if (!_scopes.TryAdd(bindings.ProviderTransactionKey, trackedScope))
-            {
-                trackedScope.Dispose();
-                LogDuplicateScope(_logger, bindings.ProviderTransactionKey);
-
-                throw new InvalidOperationException(
-                    "An EF Core commit coordination scope is already attached for this provider transaction key."
-                );
-            }
-
-            scope = trackedScope;
-        }
-        else
-        {
-            scope = new TrackedCommitScope(scope, static _ => { }, ownedServices);
-        }
-
-        return scope;
-    }
+    public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken) =>
+        CommitSignalSourceAttach.Attach(
+            scopeFactory,
+            bindings,
+            _scopes,
+            key => LogDuplicateScope(_logger, key),
+            "An EF Core commit coordination scope is already attached for this provider transaction key.",
+            cancellationToken
+        );
 
     /// <summary>
     /// Signals a commit for the scope correlated to the given transaction, if one is attached.
