@@ -18,5 +18,8 @@ internal sealed class JobsDeadOwnerReclaimer(
     public TimeSpan ReconcileInterval => optionsBuilder.DeadNodeReconcileInterval;
 
     public Task ReclaimAsync(string owner, CancellationToken cancellationToken) =>
-        internalJobManager.ReleaseDeadNodeResources(owner, cancellationToken);
+        // KTD6 / IDeadOwnerReclaimer contract: a reclaim racing host shutdown must complete, so the write
+        // deliberately uses CancellationToken.None and does not re-thread the incoming token (matches
+        // MessagingDeadOwnerReclaimer). The bridge already hands us None; this hardens the contract.
+        internalJobManager.ReleaseDeadNodeResources(owner, CancellationToken.None);
 }
