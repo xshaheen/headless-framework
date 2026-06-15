@@ -52,12 +52,11 @@ public sealed class HeadlessCachingSetupBuilder
 
         Argument.IsOneOf(
             roleKey,
-            (ReadOnlySpan<string>)
-                [
-                    CacheConstants.MemoryCacheProvider,
-                    CacheConstants.RemoteCacheProvider,
-                    CacheConstants.HybridCacheProvider,
-                ],
+            [
+                CacheConstants.MemoryCacheProvider,
+                CacheConstants.RemoteCacheProvider,
+                CacheConstants.HybridCacheProvider,
+            ],
             message: $"The tier role key '{roleKey}' is not one of the reserved role keys "
                 + $"('{CacheConstants.MemoryCacheProvider}', '{CacheConstants.RemoteCacheProvider}', "
                 + $"'{CacheConstants.HybridCacheProvider}')."
