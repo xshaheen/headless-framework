@@ -16,6 +16,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
 ) : ISettingValueRecordRepository
 {
     private const int _MaxDeleteParameters = 2000;
+    private const int _MaxNameParameters = 2000;
     private const string _ValueColumns = "[Id],[Name],[Value],[ProviderName],[ProviderKey],[DateCreated],[DateUpdated]";
 
     public async Task<SettingValueRecord?> FindAsync(
@@ -70,7 +71,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
     }
 
-    public Task<List<SettingValueRecord>> GetListAsync(
+    public async Task<List<SettingValueRecord>> GetListAsync(
         HashSet<string> names,
         string providerName,
         string? providerKey,
@@ -79,18 +80,27 @@ internal sealed class SqlServerSettingValueRecordRepository(
     {
         if (names.Count == 0)
         {
-            return Task.FromResult(new List<SettingValueRecord>());
+            return [];
         }
 
-        var nameParameters = names.Select((_, index) => $"@Name{index}").ToArray();
-        var parameters = names.Select((name, index) => _Param($"Name{index}", name)).ToList();
-        parameters.Add(_Param("ProviderName", providerName));
-        parameters.Add(_Param("ProviderKey", providerKey));
+        // Chunk the name set: a single IN-list would exceed SQL Server's ~2100-parameter ceiling once
+        // the caller passes more than that many names. The per-chunk index keeps @Name0..@NameN bounded.
+        var result = new List<SettingValueRecord>();
 
-        var sql =
-            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Name] IN ({string.Join(",", nameParameters)}) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+        foreach (var chunk in names.Chunk(_MaxNameParameters))
+        {
+            var nameParameters = chunk.Select((_, index) => $"@Name{index}").ToArray();
+            var parameters = chunk.Select((name, index) => _Param($"Name{index}", name)).ToList();
+            parameters.Add(_Param("ProviderName", providerName));
+            parameters.Add(_Param("ProviderKey", providerKey));
 
-        return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
+            var sql =
+                $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Name] IN ({string.Join(",", nameParameters)}) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+
+            result.AddRange(await _ReadValuesAsync(sql, cancellationToken, parameters.ToArray()).ConfigureAwait(false));
+        }
+
+        return result;
     }
 
     public Task<List<SettingValueRecord>> GetListAsync(
