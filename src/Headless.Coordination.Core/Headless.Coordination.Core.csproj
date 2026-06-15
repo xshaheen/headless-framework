@@ -8,6 +8,8 @@
     <InternalsVisibleTo Include="Headless.Coordination.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Coordination.SqlServer" />
     <InternalsVisibleTo Include="Headless.Coordination.Redis" />
+    <InternalsVisibleTo Include="Headless.Jobs.Core" />
+    <InternalsVisibleTo Include="Headless.Messaging.Core" />
     <InternalsVisibleTo Include="Headless.Coordination.Core.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
