@@ -1,12 +1,40 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Messaging.Coordination;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
 public sealed class SetupMessagingCoordinationTests
 {
+    [Fact]
+    public void should_register_dead_owner_recovery_bridge_unconditionally()
+    {
+        // given — no UseStorageLock, no real INodeMembership: recovery is always-on (KTD3)
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(_ => { });
+
+        // then — the reclaimer sink is registered
+        services.Should().ContainSingle(d => d.ServiceType == typeof(MessagingDeadOwnerReclaimer));
+
+        // and — the closed-generic hosted bridge over the messaging reclaimer is registered as IHostedService.
+        // The bridge type is internal to Coordination.Core and not visible here, so match it by shape.
+        var bridge = services.FirstOrDefault(d =>
+            d.ServiceType == typeof(IHostedService)
+            && d.ImplementationType is { IsGenericType: true } impl
+            && impl.GetGenericTypeDefinition().Name == "DeadOwnerRecoveryBridge`1"
+            && impl.GetGenericArguments()[0] == typeof(MessagingDeadOwnerReclaimer)
+        );
+
+        bridge
+            .Should()
+            .NotBeNull("the messaging dead-owner recovery bridge must be hosted regardless of UseStorageLock");
+    }
+
     [Fact]
     public void should_register_null_node_membership_by_default()
     {
