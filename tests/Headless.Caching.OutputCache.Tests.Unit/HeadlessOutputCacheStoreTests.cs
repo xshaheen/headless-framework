@@ -192,6 +192,41 @@ public sealed class HeadlessOutputCacheStoreTests
         await _cache.DidNotReceiveWithAnyArgs().UpsertEntryAsync<byte[]>(default!, default, default, default);
     }
 
+    [Fact]
+    public async Task guards_reject_invalid_input_on_buffer_and_evict_members()
+    {
+        // given
+        var store = _CreateStore();
+        var pipe = new Pipe();
+
+        // when / then — the buffer-store and eviction members guard before touching the cache, same as the
+        // byte[] members above (those overloads have their own argument-validation path the cache never sees)
+        await FluentActions
+            .Awaiting(() =>
+                store
+                    .SetAsync("", ReadOnlySequence<byte>.Empty, ReadOnlyMemory<string>.Empty, _ValidFor, CancellationToken.None)
+                    .AsTask()
+            )
+            .Should()
+            .ThrowAsync<ArgumentException>();
+        await FluentActions
+            .Awaiting(() => store.TryGetAsync("", pipe.Writer, CancellationToken.None).AsTask())
+            .Should()
+            .ThrowAsync<ArgumentException>();
+        await FluentActions
+            .Awaiting(() => store.TryGetAsync(_Key, null!, CancellationToken.None).AsTask())
+            .Should()
+            .ThrowAsync<ArgumentException>();
+        await FluentActions
+            .Awaiting(() => store.EvictByTagAsync("", CancellationToken.None).AsTask())
+            .Should()
+            .ThrowAsync<ArgumentException>();
+
+        await _cache.DidNotReceiveWithAnyArgs().GetAsync<byte[]>(default!, default);
+        await _cache.DidNotReceiveWithAnyArgs().UpsertEntryAsync<byte[]>(default!, default, default, default);
+        await _cache.DidNotReceiveWithAnyArgs().RemoveByTagAsync(default!, default);
+    }
+
     /// <summary>
     /// Reads the (key, value, options) of every <c>UpsertEntryAsync</c> call the store issued. Inspecting
     /// recorded calls sidesteps NSubstitute's argument-matcher engine, which mis-binds specs on this generic

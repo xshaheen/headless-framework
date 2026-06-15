@@ -85,4 +85,71 @@ public sealed class RawBytesSerializerTests
         // then
         action.Should().Throw<ArgumentNullException>();
     }
+
+    [Fact]
+    public void should_read_from_a_publicly_visible_memory_stream_via_the_buffer_fast_path()
+    {
+        // given — a resizable MemoryStream exposes its buffer (TryGetBuffer == true), exercising the segment-copy
+        // fast path rather than the seekable pre-size path the byte[]-backed streams above hit
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+        using var stream = new MemoryStream();
+        stream.Write(payload);
+        stream.Position = 0;
+
+        // when
+        var result = _serializer.Deserialize<byte[]>(stream);
+
+        // then
+        result.Should().Equal(payload);
+    }
+
+    [Fact]
+    public void should_read_from_a_non_seekable_stream_via_the_copy_to_fallback()
+    {
+        // given — a non-seekable stream cannot be pre-sized, exercising the CopyTo fallback branch
+        var payload = new byte[] { 9, 8, 7, 6 };
+        using var stream = new NonSeekableReadStream(payload);
+
+        // when
+        var result = _serializer.Deserialize<byte[]>(stream);
+
+        // then
+        result.Should().Equal(payload);
+    }
+
+    private sealed class NonSeekableReadStream(byte[] data) : Stream
+    {
+        private readonly MemoryStream _inner = new(data);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+    }
 }
