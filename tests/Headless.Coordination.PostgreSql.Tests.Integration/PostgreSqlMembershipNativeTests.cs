@@ -197,7 +197,9 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         var store = node.Services.GetRequiredService<IMembershipStore>();
 
         // Alive immediately after register (durable liveness established without a loop tick).
-        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+        (await store.ReadNodeLivenessAsync(identity, AbortToken))
+            .Should()
+            .Be(NodeLivenessState.Alive);
 
         // Aged into the suspicion band -> Suspected.
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
@@ -237,11 +239,17 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         var unregistered = new NodeIdentity(new NodeId("node-z"), new NodeIncarnation(1));
 
         // Superseded prior incarnation is not current-generation -> absent (null).
-        (await store.ReadNodeLivenessAsync(firstIdentity, AbortToken)).Should().BeNull();
+        (await store.ReadNodeLivenessAsync(firstIdentity, AbortToken))
+            .Should()
+            .BeNull();
         // Never-registered node -> absent (null).
-        (await store.ReadNodeLivenessAsync(unregistered, AbortToken)).Should().BeNull();
+        (await store.ReadNodeLivenessAsync(unregistered, AbortToken))
+            .Should()
+            .BeNull();
         // The current incarnation is still alive.
-        (await store.ReadNodeLivenessAsync(secondIdentity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+        (await store.ReadNodeLivenessAsync(secondIdentity, AbortToken))
+            .Should()
+            .Be(NodeLivenessState.Alive);
     }
 
     [Fact]

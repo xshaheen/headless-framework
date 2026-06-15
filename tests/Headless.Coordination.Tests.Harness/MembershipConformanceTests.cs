@@ -285,7 +285,9 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var store = node.Services.GetRequiredService<IMembershipStore>();
 
         // Alive immediately after register.
-        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+        (await store.ReadNodeLivenessAsync(identity, AbortToken))
+            .Should()
+            .Be(NodeLivenessState.Alive);
 
         // Aged into the suspicion band -> Suspected.
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
@@ -323,7 +325,9 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
 
         secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
         // The superseded prior incarnation is not current-generation -> absent (null).
-        (await store.ReadNodeLivenessAsync(firstIdentity, AbortToken)).Should().BeNull();
+        (await store.ReadNodeLivenessAsync(firstIdentity, AbortToken))
+            .Should()
+            .BeNull();
         (await store.ReadNodeLivenessAsync(secondIdentity, AbortToken)).Should().Be(NodeLivenessState.Alive);
     }
 
@@ -400,7 +404,9 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
 
         // The current incarnation is alive; the superseded prior incarnation is not.
-        (await second.Membership.IsAliveAsync(secondIdentity, AbortToken)).Should().BeTrue();
+        (await second.Membership.IsAliveAsync(secondIdentity, AbortToken))
+            .Should()
+            .BeTrue();
         (await second.Membership.IsAliveAsync(firstIdentity, AbortToken)).Should().BeFalse();
 
         // IsAliveAsync maps every non-Alive targeted state to false, not just absence. As the current-generation
