@@ -598,6 +598,8 @@ internal static class IdempotencyTestApp
             CancellationToken cancellationToken = default
         ) => throw _Boom();
 
+        public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+
         public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
 
         public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();

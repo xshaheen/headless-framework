@@ -247,6 +247,9 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
         CancellationToken cancellationToken = default
     ) => cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
 
+    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) =>
+        cache.RefreshAsync(key, cancellationToken);
+
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
         cache.RemoveAsync(key, cancellationToken);
 

@@ -297,6 +297,12 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         return await _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
     }
 
+    public async ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
+        await _cache.RefreshAsync(key, cancellationToken);
+    }
+
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         RemoveAttempts++;
