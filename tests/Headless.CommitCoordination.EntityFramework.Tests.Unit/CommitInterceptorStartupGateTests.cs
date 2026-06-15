@@ -5,6 +5,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -73,6 +75,40 @@ public sealed class CommitInterceptorStartupGateTests
         await _RunGateAsync(provider);
     }
 
+    [Fact]
+    public async Task should_skip_probe_without_touching_services_when_disabled()
+    {
+        // Disabled mode is the opt-out: the gate must return before it resolves a scope or context, so a host that
+        // turned the probe off pays no startup round-trip.
+        var provider = new SpyServiceProvider();
+        var gate = new CommitInterceptorStartupGate<GateTestDbContext>(
+            provider,
+            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitInterceptorProbeMode.Disabled }),
+            NullLogger<CommitInterceptorStartupGate<GateTestDbContext>>.Instance
+        );
+
+        await gate.StartingAsync(TestContext.Current.CancellationToken);
+
+        provider.WasQueried.Should().BeFalse("Disabled mode returns before resolving anything");
+    }
+
+    [Fact]
+    public async Task should_allow_startup_when_probe_is_inconclusive_even_in_strict_mode()
+    {
+        // A service provider that cannot create a scope models an unreachable/unresolvable probe environment. That
+        // is inconclusive — NOT the interceptor-mis-wire signal — so even Strict mode must allow the host to start.
+        var provider = new SpyServiceProvider();
+        var gate = new CommitInterceptorStartupGate<GateTestDbContext>(
+            provider,
+            Options.Create(new CommitInterceptorProbeOptions { Mode = CommitInterceptorProbeMode.Strict }),
+            NullLogger<CommitInterceptorStartupGate<GateTestDbContext>>.Instance
+        );
+
+        var act = async () => await gate.StartingAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync("an unreachable database is inconclusive, not a mis-wire");
+    }
+
     private static ServiceProvider _BuildProvider(
         SqliteConnection connection,
         bool wireInterceptor,
@@ -108,4 +144,18 @@ public sealed class CommitInterceptorStartupGateTests
     }
 
     private sealed class GateTestDbContext(DbContextOptions<GateTestDbContext> options) : DbContext(options);
+
+    // Records whether the probe touched DI, and resolves nothing — so CreateAsyncScope (which needs an
+    // IServiceScopeFactory) fails, exercising the inconclusive path.
+    private sealed class SpyServiceProvider : IServiceProvider
+    {
+        public bool WasQueried { get; private set; }
+
+        public object? GetService(Type serviceType)
+        {
+            WasQueried = true;
+
+            return null;
+        }
+    }
 }

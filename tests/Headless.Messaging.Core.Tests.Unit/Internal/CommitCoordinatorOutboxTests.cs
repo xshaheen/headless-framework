@@ -13,7 +13,9 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Internal;
 
@@ -157,6 +159,56 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             // Committing the scope must not re-dispatch — the message was never enlisted.
             await dispatcher.Received(1).EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>());
         }
+    }
+
+    [Fact]
+    public async Task flush_should_swallow_timeout_when_dispatcher_exceeds_flush_timeout()
+    {
+        // A broker that never completes must not hold the post-commit drain (and its DI scope + DB connection)
+        // open forever: the independent flush timeout cancels the dispatch, the OCE is swallowed, and the drain
+        // completes. The undispatched message stays durable for the relay sweep.
+        var timeProvider = new FakeTimeProvider();
+        var flushTimeout = TimeSpan.FromSeconds(30);
+        var coordinator = new CommitCoordinator();
+
+        var dispatchEntered = new TaskCompletionSource();
+        var dispatcher = Substitute.For<IDispatcher>();
+        dispatcher
+            .EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                dispatchEntered.TrySetResult();
+
+                return new ValueTask(Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()));
+            });
+
+        var buffer = new MessageOutboxBuffer(
+            coordinator,
+            dispatcher,
+            flushTimeout,
+            timeProvider,
+            NullLogger<MessageOutboxBuffer>.Instance
+        );
+
+        buffer.Add(
+            new MediumMessage
+            {
+                StorageId = Guid.NewGuid(),
+                Origin = new Message(new Dictionary<string, string?>(), value: null),
+                Content = "{}",
+                IntentType = IntentType.Bus,
+                Added = DateTime.UtcNow,
+            }
+        );
+
+        // Commit drives FlushAsync, which blocks in the (hanging) dispatcher until the flush timeout fires.
+        var drain = coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider()).AsTask();
+
+        await dispatchEntered.Task;
+        timeProvider.Advance(flushTimeout);
+
+        await drain;
+        drain.IsCompletedSuccessfully.Should().BeTrue("the flush timeout is swallowed, not propagated");
     }
 
     private static MessagePublishRequestFactory _CreatePublishRequestFactory()

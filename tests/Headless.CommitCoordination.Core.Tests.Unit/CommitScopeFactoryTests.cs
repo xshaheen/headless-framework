@@ -306,6 +306,45 @@ public sealed class CommitScopeFactoryTests
         scope.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
     }
 
+    [Fact]
+    public void begin_new_should_open_independent_root_when_ambient_scope_active()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var services = new EmptyServiceProvider();
+
+        using var ambient = factory.Begin(services);
+        using var independent = factory.BeginNew(services);
+
+        var ambientCoordinator = (CommitCoordinator)ambient.Coordinator;
+        var independentCoordinator = (CommitCoordinator)independent.Coordinator;
+
+        independentCoordinator.Should().NotBeSameAs(ambientCoordinator);
+        independentCoordinator
+            .Root.Should()
+            .BeSameAs(
+                independentCoordinator,
+                "BeginNew opens an independent root, not a child joined to the ambient coordinator"
+            );
+    }
+
+    [Fact]
+    public void pop_handle_should_throw_when_outer_scope_disposed_before_inner()
+    {
+        var stack = new CommitScopeStack();
+
+        var outer = stack.Push(new CommitCoordinator());
+        var inner = stack.Push(new CommitCoordinator());
+
+        var act = outer.Dispose;
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("Commit scope disposed out of order.");
+
+        // Unwind in order so the ambient frame does not leak into the async flow.
+        inner.Dispose();
+        outer.Dispose();
+    }
+
     private sealed class DisposableBuffer : ICommitWorkBuffer, IDisposable
     {
         public void Dispose() { }
