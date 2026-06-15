@@ -10,6 +10,10 @@ packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
+    - [Resilience model](#resilience-model)
+    - [Read path](#read-path)
+    - [Fail-safe and the expiration timeline](#fail-safe-and-the-expiration-timeline)
+    - [Operation semantics and entry model](#operation-semantics-and-entry-model)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Caching.Abstractions](#headlesscachingabstractions)
     - [Problem Solved](#problem-solved)
@@ -130,6 +134,77 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 
 ## Core Concepts
 
+### Resilience model
+
+The factory path (`GetOrAddAsync`) composes several independent mechanisms, each targeting one failure mode. Reach for the option whose row matches the failure you need to survive; the mechanisms combine freely except where Agent Instructions note an exclusion (sliding expiration excludes both fail-safe and eager refresh).
+
+| Failure mode | Mechanism | Option / API |
+| --- | --- | --- |
+| Concurrent misses on one node (thundering herd) | Per-key single-flight factory | Always on |
+| Thundering herd across nodes sharing one L2 | Cross-node single-flight | `UseDistributedFactoryLock` (+ `Headless.Caching.DistributedLocks`) |
+| Origin down or throwing | Fail-safe — serve last known-good value | `IsFailSafeEnabled`, `FailSafeMaxDuration`, `FailSafeThrottleDuration` |
+| Origin slow, stale acceptable | Soft timeout — return stale, finish in background | `FactorySoftTimeout` (needs fail-safe + a stale reserve) |
+| Origin slow, cold cache | Hard timeout — bound the cold wait | `FactoryHardTimeout` |
+| Hot key expiry latency spike | Eager refresh — renew before expiry | `EagerRefreshThreshold` |
+| Synchronized expiry of co-created entries | Jitter — desynchronize expiry | `JitterMaxDuration` |
+| Re-fetching an unchanged payload | Conditional refresh (HTTP-304) | `GetOrAddAsync` `CacheFactoryContext<T>` overload |
+| L2 slow or failing (Hybrid) | L2 read timeouts + circuit breaker | `DistributedCacheSoftTimeout` / `DistributedCacheHardTimeout` / `DistributedCacheCircuitBreakerDuration` |
+| Transient L2/backplane outage (Hybrid) | Auto-recovery — queue and replay | `EnableAutoRecovery` |
+| Invalidate a group of keys | Logical tag invalidation | `Tags` + `RemoveByTagAsync` |
+| Invalidate everything, keep reserves | Logical whole-cache clear | `ClearAsync` |
+
+### Read path
+
+Every `GetOrAddAsync` resolves a value through the tier(s), then a single-flight factory. A logically-stale entry is not a hit for ordinary reads, but it is a fail-safe reserve the factory can fall back to:
+
+```
+ GetOrAddAsync(key)
+   │
+   ▼
+ ┌──────┐  fresh hit
+ │  L1  │ ─────────────────────────────────▶ value
+ └──────┘
+   │ miss / logically stale
+   ▼
+ ┌──────┐  fresh hit
+ │  L2  │ ──▶ promote to L1 ────────────────▶ value
+ └──────┘     (Hybrid only — single-tier providers have no L2)
+   │ miss / logically stale
+   ▼
+ acquire per-key lock   (+ distributed lock if UseDistributedFactoryLock)
+   │ acquired                          │ busy / LockTimeout
+   ▼                                   ▼
+ run factory                    stale reserve? ─yes─▶ serve stale (IsStale=true)
+   │                                   │ no
+   ├─ success ──▶ write tier(s) ──▶ value
+   │
+   └─ fails or hard-timeout ──▶ stale reserve? ─yes─▶ serve stale (IsStale=true)
+                                       │ no
+                                       ▼
+                                  miss (NoValue) / throw
+```
+
+Single-tier providers (`InMemory`, `Redis`) skip the L2 hop; the lock, factory, and fail-safe rows are identical across all providers because they live in the shared coordinator.
+
+### Fail-safe and the expiration timeline
+
+Every entry carries two clocks. **Logical expiration** ends the fresh window that ordinary reads see; **physical expiration** ends the fail-safe reserve that only `GetOrAddAsync` reads. Fail-safe stretches physical past logical so a failing factory has a parachute:
+
+```
+  write     logical expiry           physical expiry
+  │                 │                        │
+  ▼                 ▼                        ▼
+  ├──── fresh ─────┼──── stale reserve ─────┼──── gone ──▶ t
+```
+
+- **fresh** — reads hit; `GetOrAddAsync` returns the live value.
+- **stale reserve** — reads miss; `GetOrAddAsync` runs the factory and serves this value *only if the factory fails* (`CacheValue<T>.IsStale = true`), then throttles retries for `FailSafeThrottleDuration`.
+- **gone** — reads miss; `GetOrAddAsync` runs the factory with no fallback.
+
+`physical expiry = max(Duration, FailSafeMaxDuration)`. With fail-safe off, the two clocks coincide, the stale-reserve window collapses to zero, and `ExpireAsync` becomes equivalent to `RemoveAsync` (no reserve to preserve).
+
+### Operation semantics and entry model
+
 `CacheValue<T>` distinguishes misses from cached null values with `HasValue`. `IsStale` is set only when the current `GetOrAddAsync` call activates fail-safe or returns stale because a timeout fired.
 
 Entries can carry two expiration timestamps:
@@ -162,6 +237,16 @@ Factory timeout selection is a single decision:
 | Fail-safe enabled, stale reserve exists, finite `FactorySoftTimeout` | Soft | Return stale and continue the factory in the background. |
 | No soft fallback, finite `FactoryHardTimeout` | Hard | Cancel or abandon the factory; serve stale if possible, otherwise throw `CacheFactoryTimeoutException`. |
 | Neither applies | None | Preserve existing unbounded factory behavior except for caller cancellation. |
+
+```
+ soft timeout  (fail-safe on + a stale reserve exists)
+   factory start ──soft──▶ serve stale now (IsStale=true)
+                           factory continues on a detached token ──▶ writes result
+
+ hard timeout  (no stale fallback)
+   factory start ──hard──▶ abandon factory ──▶ serve stale if a reserve exists,
+                                               else throw CacheFactoryTimeoutException
+```
 
 Soft timeout also bounds acquisition of the per-key lock when fail-safe and a stale reserve exist. A concurrent waiter that cannot acquire the lock within `FactorySoftTimeout` returns stale rather than blocking behind an in-flight or background-completing factory. When no stale reserve exists, `LockTimeout` bounds that wait instead: it defaults to `Timeout.InfiniteTimeSpan` (wait until the in-flight factory releases the lock, matching FusionCache's default), and a finite value makes the waiter degrade to a miss (`CacheValue<T>.NoValue`) on elapse rather than blocking. Same-key re-entrant factory calls are only supported under the fail-safe plus stale plus finite-soft combination; otherwise they can still deadlock and are unsupported.
 
