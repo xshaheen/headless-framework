@@ -250,4 +250,17 @@ public static partial class RegularLockLoggerExtensions
         string leaseId,
         TimeSpan timeout
     );
+
+    [LoggerMessage(
+        EventId = 24,
+        EventName = "TryOnceSafetyDeadlineFired",
+        Level = LogLevel.Warning,
+        Message = "Non-blocking lock acquire hit its safety deadline after {Elapsed:g} (lock-store stalled, not contention): R={Resource} Id={LeaseId}"
+    )]
+    public static partial void LogTryOnceSafetyDeadlineFired(
+        this ILogger logger,
+        string resource,
+        string leaseId,
+        TimeSpan elapsed
+    );
 }

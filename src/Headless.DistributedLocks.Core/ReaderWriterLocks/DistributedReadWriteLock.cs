@@ -385,7 +385,7 @@ public sealed class DistributedReadWriteLock(
 
         if (!gotLock)
         {
-            DistributedLockMetrics.LockFailed.Add(1);
+            DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
             return null;
         }
 
@@ -430,6 +430,7 @@ public sealed class DistributedReadWriteLock(
 
         var attemptToken = linkedCts?.Token ?? safetyCts.Token;
         bool gotLock;
+        var safetyDeadlineFired = false;
 
         try
         {
@@ -452,6 +453,10 @@ public sealed class DistributedReadWriteLock(
                 throw;
             }
 
+            // Safety deadline fired (caller has not cancelled): the lock-store stalled past
+            // `_NonBlockingAcquireDeadline`. Flag it so the failure surfaces a distinct EventId
+            // + `reason=stalled` metric instead of looking like routine contention (#320).
+            safetyDeadlineFired = true;
             gotLock = false;
         }
         catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
@@ -477,7 +482,16 @@ public sealed class DistributedReadWriteLock(
                 await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
             }
 
-            DistributedLockMetrics.LockFailed.Add(1);
+            if (safetyDeadlineFired)
+            {
+                DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonStalled);
+                logger.LogTryOnceSafetyDeadlineFired(resource, leaseId, timeWaitedForLock);
+            }
+            else
+            {
+                DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
+            }
+
             return null;
         }
 

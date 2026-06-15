@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.Metrics;
 using Headless.Abstractions;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
@@ -267,6 +268,118 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         // then
         (await act.Should().ThrowAsync<ArgumentException>()).WithParameterName("acquireOptions");
+    }
+
+    // EventId 24 == RegularLockLoggerExtensions.LogTryOnceSafetyDeadlineFired.
+    private const int _SafetyDeadlineFiredEventId = 24;
+    private const int _SafetyDeadlineSeconds = 10; // Mirrors _NonBlockingAcquireDeadline.
+
+    [Fact]
+    public async Task should_log_safety_deadline_eventid_and_tag_metric_stalled_when_deadline_fires()
+    {
+        // given — storage that hangs so the non-blocking safety deadline (not contention) ends the attempt
+        var storage = Substitute.For<IDistributedSemaphoreStorage>();
+        storage
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ci => new ValueTask<DistributedLockAcquireResult>(
+                _HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(4))
+            ));
+
+        // DistributedSemaphoreProvider is internal, so NSubstitute cannot proxy
+        // ILogger<DistributedSemaphoreProvider> (Castle DynamicProxy has no access to the internal
+        // type arg). Use a real capturing logger instead.
+        var captured = new List<int>();
+        var logger = new CapturingLogger<DistributedSemaphoreProvider>(captured);
+
+        var failedReasons = new List<string>();
+        using var meterListener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (
+                    instrument.Meter.Name == "Headless.DistributedLocks"
+                    && instrument.Name == "headless.semaphore.failed"
+                )
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        meterListener.SetMeasurementEventCallback<int>(
+            (_, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (tag is { Key: "reason", Value: string reason })
+                    {
+                        lock (failedReasons)
+                        {
+                            failedReasons.Add(reason);
+                        }
+                    }
+                }
+            }
+        );
+        meterListener.Start();
+
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        var provider = new DistributedSemaphoreProvider(
+            storage,
+            Substitute.For<IOutboxBus>(),
+            new DistributedLockOptions(),
+            _guidGenerator,
+            _timeProvider,
+            logger
+        );
+        var semaphore = provider.CreateSemaphore(Faker.Random.AlphaNumeric(10), maxCount: 1);
+
+        // when
+        var acquireTask = semaphore.TryAcquireAsync(
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
+        );
+        _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
+        await _DrainUntilAsync(() => acquireTask.IsCompleted);
+        (await acquireTask).Should().BeNull();
+
+        // then — log EventId proves the signal fires (isolated substitute logger); the metric
+        // assertion is Contain-only because `headless.semaphore.failed` is process-wide.
+        captured.Should().Contain(_SafetyDeadlineFiredEventId);
+        failedReasons.Should().Contain(DistributedLockMetrics.ReasonStalled);
+    }
+
+    private static async Task<DistributedLockAcquireResult> _HangUntilCancelledAsync(CancellationToken ct)
+    {
+        await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+        return DistributedLockAcquireResult.Failed; // Unreachable — Task.Delay throws on cancellation.
+    }
+
+    private sealed class CapturingLogger<T>(List<int> eventIds) : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            lock (eventIds)
+            {
+                eventIds.Add(eventId.Id);
+            }
+        }
     }
 
     private DistributedSemaphoreProvider _CreateProvider(DistributedLockOptions? options = null)

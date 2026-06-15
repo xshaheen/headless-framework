@@ -119,6 +119,7 @@ internal sealed class DistributedSemaphoreProvider(
                 : null;
             var attemptToken = linkedCts?.Token ?? safetyCts.Token;
             var singleResult = DistributedLockAcquireResult.Failed;
+            var safetyDeadlineFired = false;
 
             try
             {
@@ -144,6 +145,11 @@ internal sealed class DistributedSemaphoreProvider(
                     throw;
                 }
 
+                // Safety deadline fired (caller has not cancelled): the slot store stalled past
+                // `_NonBlockingAcquireDeadline`. Flag it so the failure surfaces a distinct
+                // EventId + `reason=stalled` metric instead of looking like routine contention
+                // (#320).
+                safetyDeadlineFired = true;
                 singleResult = DistributedLockAcquireResult.Failed;
             }
 
@@ -152,7 +158,15 @@ internal sealed class DistributedSemaphoreProvider(
 
             if (!singleResult.Acquired)
             {
-                DistributedLockMetrics.SemaphoreFailed.Add(1);
+                if (safetyDeadlineFired)
+                {
+                    DistributedLockMetrics.SemaphoreFailed.Add(1, DistributedLockMetrics.ReasonStalled);
+                    logger.LogTryOnceSafetyDeadlineFired(resource, leaseId, singleWait);
+                }
+                else
+                {
+                    DistributedLockMetrics.SemaphoreFailed.Add(1, DistributedLockMetrics.ReasonContended);
+                }
             }
 
             return singleResult.Acquired
@@ -241,7 +255,7 @@ internal sealed class DistributedSemaphoreProvider(
 
         if (!result.Acquired)
         {
-            DistributedLockMetrics.SemaphoreFailed.Add(1);
+            DistributedLockMetrics.SemaphoreFailed.Add(1, DistributedLockMetrics.ReasonContended);
             cancellationToken.ThrowIfCancellationRequested();
             return null;
         }

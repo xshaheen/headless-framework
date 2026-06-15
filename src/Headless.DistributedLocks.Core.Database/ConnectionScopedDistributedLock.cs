@@ -120,7 +120,7 @@ public sealed class ConnectionScopedDistributedLock(
         void recordFailedAcquisition()
         {
             DistributedLockMetrics.LockWaitTime.Record(timeProvider.GetElapsedTime(started).TotalMilliseconds);
-            DistributedLockMetrics.LockFailed.Add(1);
+            DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
         }
 
         try
