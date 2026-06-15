@@ -98,7 +98,9 @@ The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Se
 
 ### Liveness States
 
-`Alive` means the store-clock heartbeat age is below `SuspicionThreshold`. `Suspected` is a soft signal between `SuspicionThreshold` and `DeadThreshold`. `Dead` means the hard threshold passed or the node left gracefully. `GetLiveNodesAsync()` returns Alive identities only; `GetLivenessSnapshotAsync()` returns full state.
+`Alive` means the store-clock heartbeat age is below `SuspicionThreshold`. `Suspected` is a soft signal between `SuspicionThreshold` and `DeadThreshold`. `Dead` means the hard threshold passed or the node left gracefully. `GetLiveNodesAsync()` returns Alive identities only; `GetLivenessSnapshotAsync()` returns full state. `IsAliveAsync(identity)` checks a single node — it is a targeted O(1) read (one guarded single-row query / small Lua), not a full cluster snapshot, so per-request liveness checks do not scale with cluster size. It returns the same answer the snapshot would for that identity: current-generation-only, store-clock classified, and retention-bounded (a node at or past the retention window reads as absent, i.e. not alive).
+
+Provider SPI note: a custom `IMembershipStore` must implement `ReadNodeLivenessAsync(identity)` returning `NodeLivenessState?` — the targeted, read-only (no prune, no backfill) counterpart to `ReadLivenessAsync`, where `null` means the identity is absent from the current-generation view.
 
 ### Operational Read Model
 
