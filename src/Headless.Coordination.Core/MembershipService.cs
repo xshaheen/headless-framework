@@ -82,9 +82,12 @@ internal sealed class MembershipService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var snapshots = await GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        // Targeted single-node read instead of a full cluster snapshot + filter: a node is alive only when its
+        // current-generation liveness classifies as Alive. Absent (null) and any non-Alive state map to false,
+        // exactly matching the prior snapshot-based predicate.
+        var state = await store.ReadNodeLivenessAsync(identity, cancellationToken).ConfigureAwait(false);
 
-        return snapshots.Any(snapshot => snapshot.Identity == identity && snapshot.State == NodeLivenessState.Alive);
+        return state is NodeLivenessState.Alive;
     }
 
     public async ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default)

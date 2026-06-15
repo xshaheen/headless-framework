@@ -64,6 +64,16 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options,
         return snapshots.OrderBy(static snapshot => snapshot.Identity.ToString(), StringComparer.Ordinal).ToArray();
     }
 
+    public ValueTask<NodeLivenessState?> ReadNodeLivenessAsync(
+        NodeIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return ReadNodeLivenessCoreAsync(ClusterName, identity, cancellationToken);
+    }
+
     /// <summary>Allocates the next durable incarnation for <paramref name="nodeId"/>.</summary>
     protected abstract ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
@@ -105,6 +115,19 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options,
     /// </summary>
     protected abstract ValueTask<IReadOnlyList<NodeLivenessSnapshot>> ReadCurrentLivenessCoreAsync(
         string clusterName,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Reads the current-generation liveness state for a single identity, or <see langword="null"/> when the
+    /// identity is absent from the current-generation snapshot view (not current, or at/beyond the retention
+    /// window). Implementations must classify with the store clock identically to
+    /// <see cref="ReadCurrentLivenessCoreAsync"/> and apply the retention boundary as a read-only cutoff —
+    /// no pruning, no backfill.
+    /// </summary>
+    protected abstract ValueTask<NodeLivenessState?> ReadNodeLivenessCoreAsync(
+        string clusterName,
+        NodeIdentity identity,
         CancellationToken cancellationToken
     );
 

@@ -144,6 +144,75 @@ public sealed class MembershipServiceTests : TestBase
         store.Heartbeats.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(NodeLivenessState.Alive, true)]
+    [InlineData(NodeLivenessState.Suspected, false)]
+    [InlineData(NodeLivenessState.Dead, false)]
+    public async Task should_map_targeted_node_liveness_state_to_is_alive(NodeLivenessState state, bool expected)
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
+        store.NodeStates[identity] = state;
+        var sut = _CreateService(store);
+
+        // when
+        var alive = await sut.IsAliveAsync(identity, AbortToken);
+
+        // then
+        alive.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task should_treat_absent_targeted_node_as_not_alive()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
+        var sut = _CreateService(store);
+
+        // when — identity was never configured in the store, so it resolves to absent (null)
+        var alive = await sut.IsAliveAsync(identity, AbortToken);
+
+        // then
+        alive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_use_targeted_read_and_not_full_snapshot_for_is_alive()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
+        store.NodeStates[identity] = NodeLivenessState.Alive;
+        var sut = _CreateService(store);
+
+        // when
+        await sut.IsAliveAsync(identity, AbortToken);
+
+        // then — the targeted SPI method is used; the full cluster snapshot read is not
+        store.ReadNodeLivenessCalls.Should().Be(1);
+        store.ReadLivenessCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_throw_when_is_alive_called_with_cancelled_token()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
+        var sut = _CreateService(store);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await sut.IsAliveAsync(identity, cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        store.ReadNodeLivenessCalls.Should().Be(0);
+    }
+
     private static MembershipService _CreateService(
         FakeMembershipStore store,
         CoordinationOptions? options = null,

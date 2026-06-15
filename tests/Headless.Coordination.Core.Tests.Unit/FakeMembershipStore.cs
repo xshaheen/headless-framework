@@ -16,6 +16,8 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public bool ThrowOnRead { get; set; }
 
+    public bool ThrowOnReadNodeLiveness { get; set; }
+
     public bool ThrowOnLeave { get; set; }
 
     public bool BlockOnLeave { get; set; }
@@ -23,6 +25,10 @@ internal sealed class FakeMembershipStore : IMembershipStore
     public int AllocateIncarnationCalls { get; private set; }
 
     public int ReadLivenessCalls { get; private set; }
+
+    public int ReadNodeLivenessCalls { get; private set; }
+
+    public Dictionary<NodeIdentity, NodeLivenessState?> NodeStates { get; } = [];
 
     public List<NodeDescriptor> Descriptors { get; } = [];
 
@@ -101,6 +107,23 @@ internal sealed class FakeMembershipStore : IMembershipStore
                     .ToArray();
 
         return ValueTask.FromResult(snapshots);
+    }
+
+    public ValueTask<NodeLivenessState?> ReadNodeLivenessAsync(
+        NodeIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ReadNodeLivenessCalls++;
+
+        if (ThrowOnReadNodeLiveness)
+        {
+            throw new InvalidOperationException("store unavailable");
+        }
+
+        // Absent identities (never configured) resolve to null, matching the SPI's absent contract.
+        return ValueTask.FromResult(NodeStates.GetValueOrDefault(identity));
     }
 
     public void EnqueueSnapshot(params NodeLivenessSnapshot[] snapshots)
