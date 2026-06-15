@@ -105,18 +105,22 @@ public sealed partial class SqlServerCommitSignalSource(
         "CA2000:Dispose objects before losing scope",
         Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
     )]
-    public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
+    public ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(providerTransactionKey);
 
+        // Fast path: the diagnostic observer fires for EVERY SqlClient transaction, most uncoordinated. When no
+        // scope is attached for this key, return a synchronously-completed ValueTask — no async state machine, no
+        // allocation on the hot diagnostic thread. The terminal claim inside scope.SignalAsync still settles
+        // synchronously (TryRemove ran first, on this thread) before the returned drain is observed off-thread.
         if (!_scopes.TryRemove(providerTransactionKey, out var scope))
         {
-            return;
+            return ValueTask.CompletedTask;
         }
 
         // Signal and drain only — never dispose or pop the ambient frame. The enlisting caller owns the scope's
         // lifetime (via its own using) and pops the ambient frame synchronously in its own frame on disposal.
-        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
+        return scope.SignalAsync(CommitOutcome.Committed);
     }
 
     /// <summary>
@@ -130,17 +134,18 @@ public sealed partial class SqlServerCommitSignalSource(
         "CA2000:Dispose objects before losing scope",
         Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
     )]
-    public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
+    public ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(providerTransactionKey);
 
+        // Fast path: see SignalCommittedAsync — synchronously-completed ValueTask for the common uncoordinated key.
         if (!_scopes.TryRemove(providerTransactionKey, out var scope))
         {
-            return;
+            return ValueTask.CompletedTask;
         }
 
         // Signal and drain only — never dispose or pop the ambient frame (the enlisting caller owns scope lifetime).
-        await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
+        return scope.SignalAsync(CommitOutcome.RolledBack);
     }
 
     [LoggerMessage(

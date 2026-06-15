@@ -69,11 +69,11 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
                 // The commit-after event can carry a "Rollback" operation in some flows; treat it as a rollback.
                 if (IsRollbackOperation(evt.Value))
                 {
-                    _Drain(signalSource.SignalRolledBackAsync(key, CancellationToken.None).AsTask());
+                    _Drain(signalSource.SignalRolledBackAsync(key, CancellationToken.None));
                 }
                 else
                 {
-                    _Drain(signalSource.SignalCommittedAsync(key, CancellationToken.None).AsTask());
+                    _Drain(signalSource.SignalCommittedAsync(key, CancellationToken.None));
                 }
 
                 break;
@@ -85,7 +85,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
                     return;
                 }
 
-                _Drain(signalSource.SignalRolledBackAsync(key, CancellationToken.None).AsTask());
+                _Drain(signalSource.SignalRolledBackAsync(key, CancellationToken.None));
 
                 break;
             }
@@ -139,12 +139,21 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
         }
     }
 
-    private void _Drain(Task drain)
+    private void _Drain(ValueTask drain)
     {
-        _drains.TryAdd(drain, 0);
+        // Fast path: an uncoordinated transaction's signal completes synchronously (no scope attached). Nothing to
+        // track or observe — skip the Task allocation entirely. Only a pending (or synchronously-faulted) drain is
+        // materialized and tracked for the shutdown wait.
+        if (drain.IsCompletedSuccessfully)
+        {
+            return;
+        }
+
+        var drainTask = drain.AsTask();
+        _drains.TryAdd(drainTask, 0);
 
         // Observe faults off the diagnostic thread; the relay recovers any uncommitted buffer on restart.
-        _ = drain.ContinueWith(
+        _ = drainTask.ContinueWith(
             static (t, state) =>
             {
                 var self = (SqlServerCommitDiagnosticObserver)state!;
