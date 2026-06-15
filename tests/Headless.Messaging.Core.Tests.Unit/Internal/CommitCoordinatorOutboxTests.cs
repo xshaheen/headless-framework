@@ -194,7 +194,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             new MediumMessage
             {
                 StorageId = Guid.NewGuid(),
-                Origin = new Message(new Dictionary<string, string?>(), value: null),
+                Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), value: null),
                 Content = "{}",
                 IntentType = IntentType.Bus,
                 Added = DateTime.UtcNow,

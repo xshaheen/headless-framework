@@ -86,7 +86,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
             );
 
             await transaction.CommitAsync(ct);
-            await scope.SignalAsync(CommitOutcome.Committed, ct); // REQUIRED on PostgreSQL (inline signal source)
+            await scope.SignalAsync(CommitOutcome.Committed); // REQUIRED on PostgreSQL (inline signal source)
         }
 
         return Ok($"Inserted {person} and enqueued atomically (raw ADO; inline commit signal).");
