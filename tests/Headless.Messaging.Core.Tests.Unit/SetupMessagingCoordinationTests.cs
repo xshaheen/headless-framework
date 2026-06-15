@@ -57,7 +57,8 @@ public sealed class SetupMessagingCoordinationTests
     {
         // given
         var services = new ServiceCollection();
-        var membership = TestNodeMembership.Active("node-a", 7);
+        var membership = new ControlledNodeMembership();
+        membership.SetIdentity("node-a", 7);
         services.AddSingleton<INodeMembership>(membership);
 
         // when

@@ -47,8 +47,8 @@ public abstract class DataStorageTestsBase : TestBase
     /// </summary>
     protected virtual bool SupportsControllableClock => false;
 
-    /// <summary>Mutable membership used by storage-provider conformance tests.</summary>
-    protected MutableNodeMembership NodeMembership { get; } = new();
+    /// <summary>Controllable membership used by storage-provider conformance tests to stamp the owner identity.</summary>
+    protected ControlledNodeMembership NodeMembership { get; } = new();
 
     /// <summary>
     /// Counts persisted received-message rows matching the supplied <paramref name="messageId"/>
@@ -1590,84 +1590,4 @@ public abstract class DataStorageTestsBase : TestBase
     private DateTime _Now() => TimeProvider.GetUtcNow().UtcDateTime;
 
     private DateTime _FutureLeaseUntil() => _Now().AddHours(1);
-
-    [PublicAPI]
-    protected sealed class MutableNodeMembership : INodeMembership
-    {
-        private readonly HashSet<NodeIdentity> _liveNodes = [];
-
-        public NodeIdentity? Identity { get; private set; }
-
-        public CancellationToken LocalMembershipLostToken => CancellationToken.None;
-
-        public NodeIdentity SetIdentity(string nodeId, long incarnation = 1)
-        {
-            var identity = new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation));
-            Identity = identity;
-            _liveNodes.Add(identity);
-
-            return identity;
-        }
-
-        public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return ValueTask.FromResult(Identity ?? SetIdentity("test-node"));
-        }
-
-        public ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return ValueTask.FromResult(Identity is not null && _liveNodes.Contains(Identity.Value));
-        }
-
-        public ValueTask LeaveAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (Identity is not null)
-            {
-                _liveNodes.Remove(Identity.Value);
-            }
-
-            Identity = null;
-
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return ValueTask.FromResult(_liveNodes.Contains(identity));
-        }
-
-        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return ValueTask.FromResult<IReadOnlyList<NodeIdentity>>(_liveNodes.ToArray());
-        }
-
-        public ValueTask<IReadOnlyList<NodeLivenessSnapshot>> GetLivenessSnapshotAsync(
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            return ValueTask.FromResult<IReadOnlyList<NodeLivenessSnapshot>>([]);
-        }
-
-        public async IAsyncEnumerable<NodeMembershipEvent> WatchAsync(
-            [EnumeratorCancellation] CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.CompletedTask.ConfigureAwait(false);
-
-            yield break;
-        }
-    }
 }

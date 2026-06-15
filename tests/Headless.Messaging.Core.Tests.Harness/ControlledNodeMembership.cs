@@ -7,12 +7,12 @@ using Headless.Coordination;
 namespace Tests;
 
 /// <summary>
-/// Test double for driving <c>DeadOwnerRecoveryBridge</c> end-to-end conformance. Unlike
-/// <see cref="TestNodeMembership"/> (empty snapshot, no events) it exposes a settable liveness snapshot and an
-/// injectable <see cref="NodeLeft"/> event source, so a test can plant <c>Dead</c>/<c>Suspected</c>/<c>Alive</c>
-/// states and push membership events the bridge's watch and reconcile loops react to. The same
-/// <see cref="Identity"/> the bridge host runs under also stamps the owner column when a row is leased, so a test
-/// can seed a row owned by one identity and then reclaim it as another.
+/// The single controllable <see cref="INodeMembership"/> double for messaging harness tests. It exposes a
+/// settable local <see cref="Identity"/> (which stamps the owner column when a row is leased), a settable
+/// liveness snapshot, and an injectable <see cref="NodeLeft"/> event source — so storage-provider conformance
+/// tests can stamp an owner and drive <c>DeadOwnerRecoveryBridge</c> end-to-end conformance tests can plant
+/// <c>Dead</c>/<c>Suspected</c>/<c>Alive</c> states and push membership events the watch and reconcile loops
+/// react to. A test can seed a row owned by one identity and then reclaim it as another.
 /// </summary>
 [PublicAPI]
 public sealed class ControlledNodeMembership : INodeMembership
