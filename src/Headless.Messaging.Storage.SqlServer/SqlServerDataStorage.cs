@@ -930,50 +930,57 @@ public sealed class SqlServerDataStorage(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        List<SqlParameter> sqlParams = [new("@Now", SqlDbType.DateTime2) { Value = now }];
-        var deadOwnerParams = _AddDeadOwnerParameters(deadOwners, sqlParams);
         var sql = $"""
             UPDATE target
             SET LockedUntil = @Now
             FROM {tableName} AS target
             WHERE target.Owner IS NOT NULL
-              AND target.Owner IN ({deadOwnerParams})
+              AND target.Owner IN (SELECT [Owner] FROM @DeadOwners)
               AND target.LockedUntil > @Now
               AND {_TerminalRowGuardSimple};
             """;
+
+        // A TVP keeps the SQL text and parameter shape constant regardless of owner count, so SQL Server reuses
+        // a single cached plan even when a mass-node-loss reconcile batches many dead owners into one UPDATE.
+        var sqlParams = new object[]
+        {
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = now },
+            _BuildOwnerListTvpParameter(deadOwners),
+        };
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
             .ExecuteNonQueryAsync(
                 sql,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams.ToArray(),
+                sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
     }
 
-    private string _AddDeadOwnerParameters(IReadOnlyCollection<string> deadOwners, List<SqlParameter> sqlParams)
+    /// <summary>
+    /// Builds the <c>@DeadOwners</c> table-valued parameter backed by the <c>HeadlessMessagingOwnerList</c> type
+    /// (provisioned by the storage initializer). The TVP keeps the reclaim plan stable across owner counts.
+    /// </summary>
+    private SqlParameter _BuildOwnerListTvpParameter(IReadOnlyCollection<string> deadOwners)
     {
-        var parameterNames = new List<string>(deadOwners.Count);
-        var index = 0;
+        var ownersTable = new DataTable();
+        ownersTable.Columns.Add("Owner", typeof(string));
 
-        // Defensive de-dup: ReclaimDead* is a public IDataStorage contract method, so a direct
-        // caller may pass duplicate owner tags. The bridge already de-dups its reclaimed set, but
-        // this keeps the storage method self-sufficient and avoids emitting duplicate IN params.
+        // Defensive de-dup: ReclaimDead* is a public IDataStorage contract method, so a direct caller may pass
+        // duplicate owner tags (the bridge already de-dups its reclaimed set). The TVP's Owner column is the PK,
+        // so duplicates would otherwise violate it.
         foreach (var owner in deadOwners.Distinct(StringComparer.Ordinal))
         {
-            var parameterName = $"@DeadOwner{index++}";
-            parameterNames.Add(parameterName);
-            sqlParams.Add(
-                new SqlParameter(parameterName, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
-                {
-                    Value = owner,
-                }
-            );
+            ownersTable.Rows.Add(owner);
         }
 
-        return string.Join(", ", parameterNames);
+        return new SqlParameter("@DeadOwners", SqlDbType.Structured)
+        {
+            TypeName = $"[{options.Value.Schema}].[HeadlessMessagingOwnerList]",
+            Value = ownersTable,
+        };
     }
 
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>

@@ -23,15 +23,15 @@ internal sealed class MessagingDeadOwnerReclaimer(
 {
     public TimeSpan ReconcileInterval => options.Value.DeadNodeReconcileInterval;
 
-    public async Task ReclaimAsync(string owner, CancellationToken cancellationToken)
+    public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
     {
-        string[] deadOwners = [owner];
-
-        // KTD6: a reclaim racing host shutdown must complete to avoid a half-reclaim, so the bridge hands
-        // us CancellationToken.None and we deliberately do not re-thread the incoming token into the writes.
-        // Failures propagate to the bridge, which logs and re-queues the owner for the next reconcile tick.
+        // owners is the dead-owner set the bridge surfaced; pass it straight to the owner-scoped conditional
+        // UPDATE so a whole reconcile batch collapses into one write per table instead of one per owner.
+        // KTD6: a reclaim racing host shutdown must complete to avoid a half-reclaim, so the bridge hands us
+        // CancellationToken.None and we deliberately do not re-thread the incoming token into the writes.
+        // Failures propagate to the bridge, which logs and re-queues the batch for the next reconcile tick.
         var publishedReclaimed = await storage
-            .ReclaimDeadPublishedOwnersAsync(deadOwners, CancellationToken.None)
+            .ReclaimDeadPublishedOwnersAsync(owners, CancellationToken.None)
             .ConfigureAwait(false);
 
         if (publishedReclaimed > 0 && logger.IsEnabled(LogLevel.Information))
@@ -40,7 +40,7 @@ internal sealed class MessagingDeadOwnerReclaimer(
         }
 
         var receivedReclaimed = await storage
-            .ReclaimDeadReceivedOwnersAsync(deadOwners, CancellationToken.None)
+            .ReclaimDeadReceivedOwnersAsync(owners, CancellationToken.None)
             .ConfigureAwait(false);
 
         if (receivedReclaimed > 0 && logger.IsEnabled(LogLevel.Information))

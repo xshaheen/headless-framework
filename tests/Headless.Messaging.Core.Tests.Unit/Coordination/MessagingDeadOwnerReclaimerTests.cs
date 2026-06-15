@@ -60,7 +60,7 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
         var sut = _CreateSut();
 
         // when
-        await sut.ReclaimAsync("node@5", AbortToken);
+        await sut.ReclaimAsync(["node@5"], AbortToken);
 
         // then — the published and received tables are each reclaimed exactly once with the single dead owner
         await _storage
@@ -85,7 +85,7 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
         using var cts = new CancellationTokenSource();
 
         // when
-        await sut.ReclaimAsync("node@5", cts.Token);
+        await sut.ReclaimAsync(["node@5"], cts.Token);
 
         // then — storage saw CancellationToken.None, so a host-shutdown cancel cannot tear a reclaim mid-write
         await _storage
@@ -110,7 +110,7 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
             .Returns(new ValueTask<int>(0));
 
         // when
-        await sut.ReclaimAsync("node@5", AbortToken);
+        await sut.ReclaimAsync(["node@5"], AbortToken);
 
         // then — EventId 91 (MessagingDeadOwnerRowsReclaimed) fires once, for the published table only
         captured.Should().ContainSingle(e => e.Id == 91 && e.Level == LogLevel.Information);
@@ -124,7 +124,7 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
         var sut = _CreateSut(logger: _CreateCapturingLogger(captured));
 
         // when
-        await sut.ReclaimAsync("node@5", AbortToken);
+        await sut.ReclaimAsync(["node@5"], AbortToken);
 
         // then — no informational reclaim-count log is emitted
         captured.Should().NotContain(e => e.Id == 91);

@@ -103,7 +103,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
         // NodeSuspected / NodeRecovered / NodeJoined / LocalMembershipLost do not reclaim — only a confirmed leave.
         if (membershipEvent is NodeLeft left)
         {
-            await _TryReclaimAsync(left.Identity).ConfigureAwait(false);
+            await _TryReclaimAsync([left.Identity.ToString()]).ConfigureAwait(false);
         }
     }
 
@@ -142,46 +142,52 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
             _reclaimed.RemoveWhere(owner => !deadOwners.Contains(owner));
         }
 
-        foreach (var node in snapshot)
-        {
-            if (node.State == NodeLivenessState.Dead)
-            {
-                await _TryReclaimAsync(node.Identity).ConfigureAwait(false);
-            }
-        }
+        // Reclaim the whole dead set in one batch — the consumer collapses it into a single conditional write.
+        await _TryReclaimAsync(deadOwners).ConfigureAwait(false);
     }
 
-    private async Task _TryReclaimAsync(NodeIdentity identity)
+    /// <summary>
+    /// Claims the not-yet-reclaimed subset of <paramref name="owners"/> under the gate and reclaims them as one
+    /// batch; on failure the whole batch is released so the next reconcile tick retries it.
+    /// </summary>
+    private async Task _TryReclaimAsync(IReadOnlyCollection<string> owners)
     {
-        var owner = identity.ToString();
-
-        bool claimed;
+        List<string>? toReclaim = null;
 
         lock (_gate)
         {
-            // Atomically claim this owner; the loser of an event/reconcile race sees false and skips.
-            claimed = _reclaimed.Add(owner);
+            // Atomically claim each owner; the loser of an event/reconcile race sees false and is skipped.
+            foreach (var owner in owners)
+            {
+                if (_reclaimed.Add(owner))
+                {
+                    (toReclaim ??= []).Add(owner);
+                }
+            }
         }
 
-        if (!claimed)
+        if (toReclaim is null)
         {
-            return;
+            return; // every owner was already claimed by a concurrent event/reconcile pass
         }
 
         try
         {
             // KTD6: reclaim writes are not cancelled by host shutdown; they must complete to avoid a half-reclaim.
-            await reclaimer.ReclaimAsync(owner, CancellationToken.None).ConfigureAwait(false);
+            await reclaimer.ReclaimAsync(toReclaim, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            // Keep the failure observable and let the next reconcile tick retry it (do not silently swallow).
+            // Keep the failure observable and let the next reconcile tick retry the whole batch (do not swallow).
             lock (_gate)
             {
-                _reclaimed.Remove(owner);
+                foreach (var owner in toReclaim)
+                {
+                    _reclaimed.Remove(owner);
+                }
             }
 
-            logger.DeadNodeReclaimFailed(ex, owner);
+            logger.DeadNodeReclaimFailed(ex, string.Join(", ", toReclaim));
         }
     }
 }
@@ -208,7 +214,7 @@ internal static partial class DeadOwnerRecoveryBridgeLog
         EventId = 3,
         EventName = "DeadNodeReclaimFailed",
         Level = LogLevel.Error,
-        Message = "Failed to reclaim resources for dead owner {Owner}; will retry on the next reconcile"
+        Message = "Failed to reclaim resources for dead owners {Owners}; will retry on the next reconcile"
     )]
-    public static partial void DeadNodeReclaimFailed(this ILogger logger, Exception exception, string owner);
+    public static partial void DeadNodeReclaimFailed(this ILogger logger, Exception exception, string owners);
 }
