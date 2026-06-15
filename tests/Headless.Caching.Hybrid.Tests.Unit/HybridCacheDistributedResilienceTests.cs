@@ -357,6 +357,63 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task should_rearm_l1_and_open_circuit_when_l2_refresh_throws()
+    {
+        // given — a sliding entry in both tiers; L1's local ceiling is wide enough to re-arm within
+        var localExpiration = TimeSpan.FromSeconds(1);
+        var duration = TimeSpan.FromSeconds(2);
+        var slidingExpiration = TimeSpan.FromMilliseconds(400);
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new TogglableRemoteCache(_timeProvider);
+        var cache = _CreateCache(
+            l1,
+            l2,
+            new HybridCacheOptions
+            {
+                DefaultLocalExpiration = localExpiration,
+                DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(5),
+            }
+        );
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertEntryAsync(
+            key,
+            Faker.Random.Int(),
+            new CacheEntryOptions { Duration = duration, SlidingExpiration = slidingExpiration },
+            AbortToken
+        );
+
+        // advance past the half-window throttle so the re-arm fires, then capture the re-arm instant
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(300));
+        var rearmedAt = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // when — the L2 sliding re-arm throws
+        l2.FailRefresh = true;
+        var act = async () => await cache.RefreshAsync(key, AbortToken);
+
+        // then — the refresh is best-effort (does not throw) and L1 was still re-armed despite the L2 failure
+        await act.Should().NotThrowAsync();
+
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
+        l1Entry.Found.Should().BeTrue();
+        l1Entry
+            .LogicalExpiresAt.Should()
+            .Be(rearmedAt.Add(slidingExpiration), "L1 must re-arm even when the L2 refresh fails");
+
+        // and the failed L2 refresh tripped the distributed-cache circuit: a subsequent L2 read is skipped
+        l2.FailRefresh = false;
+        var other = Faker.Random.AlphaNumeric(10);
+        await l2.UpsertAsync(other, 7, TimeSpan.FromMinutes(5), AbortToken);
+        var attemptsBeforeSkippedRead = l2.ReadAttempts;
+
+        var skipped = await cache.GetAsync<int>(other, AbortToken);
+
+        skipped.HasValue.Should().BeFalse("the circuit opened on the L2 refresh failure, so L2 reads are skipped");
+        l2.ReadAttempts.Should().Be(attemptsBeforeSkippedRead, "an open circuit must not issue the L2 read");
+    }
+
     private static IBus _FaultingPublisher(string message)
     {
         var publisher = Substitute.For<IBus>();
