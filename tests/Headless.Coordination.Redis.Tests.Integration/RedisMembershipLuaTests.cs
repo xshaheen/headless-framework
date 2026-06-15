@@ -210,7 +210,9 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var store = node.Services.GetRequiredService<IMembershipStore>();
 
         // Alive immediately after register.
-        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+        (await store.ReadNodeLivenessAsync(identity, AbortToken))
+            .Should()
+            .Be(NodeLivenessState.Alive);
 
         // Aged into the suspicion band -> Suspected.
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
@@ -272,7 +274,9 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
 
         state.Should().Be(NodeLivenessState.Alive);
         // Unlike the snapshot read, the targeted read is write-free: it must NOT repair the mirror.
-        (await db.HashExistsAsync(knownKey, generationField)).Should().BeFalse();
+        (await db.HashExistsAsync(knownKey, generationField))
+            .Should()
+            .BeFalse();
     }
 
     [Fact]
@@ -293,7 +297,9 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
 
         state.Should().BeNull();
         // The retention-expired member must still be present in :known: the targeted read classifies, never prunes.
-        (await db.HashExistsAsync(knownKey, identity.ToString())).Should().BeTrue();
+        (await db.HashExistsAsync(knownKey, identity.ToString()))
+            .Should()
+            .BeTrue();
     }
 
     private static string _Cluster()

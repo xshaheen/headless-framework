@@ -169,7 +169,9 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         var store = node.Services.GetRequiredService<IMembershipStore>();
 
         // Alive immediately after register (durable liveness established without a loop tick).
-        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+        (await store.ReadNodeLivenessAsync(identity, AbortToken))
+            .Should()
+            .Be(NodeLivenessState.Alive);
 
         // Aged into the suspicion band -> Suspected.
         await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
