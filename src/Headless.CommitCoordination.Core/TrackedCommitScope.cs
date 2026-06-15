@@ -36,7 +36,7 @@ internal sealed class TrackedCommitScope : ICommitScope
 
     public ICommitCoordinator Coordinator => _inner.Coordinator;
 
-    public async ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken)
+    public async ValueTask SignalAsync(CommitOutcome outcome)
     {
         ValueTask signal;
         var claimedSignal = false;
@@ -53,7 +53,7 @@ internal sealed class TrackedCommitScope : ICommitScope
                 }
                 else
                 {
-                    signal = _inner.SignalAsync(outcome, cancellationToken);
+                    signal = _inner.SignalAsync(outcome);
                     claimedSignal = firstSignal;
                 }
             }

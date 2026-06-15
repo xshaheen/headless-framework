@@ -64,7 +64,7 @@ public static class HeadlessCoordinatedTransactionExtensions
                     // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's
                     // publishes. An AsyncLocal push inside an async helper would not propagate to this delegate.
                     await using var _ = state
-                        .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                        .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                         .ConfigureAwait(false);
 
                     await state.Operation(state.Context, ct).ConfigureAwait(false);
@@ -100,7 +100,7 @@ public static class HeadlessCoordinatedTransactionExtensions
                         .ConfigureAwait(false);
 
                     await using var _ = state
-                        .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                        .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                         .ConfigureAwait(false);
 
                     await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
@@ -143,7 +143,7 @@ public static class HeadlessCoordinatedTransactionExtensions
                         .ConfigureAwait(false);
 
                     await using var _ = state
-                        .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                        .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                         .ConfigureAwait(false);
 
                     var result = await state.Operation(state.Context, ct).ConfigureAwait(false);
@@ -181,7 +181,7 @@ public static class HeadlessCoordinatedTransactionExtensions
                         .ConfigureAwait(false);
 
                     await using var _ = state
-                        .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                        .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                         .ConfigureAwait(false);
 
                     var result = await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);

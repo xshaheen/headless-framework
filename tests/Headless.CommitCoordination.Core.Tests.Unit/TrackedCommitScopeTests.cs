@@ -36,11 +36,11 @@ public sealed class TrackedCommitScopeTests
             }
         );
 
-        var claimingSignal = tracked.SignalAsync(CommitOutcome.Committed, CancellationToken.None).AsTask();
+        var claimingSignal = tracked.SignalAsync(CommitOutcome.Committed).AsTask();
         await drainEntered.Task;
 
         // The redundant signal must complete without waiting for (or tearing down) the in-flight drain.
-        await tracked.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+        await tracked.SignalAsync(CommitOutcome.Committed);
 
         ownedScope.Disposed.Should().BeFalse("the claiming drain still owns the DI scope");
 
@@ -112,7 +112,7 @@ public sealed class TrackedCommitScopeTests
             }
         );
 
-        var claimingSignal = tracked.SignalAsync(CommitOutcome.Committed, CancellationToken.None).AsTask();
+        var claimingSignal = tracked.SignalAsync(CommitOutcome.Committed).AsTask();
         await drainEntered.Task;
 
         await tracked.DisposeAsync();

@@ -53,7 +53,7 @@ public static class CoordinatedTransactionExtensions
                     await using (transaction.ConfigureAwait(false))
                     {
                         await using var _ = state
-                            .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                            .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                             .ConfigureAwait(false);
 
                         await state.Operation(state.Context, ct).ConfigureAwait(false);
@@ -91,7 +91,7 @@ public static class CoordinatedTransactionExtensions
                     await using (transaction.ConfigureAwait(false))
                     {
                         await using var _ = state
-                            .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                            .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                             .ConfigureAwait(false);
 
                         await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);
@@ -135,7 +135,7 @@ public static class CoordinatedTransactionExtensions
                     await using (transaction.ConfigureAwait(false))
                     {
                         await using var _ = state
-                            .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                            .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                             .ConfigureAwait(false);
 
                         var result = await state.Operation(state.Context, ct).ConfigureAwait(false);
@@ -175,7 +175,7 @@ public static class CoordinatedTransactionExtensions
                     await using (transaction.ConfigureAwait(false))
                     {
                         await using var _ = state
-                            .Context.Database.EnlistCommitCoordination(transaction, state.Services)
+                            .Context.Database.EnlistCommitCoordination(transaction, state.Services, ct)
                             .ConfigureAwait(false);
 
                         var result = await state.Operation(state.Arg, state.Context, ct).ConfigureAwait(false);

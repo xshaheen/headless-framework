@@ -27,10 +27,8 @@ internal sealed class CommitScope(CommitCoordinator coordinator, IServiceProvide
         return Interlocked.Exchange(ref _signaled, 1) == 0;
     }
 
-    public ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken)
+    public ValueTask SignalAsync(CommitOutcome outcome)
     {
-        // The token is part of the ICommitScope contract but does not govern the drain: per D9 a claimed drain always
-        // runs to completion (cancelling it would abandon already-committed work).
         return SignalAsync(outcome, out _);
     }
 

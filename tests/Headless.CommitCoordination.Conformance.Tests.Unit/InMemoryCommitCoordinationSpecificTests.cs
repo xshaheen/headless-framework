@@ -42,13 +42,13 @@ public sealed class InMemoryCommitCoordinationSpecificTests
 
         await using (var child = factory.Begin(_Services))
         {
-            await child.SignalAsync(CommitOutcome.RolledBack, CancellationToken.None);
+            await child.SignalAsync(CommitOutcome.RolledBack);
         }
 
         root.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
 
         // Root already terminal: this commit signal is ignored and logged.
-        await root.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+        await root.SignalAsync(CommitOutcome.Committed);
 
         rootCalls.Should().Be(0);
         root.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
@@ -79,7 +79,7 @@ public sealed class InMemoryCommitCoordinationSpecificTests
         inMemory.Drain().Should().Equal(["queued"]);
         durable.WrittenRows.Should().Equal(["row-1"]);
 
-        await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+        await scope.SignalAsync(CommitOutcome.Committed);
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public sealed class InMemoryCommitCoordinationSpecificTests
                     }
                 );
 
-                await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+                await scope.SignalAsync(CommitOutcome.Committed);
                 completed = true;
             });
 

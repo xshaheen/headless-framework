@@ -174,7 +174,7 @@ public static class CoordinatedTransactionExtensions
             await using (transaction.ConfigureAwait(false))
             {
                 // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-                var scope = connection.EnlistCommitCoordination(transaction, services);
+                var scope = connection.EnlistCommitCoordination(transaction, services, cancellationToken);
 
                 await using (scope.ConfigureAwait(false))
                 {
@@ -186,7 +186,7 @@ public static class CoordinatedTransactionExtensions
                         // CancellationToken.None: the commit is durable, so the post-commit drain must run to
                         // completion rather than be aborted by a caller cancellation (which would log a spurious
                         // fault even though the work drained). Matches the SqlServer inline-signal helper.
-                        await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None).ConfigureAwait(false);
+                        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {

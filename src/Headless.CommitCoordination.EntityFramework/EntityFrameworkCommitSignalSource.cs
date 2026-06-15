@@ -101,7 +101,7 @@ public sealed partial class EntityFrameworkCommitSignalSource(
 
         // Signal and drain only — never dispose or pop the ambient frame. The enlisting caller owns the scope's
         // lifetime (via its own using) and pops the ambient frame synchronously in its own frame on disposal.
-        await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
     }
 
     internal void SignalCommittedInBackground(object providerTransactionKey)
@@ -136,7 +136,7 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         }
 
         // Signal and drain only — never dispose or pop the ambient frame (the enlisting caller owns scope lifetime).
-        await scope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
+        await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
     }
 
     internal void SignalRolledBackInBackground(object providerTransactionKey)

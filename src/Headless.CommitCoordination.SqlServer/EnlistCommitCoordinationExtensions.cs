@@ -42,8 +42,16 @@ public static class EnlistCommitCoordinationExtensions
         /// </summary>
         /// <param name="transaction">The open SqlClient transaction to coordinate.</param>
         /// <param name="services">The scoped service provider captured for the post-commit drain.</param>
+        /// <param name="cancellationToken">
+        /// Observed only while attaching (before any work is enlisted); a pre-cancelled token throws here rather
+        /// than pushing an ambient scope. It does not govern the post-commit drain (design decision D9).
+        /// </param>
         /// <returns>The coordinated scope; dispose it (after the transaction completes) to tear down.</returns>
-        public ICommitScope EnlistCommitCoordination(SqlTransaction transaction, IServiceProvider services)
+        public ICommitScope EnlistCommitCoordination(
+            SqlTransaction transaction,
+            IServiceProvider services,
+            CancellationToken cancellationToken = default
+        )
         {
             Argument.IsNotNull(transaction);
             Argument.IsNotNull(services);
@@ -57,7 +65,7 @@ public static class EnlistCommitCoordinationExtensions
                     Capabilities = [new RelationalCommitContext(() => connection, () => transaction)],
                     ProviderTransactionKey = connection.ClientConnectionId,
                 },
-                CancellationToken.None
+                cancellationToken
             );
         }
     }

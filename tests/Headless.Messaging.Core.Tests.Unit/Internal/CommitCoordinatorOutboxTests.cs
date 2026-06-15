@@ -81,7 +81,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
 
             await dispatcher.DidNotReceive().EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>());
 
-            await scope.SignalAsync(CommitOutcome.Committed, AbortToken);
+            await scope.SignalAsync(CommitOutcome.Committed);
 
             await dispatcher.Received(1).EnqueueToPublish(stored!, Arg.Any<CancellationToken>());
         }
@@ -152,7 +152,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             // Dispatched in-band, not buffered on the coordinator.
             await dispatcher.Received(1).EnqueueToPublish(stored!, Arg.Any<CancellationToken>());
 
-            await scope.SignalAsync(CommitOutcome.Committed, AbortToken);
+            await scope.SignalAsync(CommitOutcome.Committed);
 
             // Committing the scope must not re-dispatch — the message was never enlisted.
             await dispatcher.Received(1).EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>());

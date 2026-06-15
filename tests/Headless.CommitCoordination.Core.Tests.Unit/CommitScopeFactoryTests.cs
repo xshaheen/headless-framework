@@ -46,12 +46,12 @@ public sealed class CommitScopeFactoryTests
                 }
             );
 
-            await child.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+            await child.SignalAsync(CommitOutcome.Committed);
         }
 
         calls.Should().Be(0);
 
-        await parent.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+        await parent.SignalAsync(CommitOutcome.Committed);
 
         calls.Should().Be(1);
     }
@@ -66,7 +66,7 @@ public sealed class CommitScopeFactoryTests
         await using var parent = factory.Begin(services);
         await using var child = factory.Begin(services);
 
-        await child.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+        await child.SignalAsync(CommitOutcome.Committed);
 
         child
             .Coordinator.Invoking(x => x.OnCommit((_, _) => ValueTask.CompletedTask))
@@ -107,7 +107,7 @@ public sealed class CommitScopeFactoryTests
 
         await using (var child = factory.Begin(services))
         {
-            await child.SignalAsync(CommitOutcome.RolledBack, CancellationToken.None);
+            await child.SignalAsync(CommitOutcome.RolledBack);
         }
 
         parent.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
@@ -221,7 +221,7 @@ public sealed class CommitScopeFactoryTests
         );
 
         // Claim the commit and start the drain; it blocks on the gate, so the drain is still in flight.
-        var drain = scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+        var drain = scope.SignalAsync(CommitOutcome.Committed);
 
         // Dispose while the commit drain is pending. The terminal outcome was claimed synchronously by the signal,
         // so disposal must observe it and NOT roll back the committed work.
@@ -266,7 +266,7 @@ public sealed class CommitScopeFactoryTests
             }
         );
 
-        var drain = child.SignalAsync(CommitOutcome.RolledBack, CancellationToken.None);
+        var drain = child.SignalAsync(CommitOutcome.RolledBack);
         await rootDrainStarted.Task;
 
         await child.DisposeAsync();
@@ -296,7 +296,7 @@ public sealed class CommitScopeFactoryTests
             }
         );
 
-        await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+        await scope.SignalAsync(CommitOutcome.Committed);
         stack.Current.Should().NotBeNull("the ambient frame is owned by disposal, not by the signal");
 
         await scope.DisposeAsync();

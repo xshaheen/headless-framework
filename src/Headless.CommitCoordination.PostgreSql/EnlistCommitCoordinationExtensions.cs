@@ -25,7 +25,7 @@ namespace Headless.CommitCoordination.PostgreSql;
 /// await using var scope = connection.EnlistCommitCoordination(tx, services);
 /// // publish / save here — ICurrentCommitCoordinator.Current is now this scope
 /// await tx.CommitAsync(ct);
-/// await scope.SignalAsync(CommitOutcome.Committed, ct); // inline: the caller drives the signal
+/// await scope.SignalAsync(CommitOutcome.Committed); // inline: the caller drives the signal
 /// </code>
 /// If the caller never signals, disposing the scope discards the enlisted work (un-signalled dispose rolls back).
 /// </remarks>
@@ -40,8 +40,16 @@ public static class EnlistCommitCoordinationExtensions
         /// </summary>
         /// <param name="transaction">The open Npgsql transaction to coordinate.</param>
         /// <param name="services">The scoped service provider captured for the post-commit drain.</param>
+        /// <param name="cancellationToken">
+        /// Observed only while attaching (before any work is enlisted); a pre-cancelled token throws here rather
+        /// than pushing an ambient scope. It does not govern the post-commit drain (design decision D9).
+        /// </param>
         /// <returns>The coordinated scope; signal or dispose it after the transaction completes.</returns>
-        public ICommitScope EnlistCommitCoordination(NpgsqlTransaction transaction, IServiceProvider services)
+        public ICommitScope EnlistCommitCoordination(
+            NpgsqlTransaction transaction,
+            IServiceProvider services,
+            CancellationToken cancellationToken = default
+        )
         {
             Argument.IsNotNull(transaction);
             Argument.IsNotNull(services);
@@ -55,7 +63,7 @@ public static class EnlistCommitCoordinationExtensions
                     Capabilities = [new RelationalCommitContext(() => connection, () => transaction)],
                     ProviderTransactionKey = transaction,
                 },
-                CancellationToken.None
+                cancellationToken
             );
         }
     }

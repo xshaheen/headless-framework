@@ -74,7 +74,8 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
                         using (
                             var commitScope = context.Database.EnlistCommitCoordination(
                                 transaction,
-                                scope.ServiceProvider
+                                scope.ServiceProvider,
+                                ct
                             )
                         )
                         {

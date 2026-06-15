@@ -169,7 +169,7 @@ public static class CoordinatedTransactionExtensions
             await using (transaction.ConfigureAwait(false))
             {
                 // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-                var scope = connection.EnlistCommitCoordination(transaction, services);
+                var scope = connection.EnlistCommitCoordination(transaction, services, cancellationToken);
 
                 await using (scope.ConfigureAwait(false))
                 {
@@ -178,7 +178,7 @@ public static class CoordinatedTransactionExtensions
 
                     try
                     {
-                        await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None).ConfigureAwait(false);
+                        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {

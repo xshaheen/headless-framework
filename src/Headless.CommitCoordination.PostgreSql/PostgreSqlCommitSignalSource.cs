@@ -102,7 +102,7 @@ public sealed partial class PostgreSqlCommitSignalSource(
             return;
         }
 
-        await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+        await scope.SignalAsync(CommitOutcome.Committed).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -125,7 +125,7 @@ public sealed partial class PostgreSqlCommitSignalSource(
             return;
         }
 
-        await scope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
+        await scope.SignalAsync(CommitOutcome.RolledBack).ConfigureAwait(false);
     }
 
     [LoggerMessage(

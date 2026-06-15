@@ -217,7 +217,11 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         // save. The enlist must NOT live behind an async helper — an AsyncLocal push inside an async method does
         // not propagate back to this caller. The registered transaction interceptor drains enlisted work when the
         // transaction commits and discards it on rollback; disposing the scope is the un-signalled-dispose safety net.
-        await using var coordination = state.Context.Database.EnlistCommitCoordination(transaction, serviceProvider);
+        await using var coordination = state.Context.Database.EnlistCommitCoordination(
+            transaction,
+            serviceProvider,
+            state.CancellationToken
+        );
 
         return await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true).ConfigureAwait(false);
     }
@@ -227,7 +231,11 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 #pragma warning disable MA0045 // Sync intentionally
         // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-synchronously-enlist shape.
         using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-        using var coordination = state.Context.Database.EnlistCommitCoordination(transaction, serviceProvider);
+        using var coordination = state.Context.Database.EnlistCommitCoordination(
+            transaction,
+            serviceProvider,
+            CancellationToken.None
+        );
         return _SaveWithinTransaction(state, transaction, commitTransaction: true);
 #pragma warning restore MA0045
     }

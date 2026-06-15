@@ -30,8 +30,8 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
             }
         );
 
-        await scope.SignalAsync(CommitOutcome.Committed, AbortToken);
-        await scope.SignalAsync(CommitOutcome.Committed, AbortToken);
+        await scope.SignalAsync(CommitOutcome.Committed);
+        await scope.SignalAsync(CommitOutcome.Committed);
 
         calls.Should().Be(1);
     }
@@ -50,7 +50,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
             }
         );
 
-        await scope.SignalAsync(CommitOutcome.RolledBack, AbortToken);
+        await scope.SignalAsync(CommitOutcome.RolledBack);
 
         calls.Should().Be(0);
     }
@@ -59,7 +59,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
     {
         await using var scope = await fixture.BeginScopeAsync(AbortToken);
 
-        await scope.SignalAsync(CommitOutcome.Committed, AbortToken);
+        await scope.SignalAsync(CommitOutcome.Committed);
 
         scope
             .Coordinator.Invoking(x => x.OnCommit((_, _) => ValueTask.CompletedTask))
@@ -86,7 +86,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
             );
 
             // Child commit signal only marks the child; the root drives the actual drain.
-            await child.SignalAsync(CommitOutcome.Committed, AbortToken);
+            await child.SignalAsync(CommitOutcome.Committed);
 
             // Disposing the child alone must not fire promoted work.
             calls.Should().Be(0);
@@ -94,7 +94,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
 
         calls.Should().Be(0);
 
-        await root.SignalAsync(CommitOutcome.Committed, AbortToken);
+        await root.SignalAsync(CommitOutcome.Committed);
 
         calls.Should().Be(1);
     }
@@ -127,7 +127,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
                 }
             );
 
-            await child.SignalAsync(CommitOutcome.RolledBack, AbortToken);
+            await child.SignalAsync(CommitOutcome.RolledBack);
         }
 
         root.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
@@ -154,7 +154,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
             );
         }
 
-        await root.SignalAsync(CommitOutcome.RolledBack, AbortToken);
+        await root.SignalAsync(CommitOutcome.RolledBack);
 
         calls.Should().Be(0);
     }
@@ -173,7 +173,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
             // branches must not corrupt the parent's ambient slot.
             await using var child = factory.Begin(fixture.Services);
             await Task.Yield();
-            await child.SignalAsync(CommitOutcome.Committed, AbortToken);
+            await child.SignalAsync(CommitOutcome.Committed);
         }
 
         await Task.WhenAll(forkAsync(), forkAsync());
@@ -198,7 +198,7 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
             }
         );
 
-        var act = () => scope.SignalAsync(CommitOutcome.Committed, AbortToken).AsTask();
+        var act = () => scope.SignalAsync(CommitOutcome.Committed).AsTask();
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
 
