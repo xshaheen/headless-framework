@@ -173,6 +173,8 @@ The `*.failed` counters carry a `reason` dimension so a lock-store stall is dist
 - `reason=contended` — every expected not-acquired outcome (lock held by another holder, acquire timeout elapsed, swallowed transient storage error).
 - `reason=stalled` — a non-blocking try-once acquire (`AcquireTimeout = TimeSpan.Zero`) whose single storage attempt hit the internal safety deadline (lock-store stall), surfaced even when the caller's token never fires. Alert on `rate(headless.lock.failed{reason="stalled"})` to detect lock-store degradation; the same trip also emits the `TryOnceSafetyDeadlineFired` log event (`EventId = 24`, Warning, fields `Resource`/`LeaseId`/`Duration`) as a per-event breadcrumb. The metric counts toward the same total as before — the tag splits the existing counter, it does not add a new instrument.
 
+The two values are exposed as `public const` on `DistributedLockFailureReasons` (`Contended` / `Stalled`) so alert-rule and dashboard code can reference them at compile time instead of hard-coding the strings.
+
 Acquire paths start activities on the `ActivitySource` for distributed tracing. Lease-monitor state transitions (`Held`, `Renewed`, `Lost`, `Unknown`) are not metrics; they surface through the `LeaseMonitorStateChanged` log event (see [Lease Lifecycle Monitoring](#lease-lifecycle-monitoring)).
 
 ## Reader-Writer Locks

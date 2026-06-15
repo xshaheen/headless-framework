@@ -8,11 +8,13 @@ namespace Headless.DistributedLocks;
 
 internal static partial class DistributedLockMetrics
 {
-    // `reason` dimension values for the `*.failed` counters. `Contended` covers every
-    // expected not-acquired outcome (lock held, acquire-timeout elapsed, swallowed transient
-    // storage errors); `Stalled` is the non-blocking safety deadline firing (lock-store stall).
-    internal const string ReasonContended = "contended";
-    internal const string ReasonStalled = "stalled";
+    // `reason` dimension values for the `*.failed` counters. Internal aliases of the public
+    // `DistributedLockFailureReasons` contract, so provider call sites stay terse while the
+    // values have a single public source of truth. `Contended` covers every expected
+    // not-acquired outcome (lock held, acquire-timeout elapsed, swallowed transient storage
+    // errors); `Stalled` is the non-blocking safety deadline firing (lock-store stall).
+    internal const string ReasonContended = DistributedLockFailureReasons.Contended;
+    internal const string ReasonStalled = DistributedLockFailureReasons.Stalled;
 
     internal static readonly LockFailedCounter LockFailed = Instruments.CreateLockFailedCounter(
         DistributedLocksDiagnostics.Meter
