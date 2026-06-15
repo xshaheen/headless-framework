@@ -21,6 +21,9 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
     /// <summary>When true, read operations throw.</summary>
     public bool FailReads { get; set; }
 
+    /// <summary>When true, the Family-2 marker bumps (RemoveByTagAsync / ClearAsync / FlushAsync) throw.</summary>
+    public bool FailMarkerBumps { get; set; }
+
     public int ReadAttempts { get; private set; }
 
     public int SetEntryAttempts { get; private set; }
@@ -326,9 +329,14 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
         _cache.RemoveByPrefixAsync(prefix, cancellationToken);
 
     public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
-        _cache.RemoveByTagAsync(tag, cancellationToken);
+        FailMarkerBumps
+            ? throw new InvalidOperationException("L2 marker bump failed")
+            : _cache.RemoveByTagAsync(tag, cancellationToken);
 
-    public ValueTask ClearAsync(CancellationToken cancellationToken = default) => _cache.ClearAsync(cancellationToken);
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default) =>
+        FailMarkerBumps
+            ? throw new InvalidOperationException("L2 marker bump failed")
+            : _cache.ClearAsync(cancellationToken);
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
@@ -337,7 +345,10 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
         CancellationToken cancellationToken = default
     ) => _cache.SetRemoveAsync(key, value, expiration, cancellationToken);
 
-    public ValueTask FlushAsync(CancellationToken cancellationToken = default) => _cache.FlushAsync(cancellationToken);
+    public ValueTask FlushAsync(CancellationToken cancellationToken = default) =>
+        FailMarkerBumps
+            ? throw new InvalidOperationException("L2 marker bump failed")
+            : _cache.FlushAsync(cancellationToken);
 
     public void Dispose() => _cache.Dispose();
 }

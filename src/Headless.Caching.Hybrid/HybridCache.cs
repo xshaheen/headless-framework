@@ -104,15 +104,19 @@ public sealed partial class HybridCache(
         if (message.FlushAll)
         {
             _logger.LogFlushedLocalCache();
-            // Physically wipe this receiver's L1 (drops its local fail-safe reserves, matching the originator).
-            await LocalCache.FlushAsync(ct).ConfigureAwait(false);
-            // Seed the L2 provider's remove-generation marker from the origin timestamp so an L1-miss read here
-            // observes the flush immediately rather than after L2's refresh window (FusionCache's payload-carrying
-            // backplane). Providers whose flush is physical implement SeedRemoveMarker as a no-op.
+            // Seed the L2 provider's remove-generation marker from the origin timestamp FIRST, then wipe L1. The
+            // order matters: if L1 were wiped first, a concurrent read in the window before the L2 marker is seeded
+            // would miss the wiped L1 and fall through to L2 (marker not yet seeded), serving the stale entry. The
+            // remove marker only invalidates entries older than the flush timestamp, so seeding it before the wipe
+            // cannot hide a still-valid entry. Providers whose flush is physical implement SeedRemoveMarker as a
+            // no-op (FusionCache's payload-carrying backplane — the timestamp travels with the notification).
             if (l2Cache is ISeedableTagMarkerCache l2Markers)
             {
                 l2Markers.SeedRemoveMarker(message.Timestamp ?? _timeProvider.GetUtcNow());
             }
+
+            // Physically wipe this receiver's L1 (drops its local fail-safe reserves, matching the originator).
+            await LocalCache.FlushAsync(ct).ConfigureAwait(false);
 
             return;
         }

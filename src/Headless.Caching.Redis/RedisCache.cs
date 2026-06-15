@@ -1608,8 +1608,9 @@ public sealed class RedisCache(
     /// </summary>
     private async ValueTask<DateTime?> _ResolveNewestMarkerAsync(IReadOnlyCollection<string>? tags)
     {
-        // The clear- and remove-generation markers are compared on every read (tagged or not).
-        var newestMs = await _ResolveClearMarkerAsync().ConfigureAwait(false);
+        // Direct reads: the remove-generation marker (logical FlushAsync) also makes an entry a miss, alongside the
+        // clear- and per-tag markers (all compared on every read, tagged or not).
+        var newestMs = await _ResolveClearAndTagMarkerMsAsync(tags).ConfigureAwait(false);
 
         var removeMs = await _ResolveRemoveMarkerAsync().ConfigureAwait(false);
 
@@ -1617,6 +1618,26 @@ public sealed class RedisCache(
         {
             newestMs = removeMs;
         }
+
+        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
+    }
+
+    /// <summary>
+    /// Resolves the newest CLEAR-generation + per-tag marker, EXCLUDING the remove-generation marker. The
+    /// coordinator demote path uses this: a clear/tag-invalidated entry demotes to a still-servable fail-safe
+    /// reserve, whereas the remove marker (resolved separately by the caller) is a hard miss with no reserve — so
+    /// the coordinator resolves the remove marker once for its hard-miss check and this for the demote check,
+    /// instead of resolving the remove marker twice.
+    /// </summary>
+    private async ValueTask<DateTime?> _ResolveClearAndTagMarkerAsync(IReadOnlyCollection<string>? tags)
+    {
+        var newestMs = await _ResolveClearAndTagMarkerMsAsync(tags).ConfigureAwait(false);
+        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
+    }
+
+    private async ValueTask<long> _ResolveClearAndTagMarkerMsAsync(IReadOnlyCollection<string>? tags)
+    {
+        var newestMs = await _ResolveClearMarkerAsync().ConfigureAwait(false);
 
         if (tags is { Count: > 0 })
         {
@@ -1628,7 +1649,7 @@ public sealed class RedisCache(
             }
         }
 
-        return newestMs == _MarkerAbsent ? null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(newestMs);
+        return newestMs;
     }
 
     private async ValueTask<long> _ResolveClearMarkerAsync()
@@ -2097,7 +2118,9 @@ public sealed class RedisCache(
 
             // Family-2 logical tag/clear invalidation: demote the entry to logically-expired-but-physically-
             // present so the coordinator re-runs the factory but can still serve this reserve stale on failure.
-            var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+            // Uses the clear+tag resolver (NOT _ResolveNewestMarkerAsync) so the remove marker — already resolved
+            // for the hard-miss check above — is not resolved a second time on this path.
+            var newestMarker = await _ResolveClearAndTagMarkerAsync(frame.Tags).ConfigureAwait(false);
 
             if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
             {

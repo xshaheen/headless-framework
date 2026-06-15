@@ -13,7 +13,10 @@ namespace Headless.Caching;
 /// <remarks>
 /// Implementations must apply the seed as <em>raise-only</em>: a pushed timestamp must never lower a marker the
 /// node already knows to be newer. The pushed value is treated as freshly observed (it resets the refresh window).
-/// Caches that read markers in-process (no remote round-trip, no local marker cache) need not implement this.
+/// Any cache holding process-local marker state should implement this so it can receive single-clock seeds —
+/// including in-process caches: <c>InMemoryCache</c> implements the tag/clear seeds and treats
+/// <see cref="SeedRemoveMarker"/> as a no-op (its <c>FlushAsync</c> wipes physically, so it has no logical
+/// remove-generation marker to seed).
 /// </remarks>
 [PublicAPI]
 public interface ISeedableTagMarkerCache

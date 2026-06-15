@@ -947,8 +947,12 @@ public sealed partial class HybridCache
             .ConfigureAwait(false);
 
         // L2 marker bump is best-effort under the circuit breaker: a remote failure trips the circuit and is
-        // logged, never abandoning the local + peer invalidation already applied. A missed bump self-heals within
-        // L2's TagMarkerRefreshWindow / the marker's physical-TTL backstop.
+        // logged, never abandoning the local + peer invalidation already applied (L1 is bumped and peers got the
+        // broadcast above). NOTE: a failed or circuit-skipped L2 marker bump is NOT replayed — marker bumps are not
+        // captured by the recovery queue — so the shared-store marker stays unwritten until the next successful
+        // bump. Cross-instance staleness for a node relying solely on the shared marker (a late joiner, or this
+        // node once its process-local marker-cache entry expires) is then bounded only by each affected entry's
+        // physical TTL, not by TagMarkerRefreshWindow. (#440 follow-up: queue tag/clear/remove marker bumps.)
         await _BumpL2MarkerBestEffortAsync(ct => l2Cache.RemoveByTagAsync(tag, ct), tag, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -987,10 +991,12 @@ public sealed partial class HybridCache
     }
 
     /// <summary>
-    /// Applies a Family-2 marker bump (tag or clear) to L2 as a best-effort operation: skipped when the
+    /// Applies a Family-2 marker bump (tag/clear/remove) to L2 as a best-effort operation: skipped when the
     /// distributed-cache circuit is open, and on failure it trips the circuit and logs rather than propagating —
-    /// the caller has already applied the infallible L1 bump and broadcast the invalidation, so a missed L2 marker
-    /// self-heals within the L2 refresh window. Honours <see cref="HybridCacheOptions.ReThrowDistributedCacheExceptions"/>.
+    /// the caller has already applied the infallible L1 bump and broadcast the invalidation. A skipped/failed bump
+    /// is NOT replayed (marker bumps are not queued for recovery), so the shared-store marker stays unwritten until
+    /// the next successful bump; a node relying solely on the shared marker is then bounded only by each entry's
+    /// physical TTL. Honours <see cref="HybridCacheOptions.ReThrowDistributedCacheExceptions"/>.
     /// </summary>
     private async ValueTask _BumpL2MarkerBestEffortAsync(
         Func<CancellationToken, ValueTask> bump,
@@ -1086,7 +1092,7 @@ public sealed partial class HybridCache
             )
             .ConfigureAwait(false);
 
-        await _BumpL2MarkerBestEffortAsync(ct => l2Cache.FlushAsync(ct), "__flush", cancellationToken)
+        await _BumpL2MarkerBestEffortAsync(ct => l2Cache.FlushAsync(ct), "__remove", cancellationToken)
             .ConfigureAwait(false);
     }
 

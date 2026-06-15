@@ -198,6 +198,48 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_l1_tag_invalidation_and_trip_circuit_when_l2_marker_bump_fails()
+    {
+        // given — an entry tagged and present in both tiers
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l2 = new TogglableRemoteCache(_timeProvider);
+        var cache = _CreateCache(
+            l1,
+            l2,
+            new HybridCacheOptions { DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(5) }
+        );
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        await cache.UpsertEntryAsync(
+            key,
+            42,
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+
+        // when — the L2 marker bump throws (advance so the marker postdates the write)
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        l2.FailMarkerBumps = true;
+        var act = async () => await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // then — the call is best-effort (does not throw), and the L1 marker was bumped first so this node's own
+        // read already misses even though the L2 bump failed (the #1 L1-first guarantee)
+        await act.Should().NotThrowAsync();
+        (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
+
+        // and the failed L2 bump tripped the distributed-cache circuit: a subsequent L2 read is skipped
+        l2.FailMarkerBumps = false;
+        var other = Faker.Random.AlphaNumeric(10);
+        await l2.UpsertAsync(other, 7, TimeSpan.FromMinutes(5), AbortToken);
+        (await cache.GetAsync<int>(other, AbortToken))
+            .HasValue.Should()
+            .BeFalse("the circuit opened when the L2 marker bump failed, so L2 reads are skipped until it closes");
+        l2.ReadAttempts.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_rethrow_l2_read_exception_on_direct_get_when_enabled()
     {
         // given
