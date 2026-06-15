@@ -8,6 +8,8 @@
     <InternalsVisibleTo Include="Headless.Caching.InMemory" />
     <InternalsVisibleTo Include="Headless.Caching.Redis" />
     <InternalsVisibleTo Include="Headless.Caching.Hybrid" />
+    <InternalsVisibleTo Include="Headless.Caching.Bcl" />
+    <InternalsVisibleTo Include="Headless.Caching.Bcl.Tests.Unit" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
