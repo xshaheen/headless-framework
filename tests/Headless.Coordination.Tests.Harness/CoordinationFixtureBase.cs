@@ -29,6 +29,10 @@ public static class CoordinationFixtureExtensions
     // Time at which a dead node's retained state is fully pruned (DeadThreshold + DeadRetentionWindow).
     public static TimeSpan PruneThreshold => DeadThreshold + DeadRetentionWindow;
 
+    // Comfortably inside the suspicion band (between SuspicionThreshold and DeadThreshold) for "node is suspected"
+    // assertions.
+    public static TimeSpan SuspectedWait => (SuspicionThreshold + DeadThreshold) / 2;
+
     // Comfortably inside the dead-but-retained window (between DeadThreshold and PruneThreshold) for "node is dead
     // but its retained state still exists" assertions.
     public static TimeSpan DeadButRetainedWait => (DeadThreshold + PruneThreshold) / 2;
