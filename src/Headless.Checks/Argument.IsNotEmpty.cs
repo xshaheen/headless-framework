@@ -17,6 +17,7 @@ public static partial class Argument
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [OverloadResolutionPriority(1)]
     public static ReadOnlySpan<T> IsNotEmpty<T>(
         ReadOnlySpan<T> argument,
         string? message = null,

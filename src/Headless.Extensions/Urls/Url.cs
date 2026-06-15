@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Headless.Checks;
 
@@ -862,6 +863,7 @@ public sealed partial class Url
     /// URL-encodes illegal characters but not reserved characters.
     /// </summary>
     /// <param name="parts">URL parts to combine.</param>
+    [OverloadResolutionPriority(1)]
     public static string Combine(params ReadOnlySpan<string?> parts)
     {
         // Pre-calculate capacity to avoid reallocations

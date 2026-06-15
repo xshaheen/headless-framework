@@ -31,6 +31,8 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 
 - **Collections**: `ParallelForEachAsync`, `DetectChanges`, `EquatableArray<T>`, `ComparerFactory`, `TypeList`
 
+- **Threading**: `KeyedAsyncLock` - per-key async mutual exclusion (e.g. cache-stampede protection) with an optional `TimeProvider`-driven acquisition timeout that returns `null` instead of blocking when the wait elapses
+
 - **LINQ**: `PredicateBuilder` for composing EF Core expressions (`And`, `Or`, `Not`)
 
 - **Dates & Time**: Fluent date manipulation, `TimeProvider` extensions, timezone conversion, `ChangeableTimezoneTimeProvider`
@@ -96,6 +98,26 @@ var filter = PredicateBuilder.True<Product>()
     .And(p => p.IsActive);
 
 var products = await dbContext.Products.Where(filter).ToListAsync();
+```
+
+### Keyed Async Locking
+
+```csharp
+var keyedLock = new KeyedAsyncLock();
+
+// Unbounded: wait until this key's lock is available.
+using (await keyedLock.LockAsync(key, cancellationToken))
+{
+    // critical section scoped to `key`
+}
+
+// Bounded: returns null if the lock is not acquired within the timeout. TimeProvider drives the
+// wait, so the timeout is deterministic under FakeTimeProvider in tests.
+using var releaser = await keyedLock.LockAsync(key, TimeSpan.FromSeconds(2), TimeProvider.System, cancellationToken);
+if (releaser is null)
+{
+    // timed out acquiring the lock — degrade (skip work, serve stale, or return a miss)
+}
 ```
 
 ## Configuration

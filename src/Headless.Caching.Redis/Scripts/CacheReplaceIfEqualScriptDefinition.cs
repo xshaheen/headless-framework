@@ -30,21 +30,61 @@ internal sealed class CacheReplaceIfEqualScriptDefinition : RedisScriptDefinitio
               string.len(currentVal) >= headerLen
               and string.byte(currentVal, 1) == 255
 
-            if hasMagic and string.byte(currentVal, 2) ~= 1 then
+            if hasMagic and string.byte(currentVal, 2) ~= 3 then
               return redis.error_reply('ERR unsupported cache frame version')
             end
 
-            local isFramed = hasMagic and string.byte(currentVal, 2) == 1
+            local isFramed = hasMagic and string.byte(currentVal, 2) == 3
 
             if isFramed then
               local flags = string.byte(currentVal, 3)
               local currentIsNull = flags % 2 == 1
+              local len = string.len(currentVal)
+
+              -- Skip the optional v3 sections in frame layout order (sliding 0x08, eager-refresh 0x10,
+              -- last-modified 0x40 fixed 8B each, then etag 0x20 and tags 0x80 as u16le-length-prefixed
+              -- UTF-8) to find where the value segment starts.
+              local valueStart = headerLen
+
+              if math.floor(flags / 8) % 2 == 1 then valueStart = valueStart + 8 end
+              if math.floor(flags / 16) % 2 == 1 then valueStart = valueStart + 8 end
+              if math.floor(flags / 64) % 2 == 1 then valueStart = valueStart + 8 end
+
+              if math.floor(flags / 32) % 2 == 1 then
+                if len < valueStart + 2 then
+                  return redis.error_reply('ERR malformed cache frame')
+                end
+                valueStart = valueStart + 2
+                  + string.byte(currentVal, valueStart + 1)
+                  + string.byte(currentVal, valueStart + 2) * 256
+              end
+
+              if math.floor(flags / 128) % 2 == 1 then
+                if len < valueStart + 2 then
+                  return redis.error_reply('ERR malformed cache frame')
+                end
+                local tagCount = string.byte(currentVal, valueStart + 1)
+                  + string.byte(currentVal, valueStart + 2) * 256
+                valueStart = valueStart + 2
+                for _ = 1, tagCount do
+                  if len < valueStart + 2 then
+                    return redis.error_reply('ERR malformed cache frame')
+                  end
+                  valueStart = valueStart + 2
+                    + string.byte(currentVal, valueStart + 1)
+                    + string.byte(currentVal, valueStart + 2) * 256
+                end
+              end
+
+              if len < valueStart then
+                return redis.error_reply('ERR malformed cache frame')
+              end
 
               if expectedIsNull == 1 then
                 if currentIsNull then
                   matches = 1
                 end
-              elseif not currentIsNull and string.sub(currentVal, headerLen + 1) == @expected then
+              elseif not currentIsNull and string.sub(currentVal, valueStart + 1) == @expected then
                 matches = 1
               end
             else

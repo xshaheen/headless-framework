@@ -6,6 +6,14 @@ namespace Headless.Caching;
 public interface ICache
 {
     /// <summary>
+    /// Gets the default <see cref="CacheEntryOptions"/> configured for this cache instance at registration
+    /// (for example via the provider options' <c>DefaultEntryOptions</c>). Used by the option-less
+    /// <c>GetOrAddAsync</c> extension overloads; when <see langword="null"/>, those overloads throw
+    /// <see cref="InvalidOperationException"/> — defaults are explicit-at-registration, never magic.
+    /// </summary>
+    CacheEntryOptions? DefaultEntryOptions { get; }
+
+    /// <summary>
     /// Gets a value from cache, or creates it using the factory if not found.
     /// Uses keyed locking to prevent cache stampedes (multiple concurrent factory executions for the same key).
     /// </summary>
@@ -27,6 +35,32 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Gets a value from cache, or refreshes it using a conditional factory (the HTTP-304 pattern).
+    /// The factory receives a <see cref="CacheFactoryContext{T}"/> carrying the last-known cached value and its
+    /// validators (<see cref="CacheFactoryContext{T}.ETag"/>, <see cref="CacheFactoryContext{T}.LastModifiedAt"/>)
+    /// and returns <see cref="CacheFactoryContext{T}.NotModified"/> to extend the existing entry as fresh, or
+    /// <see cref="CacheFactoryContext{T}.Modified(T, string?, DateTime?)"/> to replace it. The factory may also
+    /// replace <see cref="CacheFactoryContext{T}.Options"/> before returning (adaptive caching).
+    /// Uses keyed locking to prevent cache stampedes, like the simple overload.
+    /// </summary>
+    /// <typeparam name="T">The type of the cached value.</typeparam>
+    /// <param name="key">The cache key.</param>
+    /// <param name="factory">The conditional factory invoked on a miss or refresh. Receives the per-execution context and the cancellation token.</param>
+    /// <param name="options">Cache entry options for the cached value; the factory may replace them via the context.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The cached, extended, or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when the entry options (including an adaptive replacement set by the factory) are invalid, for
+    /// example a non-positive <see cref="CacheEntryOptions.Duration"/>.
+    /// </exception>
+    ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    );
+
     #region Update
 
     /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>
@@ -34,6 +68,31 @@ public interface ICache
         string key,
         T? value,
         TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Sets a value as a direct write honoring the full <see cref="CacheEntryOptions"/> semantics: the entry is
+    /// stamped exactly like a fresh factory write (fail-safe extends physical retention, an eager-refresh
+    /// threshold stamps the eager point, sliding expiration clamps the logical lifetime) and
+    /// <see cref="CacheEntryOptions.Tags"/> are persisted on the entry for later <see cref="RemoveByTagAsync"/>
+    /// logical invalidation. Options are validated with the same rules as <c>GetOrAddAsync</c>. Prefer
+    /// <see cref="UpsertAsync{T}(string, T, TimeSpan?, CancellationToken)"/> on hot paths that need none of the
+    /// per-entry option semantics. (Named distinctly because the <see cref="TimeSpan"/>-to-options implicit
+    /// conversion would otherwise make every bare-<see cref="TimeSpan"/> upsert ambiguous.)
+    /// </summary>
+    /// <typeparam name="T">The type of the cached value.</typeparam>
+    /// <param name="key">The cache key.</param>
+    /// <param name="value">The value to cache; <see langword="null"/> caches the null sentinel.</param>
+    /// <param name="options">The cache entry options applied to the written entry.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><see langword="true"/> when the write was issued.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the entry options are invalid, for example a non-positive <see cref="CacheEntryOptions.Duration"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <see cref="CacheEntryOptions.Tags"/> contains an empty tag or exceeds the supported tag count/length limits.</exception>
+    ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
         CancellationToken cancellationToken = default
     );
 
@@ -165,6 +224,19 @@ public interface ICache
     /// <summary>Remove the specified cache key.</summary>
     ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Logically expires the entry instead of removing it: normal reads immediately treat it as a miss, but its
+    /// fail-safe physical reserve is preserved, so a subsequent <c>GetOrAddAsync</c> whose factory fails can still
+    /// serve the stale value (the fail-safe parachute). For an entry written WITHOUT fail-safe (no physical
+    /// reserve beyond its logical lifetime) this is equivalent to <see cref="RemoveAsync"/>. On a two-tier cache
+    /// the expiration is applied to both tiers and propagated to other instances so their copies are logically
+    /// expired too (reserves preserved). A no-op when the key is absent.
+    /// </summary>
+    /// <param name="key">The cache key to logically expire.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><see langword="true"/> when an entry was found and expired; otherwise <see langword="false"/>.</returns>
+    ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default);
+
     /// <summary>Remove only if equal the expected value.</summary>
     ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default);
 
@@ -174,6 +246,32 @@ public interface ICache
     /// <summary>Removes cached item by cache key's prefix.</summary>
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Logically invalidates every entry that carries <paramref name="tag"/> in O(1) by writing a per-tag
+    /// invalidation marker (a timestamp), without enumerating members. On the next read, an entry whose birth
+    /// time (<c>CreatedAt</c>) predates the marker is treated as a miss by direct reads and demoted to a
+    /// fail-safe reserve by the factory coordinator (so a failing factory can still serve it stale). A key
+    /// re-created after the marker (a newer birth time) is NOT invalidated, so tag memberships remain pinned to
+    /// the entry version. The marker is per-tier; the physical TTL backstops staleness if a marker is lost. On a
+    /// two-tier cache the marker is bumped on both tiers and propagated to other instances.
+    /// </summary>
+    /// <param name="tag">The invalidation tag.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// LOGICALLY clears the cache in O(1) by bumping a single reserved clear-generation marker: every entry born
+    /// before the bump is treated as a miss by direct reads and demoted to a fail-safe reserve by the factory
+    /// coordinator, so a failing factory can still serve stale values (the fail-safe reserves are preserved).
+    /// This is the reserve-preserving counterpart of <see cref="FlushAsync"/>, which drops the fail-safe reserves.
+    /// Prefer <see cref="ClearAsync"/> when you want fail-safe coverage to outlive the clear; use
+    /// <see cref="FlushAsync"/> to drop everything including reserves. The marker is per-tier and, on a two-tier
+    /// cache, is bumped on both tiers and propagated to other instances. A re-created entry (newer birth time) is
+    /// unaffected.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask ClearAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Remove some values from set.</summary>
     ValueTask<long> SetRemoveAsync<T>(
         string key,
@@ -182,12 +280,85 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Flush all cached item.</summary>
+    /// <summary>
+    /// Flushes the whole cache, dropping every entry <em>including its fail-safe reserve</em> — the reserve-dropping
+    /// counterpart of <see cref="ClearAsync"/>. After a flush a failing factory cannot serve a stale value. The
+    /// removal mechanism is tier-specific: an in-process cache wipes physically (freeing memory immediately); a
+    /// distributed cache bumps a reserved remove-generation marker (cluster-safe, no physical <c>FLUSHDB</c>), so its
+    /// entries read as a hard miss while physical memory is reclaimed lazily by each entry's TTL.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     ValueTask FlushAsync(CancellationToken cancellationToken = default);
 
     #endregion
 }
 
+/// <summary>
+/// The in-memory (local / L1) tier contract. Carries no members beyond <see cref="ICache"/>: it is a deliberate
+/// tier marker, not a behavioral extension. Multi-tier composition (for example the hybrid cache resolving its
+/// L1 tier) selects the in-memory tier by this type, distinctly from <see cref="IRemoteCache"/> — both are
+/// <see cref="ICache"/>, so the marker is what disambiguates them in DI. Do not remove it for being empty: a
+/// hybrid host depends on this type to resolve the local tier.
+/// </summary>
+[PublicAPI]
 public interface IInMemoryCache : ICache;
 
-public interface IRemoteCache : ICache;
+/// <summary>
+/// The distributed (remote / L2) tier contract. Extends <see cref="ICache"/> with single round-trip
+/// value-plus-expiration reads (used to mirror entries into a faster local tier) and also serves as the tier
+/// marker that multi-tier composition (the hybrid cache resolving its L2 tier) selects distinctly from
+/// <see cref="IInMemoryCache"/>.
+/// </summary>
+[PublicAPI]
+public interface IRemoteCache : ICache
+{
+    /// <summary>
+    /// Reads a single key in one round-trip and returns the hit's value together with its remaining
+    /// logical expiration, so callers can mirror the value into a local tier without a separate
+    /// expiration query. When the key is not found the returned <see cref="CacheValueWithExpiration{T}.Value"/>
+    /// will have <see cref="CacheValue{T}.HasValue"/> equal to <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// The expiration in the returned <see cref="CacheValueWithExpiration{T}"/> is the remaining logical TTL at
+    /// the moment the entry was read. For entries written without explicit logical-expiry metadata (legacy
+    /// payloads) the <see cref="CacheValueWithExpiration{T}.Expiration"/> is <see langword="null"/>.
+    /// Entries whose logical TTL has already elapsed are treated as misses.
+    /// </remarks>
+    /// <typeparam name="T">The type of the cached value.</typeparam>
+    /// <param name="key">The cache key to look up.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A <see cref="CacheValueWithExpiration{T}"/> containing the value and remaining logical expiration
+    /// when the key is found and has not yet logically expired; otherwise a result whose
+    /// <see cref="CacheValueWithExpiration{T}.Value"/> has <see cref="CacheValue{T}.HasValue"/> equal to
+    /// <see langword="false"/>.
+    /// </returns>
+    ValueTask<CacheValueWithExpiration<T>> GetWithExpirationAsync<T>(
+        string key,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads multiple keys in one round-trip and returns each hit's value together with its remaining
+    /// logical expiration, so callers can mirror the value into a local tier without a separate per-key
+    /// expiration query. Keys not found in the remote store are omitted from the result.
+    /// </summary>
+    /// <remarks>
+    /// The expiration in each <see cref="CacheValueWithExpiration{T}"/> is the remaining logical TTL at
+    /// the moment the entry was read. For entries written without explicit logical-expiry metadata (legacy
+    /// payloads) the <see cref="CacheValueWithExpiration{T}.Expiration"/> is <see langword="null"/>.
+    /// Entries whose logical TTL has already elapsed are excluded from the result (treated as misses).
+    /// </remarks>
+    /// <typeparam name="T">The type of the cached values.</typeparam>
+    /// <param name="cacheKeys">The keys to look up.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A dictionary keyed by cache key containing the value and remaining logical expiration for every
+    /// key that was found and has not yet logically expired. Keys not present in the store are absent
+    /// from the dictionary.
+    /// </returns>
+    ValueTask<IDictionary<string, CacheValueWithExpiration<T>>> GetAllWithExpirationAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    );
+}

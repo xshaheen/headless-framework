@@ -34,6 +34,7 @@ public sealed class InMemoryCacheTests : TestBase
                 return new CacheEntryEnvelope(
                     _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt"),
                     _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt"),
+                    _GetEntryProperty<TimeSpan?>(entry, "SlidingExpiration"),
                     _GetEntryProperty<object?>(entry, "LastFactoryError"),
                     _GetEntryProperty<IReadOnlySet<string>?>(entry, "Tags")
                 );
@@ -68,12 +69,18 @@ public sealed class InMemoryCacheTests : TestBase
                 typeof(object),
                 typeof(DateTime?),
                 typeof(DateTime?),
+                typeof(TimeSpan?),
                 typeof(TimeProvider),
                 typeof(bool),
                 typeof(bool),
                 typeof(long),
                 lastFactoryErrorType!,
-                typeof(IReadOnlySet<string>),
+                typeof(IReadOnlyCollection<string>),
+                typeof(DateTime?),
+                typeof(string),
+                typeof(DateTime?),
+                typeof(DateTime?),
+                typeof(long),
             ],
             modifiers: null
         );
@@ -85,6 +92,7 @@ public sealed class InMemoryCacheTests : TestBase
             value,
             logicalExpiresAt,
             physicalExpiresAt,
+            null,
             typeof(InMemoryCache)
                 .GetField("_timeProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(cache),
@@ -93,6 +101,11 @@ public sealed class InMemoryCacheTests : TestBase
             0L,
             null,
             null,
+            null,
+            null,
+            null,
+            null,
+            -1L,
         ]);
         memory.GetType().GetProperty("Item")!.SetValue(memory, entry, [key]);
     }
@@ -103,6 +116,19 @@ public sealed class InMemoryCacheTests : TestBase
         field.Should().NotBeNull();
 
         return field!.GetValue(cache)!;
+    }
+
+    private static async Task _StartMaintenanceAsync(InMemoryCache cache)
+    {
+        var method = typeof(InMemoryCache).GetMethod(
+            "_StartMaintenanceAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+        method.Should().NotBeNull();
+
+        var task = (Task)method!.Invoke(cache, [true])!;
+        await task;
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
     }
 
     private static T? _GetEntryProperty<T>(object entry, string propertyName)
@@ -120,6 +146,7 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().Be(expectedExpiration);
         envelope.PhysicalExpiresAt.Should().Be(expectedExpiration);
+        envelope.SlidingExpiration.Should().BeNull();
         envelope.LastFactoryError.Should().BeNull();
         envelope.Tags.Should().BeNull();
     }
@@ -127,6 +154,7 @@ public sealed class InMemoryCacheTests : TestBase
     private sealed record CacheEntryEnvelope(
         DateTime? LogicalExpiresAt,
         DateTime? PhysicalExpiresAt,
+        TimeSpan? SlidingExpiration,
         object? LastFactoryError,
         IReadOnlySet<string>? Tags
     );
@@ -238,8 +266,130 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().Be(now.Add(duration));
         envelope.PhysicalExpiresAt.Should().Be(now.Add(duration));
+        envelope.SlidingExpiration.Should().BeNull();
         envelope.LastFactoryError.Should().BeNull();
         envelope.Tags.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_store_sliding_expiration_for_factory_entry()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(10),
+            SlidingExpiration = TimeSpan.FromMinutes(2),
+        };
+
+        // when
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        // then
+        var envelope = _GetEntryEnvelope(cache, key);
+        envelope.LogicalExpiresAt.Should().Be(now.Add(options.SlidingExpiration.Value));
+        envelope.PhysicalExpiresAt.Should().Be(now.Add(options.Duration));
+        envelope.SlidingExpiration.Should().Be(options.SlidingExpiration);
+    }
+
+    [Fact]
+    public async Task should_rearm_sliding_entry_on_value_read_without_moving_physical_cap()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(10),
+            SlidingExpiration = TimeSpan.FromSeconds(2),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        var before = _GetEntryEnvelope(cache, key);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1300));
+
+        // when
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        // then
+        var after = _GetEntryEnvelope(cache, key);
+        cached.Value.Should().Be("value");
+        after.LogicalExpiresAt.Should().Be(_timeProvider.GetUtcNow().UtcDateTime.Add(options.SlidingExpiration.Value));
+        after.PhysicalExpiresAt.Should().Be(before.PhysicalExpiresAt);
+        after.SlidingExpiration.Should().Be(options.SlidingExpiration);
+    }
+
+    [Fact]
+    public async Task should_not_rearm_sliding_entry_before_rearm_threshold()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(10),
+            SlidingExpiration = TimeSpan.FromSeconds(2),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        var before = _GetEntryEnvelope(cache, key);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+
+        // when
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        // then
+        var after = _GetEntryEnvelope(cache, key);
+        cached.Value.Should().Be("value");
+        after.LogicalExpiresAt.Should().Be(before.LogicalExpiresAt);
+    }
+
+    [Fact]
+    public async Task should_not_rearm_sliding_entry_on_metadata_read()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(10),
+            SlidingExpiration = TimeSpan.FromSeconds(2),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        var before = _GetEntryEnvelope(cache, key);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1300));
+
+        // when
+        var exists = await cache.ExistsAsync(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        // then
+        var after = _GetEntryEnvelope(cache, key);
+        exists.Should().BeTrue();
+        expiration.Should().BeCloseTo(TimeSpan.FromMilliseconds(700), TimeSpan.FromMilliseconds(1));
+        after.LogicalExpiresAt.Should().Be(before.LogicalExpiresAt);
+    }
+
+    [Fact]
+    public async Task should_remove_idle_sliding_entry_during_maintenance_before_physical_cap()
+    {
+        // given
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaintenanceInterval = TimeSpan.FromMilliseconds(1) });
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            SlidingExpiration = TimeSpan.FromMilliseconds(100),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(150));
+
+        // when
+        await _StartMaintenanceAsync(cache);
+
+        // then
+        var count = await cache.GetCountAsync(cancellationToken: AbortToken);
+        count.Should().Be(0);
     }
 
     [Fact]
@@ -258,6 +408,7 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().Be(now.Add(duration));
         envelope.PhysicalExpiresAt.Should().Be(now.Add(duration));
+        envelope.SlidingExpiration.Should().BeNull();
     }
 
     [Fact]
@@ -290,6 +441,7 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().BeNull();
         envelope.PhysicalExpiresAt.Should().BeNull();
+        envelope.SlidingExpiration.Should().BeNull();
     }
 
     [Fact]
@@ -1655,6 +1807,99 @@ public sealed class InMemoryCacheTests : TestBase
         count.Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_clear_fail_safe_stale_reserve_on_flush()
+    {
+        // FusionCache parity (CanClearWithFailSafeAsync): flush must wipe the physical fail-safe
+        // reserve, not just logically-live entries. A fail-safe entry keeps a physical reserve
+        // beyond logical expiry; after flush that reserve must be gone, so a fail-safe read whose
+        // factory throws gets nothing instead of serving the stale value.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // entry already past logical expiry but still within the physical fail-safe reserve
+        await ((IFactoryCacheStore)cache).SetEntryAsync(
+            key,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = 1,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddMinutes(10),
+            },
+            AbortToken
+        );
+
+        var failSafeOptions = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(1),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(10),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+        };
+
+        // sanity: the stale reserve serves the old value before the flush
+        var beforeFlush = await cache.GetOrAddAsync<int>(
+            key,
+            _ => throw new InvalidOperationException("factory failed"),
+            failSafeOptions,
+            AbortToken
+        );
+        beforeFlush.IsStale.Should().BeTrue();
+        beforeFlush.Value.Should().Be(1);
+
+        // re-seed the stale reserve (the read above may have refreshed logical expiry)
+        await ((IFactoryCacheStore)cache).SetEntryAsync(
+            key,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = 1,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddMinutes(10),
+            },
+            AbortToken
+        );
+
+        // when
+        await cache.FlushAsync(AbortToken);
+
+        // then — reserve is gone: no entry, and a throwing fail-safe factory cannot serve the old value
+        (await cache.ExistsAsync(key, AbortToken))
+            .Should()
+            .BeFalse();
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(0);
+
+        var afterFlush = await cache.GetOrAddAsync<int>(
+            key,
+            _ => ValueTask.FromResult<int>(2),
+            failSafeOptions,
+            AbortToken
+        );
+        afterFlush.IsStale.Should().BeFalse("flush wiped the stale reserve, so the factory runs fresh");
+        afterFlush.Value.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_not_write_cache_when_reading_a_missing_key()
+    {
+        // FusionCache parity (GetOrDefaultDoesNotSetAsync): a plain read never writes the cache.
+        // Reading a missing key must not materialize an entry.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await cache.GetAsync<int>(key, AbortToken);
+
+        // then
+        result.HasValue.Should().BeFalse();
+        (await cache.ExistsAsync(key, AbortToken)).Should().BeFalse();
+        (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(0);
+    }
+
     #endregion
 
     #region Expiration Behavior
@@ -1892,10 +2137,13 @@ public sealed class InMemoryCacheTests : TestBase
 
         await ((IFactoryCacheStore)cache).SetEntryAsync(
             key,
-            new TestClass { Value = 1 },
-            isNull: false,
-            logicalExpiresAt: now.AddMinutes(-1),
-            physicalExpiresAt: now.AddMinutes(5),
+            new CacheStoreEntryWrite<TestClass>
+            {
+                Value = new TestClass { Value = 1 },
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddMinutes(5),
+            },
             AbortToken
         );
 
@@ -1950,6 +2198,41 @@ public sealed class InMemoryCacheTests : TestBase
 
         // then
         result.Should().BeFalse("reference equality fails for cloned custom classes that don't override Equals");
+    }
+
+    [Fact]
+    public async Task should_round_trip_entry_metadata_through_factory_store()
+    {
+        // given
+        using var cache = _CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var entry = new CacheStoreEntryWrite<string>
+        {
+            Value = "value",
+            IsNull = false,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(10),
+            EagerRefreshAt = now.AddMinutes(4),
+            ETag = "W/\"v42\"",
+            LastModifiedAt = now.AddMinutes(-30),
+            Tags = ["tenant:1", "products"],
+        };
+
+        // when
+        await store.SetEntryAsync(key, in entry, AbortToken);
+        var roundTripped = await store.TryGetEntryAsync<string>(key, AbortToken);
+
+        // then
+        roundTripped.Found.Should().BeTrue();
+        roundTripped.Value.Should().Be("value");
+        roundTripped.LogicalExpiresAt.Should().Be(entry.LogicalExpiresAt);
+        roundTripped.PhysicalExpiresAt.Should().Be(entry.PhysicalExpiresAt);
+        roundTripped.EagerRefreshAt.Should().Be(entry.EagerRefreshAt);
+        roundTripped.ETag.Should().Be(entry.ETag);
+        roundTripped.LastModifiedAt.Should().Be(entry.LastModifiedAt);
+        roundTripped.Tags.Should().BeEquivalentTo("tenant:1", "products");
     }
 
     [Fact]
@@ -2023,6 +2306,72 @@ public sealed class InMemoryCacheTests : TestBase
     #endregion
 
     #region Complex Type Support
+
+    [Theory]
+    [InlineData(42)]
+    [InlineData(int.MinValue)]
+    [InlineData(int.MaxValue)]
+    public async Task should_convert_boxed_simple_value_to_concrete_int_on_read(int boxedInt)
+    {
+        // FusionCache parity (HandlesFlexibleSimpleTypeConversionsAsync): a value written boxed as
+        // object round-trips to its concrete type on read. Headless only tested the failure side
+        // (should_throw_on_invalid_type_conversion...); this pins the success round-trip.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        object boxed = boxedInt;
+
+        // when
+        await cache.UpsertAsync<object>(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.GetAsync<int>(key, AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be(boxedInt);
+    }
+
+    [Fact]
+    public async Task should_convert_boxed_simple_values_of_various_types_on_read()
+    {
+        // Covers long/bool/string in addition to the int case above.
+        // given
+        using var cache = _CreateCache();
+        var longKey = Faker.Random.AlphaNumeric(10);
+        var boolKey = Faker.Random.AlphaNumeric(10);
+        var stringKey = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await cache.UpsertAsync<object>(longKey, 9_000_000_000L, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync<object>(boolKey, true, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync<object>(stringKey, "boxed-string", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        (await cache.GetAsync<long>(longKey, AbortToken))
+            .Value.Should()
+            .Be(9_000_000_000L);
+        (await cache.GetAsync<bool>(boolKey, AbortToken)).Value.Should().BeTrue();
+        (await cache.GetAsync<string>(stringKey, AbortToken)).Value.Should().Be("boxed-string");
+    }
+
+    [Fact]
+    public async Task should_convert_boxed_complex_value_to_concrete_type_on_read()
+    {
+        // FusionCache parity (HandlesFlexibleComplexTypeConversionsAsync): a complex object written
+        // boxed as object reads back as its concrete type with fields intact. Distinct from the typed
+        // should_cache_complex_objects — this exercises the boxed-object -> concrete path.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        object boxed = new TestClass { Value = 1234 };
+
+        // when
+        await cache.UpsertAsync<object>(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.GetAsync<TestClass>(key, AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value!.Value.Should().Be(1234);
+    }
 
     [Fact]
     public async Task should_cache_complex_objects()

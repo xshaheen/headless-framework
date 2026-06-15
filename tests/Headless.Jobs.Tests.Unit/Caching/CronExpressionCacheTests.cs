@@ -324,6 +324,8 @@ public sealed class CronExpressionCacheTests
 
     private sealed class RecordingCache : ICache
     {
+        public CacheEntryOptions? DefaultEntryOptions => null;
+
         public CacheBehavior Behavior { get; init; } = CacheBehavior.InvokeFactory;
 
         public CronJobEntity[] CachedCronExpressions { get; init; } = [];
@@ -388,7 +390,28 @@ public sealed class CronExpressionCacheTests
             return new CacheValue<T>(value, hasValue: true);
         }
 
+        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+            string key,
+            Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+            CacheEntryOptions options,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
         public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
+        {
+            RemoveCalls++;
+
+            if (RemoveException is not null)
+            {
+                throw RemoveException;
+            }
+
+            RemovedKeys.Add(key);
+
+            return ValueTask.FromResult(true);
+        }
+
+        public ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default)
         {
             RemoveCalls++;
 
@@ -406,6 +429,13 @@ public sealed class CronExpressionCacheTests
             string key,
             T? value,
             TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public ValueTask<bool> UpsertEntryAsync<T>(
+            string key,
+            T? value,
+            CacheEntryOptions options,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
 
@@ -533,6 +563,11 @@ public sealed class CronExpressionCacheTests
 
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public ValueTask ClearAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public ValueTask<long> SetRemoveAsync<T>(
             string key,

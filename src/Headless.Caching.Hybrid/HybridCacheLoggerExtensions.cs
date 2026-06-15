@@ -113,4 +113,75 @@ internal static partial class HybridCacheLoggerExtensions
         bool hasPrefix,
         bool flushAll
     );
+
+    [LoggerMessage(
+        EventId = 14,
+        EventName = "IgnoredStaleRemoteInvalidation",
+        Level = LogLevel.Debug,
+        Message = "Ignored a remote invalidation for key {Key}: a pending local auto-recovery operation for the key is at least as new"
+    )]
+    public static partial void LogIgnoredStaleRemoteInvalidation(this ILogger logger, string key);
+
+    [LoggerMessage(
+        EventId = 15,
+        EventName = "FailedBulkL2CacheOperation",
+        Level = LogLevel.Warning,
+        Message = "Failed to perform a bulk L2 cache operation for {KeyCount} key(s); degrading to partial L1 result"
+    )]
+    public static partial void LogFailedBulkL2CacheOperation(this ILogger logger, Exception exception, int keyCount);
+
+    [LoggerMessage(
+        EventId = 20,
+        EventName = "BulkDistributedCacheReadDegraded",
+        Level = LogLevel.Warning,
+        Message = "Bulk L2 cache read for {KeyCount} key(s) did not complete ({Reason}); degrading to partial L1 result"
+    )]
+    public static partial void LogBulkDistributedCacheReadDegraded(this ILogger logger, int keyCount, string reason);
+
+    [LoggerMessage(
+        EventId = 16,
+        EventName = "BackgroundDistributedCacheOperationFailed",
+        Level = LogLevel.Error,
+        Message = "A backgrounded L2 cache operation faulted unexpectedly for key {Key} ({ExceptionType}); the caller already returned"
+    )]
+    public static partial void LogBackgroundDistributedCacheOperationFailed(
+        this ILogger logger,
+        Exception exception,
+        string key,
+        string exceptionType
+    );
+
+    [LoggerMessage(
+        EventId = 17,
+        EventName = "DistributedCacheReadTimedOut",
+        Level = LogLevel.Warning,
+        Message = "Distributed L2 cache read timed out for key {Key} after {Timeout} ({TimeoutKind}); degrading to local fallback or miss"
+    )]
+    public static partial void LogDistributedCacheReadTimedOut(
+        this ILogger logger,
+        string key,
+        TimeSpan timeout,
+        string timeoutKind
+    );
+
+    [LoggerMessage(
+        EventId = 18,
+        EventName = "DistributedCacheCircuitOpened",
+        Level = LogLevel.Warning,
+        Message = "Distributed L2 cache circuit opened for {Duration} after a failure on key {Key}"
+    )]
+    public static partial void LogDistributedCacheCircuitOpened(
+        this ILogger logger,
+        Exception exception,
+        string key,
+        TimeSpan duration
+    );
+
+    [LoggerMessage(
+        EventId = 19,
+        EventName = "DistributedCacheCircuitClosed",
+        Level = LogLevel.Warning,
+        Message = "Distributed L2 cache circuit closed; L2 operations are enabled again"
+    )]
+    public static partial void LogDistributedCacheCircuitClosed(this ILogger logger);
 }

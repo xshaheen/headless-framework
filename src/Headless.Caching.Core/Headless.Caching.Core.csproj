@@ -4,6 +4,11 @@
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Caching.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Caching.InMemory" />
+    <InternalsVisibleTo Include="Headless.Caching.Redis" />
+    <InternalsVisibleTo Include="Headless.Caching.Hybrid" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>

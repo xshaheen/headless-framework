@@ -65,10 +65,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1); // still physically held
         await ((IFactoryCacheStore)l1).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -108,10 +111,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1);
         await ((IFactoryCacheStore)l2).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -162,10 +168,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1);
         await ((IFactoryCacheStore)l1Cache).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -208,10 +217,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         await ((IFactoryCacheStore)l1Cache).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicalExpiresAt: now.AddMinutes(-1),
-            physicalExpiresAt: now.AddHours(1),
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddHours(1),
+            },
             AbortToken
         );
 
@@ -345,11 +357,11 @@ public sealed class HybridCacheFailSafeTests : TestBase
                 "L1 expiration must be capped by DefaultLocalExpiration"
             );
 
-        // No backplane publish on factory-success path (GetOrAddAsync does not publish)
+        // The factory value-write broadcasts a key invalidation so peers drop their stale L1 copies
         await publisher
-            .DidNotReceive()
+            .Received(1)
             .PublishAsync(
-                Arg.Any<CacheInvalidationMessage>(),
+                Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -405,10 +417,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1);
         await ((IFactoryCacheStore)l2).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -443,10 +458,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         await ((IFactoryCacheStore)l2).SetEntryAsync(
             key,
-            value,
-            isNull: false,
-            logicalExpiresAt: now.Add(logicalTtl),
-            physicalExpiresAt: now.AddHours(1),
+            new CacheStoreEntryWrite<int>
+            {
+                Value = value,
+                IsNull = false,
+                LogicalExpiresAt = now.Add(logicalTtl),
+                PhysicalExpiresAt = now.AddHours(1),
+            },
             AbortToken
         );
 
@@ -486,10 +504,13 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var physicallyExpiredAt = now.AddHours(1);
         await ((IFactoryCacheStore)l2).SetEntryAsync(
             key,
-            staleValue,
-            isNull: false,
-            logicallyExpiredAt,
-            physicallyExpiredAt,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = logicallyExpiredAt,
+                PhysicalExpiresAt = physicallyExpiredAt,
+            },
             AbortToken
         );
 
@@ -549,6 +570,49 @@ public sealed class HybridCacheFailSafeTests : TestBase
         second.Value.Should().Be(staleValue);
         second.IsStale.Should().BeFalse("the throttle entry is logically fresh, so the read is a normal L1 hit");
         factoryCallCount.Should().Be(1, "the throttle window must absorb the read without re-invoking the factory");
+    }
+
+    [Fact]
+    public async Task should_not_publish_when_failsafe_throttle_restamps_stale_entry()
+    {
+        // given — a logically-expired, physically-present reserve in L1
+        var (cache, l1, _, publisher) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var staleValue = Faker.Random.Int(1, 100);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        await ((IFactoryCacheStore)l1).SetEntryAsync(
+            key,
+            new CacheStoreEntryWrite<int>
+            {
+                Value = staleValue,
+                IsNull = false,
+                LogicalExpiresAt = now.AddMinutes(-1),
+                PhysicalExpiresAt = now.AddHours(1),
+            },
+            AbortToken
+        );
+
+        // when — fail-safe activates and the throttle restamp is written through the composite store
+        var result = await cache.GetOrAddAsync<int>(
+            key,
+            _ => throw new InvalidOperationException("upstream unavailable"),
+            _FailSafeOptions(),
+            AbortToken
+        );
+
+        // then — the restamp does not change the cached bytes, so no invalidation is broadcast: peers keep
+        // serving their (byte-identical) copies instead of being forced into pointless L2 re-reads
+        result.Value.Should().Be(staleValue);
+        result.IsStale.Should().BeTrue();
+        await publisher
+            .DidNotReceive()
+            .PublishAsync(
+                Arg.Any<CacheInvalidationMessage>(),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion
