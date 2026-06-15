@@ -41,12 +41,13 @@ internal class RedisStreamManager(
         [EnumeratorCancellation] CancellationToken token
     )
     {
-        var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.NewMessages));
+        // Subscription set is fixed for the consumer's lifetime, so materialize positions once
+        // instead of rebuilding the StreamPosition[] on every poll iteration.
+        var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.NewMessages)).ToArray();
 
         while (true)
         {
-            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions.ToArray(), token)
-                .ConfigureAwait(false);
+            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions, token).ConfigureAwait(false);
 
             yield return result;
 
@@ -63,14 +64,15 @@ internal class RedisStreamManager(
         [EnumeratorCancellation] CancellationToken token
     )
     {
-        var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.Beginning));
+        // Subscription set is fixed for the consumer's lifetime, so materialize positions once
+        // instead of rebuilding the StreamPosition[] on every poll iteration.
+        var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.Beginning)).ToArray();
 
         while (true)
         {
             token.ThrowIfCancellationRequested();
 
-            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions.ToArray(), token)
-                .ConfigureAwait(false);
+            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions, token).ConfigureAwait(false);
 
             yield return result;
 
