@@ -4,6 +4,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -14,7 +15,10 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
 {
     private readonly IDataStorage _storage = Substitute.For<IDataStorage>();
 
-    private MessagingDeadOwnerReclaimer _CreateSut(TimeSpan? reconcileInterval = null)
+    private MessagingDeadOwnerReclaimer _CreateSut(
+        TimeSpan? reconcileInterval = null,
+        ILogger<MessagingDeadOwnerReclaimer>? logger = null
+    )
     {
         var options = new MessagingOptions();
 
@@ -26,8 +30,27 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
         return new MessagingDeadOwnerReclaimer(
             _storage,
             Options.Create(options),
-            NullLogger<MessagingDeadOwnerReclaimer>.Instance
+            logger ?? NullLogger<MessagingDeadOwnerReclaimer>.Instance
         );
+    }
+
+    private static ILogger<MessagingDeadOwnerReclaimer> _CreateCapturingLogger(List<(LogLevel Level, int Id)> captured)
+    {
+        var logger = Substitute.For<ILogger<MessagingDeadOwnerReclaimer>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
+
+        return logger;
     }
 
     [Fact]
@@ -71,6 +94,40 @@ public sealed class MessagingDeadOwnerReclaimerTests : TestBase
         await _storage
             .Received(1)
             .ReclaimDeadReceivedOwnersAsync(Arg.Any<IReadOnlyCollection<string>>(), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_log_reclaim_count_only_for_tables_that_recovered_rows()
+    {
+        // given — published recovers 2 rows, received recovers none
+        var captured = new List<(LogLevel Level, int Id)>();
+        var sut = _CreateSut(logger: _CreateCapturingLogger(captured));
+        _storage
+            .ReclaimDeadPublishedOwnersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<int>(2));
+        _storage
+            .ReclaimDeadReceivedOwnersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<int>(0));
+
+        // when
+        await sut.ReclaimAsync("node@5", AbortToken);
+
+        // then — EventId 91 (MessagingDeadOwnerRowsReclaimed) fires once, for the published table only
+        captured.Should().ContainSingle(e => e.Id == 91 && e.Level == LogLevel.Information);
+    }
+
+    [Fact]
+    public async Task should_not_log_reclaim_count_when_no_rows_recover()
+    {
+        // given — both tables report zero reclaimed rows (the default substitute behavior)
+        var captured = new List<(LogLevel Level, int Id)>();
+        var sut = _CreateSut(logger: _CreateCapturingLogger(captured));
+
+        // when
+        await sut.ReclaimAsync("node@5", AbortToken);
+
+        // then — no informational reclaim-count log is emitted
+        captured.Should().NotContain(e => e.Id == 91);
     }
 
     [Fact]

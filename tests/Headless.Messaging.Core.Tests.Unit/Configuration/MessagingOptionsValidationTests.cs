@@ -286,6 +286,21 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_reject_messaging_options_with_non_positive_dead_node_reconcile_interval()
+    {
+        var zero = new MessagingOptionsValidator().Validate(
+            new MessagingOptions { DeadNodeReconcileInterval = TimeSpan.Zero }
+        );
+        zero.IsValid.Should().BeFalse();
+        zero.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.DeadNodeReconcileInterval));
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { DeadNodeReconcileInterval = TimeSpan.FromSeconds(-1) })
+            .IsValid.Should()
+            .BeFalse();
+    }
+
+    [Fact]
     public void should_reject_retry_policy_with_non_positive_on_exhausted_timeout()
     {
         // given
