@@ -164,6 +164,41 @@ internal sealed class RedisMembershipStore(
         return _ParseSnapshots((RedisResult[]?)result);
     }
 
+    // Targeted single-member read. Unlike ReadLivenessAsync this performs no writes (no prune, no mirror
+    // backfill), so it does not require a writable primary — but it is left on the default database for
+    // simplicity. Resolves generation mirror-first with gen: fallback and applies the operational prune
+    // window as a read-only absent cutoff, matching the snapshot's delete-and-omit.
+    public async ValueTask<NodeLivenessState?> ReadNodeLivenessAsync(
+        NodeIdentity identity,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                Db,
+                RedisMembershipReadNodeLivenessScriptDefinition.Instance,
+                new ReadNodeLivenessParams(
+                    _KnownKey(),
+                    _GenKey(identity.NodeId),
+                    _GenerationField(identity.NodeId),
+                    identity.ToString(),
+                    identity.Incarnation.Value,
+                    _ToMilliseconds(Options.SuspicionThreshold),
+                    _ToMilliseconds(Options.DeadThreshold),
+                    _OperationalPruneMilliseconds(),
+                    nameof(NodeLivenessState.Alive),
+                    nameof(NodeLivenessState.Suspected),
+                    nameof(NodeLivenessState.Dead)
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return result.IsNull ? null : Enum.Parse<NodeLivenessState>((string)result!);
+    }
+
     internal async ValueTask CleanupAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
