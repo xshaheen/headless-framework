@@ -150,8 +150,11 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
-    public async Task should_warn_when_coordination_membership_is_registered_but_storage_lock_is_disabled()
+    public async Task should_not_fall_back_to_floor_only_when_storage_lock_disabled_but_membership_is_real()
     {
+        // Recovery is always-on (KTD3): with a real INodeMembership the DeadOwnerRecoveryBridge reclaims
+        // dead owners regardless of UseStorageLock, so the bootstrapper must neither warn that recovery is
+        // disabled (the removed EventId 92) nor emit the floor-only fallback info (EventId 88).
         var captured = new List<(LogLevel Level, EventId EventId)>();
         var membership = Substitute.For<INodeMembership>();
         membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
@@ -169,7 +172,12 @@ public sealed class BootstrapperTests : TestBase
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.EventId.Id == 92);
+        captured
+            .Should()
+            .NotContain(
+                e => e.EventId.Id == 88 || e.EventId.Id == 92,
+                "a real membership means recovery is active via the always-on bridge, independent of UseStorageLock"
+            );
     }
 
     [Fact]

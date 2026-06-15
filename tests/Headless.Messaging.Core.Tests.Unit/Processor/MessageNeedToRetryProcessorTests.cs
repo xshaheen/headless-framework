@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -78,7 +77,6 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             logger,
             dispatcher,
             lockProvider,
-            new NullNodeMembership(),
             cb
         );
 
@@ -182,8 +180,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             Options.Create(retryProcessorOptions),
             logger,
             dispatcher,
-            lockProvider,
-            new NullNodeMembership()
+            lockProvider
         );
 
         var msg1 = _CreateMessage("group-a");
@@ -652,8 +649,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(1) }),
             logger,
             dispatcher,
-            lockProvider,
-            new NullNodeMembership()
+            lockProvider
         );
 
         // Received-pickup throws on the first three cycles, succeeds on the fourth.
@@ -773,14 +769,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
-        var sut = new MessageNeedToRetryProcessor(
-            options,
-            retryOpts,
-            logger,
-            dispatcher,
-            lockProvider,
-            new NullNodeMembership()
-        );
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
@@ -856,14 +845,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
-        var sut = new MessageNeedToRetryProcessor(
-            options,
-            retryOpts,
-            logger,
-            dispatcher,
-            lockProvider,
-            new NullNodeMembership()
-        );
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
@@ -928,14 +910,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
-        var sut = new MessageNeedToRetryProcessor(
-            options,
-            retryOpts,
-            logger,
-            dispatcher,
-            lockProvider,
-            new NullNodeMembership()
-        );
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
@@ -990,14 +965,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
-        var sut = new MessageNeedToRetryProcessor(
-            options,
-            retryOpts,
-            logger,
-            dispatcher,
-            lockProvider,
-            new NullNodeMembership()
-        );
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
@@ -1055,14 +1023,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
-        var sut = new MessageNeedToRetryProcessor(
-            options,
-            retryOpts,
-            logger,
-            dispatcher,
-            lockProvider,
-            new NullNodeMembership()
-        );
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
@@ -1127,14 +1088,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
-        var sut = new MessageNeedToRetryProcessor(
-            options,
-            retryOpts,
-            logger,
-            dispatcher,
-            lockProvider,
-            new NullNodeMembership()
-        );
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
@@ -1172,14 +1126,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) }
         );
 
-        var sut = new MessageNeedToRetryProcessor(
-            options,
-            retryProcessorOptions,
-            logger,
-            dispatcher,
-            lockProvider,
-            new NullNodeMembership()
-        );
+        var sut = new MessageNeedToRetryProcessor(options, retryProcessorOptions, logger, dispatcher, lockProvider);
 
         _SetupReceivedMessages(dataStorage);
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());

@@ -291,18 +291,12 @@ internal sealed class Bootstrapper(
 
     private void _WarnIfNullNodeMembership()
     {
+        // Dead-owner recovery runs unconditionally via DeadOwnerRecoveryBridge, independent of UseStorageLock.
+        // It can only accelerate recovery when a real INodeMembership reports dead nodes; with the
+        // NullNodeMembership default the bridge is a benign no-op and recovery falls back to the per-row
+        // LockedUntil lease floor.
         var membership = serviceProvider.GetService<INodeMembership>();
-        if (!options.Value.UseStorageLock)
-        {
-            if (membership is not null and not NullNodeMembership)
-            {
-                logger.MessagingRecoveryDisabledWithoutStorageLock();
-            }
-
-            return;
-        }
-
-        if (membership is NullNodeMembership)
+        if (membership is null or NullNodeMembership)
         {
             logger.MessagingRecoveryUsingLockedUntilFloorOnly();
         }
