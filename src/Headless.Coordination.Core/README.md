@@ -9,6 +9,7 @@ Provides registration, heartbeat, event derivation, fail-stop self-loss, and ord
 ## Key Features
 
 - An internal membership service implements `INodeMembership` (consumers resolve `INodeMembership`).
+- `IsAliveAsync(identity)` is a targeted single-node check backed by the store SPI's `ReadNodeLivenessAsync` — one guarded single-row query (or small Lua), not a full cluster snapshot, so per-request liveness checks stay O(1) instead of scaling with cluster size. It returns the same result the snapshot would for that identity (current-generation-only, store-clock classified, retention-bounded).
 - Background heartbeat service derives lifecycle events from authoritative snapshots, leaves gracefully on host shutdown under a bounded timeout, and stops beating once local membership is lost.
 - Bounded per-subscriber event channels isolate slow consumers from heartbeats.
 - Default node-id provider resolves configured id, Kubernetes pod identity, hostname, then generated id.
