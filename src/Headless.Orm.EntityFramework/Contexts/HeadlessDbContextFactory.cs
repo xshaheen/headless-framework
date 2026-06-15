@@ -75,7 +75,9 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
     private static TDbContext _AttachScope(IServiceScope scope)
     {
         var context = scope.ServiceProvider.GetRequiredService<TDbContext>();
-        context.OwnedScope = scope;
+        // Hand scope ownership through the internal seam — the public IHeadlessDbContext.OwnedScope is read-only.
+        // Every Headless context base implements IHeadlessDbContextScopeOwner, so the cast always succeeds.
+        ((IHeadlessDbContextScopeOwner)context).AttachOwnedScope(scope);
 
         return context;
     }

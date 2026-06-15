@@ -5,10 +5,11 @@ using System.Data.Common;
 namespace Headless.CommitCoordination;
 
 /// <summary>
-/// Default relational commit capability backed by provider-owned connection and transaction delegates.
+/// Default relational commit capability backed by provider-owned connection and transaction delegates. Internal:
+/// provider packages construct it via <c>InternalsVisibleTo</c>; consumers query the capability through
+/// <see cref="IRelationalCommitContext" />.
 /// </summary>
-[PublicAPI]
-public sealed class RelationalCommitContext(Func<DbConnection?> connection, Func<DbTransaction?> transaction)
+internal sealed class RelationalCommitContext(Func<DbConnection?> connection, Func<DbTransaction?> transaction)
     : IRelationalCommitContext
 {
     /// <inheritdoc />

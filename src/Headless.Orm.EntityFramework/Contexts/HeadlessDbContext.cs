@@ -33,9 +33,19 @@ public interface IHeadlessDbContext
     /// <summary>
     /// Optional service scope owned by the context — set by <c>HeadlessDbContextFactory</c> when the context
     /// is created via <c>IDbContextFactory&lt;TDbContext&gt;</c>, and disposed with the context (see
-    /// <see cref="HeadlessDbContextDisposal"/>).
+    /// <see cref="HeadlessDbContextDisposal"/>). Read-only on the public surface: ownership is assigned through
+    /// the internal <see cref="IHeadlessDbContextScopeOwner"/> seam so consumers cannot reassign it.
     /// </summary>
-    IServiceScope? OwnedScope { get; set; }
+    IServiceScope? OwnedScope { get; }
+}
+
+/// <summary>
+/// Internal seam letting <c>HeadlessDbContextFactory</c> hand scope ownership to a freshly created context
+/// without exposing a public setter on <see cref="IHeadlessDbContext.OwnedScope"/>.
+/// </summary>
+internal interface IHeadlessDbContextScopeOwner
+{
+    void AttachOwnedScope(IServiceScope scope);
 }
 
 /// <summary>
@@ -72,7 +82,7 @@ public interface IHeadlessDbContext
 /// write machinery.
 /// </para>
 /// </remarks>
-public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
+public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadlessDbContextScopeOwner
 {
     private readonly HeadlessDbContextRuntime _runtime;
 
@@ -103,11 +113,9 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
 
     IServiceProvider IHeadlessDbContext.ServiceProvider => _runtime.ServiceProvider;
 
-    IServiceScope? IHeadlessDbContext.OwnedScope
-    {
-        get => _ownedScope;
-        set => _ownedScope = value;
-    }
+    IServiceScope? IHeadlessDbContext.OwnedScope => _ownedScope;
+
+    void IHeadlessDbContextScopeOwner.AttachOwnedScope(IServiceScope scope) => _ownedScope = scope;
 #pragma warning restore CA1033
 
     public override int SaveChanges()

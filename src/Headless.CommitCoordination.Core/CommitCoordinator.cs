@@ -11,10 +11,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.CommitCoordination;
 
 /// <summary>
-/// Default in-process implementation of <see cref="ICommitCoordinator" />.
+/// Default in-process implementation of <see cref="ICommitCoordinator" />. Internal: created only by
+/// <see cref="CommitScopeFactory" /> and accessed by provider packages / tests via <c>InternalsVisibleTo</c>;
+/// the public contract is <see cref="ICommitCoordinator" />.
 /// </summary>
-[PublicAPI]
-public sealed partial class CommitCoordinator : ICommitCoordinator
+internal sealed partial class CommitCoordinator : ICommitCoordinator
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<Type, ICommitWorkBuffer> _buffers = [];

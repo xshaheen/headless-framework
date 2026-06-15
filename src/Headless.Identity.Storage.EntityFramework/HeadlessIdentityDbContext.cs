@@ -54,7 +54,8 @@ public abstract class HeadlessIdentityDbContext<
     TUserPasskey
 >
     : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken, TUserPasskey>,
-        IHeadlessDbContext
+        IHeadlessDbContext,
+        IHeadlessDbContextScopeOwner
     where TUser : IdentityUser<TKey>
     where TRole : IdentityRole<TKey>
     where TKey : IEquatable<TKey>
@@ -87,11 +88,9 @@ public abstract class HeadlessIdentityDbContext<
 
     IServiceProvider IHeadlessDbContext.ServiceProvider => _runtime.ServiceProvider;
 
-    IServiceScope? IHeadlessDbContext.OwnedScope
-    {
-        get => _ownedScope;
-        set => _ownedScope = value;
-    }
+    IServiceScope? IHeadlessDbContext.OwnedScope => _ownedScope;
+
+    void IHeadlessDbContextScopeOwner.AttachOwnedScope(IServiceScope scope) => _ownedScope = scope;
 #pragma warning restore CA1033
 
     protected HeadlessIdentityDbContext(HeadlessDbContextServices services, DbContextOptions options)
