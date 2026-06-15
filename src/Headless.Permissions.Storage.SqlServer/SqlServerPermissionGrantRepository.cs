@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Permissions.Entities;
@@ -16,8 +17,6 @@ internal sealed class SqlServerPermissionGrantRepository(
     IServiceProvider services
 ) : IPermissionGrantRepository
 {
-    private const int _MaxDeleteParameters = 2000;
-    private const int _MaxNameParameters = 2000;
     private const string _GrantColumns = "[Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted]";
     private const string _TenantFilter = "(([TenantId] IS NULL AND @TenantId IS NULL) OR [TenantId]=@TenantId)";
 
@@ -64,7 +63,7 @@ internal sealed class SqlServerPermissionGrantRepository(
         );
     }
 
-    public async Task<List<PermissionGrantRecord>> GetListAsync(
+    public Task<List<PermissionGrantRecord>> GetListAsync(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
@@ -73,26 +72,22 @@ internal sealed class SqlServerPermissionGrantRepository(
     {
         if (names.Count == 0)
         {
-            return [];
+            return Task.FromResult(new List<PermissionGrantRecord>());
         }
 
-        var result = new List<PermissionGrantRecord>();
+        // Pass the names through the HeadlessPermissionsNameList TVP: one cached plan regardless of count
+        // and no 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        var sql =
+            $"SELECT {_GrantColumns} FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};";
 
-        foreach (var chunk in names.Chunk(_MaxNameParameters))
-        {
-            var nameParameters = chunk.Select((_, index) => $"@Name{index}").ToArray();
-            var parameters = chunk.Select((name, index) => _Param($"Name{index}", name)).ToList();
-            parameters.Add(_Param("ProviderName", providerName));
-            parameters.Add(_Param("ProviderKey", providerKey));
-            parameters.Add(_TenantParam());
-
-            var sql =
-                $"SELECT {_GrantColumns} FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Name] IN ({string.Join(",", nameParameters)}) AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};";
-
-            result.AddRange(await _ReadAsync(sql, cancellationToken, parameters.ToArray()).ConfigureAwait(false));
-        }
-
-        return result;
+        return _ReadAsync(
+            sql,
+            cancellationToken,
+            _BuildNameListTvpParameter(names),
+            _Param("ProviderName", providerName),
+            _Param("ProviderKey", providerKey),
+            _TenantParam()
+        );
     }
 
     public Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
@@ -145,18 +140,18 @@ internal sealed class SqlServerPermissionGrantRepository(
             return;
         }
 
-        foreach (var chunk in permissionGrants.Chunk(_MaxDeleteParameters))
-        {
-            var idParameters = chunk.Select((_, index) => $"@Id{index}").ToArray();
-            var parameters = chunk
-                .Select((permissionGrant, index) => _Param($"Id{index}", permissionGrant.Id))
-                .ToList();
-            parameters.Add(_TenantParam());
-            var sql =
-                $"DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Id] IN ({string.Join(",", idParameters)}) AND {_TenantFilter};";
+        // Pass ids through the HeadlessPermissionsIdList TVP: one cached plan regardless of count, no
+        // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        var sql =
+            $"DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Id] IN (SELECT [Id] FROM @Ids) AND {_TenantFilter};";
 
-            await _ExecuteAsync(sql, cancellationToken, parameters.ToArray()).ConfigureAwait(false);
-        }
+        await _ExecuteAsync(
+                sql,
+                cancellationToken,
+                _BuildIdListTvpParameter(permissionGrants.Select(permissionGrant => permissionGrant.Id)),
+                _TenantParam()
+            )
+            .ConfigureAwait(false);
 
         foreach (var permissionGrant in permissionGrants)
         {
@@ -221,6 +216,38 @@ internal sealed class SqlServerPermissionGrantRepository(
     private SqlParameter _TenantParam() => _Param("TenantId", services.GetService<ICurrentTenant>()?.Id);
 
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+
+    private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
+    {
+        var idsTable = new DataTable();
+        idsTable.Columns.Add("Id", typeof(Guid));
+        foreach (var id in ids)
+        {
+            idsTable.Rows.Add(id);
+        }
+
+        return new SqlParameter("@Ids", SqlDbType.Structured)
+        {
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessPermissionsIdList]",
+            Value = idsTable,
+        };
+    }
+
+    private SqlParameter _BuildNameListTvpParameter(IEnumerable<string> names)
+    {
+        var namesTable = new DataTable();
+        namesTable.Columns.Add("Name", typeof(string));
+        foreach (var name in names)
+        {
+            namesTable.Rows.Add(name);
+        }
+
+        return new SqlParameter("@Names", SqlDbType.Structured)
+        {
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessPermissionsNameList]",
+            Value = namesTable,
+        };
+    }
 
     private static SqlParameter[] _Parameters(PermissionGrantRecord permissionGrant) =>
         [
