@@ -168,6 +168,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Caching.Core` — Shared factory-backed cache orchestration.
 - `Headless.Caching.DistributedLocks` — Distributed factory-lock adapter for multi-node stampede protection.
 - `Headless.Caching.InMemory` — In-process single-instance cache.
+- `Headless.Caching.OutputCache` — ASP.NET Core `IOutputCacheStore` adapter over a named Headless cache; makes `AddOutputCache()` distributed and tag-aware.
 - `Headless.Caching.Redis` — Redis distributed cache.
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
 

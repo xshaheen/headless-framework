@@ -1,6 +1,6 @@
 ---
 domain: Caching
-packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.Hybrid, Caching.InMemory, Caching.Redis, Caching.Bcl
+packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.Hybrid, Caching.InMemory, Caching.Redis, Caching.Bcl, Caching.OutputCache
 ---
 
 # Caching
@@ -78,6 +78,15 @@ packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.
     - [Configuration](#configuration-6)
     - [Dependencies](#dependencies-6)
     - [Side Effects](#side-effects-6)
+- [Headless.Caching.OutputCache](#headlesscachingoutputcache)
+    - [Problem Solved](#problem-solved-7)
+    - [Key Features](#key-features-7)
+    - [Design Notes](#design-notes-7)
+    - [Installation](#installation-7)
+    - [Quick Start](#quick-start-7)
+    - [Configuration](#configuration-7)
+    - [Dependencies](#dependencies-7)
+    - [Side Effects](#side-effects-7)
 
 > Unified cache abstraction with in-memory, Redis, and hybrid L1+L2 implementations, plus fail-safe, refresh, tagging, and multi-node stampede protection on the factory path.
 
@@ -96,6 +105,7 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 ## Agent Instructions
 
 - Use `ICache` from `Headless.Caching.Abstractions` for application cache operations. Use `Microsoft.Extensions.Caching.Distributed.IDistributedCache` only for standard BCL consumers such as ASP.NET Core Session, and back it with `Headless.Caching.Bcl`. Use `IRemoteCache` only when a remote/L2 implementation is required.
+- For ASP.NET Core response/output caching, do not back `AddOutputCache()` with `IDistributedCache` — ASP.NET's own guidance rejects it as an output-cache store because it lacks atomic tag operations. Add `Headless.Caching.OutputCache` and call `setup.UseOutputCache(...)`; it registers an `IOutputCacheStore` over a named Headless cache so tag eviction rides the engine's distributed tag index. Still call `AddOutputCache()` and declare tags via `[OutputCache(Tags = "...")]` / `.CacheOutput(p => p.Tag("..."))` — the package supplies only the store, not the policy. In the `configureCache` callback select only the backing provider (`instance.UseRedis(...)` / `UseHybrid(...)`); calling `WithSerializer` there throws because the adapter owns its raw-bytes codec.
 - In Headless caching docs, `Memory` means `Headless.Caching.InMemory`, not `Microsoft.Extensions.Caching.Memory`.
 - Use `Headless.Caching.InMemory` for development and single-instance deployments. Use `Headless.Caching.Redis` for production multi-instance deployments. Use `Headless.Caching.Hybrid` when the app needs process-local read speed with remote cache sharing.
 - Configure every cache instance (default, tiers, named, cross-cutting) in one `services.AddHeadlessCaching(setup => ...)` call. Exactly one default `Use{InMemory,Redis,Hybrid}` is required; a second `AddHeadlessCaching` call on the same service collection throws, and a failed setup leaves the service collection unchanged.
@@ -278,6 +288,8 @@ FusionCache alignment is intentional but not exact. Headless uses FusionCache-li
 `Headless.Caching.DistributedLocks` is not a provider — it is an adapter that any provider's factory path can opt into per entry when the factory is expensive enough to justify a distributed lock round-trip.
 
 `Headless.Caching.Bcl` is also not a provider. It registers a standard `IDistributedCache` adapter over a dedicated named Headless cache for framework integrations that require the BCL contract.
+
+`Headless.Caching.OutputCache` is likewise not a provider. It registers an ASP.NET Core `IOutputCacheStore` over a dedicated named Headless cache, making `AddOutputCache()` distributed and tag-aware. It is separate from `Headless.Caching.Bcl` because an `IOutputCacheStore` references the ASP.NET shared framework, which the framework-agnostic BCL adapter must not pull in. Distribution and cluster-wide tag eviction are a function of the backing tier the consumer composes (Redis or Hybrid), not the adapter.
 
 ## Headless.Caching.Abstractions
 
@@ -1153,4 +1165,99 @@ The `configureCache` callback passed to `UseBclCache(...)` selects only the back
 - Adds a named cache instance through `setup.AddNamed(...)`, wired with the internal raw-bytes codec as a keyed `ISerializer`.
 - Registers the internal adapter as singleton and `IDistributedCache` as singleton (`TryAdd`).
 - Registers `HeadlessDistributedCacheAdapterOptions` with FluentValidation and startup validation.
+- Registers `TimeProvider.System` when no `TimeProvider` is already registered.
+
+---
+
+## Headless.Caching.OutputCache
+
+Adapter that backs ASP.NET Core's `IOutputCacheStore` with a named Headless cache, making `services.AddOutputCache()` distributed and tag-aware.
+
+### Problem Solved
+
+ASP.NET Core's output-cache middleware ships only an in-memory store, and ASP.NET's own guidance states that `IDistributedCache` is **not** a valid output-cache store because it lacks the atomic tag operations the middleware needs for `EvictByTagAsync`. This package fills that gap: it backs an `IOutputCacheStore` (and the optional `IOutputCacheBufferStore`) with the Headless cache engine, so output-cache entries become distributed and tag eviction rides the engine's distributed tag index.
+
+### Key Features
+
+- Registers `Microsoft.AspNetCore.OutputCaching.IOutputCacheStore` over a named Headless `ICache`; the same instance also implements the optional `IOutputCacheBufferStore` that the formatter pattern-matches (only `IOutputCacheStore` is registered as a service).
+- `setup.UseOutputCache(...)` provisions a dedicated named cache and wires it as the output-cache store.
+- `EvictByTagAsync(tag)` delegates to `ICache.RemoveByTagAsync` — O(1) logical (Family-2) tag-marker invalidation. Backed by Redis, the tag marker is a single shared Redis key every instance reads, so eviction is cluster-wide.
+- `validFor` maps directly to the entry's `Duration` (a single relative TTL; no sliding/absolute reconciliation); a non-positive `validFor` falls back to `DefaultExpiration`.
+- Tags pass straight through to the engine, persisted on the entry via `UpsertEntryAsync`; tag-count/length limits are delegated to the engine's write-time check.
+- Uses `services.Replace` for `IOutputCacheStore`, so the Headless store wins regardless of whether `AddOutputCache()` runs before or after `AddHeadlessCaching(...)`.
+- Wires the named cache with an internal raw-bytes codec automatically, so the middleware's serialized output-cache entries are stored in the value segment unchanged rather than JSON/base64 encoded.
+
+### Design Notes
+
+This package provides only the **store**. The consumer still calls `services.AddOutputCache()` and declares output-cache policies — vary-by, expiration strategy — and tags via `[OutputCache(Tags = "...")]` on controllers or `.CacheOutput(p => p.Tag("..."))` on minimal APIs. Policy stays ASP.NET's concern; this adapter changes only where entries live and how tag eviction propagates.
+
+It is a separate package from `Headless.Caching.Bcl` because an `IOutputCacheStore` references the ASP.NET shared framework (`Microsoft.AspNetCore.App`). Keeping it out of the framework-agnostic BCL adapter means a non-web consumer of `IDistributedCache` never pulls an ASP.NET dependency.
+
+`EvictByTagAsync` is **logical** eviction, not physical deletion. `RemoveByTagAsync` bumps a per-tag timestamp marker so matching entries read as misses (the marker's timestamp postdates their `CreatedAt`); they are not physically removed until their TTL lapses. This satisfies the ASP.NET output-cache contract and is cluster-safe — one marker key per tag, no key enumeration, works on Redis Cluster. With a Redis-backed store the marker lives in Redis, so a tag evicted on node A becomes a miss on node B on its next read (no L1 to invalidate, no backplane required).
+
+The adapter owns its raw-bytes codec internally, registered as a keyed `ISerializer` bound to the cache name. The `configureCache` callback must select **only** the backing provider (for example `instance.UseRedis(...)`) and must **not** call `WithSerializer` — doing so throws `InvalidOperationException` rather than letting a caller-supplied serializer silently compete with the raw-bytes codec. Back the named instance with a single remote provider (Redis); a Hybrid named instance resolves its inner tiers' serializers under their own keys, so the raw-bytes codec would not reach the remote tier.
+
+Distribution is a function of the backing provider the consumer composes, not the adapter. With an InMemory-only backing cache the raw-bytes codec is a no-op (InMemory stores object references and never serializes) and eviction is single-node only. Back the named instance with Redis (`instance.UseRedis(...)`) for distributed, cluster-wide output caching: the value blobs and the tag markers both live in Redis, shared by every instance.
+
+### Installation
+
+```bash
+dotnet add package Headless.Caching.OutputCache
+```
+
+### Quick Start
+
+Redis-backed store — distributed and tag-aware across instances:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+var mux = ConnectionMultiplexer.Connect("localhost:6379");
+
+builder.Services.AddOutputCache(); // ASP.NET; still declare [OutputCache(Tags = ...)] / .CacheOutput(p => p.Tag(...))
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseRedis(options => options.ConnectionMultiplexer = mux);
+    setup.UseOutputCache(
+        options => options.CacheName = "output-cache",
+        instance => instance.UseRedis(options =>
+        {
+            options.ConnectionMultiplexer = mux;
+            options.KeyPrefix = "output-cache:";
+        }));
+});
+```
+
+Declare tags where output caching is applied, then evict them through the standard ASP.NET API:
+
+```csharp
+app.MapGet("/products", GetProducts).CacheOutput(p => p.Tag("products"));
+
+// elsewhere — IOutputCacheStore.EvictByTagAsync delegates to the Headless engine
+await outputCacheStore.EvictByTagAsync("products", cancellationToken);
+```
+
+Because the Redis-backed store keeps both the value blobs and the tag markers in Redis, eviction is already cluster-wide: a tag evicted through any instance's `IOutputCacheStore` becomes a miss on every instance's next read of a matching entry — no backplane or extra wiring required. Back the named instance with a single remote provider (`instance.UseRedis(...)`); the application's own default cache can still be Hybrid independently.
+
+### Configuration
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `CacheName` | `"output-cache"` | Named cache instance used by the store. Must be non-empty and must not be a reserved Headless cache provider key. Output-cache entries live in their own namespace, isolated from the default cache. |
+| `DefaultExpiration` | `1 minute` | Duration applied only when ASP.NET hands the store a non-positive `validFor`; a positive `validFor` always passes through unchanged as the entry `Duration`. Must be greater than zero. |
+
+Options are validated through the Hosting FluentValidation pipeline with startup validation. The `configureCache` callback passed to `UseOutputCache(...)` selects only the backing provider for the named cache — exactly one, usually `instance.UseRedis(...)`. The raw-bytes codec is wired automatically; calling `WithSerializer` in the callback throws `InvalidOperationException`.
+
+### Dependencies
+
+- `Headless.Caching.Abstractions`
+- `Headless.Caching.Core`
+- `Headless.Hosting`
+- `Headless.Serializer.Abstractions`
+- `Microsoft.AspNetCore.App` (framework reference)
+
+### Side Effects
+
+- Adds a named cache instance through `setup.AddNamed(...)`, wired with the internal raw-bytes codec as a keyed `ISerializer`.
+- Replaces (`services.Replace`) the `IOutputCacheStore` registration with the Headless store as singleton. Only `IOutputCacheStore` is registered; the same instance also implements `IOutputCacheBufferStore`, which the formatter discovers by pattern-matching the resolved store (no separate registration).
+- Registers `HeadlessOutputCacheStoreOptions` with FluentValidation and startup validation.
 - Registers `TimeProvider.System` when no `TimeProvider` is already registered.
