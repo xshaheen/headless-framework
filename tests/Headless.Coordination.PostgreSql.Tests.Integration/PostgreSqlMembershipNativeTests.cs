@@ -188,6 +188,90 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         thrown.Which.InnerException.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task should_classify_targeted_node_liveness_across_states()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        // Alive immediately after register (durable liveness established without a loop tick).
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+
+        // Aged into the suspicion band -> Suspected.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Suspected);
+
+        // Aged past the dead threshold but still inside the retention window -> Dead.
+        await TimeProvider.System.Delay(
+            CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
+            AbortToken
+        );
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Dead);
+    }
+
+    [Fact]
+    public async Task should_return_dead_for_targeted_read_after_graceful_leave()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        await store.LeaveAsync(identity, AbortToken);
+
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Dead);
+    }
+
+    [Fact]
+    public async Task should_return_null_for_targeted_read_of_stale_and_unregistered_identities()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+        var store = second.Services.GetRequiredService<IMembershipStore>();
+        var unregistered = new NodeIdentity(new NodeId("node-z"), new NodeIncarnation(1));
+
+        // Superseded prior incarnation is not current-generation -> absent (null).
+        (await store.ReadNodeLivenessAsync(firstIdentity, AbortToken)).Should().BeNull();
+        // Never-registered node -> absent (null).
+        (await store.ReadNodeLivenessAsync(unregistered, AbortToken)).Should().BeNull();
+        // The current incarnation is still alive.
+        (await store.ReadNodeLivenessAsync(secondIdentity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+    }
+
+    [Fact]
+    public async Task should_return_null_without_pruning_for_retention_expired_targeted_read()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        // Age past the retention window, then read the targeted path FIRST — before any snapshot read could
+        // prune the row. The snapshot path produces absence by deleting; the targeted path must produce the same
+        // absence by classification (returning null) without writing.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+
+        var state = await store.ReadNodeLivenessAsync(identity, AbortToken);
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var livenessRows = await _CountClusterRowsAsync(
+            connection,
+            "SELECT count(*) FROM coordination_liveness WHERE cluster_name = @ClusterName;",
+            cluster
+        );
+
+        state.Should().BeNull();
+        // The retention-expired row must still be physically present: the targeted read classifies, it never prunes.
+        livenessRows.Should().Be(1);
+    }
+
     private static string _Cluster()
     {
         return "native-" + Guid.NewGuid().ToString("N");
