@@ -453,10 +453,11 @@ public sealed class DistributedReadWriteLock(
                 throw;
             }
 
-            // Safety deadline fired (caller has not cancelled): the lock-store stalled past
-            // `_NonBlockingAcquireDeadline`. Flag it so the failure surfaces a distinct EventId
-            // + `reason=stalled` metric instead of looking like routine contention (#320).
-            safetyDeadlineFired = true;
+            // Caller has not cancelled, so an OCE here is the safety deadline firing (the
+            // lock-store stalled past `_NonBlockingAcquireDeadline`). Confirm via the safety CTS
+            // rather than the caller token alone, so an unrelated storage-thrown OCE falls
+            // through to `reason=contended` instead of being mislabeled a stall (#320).
+            safetyDeadlineFired = safetyCts.IsCancellationRequested;
             gotLock = false;
         }
         catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
@@ -476,7 +477,8 @@ public sealed class DistributedReadWriteLock(
             // already short-circuits on non-Write mode, but mirroring the guarded shape here
             // keeps the intent obvious. The caller-cancel catch above performs its own cleanup
             // and rethrows before reaching here when applicable; this branch handles the
-            // non-cancelled "contended" return path.
+            // non-cancelled return paths (routine contention and safety-deadline stall,
+            // distinguished below by `safetyDeadlineFired`).
             if (mode == ReaderWriterLockMode.Write)
             {
                 await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);

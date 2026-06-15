@@ -38,8 +38,74 @@ public sealed class DistributedReadWriteLockTests : TestBase
     private const int _SafetyDeadlineFiredEventId = 24;
     private const int _SafetyDeadlineSeconds = 10; // Mirrors _NonBlockingAcquireDeadline.
 
+    // Capturing logger and metric-reason capture shared by the safety-deadline tests below.
+    // headless.lock.failed is process-wide and shared with the regular lock, so the metric
+    // assertions are Contain-only; exclusivity is asserted on the isolated substitute logger.
+    private static ILogger<DistributedReadWriteLock> _CreateCapturingLogger(List<int> capturedEventIds)
+    {
+        var logger = Substitute.For<ILogger<DistributedReadWriteLock>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(call => capturedEventIds.Add(call.Arg<EventId>().Id));
+        return logger;
+    }
+
+    private static List<string> _CaptureLockFailedReasons(MeterListener listener)
+    {
+        var reasons = new List<string>();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == "Headless.DistributedLocks" && instrument.Name == "headless.lock.failed")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<int>(
+            (_, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (tag is { Key: "reason", Value: string reason })
+                    {
+                        lock (reasons)
+                        {
+                            reasons.Add(reason);
+                        }
+                    }
+                }
+            }
+        );
+        listener.Start();
+        return reasons;
+    }
+
+    private DistributedReadWriteLock _CreateProviderWithLogger(
+        IDistributedReadWriteLockStorage storage,
+        ILogger<DistributedReadWriteLock> logger
+    )
+    {
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        return new DistributedReadWriteLock(
+            storage,
+            outboxBus: null,
+            new DistributedLockOptions(),
+            _guidGenerator,
+            _timeProvider,
+            logger
+        );
+    }
+
     [Fact]
-    public async Task should_log_safety_deadline_eventid_and_tag_metric_stalled_when_deadline_fires()
+    public async Task should_log_safety_deadline_eventid_and_tag_metric_stalled_when_write_deadline_fires()
     {
         // given — write-lock storage that hangs so the non-blocking safety deadline ends the attempt
         var storage = Substitute.For<IDistributedReadWriteLockStorage>();
@@ -54,58 +120,10 @@ public sealed class DistributedReadWriteLockTests : TestBase
             )
             .Returns(ci => new ValueTask<bool>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(5))));
 
-        var logger = Substitute.For<ILogger<DistributedReadWriteLock>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var captured = new List<int>();
-        logger
-            .When(l =>
-                l.Log(
-                    Arg.Any<LogLevel>(),
-                    Arg.Any<EventId>(),
-                    Arg.Any<object>(),
-                    Arg.Any<Exception?>(),
-                    Arg.Any<Func<object, Exception?, string>>()
-                )
-            )
-            .Do(call => captured.Add(call.Arg<EventId>().Id));
-
-        var failedReasons = new List<string>();
-        using var meterListener = new MeterListener
-        {
-            InstrumentPublished = (instrument, l) =>
-            {
-                if (instrument.Meter.Name == "Headless.DistributedLocks" && instrument.Name == "headless.lock.failed")
-                {
-                    l.EnableMeasurementEvents(instrument);
-                }
-            },
-        };
-        meterListener.SetMeasurementEventCallback<int>(
-            (_, _, tags, _) =>
-            {
-                foreach (var tag in tags)
-                {
-                    if (tag is { Key: "reason", Value: string reason })
-                    {
-                        lock (failedReasons)
-                        {
-                            failedReasons.Add(reason);
-                        }
-                    }
-                }
-            }
-        );
-        meterListener.Start();
-
-        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
-        var provider = new DistributedReadWriteLock(
-            storage,
-            outboxBus: null,
-            new DistributedLockOptions(),
-            _guidGenerator,
-            _timeProvider,
-            logger
-        );
+        using var meterListener = new MeterListener();
+        var failedReasons = _CaptureLockFailedReasons(meterListener);
+        var provider = _CreateProviderWithLogger(storage, _CreateCapturingLogger(captured));
         var resource = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -115,35 +133,95 @@ public sealed class DistributedReadWriteLockTests : TestBase
             CancellationToken.None
         );
         _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
-        await _DrainUntilAsync(() => acquireTask.IsCompleted);
-        (await acquireTask).Should().BeNull();
+        // Parked wait (not a busy spin): the safety CTS fired by Advance cancels the hung storage
+        // call, so the acquire completes promptly. WaitAsync fails fast if it ever hangs.
+        (await acquireTask.WaitAsync(TimeSpan.FromSeconds(30), AbortToken))
+            .Should()
+            .BeNull();
 
-        // then — log EventId proves the signal fires (isolated substitute logger); the metric
-        // assertion is Contain-only because `headless.lock.failed` is process-wide and shared
-        // with the regular lock.
+        // then
         captured.Should().Contain(_SafetyDeadlineFiredEventId);
         failedReasons.Should().Contain(DistributedLockMetrics.ReasonStalled);
+    }
+
+    [Fact]
+    public async Task should_log_safety_deadline_eventid_and_tag_metric_stalled_when_read_deadline_fires()
+    {
+        // given — read-lock storage that hangs; the read path shares _TryAcquireOnceAsync with write
+        // but skips writer-marker cleanup, so it needs its own coverage.
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
+        storage
+            .TryAcquireReadAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ci => new ValueTask<bool>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3))));
+
+        var captured = new List<int>();
+        using var meterListener = new MeterListener();
+        var failedReasons = _CaptureLockFailedReasons(meterListener);
+        var provider = _CreateProviderWithLogger(storage, _CreateCapturingLogger(captured));
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var acquireTask = provider.TryAcquireReadLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
+        );
+        _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
+        // Parked wait (not a busy spin): the safety CTS fired by Advance cancels the hung storage
+        // call, so the acquire completes promptly. WaitAsync fails fast if it ever hangs.
+        (await acquireTask.WaitAsync(TimeSpan.FromSeconds(30), AbortToken))
+            .Should()
+            .BeNull();
+
+        // then
+        captured.Should().Contain(_SafetyDeadlineFiredEventId);
+        failedReasons.Should().Contain(DistributedLockMetrics.ReasonStalled);
+    }
+
+    [Fact]
+    public async Task should_not_log_safety_deadline_eventid_and_tag_metric_contended_when_write_is_held()
+    {
+        // given — storage that promptly returns "not acquired" (routine contention, no stall)
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
+        storage
+            .TryAcquireWriteAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(false));
+
+        var captured = new List<int>();
+        using var meterListener = new MeterListener();
+        var failedReasons = _CaptureLockFailedReasons(meterListener);
+        var provider = _CreateProviderWithLogger(storage, _CreateCapturingLogger(captured));
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
+        );
+
+        // then — routine contention tags `contended`; the safety-deadline EventId stays silent
+        result.Should().BeNull();
+        captured.Should().NotContain(_SafetyDeadlineFiredEventId);
+        failedReasons.Should().Contain(DistributedLockMetrics.ReasonContended);
     }
 
     private static async Task<bool> _HangUntilCancelledAsync(CancellationToken ct)
     {
         await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
         return false; // Unreachable — Task.Delay throws on cancellation.
-    }
-
-    private static async Task _DrainUntilAsync(Func<bool> condition)
-    {
-        for (var i = 0; i < 2000 && !condition(); i++)
-        {
-            if (i % 100 == 0)
-            {
-                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1));
-            }
-            else
-            {
-                await Task.Yield();
-            }
-        }
     }
 
     [Fact]

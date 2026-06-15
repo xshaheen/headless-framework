@@ -145,11 +145,11 @@ internal sealed class DistributedSemaphoreProvider(
                     throw;
                 }
 
-                // Safety deadline fired (caller has not cancelled): the slot store stalled past
-                // `_NonBlockingAcquireDeadline`. Flag it so the failure surfaces a distinct
-                // EventId + `reason=stalled` metric instead of looking like routine contention
-                // (#320).
-                safetyDeadlineFired = true;
+                // Caller has not cancelled, so an OCE here is the safety deadline firing (the
+                // slot store stalled past `_NonBlockingAcquireDeadline`). Confirm via the safety
+                // CTS rather than the caller token alone, so an unrelated storage-thrown OCE
+                // falls through to `reason=contended` instead of being mislabeled a stall (#320).
+                safetyDeadlineFired = safetyCts.IsCancellationRequested;
                 singleResult = DistributedLockAcquireResult.Failed;
             }
 

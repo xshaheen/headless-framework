@@ -844,8 +844,11 @@ public sealed class DistributedLockTests : TestBase
             CancellationToken.None
         );
         _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
-        await _DrainContinuationsAsync(acquireTask);
-        (await acquireTask).Should().BeNull();
+        // Parked wait (not a busy spin): the safety CTS fired by Advance cancels the hung storage
+        // call, so the acquire completes promptly. WaitAsync fails fast if it ever hangs.
+        (await acquireTask.WaitAsync(TimeSpan.FromSeconds(30), AbortToken))
+            .Should()
+            .BeNull();
 
         // then — distinct safety-deadline signal fires; routine-contention signal does NOT.
         // Exclusivity is asserted on the per-provider substitute logger (isolated); the metric

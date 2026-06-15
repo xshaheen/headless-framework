@@ -326,12 +326,14 @@ public sealed class DistributedLock(
                 throw;
             }
 
-            // Safety deadline fired (caller has not cancelled): the lock-store
-            // stalled past `_NonBlockingAcquireDeadline`. Treat as "lock not
-            // acquired" (same null shape as a contended try-once) but flag it so
-            // the failure surfaces a distinct EventId + `reason=stalled` metric
-            // instead of being indistinguishable from routine contention (#320).
-            safetyDeadlineFired = true;
+            // Caller has not cancelled, so an OCE here is the safety deadline firing
+            // (the lock-store stalled past `_NonBlockingAcquireDeadline`). Confirm via the
+            // safety CTS rather than inferring from the caller token alone, so an unrelated
+            // storage-thrown OCE falls through to `reason=contended` instead of being
+            // mislabeled a stall. Treat as "lock not acquired" (same null shape as a
+            // contended try-once) but flag it so the failure surfaces a distinct EventId +
+            // `reason=stalled` metric instead of looking like routine contention (#320).
+            safetyDeadlineFired = safetyCts.IsCancellationRequested;
             acquireResult = DistributedLockAcquireResult.Failed;
         }
         catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
