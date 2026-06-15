@@ -1,0 +1,21 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Caching</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Caching.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Caching.InMemory" />
+    <InternalsVisibleTo Include="Headless.Caching.Redis" />
+    <InternalsVisibleTo Include="Headless.Caching.Hybrid" />
+    <InternalsVisibleTo Include="Headless.Caching.Bcl" />
+    <InternalsVisibleTo Include="Headless.Caching.Bcl.Tests.Unit" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

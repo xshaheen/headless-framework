@@ -3,6 +3,7 @@
 using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Coordination;
 using Headless.Core;
 using Headless.DistributedLocks;
 using Headless.Messaging;
@@ -14,6 +15,7 @@ using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -41,7 +43,15 @@ public static class SetupMessaging
 
             var builder = new MessageBuilder<TMessage>(setup.Services);
             configure(builder);
-            setup.Services.AddSingleton(builder.Build());
+            var registration = builder.Build();
+            setup.Services.AddSingleton(registration);
+
+            // Name authority is eager: register the raw name now so publish/subscribe agree without waiting
+            // for the startup consumer drain. Consumer metadata still drains at bootstrap (it needs options).
+            if (registration.MessageName is { } messageName)
+            {
+                setup.Registry.RegisterMessageName(registration.MessageType, messageName);
+            }
 
             return setup;
         }
@@ -118,10 +128,8 @@ public static class SetupMessaging
     /// is never added, the emitted descriptors are inert. Application code should prefer the
     /// <c>setup.ForMessage&lt;T&gt;(…)</c> callback.
     /// <para>
-    /// Ordering: the emitted registration is drained into the consumer registry by
-    /// <see cref="AddHeadlessMessaging"/>, so this MUST be called before <see cref="AddHeadlessMessaging"/>. Calling it
-    /// afterwards throws (the registry is already built and would silently ignore the late registration). A fully
-    /// order-independent path (runtime subscription) is tracked in #390.
+    /// Ordering: the emitted registration is drained into the consumer registry at messaging bootstrap, so this can
+    /// be called before or after <see cref="AddHeadlessMessaging"/> as long as both calls happen before host build.
     /// </para>
     /// </remarks>
     /// <typeparam name="TMessage">The message type to register.</typeparam>
@@ -129,9 +137,6 @@ public static class SetupMessaging
     /// <param name="configure">The message registration callback.</param>
     /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when called after <see cref="AddHeadlessMessaging"/> has already run.
-    /// </exception>
     [PublicAPI]
     public static IServiceCollection ForMessage<TMessage>(
         this IServiceCollection services,
@@ -141,23 +146,18 @@ public static class SetupMessaging
     {
         Argument.IsNotNull(configure);
 
-        // AddHeadlessMessaging drains MessageRegistration singletons into the consumer registry once,
-        // synchronously, during its call. A registration added after that point is never seen, so the
-        // consumer would silently never receive messages. Fail fast instead of degrading silently.
-        if (services.Any(static descriptor => descriptor.ServiceType == typeof(ConsumerRegistry)))
-        {
-            throw new InvalidOperationException(
-                "IServiceCollection.ForMessage<"
-                    + typeof(TMessage).Name
-                    + ">(...) must be called before AddHeadlessMessaging(...). The consumer registry is populated during "
-                    + "AddHeadlessMessaging and does not pick up registrations added afterwards. Move this registration "
-                    + "(or the Add... call that performs it) before AddHeadlessMessaging."
-            );
-        }
-
         var builder = new MessageBuilder<TMessage>(services);
         configure(builder);
-        services.AddSingleton(builder.Build());
+        var registration = builder.Build();
+        services.AddSingleton(registration);
+
+        // Name authority is eager and order-independent: the shared registry is found-or-created, so a name
+        // declared here is authoritative immediately whether this seam runs before or after AddHeadlessMessaging.
+        // This closes the publish-before-drain window — consumer metadata still drains at bootstrap.
+        if (registration.MessageName is { } messageName)
+        {
+            _GetOrAddConsumerRegistry(services).RegisterMessageName(registration.MessageType, messageName);
+        }
 
         return services;
     }
@@ -182,7 +182,7 @@ public static class SetupMessaging
     ///     setup.Options.RetryPolicy.MaxPersistedRetries = 15;
     ///     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
     ///     setup.UseSqlServer("connection_string");
-    ///     setup.UseRabbitMQ(rabbit =>
+    ///     setup.UseRabbitMq(rabbit =>
     ///     {
     ///         rabbit.HostName = "localhost";
     ///         rabbit.Port = 5672;
@@ -203,17 +203,32 @@ public static class SetupMessaging
     {
         Argument.IsNotNull(configure);
 
-        var registry = new ConsumerRegistry();
-        services.TryAddSingleton<IConsumerRegistry>(registry);
-        services.TryAddSingleton(registry);
+        // Found-or-created so a library that called services.ForMessage<T>(...) before AddHeadlessMessaging
+        // shares the same registry instance — registration order does not matter.
+        var registry = _GetOrAddConsumerRegistry(services);
         var options = new MessagingOptions();
         var setup = new MessagingSetupBuilder(services, options, registry);
 
         configure(setup);
 
-        _DiscoverMessageRegistrations(services, setup, registry);
-
         return _RegisterCoreMessagingServices(services, setup);
+    }
+
+    private static ConsumerRegistry _GetOrAddConsumerRegistry(IServiceCollection services)
+    {
+        if (
+            services.FirstOrDefault(static d => d.ServiceType == typeof(ConsumerRegistry))?.ImplementationInstance
+            is ConsumerRegistry existing
+        )
+        {
+            return existing;
+        }
+
+        var registry = new ConsumerRegistry();
+        services.AddSingleton(registry);
+        services.TryAddSingleton<IConsumerRegistry>(registry);
+
+        return registry;
     }
 
     private static IEnumerable<(Type ConsumerType, Type MessageType)> _FindConsumers(Assembly assembly)
@@ -254,7 +269,15 @@ public static class SetupMessaging
                 new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
             );
 
-            setup.Services.AddSingleton(new MessageRegistration(messageType, MessageName: null, [builder.Build()]));
+            setup.Services.AddSingleton(
+                new MessageRegistration(
+                    messageType,
+                    MessageName: null,
+                    CorrelationSelector: null,
+                    ProviderConfigs: new Dictionary<Type, object>(),
+                    Consumers: [builder.Build()]
+                )
+            );
         }
     }
 
@@ -273,7 +296,10 @@ public static class SetupMessaging
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
+        services.TryAddSingleton<
+            Headless.CommitCoordination.ICurrentCommitCoordinator,
+            MessagingNullCommitCoordinator
+        >();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton
         // wire CurrentTenant (AsyncLocal-backed) as the framework default while letting Headless.Api / EF / consumer
         // overrides supply a real implementation. NullCurrentTenant remains the fallback that's stripped when a real
@@ -281,6 +307,8 @@ public static class SetupMessaging
         // strict-tenancy guard (#238) still fails fast when TenantContextRequired = true and no caller / seam set a tenant.
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+        services.TryAddSingleton<IMessageMetadataRegistry, MessageMetadataRegistry>();
+        services.TryAddSingleton<IConsumeContextAccessor, AsyncLocalConsumeContextAccessor>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton<OutboxMessageWriter>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
@@ -302,6 +330,7 @@ public static class SetupMessaging
         // IDistributedLock so UseStorageLock always targets the provider wired via
         // MessagingBuilder.UseDistributedLock(…), not an unrelated app registration.
         services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(MessagingKeys.LockProvider);
+        services.TryAddSingleton<INodeMembership, NullNodeMembership>();
 
         //Processors
         services.TryAddEnumerable(
@@ -387,20 +416,90 @@ public static class SetupMessaging
         }
     }
 
-    private static void _DiscoverMessageRegistrations(
-        IServiceCollection services,
-        MessagingSetupBuilder setup,
-        ConsumerRegistry registry
+    /// <summary>
+    /// Drains the deferred <see cref="MessageRegistration"/> singletons captured by <c>ForMessage&lt;T&gt;</c> into the
+    /// consumer registry. Order-independent: the registrations are resolved from the built provider, so it works whether
+    /// the <c>ForMessage</c> / <c>Add…</c> call ran before or after <see cref="AddHeadlessMessaging"/>. Idempotent — the
+    /// first caller (Bootstrapper startup or the consumer selector) wins; subsequent calls are no-ops.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Threading invariant.</strong> The <c>HasCompletedMessageRegistrationDrain</c> guard provides
+    /// idempotency, not thread-safety: the guard read, the consumer-registration loop, and the completion mark are
+    /// not one atomic step. This is safe only because the two callers never drain concurrently. The bootstrapper
+    /// drains synchronously in <c>_CheckRequirement</c> before it starts any processor, so message dispatch — and
+    /// therefore the consumer-selector fallback — cannot run during the bootstrap drain; and concurrent
+    /// <c>BootstrapAsync</c> callers share a single in-flight task. The selector path only performs the first drain
+    /// in manual/test hosts that bypass the bootstrapper.
+    /// </para>
+    /// <para>
+    /// If a future change starts a processor (or otherwise dispatches a message) before this drain completes, two
+    /// threads can pass the guard and double-register a consumer, throwing a spurious "Duplicate consumer
+    /// registration". Keep the bootstrapper drain ahead of processor startup, or make the drain atomic.
+    /// </para>
+    /// </remarks>
+    internal static void DrainPendingMessageRegistrations(IServiceProvider provider, MessagingOptions options)
+    {
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        if (registry.HasCompletedMessageRegistrationDrain)
+        {
+            // Guard: detect ForMessage<T> calls that happened after BuildServiceProvider(). On .NET 10,
+            // ServiceCollection is not made read-only after build — mutations silently succeed but the
+            // existing provider never sees the new descriptors. Compare the descriptor count in the
+            // registered IServiceCollection (snapshot from before build) against what the provider can
+            // actually resolve to surface this misuse as a loud warning rather than a silent no-op.
+            var serviceCollection = provider.GetService<IServiceCollection>();
+
+            if (serviceCollection is not null)
+            {
+                var descriptorCount = serviceCollection.Count(static d => d.ServiceType == typeof(MessageRegistration));
+                var resolvedCount = provider.GetServices<MessageRegistration>().Count();
+
+                if (descriptorCount > resolvedCount)
+                {
+                    var logger = provider.GetService<ILoggerFactory>()?.CreateLogger(typeof(SetupMessaging).FullName!);
+
+                    if (logger is not null)
+                    {
+                        SetupMessagingLog.ForMessageCalledAfterProviderBuilt(logger, descriptorCount - resolvedCount);
+                    }
+                }
+            }
+
+            return;
+        }
+
+        var registrations = provider.GetServices<MessageRegistration>().ToList();
+
+        // Nothing was captured via ForMessage<T> — mark drained without touching the circuit-breaker
+        // registry, which is only registered once AddHeadlessMessaging's core wiring has run.
+        if (registrations.Count == 0)
+        {
+            registry.MarkMessageRegistrationDrainCompleted();
+            return;
+        }
+
+        var circuitBreakerRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        DiscoverMessageRegistrations(registrations, options, registry, circuitBreakerRegistry);
+    }
+
+    internal static void DiscoverMessageRegistrations(
+        IReadOnlyCollection<MessageRegistration> registrations,
+        MessagingOptions options,
+        ConsumerRegistry registry,
+        ConsumerCircuitBreakerRegistry circuitBreakerRegistry
     )
     {
-        var registrations = services
-            .Where(static d => d.ServiceType == typeof(MessageRegistration) && d.Lifetime == ServiceLifetime.Singleton)
-            .Select(static d => d.ImplementationInstance)
-            .OfType<MessageRegistration>()
-            .ToList();
+        if (registry.HasCompletedMessageRegistrationDrain)
+        {
+            return;
+        }
 
         if (registrations.Count == 0)
         {
+            registry.MarkMessageRegistrationDrainCompleted();
             return;
         }
 
@@ -414,95 +513,79 @@ public static class SetupMessaging
 
         var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
 
-        foreach (var group in registrations.GroupBy(static registration => registration.MessageType))
+        // Names are registered eagerly at ForMessage<T>(...) time, so the drain only builds consumer
+        // metadata (which needs MessagingOptions). Iterate registrations directly — no per-type grouping.
+        foreach (var registration in registrations)
         {
-            var explicitMessageNames = group
-                .Select(static registration => registration.MessageName)
-                .Where(static messageName => messageName is not null)
-                // Message names match case-insensitively at dispatch (IConsumerServiceSelector), so
-                // case-variant explicit names for one type are the same name, not a conflict.
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            if (explicitMessageNames.Count > 1)
+            foreach (var consumer in registration.Consumers)
             {
-                throw new InvalidOperationException(
-                    $"Message type {group.Key.FullName ?? group.Key.Name} is already mapped to messageName '{explicitMessageNames[0]}'. "
-                        + $"Cannot map to '{explicitMessageNames[1]}'."
-                );
-            }
-
-            var explicitMessageName = explicitMessageNames.Count == 0 ? null : explicitMessageNames[0];
-
-            if (explicitMessageName is not null)
-            {
-                setup.Options.WithMessageNameMapping(group.Key, explicitMessageName);
-            }
-
-            foreach (var registration in group)
-            {
-                foreach (var consumer in registration.Consumers)
+                if (
+                    consumer.IsAssemblyScan && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType))
+                )
                 {
-                    if (
-                        consumer.IsAssemblyScan
-                        && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType))
-                    )
-                    {
-                        continue;
-                    }
-
-                    var resolved = setup.Options.CreateConsumerMetadata(
-                        consumer.ConsumerType,
-                        registration.MessageType,
-                        messageName: null,
-                        consumer.Group,
-                        consumer.Concurrency,
-                        consumer.HandlerId,
-                        consumer.IntentType
-                    );
-
-                    var key = new ConsumerRegistrationKey(
-                        resolved.MessageName,
-                        resolved.Group,
-                        resolved.IntentType,
-                        resolved.ConsumerType
-                    );
-
-                    var settings = new ConsumerRegistrationSettings(
-                        resolved.Concurrency,
-                        resolved.ResolvedHandlerId,
-                        ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride)
-                    );
-
-                    if (registeredKeys.TryGetValue(key, out var existing))
-                    {
-                        // R9a: re-registering the SAME consumer for the same (message name, group, intent)
-                        // is an idempotent merge only when the registration is genuinely identical. Diverging
-                        // concurrency / handler id / circuit-breaker overrides would otherwise be silently
-                        // dropped here, so fail fast and name the conflict instead.
-                        if (existing != settings)
-                        {
-                            throw new InvalidOperationException(
-                                $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
-                                    + $"more than once for message name '{resolved.MessageName}' "
-                                    + $"(group '{resolved.Group}', intent {resolved.IntentType}) with conflicting settings. "
-                                    + "Register the consumer once, or make every registration identical."
-                            );
-                        }
-
-                        continue;
-                    }
-
-                    registeredKeys.Add(key, settings);
-                    registry.Register(resolved);
-                    _ApplyCircuitBreakerOverride(setup, resolved, consumer);
+                    continue;
                 }
+
+                var resolved = options.CreateConsumerMetadata(
+                    consumer.ConsumerType,
+                    registration.MessageType,
+                    messageName: null,
+                    registry.TryGetRawMessageName(registration.MessageType, out var mappedMessageName)
+                        ? mappedMessageName
+                        : null,
+                    consumer.Group,
+                    consumer.Concurrency,
+                    consumer.HandlerId,
+                    consumer.IntentType
+                ) with
+                {
+                    ProviderConfigs = consumer.ProviderConfigs,
+                };
+
+                var key = new ConsumerRegistrationKey(
+                    resolved.MessageName,
+                    resolved.Group,
+                    resolved.IntentType,
+                    resolved.ConsumerType
+                );
+
+                var settings = new ConsumerRegistrationSettings(
+                    resolved.Concurrency,
+                    resolved.ResolvedHandlerId,
+                    ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
+                    resolved.ProviderConfigs
+                );
+
+                if (registeredKeys.TryGetValue(key, out var existing))
+                {
+                    // R9a: re-registering the SAME consumer for the same (message name, group, intent)
+                    // is an idempotent merge only when the registration is genuinely identical. Diverging
+                    // concurrency / handler id / circuit-breaker / provider overrides would otherwise be silently
+                    // dropped here, so fail fast and name the conflict instead.
+                    if (existing != settings)
+                    {
+                        throw new InvalidOperationException(
+                            $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
+                                + $"more than once for message name '{resolved.MessageName}' "
+                                + $"(group '{resolved.Group}', intent {resolved.IntentType}) with conflicting settings. "
+                                + "Register the consumer once, or make every registration identical."
+                        );
+                    }
+
+                    continue;
+                }
+
+                registeredKeys.Add(key, settings);
+                registry.Register(resolved);
+                _ApplyCircuitBreakerOverride(circuitBreakerRegistry, resolved, consumer);
             }
         }
+
+        registry.MarkMessageRegistrationDrainCompleted();
     }
 
     private static void _ApplyCircuitBreakerOverride(
-        MessagingSetupBuilder setup,
+        ConsumerCircuitBreakerRegistry circuitBreakerRegistry,
         ConsumerMetadata resolved,
         MessageConsumerRegistration consumer
     )
@@ -512,7 +595,7 @@ public static class SetupMessaging
             return;
         }
 
-        setup.CircuitBreakerRegistry.Register(CircuitBreakerGroupKeys.For(resolved), consumer.CircuitBreakerOverride);
+        circuitBreakerRegistry.Register(CircuitBreakerGroupKeys.For(resolved), consumer.CircuitBreakerOverride);
     }
 
     private readonly record struct ConsumerRegistrationKey(
@@ -539,11 +622,90 @@ public static class SetupMessaging
             );
     }
 
-    private readonly record struct ConsumerRegistrationSettings(
-        byte Concurrency,
-        string ResolvedHandlerId,
-        ConsumerCircuitBreakerSettings CircuitBreaker
-    );
+    private readonly struct ConsumerRegistrationSettings : IEquatable<ConsumerRegistrationSettings>
+    {
+        private readonly byte _concurrency;
+        private readonly string _resolvedHandlerId;
+        private readonly ConsumerCircuitBreakerSettings _circuitBreaker;
+        private readonly IReadOnlyDictionary<Type, object> _providerConfigs;
+
+        public ConsumerRegistrationSettings(
+            byte concurrency,
+            string resolvedHandlerId,
+            ConsumerCircuitBreakerSettings circuitBreaker,
+            IReadOnlyDictionary<Type, object> providerConfigs
+        )
+        {
+            _concurrency = concurrency;
+            _resolvedHandlerId = resolvedHandlerId;
+            _circuitBreaker = circuitBreaker;
+            _providerConfigs = providerConfigs;
+        }
+
+        public bool Equals(ConsumerRegistrationSettings other) =>
+            _concurrency == other._concurrency
+            && string.Equals(_resolvedHandlerId, other._resolvedHandlerId, StringComparison.Ordinal)
+            && _circuitBreaker == other._circuitBreaker
+            && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
+
+        public override bool Equals(object? obj) => obj is ConsumerRegistrationSettings other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            hash.Add(_concurrency);
+            hash.Add(_resolvedHandlerId, StringComparer.Ordinal);
+            hash.Add(_circuitBreaker);
+
+            foreach (var pair in _providerConfigs.OrderBy(static pair => pair.Key.FullName, StringComparer.Ordinal))
+            {
+                hash.Add(pair.Key);
+                hash.Add(pair.Value);
+            }
+
+            return hash.ToHashCode();
+        }
+
+        public static bool operator ==(ConsumerRegistrationSettings left, ConsumerRegistrationSettings right) =>
+            left.Equals(right);
+
+        public static bool operator !=(ConsumerRegistrationSettings left, ConsumerRegistrationSettings right) =>
+            !left.Equals(right);
+
+        private static bool _ProviderConfigsEqual(
+            IReadOnlyDictionary<Type, object> left,
+            IReadOnlyDictionary<Type, object> right
+        )
+        {
+            if (left.Count != right.Count)
+            {
+                return false;
+            }
+
+            foreach (var (key, value) in left)
+            {
+                if (!right.TryGetValue(key, out var otherValue))
+                {
+                    return false;
+                }
+
+                // Class-based message-scope configs (e.g. KafkaMessageConfig<T>) implement
+                // IProviderHeaderContributions and hold a Func — they have no meaningful value
+                // equality. Two instances of the same type for the same key are idempotent.
+                if (value is IProviderHeaderContributions)
+                {
+                    continue;
+                }
+
+                if (!Equals(value, otherValue))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 
     private readonly record struct ConsumerCircuitBreakerSettings(
         bool HasOverride,
@@ -566,4 +728,15 @@ public static class SetupMessaging
                 );
         }
     }
+}
+
+internal static partial class SetupMessagingLog
+{
+    [LoggerMessage(
+        EventId = 88,
+        EventName = "ForMessageCalledAfterProviderBuilt",
+        Level = LogLevel.Warning,
+        Message = "{Count} ForMessage<T> registration(s) were added after the service provider was built and will be ignored. Move all ForMessage<T> calls before BuildServiceProvider() / host.Build()."
+    )]
+    public static partial void ForMessageCalledAfterProviderBuilt(this ILogger logger, int count);
 }

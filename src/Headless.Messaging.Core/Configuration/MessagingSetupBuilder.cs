@@ -67,7 +67,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     {
         Argument.IsNotNullOrWhiteSpace(messageName);
 
-        Options.WithMessageNameMapping(typeof(TMessage), messageName);
+        Registry.RegisterMessageName(typeof(TMessage), messageName);
         return this;
     }
 
@@ -105,6 +105,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
             consumerType,
             messageType,
             messageName,
+            Registry.TryGetRawMessageName(messageType, out var mappedMessageName) ? mappedMessageName : null,
             group,
             concurrency,
             intentType: intentType

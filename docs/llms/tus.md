@@ -60,6 +60,7 @@ app.MapTus("/files", async _ => new DefaultTusConfiguration
 For multi-instance deployments, add distributed locking:
 ```csharp
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
+builder.Services.AddDistributedLockRedisStorage();
 builder.Services.AddDistributedLockTusLockProvider();
 ```
 
@@ -198,7 +199,7 @@ Provides a TUS file lock provider implementation using the framework's distribut
 
 - `DistributedLockTusLockProvider` - ITusFileLockProvider implementation
 - `DistributedLockTusLock` - Distributed file lock wrapper
-- Works with any configured `IDistributedLock` provider
+- Works with any IDistributedLock (Redis, Cache)
 
 ## Installation
 
@@ -213,6 +214,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add resource lock provider first
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
+builder.Services.AddDistributedLockRedisStorage();
 
 // Add TUS lock provider
 builder.Services.AddDistributedLockTusLockProvider();

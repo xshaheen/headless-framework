@@ -138,6 +138,8 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
             $"""
             IF OBJECT_ID(N'{_Schema}.SettingValues', N'U') IS NOT NULL DROP TABLE [{_Schema}].[SettingValues];
             IF OBJECT_ID(N'{_Schema}.SettingDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[SettingDefinitions];
+            IF TYPE_ID(N'{_Schema}.HeadlessSettingsIdList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessSettingsIdList];
+            IF TYPE_ID(N'{_Schema}.HeadlessSettingsNameList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessSettingsNameList];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'DROP SCHEMA [{_Schema}]');
             """,
             connection

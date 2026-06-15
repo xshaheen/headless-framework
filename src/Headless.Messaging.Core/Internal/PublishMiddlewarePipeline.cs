@@ -65,12 +65,18 @@ internal sealed class PublishMiddlewarePipeline(
             cancellationToken
         );
         var middleware = _ResolveMiddleware(provider, context);
-        var innerRingCompleted = false;
+
+        // Inner-ring completion flag, hoisted into a single StrongBox so the per-middleware wiring below
+        // captures one loop-invariant reference instead of allocating a fresh `() => innerRingCompleted`
+        // delegate for every middleware in the chain. This flag is intentionally distinct from
+        // context.IsCompleted: it tracks whether the innermost publish actually ran, whereas a
+        // short-circuiting middleware can mark the context completed without the inner ring executing.
+        var innerRingCompleted = new StrongBox<bool>(false);
 
         Func<ValueTask> next = async () =>
         {
             await innerPublish(context.Options, context.DelayTime, context.CancellationToken).ConfigureAwait(false);
-            innerRingCompleted = true;
+            innerRingCompleted.Value = true;
             context.MarkCompleted();
         };
 
@@ -78,7 +84,7 @@ internal sealed class PublishMiddlewarePipeline(
         {
             var current = middleware[i];
             var innerNext = next;
-            next = () => _InvokeAsync(current, context, innerNext, () => innerRingCompleted);
+            next = () => _InvokeAsync(current, context, innerNext, innerRingCompleted);
         }
 
         await next().ConfigureAwait(false);
@@ -88,7 +94,7 @@ internal sealed class PublishMiddlewarePipeline(
         object middleware,
         PublishContext context,
         Func<ValueTask> innerNext,
-        Func<bool> innerRingCompleted
+        StrongBox<bool> innerRingCompleted
     )
     {
         try
@@ -96,7 +102,7 @@ internal sealed class PublishMiddlewarePipeline(
             await _InvokeMiddlewareAsync(middleware, context, innerNext).ConfigureAwait(false);
             _MarkCompleted(context);
         }
-        catch (Exception ex) when (innerRingCompleted())
+        catch (Exception ex) when (innerRingCompleted.Value)
         {
             logger?.PublishPostSuccessMiddlewareFailed(ex, middleware.GetType().FullName ?? middleware.GetType().Name);
             return;

@@ -126,6 +126,26 @@ internal sealed class SqlServerSettingsStorageInitializer(
             END CATCH;
             """;
 
+        // Table-valued parameter types for batched id/name queries (single cached plan, no 2100-parameter
+        // ceiling, portable to older engines). The name type is a heap (no PK) so trailing-space / collation
+        // duplicate names cannot raise a PK violation the dynamic IN-list never had.
+        var createTvpTypes = $"""
+            BEGIN TRY
+                IF TYPE_ID(N'{options.Schema}.HeadlessSettingsIdList') IS NULL
+                    CREATE TYPE [{options.Schema}].[HeadlessSettingsIdList] AS TABLE ([Id] uniqueidentifier NOT NULL PRIMARY KEY);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+            BEGIN TRY
+                IF TYPE_ID(N'{options.Schema}.HeadlessSettingsNameList') IS NULL
+                    CREATE TYPE [{options.Schema}].[HeadlessSettingsNameList] AS TABLE ([Name] nvarchar({SettingValueRecordConstants.NameMaxLength}) NOT NULL);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+            """;
+
         // Wrap the DDL body in BEGIN TRAN / COMMIT TRAN so a mid-script failure cannot leave the
         // schema half-initialized. Inner BEGIN TRY swallow-lists keep soft errors (2714, 1913,
         // 2759) from dooming the outer transaction.
@@ -144,6 +164,8 @@ internal sealed class SqlServerSettingsStorageInitializer(
                 {createDefinitionsIndex}
 
                 {createValuesIndexes}
+
+                {createTvpTypes}
 
                 COMMIT TRAN;
 

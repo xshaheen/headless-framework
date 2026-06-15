@@ -3,8 +3,11 @@
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -98,13 +101,10 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
         registry.GetAll().Should().BeEmpty();
-        provider
-            .GetRequiredService<IOptions<MessagingOptions>>()
-            .Value.MessageNameMappings[typeof(OrderPlaced)]
-            .Should()
-            .Be("orders.placed");
+        registry.TryGetRawMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.placed");
     }
 
     [Fact]
@@ -130,12 +130,39 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
         metadata.MessageName.Should().Be("orders.placed");
         metadata.Group.Should().Be("orders");
         metadata.Concurrency.Should().Be(3);
         metadata.HandlerId.Should().Be("handler-1");
         metadata.IntentType.Should().Be(IntentType.Queue);
+    }
+
+    [Fact]
+    public void should_drain_service_collection_for_message_registered_after_add_headless_messaging()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        // when
+        var act = () =>
+            services.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").OnBus<OrderPlacedHandler>(consumer => consumer.Group("orders"))
+            );
+        act.Should().NotThrow();
+
+        using var provider = services.BuildServiceProvider();
+        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
+
+        // then
+        metadata.MessageName.Should().Be("orders.placed");
+        metadata.ConsumerType.Should().Be<OrderPlacedHandler>();
+        metadata.Group.Should().Be("orders");
     }
 
     [Fact]
@@ -239,7 +266,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers.Should().HaveCount(2);
         consumers.Should().OnlyContain(consumer => consumer.MessageName == "orders.placed");
     }
@@ -262,7 +289,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle();
+        provider.GetDrainedConsumerRegistry().GetAll().Should().ContainSingle();
     }
 
     [Fact]
@@ -273,6 +300,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessage<OrderPlaced>(message =>
@@ -288,6 +316,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should()
@@ -315,6 +346,8 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
         };
 
         // then
@@ -333,6 +366,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessage<OrderPlaced>(message =>
@@ -346,6 +380,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should()
@@ -361,6 +398,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
@@ -368,6 +406,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should().NotThrow();
@@ -381,6 +422,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
@@ -388,6 +430,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped*");
@@ -492,7 +537,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers.Should().Contain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
         consumers.Should().OnlyContain(consumer => consumer.IntentType == IntentType.Bus);
     }
@@ -523,7 +568,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         var metadata = provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
@@ -554,7 +599,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().NotBeEmpty();
+        provider.GetDrainedConsumerRegistry().GetAll().Should().NotBeEmpty();
         callbackCounts
             .Should()
             .Contain(
@@ -612,7 +657,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers
             .Should()
             .Contain(consumer =>
@@ -654,7 +699,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers.Should().NotContain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
         provider.GetServices<IConsume<OrderPlaced>>().Should().NotContain(consumer => consumer is OrderPlacedHandler);
@@ -692,7 +737,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Should()
             .NotContain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
@@ -726,7 +771,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
             .HandlerId.Should()
@@ -759,11 +804,11 @@ public sealed class ForMessageRegistrationTests
 
         // then
         var noArg = noArgProvider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
         var callback = callbackProvider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
@@ -791,7 +836,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         var registrations = provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Where(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
             .ToList();
@@ -827,7 +872,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         var metadata = provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
@@ -884,6 +929,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
+        provider.GetDrainedConsumerRegistry();
         var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
         circuitBreakers.TryGet($"{IntentType.Bus:D}:orders", out var options).Should().BeTrue();
         options!.FailureThreshold.Should().Be(3);
@@ -914,6 +960,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
+        provider.GetDrainedConsumerRegistry();
         var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
         circuitBreakers.TryGet($"{IntentType.Queue:D}:orders", out var options).Should().BeTrue();
         options!.FailureThreshold.Should().Be(3);
@@ -927,6 +974,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
@@ -944,6 +992,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should()
@@ -986,7 +1037,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Where(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
             .Should()
@@ -1001,6 +1052,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
@@ -1024,9 +1076,124 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*conflicting settings*");
+    }
+
+    [Fact]
+    public void should_warn_when_for_message_called_after_provider_built()
+    {
+        // given — drain runs once at build time; a post-build ForMessage<T> call silently adds a
+        // descriptor that the already-frozen provider cannot see. The guard must emit a warning
+        // rather than letting the registration vanish without a trace.
+        var services = new ServiceCollection();
+        var capturedWarnings = new List<(LogLevel Level, string Message)>();
+
+        services.AddLogging(logging =>
+        {
+            logging.AddProvider(new CapturingLoggerProvider(capturedWarnings));
+            logging.SetMinimumLevel(LogLevel.Warning);
+        });
+
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // drain once so HasCompletedMessageRegistrationDrain == true
+        provider.GetDrainedConsumerRegistry();
+
+        // when — register after the provider is built; the descriptor lands in the collection
+        // but the frozen provider cannot resolve it
+        services.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
+
+        // trigger the drain short-circuit path
+        provider.GetDrainedConsumerRegistry();
+
+        // then
+        capturedWarnings
+            .Should()
+            .ContainSingle(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Message.Contains("ForMessage<T>")
+                && entry.Message.Contains('1')
+            );
+    }
+
+    [Fact]
+    public void should_resolve_explicit_message_name_for_publish_before_consumer_drain()
+    {
+        // given — names are registered eagerly at ForMessage<T>(...) time, so a publish that races ahead
+        // of the startup consumer drain (e.g. an IHostedService publishing in StartAsync) must still see
+        // the explicit name. Before Plan B the factory fell back to the convention name and cached it
+        // permanently, silently diverging publish from subscribe.
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // when — resolve and publish WITHOUT draining the registry first
+        var factory = provider.GetRequiredService<IMessagePublishRequestFactory>();
+        var prepared = factory.Create(new OrderPlaced());
+
+        // then — the eager name resolved even though the consumer drain has not run
+        prepared.MessageName.Should().Be("orders.placed");
+        provider.GetRequiredService<ConsumerRegistry>().HasCompletedMessageRegistrationDrain.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_share_registry_for_seam_registered_before_add_headless_messaging()
+    {
+        // given — the service-collection seam runs BEFORE AddHeadlessMessaging. Find-or-create must hand
+        // both call sites the same ConsumerRegistry, so the seam's eager name is authoritative regardless
+        // of registration order.
+        var services = new ServiceCollection();
+        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then — name is resolvable eagerly, before any drain
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        registry.TryGetRawMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.placed");
+        registry.HasCompletedMessageRegistrationDrain.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_cross_entry_point_name_conflict_eagerly()
+    {
+        // given — a seam and the builder map the SAME message type to different names. Because both write
+        // to the shared registry eagerly, the conflict surfaces at registration time, not at startup.
+        var services = new ServiceCollection();
+        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"))
+            );
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped*");
     }
 
     private sealed record OrderPlaced;
@@ -1054,6 +1221,32 @@ public sealed class ForMessageRegistrationTests
         public ValueTask ConsumeAsync(ConsumeContext<OtherOrderPlaced> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingLoggerProvider(List<(LogLevel Level, string Message)> sink) : ILoggerProvider
+    {
+        public void Dispose() { }
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(sink);
+
+        private sealed class CapturingLogger(List<(LogLevel Level, string Message)> sink) : ILogger
+        {
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                sink.Add((logLevel, formatter(state, exception)));
+            }
         }
     }
 }

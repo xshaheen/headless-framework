@@ -23,7 +23,10 @@ internal sealed class MessagePublishRequestFactory(
     IGuidGenerator idGenerator,
     TimeProvider timeProvider,
     IOptions<MessagingOptions> optionsAccessor,
-    ICurrentTenant currentTenant
+    IConsumerRegistry consumerRegistry,
+    ICurrentTenant currentTenant,
+    IMessageMetadataRegistry? metadataRegistry = null,
+    IConsumeContextAccessor? consumeContextAccessor = null
 ) : IMessagePublishRequestFactory
 {
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
@@ -37,6 +40,12 @@ internal sealed class MessagePublishRequestFactory(
         Headers.SentTime,
         Headers.DelayTime,
         Headers.Intent,
+    };
+
+    private static readonly HashSet<string> _ProviderReservedHeaders = new(_ReservedHeaders, StringComparer.Ordinal)
+    {
+        Headers.TenantId,
+        Headers.TraceParent,
     };
 
     private readonly ConditionalWeakTable<Type, string> _messageNameCache = [];
@@ -54,9 +63,25 @@ internal sealed class MessagePublishRequestFactory(
             Argument.IsPositive(requestedDelay);
         }
 
-        var messageName = _ResolveMessageName(typeof(T), options?.MessageName);
-        var headers = _CreateHeaders(options?.MessageType ?? typeof(T), messageName, options, delayTime);
+        var publishType = typeof(T);
+        var explicitMessageType = options?.MessageType;
+        var metadataLookupType = contentObj?.GetType() ?? explicitMessageType ?? publishType;
+        MessageMetadata? metadata = null;
+        metadataRegistry?.TryGet(metadataLookupType, out metadata);
+
+        var messageType = explicitMessageType ?? metadata?.MessageType ?? publishType;
+        var messageName = _ResolveMessageName(messageType, options?.MessageName);
+        var headers = _CreateHeaders(
+            messageType,
+            messageName,
+            options,
+            delayTime,
+            _ResolveCorrelationFromSelector(metadata, contentObj, metadataLookupType),
+            consumeContextAccessor?.Current?.CorrelationId
+        );
         var publishAt = _ResolvePublishAt(delayTime);
+
+        _ApplyProviderHeaderContributions(headers, metadata, contentObj, metadataLookupType);
 
         headers[Headers.SentTime] = publishAt.UtcDateTime.ToString(CultureInfo.InvariantCulture);
         headers[Headers.Intent] = intentType.ToString();
@@ -65,6 +90,8 @@ internal sealed class MessagePublishRequestFactory(
         {
             headers[Headers.DelayTime] = delayTime.Value.ToString();
         }
+
+        _ValidateHeaderValues(headers);
 
         return new PreparedPublishMessage
         {
@@ -79,7 +106,9 @@ internal sealed class MessagePublishRequestFactory(
         Type messageType,
         string messageName,
         MessageOptions? options,
-        TimeSpan? delayTime
+        TimeSpan? delayTime,
+        string? selectorCorrelationId,
+        string? ambientCorrelationId
     )
     {
         var headers =
@@ -87,7 +116,7 @@ internal sealed class MessagePublishRequestFactory(
                 ? new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
                 : new Dictionary<string, string?>(StringComparer.Ordinal);
 
-        _ValidateCustomHeaders(headers);
+        _ValidateCustomHeaderNames(headers);
         _ApplyTenantId(headers, options);
 
         var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
@@ -95,9 +124,14 @@ internal sealed class MessagePublishRequestFactory(
             : _ValidateMessageId(options!.MessageId);
 
         headers[Headers.MessageId] = messageId;
-        headers[Headers.CorrelationId] = string.IsNullOrWhiteSpace(options?.CorrelationId)
-            ? messageId
-            : options!.CorrelationId;
+        var correlationId = _ResolveCorrelationId(
+            options?.CorrelationId,
+            selectorCorrelationId,
+            ambientCorrelationId,
+            messageId
+        );
+
+        headers[Headers.CorrelationId] = correlationId;
         headers[Headers.CorrelationSequence] = (options?.CorrelationSequence ?? 0).ToString(
             CultureInfo.InvariantCulture
         );
@@ -117,6 +151,178 @@ internal sealed class MessagePublishRequestFactory(
         return headers;
     }
 
+    private static string _ResolveCorrelationId(
+        string? explicitCorrelationId,
+        string? selectorCorrelationId,
+        string? ambientCorrelationId,
+        string messageId
+    )
+    {
+        if (!string.IsNullOrWhiteSpace(explicitCorrelationId))
+        {
+            return explicitCorrelationId!;
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectorCorrelationId))
+        {
+            return selectorCorrelationId!;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ambientCorrelationId))
+        {
+            return ambientCorrelationId!;
+        }
+
+        return messageId;
+    }
+
+    private static string? _ResolveCorrelationFromSelector<T>(
+        MessageMetadata? metadata,
+        T? contentObj,
+        Type messageType
+    )
+    {
+        if (metadata?.CorrelationSelector is null || contentObj is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var value = metadata.CorrelationSelector(contentObj);
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"CorrelationFrom selector failed for message type '{messageType.FullName ?? messageType.Name}'.",
+                ex
+            );
+        }
+    }
+
+    private static void _ApplyProviderHeaderContributions<T>(
+        Dictionary<string, string?> headers,
+        MessageMetadata? metadata,
+        T? contentObj,
+        Type messageType
+    )
+    {
+        if (metadata is null || contentObj is null || metadata.ProviderConfigs.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var config in metadata.ProviderConfigs.Values)
+        {
+            if (config is not IProviderHeaderContributions providerContributions)
+            {
+                continue;
+            }
+
+            foreach (var contribution in providerContributions.HeaderContributions)
+            {
+                _ValidateProviderHeaderName(contribution.HeaderName, config);
+
+                string? value;
+                try
+                {
+                    value = contribution.Selector(contentObj);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Provider header contribution '{contribution.HeaderName}' failed for message type "
+                            + $"'{messageType.FullName ?? messageType.Name}' from provider config "
+                            + $"'{config.GetType().FullName ?? config.GetType().Name}'.",
+                        ex
+                    );
+                }
+
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                _ValidateProviderHeaderValue(contribution.HeaderName, value!, config);
+                headers[contribution.HeaderName] = value;
+            }
+        }
+    }
+
+    private static void _ValidateProviderHeaderName(string headerName, object providerConfig)
+    {
+        _ValidateHeaderName(headerName);
+
+        if (_ProviderReservedHeaders.Contains(headerName))
+        {
+            throw new InvalidOperationException(
+                $"Provider config '{providerConfig.GetType().FullName ?? providerConfig.GetType().Name}' tried to write "
+                    + $"reserved header '{headerName}'."
+            );
+        }
+    }
+
+    private static void _ValidateProviderHeaderValue(string headerName, string value, object providerConfig)
+    {
+        if (_ContainsControlCharacter(value))
+        {
+            throw new InvalidOperationException(
+                $"Provider config '{providerConfig.GetType().FullName ?? providerConfig.GetType().Name}' returned an invalid "
+                    + $"value for header '{headerName}'. Header values cannot contain control characters."
+            );
+        }
+    }
+
+    private static void _ValidateHeaderName(string headerName)
+    {
+        Argument.IsNotNullOrWhiteSpace(headerName);
+
+        if (_ContainsControlCharacter(headerName))
+        {
+            var safeHeaderName = LogSanitizer.Sanitize(headerName, 200);
+            throw new InvalidOperationException(
+                $"Header '{safeHeaderName}' is invalid. Header names cannot contain control characters."
+            );
+        }
+    }
+
+    private static void _ValidateHeaderValue(string headerName, string value)
+    {
+        if (_ContainsControlCharacter(value))
+        {
+            throw new InvalidOperationException(
+                $"Header '{headerName}' contains an invalid value. Header values cannot contain control characters."
+            );
+        }
+    }
+
+    private static void _ValidateHeaderValues(Dictionary<string, string?> headers)
+    {
+        foreach (var (headerName, value) in headers)
+        {
+            if (value is null)
+            {
+                continue;
+            }
+
+            _ValidateHeaderValue(headerName, value);
+        }
+    }
+
+    private static bool _ContainsControlCharacter(string value)
+    {
+        foreach (var character in value.AsSpan())
+        {
+            if (char.IsControl(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static string _ValidateMessageId(string messageId)
     {
         Argument.IsLessThanOrEqualTo(
@@ -125,6 +331,8 @@ internal sealed class MessagePublishRequestFactory(
             $"Options.MessageId must be {MessageOptions.MessageIdMaxLength} characters or fewer before durable storage.",
             paramName: nameof(messageId)
         );
+
+        _ValidateHeaderValue(Headers.MessageId, messageId);
 
         return messageId;
     }
@@ -228,16 +436,22 @@ internal sealed class MessagePublishRequestFactory(
             $"Options.TenantId must be {MessageOptions.TenantIdMaxLength} characters or fewer before durable storage.",
             paramName: nameof(tenantId)
         );
+
+        _ValidateHeaderValue(Headers.TenantId, tenantId);
     }
 
-    private static void _ValidateCustomHeaders(IReadOnlyDictionary<string, string?> headers)
+    private static void _ValidateCustomHeaderNames(Dictionary<string, string?> headers)
     {
-        var invalidHeader = headers.Keys.FirstOrDefault(_ReservedHeaders.Contains);
-        if (invalidHeader != null)
+        foreach (var headerName in headers.Keys)
         {
-            throw new InvalidOperationException(
-                $"Header '{invalidHeader}' is reserved. Use the typed publish options properties for messaging metadata overrides."
-            );
+            _ValidateHeaderName(headerName);
+
+            if (_ReservedHeaders.Contains(headerName))
+            {
+                throw new InvalidOperationException(
+                    $"Header '{headerName}' is reserved. Use the typed publish options properties for messaging metadata overrides."
+                );
+            }
         }
     }
 
@@ -256,6 +470,7 @@ internal sealed class MessagePublishRequestFactory(
     {
         if (!string.IsNullOrWhiteSpace(explicitMessageName))
         {
+            MessagingOptions.ValidateMessageName(explicitMessageName!);
             return _options.ApplyMessageNamePrefix(explicitMessageName!);
         }
 
@@ -264,7 +479,7 @@ internal sealed class MessagePublishRequestFactory(
             return cachedName;
         }
 
-        if (_options.MessageNameMappings.TryGetValue(messageType, out var messageName))
+        if (consumerRegistry.TryGetRawMessageName(messageType, out var messageName))
         {
             messageName = _options.ApplyMessageNamePrefix(messageName);
             _messageNameCache.AddOrUpdate(messageType, messageName);

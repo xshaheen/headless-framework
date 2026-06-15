@@ -79,15 +79,15 @@ static void addRedisDistributedLock(IServiceCollection services)
     // Redis connection (required by Headless.DistributedLocks.Redis)
     services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 
-    // Resource Locks
-    services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-
     // Messages
     services.AddHeadlessMessaging(setup =>
     {
         setup.UseInMemory();
         setup.UseInMemoryStorage();
     });
+
+    // Resource Locks
+    services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 }
 
 internal sealed class SettingsMigrationDbContext(

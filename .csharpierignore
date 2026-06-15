@@ -1,0 +1,9 @@
+# CI restores NuGet packages into the workspace (.nuget/packages via NUGET_PACKAGES in ci.yml);
+# third-party package content must never gate formatting.
+.nuget/
+.worktrees/
+artifacts/
+
+# CSharpier's XML check disagrees on this hand-maintained file between local (macOS) and CI (Linux)
+# runs of the same tool version; it is not authored code, so it is excluded from the gate.
+nuget.config

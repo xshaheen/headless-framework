@@ -1,4 +1,6 @@
+using Headless.Coordination;
 using Headless.Jobs.BackgroundServices;
+using Headless.Jobs.Coordination;
 using Headless.Jobs.Dispatcher;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Instrumentation;
@@ -47,7 +49,8 @@ public static class JobsServiceExtensions
         services.AddSingleton<ITimeJobManager<TTimeJob>, JobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<ICronJobManager<TCronJob>, JobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeJob, TCronJob>>();
-        services.AddSingleton<IJobsRedisContext, NoOpJobsRedisContext>();
+        // Default owner identity for the in-memory path + always-on instrumentation; the durable path overrides it.
+        services.TryAddSingleton<IJobsOwnerIdentity, DefaultJobsOwnerIdentity>();
         services.AddSingleton<
             IJobPersistenceProvider<TTimeJob, TCronJob>,
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
@@ -97,6 +100,13 @@ public static class JobsServiceExtensions
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services);
 
+        // The durable operational store opts into coordinated membership; wire it after the provider's own
+        // services are registered so the require-provider check sees the coordination registration.
+        if (optionInstance.RequiresCoordinatedMembership)
+        {
+            _AddCoordinatedDurablePath(services);
+        }
+
         if (optionInstance.JobExceptionHandlerType != null)
         {
             services.AddSingleton(typeof(IJobExceptionHandler), optionInstance.JobExceptionHandlerType);
@@ -106,5 +116,37 @@ public static class JobsServiceExtensions
         services.AddSingleton(_ => tickerExecutionContext);
         services.AddSingleton(_ => schedulerOptionsBuilder);
         return services;
+    }
+
+    private static void _AddCoordinatedDurablePath(IServiceCollection services)
+    {
+        // Fail-fast (R5): the durable path requires a real coordination provider. INodeMembership resolves by
+        // last-wins registration (AddHeadlessCoordination uses AddSingleton, not TryAdd), so a consumer package may
+        // register a NullNodeMembership fallback first and have coordination replace it. Inspect the LAST descriptor
+        // — the one DI will actually resolve — not the first; FirstOrDefault would see the null fallback and reject a
+        // valid config. A factory-registered NullNodeMembership cannot be detected pre-build, so AddHeadlessCoordination
+        // must be registered before AddHeadlessJobs(... AddOperationalStore(...)).
+        var membershipDescriptor = services.LastOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(INodeMembership)
+        );
+
+        var isNullProvider =
+            membershipDescriptor?.ImplementationType == typeof(NullNodeMembership)
+            || membershipDescriptor?.ImplementationInstance is NullNodeMembership;
+
+        if (membershipDescriptor is null || isNullProvider)
+        {
+            throw new InvalidOperationException(
+                "The durable Jobs operational store requires a coordination provider. Register one with "
+                    + "AddHeadlessCoordination(...) before AddHeadlessJobs(... AddOperationalStore(...))."
+            );
+        }
+
+        // Override the default owner identity (U1) with the node@incarnation adapter over INodeMembership.
+        services.AddSingleton<IJobsOwnerIdentity, JobsOwnerIdentityAdapter>();
+
+        // Event-driven dead-node recovery (U2) and the registration startup gate (R6).
+        services.AddHostedService<MembershipRecoveryBridge>();
+        services.AddHostedService<JobsCoordinationStartupGate>();
     }
 }

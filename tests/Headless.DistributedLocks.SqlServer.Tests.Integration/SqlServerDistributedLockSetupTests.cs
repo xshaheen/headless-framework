@@ -15,11 +15,13 @@ public sealed class SqlServerDistributedLockSetupTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(options =>
-        {
-            options.ConnectionString = "Server=localhost;Database=headless;User Id=sa;Password=Password1!";
-            options.EnableFencing = false;
-        }));
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UseSqlServer(options =>
+            {
+                options.ConnectionString = "Server=localhost;Database=headless;User Id=sa;Password=Password1!";
+                options.EnableFencing = false;
+            })
+        );
 
         await using var provider = services.BuildServiceProvider();
 
@@ -44,13 +46,15 @@ public sealed class SqlServerDistributedLockSetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(options =>
-        {
-            options.ConnectionString = connectionString;
-            options.Schema = schema;
-            options.KeyPrefix = keyPrefix;
-            options.CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
-        }));
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UseSqlServer(options =>
+            {
+                options.ConnectionString = connectionString;
+                options.Schema = schema;
+                options.KeyPrefix = keyPrefix;
+                options.CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
+            })
+        );
 
         using var provider = services.BuildServiceProvider();
 

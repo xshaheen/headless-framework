@@ -4,6 +4,7 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -39,15 +40,16 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
-        // when — AddHeadlessDistributedLocks BEFORE AddHeadlessMessaging so the registration is drained.
+        // when — register the lock provider BEFORE AddHeadlessMessaging.
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then — the shared lock-release consumer is present in the consumer registry with the
         // expected name, intent, and concurrency, with no explicit opt-in call.
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
-        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        var metadata = provider.GetRequiredService<IConsumerRegistry>().GetAll().Single();
         metadata.ConsumerType.Should().Be<DistributedLock.LockReleasedConsumer>();
         metadata.MessageName.Should().Be("headless.locks.released");
         metadata.IntentType.Should().Be(IntentType.Bus);
@@ -67,28 +69,37 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then
         services
             .Count(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>))
             .Should()
             .Be(1);
-        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle();
+        provider.GetRequiredService<IConsumerRegistry>().GetAll().Should().ContainSingle();
     }
 
     [Fact]
-    public void should_throw_when_added_after_messaging()
+    public void should_register_lock_released_consumer_when_added_after_messaging()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(_ => { });
 
-        // when / then — the consumer registry was already drained, so a late auto-registration would
-        // be silently ignored. The seam fails fast instead. (Order-independent registration via
-        // runtime subscription is tracked in #390.)
+        // when — registering AFTER AddHeadlessMessaging still works; the captured registration is
+        // drained at messaging bootstrap, so registration order does not matter.
         var act = () => services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().NotThrow();
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
+
+        // then
+        provider
+            .GetRequiredService<IConsumerRegistry>()
+            .GetAll()
+            .Should()
+            .ContainSingle(metadata => metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer));
     }
 
     [Fact]

@@ -159,12 +159,14 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.KeyPrefix = "test:";
-            configure?.Invoke(options);
-        }));
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = fixture.ConnectionString;
+                options.KeyPrefix = "test:";
+                configure?.Invoke(options);
+            })
+        );
 
         return services.BuildServiceProvider();
     }

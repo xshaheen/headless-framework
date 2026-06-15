@@ -605,20 +605,77 @@ internal static partial class LoggerExtensions
     public static partial void UseStorageLockWithNoOpProviderButRealUnkeyed(this ILogger logger);
 
     [LoggerMessage(
-        EventId = 79,
-        EventName = "ReceivedRetryLockOwnershipLost",
-        Level = LogLevel.Warning,
-        Message = "Received-retry lock renewal returned false; ownership has been lost. Clearing the cached handle so the next cycle re-acquires from scratch."
+        EventId = 88,
+        EventName = "MessagingRecoveryUsingLockedUntilFloorOnly",
+        Level = LogLevel.Information,
+        Message = "Messaging Coordination membership is not registered. Dead-incarnation retry recovery falls back to the per-row LockedUntil floor; register a Coordination provider to accelerate orphaned retry rows."
     )]
-    public static partial void ReceivedRetryLockOwnershipLost(this ILogger logger);
+    public static partial void MessagingRecoveryUsingLockedUntilFloorOnly(this ILogger logger);
 
     [LoggerMessage(
-        EventId = 80,
-        EventName = "ReceivedRetryLockRenewalFailed",
-        Level = LogLevel.Warning,
-        Message = "Received-retry lock renewal threw an exception. Treating as transient; the in-flight consume task continues under per-row LockedUntil, the handle has been cleared, and the next cycle will re-acquire fresh."
+        EventId = 89,
+        EventName = "CoordinationMembershipQueryFailed",
+        Level = LogLevel.Debug,
+        Message = "Coordination membership query failed; dead-incarnation retry recovery falls back to the per-row LockedUntil floor for this tick."
     )]
-    public static partial void ReceivedRetryLockRenewalFailed(this ILogger logger, Exception ex);
+    public static partial void CoordinationMembershipQueryFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 93,
+        EventName = "CoordinationMembershipQueryFailureEscalated",
+        Level = LogLevel.Error,
+        Message = "Coordination membership query has failed for {ConsecutiveFailures} consecutive cycles; dead-incarnation retry recovery is falling back to the per-row LockedUntil floor."
+    )]
+    public static partial void CoordinationMembershipQueryFailureEscalated(
+        this ILogger logger,
+        Exception exception,
+        int consecutiveFailures
+    );
+
+    [LoggerMessage(
+        EventId = 90,
+        EventName = "MessagingDeadOwnerReclaimFailed",
+        Level = LogLevel.Warning,
+        Message = "{RetryKind} retry dead-owner reclaim failed. Dispatch continues for this tick; reclaim will retry on the next cycle."
+    )]
+    public static partial void MessagingDeadOwnerReclaimFailed(
+        this ILogger logger,
+        Exception exception,
+        string retryKind
+    );
+
+    [LoggerMessage(
+        EventId = 91,
+        EventName = "MessagingDeadOwnerRowsReclaimed",
+        Level = LogLevel.Information,
+        Message = "{RetryKind} retry recovered {ReclaimedRows} orphaned rows from dead owners."
+    )]
+    public static partial void MessagingDeadOwnerRowsReclaimed(
+        this ILogger logger,
+        string retryKind,
+        int reclaimedRows
+    );
+
+    [LoggerMessage(
+        EventId = 92,
+        EventName = "MessagingRecoveryDisabledWithoutStorageLock",
+        Level = LogLevel.Warning,
+        Message = "Messaging Coordination membership is registered but UseStorageLock is disabled. Dead-incarnation retry recovery is disabled; enable UseStorageLock through MessagingBuilder.UseDistributedLock(...) or rely on the per-row LockedUntil floor."
+    )]
+    public static partial void MessagingRecoveryDisabledWithoutStorageLock(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 79,
+        EventName = "RetryLockLeaseLost",
+        Level = LogLevel.Warning,
+        Message = "{RetryKind} retry lock lease {LeaseId} for resource {Resource} was observed lost. No new retry pickup starts under this lease; in-flight dispatch remains guarded by per-row LockedUntil."
+    )]
+    public static partial void RetryLockLeaseLost(
+        this ILogger logger,
+        string retryKind,
+        string resource,
+        string leaseId
+    );
 
     [LoggerMessage(
         EventId = 81,

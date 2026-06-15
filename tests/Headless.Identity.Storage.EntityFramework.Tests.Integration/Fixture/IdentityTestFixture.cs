@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination.EntityFramework;
 using Headless.EntityFramework;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -30,5 +31,10 @@ public sealed class IdentityTestFixture
             IdentityUserToken<string>,
             IdentityUserPasskey<string>
         >(options => options.UseNpgsql(SqlConnectionString));
+
+        // Register EF commit coordination so the scope-free ExecuteCoordinatedTransactionAsync helper can
+        // resolve EntityFrameworkCommitSignalSource and enlist; the interceptor is attached to the context by
+        // AddHeadlessDbContext via IDbContextOptionsConfiguration.
+        services.AddEntityFrameworkCommitCoordination();
     }
 }

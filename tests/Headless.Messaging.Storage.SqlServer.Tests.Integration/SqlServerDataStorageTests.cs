@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -52,7 +53,8 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            _timeProvider
+            _timeProvider,
+            new NullNodeMembership()
         );
 
         await base.InitializeAsync();

@@ -40,6 +40,13 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     internal bool RegisterBackgroundServices { get; set; } = true;
 
     /// <summary>
+    /// Set by the durable operational-store provider to opt into coordinated membership: the node owner
+    /// becomes <c>node@incarnation</c> and dead-node recovery flows through Headless.Coordination. The core
+    /// pipeline reacts by requiring a coordination provider and wiring the recovery bridge + startup gate.
+    /// </summary>
+    internal bool RequiresCoordinatedMembership { get; set; }
+
+    /// <summary>
     /// Seeding delegate for time jobs, executed with the application's service provider.
     /// </summary>
     internal Func<IServiceProvider, Task>? TimeSeederAction { get; set; }
@@ -184,6 +191,13 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan IdleWorkerTimeOut { get; set; } = TimeSpan.FromMinutes(1);
     public TimeSpan FallbackIntervalChecker { get; set; } = TimeSpan.FromSeconds(30);
     public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Local;
+
+    /// <summary>
+    /// How often the durable path reconciles dead nodes from the membership liveness snapshot to reclaim
+    /// any <c>NodeLeft</c> signal missed while not subscribed. Membership events accelerate recovery; this
+    /// periodic reconcile is the backstop (origin §4b invariant). Defaults to one minute.
+    /// </summary>
+    public TimeSpan DeadNodeReconcileInterval { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// Controls how job processing starts. Defaults to <see cref="JobsStartMode.Immediate"/>.

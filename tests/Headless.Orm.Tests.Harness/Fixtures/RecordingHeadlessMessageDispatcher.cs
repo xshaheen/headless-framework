@@ -56,20 +56,13 @@ public sealed class RecordingHeadlessMessageDispatcher : ILocalEventBus, IHeadle
         return ValueTask.CompletedTask;
     }
 
-    public Task DispatchAsync(
-        IReadOnlyList<IIntegrationEvent> integrationEvents,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    )
+    public Task DispatchAsync(IReadOnlyList<IIntegrationEvent> integrationEvents, CancellationToken cancellationToken)
     {
         _RecordDistributed(integrationEvents);
         return Task.CompletedTask;
     }
 
-    public void Dispatch(
-        IReadOnlyList<IIntegrationEvent> integrationEvents,
-        IDbContextTransaction currentTransaction
-    ) => _RecordDistributed(integrationEvents);
+    public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents) => _RecordDistributed(integrationEvents);
 
     private void _RecordLocal(IDomainEvent domainEvent)
     {

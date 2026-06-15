@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.CommitCoordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -35,7 +37,6 @@ public sealed class SetupTests : TestBase
         provider.GetRequiredService<MessageStorageMarkerService>().Name.Should().Be("PostgreSql");
         provider.GetRequiredService<IStorageInitializer>().Should().BeOfType<PostgreSqlStorageInitializer>();
         provider.GetRequiredService<IDataStorage>().Should().BeOfType<PostgreSqlDataStorage>();
-        provider.GetRequiredService<IOutboxTransaction>().Should().BeOfType<PostgreSqlOutboxTransaction>();
 
         var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
         options.ConnectionString.Should().Be("Host=localhost;Database=test");
@@ -69,6 +70,85 @@ public sealed class SetupTests : TestBase
         options.Schema.Should().Be("custom_schema");
         _GetInternalType(options, "DbContextType").Should().Be(typeof(TestMessagingDbContext));
         _GetInternalString(options, "Version").Should().Be("v9");
+    }
+
+    [Fact]
+    public async Task should_enable_transactional_outbox_by_default_on_entity_framework_path()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseEntityFramework<TestMessagingDbContext>();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        // then — a real commit coordinator (not the null fallback) is wired, and the interceptor auto-attach
+        // configuration is registered for the consumer's DbContext.
+        provider
+            .GetRequiredService<ICurrentCommitCoordinator>()
+            .GetType()
+            .Name.Should()
+            .NotBe("MessagingNullCommitCoordinator");
+        provider
+            .GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>()
+            .Should()
+            .NotBeEmpty("the EF-context path auto-registers the commit-interceptor options configuration");
+    }
+
+    [Fact]
+    public async Task should_not_enable_transactional_outbox_on_raw_path()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when — raw ADO storage, no DbContext
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UsePostgreSql("Host=localhost;Database=test");
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        // then — the null fallback stays; no auto-registration.
+        provider
+            .GetRequiredService<ICurrentCommitCoordinator>()
+            .GetType()
+            .Name.Should()
+            .Be("MessagingNullCommitCoordinator");
+        provider.GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_opt_out_of_transactional_outbox_when_requested()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when — EF path but explicitly opted out via the per-storage flag
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalOutbox = false);
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        // then — opt-out restores non-transactional immediate dispatch; no coordinator, no config.
+        provider
+            .GetRequiredService<ICurrentCommitCoordinator>()
+            .GetType()
+            .Name.Should()
+            .Be("MessagingNullCommitCoordinator");
+        provider.GetServices<IDbContextOptionsConfiguration<TestMessagingDbContext>>().Should().BeEmpty();
     }
 
     [Fact]

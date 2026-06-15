@@ -48,6 +48,14 @@ export class GetMachineJobs{
     item2!:number;
 }
 
+export class GetLiveNode{
+    identity!:string;
+    state!:string;
+    role?:string;
+    lastBeat?:string;
+    metadata!:Record<string, string>;
+}
+
 
 export class GetJobStatusesPastWeek{
     item1!:string;

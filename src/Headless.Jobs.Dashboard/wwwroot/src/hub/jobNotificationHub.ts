@@ -14,7 +14,8 @@ export const methodName = {
   onReceiveThreadsActive: "GetActiveThreadsNotification",
   onReceiveNextOccurrence: "GetNextOccurrenceNotification",
   onReceiveHostStatus: "GetHostStatusNotification",
-  onReceiveHostExceptionMessage: "UpdateHostExceptionNotification"
+  onReceiveHostExceptionMessage: "UpdateHostExceptionNotification",
+  onReceiveNodesUpdate: "UpdateNodesNotification"
 }
 // Define a SignalR service class
 class JobNotificationHub extends BaseHub {  
@@ -112,6 +113,13 @@ class JobNotificationHub extends BaseHub {
 
   onReceiveHostExceptionMessage<T>(callback: (response: T) => void): void {
     this.onReceiveMessageAsSingle<T>(methodName.onReceiveHostExceptionMessage, (responseFromHub: any) => {
+      callback(responseFromHub);
+    });
+  }
+
+  // Live-nodes delta pushed by the membership dashboard bridge (one node-state change per event).
+  onReceiveNodesUpdate<T>(callback: (response: T) => void): void {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveNodesUpdate, (responseFromHub: any) => {
       callback(responseFromHub);
     });
   }

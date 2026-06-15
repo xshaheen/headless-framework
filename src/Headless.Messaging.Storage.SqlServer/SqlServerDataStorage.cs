@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -26,7 +27,8 @@ public sealed class SqlServerDataStorage(
     IStorageInitializer initializer,
     ISerializer serializer,
     [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    INodeMembership nodeMembership
 ) : IDataStorage
 {
     /// <summary>
@@ -65,6 +67,7 @@ public sealed class SqlServerDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
+    private readonly INodeMembership _nodeMembership = nodeMembership;
 
     public async ValueTask ChangePublishStateToDelayedAsync(
         Guid[] storageIds,
@@ -76,17 +79,7 @@ public sealed class SqlServerDataStorage(
             return;
         }
 
-        var schema = options.Value.Schema;
-        var tvpTypeName = $"[{schema}].[HeadlessMessagingIdList]";
-
-        var idsTable = new DataTable();
-        idsTable.Columns.Add("Id", typeof(Guid));
-        foreach (var id in storageIds)
-        {
-            idsTable.Rows.Add(id);
-        }
-
-        var tvpParam = new SqlParameter("@Ids", SqlDbType.Structured) { TypeName = tvpTypeName, Value = idsTable };
+        var tvpParam = _BuildIdListTvpParameter(storageIds);
         var statusParam = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
 
         var sql = $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN (SELECT [Id] FROM @Ids);";
@@ -147,7 +140,7 @@ public sealed class SqlServerDataStorage(
             // X1 terminal-row guard: refuses updates to rows that are already terminal AND
             // have NextRetryAt cleared. Failed rows with non-null NextRetryAt stay mutable so
             // the retry processor can rewrite them — see the matching note in PostgreSqlDataStorage.
-            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardWithRetries}";
+            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, Owner=@Owner, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardWithRetries}";
 
         object[] sqlParams =
         [
@@ -160,6 +153,7 @@ public sealed class SqlServerDataStorage(
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = lockedUntil.ToUtcParameterValue() },
+            _OwnerParameter("@Owner", lockedUntil),
             new SqlParameter("@OriginalRetries", SqlDbType.Int) { Value = originalRetries ?? (object)DBNull.Value },
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
@@ -193,8 +187,8 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[StatusName],[MessageId])"
-            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId);";
+            $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId])"
+            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var stored = new MediumMessage
@@ -207,6 +201,7 @@ public sealed class SqlServerDataStorage(
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             LockedUntil = null,
+            Owner = null,
             Retries = 0,
         };
 
@@ -224,6 +219,7 @@ public sealed class SqlServerDataStorage(
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = stored.NextRetryAt.ToUtcParameterValue() },
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = stored.LockedUntil.ToUtcParameterValue() },
+            _OwnerParameter("@Owner", stored.LockedUntil),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", message.Origin.GetId()),
         ];
@@ -341,6 +337,7 @@ public sealed class SqlServerDataStorage(
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = DBNull.Value },
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = DBNull.Value },
+            _OwnerParameter("@Owner", lockedUntil: null),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
             new SqlParameter("@MessageId", message.Origin.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
@@ -368,6 +365,7 @@ public sealed class SqlServerDataStorage(
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             LockedUntil = null,
+            Owner = null,
             Retries = 0,
         };
 
@@ -392,6 +390,7 @@ public sealed class SqlServerDataStorage(
             {
                 Value = mediumMessage.LockedUntil.ToUtcParameterValue(),
             },
+            _OwnerParameter("@Owner", mediumMessage.LockedUntil),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", message.Origin.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
@@ -458,11 +457,27 @@ public sealed class SqlServerDataStorage(
         return _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken);
     }
 
+    public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReclaimDeadOwnersAsync(_publishedTable, liveOwners, cancellationToken);
+    }
+
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
         return _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken);
+    }
+
+    public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _ReclaimDeadOwnersAsync(_receivedTable, liveOwners, cancellationToken);
     }
 
     public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
@@ -511,15 +526,9 @@ public sealed class SqlServerDataStorage(
             return 0;
         }
 
-        var paramNames = new string[ids.Count];
-        var sqlParams = new object[ids.Count];
-        for (var i = 0; i < ids.Count; i++)
-        {
-            paramNames[i] = $"@Id{i}";
-            sqlParams[i] = new SqlParameter($"@Id{i}", ids[i]);
-        }
+        var sqlParams = new object[] { _BuildIdListTvpParameter(ids) };
 
-        var sql = $"DELETE FROM {_receivedTable} WHERE Id IN ({string.Join(',', paramNames)})";
+        var sql = $"DELETE FROM {_receivedTable} WHERE Id IN (SELECT Id FROM @Ids)";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
@@ -542,15 +551,9 @@ public sealed class SqlServerDataStorage(
             return 0;
         }
 
-        var paramNames = new string[ids.Count];
-        var sqlParams = new object[ids.Count];
-        for (var i = 0; i < ids.Count; i++)
-        {
-            paramNames[i] = $"@Id{i}";
-            sqlParams[i] = new SqlParameter($"@Id{i}", ids[i]);
-        }
+        var sqlParams = new object[] { _BuildIdListTvpParameter(ids) };
 
-        var sql = $"DELETE FROM {_publishedTable} WHERE Id IN ({string.Join(',', paramNames)})";
+        var sql = $"DELETE FROM {_publishedTable} WHERE Id IN (SELECT Id FROM @Ids)";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
@@ -561,6 +564,28 @@ public sealed class SqlServerDataStorage(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds the <c>@Ids</c> table-valued parameter backed by the <c>HeadlessMessagingIdList</c> type
+    /// (provisioned by the storage initializer). Using a TVP keeps the SQL text and parameter shape
+    /// constant regardless of id count, so SQL Server reuses a single cached query plan — and it stays
+    /// portable to older engines (table types need no OPENJSON / compatibility level 130).
+    /// </summary>
+    private SqlParameter _BuildIdListTvpParameter(IReadOnlyList<Guid> ids)
+    {
+        var idsTable = new DataTable();
+        idsTable.Columns.Add("Id", typeof(Guid));
+        foreach (var id in ids)
+        {
+            idsTable.Rows.Add(id);
+        }
+
+        return new SqlParameter("@Ids", SqlDbType.Structured)
+        {
+            TypeName = $"[{options.Value.Schema}].[HeadlessMessagingIdList]",
+            Value = idsTable,
+        };
     }
 
     public async ValueTask ScheduleMessagesOfDelayedAsync(
@@ -645,7 +670,7 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries}";
+            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,Owner=@Owner,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries}";
 
         object[] sqlParams =
         [
@@ -658,6 +683,7 @@ public sealed class SqlServerDataStorage(
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = lockedUntil.ToUtcParameterValue() },
+            _OwnerParameter("@Owner", lockedUntil),
             new SqlParameter("@OriginalRetries", SqlDbType.Int) { Value = originalRetries ?? (object)DBNull.Value },
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
@@ -731,10 +757,10 @@ public sealed class SqlServerDataStorage(
                 )}') AND target.NextRetryAt IS NULL)
                 AND (target.LockedUntil IS NULL OR target.LockedUntil <= GETUTCDATE())
             THEN
-                UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Content = @Content, ExceptionInfo = @ExceptionInfo
+                UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Owner = @Owner, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
-                INSERT ([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[StatusName],[MessageId],[ExceptionInfo])
-                VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId,@ExceptionInfo);
+                INSERT ([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo])
+                VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo);
             """;
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
@@ -764,16 +790,21 @@ public sealed class SqlServerDataStorage(
         // from the consume/publish path itself was unconditional). Returning false here surfaces the
         // contention to the inline retry loop, which skips dispatch.
         var sql =
-            $"UPDATE {tableName} SET LockedUntil=@LockedUntil WHERE Id=@Id "
+            $"UPDATE {tableName} SET LockedUntil=@LockedUntil, Owner=@Owner WHERE Id=@Id "
             + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
+        var owner = _nodeMembership.GetOwnerTag();
         object[] sqlParams =
         [
             new SqlParameter("@Id", message.StorageId),
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2)
             {
                 Value = ((DateTime?)lockedUntil).ToUtcParameterValue(),
+            },
+            new SqlParameter("@Owner", SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
+            {
+                Value = owner ?? (object)DBNull.Value,
             },
             new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
@@ -791,6 +822,7 @@ public sealed class SqlServerDataStorage(
         if (affectedRows > 0)
         {
             message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
+            message.Owner = owner;
         }
 
         return affectedRows > 0;
@@ -817,8 +849,8 @@ public sealed class SqlServerDataStorage(
         // and avoids subtle drift between application time and DB time.
         var sql = $"""
             UPDATE TOP (@BatchSize) {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
-            SET LockedUntil = @NewLease
-            OUTPUT inserted.Id, inserted.Content, inserted.IntentType, inserted.Retries, inserted.Added, inserted.NextRetryAt, inserted.LockedUntil
+            SET LockedUntil = @NewLease, Owner = @Owner
+            OUTPUT inserted.Id, inserted.Content, inserted.IntentType, inserted.Retries, inserted.Added, inserted.NextRetryAt, inserted.LockedUntil, inserted.Owner
             WHERE Retries <= @Retries
               AND Version = @Version
               AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
@@ -836,6 +868,7 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@Now", SqlDbType.DateTime2) { Value = now },
             new SqlParameter("@NewLease", SqlDbType.DateTime2) { Value = newLease },
+            _OwnerParameter("@Owner", newLease),
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
@@ -865,6 +898,9 @@ public sealed class SqlServerDataStorage(
                                 LockedUntil = await reader.IsDBNullAsync(6, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(6),
+                                Owner = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(7),
                             }
                         );
                     }
@@ -879,4 +915,68 @@ public sealed class SqlServerDataStorage(
 
         return result;
     }
+
+    private async ValueTask<int> _ReclaimDeadOwnersAsync(
+        string tableName,
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken
+    )
+    {
+        if (liveOwners.Count == 0)
+        {
+            return 0;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        List<SqlParameter> sqlParams = [new("@Now", SqlDbType.DateTime2) { Value = now }];
+        var liveOwnerParams = _AddLiveOwnerParameters(liveOwners, sqlParams);
+        var sql = $"""
+            UPDATE target
+            SET LockedUntil = @Now
+            FROM {tableName} AS target
+            WHERE target.Owner IS NOT NULL
+              AND target.Owner NOT IN ({liveOwnerParams})
+              AND target.LockedUntil > @Now
+              AND {_TerminalRowGuardSimple};
+            """;
+
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        return await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams.ToArray(),
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private string _AddLiveOwnerParameters(IReadOnlyCollection<string> liveOwners, List<SqlParameter> sqlParams)
+    {
+        var parameterNames = new List<string>(liveOwners.Count);
+        var index = 0;
+
+        // Defensive de-dup: ReclaimDead* is a public IDataStorage contract method, so a direct
+        // caller may pass duplicate owner tags. The processor already de-dups its cached set, but
+        // this keeps the storage method self-sufficient and avoids emitting duplicate NOT IN params.
+        foreach (var owner in liveOwners.Distinct(StringComparer.Ordinal))
+        {
+            var parameterName = $"@LiveOwner{index++}";
+            parameterNames.Add(parameterName);
+            sqlParams.Add(
+                new SqlParameter(parameterName, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
+                {
+                    Value = owner,
+                }
+            );
+        }
+
+        return string.Join(", ", parameterNames);
+    }
+
+    private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
+        new(name, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
+        {
+            Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+        };
 }

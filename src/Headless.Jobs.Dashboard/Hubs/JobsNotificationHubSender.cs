@@ -82,9 +82,9 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         _ = _hubContext.Clients.All.SendAsync("UpdateHostExceptionNotification", exceptionMessage);
     }
 
-    public async Task UpdateNodeHeartBeatAsync(object nodeHeartBeat)
+    public async Task UpdateNodesAsync(object nodes)
     {
-        await _hubContext.Clients.All.SendAsync("UpdateNodeHeartBeat", nodeHeartBeat);
+        await _hubContext.Clients.All.SendAsync("UpdateNodesNotification", nodes);
     }
 
     public async Task AddCronOccurrenceAsync(Guid groupId, object occurrence)

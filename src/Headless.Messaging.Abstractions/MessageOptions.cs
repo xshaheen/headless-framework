@@ -38,7 +38,8 @@ public abstract record MessageOptions
     public string? MessageName { get; init; }
 
     /// <summary>
-    /// Gets custom application headers. Reserved messaging headers are rejected.
+    /// Gets custom application headers. Reserved messaging headers are rejected, and header names/values
+    /// cannot contain control characters.
     /// </summary>
     public IDictionary<string, string?>? Headers { get; init; }
 

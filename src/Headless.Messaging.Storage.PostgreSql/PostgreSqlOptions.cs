@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,6 +55,8 @@ internal sealed class PostgreSqlOptionsValidator : AbstractValidator<PostgreSqlO
                 "PostgreSQL messaging storage requires either a DataSource or ConnectionString. "
                     + "Configure via UsePostgreSql(connectionString) or UsePostgreSql(options => options.ConnectionString = ...)"
             );
+
+        RuleFor(x => x.OwnerColumnMaxLength).GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
     }
 }
 

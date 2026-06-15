@@ -29,7 +29,6 @@ public sealed class MessagingOptions
         "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
 #pragma warning restore IDE0032
 
-    internal Dictionary<Type, string> MessageNameMappings { get; } = [];
     internal MessagingConventions Conventions { get; set; } = new();
 
     /// <summary>
@@ -210,6 +209,19 @@ public sealed class MessagingOptions
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets the maximum time the commit-coordination drain spends flushing buffered outbox messages to
+    /// the transport after a transaction commits. Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// The post-commit drain runs with <see cref="CancellationToken.None"/> (a committed dispatch must not be
+    /// abandoned because the request was cancelled), so an unresponsive broker would otherwise hold the drain —
+    /// and the request thread, DI scope, and DB connection — indefinitely. This timeout bounds that wait;
+    /// messages are already durably stored in-transaction, so any not dispatched before the deadline are
+    /// recovered by the relay sweep (dispatch is acceleration, not correctness).
+    /// </remarks>
+    public TimeSpan OutboxFlushTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
     /// <see cref="IConsumerBuilderBase{TConsumer, TBuilder}.WithCircuitBreaker"/>.
@@ -263,15 +275,11 @@ public sealed class MessagingOptions
         target.TenantContextRequired = TenantContextRequired;
         target.TransportPublishTimeout = TransportPublishTimeout;
         target.CommandTimeout = CommandTimeout;
+        target.OutboxFlushTimeout = OutboxFlushTimeout;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
         RetryProcessor.CopyTo(target.RetryProcessor);
-
-        foreach (var mapping in MessageNameMappings)
-        {
-            target.MessageNameMappings[mapping.Key] = mapping.Value;
-        }
     }
 
     /// <summary>
@@ -318,27 +326,6 @@ public sealed class MessagingOptions
         }
     }
 
-    /// <summary>
-    /// Registers a message-name mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.
-    /// </summary>
-    internal void WithMessageNameMapping(Type messageType, string messageName)
-    {
-        Argument.IsNotNullOrWhiteSpace(messageName);
-        _ValidateMessageName(messageName);
-
-        if (
-            MessageNameMappings.TryGetValue(messageType, out var existingMessageName)
-            && !string.Equals(existingMessageName, messageName, StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Message type {messageType.Name} is already mapped to messageName '{existingMessageName}'. Cannot map to '{messageName}'."
-            );
-        }
-
-        MessageNameMappings[messageType] = messageName;
-    }
-
     internal string ApplyMessageNamePrefix(string messageName)
     {
         Argument.IsNotNullOrWhiteSpace(messageName);
@@ -353,6 +340,12 @@ public sealed class MessagingOptions
         Argument.IsNotNullOrWhiteSpace(group);
 
         return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
+    }
+
+    internal static void ValidateMessageName(string messageName)
+    {
+        Argument.IsNotNullOrWhiteSpace(messageName);
+        _ValidateMessageName(messageName);
     }
 
     /// <summary>
@@ -402,6 +395,7 @@ public sealed class MessagingOptions
         Type consumerType,
         Type messageType,
         string? messageName,
+        string? mappedMessageName,
         string? group,
         byte concurrency,
         string? handlerId = null,
@@ -413,10 +407,7 @@ public sealed class MessagingOptions
 
         var finalHandlerId = handlerId ?? MessagingConventions.GetDefaultHandlerId(consumerType, messageType);
         var resolvedMessageName =
-            messageName
-            ?? (MessageNameMappings.TryGetValue(messageType, out var mappedMessageName) ? mappedMessageName : null)
-            ?? conventions.GetMessageName(messageType)
-            ?? messageType.Name;
+            messageName ?? mappedMessageName ?? conventions.GetMessageName(messageType) ?? messageType.Name;
         var finalMessageName = ApplyMessageNamePrefix(resolvedMessageName);
         var finalGroup = ResolveGroupName(finalHandlerId, group);
 
@@ -465,6 +456,11 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("CommandTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("CommandTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.OutboxFlushTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("OutboxFlushTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("OutboxFlushTimeout must not exceed 5 minutes.");
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
     }
 

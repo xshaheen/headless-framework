@@ -214,8 +214,8 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
         // Set a simple synchronization context if needed for continuations
         var originalContext = SynchronizationContext.Current;
-        var tickerQContext = new JobsSynchronizationContext(this);
-        SynchronizationContext.SetSynchronizationContext(tickerQContext);
+        var jobsContext = new JobsSynchronizationContext(this);
+        SynchronizationContext.SetSynchronizationContext(jobsContext);
 
         try
         {

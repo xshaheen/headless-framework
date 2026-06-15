@@ -171,4 +171,110 @@ public sealed class ScopedCacheTests : TestBase
         result.Should().ContainKey("ns:key1");
         result.Should().ContainKey("ns:key2");
     }
+
+    [Fact]
+    public async Task should_scope_key_for_options_based_upsert()
+    {
+        // given
+        var sut = _CreateSut();
+        var options = new CacheEntryOptions { Duration = _DefaultExpiration };
+
+        _currentScope = "scope-a";
+        await sut.UpsertEntryAsync("key", "value-a", options, AbortToken);
+
+        // when / then — only the writing scope sees the entry
+        var resultA = await sut.GetAsync("key", AbortToken);
+        resultA.HasValue.Should().BeTrue();
+        resultA.Value.Should().Be("value-a");
+
+        _currentScope = "scope-b";
+        (await sut.GetAsync("key", AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_scope_key_for_refresh()
+    {
+        // given
+        var sut = _CreateSut();
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(2),
+            SlidingExpiration = TimeSpan.FromMilliseconds(400),
+        };
+
+        _currentScope = "scope-a";
+        await sut.UpsertEntryAsync("key", "value-a", options, AbortToken);
+
+        _currentScope = "scope-b";
+        await sut.UpsertEntryAsync("key", "value-b", options, AbortToken);
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(300));
+        _currentScope = "scope-a";
+        await sut.RefreshAsync("key", AbortToken);
+
+        // then
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(200));
+
+        _currentScope = "scope-a";
+        var resultA = await sut.GetAsync("key", AbortToken);
+        resultA.HasValue.Should().BeTrue();
+        resultA.Value.Should().Be("value-a");
+
+        _currentScope = "scope-b";
+        var resultB = await sut.GetAsync("key", AbortToken);
+        resultB.HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_scope_tags_for_remove_by_tag()
+    {
+        // given — tags are documented as NOT scope-isolated: only keys are scoped
+        var sut = _CreateSut();
+        var options = new CacheEntryOptions { Duration = _DefaultExpiration, Tags = ["shared-tag"] };
+
+        _currentScope = "scope-a";
+        await sut.UpsertEntryAsync("key", "value-a", options, AbortToken);
+
+        _currentScope = "scope-b";
+        await sut.UpsertEntryAsync("key", "value-b", options, AbortToken);
+
+        // when — invalidating from scope-b logically takes down BOTH scopes' tagged entries
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await sut.RemoveByTagAsync("shared-tag", AbortToken);
+
+        // then
+        (await sut.GetAsync("key", AbortToken))
+            .HasValue.Should()
+            .BeFalse();
+
+        _currentScope = "scope-a";
+        (await sut.GetAsync("key", AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_scope_clear_async()
+    {
+        // given — like FlushAsync, ClearAsync is documented as NOT scope-isolated.
+        var sut = _CreateSut();
+        var options = new CacheEntryOptions { Duration = _DefaultExpiration };
+
+        _currentScope = "scope-a";
+        await sut.UpsertEntryAsync("key", "value-a", options, AbortToken);
+
+        _currentScope = "scope-b";
+        await sut.UpsertEntryAsync("key", "value-b", options, AbortToken);
+
+        // when — clearing from scope-b logically clears BOTH scopes
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await sut.ClearAsync(AbortToken);
+
+        // then
+        (await sut.GetAsync("key", AbortToken))
+            .HasValue.Should()
+            .BeFalse();
+
+        _currentScope = "scope-a";
+        (await sut.GetAsync("key", AbortToken)).HasValue.Should().BeFalse();
+    }
 }

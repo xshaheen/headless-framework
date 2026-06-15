@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.CommitCoordination.EntityFramework\Headless.CommitCoordination.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
@@ -19,6 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Identity.Storage.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Orm.EntityFramework.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.AuditLog.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework.Tests.Integration" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />

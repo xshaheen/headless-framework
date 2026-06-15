@@ -90,9 +90,7 @@ public static class SetupPostgresDistributedLocks
             }
             else if (_configure is not null)
             {
-                services.Configure<PostgresDistributedLockOptions, PostgresDistributedLockOptionsValidator>(
-                    _configure
-                );
+                services.Configure<PostgresDistributedLockOptions, PostgresDistributedLockOptionsValidator>(_configure);
             }
             else
             {

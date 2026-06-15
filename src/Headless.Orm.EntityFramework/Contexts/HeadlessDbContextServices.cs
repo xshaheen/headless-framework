@@ -9,17 +9,16 @@ using Microsoft.Extensions.Options;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Framework-internal parameter bag resolved as a scoped service and injected into
-/// <see cref="HeadlessDbContext"/> via its constructor. Members are intentionally internal because the
-/// type only exists to thread the runtime collaborators (tenant, clock, save-changes pipeline) through
-/// the DbContext layer without changing public DbContext constructor signatures.
+/// Constructor parameter bag resolved as a scoped service and injected into <see cref="HeadlessDbContext"/>.
+/// Consumers pass this type through derived context constructors, but its members are framework-internal.
 /// </summary>
 /// <remarks>
-/// Hidden from IntelliSense because consumers should never resolve or inject this type directly. It is
-/// not part of the public surface area.
+/// Hidden from IntelliSense because consumers should only accept this type in derived DbContext constructors;
+/// they should not resolve it directly or depend on its member shape.
 /// </remarks>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class HeadlessDbContextServices(
+    IServiceProvider serviceProvider,
     ICurrentTenant currentTenant,
     IClock clock,
     IHeadlessSaveChangesPipeline saveChangesPipeline,
@@ -33,4 +32,9 @@ public sealed class HeadlessDbContextServices(
     internal IHeadlessSaveChangesPipeline SaveChangesPipeline { get; } = saveChangesPipeline;
 
     internal bool IsTenantWriteGuardEnabled => tenantWriteGuardOptions.Value.IsEnabled;
+
+    // The scoped (request) service provider that resolved this bag — the SAME scope the save pipeline captures.
+    // Surfaced so coordinated-transaction helpers can enlist with the correct scope for the post-commit drain
+    // (EF's CoreOptionsExtension.ApplicationServiceProvider is the ROOT provider and must not be used here).
+    internal IServiceProvider ServiceProvider { get; } = serviceProvider;
 }

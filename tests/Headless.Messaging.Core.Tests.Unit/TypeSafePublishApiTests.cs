@@ -1,9 +1,9 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Transactions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -34,11 +34,11 @@ public sealed class TypeSafePublishApiTests
 
         // when
         using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        var registry = provider.GetRequiredService<IConsumerRegistry>();
 
         // then
-        options.MessageNameMappings.Should().ContainKey(typeof(OrderCreated));
-        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
+        registry.TryGetRawMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.created");
     }
 
     [Fact]
@@ -57,12 +57,13 @@ public sealed class TypeSafePublishApiTests
 
         // when
         using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        var registry = provider.GetRequiredService<IConsumerRegistry>();
 
         // then
-        options.MessageNameMappings.Should().HaveCount(2);
-        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
-        options.MessageNameMappings[typeof(UserRegistered)].Should().Be("users.registered");
+        registry.TryGetRawMessageName(typeof(OrderCreated), out var orderMessageName).Should().BeTrue();
+        orderMessageName.Should().Be("orders.created");
+        registry.TryGetRawMessageName(typeof(UserRegistered), out var userMessageName).Should().BeTrue();
+        userMessageName.Should().Be("users.registered");
     }
 
     [Fact]
@@ -125,13 +126,22 @@ public sealed class TypeSafePublishApiTests
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        var registry = provider.GetRequiredService<IConsumerRegistry>();
         var publisher = provider.GetRequiredService<IOutboxBus>();
 
         // then - Mapping is available for type-safe publishing
-        options.MessageNameMappings.Should().ContainKey(typeof(OrderCreated));
-        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
+        registry.TryGetRawMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.created");
         publisher.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void messaging_options_should_not_expose_message_name_mappings()
+    {
+        typeof(MessagingOptions)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Should()
+            .NotContain(property => property.Name == "MessageNameMappings");
     }
 
     [Fact]
@@ -178,39 +188,6 @@ public sealed class TypeSafePublishApiTests
         expectedErrorPattern.Should().Contain("OrderCreated");
     }
 
-    [Fact]
-    public async Task should_support_custom_outbox_transaction_buffers()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessMessaging(opt =>
-        {
-            opt.WithMessageNameMapping<OrderCreated>("orders.created");
-            opt.UseInMemory();
-            opt.UseInMemoryStorage();
-        });
-
-        await using var provider = services.BuildServiceProvider();
-        var publisher = provider.GetRequiredService<IOutboxBus>();
-        var accessor = provider.GetRequiredService<IOutboxTransactionAccessor>();
-        var transaction = new TestOutboxTransaction { DbTransaction = new object() };
-        accessor.Current = transaction;
-
-        try
-        {
-            // when
-            await publisher.PublishAsync(new OrderCreated { OrderId = 42 });
-        }
-        finally
-        {
-            accessor.Current = null;
-        }
-
-        // then
-        transaction.BufferedMessages.Should().ContainSingle();
-    }
-
     [UsedImplicitly]
     private sealed class OrderCreatedHandler : IConsume<OrderCreated>
     {
@@ -218,31 +195,5 @@ public sealed class TypeSafePublishApiTests
         {
             return ValueTask.CompletedTask;
         }
-    }
-
-    private sealed class TestOutboxTransaction : IOutboxTransaction, IOutboxMessageBuffer
-    {
-        public List<MediumMessage> BufferedMessages { get; } = [];
-
-        public bool AutoCommit { get; set; }
-
-        public object? DbTransaction { get; set; }
-
-        public void Commit() { }
-
-        public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public void Rollback() { }
-
-        public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public void AddToSent(MediumMessage message)
-        {
-            BufferedMessages.Add(message);
-        }
-
-        public void Dispose() { }
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

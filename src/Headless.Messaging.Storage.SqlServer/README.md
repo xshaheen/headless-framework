@@ -34,7 +34,7 @@ builder.Services.AddHeadlessMessaging(options =>
         config.Schema = "messaging";
     });
 
-    options.UseRabbitMQ(rmq => { /* ... */ });
+    options.UseRabbitMq(rmq => { /* ... */ });
 });
 ```
 
@@ -52,6 +52,10 @@ options.UseSqlServer(config =>
 
 - `Headless.Messaging.Core`
 - `Microsoft.Data.SqlClient`
+
+## SQL Server Compatibility
+
+Dead-owner retry recovery binds live Coordination owners as ordinary SQL parameters and does not require `OPENJSON` or SQL Server compatibility level 130. Older SQL Server-compatible engines still recover through the per-row `LockedUntil` floor if reclaim fails.
 
 ## Side Effects
 

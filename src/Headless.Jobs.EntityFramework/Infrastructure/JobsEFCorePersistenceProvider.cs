@@ -1,23 +1,29 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Linq.Expressions;
+using Headless.Caching;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Infrastructure;
 
 internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
-    SchedulerOptionsBuilder optionsBuilder,
-    IJobsRedisContext redisContext
+    IJobsOwnerIdentity ownerIdentity,
+    ICache? cache,
+    ILogger logger
 )
     : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
         timeProvider,
-        optionsBuilder,
-        redisContext
+        ownerIdentity,
+        cache,
+        logger
     ),
         IJobPersistenceProvider<TTimeJob, TCronJob>
     where TDbContext : DbContext
@@ -200,12 +206,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (RedisContext.HasRedisConnection)
-        {
-            await RedisContext
-                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
     }
@@ -220,12 +221,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (RedisContext.HasRedisConnection)
-        {
-            await RedisContext
-                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
     }
@@ -241,12 +237,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (RedisContext.HasRedisConnection)
-        {
-            await RedisContext
-                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
     }
@@ -337,6 +328,11 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return [];
         }
 
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return [];
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -346,14 +342,14 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var query = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => occurrenceIds.Contains(x.Id))
-            .WhereCanAcquire(LockHolder);
+            .WhereCanAcquire(owner);
 
         // Lock and mark InProgress
         var affected = await query
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, LockHolder)
+                        .SetProperty(x => x.LockHolder, owner)
                         .SetProperty(x => x.LockedAt, now)
                         .SetProperty(x => x.Status, JobStatus.InProgress)
                         .SetProperty(x => x.UpdatedAt, now),
@@ -370,7 +366,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Where(x => occurrenceIds.Contains(x.Id) && x.LockHolder == LockHolder && x.Status == JobStatus.InProgress)
+            .Where(x => occurrenceIds.Contains(x.Id) && x.LockHolder == owner && x.Status == JobStatus.InProgress)
             .Include(x => x.CronJob)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);

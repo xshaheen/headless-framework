@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Primitives;
@@ -11,11 +12,12 @@ public static class OrderExtensions
 {
     extension<T>(IQueryable<T> source)
     {
-        public IOrderedQueryable<T> OrderBy(params List<OrderBy> orders)
+        public IOrderedQueryable<T> OrderBy(List<OrderBy> orders)
         {
             return source.OrderBy(orders.AsReadOnlySpan());
         }
 
+        [OverloadResolutionPriority(1)]
         public IOrderedQueryable<T> OrderBy(params ReadOnlySpan<OrderBy> orders)
         {
             if (orders.IsEmpty)

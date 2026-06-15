@@ -385,7 +385,7 @@ public sealed class DistributedReadWriteLock(
 
         if (!gotLock)
         {
-            DistributedLockMetrics.LockFailed.Add(1);
+            DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
             return null;
         }
 
@@ -430,6 +430,7 @@ public sealed class DistributedReadWriteLock(
 
         var attemptToken = linkedCts?.Token ?? safetyCts.Token;
         bool gotLock;
+        var safetyDeadlineFired = false;
 
         try
         {
@@ -452,6 +453,11 @@ public sealed class DistributedReadWriteLock(
                 throw;
             }
 
+            // Caller has not cancelled, so an OCE here is the safety deadline firing (the
+            // lock-store stalled past `_NonBlockingAcquireDeadline`). Confirm via the safety CTS
+            // rather than the caller token alone, so an unrelated storage-thrown OCE falls
+            // through to `reason=contended` instead of being mislabeled a stall (#320).
+            safetyDeadlineFired = safetyCts.IsCancellationRequested;
             gotLock = false;
         }
         catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
@@ -471,13 +477,23 @@ public sealed class DistributedReadWriteLock(
             // already short-circuits on non-Write mode, but mirroring the guarded shape here
             // keeps the intent obvious. The caller-cancel catch above performs its own cleanup
             // and rethrows before reaching here when applicable; this branch handles the
-            // non-cancelled "contended" return path.
+            // non-cancelled return paths (routine contention and safety-deadline stall,
+            // distinguished below by `safetyDeadlineFired`).
             if (mode == ReaderWriterLockMode.Write)
             {
                 await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
             }
 
-            DistributedLockMetrics.LockFailed.Add(1);
+            if (safetyDeadlineFired)
+            {
+                DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonStalled);
+                logger.LogTryOnceSafetyDeadlineFired(resource, leaseId, timeWaitedForLock);
+            }
+            else
+            {
+                DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
+            }
+
             return null;
         }
 

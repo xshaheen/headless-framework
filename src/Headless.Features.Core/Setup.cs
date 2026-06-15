@@ -1,11 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
+using Headless.Caching;
 using Headless.Checks;
 using Headless.Domain;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Filters;
 using Headless.Features.Models;
+using Headless.Features.Repositories;
 using Headless.Features.Resources;
 using Headless.Features.Seeders;
 using Headless.Features.ValueProviders;
@@ -13,6 +16,7 @@ using Headless.Features.Values;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Features;
 
@@ -136,7 +140,19 @@ public static class SetupCore
         /*
          * You need to provide a storage implementation for `IFeatureValueRecordRepository`
          */
-        services.TryAddSingleton<IFeatureValueStore, FeatureValueStore>();
+        services.TryAddSingleton<IFeatureValueStore>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<FeatureManagementOptions>>().Value;
+            var cache = string.IsNullOrEmpty(options.FeatureValueCacheName)
+                ? sp.GetRequiredService<ICache>()
+                : sp.GetRequiredService<ICacheProvider>().GetCache(options.FeatureValueCacheName);
+            return new FeatureValueStore(
+                sp.GetRequiredService<IFeatureDefinitionManager>(),
+                sp.GetRequiredService<IFeatureValueRecordRepository>(),
+                sp.GetRequiredService<IGuidGenerator>(),
+                cache
+            );
+        });
         services.TryAddSingleton<IFeatureValueProviderManager, FeatureValueProviderManager>();
         services.TryAddTransient<IFeatureManager, FeatureManager>();
 

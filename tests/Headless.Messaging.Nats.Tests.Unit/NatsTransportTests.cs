@@ -66,6 +66,24 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
+    public void ResolveSubject_should_append_valid_subject_shard()
+    {
+        var message = _CreateTransportMessage("msg-123", "orders.created");
+        message.Headers[NatsMessagingHeaders.SubjectShard] = "tenant-a";
+
+        NatsTransport.ResolveSubject(message).Should().Be("orders.created.tenant-a");
+    }
+
+    [Fact]
+    public void ResolveSubject_should_ignore_invalid_subject_shard_and_fall_back_to_message_name()
+    {
+        var message = _CreateTransportMessage("msg-123", "orders.created");
+        message.Headers[NatsMessagingHeaders.SubjectShard] = "tenant.a";
+
+        NatsTransport.ResolveSubject(message).Should().Be("orders.created");
+    }
+
+    [Fact]
     public void CreatePublishHeaders_should_return_null_when_all_values_are_null()
     {
         var message = new TransportMessage(

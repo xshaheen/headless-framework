@@ -27,6 +27,8 @@ public sealed record ConsumerMetadata(
     string? HandlerId = null
 )
 {
+    private static readonly IReadOnlyDictionary<Type, object> _EmptyProviderConfigs = new Dictionary<Type, object>();
+
     /// <summary>
     /// Gets the resolved handler identity used by the runtime when an explicit id is not supplied.
     /// </summary>
@@ -41,4 +43,9 @@ public sealed record ConsumerMetadata(
     /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
     /// </summary>
     internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }
+
+    /// <summary>
+    /// Provider-specific consumer configuration registered through provider escape hatches.
+    /// </summary>
+    internal IReadOnlyDictionary<Type, object> ProviderConfigs { get; init; } = _EmptyProviderConfigs;
 }

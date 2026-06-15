@@ -50,7 +50,17 @@ options.UseNats(nats =>
         ConnectTimeout = TimeSpan.FromSeconds(10),
     };
 });
+
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString()))
+        .OnBus<OrderEventConsumer>(consumer => consumer.UseNats(nats => nats.Sharded())));
 ```
+
+`SubjectShard(...)` stamps `NatsMessagingHeaders.SubjectShard` (`headless-nats-subject-shard`) during publish. The provider appends it as one safe subject token, producing subjects such as `orders.events.42`; `.`/`*`/`>`/whitespace/control characters are rejected. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+
+When `SubjectShard(...)` is set on the producer side, every consumer registered for that message must declare `.UseNats(c => c.Sharded())`. This is validated at startup and throws `InvalidOperationException` if violated. The reason: NATS delivers zero messages with no error when a FilterSubject does not match any shard subject — the asymmetry causes silent data loss.
 
 ### Stream Auto-Creation
 
@@ -70,6 +80,7 @@ nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 - Reject sends `NAK` so JetStream can redeliver.
 - `FetchTopicsAsync(...)` groups subjects into streams and creates them when auto-creation is enabled.
 - Consumer startup creates filtered durable consumers for each subscribed subject.
+- Message-level `SubjectShard(...)` publishes to `{messageName}.{shard}`. Stream auto-creation and durable consumer filters add wildcard coverage only for consumers that declared `.UseNats(c => c.Sharded())`. Shard symmetry is enforced at startup.
 - Sequential handling preserves per-subject delivery order best. Parallel handlers and redeliveries can reorder work.
 - Subject naming, header sizes, and payload limits follow NATS and JetStream limits.
 

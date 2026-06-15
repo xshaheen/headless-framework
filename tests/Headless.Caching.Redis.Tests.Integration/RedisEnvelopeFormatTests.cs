@@ -2,17 +2,19 @@
 
 using System.Buffers.Binary;
 using System.Text;
+using Headless.Caching;
 using StackExchange.Redis;
 
 namespace Tests;
 
 public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
 {
-    private const int _HeaderLength = 19;
+    private const int _HeaderLength = 27;
     private const byte _Magic = 0xFF;
-    private const byte _Version = 0x01;
+    private const byte _Version = 0x03;
     private const byte _NullFlag = 1 << 0;
     private const byte _HasPhysicalExpiresAtFlag = 1 << 2;
+    private const byte _HasSlidingExpirationFlag = 1 << 3;
 
     [Fact]
     public async Task should_store_scalar_value_as_framed_payload_with_magic_prefix()
@@ -31,6 +33,36 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
     }
 
     [Fact]
+    public async Task should_reject_factory_store_write_when_concurrency_stamp_changed()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = DateTime.UtcNow;
+        var originalEntry = new CacheStoreEntryWrite<string>
+        {
+            Value = "original",
+            IsNull = false,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(5),
+        };
+        await store.SetEntryAsync(key, in originalEntry, AbortToken);
+        var snapshot = await store.TryGetEntryAsync<string>(key, AbortToken);
+
+        var concurrentEntry = originalEntry with { Value = "concurrent" };
+        await store.SetEntryAsync(key, in concurrentEntry, AbortToken);
+
+        var staleWrite = originalEntry with { Value = "late", ExpectedConcurrencyStamp = snapshot.ConcurrencyStamp };
+
+        var committed = await store.SetEntryAsync(key, in staleWrite, AbortToken);
+
+        committed.Should().BeFalse();
+        var value = await cache.GetAsync<string>(key, AbortToken);
+        value.Value.Should().Be("concurrent");
+    }
+
+    [Fact]
     public async Task should_map_physical_expiration_to_redis_ttl()
     {
         await FlushAsync();
@@ -43,6 +75,50 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
         var ttl = await _Database().KeyTimeToLiveAsync(key);
         ttl.Should().NotBeNull();
         ttl!.Value.Should().BeCloseTo(duration, TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task should_map_failsafe_physical_expiration_to_redis_ttl()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(5),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromSeconds(30),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(1),
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        var ttl = await _Database().KeyTimeToLiveAsync(key);
+        ttl.Should().NotBeNull();
+        ttl!.Value.Should().BeCloseTo(options.FailSafeMaxDuration, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task should_store_sliding_expiration_flag_and_map_redis_ttl_to_logical_deadline()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(30),
+            SlidingExpiration = TimeSpan.FromSeconds(5),
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        var stored = await _GetRawBytesAsync(key);
+        var ttl = await _Database().KeyTimeToLiveAsync(key);
+        (stored[2] & _HasSlidingExpirationFlag).Should().Be(_HasSlidingExpirationFlag);
+        // Value follows the fixed v3 header (27) plus the 8-byte sliding section = offset 35.
+        stored.AsSpan(35).ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
+        ttl.Should().NotBeNull();
+        ttl!.Value.Should().BeCloseTo(options.SlidingExpiration.Value, TimeSpan.FromSeconds(2));
     }
 
     [Fact]
@@ -150,6 +226,38 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
 
         logical.Should().BeOnOrAfter(before + duration - TimeSpan.FromSeconds(5));
         logical.Should().BeOnOrBefore(after + duration + TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task should_round_trip_entry_metadata_through_factory_store()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var store = (IFactoryCacheStore)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Lorem.Word();
+        var now = DateTime.UtcNow;
+        var entry = new CacheStoreEntryWrite<string>
+        {
+            Value = value,
+            IsNull = false,
+            LogicalExpiresAt = now.AddMinutes(5),
+            PhysicalExpiresAt = now.AddMinutes(10),
+            EagerRefreshAt = now.AddMinutes(4),
+            ETag = "W/\"v42\"",
+            LastModifiedAt = now.AddMinutes(-30),
+            Tags = ["tenant:1", "products"],
+        };
+
+        await store.SetEntryAsync(key, in entry, AbortToken);
+
+        var roundTripped = await store.TryGetEntryAsync<string>(key, AbortToken);
+        roundTripped.Found.Should().BeTrue();
+        roundTripped.Value.Should().Be(value);
+        roundTripped.EagerRefreshAt.Should().BeCloseTo(entry.EagerRefreshAt!.Value, TimeSpan.FromMilliseconds(1));
+        roundTripped.ETag.Should().Be(entry.ETag);
+        roundTripped.LastModifiedAt.Should().BeCloseTo(entry.LastModifiedAt!.Value, TimeSpan.FromMilliseconds(1));
+        roundTripped.Tags.Should().Equal("tenant:1", "products");
     }
 
     [Fact]

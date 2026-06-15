@@ -38,7 +38,7 @@ using Microsoft.AspNetCore.Builder;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddInMemoryCache();           // or AddRedisCache(...)
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory()); // or setup.UseRedis(...)
 builder.Services.AddIdempotency(o =>
 {
     o.IdempotencyKeyExpiration = TimeSpan.FromHours(24);

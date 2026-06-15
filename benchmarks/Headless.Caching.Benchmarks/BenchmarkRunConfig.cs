@@ -1,0 +1,49 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Diagnosers;
+using BenchmarkDotNet.Jobs;
+
+namespace Headless.Caching.Benchmarks;
+
+internal static class BenchmarkRunConfig
+{
+    private static readonly string s_artifactsPath = Path.Combine("artifacts", "benchmark", "caching");
+
+    public static IConfig Create(string[] args)
+    {
+        // DefaultConfig.Instance already registers the GitHub markdown + HTML exporters; re-adding them triggers
+        // a "exporter already present" config warning and duplicate output, so only the diagnoser is added here.
+        var config = ManualConfig
+            .Create(DefaultConfig.Instance)
+            .WithArtifactsPath(s_artifactsPath)
+            .AddDiagnoser(MemoryDiagnoser.Default);
+
+        if (!_HasExplicitJob(args))
+        {
+            config.AddJob(Job.Default.WithId("cache-comparison"));
+        }
+
+        return config;
+    }
+
+    private static bool _HasExplicitJob(string[] args)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            if (arg is "-j" or "--job")
+            {
+                return true;
+            }
+
+            if (arg.StartsWith("--job=", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}

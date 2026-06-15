@@ -52,6 +52,7 @@ This repo's abstraction-plus-provider pattern (`Headless.<Feature>.Abstractions`
 - [Headless.DistributedLocks.Tests.Harness](tests/Headless.DistributedLocks.Tests.Harness) — lock-provider conformance
 - [Headless.Orm.Tests.Harness](tests/Headless.Orm.Tests.Harness) — `HeadlessDbContext` runtime + EF Core base behavior
 - [Headless.Messaging.Core.Tests.Harness](tests/Headless.Messaging.Core.Tests.Harness) — messaging dispatch/outbox
+- [Headless.Jobs.EntityFramework.Tests.Harness](tests/Headless.Jobs.EntityFramework.Tests.Harness) — Jobs+Coordination conformance across the EF DB providers (Postgres, SqlServer); uses the interface + extensions shape (`IJobsCoordinationFixture`) rather than an abstract fixture base
 
 **Anti-pattern to avoid:** the storage-domain integration tests today (`Headless.{AuditLog,Features,Permissions,Settings}.Storage.{EntityFramework,PostgreSql,SqlServer}.Tests.Integration`) each own a private `<Provider><Feature>Fixture.cs` with substantial overlap. This is the exact shape this rule is meant to prevent — when adding a new domain or provider, extract first.
 
@@ -65,8 +66,8 @@ This repo's abstraction-plus-provider pattern (`Headless.<Feature>.Abstractions`
 
 Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — they pin configuration, results directories, and parallelism consistently. `make help` lists everything; `make` alone prints it.
 
-- **Setup**: `make bootstrap` (restores tools + packages). `make tools`, `make restore` individually.
-- **Build**: `make build` (incremental, errors-only), `make rebuild` (no incremental), `make build-project PROJECT=src/.../X.csproj`.
+- **Setup**: run `make bootstrap` when initializing a fresh clone or new worktree; it restores tools, packages, and git hooks. Use `make tools` and `make restore` individually only when you need a narrower setup step. Use `make restore-project PROJECT=src/.../X.csproj` for a project-scoped restore.
+- **Build**: `make build` (incremental, errors-only), `make rebuild` (no incremental), `make build-project PROJECT=src/.../X.csproj`. Prefer `build-project` when the work is scoped to a specified project; it restores only the selected project graph before building and does not restore the full solution.
 - **Format**: `make format` (CSharpier write), `make format-check` (verify only).
 - **Test**: `make test` (build + run all). `make test-fast` / `make test-project-fast` skip restore/build when outputs exist. Scope with `make test-project TEST_PROJECT=…`, `test-class CLASS='*ClockTests'`, `test-method METHOD=…`, `test-namespace`, `test-trait`, `test-query`. Group runs: `test-unit`, `test-integration` (needs Docker).
 - **Coverage**: `make coverage` (Cobertura), `coverage-html`, `coverage-json` (Summary.json), `coverage-open`.
@@ -91,21 +92,23 @@ Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — the
 
 **DI Registration (Setup classes):**
 
-Every provider package exposes a single static `Setup{Provider}` class in `Setup.cs` at the package root, following this shape:
+Every provider package exposes a single static `Setup{Provider}` class in `Setup.cs` at the package root. Multi-provider features follow the unified setup builder pattern (see `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md`): the feature's Core package owns the root `AddHeadless{Feature}(Action<Headless{Feature}SetupBuilder>)` entry plus the provider gates, and each provider package contributes `Use{Provider}` extension members on the builder:
 
 ```csharp
 public static class SetupRedisCache
 {
-    extension(IServiceCollection services) // C# 14 extension members
+    extension(HeadlessCachingSetupBuilder setup) // C# 14 extension members
     {
-        public IServiceCollection AddRedisCache(IConfiguration configuration, ...) { ... }
-        public IServiceCollection AddRedisCache(Action<TOptions> setupAction, ...) { ... }
-        public IServiceCollection AddRedisCache(Action<TOptions, IServiceProvider> setupAction, ...) { ... }
-
-        private IServiceCollection _AddCacheCore(...) { /* shared wiring */ }
+        public HeadlessCachingSetupBuilder UseRedis(IConfiguration configuration) { ... }
+        public HeadlessCachingSetupBuilder UseRedis(Action<TOptions> setupAction) { ... }
+        public HeadlessCachingSetupBuilder UseRedis(Action<TOptions, IServiceProvider> setupAction) { ... }
     }
+
+    private static IServiceCollection _AddCacheCore(...) { /* shared wiring */ }
 }
 ```
+
+Single-backend packages with no provider choice keep plain `Add{Feature}` extensions on `IServiceCollection` (same overload trio).
 
 - Name the shared private helper `_Add{Feature}Core`.
 

@@ -1,17 +1,18 @@
-using System.Data.Common;
 using Dapper;
-using Demo.Messages;
+using Headless.CommitCoordination.SqlServer;
 using Headless.Messaging;
-using Headless.Messaging.Storage.SqlServer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using NameGenerator.Generators;
 
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTransaction) : Controller
+public class ValuesController(IOutboxBus producer, IServiceProvider services) : Controller
 {
+    private const string MessageName = "sample.rabbitmq.sqlserver";
+
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
     {
@@ -26,12 +27,14 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
         return Ok();
     }
 
+    // Baseline: publish with no surrounding transaction. The message is stored and dispatched immediately, NOT
+    // atomic with any database write. Contrast with the coordinated endpoints below.
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
         await producer.PublishAsync(
-            new Person { Id = 123, Name = "Bar" },
-            new PublishOptions { MessageName = "sample.rabbitmq.sqlserver" }
+            new Person { Name = "Bar", Age = 42 },
+            new PublishOptions { MessageName = MessageName }
         );
 
         return Ok();
@@ -41,107 +44,128 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
     public async Task<IActionResult> Delay(int delaySeconds)
     {
         await producer.PublishAsync(
-            new Person { Id = 123, Name = "Bar" },
-            new PublishOptions { MessageName = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(delaySeconds) }
+            new Person { Name = "Bar", Age = 42 },
+            new PublishOptions { MessageName = MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) }
         );
 
         return Ok();
     }
 
-    [Route("~/delay/transaction/{delaySeconds:int}")]
-    public async Task<IActionResult> DelayWithTransaction(int delaySeconds)
+    // CAPABILITY 1 — raw ADO (Dapper) coordinated transaction via the EnlistCommitCoordination advanced seam.
+    // The caller owns the transaction (so it can pass it to Dapper) and enlists it synchronously, which makes the
+    // coordinator ambient. The PublishAsync then writes its outbox row in the SAME transaction. On SqlServer commit
+    // detection is OUT-OF-BAND (a SqlClient diagnostic listener), so committing the transaction is enough — no
+    // manual signal is needed (contrast with PostgreSQL, which requires an explicit SignalAsync).
+    [Route("~/coordinated/adonet")]
+    public async Task<IActionResult> CoordinatedAdoNet()
     {
-        await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
+        var person = new Person { Name = new RealNameGenerator().Generate(), Age = Random.Shared.Next(10, 99) };
+        var ct = HttpContext.RequestAborted;
+
+        await using var connection = new SqlConnection(AppDbContext.ConnectionString);
+        await connection.OpenAsync(ct);
+        var transaction = (SqlTransaction)await connection.BeginTransactionAsync(ct);
+
+        await using (transaction)
+        // Enlist synchronously in this frame so the ambient coordinator flows to the publish below.
+        using (connection.EnlistCommitCoordination(transaction, services))
         {
-            await using var transaction = await connection.BeginTransactionAsync(outboxTransaction, autoCommit: true);
-
-            //your business code
             await connection.ExecuteAsync(
-                "INSERT INTO Persons(Name,Age,CreateTime) VALUES(@Name,@Age, GETDATE())",
-                new { Name = new RealNameGenerator().Generate(), Age = Random.Shared.Next(10, 99) },
-                transaction: (DbTransaction?)transaction.DbTransaction
+                new CommandDefinition(
+                    "INSERT INTO Persons(Name, Age, CreateTime) VALUES(@Name, @Age, GETDATE())",
+                    new { person.Name, person.Age },
+                    transaction,
+                    cancellationToken: ct
+                )
             );
 
-            await producer.PublishAsync(
-                new Person { Id = 123, Name = "Bar" },
-                new PublishOptions
-                {
-                    MessageName = "sample.rabbitmq.sqlserver",
-                    Delay = TimeSpan.FromSeconds(delaySeconds),
-                }
-            );
+            await producer.PublishAsync(person, new PublishOptions { MessageName = MessageName }, ct);
+
+            await transaction.CommitAsync(ct); // the out-of-band diagnostic observer drains the publish on commit
         }
 
-        return Ok();
+        return Ok($"Inserted {person} and published atomically (raw ADO; out-of-band commit detection).");
     }
 
-    [Route("~/adonet/transaction")]
-    public async Task<IActionResult> AdonetWithTransaction()
+    // CAPABILITY 2 — EF Core coordinated transaction.
+    // The DbContext helper runs inside EF's execution strategy (retry-safe), opens + enlists + commits in one call.
+    // SaveChanges and the publish commit together; a retried attempt discards its buffer and re-runs cleanly.
+    [Route("~/coordinated/ef")]
+    public async Task<IActionResult> CoordinatedEntityFramework([FromServices] AppDbContext dbContext)
     {
         var person = new Person { Name = new RealNameGenerator().Generate(), Age = Random.Shared.Next(10, 99) };
 
-        await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
+        await dbContext.ExecuteCoordinatedTransactionAsync(
+            async (ctx, ct) =>
+            {
+                ((AppDbContext)ctx).Persons.Add(person);
+                await ctx.SaveChangesAsync(ct);
+
+                await producer.PublishAsync(person, new PublishOptions { MessageName = MessageName }, ct);
+            },
+            services,
+            cancellationToken: HttpContext.RequestAborted
+        );
+
+        return Ok($"Inserted {person} and published atomically (EF Core).");
+    }
+
+    // CAPABILITY 3 — rollback discards the publish (the core invariant).
+    // The INSERT and the publish are buffered, then the operation throws. The transaction rolls back, so the row is
+    // never persisted AND the message is never dispatched — no half-completed unit of work.
+    [Route("~/coordinated/rollback")]
+    public async Task<IActionResult> CoordinatedRollback([FromServices] AppDbContext dbContext)
+    {
+        var person = new Person { Name = new RealNameGenerator().Generate(), Age = Random.Shared.Next(10, 99) };
+
+        try
         {
-            await using var transaction = await connection.BeginTransactionAsync(outboxTransaction, autoCommit: false);
+            await dbContext.ExecuteCoordinatedTransactionAsync(
+                async (ctx, ct) =>
+                {
+                    ((AppDbContext)ctx).Persons.Add(person);
+                    await ctx.SaveChangesAsync(ct);
 
-            await producer.PublishAsync(person, new PublishOptions { MessageName = "sample.rabbitmq.sqlserver" });
+                    await producer.PublishAsync(person, new PublishOptions { MessageName = MessageName }, ct);
 
-            await connection.ExecuteAsync(
-                "INSERT INTO Persons(Name,Age,CreateTime) VALUES(@Name,@Age, GETDATE())",
-                param: new { person.Name, person.Age },
-                transaction: (DbTransaction?)transaction.DbTransaction
+                    throw new InvalidOperationException("Simulated failure after the buffered publish.");
+                },
+                services,
+                cancellationToken: HttpContext.RequestAborted
             );
-
-            await producer.PublishAsync(
-                person,
-                new PublishOptions { MessageName = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(5) }
-            );
-
-            await ((DbTransaction)transaction.DbTransaction!).CommitAsync();
         }
-
-        person.Name = new RealNameGenerator().Generate();
-
-        await producer.PublishAsync(person, new PublishOptions { MessageName = "sample.rabbitmq.sqlserver" });
+        catch (InvalidOperationException)
+        {
+            return Ok("Transaction rolled back: neither the row nor the message survived (discard-on-rollback).");
+        }
 
         return Ok();
     }
 
-    [Route("~/ef/transaction")]
-    public async Task<IActionResult> EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
+    // CAPABILITY 4 — delayed publish inside a coordinated transaction.
+    // The delayed message is still bound to the commit: it is only scheduled if the transaction commits.
+    [Route("~/coordinated/delay/{delaySeconds:int}")]
+    public async Task<IActionResult> CoordinatedDelay(int delaySeconds, [FromServices] AppDbContext dbContext)
     {
-        await using (await dbContext.Database.BeginTransactionAsync(outboxTransaction, autoCommit: true))
-        {
-            dbContext.Persons.Add(new Person { Name = "ef.transaction" });
-            await dbContext.SaveChangesAsync();
-            await producer.PublishAsync(
-                new Person { Id = 123, Name = "Bar" },
-                new PublishOptions { MessageName = "sample.rabbitmq.sqlserver" }
-            );
-        }
-        return Ok();
-    }
+        var person = new Person { Name = new RealNameGenerator().Generate(), Age = Random.Shared.Next(10, 99) };
 
-    [Route("~/typed/subscribe")]
-    public async Task<IActionResult> TypePublish()
-    {
-        // Add the following code to startup.cs
-        //services
-        //    .AddSingleton<IConsumerServiceSelector, TypedConsumerServiceSelector>()
-        //    .AddQueueHandlers(typeof(Startup).Assembly);
+        await dbContext.ExecuteCoordinatedTransactionAsync(
+            async (ctx, ct) =>
+            {
+                ((AppDbContext)ctx).Persons.Add(person);
+                await ctx.SaveChangesAsync(ct);
 
-        await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
-        {
-            await using var transaction = await connection.BeginTransactionAsync(outboxTransaction);
-            // This is where you would do other work that is going to persist data to your database
+                await producer.PublishAsync(
+                    person,
+                    new PublishOptions { MessageName = MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) },
+                    ct
+                );
+            },
+            services,
+            cancellationToken: HttpContext.RequestAborted
+        );
 
-            var message = TestMessage.Create($"This is message text created at {DateTime.UtcNow:O}.");
-
-            await producer.PublishAsync(message, new PublishOptions { MessageName = typeof(TestMessage).FullName! });
-            await transaction.CommitAsync();
-        }
-
-        return Content("ok");
+        return Ok($"Inserted {person}; delayed publish ({delaySeconds}s) bound to the commit.");
     }
 }
 

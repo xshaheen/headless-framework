@@ -62,10 +62,15 @@ services.AddHeadlessFeatures(setup =>
     setup.ConfigureManagement(options =>
     {
         options.CrossApplicationsCommonLockKey = "features:common_update_lock";
+        // Optional: route feature-value caching to a named cache instance or role key.
+        // Null/empty uses the default registered ICache.
+        options.FeatureValueCacheName = "features";
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+`FeatureValueCacheName` (default `null`) — optional cache instance name or `CacheConstants` role key for feature-value caching; `null`/empty uses the default registered `ICache`. Set it when feature caching should use a dedicated named cache (e.g. `setup.AddNamed("features", ...)`) rather than the application's default cache.
 
 The `(options, IServiceProvider)` overload is available when configuration needs resolved
 services. `services.Configure<FeatureManagementOptions>(...)` also works and composes with

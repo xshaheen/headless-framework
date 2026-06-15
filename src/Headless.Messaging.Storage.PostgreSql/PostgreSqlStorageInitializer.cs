@@ -2,6 +2,7 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -91,6 +92,22 @@ public sealed class PostgreSqlStorageInitializer(
             )
             .ConfigureAwait(false);
 
+        await _EnsureOwnerIndexConcurrentlyAsync(
+                connection,
+                GetReceivedTableName(),
+                indexName: "idx_received_Owner_not_null",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await _EnsureOwnerIndexConcurrentlyAsync(
+                connection,
+                GetPublishedTableName(),
+                indexName: "idx_published_Owner_not_null",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         logger.LogEnsuringTablesCreated();
     }
 
@@ -134,6 +151,28 @@ public sealed class PostgreSqlStorageInitializer(
 
         var createIndex = $"""
             CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} USING gin ("Content" gin_trgm_ops);
+            """;
+
+        await connection
+            .ExecuteNonQueryAsync(
+                createIndex,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task _EnsureOwnerIndexConcurrentlyAsync(
+        NpgsqlConnection connection,
+        string qualifiedTable,
+        string indexName,
+        CancellationToken cancellationToken
+    )
+    {
+        await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken).ConfigureAwait(false);
+
+        var createIndex = $"""
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Owner") WHERE "Owner" IS NOT NULL;
             """;
 
         await connection
@@ -213,6 +252,7 @@ public sealed class PostgreSqlStorageInitializer(
                 "ExpiresAt" TIMESTAMPTZ NULL,
                 "NextRetryAt" TIMESTAMPTZ NULL,
                 "LockedUntil" TIMESTAMPTZ NULL,
+                "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL,
                 "ExceptionInfo" text NULL
@@ -251,6 +291,7 @@ public sealed class PostgreSqlStorageInitializer(
                 "ExpiresAt" TIMESTAMPTZ NULL,
                 "NextRetryAt" TIMESTAMPTZ NULL,
                 "LockedUntil" TIMESTAMPTZ NULL,
+                "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL
             );
@@ -261,6 +302,9 @@ public sealed class PostgreSqlStorageInitializer(
             -- retry-pickup index for published is also created post-transaction via
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
+
+            ALTER TABLE {GetReceivedTableName()} ADD COLUMN IF NOT EXISTS "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL;
+            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL;
 
             """;
 

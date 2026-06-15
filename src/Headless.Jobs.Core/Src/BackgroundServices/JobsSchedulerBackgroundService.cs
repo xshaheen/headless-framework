@@ -21,6 +21,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
     private readonly JobsExecutionTaskHandler _taskHandler;
     private readonly IJobFunctionConcurrencyGate _concurrencyGate;
     private readonly TimeProvider _timeProvider;
+    private readonly IJobsOwnerIdentity _ownerIdentity;
     private int _started;
     public bool SkipFirstRun { get; set; }
     public bool IsRunning => _started == 1;
@@ -31,7 +32,8 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         JobsTaskScheduler taskScheduler,
         IInternalJobManager internalJobsManager,
         IJobFunctionConcurrencyGate concurrencyGate,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        IJobsOwnerIdentity ownerIdentity
     )
     {
         _executionContext = Argument.IsNotNull(executionContext);
@@ -40,6 +42,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         _internalJobsManager = Argument.IsNotNull(internalJobsManager);
         _concurrencyGate = Argument.IsNotNull(concurrencyGate);
         _timeProvider = Argument.IsNotNull(timeProvider);
+        _ownerIdentity = Argument.IsNotNull(ownerIdentity);
         _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
     }
 
@@ -58,27 +61,35 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        // Fail-stop (R9): on local membership loss the owner identity's token fires, so the loop exits cleanly
+        // instead of spinning on a refused stamp. On the in-memory path this token is None and never fires.
+        using var membershipLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            stoppingToken,
+            _ownerIdentity.MembershipLostToken
+        );
+        var loopToken = membershipLinkedCts.Token;
+
+        while (!loopToken.IsCancellationRequested)
         {
-            _schedulerLoopCancellationTokenSource = SafeCancellationTokenSource.CreateLinked(stoppingToken);
+            _schedulerLoopCancellationTokenSource = SafeCancellationTokenSource.CreateLinked(loopToken);
 
             try
             {
-                await _RunJobsSchedulerAsync(stoppingToken, _schedulerLoopCancellationTokenSource.Token);
+                await _RunJobsSchedulerAsync(loopToken, _schedulerLoopCancellationTokenSource.Token);
             }
             catch (OperationCanceledException)
                 when (_schedulerLoopCancellationTokenSource.Token.IsCancellationRequested
-                    && !stoppingToken.IsCancellationRequested
+                    && !loopToken.IsCancellationRequested
                 )
             {
                 // This is a restart request - release resources and continue loop
-                await _internalJobsManager.ReleaseAcquiredResources(_executionContext.Functions, stoppingToken);
+                await _internalJobsManager.ReleaseAcquiredResources(_executionContext.Functions, loopToken);
                 // Small delay to allow resources to be released
-                await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), stoppingToken);
+                await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), loopToken);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (loopToken.IsCancellationRequested)
             {
-                // Application is shutting down - release resources and exit
+                // Host shutdown or local membership loss - release resources and exit
                 await _internalJobsManager.ReleaseAcquiredResources(
                     _executionContext.Functions,
                     CancellationToken.None
@@ -90,7 +101,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 await _ReleaseAllResourcesAsync(ex);
                 // Continue running - don't exit the scheduler loop on exceptions
                 // Add a small delay to prevent tight loop if errors persist
-                await _timeProvider.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+                await _timeProvider.Delay(TimeSpan.FromSeconds(1), loopToken);
             }
             finally
             {

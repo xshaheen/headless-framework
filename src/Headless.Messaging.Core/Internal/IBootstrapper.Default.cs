@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
@@ -93,6 +94,7 @@ internal sealed class Bootstrapper(
         {
             _CheckRequirement();
             _WarnIfNoOpProvider();
+            _WarnIfNullNodeMembership();
 
             try
             {
@@ -287,6 +289,25 @@ internal sealed class Bootstrapper(
         logger.UseStorageLockWithNoOpProvider();
     }
 
+    private void _WarnIfNullNodeMembership()
+    {
+        var membership = serviceProvider.GetService<INodeMembership>();
+        if (!options.Value.UseStorageLock)
+        {
+            if (membership is not null and not NullNodeMembership)
+            {
+                logger.MessagingRecoveryDisabledWithoutStorageLock();
+            }
+
+            return;
+        }
+
+        if (membership is NullNodeMembership)
+        {
+            logger.MessagingRecoveryUsingLockedUntilFloorOnly();
+        }
+    }
+
     private void _CheckRequirement()
     {
         var marker = serviceProvider.GetService<MessagingMarkerService>();
@@ -297,12 +318,14 @@ internal sealed class Bootstrapper(
             );
         }
 
+        _DrainPendingMessageRegistrations();
+
         var messageQueueMarker = serviceProvider.GetService<MessageQueueMarkerService>();
         if (messageQueueMarker == null)
         {
             throw new InvalidOperationException(
                 "Messaging requires a transport provider. Register a native IBusTransport/IQueueTransport "
-                    + "(e.g., UseRabbitMQ, UseKafka, UseAzureServiceBus)."
+                    + "(e.g., UseRabbitMq, UseKafka, UseAzureServiceBus)."
                     + Environment.NewLine
                     + "Example: services.AddHeadlessMessaging(setup => { setup.UseRabbitMq(...); });"
             );
@@ -333,8 +356,8 @@ internal sealed class Bootstrapper(
 
     private void _CheckMessageNameCollisions()
     {
-        var registry = serviceProvider.GetService<IConsumerRegistry>();
-        var consumers = registry?.GetAll() ?? [];
+        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
+        var consumers = registry.GetAll();
         var nameToTypes = new Dictionary<string, HashSet<Type>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var consumer in consumers)
@@ -342,7 +365,9 @@ internal sealed class Bootstrapper(
             _TrackMessageName(nameToTypes, consumer.MessageName, consumer.MessageType);
         }
 
-        foreach (var mapping in options.Value.MessageNameMappings)
+        var mappings = registry.GetMessageNameMappings();
+
+        foreach (var mapping in mappings)
         {
             _TrackMessageName(nameToTypes, options.Value.ApplyMessageNamePrefix(mapping.Value), mapping.Key);
         }
@@ -551,6 +576,11 @@ internal sealed class Bootstrapper(
         {
             throw new AggregateException("One or more messaging processors failed to stop cleanly.", failures);
         }
+    }
+
+    private void _DrainPendingMessageRegistrations()
+    {
+        SetupMessaging.DrainPendingMessageRegistrations(serviceProvider, options.Value);
     }
 
     private void _StopProcessors()

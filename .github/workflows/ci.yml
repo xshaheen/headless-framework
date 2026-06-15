@@ -85,6 +85,12 @@ jobs:
       - name: "Restore"
         run: dotnet restore headless-framework.slnx
 
+      - name: "Format check"
+        run: |
+          dotnet tool restore
+          dotnet csharpier check .
+        shell: bash
+
       - name: "Build"
         run: dotnet build headless-framework.slnx --configuration ${{ env.CONFIGURATION }} --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly
 

@@ -56,7 +56,8 @@ internal sealed class QueueConsumerBuilder<TConsumer>(MessageConsumerRegistratio
     where TConsumer : class;
 
 internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumerRegistrationBuilder registration)
-    : IConsumerBuilderBase<TConsumer, TBuilder>
+    : IConsumerBuilderBase<TConsumer, TBuilder>,
+        IConsumerProviderConfigBuilder
     where TConsumer : class
     where TBuilder : class, IConsumerBuilderBase<TConsumer, TBuilder>
 {
@@ -84,6 +85,9 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
         return _Self;
     }
 
+    void IConsumerProviderConfigBuilder.SetConsumerProviderConfig(object config) =>
+        registration.SetProviderConfig(config);
+
     // The concrete builder always implements TBuilder, so this is a safe self-cast that keeps
     // the lane interface flowing through the fluent chain without duplicating the four methods.
     private TBuilder _Self => (TBuilder)(object)this;
@@ -95,6 +99,8 @@ internal sealed class MessageConsumerRegistrationBuilder(
     bool isAssemblyScan = false
 )
 {
+    private readonly ProviderConfigBag _providerConfigs = new();
+
     public IntentType IntentType { get; set; } = intentType;
 
     public string? Group { get; private set; }
@@ -135,7 +141,9 @@ internal sealed class MessageConsumerRegistrationBuilder(
         CircuitBreakerOverride = options;
     }
 
-    public MessageConsumerRegistration Build()
+    public void SetProviderConfig(object config) => _providerConfigs.Set(config);
+
+    public MessageConsumerRegistration Build(IReadOnlyDictionary<Type, object>? messageProviderConfigs = null)
     {
         return new MessageConsumerRegistration(
             consumerType,
@@ -144,7 +152,8 @@ internal sealed class MessageConsumerRegistrationBuilder(
             Group,
             Concurrency,
             HandlerId,
-            CircuitBreakerOverride
+            CircuitBreakerOverride,
+            _providerConfigs.BuildOverlay(messageProviderConfigs ?? new Dictionary<Type, object>())
         );
     }
 }

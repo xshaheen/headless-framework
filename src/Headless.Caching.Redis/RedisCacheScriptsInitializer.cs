@@ -15,6 +15,7 @@ internal sealed class RedisCacheScriptsInitializer(
         IncrementWithExpireScriptDefinition.Instance,
         CacheRemoveIfEqualScriptDefinition.Instance,
         CacheReplaceIfEqualScriptDefinition.Instance,
+        CacheTaggedSetScriptDefinition.Instance,
         SetIfHigherScriptDefinition.Instance,
         SetIfLowerScriptDefinition.Instance,
     ];

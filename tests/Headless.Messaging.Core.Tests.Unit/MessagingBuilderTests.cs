@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -25,7 +27,7 @@ public sealed class MessagingBuilderTests
         );
 
         using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
 
         // then
         var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
@@ -80,6 +82,25 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
+    public void should_resolve_real_commit_coordinator_when_registered_after_messaging()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(_ => { });
+        services.AddCommitCoordination();
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider
+            .GetRequiredService<ICurrentCommitCoordinator>()
+            .Should()
+            .BeSameAs(provider.GetRequiredService<CommitScopeStack>());
+    }
+
+    [Fact]
     public void should_prevent_duplicate_topic_mappings()
     {
         // given
@@ -131,7 +152,7 @@ public sealed class MessagingBuilderTests
         });
 
         using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
 
         // then
         registry.GetAll().Single().Group.Should().Be("shared-group");
@@ -158,7 +179,7 @@ public sealed class MessagingBuilderTests
         });
 
         using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
 
         // then
         var handlerId = MessagingConventions.GetDefaultHandlerId(typeof(TestOrderConsumer), typeof(TestOrderMessage));
@@ -213,6 +234,7 @@ public sealed class MessagingBuilderTests
         );
 
         using var provider = services.BuildServiceProvider();
+        provider.GetDrainedConsumerRegistry();
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then

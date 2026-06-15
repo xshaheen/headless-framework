@@ -40,7 +40,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         ScopeProbe probe;
         await using (var ctx = await factory.CreateDbContextAsync(TestContext.Current.CancellationToken))
         {
-            var scoped = (IHeadlessDbContext)ctx;
+            var scoped = (IHeadlessDbContextScopeOwner)ctx;
             scoped.OwnedScope.Should().NotBeNull("factory-created contexts carry their own scope");
             probe = scoped.OwnedScope!.ServiceProvider.GetRequiredService<ScopeProbe>();
             probe.IsDisposed.Should().BeFalse("scope is alive while the context is alive");
@@ -63,7 +63,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
 
         // then — different instances, different scopes
         a.Should().NotBeSameAs(b);
-        ((IHeadlessDbContext)a).OwnedScope.Should().NotBeSameAs(((IHeadlessDbContext)b).OwnedScope);
+        ((IHeadlessDbContextScopeOwner)a).OwnedScope.Should().NotBeSameAs(((IHeadlessDbContextScopeOwner)b).OwnedScope);
     }
 
     [Fact]

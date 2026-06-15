@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -54,7 +55,8 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            _timeProvider
+            _timeProvider,
+            new NullNodeMembership()
         );
         _monitoringApi = _storage.GetMonitoringApi();
 
@@ -209,6 +211,62 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         // then
         retrieved.Should().NotBeNull();
         retrieved!.StorageId.Should().Be(stored.StorageId);
+    }
+
+    #endregion
+
+    #region Get Messages By Ids Tests
+
+    [Fact]
+    public async Task should_get_published_messages_by_ids()
+    {
+        // given
+        var first = await _CreatePublishedMessage(StatusName.Succeeded);
+        var second = await _CreatePublishedMessage(StatusName.Succeeded);
+        await _CreatePublishedMessage(StatusName.Succeeded); // stored but not requested
+
+        // when - multiple ids resolved through the IN-list query
+        var result = await _monitoringApi.GetPublishedMessagesAsync([first.StorageId, second.StorageId], AbortToken);
+
+        // then
+        result.Select(m => m.StorageId).Should().BeEquivalentTo([first.StorageId, second.StorageId]);
+    }
+
+    [Fact]
+    public async Task should_get_received_messages_by_ids()
+    {
+        // given
+        var first = await _CreateReceivedMessage(StatusName.Failed);
+        var second = await _CreateReceivedMessage(StatusName.Succeeded);
+
+        // when
+        var result = await _monitoringApi.GetReceivedMessagesAsync([first.StorageId, second.StorageId], AbortToken);
+
+        // then
+        result.Select(m => m.StorageId).Should().BeEquivalentTo([first.StorageId, second.StorageId]);
+    }
+
+    [Fact]
+    public async Task should_return_only_existing_messages_when_some_ids_missing()
+    {
+        // given
+        var existing = await _CreatePublishedMessage(StatusName.Succeeded);
+
+        // when - mix a stored id with one that was never persisted
+        var result = await _monitoringApi.GetPublishedMessagesAsync([existing.StorageId, Guid.NewGuid()], AbortToken);
+
+        // then
+        result.Should().ContainSingle().Which.StorageId.Should().Be(existing.StorageId);
+    }
+
+    [Fact]
+    public async Task should_return_empty_when_ids_empty()
+    {
+        // when
+        var result = await _monitoringApi.GetPublishedMessagesAsync([], AbortToken);
+
+        // then
+        result.Should().BeEmpty();
     }
 
     #endregion

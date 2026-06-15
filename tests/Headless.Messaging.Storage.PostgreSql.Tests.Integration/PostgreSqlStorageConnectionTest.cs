@@ -1,5 +1,8 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Dapper;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -38,7 +41,8 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
-            TimeProvider.System
+            TimeProvider.System,
+            new NullNodeMembership()
         );
 
         await base.InitializeAsync();

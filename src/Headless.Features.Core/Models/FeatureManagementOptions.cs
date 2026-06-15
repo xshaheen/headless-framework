@@ -39,6 +39,9 @@ public sealed class FeatureManagementOptions
 
     /// <summary>Default: 30 seconds.</summary>
     public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
+
+    /// <summary>Optional cache instance name or store role-key for feature-value caching. When null/empty, the default registered ICache is used.</summary>
+    public string? FeatureValueCacheName { get; set; }
 }
 
 public sealed class FeatureManagementOptionsValidator : AbstractValidator<FeatureManagementOptions>

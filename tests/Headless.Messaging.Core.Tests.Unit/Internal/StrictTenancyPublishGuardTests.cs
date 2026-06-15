@@ -101,9 +101,9 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     }
 
     [Fact]
-    public void should_let_u2_reserved_header_check_fire_before_u10_when_raw_header_set_without_typed()
+    public void should_let_u2_raw_header_integrity_check_fire_before_u10_when_raw_header_set_without_typed()
     {
-        // given - U2 ReservedTenantHeader takes priority over U10 absence check
+        // given - U2 raw header integrity check takes priority over U10 absence check
         var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: "acme");
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "injected" };
 
@@ -112,12 +112,11 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
 
         // then
         var exception = act.Should().Throw<InvalidOperationException>().WithMessage("*reserved*").Which;
-        exception.Data.Count.Should().Be(1);
         exception.Data["Headers.TenantId.Raw"].Should().Be("injected");
     }
 
     [Fact]
-    public void should_let_u2_mismatch_check_fire_before_u10_when_typed_and_raw_disagree()
+    public void should_reject_raw_tenant_header_when_typed_tenant_disagrees()
     {
         // given
         var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: null);
@@ -129,7 +128,6 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
 
         // then
         var exception = act.Should().Throw<InvalidOperationException>().WithMessage("*disagrees*").Which;
-        exception.Data.Count.Should().Be(2);
         exception.Data[$"{nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)}"].Should().Be("explicit");
         exception.Data["Headers.TenantId.Raw"].Should().Be("wire-side");
     }
@@ -177,7 +175,8 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     )
     {
         var options = new MessagingOptions { TenantContextRequired = tenantContextRequired };
-        options.WithMessageNameMapping(typeof(TestMessage), "test.messageName");
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "test.messageName");
 
         var resolvedTenant = currentTenant ?? new StubCurrentTenant(ambientTenantId);
 
@@ -185,6 +184,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             Options.Create(options),
+            registry,
             resolvedTenant
         );
     }

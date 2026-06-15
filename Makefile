@@ -34,7 +34,7 @@ help: ## Show available commands.
 	@printf "  make pack CONFIGURATION=Release\n\n"
 
 .PHONY: bootstrap
-bootstrap: tools restore hooks ## Restore local tools, NuGet packages, and git hooks.
+bootstrap: tools restore hooks ## Initialize a clone/worktree: restore tools, packages, and git hooks.
 
 .PHONY: tools
 tools: ## Restore repo-pinned .NET tools.
@@ -43,6 +43,11 @@ tools: ## Restore repo-pinned .NET tools.
 .PHONY: restore
 restore: ## Restore NuGet packages.
 	$(DOTNET) restore "$(SOLUTION)"
+
+.PHONY: restore-project
+restore-project: ## Restore one project; preferred for focused project work.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
+	$(DOTNET) restore "$(PROJECT)"
 
 .PHONY: hooks
 hooks: ## Point git at the committed hooks (per clone/worktree).
@@ -57,7 +62,7 @@ rebuild: restore ## Build the solution without incremental compilation.
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: build-project
-build-project: restore ## Build one project: make build-project PROJECT=src/.../*.csproj
+build-project: restore-project ## Build one project; preferred when working on a specified project.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
 	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 

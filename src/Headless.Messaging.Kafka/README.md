@@ -54,28 +54,40 @@ options.UseKafka(kafka =>
 });
 ```
 
+Message-level Kafka knobs attach to `ForMessage<TMessage>(...)`:
+
+```csharp
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString())));
+```
+
+`PartitionBy(...)` stamps `KafkaHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+
+Consumer-side Kafka knobs attach to the consumer registration:
+
+```csharp
+options.ForMessage<OrderEvent>(message =>
+    message.OnQueue<OrderWorker>(consumer =>
+        consumer
+            .Group("orders")
+            .UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))));
+```
+
 ## Message Ordering
 
 Kafka provides **strict FIFO ordering within partitions**:
 
 ### Partition-Based Ordering
 
-Messages sent to the same partition are delivered in order. Use message keys to route related messages to the same partition:
+Messages sent to the same partition are delivered in order. Use `UseKafka(...).PartitionBy(...)` to route related messages to the same partition:
 
 ```csharp
-// Publish with partition key for ordered delivery.
-// The Kafka transport reads the partition key from KafkaHeaders.KafkaKey
-// ("headless-kafka-key") at SendAsync time.
-await publisher.PublishAsync(
-    order,
-    new PublishOptions
-    {
-        MessageName = "orders.events",
-        Headers = new Dictionary<string, string?>
-        {
-            [KafkaHeaders.KafkaKey] = order.CustomerId.ToString()
-        }
-    });
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString())));
 ```
 
 ### Configuration for Strict Ordering

@@ -1,28 +1,32 @@
 using Headless.Checks;
+using Headless.Coordination;
 using Headless.Jobs.DashboardDtos;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Infrastructure.Dashboard;
 
 internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     JobsExecutionContext executionContext,
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
-    IJobsHostScheduler tickerQHostScheduler,
+    IJobsHostScheduler jobsHostScheduler,
     IJobsNotificationHubSender notificationHubSender,
     DashboardOptionsBuilder dashboardOptions,
     IJobsDispatcher dispatcher,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    IServiceProvider serviceProvider
 ) : IJobsDashboardRepository<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
+    private readonly IServiceProvider _serviceProvider = Argument.IsNotNull(serviceProvider);
     private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider = Argument.IsNotNull(
         persistenceProvider
     );
-    private readonly IJobsHostScheduler _tickerQHostScheduler = Argument.IsNotNull(tickerQHostScheduler);
+    private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
     private readonly IJobsNotificationHubSender _notificationHubSender = Argument.IsNotNull(notificationHubSender);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
@@ -312,6 +316,66 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .ToList();
     }
 
+    public async Task<IReadOnlyList<LiveNodeView>> GetLiveNodesAsync(CancellationToken cancellationToken = default)
+    {
+        // The coordination provider is optional: the in-memory / single-process path registers no INodeMembership,
+        // and the NullNodeMembership default never reports live nodes. Either way the panel renders empty.
+        var membership = _serviceProvider.GetService<INodeMembership>();
+
+        if (membership is null or NullNodeMembership)
+        {
+            return [];
+        }
+
+        var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken);
+
+        return ProjectLiveNodes(snapshot);
+    }
+
+    /// <summary>Projects a coordination liveness snapshot into the dashboard node view. Pure — testable in isolation.</summary>
+    internal static IReadOnlyList<LiveNodeView> ProjectLiveNodes(IReadOnlyList<NodeLivenessSnapshot> snapshot)
+    {
+        var views = new List<LiveNodeView>(snapshot.Count);
+
+        foreach (var node in snapshot)
+        {
+            views.Add(
+                new LiveNodeView
+                {
+                    Identity = node.Identity.ToString(),
+                    State = node.State.ToString(),
+                    Role = node.Role,
+                    LastBeat = _ExtractLastBeat(node.Metadata),
+                    Metadata = node.Metadata,
+                }
+            );
+        }
+
+        return views;
+    }
+
+    private static string? _ExtractLastBeat(IReadOnlyDictionary<string, string> metadata)
+    {
+        // Last-beat is provider-supplied and best-effort; probe the common metadata keys without assuming any one.
+        foreach (var key in _LastBeatMetadataKeys)
+        {
+            if (metadata.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static readonly string[] _LastBeatMetadataKeys =
+    [
+        "last_beat",
+        "lastBeat",
+        "last_heartbeat",
+        "lastHeartbeat",
+    ];
+
     public async Task<CronJobEntity[]> GetCronJobsAsync(CancellationToken cancellationToken = default)
     {
         return await _persistenceProvider.GetCronJobs(null, cancellationToken);
@@ -505,7 +569,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         if (_executionContext.Functions.Any(x => x.JobId == id))
         {
-            _tickerQHostScheduler.Restart();
+            _jobsHostScheduler.Restart();
         }
     }
 

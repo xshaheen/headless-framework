@@ -14,6 +14,11 @@ namespace Headless.Threading;
 /// is automatically cleaned up when no longer in use.
 /// </para>
 /// <para>
+/// The dictionary is sharded into <see cref="_ShardCount"/> stripes to reduce contention under
+/// high key-cardinality workloads. Each acquire/release locks only the shard that owns the key
+/// rather than a single process-wide monitor.
+/// </para>
+/// <para>
 /// <b>Cache stampede protection example:</b>
 /// </para>
 /// <code>
@@ -41,8 +46,38 @@ namespace Headless.Threading;
 [PublicAPI]
 public sealed class KeyedAsyncLock : IDisposable
 {
-    private readonly Dictionary<string, RefCountedSemaphore> _semaphores = new(StringComparer.Ordinal);
+    // Power-of-two near ProcessorCount, clamped to [8, 64].
+    // Using a power of two lets shard selection reduce to a fast bitmask (hash & (_ShardCount-1))
+    // instead of a division, and avoids modulo bias.
+    private static readonly int _ShardCount = _ComputeShardCount();
+
+    private static int _ComputeShardCount()
+    {
+        // Round ProcessorCount up to the nearest power of two, then clamp.
+        var n = Environment.ProcessorCount;
+        var p = 1;
+
+        while (p < n)
+        {
+            p <<= 1;
+        }
+
+        return Math.Clamp(p, 8, 64);
+    }
+
+    private readonly Shard[] _shards;
     private bool _disposed;
+
+    /// <summary>Initializes a new <see cref="KeyedAsyncLock"/> instance.</summary>
+    public KeyedAsyncLock()
+    {
+        _shards = new Shard[_ShardCount];
+
+        for (var i = 0; i < _shards.Length; i++)
+        {
+            _shards[i] = new Shard();
+        }
+    }
 
     /// <summary>
     /// Asynchronously acquires a lock for the specified key.
@@ -70,66 +105,164 @@ public sealed class KeyedAsyncLock : IDisposable
         return new Releaser(this, key);
     }
 
-    private SemaphoreSlim _GetOrCreate(string key)
+    /// <summary>
+    /// Attempts to acquire the lock for the specified key without waiting. Useful for non-blocking
+    /// deduplication: the first caller wins and others observe the lock as held.
+    /// </summary>
+    /// <param name="key">The key to lock on.</param>
+    /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed, or <see langword="null"/> when the lock is already held.</returns>
+    [MustDisposeResource]
+    public IDisposable? TryLock(string key)
     {
-        lock (_semaphores)
-        {
-            if (_semaphores.TryGetValue(key, out var item))
-            {
-                ++item.RefCount;
-                return item.Semaphore;
-            }
+        Argument.IsNotNullOrEmpty(key);
 
-#pragma warning disable CA2000 // The SemaphoreSlim will be disposed when the RefCountedSemaphore is removed
-            var newItem = new RefCountedSemaphore(new SemaphoreSlim(1, 1));
-#pragma warning restore CA2000
-            _semaphores[key] = newItem;
-            return newItem.Semaphore;
+        var semaphore = _GetOrCreate(key);
+
+        if (!semaphore.Wait(0))
+        {
+            _DecrementRefCount(key);
+            return null;
         }
+
+        return new Releaser(this, key);
     }
 
-    private void _DecrementRefCount(string key)
+    /// <summary>
+    /// Asynchronously acquires a lock for the specified key, returning <see langword="null"/> when the timeout
+    /// elapses before acquisition.
+    /// </summary>
+    /// <param name="key">The key to lock on.</param>
+    /// <param name="timeout">The acquisition timeout, or <see cref="Timeout.InfiniteTimeSpan"/> for unbounded wait.</param>
+    /// <param name="timeProvider">The time provider used for deterministic timeout scheduling.</param>
+    /// <param name="cancellationToken">Optional cancellation token.</param>
+    /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed, or <see langword="null"/> on timeout.</returns>
+    [MustDisposeResource]
+    public async Task<IDisposable?> LockAsync(
+        string key,
+        TimeSpan timeout,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default
+    )
     {
-        lock (_semaphores)
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(timeProvider);
+
+        if (timeout == Timeout.InfiniteTimeSpan)
         {
-            if (!_semaphores.TryGetValue(key, out var item))
-            {
-                return;
-            }
-
-            --item.RefCount;
-
-            if (item.RefCount == 0)
-            {
-                _semaphores.Remove(key);
-                item.Semaphore.Dispose();
-            }
+            return await LockAsync(key, cancellationToken).ConfigureAwait(false);
         }
+
+        Argument.IsPositive(timeout);
+
+        var semaphore = _GetOrCreate(key);
+
+        // When the caller token cannot be cancelled, skip the linked CTS — one allocation instead of two.
+        if (!cancellationToken.CanBeCanceled)
+        {
+            using var delayCts = new CancellationTokenSource();
+            var waitTask = semaphore.WaitAsync(delayCts.Token);
+            var delayTask = Task.Delay(timeout, timeProvider, delayCts.Token);
+            var winner = await Task.WhenAny(waitTask, delayTask).ConfigureAwait(false);
+
+            if (winner == waitTask)
+            {
+                try
+                {
+                    await waitTask.ConfigureAwait(false);
+                }
+                catch
+                {
+                    await delayCts.CancelAsync().ConfigureAwait(false);
+                    _DecrementRefCount(key);
+                    throw;
+                }
+
+                await delayCts.CancelAsync().ConfigureAwait(false);
+                return new Releaser(this, key);
+            }
+
+            // Timeout elapsed: cancel the semaphore wait and clean up.
+            await delayCts.CancelAsync().ConfigureAwait(false);
+
+            try
+            {
+                await waitTask.ConfigureAwait(false);
+                // The wait completed in the window between the race and our cancel — treat as acquired then released.
+                _Release(key);
+            }
+            catch (OperationCanceledException)
+            {
+                // Our own delayCts triggered this; the caller did not cancel (CanBeCanceled was false).
+                _DecrementRefCount(key);
+            }
+            catch
+            {
+                _DecrementRefCount(key);
+                throw;
+            }
+
+            return null;
+        }
+
+        // Both a finite timeout AND a cancellable caller token: link them so either can abort the wait.
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var delayCts2 = new CancellationTokenSource();
+        var waitTask2 = semaphore.WaitAsync(waitCts.Token);
+        var delayTask2 = Task.Delay(timeout, timeProvider, delayCts2.Token);
+        var winner2 = await Task.WhenAny(waitTask2, delayTask2).ConfigureAwait(false);
+
+        if (winner2 == waitTask2)
+        {
+            try
+            {
+                await waitTask2.ConfigureAwait(false);
+            }
+            catch
+            {
+                await delayCts2.CancelAsync().ConfigureAwait(false);
+                _DecrementRefCount(key);
+                throw;
+            }
+
+            await delayCts2.CancelAsync().ConfigureAwait(false);
+            return new Releaser(this, key);
+        }
+
+        await waitCts.CancelAsync().ConfigureAwait(false);
+
+        try
+        {
+            await waitTask2.ConfigureAwait(false);
+            _Release(key);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Cancelled by waitCts (timeout path), not by the caller.
+            _DecrementRefCount(key);
+        }
+        catch
+        {
+            _DecrementRefCount(key);
+            throw;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return null;
     }
 
-    private void _Release(string key)
+    private Shard _GetShard(string key)
     {
-        lock (_semaphores)
-        {
-            if (!_semaphores.TryGetValue(key, out var item))
-            {
-                return;
-            }
-
-            --item.RefCount;
-
-            if (item.RefCount == 0)
-            {
-                _semaphores.Remove(key);
-                item.Semaphore.Release();
-                item.Semaphore.Dispose();
-            }
-            else
-            {
-                item.Semaphore.Release();
-            }
-        }
+        // StringComparer.Ordinal matches the per-shard dictionary comparer, ensuring the same key
+        // always maps to the same shard regardless of the calling context.
+        var hash = StringComparer.Ordinal.GetHashCode(key);
+        return _shards[hash & (_ShardCount - 1)];
     }
+
+    private SemaphoreSlim _GetOrCreate(string key) => _GetShard(key).GetOrCreate(key);
+
+    private void _DecrementRefCount(string key) => _GetShard(key).DecrementRefCount(key);
+
+    private void _Release(string key) => _GetShard(key).Release(key);
 
     /// <summary>
     /// Disposes all semaphores held by this instance.
@@ -143,14 +276,9 @@ public sealed class KeyedAsyncLock : IDisposable
 
         _disposed = true;
 
-        lock (_semaphores)
+        foreach (var shard in _shards)
         {
-            foreach (var item in _semaphores.Values)
-            {
-                item.Semaphore.Dispose();
-            }
-
-            _semaphores.Clear();
+            shard.DisposeAll();
         }
     }
 
@@ -173,5 +301,86 @@ public sealed class KeyedAsyncLock : IDisposable
     {
         public int RefCount { get; set; } = 1;
         public SemaphoreSlim Semaphore { get; } = semaphore;
+    }
+
+    // Each shard owns its lock and dictionary; all bookkeeping happens inside the shard so the monitor stays a
+    // private field (never exposed), keeping lock-target analysis happy and scoping contention to the shard.
+    private sealed class Shard
+    {
+        // Lock is .NET 9+ and performs better than lock(object) on uncontended paths.
+        private readonly Lock _gate = new();
+
+        // Internal (not private) so the test suite can reflect the live count; never used as a lock target.
+        internal readonly Dictionary<string, RefCountedSemaphore> Map = new(StringComparer.Ordinal);
+
+        public SemaphoreSlim GetOrCreate(string key)
+        {
+            lock (_gate)
+            {
+                if (Map.TryGetValue(key, out var item))
+                {
+                    ++item.RefCount;
+                    return item.Semaphore;
+                }
+
+#pragma warning disable CA2000 // The SemaphoreSlim will be disposed when the RefCountedSemaphore is removed
+                var newItem = new RefCountedSemaphore(new SemaphoreSlim(1, 1));
+#pragma warning restore CA2000
+                Map[key] = newItem;
+                return newItem.Semaphore;
+            }
+        }
+
+        public void DecrementRefCount(string key)
+        {
+            lock (_gate)
+            {
+                if (!Map.TryGetValue(key, out var item))
+                {
+                    return;
+                }
+
+                if (--item.RefCount == 0)
+                {
+                    Map.Remove(key);
+                    item.Semaphore.Dispose();
+                }
+            }
+        }
+
+        public void Release(string key)
+        {
+            lock (_gate)
+            {
+                if (!Map.TryGetValue(key, out var item))
+                {
+                    return;
+                }
+
+                if (--item.RefCount == 0)
+                {
+                    Map.Remove(key);
+                    item.Semaphore.Release();
+                    item.Semaphore.Dispose();
+                }
+                else
+                {
+                    item.Semaphore.Release();
+                }
+            }
+        }
+
+        public void DisposeAll()
+        {
+            lock (_gate)
+            {
+                foreach (var item in Map.Values)
+                {
+                    item.Semaphore.Dispose();
+                }
+
+                Map.Clear();
+            }
+        }
     }
 }

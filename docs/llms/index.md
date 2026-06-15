@@ -7,7 +7,8 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 ### Package selection
 
 - **Abstraction + provider pattern.** Depend on `Headless.*.Abstractions` interfaces. Add exactly one provider package per feature (e.g., `Headless.Caching.Redis`, `Headless.Blobs.Azure`). Never reference a provider type from application code.
-- **Caching.** Use `ICache` from `Headless.Caching.Abstractions`. Do not use `Microsoft.Extensions.Caching.Distributed.IDistributedCache` or `IMemoryCache` directly.
+- **Caching.** Use `ICache` from `Headless.Caching.Abstractions` for application cache operations. Use `Headless.Caching.Bcl` only when ASP.NET Core Session or another standard integration requires `Microsoft.Extensions.Caching.Distributed.IDistributedCache`. Do not use `IMemoryCache` directly.
+- **Coordination.** Use `INodeMembership` from `Headless.Coordination.Abstractions` for node liveness and `node@incarnation` identity. Do not use it as a consensus system or ownership ledger.
 - **Blob storage.** Use `IBlobStorage` from `Headless.Blobs.Abstractions`. Do not call cloud SDK clients (`Amazon.S3.IAmazonS3`, `Azure.Storage.Blobs.BlobServiceClient`) from application code.
 - **Serialization.** Use `ISerializer` from `Headless.Serializer.Abstractions`. Default to `Headless.Serializer.Json`; use `Headless.Serializer.MessagePack` only when binary performance is required. Do not call `System.Text.Json.JsonSerializer` directly.
 - **Distributed messaging.** Use `Headless.Messaging` abstractions. Do not use raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`, `Azure.Messaging.ServiceBus`) from application code.
@@ -100,7 +101,9 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [core.md](core.md) — Foundation utilities, DDD building blocks, guard clauses, domain events.
 - [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing.
 - [blobs.md](blobs.md) — Unified blob storage (AWS S3, Azure, file system, Redis, SFTP).
-- [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching.
+- [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching with fail-safe, refresh, tagging, and distributed factory locks.
+- [commit-coordination.md](commit-coordination.md) — Post-commit and rollback callback coordination for outbox, jobs, cache, and events.
+- [coordination.md](coordination.md) — Node membership, liveness, lifecycle events, and provider-backed fail-stop fencing.
 - [emails.md](emails.md) — Email sending (AWS SES, MailKit SMTP, dev no-op).
 - [features.md](features.md) — Feature flags with caching, value providers, EF Core storage.
 - [identity.md](identity.md) — ASP.NET Core Identity with EF Core integration.
@@ -161,9 +164,29 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Caching
 - `Headless.Caching.Abstractions` — `ICache` interface.
+- `Headless.Caching.Bcl` — BCL `IDistributedCache` adapter over a named Headless cache, for ASP.NET Core Session and standard integrations.
+- `Headless.Caching.Core` — Shared factory-backed cache orchestration.
+- `Headless.Caching.DistributedLocks` — Distributed factory-lock adapter for multi-node stampede protection.
 - `Headless.Caching.InMemory` — In-process single-instance cache.
 - `Headless.Caching.Redis` — Redis distributed cache.
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
+
+### Commit Coordination
+- `Headless.CommitCoordination.Abstractions` — Register-only commit coordinator contracts, work buffers, and capabilities.
+- `Headless.CommitCoordination.Core` — In-process coordinator, ambient stack, scope factory, and relational capability implementation.
+- `Headless.CommitCoordination.DurableWork` — Durable work buffer base with fail-closed relational provider policy.
+- `Headless.CommitCoordination.EntityFramework` — EF Core commit coordination registration points.
+- `Headless.CommitCoordination.InMemory` — Explicit in-process signal source for tests and owner-driven flows.
+- `Headless.CommitCoordination.PostgreSql` — PostgreSQL inline commit signal source.
+- `Headless.CommitCoordination.SqlServer` — SQL Server provider-key signal correlation.
+
+### Coordination
+- `Headless.Coordination.Abstractions` — Node identity, liveness, membership, and event contracts.
+- `Headless.Coordination.Core` — Provider-agnostic heartbeat engine, event stream, and fail-stop membership service.
+- `Headless.Coordination.Core.Database` — Shared relational substrate for native SQL providers.
+- `Headless.Coordination.PostgreSql` — PostgreSQL membership provider using `clock_timestamp()`.
+- `Headless.Coordination.Redis` — Redis membership provider using Lua and Redis `TIME`.
+- `Headless.Coordination.SqlServer` — SQL Server membership provider using `SYSUTCDATETIME()`.
 
 ### Email
 - `Headless.Emails.Abstractions` — Email sending interface.
@@ -289,8 +312,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Jobs.SourceGenerator` — Compile-time codegen for `[Jobs]`-marked methods.
 - `Headless.Jobs.Dashboard` — Auth and web UI for job monitoring.
 - `Headless.Jobs.OpenTelemetry` — Tracing and metrics.
-- `Headless.Jobs.EntityFramework` — EF Core job state persistence.
-- `Headless.Jobs.Caching.Redis` — Redis node registry and heartbeats.
+- `Headless.Jobs.EntityFramework` — EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching.
 
 ### TUS (Resumable Uploads)
 - `Headless.Tus` — Core TUS protocol utilities.
