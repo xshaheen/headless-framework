@@ -18,6 +18,8 @@ Bridges EF Core's transaction commit/rollback edges to commit coordination, so w
 
 **The startup gate turns the silent mis-wire into a boot-time signal.** When coordination is enabled but the interceptor is not actually attached, a transaction *looks* transactional but isn't — publishes drain as rollback and vanish with no error. `CommitInterceptorStartupGate<TContext>` runs before any hosted service: it commits an empty transaction (no data mutated) on the consumer's `DbContext` and asserts the commit interceptor fired. On a mis-wire it logs a loud warning (`Warn`, the default) or throws at startup (`Strict`, opt-in via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitInterceptorProbeMode.Strict)`). The on-by-default `Headless.Messaging.Core` EF storage path enables this gate automatically; raw-ADO storage paths attach no interceptor and use the SqlServer/PostgreSql signal sources instead.
 
+The probe opens a real (empty) transaction against the database on every host start. Set `Mode = CommitInterceptorProbeMode.Disabled` to skip that round-trip — the escape-hatch for a cold-start latency budget or a boot environment where the database is not yet reachable. The cost is losing early mis-wire detection; durability is unaffected because the outbox row and relay sweep recover the work either way.
+
 ## Installation
 
 ```bash

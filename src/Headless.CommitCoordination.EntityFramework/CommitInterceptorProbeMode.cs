@@ -10,7 +10,13 @@ namespace Headless.CommitCoordination.EntityFramework;
 [PublicAPI]
 public enum CommitInterceptorProbeMode
 {
-    /// <summary>Skip the probe entirely.</summary>
+    /// <summary>
+    /// Skip the probe entirely. The escape-hatch when the per-host-start round-trip (an empty-transaction commit
+    /// against the database) is unwanted — e.g. a cold-start latency budget or an environment where the database is
+    /// not reachable at boot. The trade-off is losing early mis-wire detection: an interceptor that is registered but
+    /// not firing stays silent until a real publish drains as a rollback. The durable outbox row + relay sweep still
+    /// recover the work regardless; only the early signal is lost.
+    /// </summary>
     Disabled = 0,
 
     /// <summary>Log a loud warning when the interceptor is not firing, but let the host start. The default.</summary>
