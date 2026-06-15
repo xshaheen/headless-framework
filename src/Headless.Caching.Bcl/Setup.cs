@@ -44,8 +44,24 @@ public static class SetupBclCache
             var cacheName = Argument.IsNotNullOrWhiteSpace(configuredOptions.CacheName);
             Argument.IsPositive(configuredOptions.DefaultAbsoluteExpiration);
 
-            // AddNamed validates the reserved-key/uniqueness rules and the single-provider invariant.
-            setup.AddNamed(cacheName, configureCache);
+            // AddNamed validates the reserved-key/uniqueness rules and the single-provider invariant. The adapter
+            // owns the raw-bytes codec (_AddBclCacheCore registers it keyed by cache name), so a serializer set on
+            // the instance would silently compete with it — reject it loudly instead of letting last-write-wins decide.
+            setup.AddNamed(
+                cacheName,
+                instance =>
+                {
+                    configureCache(instance);
+
+                    if (instance.SerializerFactory is not null)
+                    {
+                        throw new InvalidOperationException(
+                            $"The BCL cache adapter manages its own raw-bytes serializer for cache '{cacheName}'. "
+                                + "Do not call WithSerializer in the configureCache callback."
+                        );
+                    }
+                }
+            );
 
             setup.RegisterCrossCuttingExtension(services => services._AddBclCacheCore(configuredOptions));
 
