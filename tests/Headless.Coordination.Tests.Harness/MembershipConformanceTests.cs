@@ -355,15 +355,39 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var store = node.Services.GetRequiredService<IMembershipStore>();
         var unregistered = new NodeIdentity(new NodeId("node-z"), new NodeIncarnation(1));
 
-        // Within the retention window the targeted read must equal the snapshot's per-identity state across all
-        // states, and null exactly when the identity is absent from the snapshot.
-        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
-        var present = await store.ReadNodeLivenessAsync(identity, AbortToken);
+        // Within the retention window the targeted read must equal the snapshot's per-identity state across every
+        // classification — Alive, Suspected, and Dead-but-retained — and null exactly when the identity is absent
+        // from the snapshot. Each band stays inside the retention window, so the snapshot read's prune never
+        // deletes the row and masks a divergence; advancing the store clock walks the same row through all three
+        // states. Pinning each band to its expected literal stops the agreement assertion from passing vacuously
+        // when both paths classify the same wrong state.
+
+        // Alive immediately after register, plus the absent identity.
+        var aliveSnapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+        var alive = await store.ReadNodeLivenessAsync(identity, AbortToken);
         var absent = await store.ReadNodeLivenessAsync(unregistered, AbortToken);
 
-        present.Should().Be(snapshot.FirstOrDefault(x => x.Identity == identity)?.State);
-        absent.Should().Be(snapshot.FirstOrDefault(x => x.Identity == unregistered)?.State);
+        alive.Should().Be(aliveSnapshot.FirstOrDefault(x => x.Identity == identity)?.State);
+        alive.Should().Be(NodeLivenessState.Alive);
+        absent.Should().Be(aliveSnapshot.FirstOrDefault(x => x.Identity == unregistered)?.State);
         absent.Should().BeNull();
+
+        // Suspected.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
+        var suspectedSnapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+        var suspected = await store.ReadNodeLivenessAsync(identity, AbortToken);
+        suspected.Should().Be(suspectedSnapshot.FirstOrDefault(x => x.Identity == identity)?.State);
+        suspected.Should().Be(NodeLivenessState.Suspected);
+
+        // Dead, still inside the retention window.
+        await TimeProvider.System.Delay(
+            CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
+            AbortToken
+        );
+        var deadSnapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+        var dead = await store.ReadNodeLivenessAsync(identity, AbortToken);
+        dead.Should().Be(deadSnapshot.FirstOrDefault(x => x.Identity == identity)?.State);
+        dead.Should().Be(NodeLivenessState.Dead);
     }
 
     public virtual async Task should_derive_is_alive_from_targeted_read()
@@ -378,6 +402,18 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         // The current incarnation is alive; the superseded prior incarnation is not.
         (await second.Membership.IsAliveAsync(secondIdentity, AbortToken)).Should().BeTrue();
         (await second.Membership.IsAliveAsync(firstIdentity, AbortToken)).Should().BeFalse();
+
+        // IsAliveAsync maps every non-Alive targeted state to false, not just absence. As the current-generation
+        // node ages out of the alive band its targeted state becomes Suspected, then Dead — both derive false
+        // (only Alive is true), so this pins the R4 derivation beyond the superseded/absent case above.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
+        (await second.Membership.IsAliveAsync(secondIdentity, AbortToken)).Should().BeFalse();
+
+        await TimeProvider.System.Delay(
+            CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
+            AbortToken
+        );
+        (await second.Membership.IsAliveAsync(secondIdentity, AbortToken)).Should().BeFalse();
     }
 
     private static string _Cluster()
