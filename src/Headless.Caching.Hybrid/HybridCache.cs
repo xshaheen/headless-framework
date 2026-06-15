@@ -110,16 +110,27 @@ public sealed partial class HybridCache(
 
         if (message.Clear)
         {
-            // Logical clear: O(1) L1 clear-generation marker bump. Reserves are preserved (unlike FlushAll). A
-            // locally re-created entry with a newer birth time is naturally not invalidated by this marker, so no
-            // recovery-aware walk is needed.
-            await LocalCache.ClearAsync(ct).ConfigureAwait(false);
-            // Push the marker into the L2 local cache too (when it caches markers): without this, an L1-miss
-            // read on this peer would fall through to L2 and observe the clear only after L2's refresh window.
-            // The notification already carries the timestamp, so no L2 round-trip is needed (FusionCache pattern).
+            var clearAt = message.Timestamp ?? _timeProvider.GetUtcNow();
+
+            // Seed the L1 clear-generation marker from the ORIGINATOR's timestamp (raise-only), not via ClearAsync
+            // which would stamp the receiver's own clock: under cross-node clock skew a receiver lagging the origin
+            // would write a marker older than a freshly-born local entry and fail to invalidate it. Reserves are
+            // preserved (unlike FlushAll). Fall back to a local-clock ClearAsync only when L1 cannot be seeded.
+            if (LocalCache is ISeedableTagMarkerCache l1Markers)
+            {
+                l1Markers.SeedClearMarker(clearAt);
+            }
+            else
+            {
+                await LocalCache.ClearAsync(ct).ConfigureAwait(false);
+            }
+
+            // Seed the L2 provider's process-local marker cache too (when it caches markers): without this, an
+            // L1-miss read on this peer would fall through to L2 and observe the clear only after L2's refresh
+            // window. The notification carries the timestamp, so no L2 round-trip is needed (FusionCache pattern).
             if (l2Cache is ISeedableTagMarkerCache l2Markers)
             {
-                l2Markers.SeedClearMarker(message.Timestamp ?? _timeProvider.GetUtcNow());
+                l2Markers.SeedClearMarker(clearAt);
             }
 
             return;
@@ -133,16 +144,29 @@ public sealed partial class HybridCache(
 
         if (!string.IsNullOrEmpty(message.Tag))
         {
-            // O(1) L1 tag-marker bump. Family-2 logical invalidation is version-pinned by entry birth time, so a
-            // pending recovery write that landed after this invalidation carries a newer CreatedAt and is not
-            // invalidated by the older marker — the previous recovery-aware GetTaggedKeys walk is unnecessary.
-            await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
-            // Push the marker into the L2 local cache too (when it caches markers) so an L1-miss read on this peer
-            // observes the invalidation immediately rather than after L2's refresh window. The notification carries
-            // the timestamp, so no L2 round-trip is needed (FusionCache's payload-carrying-backplane optimization).
+            var tagAt = message.Timestamp ?? _timeProvider.GetUtcNow();
+
+            // Seed the L1 tag marker from the ORIGINATOR's timestamp (raise-only), not via RemoveByTagAsync which
+            // stamps the receiver's local clock — under clock skew a lagging receiver would record a marker older
+            // than the invalidated entries' CreatedAt and miss the invalidation. Family-2 logical invalidation is
+            // version-pinned by entry birth time, so a pending recovery write that landed after this invalidation
+            // carries a newer CreatedAt and is naturally not invalidated by the older marker. Fall back to a
+            // local-clock RemoveByTagAsync only when L1 cannot be seeded.
+            if (LocalCache is ISeedableTagMarkerCache l1Markers)
+            {
+                l1Markers.SeedTagMarker(message.Tag, tagAt);
+            }
+            else
+            {
+                await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
+            }
+
+            // Seed the L2 provider's process-local marker cache too so an L1-miss read on this peer observes the
+            // invalidation immediately rather than after L2's refresh window. The notification carries the
+            // timestamp, so no L2 round-trip is needed (FusionCache's payload-carrying-backplane optimization).
             if (l2Cache is ISeedableTagMarkerCache l2Markers)
             {
-                l2Markers.SeedTagMarker(message.Tag, message.Timestamp ?? _timeProvider.GetUtcNow());
+                l2Markers.SeedTagMarker(message.Tag, tagAt);
             }
 
             return;

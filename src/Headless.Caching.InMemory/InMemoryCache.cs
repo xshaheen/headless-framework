@@ -12,7 +12,7 @@ using Nito.AsyncEx;
 namespace Headless.Caching;
 
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
-public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposable
+public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedableTagMarkerCache, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
 
@@ -1592,6 +1592,35 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         } while (Interlocked.CompareExchange(ref _clearGenerationTicks, nowTicks, current) != current);
 
         return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public void SeedTagMarker(string tag, DateTimeOffset invalidatedAt)
+    {
+        Argument.IsNotNullOrEmpty(tag);
+
+        // Raise-only seed from a backplane notification: apply the originator's timestamp, NOT this node's local
+        // clock, so a receiver whose clock lags the origin still records a marker newer than the invalidated
+        // entries' CreatedAt (the cross-node clock-skew trap). Never lower a marker we already know to be newer.
+        var at = invalidatedAt.UtcDateTime;
+        _tagMarkers.AddOrUpdate(tag, at, (_, existing) => at > existing ? at : existing);
+    }
+
+    /// <inheritdoc />
+    public void SeedClearMarker(DateTimeOffset invalidatedAt)
+    {
+        // Raise-only CAS using the originator's timestamp (see SeedTagMarker). Never move the generation backwards.
+        var ticks = invalidatedAt.UtcDateTime.Ticks;
+
+        long current;
+        do
+        {
+            current = Interlocked.Read(ref _clearGenerationTicks);
+            if (ticks <= current)
+            {
+                break;
+            }
+        } while (Interlocked.CompareExchange(ref _clearGenerationTicks, ticks, current) != current);
     }
 
     /// <summary>

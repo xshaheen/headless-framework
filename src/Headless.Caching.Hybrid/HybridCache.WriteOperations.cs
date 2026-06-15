@@ -917,16 +917,40 @@ public sealed partial class HybridCache
         Argument.IsNotNullOrEmpty(tag);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Publish FIRST (matching the write-path ordering rationale: minimize the window in which another
-        // instance re-populates its L1 from a not-yet-invalidated L2), then bump the L2 marker, then our own L1.
+        // One timestamp generated here flows through L1, the broadcast, and L2 (FusionCache's single-clock model),
+        // so every node — origin and peers — version-pins this invalidation against the same instant.
+        var invalidatedAt = _timeProvider.GetUtcNow();
+
+        // L1 FIRST and unconditional: the local marker bump is in-process and infallible, so this node's own
+        // invalidation always takes effect even when L2 is unreachable. Seed it with invalidatedAt (not the local
+        // store's own clock) so L1 agrees with the broadcast timestamp peers will apply.
+        if (LocalCache is ISeedableTagMarkerCache l1Markers)
+        {
+            l1Markers.SeedTagMarker(tag, invalidatedAt);
+        }
+        else
+        {
+            await LocalCache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Broadcast carrying the timestamp so peers seed their L1/L2 from the origin clock; publish before the L2
+        // bump to minimize the window in which a peer re-populates its L1 from a not-yet-invalidated L2.
         await _PublishInvalidationAsync(
-                new CacheInvalidationMessage { InstanceId = _instanceId, Tag = tag },
+                new CacheInvalidationMessage
+                {
+                    InstanceId = _instanceId,
+                    Tag = tag,
+                    Timestamp = invalidatedAt,
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        await l2Cache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
-        await LocalCache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
+        // L2 marker bump is best-effort under the circuit breaker: a remote failure trips the circuit and is
+        // logged, never abandoning the local + peer invalidation already applied. A missed bump self-heals within
+        // L2's TagMarkerRefreshWindow / the marker's physical-TTL backstop.
+        await _BumpL2MarkerBestEffortAsync(ct => l2Cache.RemoveByTagAsync(tag, ct), tag, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -935,16 +959,64 @@ public sealed partial class HybridCache
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Logical clear: bump the L2 then L1 clear-generation markers and broadcast so peers bump theirs.
-        // Publish first for the same ordering rationale as RemoveByTagAsync. Reserves are preserved on all tiers.
+        // Single-clock model (see RemoveByTagAsync): L1 first and unconditional, then broadcast, then best-effort
+        // L2 under the circuit breaker. Reserves are preserved on all tiers (logical clear, not a physical wipe).
+        var invalidatedAt = _timeProvider.GetUtcNow();
+
+        if (LocalCache is ISeedableTagMarkerCache l1Markers)
+        {
+            l1Markers.SeedClearMarker(invalidatedAt);
+        }
+        else
+        {
+            await LocalCache.ClearAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await _PublishInvalidationAsync(
-                new CacheInvalidationMessage { InstanceId = _instanceId, Clear = true },
+                new CacheInvalidationMessage
+                {
+                    InstanceId = _instanceId,
+                    Clear = true,
+                    Timestamp = invalidatedAt,
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        await l2Cache.ClearAsync(cancellationToken).ConfigureAwait(false);
-        await LocalCache.ClearAsync(cancellationToken).ConfigureAwait(false);
+        await _BumpL2MarkerBestEffortAsync(ct => l2Cache.ClearAsync(ct), "*", cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Applies a Family-2 marker bump (tag or clear) to L2 as a best-effort operation: skipped when the
+    /// distributed-cache circuit is open, and on failure it trips the circuit and logs rather than propagating —
+    /// the caller has already applied the infallible L1 bump and broadcast the invalidation, so a missed L2 marker
+    /// self-heals within the L2 refresh window. Honours <see cref="HybridCacheOptions.ReThrowDistributedCacheExceptions"/>.
+    /// </summary>
+    private async ValueTask _BumpL2MarkerBestEffortAsync(
+        Func<CancellationToken, ValueTask> bump,
+        string circuitKey,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!_IsDistributedCacheCircuitClosed())
+        {
+            return;
+        }
+
+        try
+        {
+            await bump(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+        {
+            _OpenDistributedCacheCircuit(exception, circuitKey);
+            _logger.LogFailedToWriteToL2Cache(exception, circuitKey);
+
+            if (options.ReThrowDistributedCacheExceptions)
+            {
+                throw;
+            }
+        }
     }
 
     /// <inheritdoc />
