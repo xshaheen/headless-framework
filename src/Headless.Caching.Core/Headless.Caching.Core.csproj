@@ -14,5 +14,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
   </ItemGroup>
 </Project>
