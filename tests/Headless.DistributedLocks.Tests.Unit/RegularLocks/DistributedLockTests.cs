@@ -687,7 +687,7 @@ public sealed class DistributedLockTests : TestBase
     // lock-store call cannot hang the caller indefinitely, even when the caller's
     // CancellationToken does not fire.
 
-    private const int _SafetyDeadlineSeconds = 10; // Mirrors _NonBlockingAcquireDeadline in DistributedLock.
+    private const int _SafetyDeadlineSeconds = DistributedLockTestSupport.NonBlockingAcquireDeadlineSeconds; // Mirrors _NonBlockingAcquireDeadline.
 
     private static Func<NSubstitute.Core.CallInfo, ValueTask<DistributedLockAcquireResult>> _HangForeverInsert =>
         ci => new ValueTask<DistributedLockAcquireResult>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3)));
@@ -768,44 +768,9 @@ public sealed class DistributedLockTests : TestBase
             .BeFalse("safety deadline must fire before the caller's much-later deadline");
     }
 
-    // EventId 24 == RegularLockLoggerExtensions.LogTryOnceSafetyDeadlineFired.
-    private const int _SafetyDeadlineFiredEventId = 24;
-
-    // EventId 13 == RegularLockLoggerExtensions.LogFailedToAcquireLockAfter (routine contention).
-    private const int _FailedToAcquireLockAfterEventId = 13;
-
-    private static List<string> _CaptureLockFailedReasons(MeterListener listener)
-    {
-        var reasons = new List<string>();
-
-        listener.InstrumentPublished = (instrument, l) =>
-        {
-            if (instrument.Meter.Name == "Headless.DistributedLocks" && instrument.Name == "headless.lock.failed")
-            {
-                l.EnableMeasurementEvents(instrument);
-            }
-        };
-
-        listener.SetMeasurementEventCallback<int>(
-            (_, _, tags, _) =>
-            {
-                foreach (var tag in tags)
-                {
-                    if (tag is { Key: "reason", Value: string reason })
-                    {
-                        lock (reasons)
-                        {
-                            reasons.Add(reason);
-                        }
-                    }
-                }
-            }
-        );
-
-        listener.Start();
-
-        return reasons;
-    }
+    // EventId values live in DistributedLockTestSupport (single source across the lock test classes).
+    private const int _SafetyDeadlineFiredEventId = DistributedLockTestSupport.SafetyDeadlineFiredEventId;
+    private const int _FailedToAcquireLockAfterEventId = DistributedLockTestSupport.FailedToAcquireLockAfterEventId;
 
     [Fact]
     public async Task should_log_safety_deadline_eventid_and_tag_metric_stalled_when_deadline_fires()
@@ -816,23 +781,11 @@ public sealed class DistributedLockTests : TestBase
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(_HangForeverInsert);
 
-        var logger = Substitute.For<ILogger<DistributedLock>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var captured = new List<int>();
-        logger
-            .When(l =>
-                l.Log(
-                    Arg.Any<LogLevel>(),
-                    Arg.Any<EventId>(),
-                    Arg.Any<object>(),
-                    Arg.Any<Exception?>(),
-                    Arg.Any<Func<object, Exception?, string>>()
-                )
-            )
-            .Do(call => captured.Add(call.Arg<EventId>().Id));
+        var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
 
         using var meterListener = new MeterListener();
-        var failedReasons = _CaptureLockFailedReasons(meterListener);
+        var failedReasons = DistributedLockTestSupport.CaptureFailedReasons(meterListener, "headless.lock.failed");
 
         var provider = _CreateProvider(storage: storage, logger: logger);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -868,23 +821,11 @@ public sealed class DistributedLockTests : TestBase
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(DistributedLockAcquireResult.Failed));
 
-        var logger = Substitute.For<ILogger<DistributedLock>>();
-        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var captured = new List<int>();
-        logger
-            .When(l =>
-                l.Log(
-                    Arg.Any<LogLevel>(),
-                    Arg.Any<EventId>(),
-                    Arg.Any<object>(),
-                    Arg.Any<Exception?>(),
-                    Arg.Any<Func<object, Exception?, string>>()
-                )
-            )
-            .Do(call => captured.Add(call.Arg<EventId>().Id));
+        var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
 
         using var meterListener = new MeterListener();
-        var failedReasons = _CaptureLockFailedReasons(meterListener);
+        var failedReasons = DistributedLockTestSupport.CaptureFailedReasons(meterListener, "headless.lock.failed");
 
         var provider = _CreateProvider(storage: storage, logger: logger);
         var resource = Faker.Random.AlphaNumeric(10);

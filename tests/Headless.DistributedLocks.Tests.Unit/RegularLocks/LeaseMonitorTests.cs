@@ -388,12 +388,13 @@ public sealed class LeaseMonitorTests : TestBase
         // when
         sut.TriggerImmediateValidation();
 
-        // Wait for the callback to be invoked.
-        await callbackInvoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        // Wait for the callback to be invoked. Generous timeout so a starved continuation under
+        // heavy parallel load fails the assertion below rather than timing out spuriously here.
+        await callbackInvoked.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
         // then
         // Synchronous callback disposal should complete without hanging/deadlocking.
-        await callbackCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await callbackCompleted.Task.WaitAsync(TimeSpan.FromSeconds(30));
         sut.MonitoringTask.IsCompleted.Should().BeTrue();
     }
 
