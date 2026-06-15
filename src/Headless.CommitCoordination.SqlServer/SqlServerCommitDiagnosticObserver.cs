@@ -141,9 +141,10 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
 
     private void _Drain(ValueTask drain)
     {
-        // Fast path: an uncoordinated transaction's signal completes synchronously (no scope attached). Nothing to
-        // track or observe — skip the Task allocation entirely. Only a pending (or synchronously-faulted) drain is
-        // materialized and tracked for the shutdown wait.
+        // Fast path: an uncoordinated transaction's signal completes synchronously AND successfully (no scope
+        // attached) — IsCompletedSuccessfully is true, so skip the Task allocation entirely. A pending drain, or a
+        // synchronously-FAULTED one (IsCompletedSuccessfully is false), falls through to AsTask() below, where the
+        // continuation tracks it for the shutdown wait and observes/logs any fault — never silently swallowed.
         if (drain.IsCompletedSuccessfully)
         {
             return;

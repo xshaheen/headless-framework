@@ -81,7 +81,10 @@ internal sealed partial class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMes
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             // Latency degradation, not data loss: the undispatched messages remain in the durable store and the
-            // relay sweep picks them up. Surface it so a chronically slow broker is diagnosable.
+            // relay sweep picks them up. Surface it so a chronically slow broker is diagnosable. A timeout subsumes
+            // any per-message broker faults recorded earlier in this same flush — those were already logged
+            // individually (LogMessageDispatchFailed) and are equally relay-recoverable, so the timeout is the
+            // single drain signal here rather than re-throwing the accumulated faults.
             LogFlushTimedOut(_logger, _flushTimeout);
 
             return;

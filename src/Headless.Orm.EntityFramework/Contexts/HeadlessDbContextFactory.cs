@@ -75,9 +75,20 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
     private static TDbContext _AttachScope(IServiceScope scope)
     {
         var context = scope.ServiceProvider.GetRequiredService<TDbContext>();
+
         // Hand scope ownership through the internal seam — OwnedScope is not on the public IHeadlessDbContext.
-        // Every Headless context base implements IHeadlessDbContextScopeOwner, so the cast always succeeds.
-        ((IHeadlessDbContextScopeOwner)context).OwnedScope = scope;
+        // Every Headless context base implements IHeadlessDbContextScopeOwner; a context that implements
+        // IHeadlessDbContext by hand (without deriving from HeadlessDbContext/HeadlessIdentityDbContext) cannot
+        // own a factory scope — fail with an actionable message rather than a bare InvalidCastException.
+        if (context is not IHeadlessDbContextScopeOwner scopeOwner)
+        {
+            throw new InvalidOperationException(
+                $"`{typeof(TDbContext).FullName}` must derive from HeadlessDbContext or HeadlessIdentityDbContext "
+                    + "to be created through HeadlessDbContextFactory."
+            );
+        }
+
+        scopeOwner.OwnedScope = scope;
 
         return context;
     }

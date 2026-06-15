@@ -7,12 +7,13 @@ using Microsoft.Extensions.Logging;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Shared owned-scope teardown for the Headless DbContext bases, exposed as extensions on the
-/// <see cref="IHeadlessDbContext"/> seam. Both <see cref="HeadlessDbContext"/> and the Identity context
+/// Shared owned-scope teardown for the Headless DbContext bases, exposed as extensions on the internal
+/// <see cref="IHeadlessDbContextScopeOwner"/> seam. Both <see cref="HeadlessDbContext"/> and the Identity context
 /// call these so the dispose semantics (resolve-logger-first, categorize under the concrete context type,
 /// guard against a secondary scope-dispose failure masking the primary exception, prefer async scope
 /// disposal) stay identical — the contexts cannot share a base class (the Identity context must derive from
-/// <c>IdentityDbContext</c>), so the behavior lives here.
+/// <c>IdentityDbContext</c>), so the behavior lives here. The seam receiver makes the owned-scope access
+/// compile-time safe (no runtime cast) and binds only on types that actually own a scope.
 /// </summary>
 /// <remarks>
 /// Only the owned-scope step is centralized: <c>base</c> disposal, runtime teardown, and
@@ -21,9 +22,9 @@ namespace Headless.EntityFramework;
 /// </remarks>
 internal static class HeadlessDbContextDisposal
 {
-    public static void DisposeOwnedScope(this IHeadlessDbContext context)
+    public static void DisposeOwnedScope(this IHeadlessDbContextScopeOwner context)
     {
-        var ownedScope = ((IHeadlessDbContextScopeOwner)context).OwnedScope;
+        var ownedScope = context.OwnedScope;
 
         if (ownedScope is null)
         {
@@ -46,9 +47,9 @@ internal static class HeadlessDbContextDisposal
         }
     }
 
-    public static async ValueTask DisposeOwnedScopeAsync(this IHeadlessDbContext context)
+    public static async ValueTask DisposeOwnedScopeAsync(this IHeadlessDbContextScopeOwner context)
     {
-        var ownedScope = ((IHeadlessDbContextScopeOwner)context).OwnedScope;
+        var ownedScope = context.OwnedScope;
 
         if (ownedScope is null)
         {

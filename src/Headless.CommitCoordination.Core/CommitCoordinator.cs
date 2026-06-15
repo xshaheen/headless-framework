@@ -168,8 +168,9 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
 
         // Runs after the drain completes (or faults) so a caller offloading the drain can order post-drain work
         // — e.g. disposing promoted child registrations only once the rollback drain has invoked them. A cleanup
-        // fault must NOT mask the drain fault (a bare finally would): prefer the drain exception, and surface both
-        // via AggregateException when afterDrain also throws.
+        // fault must NOT mask the drain fault (a bare finally would): if only one side throws it propagates alone;
+        // if both throw, surface them together via AggregateException (the drain fault's original stack is
+        // preserved on the captured ExceptionDispatchInfo's SourceException).
         try
         {
             afterDrain?.Invoke();

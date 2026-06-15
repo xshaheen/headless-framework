@@ -32,6 +32,8 @@ internal sealed class OutboxIntegrationEventDispatcher(
     {
         Argument.IsNotNull(integrationEvents);
 
+        // An empty list can't dispatch anything non-atomically, so the coordination guard only matters when there
+        // is real work — bail before it.
         if (integrationEvents.Count == 0)
         {
             return;
