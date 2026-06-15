@@ -1,0 +1,28 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.CommitCoordination</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.CommitCoordination.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.InMemory" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.SqlServer" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.Tests.Harness" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.Conformance.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.DurableWork.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.EntityFramework.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.PostgreSql.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.SqlServer.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
+</Project>

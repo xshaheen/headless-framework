@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.CommitCoordination.DurableWork\Headless.CommitCoordination.DurableWork.csproj" />
+    <ProjectReference Include="..\..\src\Headless.CommitCoordination.InMemory\Headless.CommitCoordination.InMemory.csproj" />
+    <ProjectReference Include="..\Headless.CommitCoordination.Tests.Harness\Headless.CommitCoordination.Tests.Harness.csproj" />
+  </ItemGroup>
+</Project>

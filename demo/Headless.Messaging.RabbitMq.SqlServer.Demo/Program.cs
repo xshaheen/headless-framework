@@ -1,15 +1,20 @@
 using Dapper;
 using Demo;
+using Headless.CommitCoordination.SqlServer;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure services
 //docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=yourStrong(!)Password" -e "MSSQL_PID=Evaluation" -p 1433:1433 \
 // --name sqlpreview --hostname sqlpreview -d mcr.microsoft.com/mssql/server:2022-preview-ubuntu-22.04
-builder.Services.AddDbContext<AppDbContext>();
+// Plain AddDbContext — no AddInterceptors needed: because messaging uses the EF storage path
+// (setup.UseEntityFramework<AppDbContext>() below), the transactional outbox is ON BY DEFAULT and the
+// commit-coordination interceptor is auto-attached to this context's options.
+builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlServer(AppDbContext.ConnectionString));
 
 //builder.Services
 //    .AddSingleton<IConsumerServiceSelector, TypedConsumerServiceSelector>()
@@ -41,6 +46,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.UseDashboard(d => d.WithNoAuth());
 
     //setup.Options.EnablePublishParallelSend = true;
+    // (commit-coordination registration follows AddHeadlessMessaging, below)
 
     //setup.Options.RetryPolicy.OnExhausted = (failed, ct) =>
     //{
@@ -52,6 +58,12 @@ builder.Services.AddHeadlessMessaging(setup =>
     //};
     //setup.Options.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
 });
+
+// The EF-storage path already enabled the transactional outbox (commit coordination + EF interceptor) by default,
+// so the /coordinated/ef, /coordinated/rollback, and /coordinated/delay endpoints need no extra wiring. This single
+// call is only for the raw-ADO /coordinated/adonet endpoint, which enlists a raw SqlConnection via the SqlServer
+// out-of-band diagnostic signal source.
+builder.Services.AddSqlServerCommitCoordination();
 
 builder.Services.AddControllers();
 

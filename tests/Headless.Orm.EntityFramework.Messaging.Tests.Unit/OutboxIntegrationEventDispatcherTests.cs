@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
@@ -16,6 +17,14 @@ public sealed class OutboxIntegrationEventDispatcherTests
     private sealed record OrderPlaced(string UniqueId) : IIntegrationEvent;
 
     private sealed record PaymentCaptured(string UniqueId) : IIntegrationEvent;
+
+    // An ambient coordinator (Current != null) models the save pipeline having opened a coordinated transaction.
+    private static ICurrentCommitCoordinator AmbientCoordinator()
+    {
+        var current = Substitute.For<ICurrentCommitCoordinator>();
+        current.Current.Returns(Substitute.For<ICommitCoordinator>());
+        return current;
+    }
 
     private sealed class RecordingOutboxBus : IOutboxBus
     {
@@ -105,100 +114,81 @@ public sealed class OutboxIntegrationEventDispatcherTests
     [Fact]
     public async Task dispatch_async_should_be_noop_for_empty_event_list()
     {
-        // given — an empty list must short-circuit before resolving the outbox transaction, so a provider
-        // with no IOutboxTransaction registered must not throw.
+        // given — an empty list must short-circuit without publishing anything.
         var bus = new RecordingOutboxBus();
-        await using var services = new ServiceCollection().BuildServiceProvider();
-        var dispatcher = new OutboxIntegrationEventDispatcher(services, bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
-
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         // when
-        await dispatcher.DispatchAsync([], transaction, TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync([], TestContext.Current.CancellationToken);
 
         // then
         bus.Published.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task dispatch_async_should_resolve_outbox_transaction_publish_all_events_and_cleanup()
+    public async Task dispatch_async_should_publish_all_events_through_outbox_bus()
     {
-        // given
+        // given — the pipeline opened a coordinated transaction, so the outbox writer enlists on the ambient
+        // coordinator. The dispatcher only fans the events out to the bus; it does not touch the transaction.
         var bus = new RecordingOutboxBus();
-        var outboxTransaction = Substitute.For<IOutboxTransaction>();
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddSingleton(outboxTransaction);
-        await using var services = serviceCollection.BuildServiceProvider();
-        var dispatcher = new OutboxIntegrationEventDispatcher(services, bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1"), new PaymentCaptured("payment-1")];
 
         // when
-        await dispatcher.DispatchAsync(events, transaction, TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
 
         // then
-        outboxTransaction.Received(1).DbTransaction = transaction;
-        outboxTransaction.Received(1).AutoCommit = false;
-        outboxTransaction.Received(1).DbTransaction = null;
-
         bus.Published.Should().HaveCount(2);
         bus.Published[0].GenericType.Should().Be<OrderPlaced>();
         bus.Published[1].GenericType.Should().Be<PaymentCaptured>();
     }
 
     [Fact]
-    public async Task dispatch_async_should_cleanup_transaction_when_publish_fails()
+    public async Task dispatch_async_should_propagate_publish_failure()
     {
         // given
         var bus = new ThrowingOutboxBus();
-        var outboxTransaction = Substitute.For<IOutboxTransaction>();
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddSingleton(outboxTransaction);
-        await using var services = serviceCollection.BuildServiceProvider();
-        var dispatcher = new OutboxIntegrationEventDispatcher(services, bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
-        // when — await directly so the task completes before the provider is disposed (CA2025).
-        InvalidOperationException? caught = null;
-        try
-        {
-            await dispatcher.DispatchAsync(events, transaction, TestContext.Current.CancellationToken);
-        }
-        catch (InvalidOperationException exception)
-        {
-            caught = exception;
-        }
+        // when
+        var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
 
         // then
-        caught.Should().NotBeNull();
-        caught.Message.Should().Be("Publish failed");
-        outboxTransaction.Received(1).DbTransaction = transaction;
-        outboxTransaction.Received(1).DbTransaction = null;
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("Publish failed");
     }
 
     [Fact]
-    public async Task dispatch_async_should_cleanup_transaction_when_cancelled_before_publishing()
+    public async Task dispatch_async_should_propagate_cancellation_before_publishing()
     {
         // given — a pre-cancelled token with a non-empty event list. The per-event loop trips
-        // ThrowIfCancellationRequested on the first iteration, so the OperationCanceledException must
-        // propagate while the finally-block still detaches the outbox transaction (DbTransaction = null).
+        // ThrowIfCancellationRequested on the first iteration, so nothing is published.
         var bus = new RecordingOutboxBus();
-        var outboxTransaction = Substitute.For<IOutboxTransaction>();
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddSingleton(outboxTransaction);
-        await using var services = serviceCollection.BuildServiceProvider();
-        var dispatcher = new OutboxIntegrationEventDispatcher(services, bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        // when — await directly so the task completes before the provider is disposed (CA2025).
-        var act = async () => await dispatcher.DispatchAsync(events, transaction, cts.Token);
+        // when
+        var act = async () => await dispatcher.DispatchAsync(events, cts.Token);
 
-        // then — cancellation propagates and the finally-block cleanup still ran.
+        // then
         await act.Should().ThrowAsync<OperationCanceledException>();
-        outboxTransaction.Received(1).DbTransaction = null;
         bus.Published.Should().BeEmpty();
     }
 
@@ -207,22 +197,45 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given
         var bus = new RecordingOutboxBus();
-        var outboxTransaction = Substitute.For<IOutboxTransaction>();
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.AddSingleton(outboxTransaction);
-        using var services = serviceCollection.BuildServiceProvider();
-        var dispatcher = new OutboxIntegrationEventDispatcher(services, bus, new IntegrationEventPublishInvokerCache());
-        var transaction = Substitute.For<IDbContextTransaction>();
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            AmbientCoordinator(),
+            new IntegrationEventPublishInvokerCache()
+        );
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
-        dispatcher.Dispatch(events, transaction);
+        dispatcher.Dispatch(events);
 
         // then
-        outboxTransaction.Received(1).DbTransaction = transaction;
-        outboxTransaction.Received(1).DbTransaction = null;
         bus.Published.Should().ContainSingle();
         bus.Published[0].GenericType.Should().Be<OrderPlaced>();
+    }
+
+    [Fact]
+    public async Task dispatch_async_should_fail_loud_when_no_ambient_coordinator()
+    {
+        // given — integration events emitted while saving inside a caller-managed transaction that was never
+        // enlisted in commit coordination: no coordinator is ambient, so dispatching would be non-atomic. The
+        // dispatcher must fail loud instead of shipping a message a caller rollback can no longer recall.
+        var bus = new RecordingOutboxBus();
+        var coordinator = Substitute.For<ICurrentCommitCoordinator>();
+        coordinator.Current.Returns((ICommitCoordinator?)null);
+        var dispatcher = new OutboxIntegrationEventDispatcher(
+            bus,
+            coordinator,
+            new IntegrationEventPublishInvokerCache()
+        );
+        IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
+
+        // when
+        var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
+
+        // then — fails loud and publishes nothing
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
+            "*not enlisted in commit coordination*"
+        );
+        bus.Published.Should().BeEmpty();
     }
 
     #endregion

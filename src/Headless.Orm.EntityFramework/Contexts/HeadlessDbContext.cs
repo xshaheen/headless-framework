@@ -9,22 +9,38 @@ using Microsoft.Extensions.Logging;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Internal contract shared by the Headless DbContext bases (<see cref="HeadlessDbContext"/> and the Identity
-/// context) so the runtime, save pipeline, factory, and disposal infrastructure operate against either base
-/// without a common class — the Identity context must derive from <c>IdentityDbContext</c>, so a marker
-/// interface is the only shared seam. Exposes the tenant/schema the runtime reads and the per-call service
-/// scope the factory hands in.
+/// Capability seam shared by the Headless DbContext bases (<see cref="HeadlessDbContext"/> and the Identity
+/// context) so the runtime, save pipeline, factory, disposal infrastructure, and coordinated-transaction
+/// helpers operate against either base without a common class — the Identity context must derive from
+/// <c>IdentityDbContext</c>, so this interface is the only shared seam. Exposes the tenant/schema the runtime
+/// reads and the per-call service scope the factory hands in. Implemented explicitly by both bases, so it does
+/// not widen their public surface; it is public so capability-based extensions (e.g.
+/// <c>ExecuteCoordinatedTransactionAsync</c>) can target any Headless-managed context.
 /// </summary>
-internal interface IHeadlessDbContext
+[PublicAPI]
+public interface IHeadlessDbContext
 {
     string? DefaultSchema { get; }
 
     string? TenantId { get; }
 
     /// <summary>
-    /// Optional service scope owned by the context — set by <c>HeadlessDbContextFactory</c> when the context
-    /// is created via <c>IDbContextFactory&lt;TDbContext&gt;</c>, and disposed with the context (see
-    /// <see cref="HeadlessDbContextDisposal"/>).
+    /// The scoped (request) service provider that resolved this context — used by coordinated-transaction
+    /// helpers to enlist with the correct scope for the post-commit drain.
+    /// </summary>
+    IServiceProvider ServiceProvider { get; }
+}
+
+/// <summary>
+/// Internal lifecycle seam for the service scope a factory-created context owns. Kept off the public
+/// <see cref="IHeadlessDbContext"/> entirely: only <c>HeadlessDbContextFactory</c> (set) and
+/// <c>HeadlessDbContextDisposal</c> (get) touch it, so consumers neither read nor reassign it.
+/// </summary>
+internal interface IHeadlessDbContextScopeOwner
+{
+    /// <summary>
+    /// Optional service scope owned by the context — set by <c>HeadlessDbContextFactory</c> when the context is
+    /// created via <c>IDbContextFactory&lt;TDbContext&gt;</c>, and disposed with the context.
     /// </summary>
     IServiceScope? OwnedScope { get; set; }
 }
@@ -63,7 +79,7 @@ internal interface IHeadlessDbContext
 /// write machinery.
 /// </para>
 /// </remarks>
-public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
+public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadlessDbContextScopeOwner
 {
     private readonly HeadlessDbContextRuntime _runtime;
 
@@ -83,18 +99,23 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
 
     public string? TenantId => _runtime.TenantId;
 
-    // The IHeadlessDbContext seam is internal, so satisfy it through explicit (non-overridable)
-    // implementations that delegate to the public members — keeps the public surface intact while avoiding
-    // an externally-overridable member bound to an internal interface (CA2119).
+    // The IHeadlessDbContext seam is implemented explicitly (non-overridable) so it stays off this context's
+    // public surface and avoids an externally-overridable member bound to the seam (CA2119). CA1033 (explicit
+    // member not visible to derived types) is intentional: derived contexts never call these — the framework
+    // runtime/save pipeline and coordinated-transaction helpers reach them through the interface.
+#pragma warning disable CA1033
     string? IHeadlessDbContext.DefaultSchema => DefaultSchema;
 
     string? IHeadlessDbContext.TenantId => TenantId;
 
-    IServiceScope? IHeadlessDbContext.OwnedScope
+    IServiceProvider IHeadlessDbContext.ServiceProvider => _runtime.ServiceProvider;
+
+    IServiceScope? IHeadlessDbContextScopeOwner.OwnedScope
     {
         get => _ownedScope;
         set => _ownedScope = value;
     }
+#pragma warning restore CA1033
 
     public override int SaveChanges()
     {

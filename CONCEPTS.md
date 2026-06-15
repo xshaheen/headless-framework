@@ -104,3 +104,55 @@ timing is best-effort (not-before semantics).
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that
   issues incarnations — these are distinct: Incarnation is the per-node value, the generation
   table/counter is the authority.
+
+## Commit Coordination
+
+### Commit coordinator
+
+The register-only scope object that collects commit and rollback callbacks for one physical unit of
+work. It guarantees exactly-once callback invocation per coordinator instance, not exactly-once
+business effects.
+
+### Commit signal source
+
+The provider adapter that turns a native commit or rollback edge into a coordinator terminal signal.
+Examples include owner-driven in-memory signals and SQL Server provider-key correlation.
+
+### Work buffer
+
+Scope-local state owned by a coordinator. Buffers hold deferred work until the terminal outcome; they
+must not be used as arbitrary service-locator bags.
+
+### Capability
+
+A read-only provider escape hatch attached by the scope owner. `IRelationalCommitContext` is the
+current capability for BCL `DbConnection` and `DbTransaction` handles.
+
+## Startup validation
+
+### Startup validation gate
+
+A check that runs once during host startup to verify configuration, and on failure either warns or
+fails host startup. Gates split into two tiers — Correctness gate and Diagnostic gate — by whether
+the check does runtime I/O.
+
+### Correctness gate
+
+A startup validation gate that is cheap and does no network I/O — it inspects options, in-memory EF
+model metadata, DI wiring, or tenant posture. Always strict (fails startup) in every environment,
+because the misconfigurations it catches are deterministic and cheap to detect, so deferring them
+only moves the failure to live traffic.
+
+### Diagnostic gate
+
+A startup validation gate that does runtime I/O — opening a connection or probing a live operation —
+and so adds boot latency and can fail on a transient blip. Verifies an environment- or
+library-compatibility property rather than a per-request correctness property; defaults to off in
+production and active in development.
+*Avoid:* diagnostic probe (use Diagnostic gate for the concept; "probe" names the I/O call it makes).
+
+### Validation mode
+
+The per-gate strictness setting: off (skip), warn (log and continue, recording degraded state), or
+strict (throw and fail host startup). A gate resolves its mode from an explicit operator value when
+set, otherwise from an environment-aware default keyed to its tier.
