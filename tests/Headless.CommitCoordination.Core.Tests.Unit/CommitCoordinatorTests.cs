@@ -278,6 +278,58 @@ public sealed class CommitCoordinatorTests
         }
     }
 
+    [Fact]
+    public async Task drain_then_should_propagate_the_drain_fault_when_only_the_drain_throws()
+    {
+        var coordinator = new CommitCoordinator();
+        coordinator.OnCommit((_, _) => throw new InvalidOperationException("drain boom"));
+        coordinator.TryClaimTerminal(CommitOutcome.Committed, out var claim).Should().BeTrue();
+
+        var act = async () =>
+            await CommitCoordinator._DrainThenAsync(claim, new EmptyServiceProvider(), afterDrain: null);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Be("drain boom");
+    }
+
+    [Fact]
+    public async Task drain_then_should_propagate_the_after_drain_fault_when_only_after_drain_throws()
+    {
+        var coordinator = new CommitCoordinator();
+        coordinator.OnCommit((_, _) => ValueTask.CompletedTask);
+        coordinator.TryClaimTerminal(CommitOutcome.Committed, out var claim).Should().BeTrue();
+
+        var act = async () =>
+            await CommitCoordinator._DrainThenAsync(
+                claim,
+                new EmptyServiceProvider(),
+                () => throw new InvalidOperationException("cleanup boom")
+            );
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Be("cleanup boom");
+    }
+
+    [Fact]
+    public async Task drain_then_should_surface_both_faults_as_aggregate_with_drain_first_when_both_throw()
+    {
+        // The #2 fix: a cleanup (afterDrain) fault must NOT mask the drain fault. Both surface via
+        // AggregateException with the drain fault as the first inner.
+        var coordinator = new CommitCoordinator();
+        coordinator.OnCommit((_, _) => throw new InvalidOperationException("drain boom"));
+        coordinator.TryClaimTerminal(CommitOutcome.Committed, out var claim).Should().BeTrue();
+
+        var act = async () =>
+            await CommitCoordinator._DrainThenAsync(
+                claim,
+                new EmptyServiceProvider(),
+                () => throw new InvalidOperationException("cleanup boom")
+            );
+
+        var aggregate = (await act.Should().ThrowAsync<AggregateException>()).Which;
+        aggregate.InnerExceptions.Should().HaveCount(2);
+        aggregate.InnerExceptions[0].Message.Should().Be("drain boom");
+        aggregate.InnerExceptions[1].Message.Should().Be("cleanup boom");
+    }
+
     private sealed record BufferFactoryState(string Value, Func<int> Next);
 
     private sealed record StatefulBuffer(string State, int CallsAtCreation) : ICommitWorkBuffer;

@@ -114,16 +114,15 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task save_under_consumer_opened_plain_transaction_falls_back_to_immediate_dispatch()
+    public async Task save_emitting_events_under_a_consumer_opened_plain_transaction_should_fail_loud()
     {
-        // given — the pipeline owns the coordinated-transaction scope (Option 1). When a CONSUMER opens its
-        // own PLAIN EF transaction (BeginTransactionAsync) WITHOUT calling EnlistCommitCoordination, the pipeline
-        // reuses it via the current-transaction branch, but no commit coordinator is ambient, so the outbox writer
-        // falls back to immediate dispatch: the outbox row is written on its own autonomous connection, NOT
-        // enlisted in the consumer's transaction. This is the documented fallback (see the
-        // HeadlessSaveChangesPipeline / OutboxMessageWriter contract) — atomic enlistment requires either the
-        // pipeline-owned save or an explicit DatabaseFacade.EnlistCommitCoordination on the open transaction (see
-        // the enlisted_publish_* tests).
+        // given — a CONSUMER opens its own PLAIN EF transaction (BeginTransactionAsync) WITHOUT calling
+        // EnlistCommitCoordination, then saves with integration events. The pipeline reuses the consumer's
+        // transaction via the current-transaction branch, but no commit coordinator is ambient — dispatching the
+        // outbox here would be non-atomic with the consumer's transaction. The dispatcher now FAILS LOUD (#1)
+        // rather than silently writing the row on an autonomous connection. Atomic enlistment requires either the
+        // pipeline-owned save (no consumer transaction) or an explicit EnlistCommitCoordination (see the
+        // enlisted_publish_* tests).
         const string marker = "evt-consumer-plain";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
@@ -133,14 +132,47 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
-        // when — save (consumer reuses its plain transaction), then the consumer rolls it back.
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
-        await transaction.RollbackAsync(TestContext.Current.CancellationToken);
+        // when — save under the un-enlisted consumer transaction.
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // then — the outbox row was written on an autonomous connection and survives the rollback (fallback).
+        // then — fails loud with an actionable wiring error and writes no outbox row.
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("*not enlisted in commit coordination*");
+        await transaction.RollbackAsync(TestContext.Current.CancellationToken);
+        (await _CountPublishedContainingAsync(marker))
+            .Should()
+            .Be(0);
+    }
+
+    [Fact]
+    public async Task coordinated_transaction_wrapping_a_save_should_dispatch_the_event_atomically()
+    {
+        // given — the welded ExecuteCoordinatedTransactionAsync helper opens the coordinated transaction and
+        // pushes the ambient coordinator. The inner SaveChanges runs WITHIN that transaction (current-transaction
+        // branch) and emits an integration event. This pins that the #1 guard sees the ambient (outer) coordinator
+        // via AsyncLocal and PASSES — the event buffers on that coordinator and drains atomically on commit.
+        const string marker = "evt-coordinated-nested";
+        await using var provider = await _BuildProviderAsync();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+
+        // when
+        await db.ExecuteCoordinatedTransactionAsync(
+            async (ctx, ct) =>
+            {
+                var order = new OrderEntity { Name = "coordinated-nested" };
+                order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
+                ctx.Orders.Add(order);
+                await ctx.SaveChangesAsync(ct);
+            },
+            cancellationToken: TestContext.Current.CancellationToken
+        );
+
+        // then — the event dispatched atomically with the business row (guard did not mis-fire).
         (await _CountPublishedContainingAsync(marker))
             .Should()
             .Be(1);
+        (await _CountOrdersAsync()).Should().Be(1);
     }
 
     [Fact]

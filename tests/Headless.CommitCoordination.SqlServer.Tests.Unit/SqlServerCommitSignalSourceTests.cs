@@ -91,9 +91,16 @@ public sealed class SqlServerCommitSignalSourceTests
         );
 
         // No scope attached for this key — the diagnostic fires for every connection, so an absent key is the
-        // normal case and must be a silent no-op (no throw).
-        await source.SignalCommittedAsync(new object(), CancellationToken.None);
-        await source.SignalRolledBackAsync(new object(), CancellationToken.None);
+        // normal case and must be a silent no-op (no throw) that completes SYNCHRONOUSLY: the fast-path returns
+        // ValueTask.CompletedTask, which is what lets the observer's _Drain skip the Task allocation.
+        var committed = source.SignalCommittedAsync(new object(), CancellationToken.None);
+        var rolledBack = source.SignalRolledBackAsync(new object(), CancellationToken.None);
+
+        committed.IsCompletedSuccessfully.Should().BeTrue("the uncoordinated-key fast-path returns a completed ValueTask");
+        rolledBack.IsCompletedSuccessfully.Should().BeTrue("the uncoordinated-key fast-path returns a completed ValueTask");
+
+        await committed;
+        await rolledBack;
     }
 
     [Fact]
