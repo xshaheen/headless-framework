@@ -107,6 +107,7 @@ public sealed class CommitInterceptorStartupGateTests
         var act = async () => await gate.StartingAsync(TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync("an unreachable database is inconclusive, not a mis-wire");
+        provider.WasQueried.Should().BeTrue("the inconclusive path must reach DI/probe resolution before bailing");
     }
 
     private static ServiceProvider _BuildProvider(

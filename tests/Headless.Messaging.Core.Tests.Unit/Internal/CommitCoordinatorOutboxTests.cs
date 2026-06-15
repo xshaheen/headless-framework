@@ -13,6 +13,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -170,8 +171,9 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         var timeProvider = new FakeTimeProvider();
         var flushTimeout = TimeSpan.FromSeconds(30);
         var coordinator = new CommitCoordinator();
+        var logger = new RecordingLogger<MessageOutboxBuffer>();
 
-        var dispatchEntered = new TaskCompletionSource();
+        var dispatchEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var dispatcher = Substitute.For<IDispatcher>();
         dispatcher
             .EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
@@ -182,24 +184,8 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 return new ValueTask(Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()));
             });
 
-        var buffer = new MessageOutboxBuffer(
-            coordinator,
-            dispatcher,
-            flushTimeout,
-            timeProvider,
-            NullLogger<MessageOutboxBuffer>.Instance
-        );
-
-        buffer.Add(
-            new MediumMessage
-            {
-                StorageId = Guid.NewGuid(),
-                Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), value: null),
-                Content = "{}",
-                IntentType = IntentType.Bus,
-                Added = DateTime.UtcNow,
-            }
-        );
+        var buffer = new MessageOutboxBuffer(coordinator, dispatcher, flushTimeout, timeProvider, logger);
+        buffer.Add(_BuildMessage());
 
         // Commit drives FlushAsync, which blocks in the (hanging) dispatcher until the flush timeout fires.
         var drain = coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider()).AsTask();
@@ -207,9 +193,104 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
         await dispatchEntered.Task;
         timeProvider.Advance(flushTimeout);
 
+        // The drain completes (it would throw if the timeout propagated) and the timeout-swallow branch logged.
         await drain;
-        drain.IsCompletedSuccessfully.Should().BeTrue("the flush timeout is swallowed, not propagated");
+        logger.Warnings.Should().ContainSingle().Which.Should().Contain("exceeded");
     }
+
+    [Fact]
+    public async Task flush_should_keep_dispatching_and_rethrow_a_single_message_broker_fault()
+    {
+        var coordinator = new CommitCoordinator();
+        var dispatched = new List<Guid>();
+        var failing = _BuildMessage();
+        var ok = _BuildMessage();
+
+        var dispatcher = Substitute.For<IDispatcher>();
+        dispatcher
+            .EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var msg = call.Arg<MediumMessage>();
+                if (msg.StorageId == failing.StorageId)
+                {
+                    throw new InvalidOperationException("broker down");
+                }
+
+                dispatched.Add(msg.StorageId);
+
+                return ValueTask.CompletedTask;
+            });
+
+        var buffer = new MessageOutboxBuffer(
+            coordinator,
+            dispatcher,
+            TimeSpan.FromSeconds(30),
+            new FakeTimeProvider(),
+            NullLogger<MessageOutboxBuffer>.Instance
+        );
+        buffer.Add(failing);
+        buffer.Add(ok);
+
+        var act = async () => await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+
+        // Single fault rethrown as the original type (via ExceptionDispatchInfo); the later message still dispatched.
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("broker down");
+        dispatched.Should().Contain(ok.StorageId, "a single message's broker fault must not abandon the rest of the buffer");
+    }
+
+    [Fact]
+    public async Task flush_should_aggregate_multiple_message_broker_faults()
+    {
+        var coordinator = new CommitCoordinator();
+        var dispatched = new List<Guid>();
+        var fail1 = _BuildMessage();
+        var ok = _BuildMessage();
+        var fail2 = _BuildMessage();
+
+        var dispatcher = Substitute.For<IDispatcher>();
+        dispatcher
+            .EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var msg = call.Arg<MediumMessage>();
+                if (msg.StorageId == fail1.StorageId || msg.StorageId == fail2.StorageId)
+                {
+                    throw new InvalidOperationException("broker down");
+                }
+
+                dispatched.Add(msg.StorageId);
+
+                return ValueTask.CompletedTask;
+            });
+
+        var buffer = new MessageOutboxBuffer(
+            coordinator,
+            dispatcher,
+            TimeSpan.FromSeconds(30),
+            new FakeTimeProvider(),
+            NullLogger<MessageOutboxBuffer>.Instance
+        );
+        buffer.Add(fail1);
+        buffer.Add(ok);
+        buffer.Add(fail2);
+
+        var act = async () => await coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider());
+
+        // Two faults aggregate; the interleaved good message still dispatched.
+        (await act.Should().ThrowAsync<AggregateException>()).Which.InnerExceptions.Should().HaveCount(2);
+        dispatched.Should().Contain(ok.StorageId);
+    }
+
+    private static MediumMessage _BuildMessage() =>
+        new()
+        {
+            StorageId = Guid.NewGuid(),
+            Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), value: null),
+            Content = "{}",
+            IntentType = IntentType.Bus,
+            Added = DateTime.UtcNow,
+        };
 
     private static MessagePublishRequestFactory _CreatePublishRequestFactory()
     {
@@ -230,6 +311,30 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     private sealed class EmptyServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
+        }
     }
 
     private sealed class NoopPublishMiddlewarePipeline(bool expectTransactional = true) : IPublishMiddlewarePipeline
