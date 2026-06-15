@@ -9,9 +9,7 @@ public sealed class StringToGuidJsonConverter : JsonConverter<Guid>
         if (reader.TokenType == JsonTokenType.String)
         {
             var text = reader.GetString();
-            ReadOnlySpan<string> formats = ["N", "D", "B", "P", "X"];
-
-            foreach (var format in formats)
+            foreach (var format in (ReadOnlySpan<string>)["N", "D", "B", "P", "X"])
             {
                 if (Guid.TryParseExact(text, format, out var parsedGuid))
                 {

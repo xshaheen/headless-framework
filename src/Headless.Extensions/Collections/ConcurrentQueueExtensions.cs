@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
@@ -8,24 +9,33 @@ namespace System.Collections.Generic;
 [PublicAPI]
 public static class ConcurrentQueueExtensions
 {
-    public static void EnqueueRange<T>(this ConcurrentQueue<T> queue, IEnumerable<T> items)
+    extension<T>(ConcurrentQueue<T> queue)
     {
-        foreach (var item in items)
+        public void Clear()
         {
-            queue.Enqueue(item);
+            while (queue.TryDequeue(out _)) { }
         }
-    }
 
-    public static void EnqueueRange<T>(this ConcurrentQueue<T> queue, params ReadOnlySpan<T> items)
-    {
-        foreach (var item in items)
+        [OverloadResolutionPriority(1)]
+        public void EnqueueRange(params ReadOnlySpan<T> items)
         {
-            queue.Enqueue(item);
+            foreach (var item in items)
+            {
+                queue.Enqueue(item);
+            }
         }
-    }
 
-    public static void Clear<T>(this ConcurrentQueue<T> queue)
-    {
-        while (queue.TryDequeue(out _)) { }
+        public void EnqueueRange(List<T> items)
+        {
+            queue.EnqueueRange(items.AsReadOnlySpan());
+        }
+
+        public void EnqueueRange(IEnumerable<T> items)
+        {
+            foreach (var item in items)
+            {
+                queue.Enqueue(item);
+            }
+        }
     }
 }
