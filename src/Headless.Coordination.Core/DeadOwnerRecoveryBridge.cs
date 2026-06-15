@@ -23,9 +23,12 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
     TReclaimer reclaimer,
     TimeProvider timeProvider,
     ILogger<DeadOwnerRecoveryBridge<TReclaimer>> logger
-) : BackgroundService
+) : BackgroundService, IDeadOwnerRecoveryBridge
     where TReclaimer : IDeadOwnerReclaimer
 {
+    private static readonly TimeSpan _WatchRetryInitialBackoff = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _WatchRetryMaxBackoff = TimeSpan.FromSeconds(30);
+
     private readonly Lock _gate = new();
     private readonly HashSet<string> _reclaimed = new(StringComparer.Ordinal);
 
@@ -36,21 +39,41 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
 
     private async Task _WatchLoopAsync(CancellationToken stoppingToken)
     {
-        try
+        // Re-subscribe with bounded exponential backoff so a transient watch failure (store blip, dropped stream)
+        // degrades to higher reconcile latency, not to a permanently-dead low-latency path for the process
+        // lifetime. The periodic reconcile remains the authoritative backstop throughout.
+        var backoff = _WatchRetryInitialBackoff;
+
+        while (!stoppingToken.IsCancellationRequested)
         {
-            // The await foreach disposes the underlying enumerator on exit/cancellation, releasing the subscription.
-            await foreach (var membershipEvent in membership.WatchAsync(stoppingToken).ConfigureAwait(false))
+            try
             {
-                await HandleEventAsync(membershipEvent).ConfigureAwait(false);
+                // The await foreach disposes the underlying enumerator on exit/cancellation, releasing the subscription.
+                await foreach (var membershipEvent in membership.WatchAsync(stoppingToken).ConfigureAwait(false))
+                {
+                    await HandleEventAsync(membershipEvent).ConfigureAwait(false);
+                    backoff = _WatchRetryInitialBackoff; // a healthy stream resets the backoff
+                }
             }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-            // Expected on host stop.
-        }
-        catch (Exception ex)
-        {
-            logger.MembershipWatchFailed(ex);
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return; // expected on host stop
+            }
+            catch (Exception ex)
+            {
+                logger.MembershipWatchFailed(ex);
+            }
+
+            try
+            {
+                await timeProvider.Delay(backoff, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            backoff = backoff >= _WatchRetryMaxBackoff ? _WatchRetryMaxBackoff : backoff + backoff;
         }
     }
 
@@ -90,7 +113,18 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
     /// </summary>
     internal async Task ReconcileOnceAsync(CancellationToken cancellationToken)
     {
-        var snapshot = await membership.GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        // Bound the snapshot read so a hung membership store cannot block the reconcile loop indefinitely; on
+        // timeout the read fails with OCE, the loop logs DeadNodeReconcileFailed, and the next tick retries. The
+        // reconcile interval is the natural cap — a snapshot read should never approach a whole tick.
+        var timeout = reclaimer.ReconcileInterval;
+        using var timeoutCts = timeout > TimeSpan.Zero ? new CancellationTokenSource(timeout, timeProvider) : null;
+        using var linkedCts = timeoutCts is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        var snapshot = await membership
+            .GetLivenessSnapshotAsync(linkedCts?.Token ?? cancellationToken)
+            .ConfigureAwait(false);
 
         var deadOwners = new HashSet<string>(StringComparer.Ordinal);
 

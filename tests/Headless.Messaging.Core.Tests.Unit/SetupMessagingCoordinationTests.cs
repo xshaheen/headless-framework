@@ -22,11 +22,12 @@ public sealed class SetupMessagingCoordinationTests
         services.Should().ContainSingle(d => d.ServiceType == typeof(MessagingDeadOwnerReclaimer));
 
         // and — the closed-generic hosted bridge over the messaging reclaimer is registered as IHostedService.
-        // The bridge type is internal to Coordination.Core and not visible here, so match it by shape.
+        // The bridge type is internal to Coordination.Core, so match it by the public IDeadOwnerRecoveryBridge
+        // marker plus its closed reclaimer type-arg — both compile-time references, so a rename breaks the build.
         var bridge = services.FirstOrDefault(d =>
             d.ServiceType == typeof(IHostedService)
             && d.ImplementationType is { IsGenericType: true } impl
-            && impl.GetGenericTypeDefinition().Name == "DeadOwnerRecoveryBridge`1"
+            && typeof(IDeadOwnerRecoveryBridge).IsAssignableFrom(impl)
             && impl.GetGenericArguments()[0] == typeof(MessagingDeadOwnerReclaimer)
         );
 

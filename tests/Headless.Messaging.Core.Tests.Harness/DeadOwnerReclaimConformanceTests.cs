@@ -248,14 +248,9 @@ public abstract class DeadOwnerReclaimConformanceTests : TestBase
     private async Task _StartBridgeAsync(IServiceProvider provider)
     {
         // Resolve only the dead-owner recovery bridge from the hosted-service graph (the type is internal to
-        // Coordination.Core, so it is matched by shape) and start just it — the Bootstrapper and processing
-        // servers stay unstarted, so no transport is required.
-        var bridge = provider
-            .GetServices<IHostedService>()
-            .First(host =>
-                host.GetType() is { IsGenericType: true } type
-                && type.GetGenericTypeDefinition().Name == "DeadOwnerRecoveryBridge`1"
-            );
+        // Coordination.Core, so it is matched by the public IDeadOwnerRecoveryBridge marker) and start just it —
+        // the Bootstrapper and processing servers stay unstarted, so no transport is required.
+        var bridge = provider.GetServices<IHostedService>().First(host => host is IDeadOwnerRecoveryBridge);
 
         await bridge.StartAsync(AbortToken);
         _startedBridges.Add(bridge);
