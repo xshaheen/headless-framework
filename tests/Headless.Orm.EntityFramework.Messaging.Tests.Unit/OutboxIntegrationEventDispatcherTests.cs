@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
@@ -16,6 +17,14 @@ public sealed class OutboxIntegrationEventDispatcherTests
     private sealed record OrderPlaced(string UniqueId) : IIntegrationEvent;
 
     private sealed record PaymentCaptured(string UniqueId) : IIntegrationEvent;
+
+    // An ambient coordinator (Current != null) models the save pipeline having opened a coordinated transaction.
+    private static ICurrentCommitCoordinator AmbientCoordinator()
+    {
+        var current = Substitute.For<ICurrentCommitCoordinator>();
+        current.Current.Returns(Substitute.For<ICommitCoordinator>());
+        return current;
+    }
 
     private sealed class RecordingOutboxBus : IOutboxBus
     {
@@ -107,7 +116,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given — an empty list must short-circuit without publishing anything.
         var bus = new RecordingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
         // when
         await dispatcher.DispatchAsync([], TestContext.Current.CancellationToken);
 
@@ -121,7 +130,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // given — the pipeline opened a coordinated transaction, so the outbox writer enlists on the ambient
         // coordinator. The dispatcher only fans the events out to the bus; it does not touch the transaction.
         var bus = new RecordingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1"), new PaymentCaptured("payment-1")];
 
         // when
@@ -138,7 +147,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given
         var bus = new ThrowingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
@@ -154,7 +163,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // given — a pre-cancelled token with a non-empty event list. The per-event loop trips
         // ThrowIfCancellationRequested on the first iteration, so nothing is published.
         var bus = new RecordingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -172,7 +181,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given
         var bus = new RecordingOutboxBus();
-        var dispatcher = new OutboxIntegrationEventDispatcher(bus, new IntegrationEventPublishInvokerCache());
+        var dispatcher = new OutboxIntegrationEventDispatcher(bus, AmbientCoordinator(), new IntegrationEventPublishInvokerCache());
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
         // when
@@ -181,6 +190,27 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // then
         bus.Published.Should().ContainSingle();
         bus.Published[0].GenericType.Should().Be<OrderPlaced>();
+    }
+
+    [Fact]
+    public async Task dispatch_async_should_fail_loud_when_no_ambient_coordinator()
+    {
+        // given — integration events emitted while saving inside a caller-managed transaction that was never
+        // enlisted in commit coordination: no coordinator is ambient, so dispatching would be non-atomic. The
+        // dispatcher must fail loud instead of shipping a message a caller rollback can no longer recall.
+        var bus = new RecordingOutboxBus();
+        var coordinator = Substitute.For<ICurrentCommitCoordinator>();
+        coordinator.Current.Returns((ICommitCoordinator?)null);
+        var dispatcher = new OutboxIntegrationEventDispatcher(bus, coordinator, new IntegrationEventPublishInvokerCache());
+        IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
+
+        // when
+        var act = async () => await dispatcher.DispatchAsync(events, TestContext.Current.CancellationToken);
+
+        // then — fails loud and publishes nothing
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .WithMessage("*not enlisted in commit coordination*");
+        bus.Published.Should().BeEmpty();
     }
 
     #endregion
