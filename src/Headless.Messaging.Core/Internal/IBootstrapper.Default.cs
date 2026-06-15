@@ -299,6 +299,19 @@ internal sealed class Bootstrapper(
         if (membership is null or NullNodeMembership)
         {
             logger.MessagingRecoveryUsingLockedUntilFloorOnly();
+            return;
+        }
+
+        // Recovery is active. Dead-only reclaim avoids duplicate delivery only when a node is classified Dead
+        // no sooner than its in-flight dispatch could still be running — i.e. Coordination's DeadThreshold must
+        // be >= the retry DispatchTimeout. Otherwise a still-alive node that crosses the dead threshold
+        // mid-dispatch is reclaimed and its message re-dispatched. Warn rather than fail: a redundant delivery
+        // is within the at-least-once contract, and the two thresholds live in separate option packages.
+        var deadThreshold = serviceProvider.GetService<IOptions<CoordinationOptions>>()?.Value.DeadThreshold;
+        var dispatchTimeout = options.Value.RetryPolicy.DispatchTimeout;
+        if (deadThreshold is { } threshold && threshold < dispatchTimeout)
+        {
+            logger.MessagingDeadThresholdBelowDispatchTimeout(threshold, dispatchTimeout);
         }
     }
 

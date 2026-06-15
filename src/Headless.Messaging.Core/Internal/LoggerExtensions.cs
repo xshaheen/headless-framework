@@ -613,6 +613,18 @@ internal static partial class LoggerExtensions
     public static partial void MessagingRecoveryUsingLockedUntilFloorOnly(this ILogger logger);
 
     [LoggerMessage(
+        EventId = 94,
+        EventName = "MessagingDeadThresholdBelowDispatchTimeout",
+        Level = LogLevel.Warning,
+        Message = "Coordination DeadThreshold ({DeadThreshold}) is below the retry DispatchTimeout ({DispatchTimeout}). A still-alive node that crosses the dead threshold mid-dispatch will be reclaimed and its message re-dispatched (a redundant at-least-once delivery). Set DeadThreshold >= DispatchTimeout to avoid it."
+    )]
+    public static partial void MessagingDeadThresholdBelowDispatchTimeout(
+        this ILogger logger,
+        TimeSpan deadThreshold,
+        TimeSpan dispatchTimeout
+    );
+
+    [LoggerMessage(
         EventId = 91,
         EventName = "MessagingDeadOwnerRowsReclaimed",
         Level = LogLevel.Information,

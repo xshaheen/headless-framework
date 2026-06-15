@@ -273,6 +273,57 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
+    public async Task should_warn_when_dead_threshold_is_below_dispatch_timeout_with_real_membership()
+    {
+        // given — recovery active (real membership) but DeadThreshold (30s) < DispatchTimeout (5m): a still-alive
+        // node crossing the dead threshold mid-dispatch would be reclaimed and re-dispatched.
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var membership = Substitute.For<INodeMembership>();
+        membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5),
+            extraSetup: services =>
+            {
+                services.RemoveAll<INodeMembership>();
+                services.AddSingleton(membership);
+                services.Configure<CoordinationOptions>(c => c.DeadThreshold = TimeSpan.FromSeconds(30));
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.EventId.Id == 94);
+    }
+
+    [Fact]
+    public async Task should_not_warn_when_dead_threshold_meets_dispatch_timeout()
+    {
+        // given — DeadThreshold (10m) >= DispatchTimeout (5m): the invariant holds, no duplicate-delivery window.
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var membership = Substitute.For<INodeMembership>();
+        membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5),
+            extraSetup: services =>
+            {
+                services.RemoveAll<INodeMembership>();
+                services.AddSingleton(membership);
+                services.Configure<CoordinationOptions>(c => c.DeadThreshold = TimeSpan.FromMinutes(10));
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().NotContain(e => e.EventId.Id == 94);
+    }
+
+    [Fact]
     public async Task should_isolate_messaging_lock_provider_from_unkeyed_app_level_provider()
     {
         // given — an app-level un-keyed provider AND a messaging-keyed provider
