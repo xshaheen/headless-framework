@@ -37,6 +37,10 @@ services.AddCoordinationCore<MyMembershipStore>(options =>
 
 Applications normally use a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`; `AddCoordinationCore<TStore>` is the lower-level hook for provider authors and custom stores.
 
+## Provider SPI
+
+Custom `IMembershipStore` implementations must provide `ReadNodeLivenessAsync(NodeIdentity, CancellationToken) -> NodeLivenessState?` alongside the cluster-wide `ReadLivenessAsync`. It returns the classified state of a single identity, or `null` when that identity is absent from the current-generation view. The contract: it MUST equal what `ReadLivenessAsync` would conclude for that identity — current-generation-only, store-clock classified, and retention-bounded so a row at/beyond the retention window reads as `null`, not `Dead` — and it MUST be read-only (no pruning, no generation-mirror backfill) so `IsAliveAsync` stays a bounded single-row read. There is no default implementation; this method is a required part of the SPI, so existing custom stores must add it.
+
 ## Configuration
 
 Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWindow` must be at least two heartbeat intervals.

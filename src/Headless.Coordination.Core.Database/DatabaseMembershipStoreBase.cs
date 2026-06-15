@@ -71,7 +71,7 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options,
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ReadNodeLivenessCoreAsync(ClusterName, identity, cancellationToken);
+        return ReadCurrentNodeLivenessCoreAsync(ClusterName, identity, cancellationToken);
     }
 
     /// <summary>Allocates the next durable incarnation for <paramref name="nodeId"/>.</summary>
@@ -125,7 +125,7 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options,
     /// <see cref="ReadCurrentLivenessCoreAsync"/> and apply the retention boundary as a read-only cutoff —
     /// no pruning, no backfill.
     /// </summary>
-    protected abstract ValueTask<NodeLivenessState?> ReadNodeLivenessCoreAsync(
+    protected abstract ValueTask<NodeLivenessState?> ReadCurrentNodeLivenessCoreAsync(
         string clusterName,
         NodeIdentity identity,
         CancellationToken cancellationToken

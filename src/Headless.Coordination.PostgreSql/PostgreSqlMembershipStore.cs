@@ -256,7 +256,7 @@ internal sealed class PostgreSqlMembershipStore(
         return snapshots;
     }
 
-    protected override async ValueTask<NodeLivenessState?> ReadNodeLivenessCoreAsync(
+    protected override async ValueTask<NodeLivenessState?> ReadCurrentNodeLivenessCoreAsync(
         string clusterName,
         NodeIdentity identity,
         CancellationToken cancellationToken
