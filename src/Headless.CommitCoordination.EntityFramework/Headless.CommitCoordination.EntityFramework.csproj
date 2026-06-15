@@ -1,0 +1,24 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.CommitCoordination.EntityFramework</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The Type-based wiring helpers in Setup.cs are infrastructure seams for the messaging EF storage
+         packages (and their own unit tests), not part of the consumer-facing NuGet contract. -->
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer" />
+    <InternalsVisibleTo Include="Headless.CommitCoordination.EntityFramework.Tests.Unit" />
+  </ItemGroup>
+</Project>

@@ -492,7 +492,6 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
 
         public Task DispatchAsync(
             IReadOnlyList<IIntegrationEvent> integrationEvents,
-            IDbContextTransaction currentTransaction,
             CancellationToken cancellationToken
         )
         {
@@ -500,10 +499,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
             return Task.CompletedTask;
         }
 
-        public void Dispatch(
-            IReadOnlyList<IIntegrationEvent> integrationEvents,
-            IDbContextTransaction currentTransaction
-        )
+        public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents)
         {
             DistributedEmitters.AddRange(integrationEvents);
         }

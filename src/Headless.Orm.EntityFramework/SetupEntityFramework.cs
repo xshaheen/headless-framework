@@ -3,11 +3,13 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Checks;
+using Headless.CommitCoordination.EntityFramework;
 using Headless.Core;
 using Headless.Domain;
 using Headless.EntityFramework.CompiledQueryCache;
 using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -76,6 +78,12 @@ public static class SetupEntityFramework
         {
             var builder = services.AddHeadlessDbContextServices(configureHeadlessOptions);
 
+            // EF Core does not auto-discover IInterceptor registrations from the application container. A
+            // DI-registered IDbContextOptionsConfiguration<TDbContext> attaches them whenever EF Core builds this
+            // context's options — covering this AddDbContext registration AND a consumer's own plain
+            // AddDbContext<TDbContext>. Deduped by reference, so the consumer's own options-action adds are safe.
+            services.AddDiRegisteredInterceptorsConfiguration<TDbContext>();
+
             services.AddDbContext<TDbContext>(
                 (serviceProvider, optionsBuilder) =>
                 {
@@ -95,6 +103,28 @@ public static class SetupEntityFramework
             return builder;
         }
 
+        /// <summary>
+        /// Registers an <see cref="IDbContextOptionsConfiguration{TContext}"/> that attaches every
+        /// application-registered <see cref="Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor"/> to
+        /// <typeparamref name="TDbContext"/>'s options whenever EF Core builds them — including a consumer's own
+        /// plain <c>AddDbContext&lt;TDbContext&gt;</c>. EF Core does not auto-discover DI interceptors; this is the
+        /// seam that makes package-registered interceptors (e.g. the commit-coordination interceptor) fire. Safe to
+        /// call repeatedly (deduped by reference).
+        /// </summary>
+        /// <returns>The service collection.</returns>
+        public IServiceCollection AddDiRegisteredInterceptorsConfiguration<TDbContext>()
+            where TDbContext : DbContext
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<
+                    IDbContextOptionsConfiguration<TDbContext>,
+                    DiRegisteredInterceptorsOptionsConfiguration<TDbContext>
+                >()
+            );
+
+            return services;
+        }
+
         public IHeadlessDbContextBuilder AddHeadlessDbContextServices()
         {
             return services.AddHeadlessDbContextServices(configureOptions: null);
@@ -107,6 +137,11 @@ public static class SetupEntityFramework
             var options = _GetOrAddHeadlessDbContextOptions(services);
             configureOptions?.Invoke(options);
             options.RegisterServices(services);
+
+            // The SaveChanges pipeline opens a coordinated EF transaction so the messaging outbox (and any
+            // other commit-enlisted work) drains atomically when the save commits. Registering the EF commit
+            // coordination source + interceptor here is harmless when nothing enlists (the drain is empty).
+            services.AddEntityFrameworkCommitCoordination();
 
             services.AddOptions<TenantWriteGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();

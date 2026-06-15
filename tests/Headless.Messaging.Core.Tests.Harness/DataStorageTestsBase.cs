@@ -622,6 +622,44 @@ public abstract class DataStorageTestsBase : TestBase
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    public virtual async Task should_seal_succeeded_published_message_against_state_change_and_retry_pickup()
+    {
+        // given — Succeeded with NextRetryAt = NULL is the terminal fingerprint written after a
+        // successful dispatch. This is the double-dispatch closure: the commit-edge drain and the
+        // relay sweep can both attempt the same row in a narrow window, so once one of them seals
+        // it, the row must reject any late state change AND never be returned by the retry pickup.
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "succeeded-terminal-seal",
+            message,
+            cancellationToken: AbortToken
+        );
+
+        var sealedFirst = await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Succeeded,
+            nextRetryAt: null,
+            cancellationToken: AbortToken
+        );
+        sealedFirst.Should().BeTrue("the first transition to Succeeded must win against a fresh row");
+
+        // when — a late writer (the losing side of the drain/relay race) tries to flip the row back.
+        var lateChange = await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Scheduled,
+            nextRetryAt: DateTime.UtcNow,
+            cancellationToken: AbortToken
+        );
+
+        // then — the terminal guard rejects the write and the pickup never re-sends the row.
+        lateChange.Should().BeFalse("a Succeeded row with no scheduled retry is terminal");
+
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        retriable.Should().NotBeNull();
+        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
     public virtual async Task should_not_return_published_message_with_future_next_retry_at()
     {
         // given — a Failed message scheduled for the future must NOT be returned until its

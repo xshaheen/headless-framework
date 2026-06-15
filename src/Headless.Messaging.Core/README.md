@@ -69,17 +69,23 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 });
 
-// Publish broadcast messages with outbox (reliable delivery)
-public sealed class OrderService(IOutboxBus bus, IOutboxTransaction transaction)
+// Publish broadcast messages with the transactional outbox (reliable delivery).
+// NOTE: on the EF storage path (setup.UseEntityFramework<TContext>()) the outbox is on by default and the
+// commit interceptor is attached for you — see "Transactional Outbox (Atomic Publish)" above. The manual
+// EnlistCommitCoordination below is the raw-ADO / advanced seam: it makes the open transaction the ambient
+// commit coordinator so the outbox writer stores rows INSIDE it; the EF transaction interceptor dispatches
+// them post-commit and discards them on rollback. The enlist is synchronous on purpose — it must run in the
+// caller's frame so the ambient scope flows to the publish below.
+public sealed class OrderService(IOutboxBus bus, AppDbContext dbContext, IServiceProvider services)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
-        await using (var dbTransaction = await dbContext.Database.BeginTransactionAsync(transaction, autoCommit: false, ct))
-        {
-            await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
-            await dbContext.SaveChangesAsync(ct);
-            await dbTransaction.CommitAsync(ct);
-        }
+        await using var tx = await dbContext.Database.BeginTransactionAsync(ct);
+        await using var _ = dbContext.Database.EnlistCommitCoordination(tx, services);
+
+        await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
+        await dbContext.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 }
 
@@ -92,6 +98,16 @@ public sealed class ImportService(IQueue queue)
     }
 }
 ```
+
+## Transactional Outbox (Atomic Publish)
+
+The transactional outbox is **on by default on the EF storage path**. When the host selects EF-context storage with `setup.UseEntityFramework<TContext>()`, a `PublishAsync(...)` inside a coordinated transaction writes its outbox row in the same DB transaction and is discarded on rollback — zero consumer wiring. The EF storage setup auto-registers commit coordination and a DI-registered `IDbContextOptionsConfiguration<TContext>` that attaches the commit-coordination interceptor to the consumer's `DbContext`, even a plain `AddDbContext<TContext>` with no `AddInterceptors(...)`.
+
+- Opt out with `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` to restore non-transactional immediate dispatch — the opt-out travels with the EF storage choice, not a separate global call.
+- A startup self-probe (`CommitInterceptorStartupGate<TContext>`) commits an empty transaction and asserts the interceptor fired. On a mis-wire it logs a loud warning by default; set `CommitInterceptorProbeMode.Strict` via `services.Configure<CommitInterceptorProbeOptions>(o => o.Mode = CommitInterceptorProbeMode.Strict)` to fail startup instead.
+- On by default applies **only** to the EF-context path. The raw-ADO storage paths (`setup.UsePostgreSql(connString)` / `setup.UseSqlServer(connString)`, no `DbContext`) are unchanged and stay explicit opt-in: register `AddPostgreSqlCommitCoordination()`/`AddSqlServerCommitCoordination()` and use the `EnlistCommitCoordination` / `ExecuteCoordinatedTransactionAsync` helpers (shown in Quick Start below). There is no `DbContext` to attach an interceptor to on those paths.
+
+The write is atomic with the business data; delivery is still at-least-once, so consumers must be idempotent (see [Retry Policy](#retry-policy)). See `Headless.CommitCoordination.EntityFramework` for the interceptor attachment and probe details.
 
 ## Defaults And Telemetry
 
@@ -319,6 +335,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
     setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
     setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
+    setup.Options.OutboxFlushTimeout = TimeSpan.FromSeconds(30);
     setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
         initialDelay: TimeSpan.FromSeconds(1),
         maxDelay: TimeSpan.FromMinutes(5)
@@ -351,8 +368,11 @@ Top-level messaging timeouts that influence retry behavior:
 | --- | --- | --- | --- |
 | `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
 | `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
+| `OutboxFlushTimeout` | `TimeSpan` | `30s` | Bounds the post-commit drain that flushes buffered outbox messages to the transport. The drain runs with `CancellationToken.None`, so an unresponsive broker would otherwise hold the request thread, DI scope, and DB connection indefinitely. Undispatched messages stay durable and are recovered by the relay sweep. `> 0`, `<= 5m`. |
 
 Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.
+
+**Delivery semantics are at-least-once; consumers must be idempotent.** The framework never promises exactly-once: the commit-edge drain and the relay sweep can both deliver the same message in a narrow window (the `LockedUntil` lease plus the Succeeded/Failed terminal-row guard minimize but do not eliminate duplicates), and a crash between broker accept and the success-mark write redelivers on recovery. Dedupe in consumers by business key or message id.
 
 When a Coordination provider is registered, storage rows also stamp nullable `Owner` as `node@incarnation` when `LockedUntil` is written. The retry processor reconciles live Coordination nodes on each locked pickup tick and accelerates rows owned by dead incarnations by moving `LockedUntil` back to now. `LockedUntil` remains the correctness floor; Coordination only reduces orphan recovery latency. Without Coordination, `Owner` stays `null` and behavior is unchanged.
 

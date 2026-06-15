@@ -214,6 +214,10 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         base.should_not_return_published_message_with_failed_status_and_null_next_retry_at();
 
     [Fact]
+    public override Task should_seal_succeeded_published_message_against_state_change_and_retry_pickup() =>
+        base.should_seal_succeeded_published_message_against_state_change_and_retry_pickup();
+
+    [Fact]
     public override Task should_not_return_published_message_with_future_next_retry_at() =>
         base.should_not_return_published_message_with_future_next_retry_at();
 
