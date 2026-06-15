@@ -4,6 +4,11 @@
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The output-cache adapter's two-node convergence test reuses the engine's backplane test pattern, which
+         routes peer invalidations through the internal HybridCache.HandleInvalidationAsync. -->
+    <InternalsVisibleTo Include="Headless.Caching.OutputCache.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Caching.Core\Headless.Caching.Core.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
