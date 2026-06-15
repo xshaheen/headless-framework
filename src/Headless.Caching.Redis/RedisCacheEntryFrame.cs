@@ -314,6 +314,70 @@ internal static class RedisCacheEntryFrame
     }
 
     /// <summary>
+    /// Decodes only the metadata needed to re-arm a sliding entry (no value, no tags) from a fixed prefix of the
+    /// frame: the 27-byte header plus the sliding field, which is the first optional section and therefore sits
+    /// immediately after the header at <see cref="HeaderLength"/>. Used by the value-free <c>RefreshAsync</c> path
+    /// so a large value payload is never transferred just to push out its TTL. Returns <see langword="false"/>
+    /// (treat as a miss) when the prefix is not a recognizable framed header, or when a present sliding field is
+    /// truncated by a too-short prefix.
+    /// </summary>
+    /// <param name="prefix">A leading slice of the stored value, at least <see cref="HeaderLength"/> bytes.</param>
+    /// <param name="header">The decoded header view when this returns <see langword="true"/>.</param>
+    public static bool TryDecodeHeader(ReadOnlySpan<byte> prefix, out HeaderView header)
+    {
+        header = default;
+
+        if (prefix.Length < HeaderLength || prefix[0] != Magic || prefix[1] != Version)
+        {
+            return false;
+        }
+
+        var flags = prefix[2];
+        var hasLogical = (flags & HasLogicalExpiresAtFlag) is not 0;
+        var hasPhysical = (flags & HasPhysicalExpiresAtFlag) is not 0;
+        var hasSliding = (flags & HasSlidingExpirationFlag) is not 0;
+        var hasTags = (flags & HasTagsFlag) is not 0;
+
+        var logicalMs = hasLogical ? BinaryPrimitives.ReadInt64LittleEndian(prefix.Slice(3, sizeof(long))) : 0L;
+        var physicalMs = hasPhysical ? BinaryPrimitives.ReadInt64LittleEndian(prefix.Slice(11, sizeof(long))) : 0L;
+        var createdAtMs = BinaryPrimitives.ReadInt64LittleEndian(prefix.Slice(_CreatedAtOffset, sizeof(long)));
+        var hasCreatedAt = createdAtMs != CreatedAtAbsentSentinel;
+
+        var slidingMs = 0L;
+
+        if (hasSliding)
+        {
+            // Sliding is the first optional field, so it occupies the eight bytes right after the fixed header.
+            if (prefix.Length < HeaderLength + sizeof(long))
+            {
+                return false;
+            }
+
+            slidingMs = BinaryPrimitives.ReadInt64LittleEndian(prefix.Slice(HeaderLength, sizeof(long)));
+        }
+
+        if (
+            (hasLogical && _IsOutOfRange(logicalMs))
+            || (hasPhysical && _IsOutOfRange(physicalMs))
+            || (hasSliding && slidingMs <= 0)
+            || (hasCreatedAt && _IsOutOfRange(createdAtMs))
+        )
+        {
+            return false;
+        }
+
+        header = new HeaderView(
+            HasTags: hasTags,
+            LogicalExpiresAt: hasLogical ? _FromUnixTimeMilliseconds(logicalMs) : null,
+            PhysicalExpiresAt: hasPhysical ? _FromUnixTimeMilliseconds(physicalMs) : null,
+            SlidingExpiration: hasSliding ? TimeSpan.FromMilliseconds(slidingMs) : null,
+            CreatedAt: hasCreatedAt ? _FromUnixTimeMilliseconds(createdAtMs) : null
+        );
+
+        return true;
+    }
+
+    /// <summary>
     /// Encodes a tag collection as the frame's tag section bytes: u16le count, then per tag a u16le UTF-8 byte
     /// length followed by the UTF-8 bytes. The tagged-write Lua script parses the same layout to fan the tags
     /// out into the reverse tag index, so this is the single tag wire encoding.
@@ -486,6 +550,19 @@ internal static class RedisCacheEntryFrame
         DateTimeOffset.FromUnixTimeMilliseconds(value).UtcDateTime;
 
     private static bool _IsOutOfRange(long value) => value is < MinUnixEpochMilliseconds or > MaxUnixEpochMilliseconds;
+
+    /// <summary>
+    /// The subset of frame metadata recovered by <see cref="TryDecodeHeader"/> for the value-free re-arm path:
+    /// expiration stamps, the sliding window, the birth time (for clear/remove marker checks), and whether the
+    /// entry carries tags (which require the full frame for per-tag marker resolution).
+    /// </summary>
+    internal readonly record struct HeaderView(
+        bool HasTags,
+        DateTime? LogicalExpiresAt,
+        DateTime? PhysicalExpiresAt,
+        TimeSpan? SlidingExpiration,
+        DateTime? CreatedAt
+    );
 
     internal readonly record struct DecodedFrame(
         bool IsFramed,

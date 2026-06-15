@@ -550,6 +550,9 @@ public sealed class CronExpressionCacheTests
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
 
+        public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public ValueTask<bool> RemoveIfEqualAsync<T>(
             string key,
             T? expected,

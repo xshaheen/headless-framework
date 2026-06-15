@@ -237,6 +237,13 @@ public sealed class ScopedCache<T> : ICache<T>
         return _cache.GetSetAsync<T>(_ScopeKey(key), pageIndex, pageSize, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public ValueTask RefreshAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(cacheKey);
+        return _cache.RefreshAsync(_ScopeKey(cacheKey), cancellationToken);
+    }
+
     #endregion
 
     #region Remove

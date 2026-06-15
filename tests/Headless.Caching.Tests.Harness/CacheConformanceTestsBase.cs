@@ -598,6 +598,117 @@ public abstract class CacheConformanceTestsBase : TestBase
         expired.HasValue.Should().BeFalse();
     }
 
+    public virtual async Task should_refresh_sliding_entry_without_reading_value()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateSlidingOptions(sliding: TimeSpan.FromMilliseconds(150));
+
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+
+        await cache.RefreshAsync(key, AbortToken);
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(90));
+        var refreshed = await cache.GetAsync<string>(key, AbortToken);
+
+        refreshed.HasValue.Should().BeTrue();
+        refreshed.Value.Should().Be("value");
+    }
+
+    public virtual async Task should_not_refresh_non_sliding_entry()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMilliseconds(180) };
+
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(120));
+
+        await cache.RefreshAsync(key, AbortToken);
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+        var expired = await cache.GetAsync<string>(key, AbortToken);
+
+        expired.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_ignore_refresh_for_missing_entry()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+
+        var act = async () => await cache.RefreshAsync(Faker.Random.AlphaNumeric(10), AbortToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    public virtual async Task should_refresh_tagged_sliding_entry()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMilliseconds(700),
+            SlidingExpiration = TimeSpan.FromMilliseconds(150),
+            Tags = [tag],
+        };
+
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+
+        // A tagged entry exercises the Redis full-frame fallback (the header-only read cannot recover tags).
+        await cache.RefreshAsync(key, AbortToken);
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(90));
+        var refreshed = await cache.GetAsync<string>(key, AbortToken);
+
+        refreshed.HasValue.Should().BeTrue();
+        refreshed.Value.Should().Be("value");
+    }
+
+    public virtual async Task should_not_resurrect_tag_invalidated_entry_on_refresh()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            SlidingExpiration = TimeSpan.FromMilliseconds(200),
+            Tags = [tag],
+        };
+
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // Refresh must not re-arm (or otherwise revive) a tag-invalidated entry: the read stays a miss.
+        await cache.RefreshAsync(key, AbortToken);
+
+        var invalidated = await cache.GetAsync<string>(key, AbortToken);
+        invalidated.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_expire_immediately_when_upsert_duration_is_non_positive()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // A non-positive Duration (e.g. a past BCL absolute expiration) is "expire immediately" across providers,
+        // not an error: the write is an immediate eviction and the entry is never observable.
+        await cache.UpsertEntryAsync(key, "value", new CacheEntryOptions { Duration = TimeSpan.Zero }, AbortToken);
+
+        var immediate = await cache.GetAsync<string>(key, AbortToken);
+        immediate.HasValue.Should().BeFalse();
+    }
+
     public virtual async Task should_extend_entry_when_conditional_factory_reports_not_modified()
     {
         await ResetAsync();

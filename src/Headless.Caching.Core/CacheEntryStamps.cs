@@ -29,6 +29,14 @@ public readonly record struct CacheEntryStamps(
     /// <param name="now">The current UTC timestamp.</param>
     public static CacheEntryStamps Compute(CacheEntryOptions options, DateTime now)
     {
+        // A non-positive Duration means the entry is already expired on write (e.g. a BCL absolute expiration in
+        // the past): stamp it at `now` so every read treats it as a miss and the provider set paths evict it.
+        // Jitter/sliding/eager/fail-safe would re-arm a lifetime the entry never has, so they do not apply.
+        if (options.Duration <= TimeSpan.Zero)
+        {
+            return new CacheEntryStamps(now, now, EagerRefreshAt: null, CreatedAt: now);
+        }
+
         // Anti-stampede jitter: spread mass-expiry by extending Duration by a random [0, JitterMaxDuration). The
         // jittered span MUST be the single Duration source for every derived stamp below (logical, physical, eager)
         // or the physical >= logical invariant breaks for a non-fail-safe entry. When JitterMaxDuration is Zero the
@@ -66,7 +74,9 @@ public readonly record struct CacheEntryStamps(
     /// <param name="options">The cache entry options to validate.</param>
     public static void ValidateOptions(CacheEntryOptions options)
     {
-        Argument.IsPositive(options.Duration);
+        // Duration is intentionally unconstrained in sign: a non-positive value is a valid "expire immediately"
+        // request (Compute stamps it at `now`). The optional-field checks below still reject genuinely
+        // contradictory configurations (e.g. sub-millisecond sliding, sliding + fail-safe) regardless of sign.
         Argument.IsPositiveOrZero(options.JitterMaxDuration);
 
         if (options.SlidingExpiration is { } configuredSlidingExpiration)

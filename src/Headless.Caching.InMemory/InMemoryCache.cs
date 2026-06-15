@@ -128,6 +128,31 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedabl
         return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+
+        // Only re-arm an entry a value-returning read would actually serve: skip entries that are expired,
+        // logically expired, or tag/clear-invalidated. Without these guards Refresh would push the TTL out on a
+        // miss, diverging from the Redis provider (which gates the same way) and from the read path here.
+        if (
+            _memory.TryGetValue(key, out var existingEntry)
+            && !existingEntry.IsExpired
+            && !existingEntry.IsLogicallyExpired
+            && !_IsTagInvalidated(existingEntry)
+        )
+        {
+            _TryRearmSlidingEntry(key, existingEntry, _timeProvider.GetUtcNow().UtcDateTime);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     #region Update
 
     public ValueTask<bool> UpsertAsync<T>(
@@ -1944,6 +1969,28 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedabl
     private async ValueTask<bool> _SetEntryCoreWithResultAsync<T>(string key, CacheStoreEntryWrite<T> entry)
     {
         key = _GetKey(key);
+
+        // Already expired on write (e.g. a non-positive Duration from a past BCL absolute expiration): evict
+        // immediately and report success, mirroring RedisCache._SetEntryCoreAsync — honoring the CAS guard when
+        // an expected stamp is supplied so a stale-stamp write does not delete a newer entry.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var expiresIn = (entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt) - now;
+
+        if (expiresIn <= TimeSpan.Zero)
+        {
+            if (
+                entry.ExpectedConcurrencyStamp is { } expiredExpectedStamp
+                && _memory.TryGetValue(key, out var existingEntry)
+                && !string.Equals(existingEntry.ConcurrencyStamp, expiredExpectedStamp, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+
+            _RemoveExpiredKey(key);
+            return true;
+        }
+
         var entrySize = _CalculateEntrySize(entry.Value);
 
         if (!_ValidateEntrySize(entrySize))

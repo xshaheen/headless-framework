@@ -10,6 +10,7 @@ Provides a provider-agnostic caching API so applications can switch between memo
 
 - `ICache` - core interface for cache operations:
   - Upsert/Get/Remove with expiration
+  - `RefreshAsync` to re-arm sliding entries without returning the value
   - Removal (`RemoveAsync` hard-deletes including the fail-safe reserve; `ExpireAsync` logically expires but preserves the reserve)
   - Bulk operations (UpsertAll, GetAll, RemoveAll)
   - Prefix-based operations (GetByPrefix, RemoveByPrefix)

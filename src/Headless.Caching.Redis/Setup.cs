@@ -174,7 +174,7 @@ public static class SetupRedisCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
-                services._AddNamedCacheCore(name);
+                services._AddNamedCacheCore(instance);
             });
 
             return instance;
@@ -195,7 +195,7 @@ public static class SetupRedisCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction, name);
-                services._AddNamedCacheCore(name);
+                services._AddNamedCacheCore(instance);
             });
 
             return instance;
@@ -216,7 +216,7 @@ public static class SetupRedisCache
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration, name);
-                services._AddNamedCacheCore(name);
+                services._AddNamedCacheCore(instance);
             });
 
             return instance;
@@ -225,13 +225,19 @@ public static class SetupRedisCache
 
     extension(IServiceCollection services)
     {
-        private IServiceCollection _AddNamedCacheCore(string name)
+        private IServiceCollection _AddNamedCacheCore(HeadlessCacheInstanceBuilder instance)
         {
             services._AddSerializerCore();
             services.AddCacheProvider();
 
+            var name = instance.Name;
             var loaderKey = RedisCacheServiceKeys.NamedScriptsLoader(name);
             var initializerKey = RedisCacheServiceKeys.NamedScriptsInitializer(name);
+
+            if (instance.SerializerFactory is { } serializerFactory)
+            {
+                services.AddKeyedSingleton<ISerializer>(name, (sp, _) => serializerFactory(sp));
+            }
 
             services.TryAddKeyedSingleton(
                 loaderKey,
@@ -262,7 +268,7 @@ public static class SetupRedisCache
                 name,
                 (sp, _) =>
                     new RedisCache(
-                        sp.GetRequiredService<ISerializer>(),
+                        sp.GetKeyedService<ISerializer>(name) ?? sp.GetRequiredService<ISerializer>(),
                         sp.GetRequiredService<TimeProvider>(),
                         sp.GetRequiredService<IOptionsMonitor<RedisCacheOptions>>().Get(name),
                         sp.GetRequiredKeyedService<HeadlessRedisScriptsLoader>(loaderKey),

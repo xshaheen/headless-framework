@@ -274,6 +274,30 @@ public sealed partial class HybridCache(
     }
 
     /// <inheritdoc />
+    public async ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_IsDistributedCacheCircuitClosed())
+        {
+            try
+            {
+                await l2Cache.RefreshAsync(key, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            {
+                _OpenDistributedCacheCircuit(exception, key);
+                _logger.LogFailedToRefreshL2Cache(exception, key);
+            }
+        }
+
+        await LocalCache.RefreshAsync(key, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();

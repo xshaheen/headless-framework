@@ -2237,7 +2237,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var factoryRan = false;
 
-        // when — the factory sets an invalid duration; validation happens at write time, after the factory ran
+        // when — the factory sets an invalid option; validation happens at write time, after the factory ran
         var act = async () =>
             await _CreateCoordinator()
                 .GetOrAddAsync<string>(
@@ -2246,7 +2246,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
                     (context, _) =>
                     {
                         factoryRan = true;
-                        context.Options = context.Options with { Duration = TimeSpan.Zero };
+                        context.Options = context.Options with { JitterMaxDuration = TimeSpan.FromMilliseconds(-1) };
                         return ValueTask.FromResult(context.Modified("fresh"));
                     },
                     _CreateOptions(),
