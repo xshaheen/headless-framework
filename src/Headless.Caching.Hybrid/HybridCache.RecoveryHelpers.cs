@@ -198,6 +198,40 @@ public sealed partial class HybridCache
     }
 
     /// <summary>
+    /// Queues a Family-2 marker bump (tag/clear/remove) for auto-recovery after a failed/circuit-skipped L2 write.
+    /// Replay re-asserts the marker at its ORIGINAL timestamp via the raise-only durable write (so a write that
+    /// landed during the outage is not resurrected) and re-broadcasts the original message (closing the failed-
+    /// publish half of the gap). Stored under a synthetic key so per-tag bumps coalesce and clear/remove are
+    /// singletons; <see cref="HybridCacheRecoveryKind.MarkerBump"/> is exempt from the incoming-invalidation
+    /// conflict drop because raise-only markers are idempotent. <paramref name="writeMarker"/> captures the original
+    /// <c>invalidatedAt</c>, so replay writes that instant — not the recovery time.
+    /// </summary>
+    private void _QueueMarkerRecovery(
+        ISeedableTagMarkerCache writer,
+        Func<ISeedableTagMarkerCache, CancellationToken, ValueTask> writeMarker,
+        string recoveryKey,
+        CacheInvalidationMessage message
+    )
+    {
+        var queue = RecoveryQueue!;
+
+        queue.Enqueue(
+            recoveryKey,
+            HybridCacheRecoveryKind.MarkerBump,
+            _timeProvider.GetUtcNow() + queue.DefaultRetention,
+            async ct =>
+            {
+                await writeMarker(writer, ct).ConfigureAwait(false);
+                await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
+                return HybridCacheRecoveryReplayOutcome.Replayed;
+            },
+            // Intent timestamp = the original invalidation instant, so a value op written later (newer EnqueuedAt)
+            // is replayed after this marker and survives it.
+            enqueuedAt: message.Timestamp
+        );
+    }
+
+    /// <summary>
     /// Publishes the key invalidation for a successfully replayed value op, mirroring the live path (a landed
     /// set/remove subsumes its invalidation). Stamped with the ORIGINAL write time so receivers order it
     /// correctly: a peer whose own pending write for the key is newer ignores it instead of wiping its L1. A

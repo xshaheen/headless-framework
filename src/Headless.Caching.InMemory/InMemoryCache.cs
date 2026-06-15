@@ -1631,6 +1631,34 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedabl
         // the same way, so there is no local logical remove marker to seed.
     }
 
+    // The in-process cache has no separate durable store: its marker dictionaries ARE the store, so the durable
+    // Write* writes collapse to the raise-only local Seed* bumps. WriteRemoveMarkerAsync stays a no-op (FlushAsync
+    // wipes physically). These exist for ISeedableTagMarkerCache compliance; in a hybrid this cache is L1, not L2.
+
+    /// <inheritdoc />
+    public ValueTask WriteTagMarkerAsync(
+        string tag,
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        SeedTagMarker(tag, invalidatedAt);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public ValueTask WriteClearMarkerAsync(DateTimeOffset invalidatedAt, CancellationToken cancellationToken = default)
+    {
+        SeedClearMarker(invalidatedAt);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public ValueTask WriteRemoveMarkerAsync(DateTimeOffset invalidatedAt, CancellationToken cancellationToken = default)
+    {
+        return ValueTask.CompletedTask;
+    }
+
     /// <summary>
     /// Computes the newest invalidation marker applicable to <paramref name="entry"/> — the max of the global
     /// clear-generation marker and every per-tag marker the entry carries — or <see langword="null"/> when none

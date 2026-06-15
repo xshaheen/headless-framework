@@ -47,6 +47,36 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     }
 
     [Fact]
+    public async Task should_write_tag_marker_raise_only()
+    {
+        await FlushAsync();
+        var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
+        using var cache = CreateCache(prefix);
+        var writer = (ISeedableTagMarkerCache)cache;
+        var tag = Faker.Random.AlphaNumeric(8);
+        var markerKey = $"{prefix}{_TagMarkerNamespace}{tag}";
+
+        var t1 = DateTimeOffset.UtcNow;
+        var t0 = t1 - TimeSpan.FromSeconds(10);
+        var t2 = t1 + TimeSpan.FromSeconds(10);
+
+        // A durable write establishes the marker.
+        await writer.WriteTagMarkerAsync(tag, t1, AbortToken);
+        var afterT1 = (await _Database.StringGetAsync(markerKey)).ToString();
+
+        // An OLDER write must not lower it (raise-only — this is what makes an auto-recovery replay safe).
+        await writer.WriteTagMarkerAsync(tag, t0, AbortToken);
+        (await _Database.StringGetAsync(markerKey))
+            .ToString()
+            .Should()
+            .Be(afterT1, "an older raise-only write must not lower the stored marker");
+
+        // A NEWER write does raise it.
+        await writer.WriteTagMarkerAsync(tag, t2, AbortToken);
+        (await _Database.StringGetAsync(markerKey)).ToString().Should().NotBe(afterT1);
+    }
+
+    [Fact]
     public async Task should_miss_tagged_entry_after_remove_by_tag()
     {
         await FlushAsync();

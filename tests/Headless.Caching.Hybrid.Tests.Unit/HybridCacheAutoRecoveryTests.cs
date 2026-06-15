@@ -566,4 +566,116 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         cache.RecoveryQueue.Count.Should().Be(1);
         (await l1.GetAsync<int>(key, AbortToken)).Value.Should().Be(value);
     }
+
+    [Fact]
+    public async Task should_queue_failed_tag_marker_bump_and_replay_when_l2_recovers()
+    {
+        // given — an entry present in both tiers, tagged
+        var (cache, l1, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        await using var _ = cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        await cache.UpsertEntryAsync(
+            key,
+            42,
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+
+        // when — tag invalidation while the L2 marker bump fails (advance so the marker postdates the write)
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        l2.FailMarkerBumps = true;
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // then — L1 invalidated locally (best-effort did not throw), the marker bump is queued, and the L2 marker
+        // was NOT written, so an L2 read still serves the entry (the gap this feature closes)
+        cache.RecoveryQueue!.Count.Should().Be(1);
+        (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue();
+
+        // when — L2 recovers and the recovery pass runs
+        l2.FailMarkerBumps = false;
+        _timeProvider.Advance(_Delay);
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the replay wrote the L2 marker; the L2 read now misses and the queue drained
+        cache.RecoveryQueue.Count.Should().Be(0);
+        (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_replay_tag_marker_at_original_timestamp_so_a_later_write_survives()
+    {
+        // given
+        var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        await using var _ = cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] };
+        await cache.UpsertEntryAsync(key, 1, options, AbortToken);
+
+        // when — tag invalidation fails its L2 marker bump (queued at this instant)
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        l2.FailMarkerBumps = true;
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // ...and a newer write for the same key/tag lands during the outage (only marker bumps fail here)
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.UpsertEntryAsync(key, 2, options, AbortToken);
+
+        // when — recover and replay the queued marker (re-asserts the ORIGINAL timestamp, raise-only)
+        l2.FailMarkerBumps = false;
+        _timeProvider.Advance(_Delay);
+        await cache.RecoveryQueue!.ProcessAsync(AbortToken);
+
+        // then — the newer write survives on L2: replaying the marker at its original (older) timestamp does not
+        // invalidate an entry born after it (would fail if the replay stamped the recovery-time clock)
+        (await l2.GetAsync<int>(key, AbortToken))
+            .Value.Should()
+            .Be(2);
+    }
+
+    [Fact]
+    public async Task should_not_drop_queued_marker_bump_on_incoming_flush_all()
+    {
+        // given — a queued tag marker bump
+        var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        await using var _ = cache;
+        var tag = Faker.Random.AlphaNumeric(8);
+        l2.FailMarkerBumps = true;
+        await cache.RemoveByTagAsync(tag, AbortToken);
+        cache.RecoveryQueue!.Count.Should().Be(1);
+
+        // when — a foreign FlushAll arrives with a strictly newer timestamp
+        await cache.HandleInvalidationAsync(
+            new CacheInvalidationMessage
+            {
+                InstanceId = "other",
+                FlushAll = true,
+                Timestamp = _timeProvider.GetUtcNow() + TimeSpan.FromSeconds(1),
+            },
+            AbortToken
+        );
+
+        // then — the marker bump is raise-only/idempotent and exempt from the conflict drop, so it survives
+        cache.RecoveryQueue.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_coalesce_repeated_marker_bumps_for_the_same_tag()
+    {
+        // given
+        var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        await using var _ = cache;
+        var tag = Faker.Random.AlphaNumeric(8);
+        l2.FailMarkerBumps = true;
+
+        // when — two failed bumps for the same tag under the outage
+        await cache.RemoveByTagAsync(tag, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // then — they share one synthetic key, so the queue holds a single coalesced item (last intent wins)
+        cache.RecoveryQueue!.Count.Should().Be(1);
+    }
 }

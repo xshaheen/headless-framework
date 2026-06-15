@@ -9,7 +9,11 @@ namespace Tests;
 /// simulating a transient outage for auto-recovery tests. Reads always work. Counts write attempts so tests
 /// can assert barrier/retry behavior.
 /// </summary>
-internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteCache, IFactoryCacheStore, IDisposable
+internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
+    : IRemoteCache,
+        IFactoryCacheStore,
+        ISeedableTagMarkerCache,
+        IDisposable
 {
     private readonly InMemoryCache _cache = new(timeProvider, new InMemoryCacheOptions { CloneValues = true });
 
@@ -346,6 +350,41 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteC
     ) => _cache.SetRemoveAsync(key, value, expiration, cancellationToken);
 
     public ValueTask FlushAsync(CancellationToken cancellationToken = default) =>
+        FailMarkerBumps
+            ? throw new InvalidOperationException("L2 marker bump failed")
+            : _cache.FlushAsync(cancellationToken);
+
+    // ISeedableTagMarkerCache: a seedable L2 so the Hybrid uses the timestamped marker-write path. Seed* delegate
+    // to the inner cache's local marker state; Write* are the durable writes and honor FailMarkerBumps.
+    public void SeedTagMarker(string tag, DateTimeOffset invalidatedAt) => _cache.SeedTagMarker(tag, invalidatedAt);
+
+    public void SeedClearMarker(DateTimeOffset invalidatedAt) => _cache.SeedClearMarker(invalidatedAt);
+
+    public void SeedRemoveMarker(DateTimeOffset invalidatedAt) => _cache.SeedRemoveMarker(invalidatedAt);
+
+    public ValueTask WriteTagMarkerAsync(
+        string tag,
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    ) =>
+        FailMarkerBumps
+            ? throw new InvalidOperationException("L2 marker bump failed")
+            : _cache.WriteTagMarkerAsync(tag, invalidatedAt, cancellationToken);
+
+    public ValueTask WriteClearMarkerAsync(
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    ) =>
+        FailMarkerBumps
+            ? throw new InvalidOperationException("L2 marker bump failed")
+            : _cache.WriteClearMarkerAsync(invalidatedAt, cancellationToken);
+
+    // Inner InMemoryCache has no logical remove marker (FlushAsync wipes physically), so model a durable remove on
+    // this InMemory-backed L2 stand-in as a physical flush of the inner cache.
+    public ValueTask WriteRemoveMarkerAsync(
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    ) =>
         FailMarkerBumps
             ? throw new InvalidOperationException("L2 marker bump failed")
             : _cache.FlushAsync(cancellationToken);

@@ -1420,39 +1420,27 @@ public sealed class RedisCache(
     }
 
     /// <inheritdoc />
-    public async ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    public ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(tag);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // O(1) Family-2 logical invalidation: write the per-tag timestamp marker (one key per tag, so this works
-        // on Redis Cluster). No member enumeration. Reads compare a tagged entry's CreatedAt against this marker.
-        var nowMs = RedisCacheEntryFrame.ToUnixTimeMilliseconds(timeProvider.GetUtcNow().UtcDateTime);
-        var markerKey = (RedisKey)_GetTagMarkerKey(tag);
-
-        await _database.StringSetAsync(markerKey, nowMs.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
-
-        // Make our own subsequent reads see the bump immediately (other instances pick it up within the refresh
-        // window). Stamp the local cache so the next read of this tag does not need a round-trip to observe it.
-        _markerCache[tag] = (nowMs, _StopwatchTicks());
+        // O(1) Family-2 logical invalidation: raise-only durable write of the per-tag timestamp marker (one key per
+        // tag, so this works on Redis Cluster) plus the local stamp. Reads compare a tagged entry's CreatedAt
+        // against it. Routed through WriteTagMarkerAsync so the live path and auto-recovery replay share one
+        // raise-only write (on the live path `now` is monotonic, so behavior is unchanged).
+        return WriteTagMarkerAsync(tag, timeProvider.GetUtcNow(), cancellationToken);
     }
 
     /// <inheritdoc />
-    public async ValueTask ClearAsync(CancellationToken cancellationToken = default)
+    public ValueTask ClearAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // O(1) Family-2 logical clear: bump the single reserved clear-generation marker. Entries born before it
-        // read as misses (direct reads) or demote to fail-safe reserves (coordinator). Physical reserves survive
-        // (unlike FlushAsync). Compared on every read, tagged or not.
-        var nowMs = RedisCacheEntryFrame.ToUnixTimeMilliseconds(timeProvider.GetUtcNow().UtcDateTime);
-
-        await _database
-            .StringSetAsync((RedisKey)_GetClearMarkerKey(), nowMs.ToString(CultureInfo.InvariantCulture))
-            .ConfigureAwait(false);
-
-        Interlocked.Exchange(ref _clearMarkerMs, nowMs);
-        Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
+        // O(1) Family-2 logical clear: raise-only durable write of the single reserved clear-generation marker.
+        // Entries born before it read as misses (direct reads) or demote to fail-safe reserves (coordinator);
+        // physical reserves survive (unlike FlushAsync). Compared on every read, tagged or not.
+        return WriteClearMarkerAsync(timeProvider.GetUtcNow(), cancellationToken);
     }
 
     /// <inheritdoc />
@@ -1511,6 +1499,64 @@ public sealed class RedisCache(
         Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
     }
 
+    /// <inheritdoc />
+    public async ValueTask WriteTagMarkerAsync(
+        string tag,
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(tag);
+
+        var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
+        await _RaiseDurableMarkerAsync((RedisKey)_GetTagMarkerKey(tag), ms, cancellationToken).ConfigureAwait(false);
+        SeedTagMarker(tag, invalidatedAt);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask WriteClearMarkerAsync(
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
+        await _RaiseDurableMarkerAsync((RedisKey)_GetClearMarkerKey(), ms, cancellationToken).ConfigureAwait(false);
+        SeedClearMarker(invalidatedAt);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask WriteRemoveMarkerAsync(
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
+        await _RaiseDurableMarkerAsync((RedisKey)_GetRemoveMarkerKey(), ms, cancellationToken).ConfigureAwait(false);
+        SeedRemoveMarker(invalidatedAt);
+    }
+
+    /// <summary>
+    /// Raise-only durable marker write (set-if-higher): a recovery replay may carry an older timestamp than a bump
+    /// that already landed, so it must never lower the stored marker. Reuses the shared set-if-higher Lua script
+    /// (markers carry no expiry, so the optional pexpire is skipped via an empty <c>expires</c> arg).
+    /// </summary>
+    private async ValueTask _RaiseDurableMarkerAsync(RedisKey markerKey, long ms, CancellationToken cancellationToken)
+    {
+        await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                SetIfHigherScriptDefinition.Instance,
+                new
+                {
+                    key = markerKey,
+                    value = (RedisValue)ms.ToString(CultureInfo.InvariantCulture),
+                    expires = RedisValue.EmptyString,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     public async ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
@@ -1552,24 +1598,18 @@ public sealed class RedisCache(
         return removed;
     }
 
-    public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    public ValueTask FlushAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         // Logical flush (FusionCache Clear(false) parity): a physical wipe of a distributed Redis is unsafe —
         // FLUSHDB only affects the addressed node on a Redis Cluster (and destroys co-tenant data on a shared
         // instance), and an O(N) prefix SCAN+UNLINK does not span shards atomically. Instead bump the reserved
-        // remove-generation marker: every entry born before it reads as a hard miss with NO fail-safe reserve
-        // (distinct from ClearAsync, which preserves reserves). One marker key — cluster-safe; physical memory is
-        // reclaimed by each entry's TTL, so GetCountAsync may still count logically-removed entries until they age out.
-        var nowMs = RedisCacheEntryFrame.ToUnixTimeMilliseconds(timeProvider.GetUtcNow().UtcDateTime);
-
-        await _database
-            .StringSetAsync((RedisKey)_GetRemoveMarkerKey(), nowMs.ToString(CultureInfo.InvariantCulture))
-            .ConfigureAwait(false);
-
-        Interlocked.Exchange(ref _removeMarkerMs, nowMs);
-        Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
+        // remove-generation marker (raise-only durable write): every entry born before it reads as a hard miss with
+        // NO fail-safe reserve (distinct from ClearAsync, which preserves reserves). One marker key — cluster-safe;
+        // physical memory is reclaimed by each entry's TTL, so GetCountAsync may still count logically-removed
+        // entries until they age out.
+        return WriteRemoveMarkerAsync(timeProvider.GetUtcNow(), cancellationToken);
     }
 
     #endregion

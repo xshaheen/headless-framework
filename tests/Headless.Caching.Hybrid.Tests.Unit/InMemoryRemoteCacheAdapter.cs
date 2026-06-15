@@ -25,6 +25,25 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
 
     public void SeedRemoveMarker(DateTimeOffset invalidatedAt) => SeededRemoveMarkers.Add(invalidatedAt);
 
+    // Durable marker writes delegate to the inner cache (its marker dictionaries are this adapter's durable store).
+    public ValueTask WriteTagMarkerAsync(
+        string tag,
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    ) => cache.WriteTagMarkerAsync(tag, invalidatedAt, cancellationToken);
+
+    public ValueTask WriteClearMarkerAsync(
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    ) => cache.WriteClearMarkerAsync(invalidatedAt, cancellationToken);
+
+    // The inner InMemoryCache has no logical remove-generation marker (its FlushAsync wipes physically), so model
+    // a durable remove on this InMemory-backed L2 stand-in as a physical flush of the inner cache.
+    public ValueTask WriteRemoveMarkerAsync(
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    ) => cache.FlushAsync(cancellationToken);
+
     public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;
 
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>

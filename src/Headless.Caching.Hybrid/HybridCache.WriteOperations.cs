@@ -934,26 +934,27 @@ public sealed partial class HybridCache
         }
 
         // Broadcast carrying the timestamp so peers seed their L1/L2 from the origin clock; publish before the L2
-        // bump to minimize the window in which a peer re-populates its L1 from a not-yet-invalidated L2.
-        await _PublishInvalidationAsync(
-                new CacheInvalidationMessage
-                {
-                    InstanceId = _instanceId,
-                    Tag = tag,
-                    Timestamp = invalidatedAt,
-                },
+        // bump to minimize the window in which a peer re-populates its L1 from a not-yet-invalidated L2. The same
+        // message is reused as the auto-recovery replay payload (re-broadcast at its original timestamp).
+        var message = new CacheInvalidationMessage
+        {
+            InstanceId = _instanceId,
+            Tag = tag,
+            Timestamp = invalidatedAt,
+        };
+        await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+
+        // L2 marker bump is best-effort under the circuit breaker. When the L2 supports timestamped marker writes
+        // (ISeedableTagMarkerCache) and auto-recovery is enabled, a skipped/failed bump is queued and replayed at
+        // its original timestamp on recovery; otherwise it is bounded by each entry's physical TTL.
+        await _BumpL2MarkerBestEffortAsync(
+                (writer, ct) => writer.WriteTagMarkerAsync(tag, invalidatedAt, ct),
+                ct => l2Cache.RemoveByTagAsync(tag, ct),
+                _TagMarkerRecoveryKey(tag),
+                message,
+                tag,
                 cancellationToken
             )
-            .ConfigureAwait(false);
-
-        // L2 marker bump is best-effort under the circuit breaker: a remote failure trips the circuit and is
-        // logged, never abandoning the local + peer invalidation already applied (L1 is bumped and peers got the
-        // broadcast above). NOTE: a failed or circuit-skipped L2 marker bump is NOT replayed — marker bumps are not
-        // captured by the recovery queue — so the shared-store marker stays unwritten until the next successful
-        // bump. Cross-instance staleness for a node relying solely on the shared marker (a late joiner, or this
-        // node once its process-local marker-cache entry expires) is then bounded only by each affected entry's
-        // physical TTL, not by TagMarkerRefreshWindow. (#440 follow-up: queue tag/clear/remove marker bumps.)
-        await _BumpL2MarkerBestEffortAsync(ct => l2Cache.RemoveByTagAsync(tag, ct), tag, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -976,47 +977,88 @@ public sealed partial class HybridCache
             await LocalCache.ClearAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await _PublishInvalidationAsync(
-                new CacheInvalidationMessage
-                {
-                    InstanceId = _instanceId,
-                    Clear = true,
-                    Timestamp = invalidatedAt,
-                },
+        var message = new CacheInvalidationMessage
+        {
+            InstanceId = _instanceId,
+            Clear = true,
+            Timestamp = invalidatedAt,
+        };
+        await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+
+        await _BumpL2MarkerBestEffortAsync(
+                (writer, ct) => writer.WriteClearMarkerAsync(invalidatedAt, ct),
+                ct => l2Cache.ClearAsync(ct),
+                _ClearMarkerRecoveryKey,
+                message,
+                "*",
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        await _BumpL2MarkerBestEffortAsync(ct => l2Cache.ClearAsync(ct), "*", cancellationToken).ConfigureAwait(false);
     }
+
+    // Synthetic recovery-queue keys for marker bumps. The NUL prefix keeps them in their own namespace within the
+    // queue's key-keyed dictionary so they never collide with real cache keys (and per-tag keys coalesce naturally).
+    private const string _ClearMarkerRecoveryKey = "\0hybrid-marker:clear";
+    private const string _RemoveMarkerRecoveryKey = "\0hybrid-marker:remove";
+
+    private static string _TagMarkerRecoveryKey(string tag) => string.Concat("\0hybrid-marker:tag:", tag);
 
     /// <summary>
     /// Applies a Family-2 marker bump (tag/clear/remove) to L2 as a best-effort operation: skipped when the
     /// distributed-cache circuit is open, and on failure it trips the circuit and logs rather than propagating —
-    /// the caller has already applied the infallible L1 bump and broadcast the invalidation. A skipped/failed bump
-    /// is NOT replayed (marker bumps are not queued for recovery), so the shared-store marker stays unwritten until
-    /// the next successful bump; a node relying solely on the shared marker is then bounded only by each entry's
-    /// physical TTL. Honours <see cref="HybridCacheOptions.ReThrowDistributedCacheExceptions"/>.
+    /// the caller has already applied the infallible L1 bump and broadcast the invalidation. When the L2 supports
+    /// timestamped marker writes (<see cref="ISeedableTagMarkerCache"/>) and auto-recovery is enabled, a
+    /// skipped/failed bump is queued and replayed at its <em>original</em> timestamp (raise-only durable write) on
+    /// recovery; otherwise the shared-store marker is bounded by each entry's physical TTL. A successful bump
+    /// supersedes any queued recovery for the same marker. Honours
+    /// <see cref="HybridCacheOptions.ReThrowDistributedCacheExceptions"/>.
     /// </summary>
     private async ValueTask _BumpL2MarkerBestEffortAsync(
-        Func<CancellationToken, ValueTask> bump,
+        Func<ISeedableTagMarkerCache, CancellationToken, ValueTask> writeMarker,
+        Func<CancellationToken, ValueTask> fallbackBump,
+        string recoveryKey,
+        CacheInvalidationMessage message,
         string circuitKey,
         CancellationToken cancellationToken
     )
     {
+        var writer = l2Cache as ISeedableTagMarkerCache;
+
         if (!_IsDistributedCacheCircuitClosed())
         {
+            // Circuit open: skip the live write. Queue for replay only when the L2 can re-assert the original
+            // timestamp (raise-only timestamped write) and auto-recovery is on.
+            if (writer is not null && RecoveryQueue is not null)
+            {
+                _QueueMarkerRecovery(writer, writeMarker, recoveryKey, message);
+            }
+
             return;
         }
 
         try
         {
-            await bump(cancellationToken).ConfigureAwait(false);
+            if (writer is not null)
+            {
+                await writeMarker(writer, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await fallbackBump(cancellationToken).ConfigureAwait(false);
+            }
+
+            // A successful live bump supersedes any bump queued during an earlier outage for this marker.
+            RecoveryQueue?.OnSuccessfulL2Operation(recoveryKey);
         }
         catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
         {
             _OpenDistributedCacheCircuit(exception, circuitKey);
             _logger.LogFailedToWriteToL2Cache(exception, circuitKey);
+
+            if (writer is not null && RecoveryQueue is not null)
+            {
+                _QueueMarkerRecovery(writer, writeMarker, recoveryKey, message);
+            }
 
             if (options.ReThrowDistributedCacheExceptions)
             {
@@ -1081,18 +1123,22 @@ public sealed partial class HybridCache
 
         await LocalCache.FlushAsync(cancellationToken).ConfigureAwait(false);
 
-        await _PublishInvalidationAsync(
-                new CacheInvalidationMessage
-                {
-                    InstanceId = _instanceId,
-                    FlushAll = true,
-                    Timestamp = invalidatedAt,
-                },
+        var message = new CacheInvalidationMessage
+        {
+            InstanceId = _instanceId,
+            FlushAll = true,
+            Timestamp = invalidatedAt,
+        };
+        await _PublishInvalidationAsync(message, cancellationToken).ConfigureAwait(false);
+
+        await _BumpL2MarkerBestEffortAsync(
+                (writer, ct) => writer.WriteRemoveMarkerAsync(invalidatedAt, ct),
+                ct => l2Cache.FlushAsync(ct),
+                _RemoveMarkerRecoveryKey,
+                message,
+                "__remove",
                 cancellationToken
             )
-            .ConfigureAwait(false);
-
-        await _BumpL2MarkerBestEffortAsync(ct => l2Cache.FlushAsync(ct), "__remove", cancellationToken)
             .ConfigureAwait(false);
     }
 

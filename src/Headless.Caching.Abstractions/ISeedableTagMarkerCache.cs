@@ -34,4 +34,23 @@ public interface ISeedableTagMarkerCache
     /// physically have no such marker and implement this as a no-op.
     /// </summary>
     void SeedRemoveMarker(DateTimeOffset invalidatedAt);
+
+    /// <summary>
+    /// Writes <paramref name="tag"/>'s invalidation marker to the <em>durable</em> store at
+    /// <paramref name="invalidatedAt"/> (then updates the local copy), as opposed to <see cref="SeedTagMarker"/>
+    /// which only updates the local copy. The durable write is <em>raise-only</em> — it must never lower a newer
+    /// marker already stored — so a multi-tier host can carry the original invalidation timestamp here (e.g. on a
+    /// live invalidation or an auto-recovery replay after an outage) without resurrecting entries written after it.
+    /// </summary>
+    ValueTask WriteTagMarkerAsync(
+        string tag,
+        DateTimeOffset invalidatedAt,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>Durable, raise-only write of the global clear-generation marker at <paramref name="invalidatedAt"/>. See <see cref="WriteTagMarkerAsync"/>.</summary>
+    ValueTask WriteClearMarkerAsync(DateTimeOffset invalidatedAt, CancellationToken cancellationToken = default);
+
+    /// <summary>Durable, raise-only write of the global remove-generation marker at <paramref name="invalidatedAt"/>. See <see cref="WriteTagMarkerAsync"/>. A cache whose <c>FlushAsync</c> wipes physically implements this as a no-op.</summary>
+    ValueTask WriteRemoveMarkerAsync(DateTimeOffset invalidatedAt, CancellationToken cancellationToken = default);
 }

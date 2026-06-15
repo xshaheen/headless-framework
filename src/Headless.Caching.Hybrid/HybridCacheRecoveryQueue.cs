@@ -12,6 +12,14 @@ internal enum HybridCacheRecoveryKind
     Remove,
     Expire,
     PublishInvalidation,
+
+    /// <summary>
+    /// A Family-2 tag/clear/remove generation marker bump (logical RemoveByTag/Clear/Flush). Stored under a
+    /// synthetic key; replay re-asserts the marker at its original timestamp (raise-only durable write) and
+    /// re-broadcasts. Exempt from <see cref="HybridCacheRecoveryQueue.OnIncomingInvalidation"/> conflict drops —
+    /// raise-only markers are idempotent and never resurrect stale data.
+    /// </summary>
+    MarkerBump,
 }
 
 /// <summary>Outcome of replaying a queued recovery item.</summary>
@@ -33,9 +41,11 @@ internal enum HybridCacheRecoveryReplayOutcome
 /// represents the latest local intent for that key.
 /// </summary>
 /// <remarks>
-/// Scope is intentionally limited to single-key operations (factory/entry sets, scalar upserts, removes, and
-/// their invalidation publishes). Bulk, atomic (increment/set-if), and set operations are not captured: their
-/// failure semantics are value-dependent and replaying them later could double-apply effects.
+/// Scope covers single-key operations (factory/entry sets, scalar upserts, removes, and their invalidation
+/// publishes) plus Family-2 tag/clear/remove marker bumps (<see cref="HybridCacheRecoveryKind.MarkerBump"/>, stored
+/// under synthetic keys and replayed at their original timestamp via a raise-only durable write). Bulk, atomic
+/// (increment/set-if), and set operations are not captured: their failure semantics are value-dependent and
+/// replaying them later could double-apply effects.
 /// </remarks>
 internal sealed class HybridCacheRecoveryQueue : IDisposable
 {
@@ -204,13 +214,17 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             return;
         }
 
-        bool IsOlder(RecoveryItem item) => message.Timestamp is null || item.EnqueuedAt < message.Timestamp.Value;
+        // A queued marker bump (raise-only, idempotent) never resurrects stale data, so it is exempt from the
+        // conflict drop: replaying it only re-asserts the same generation timestamp via the raise-only durable write.
+        bool IsConflicting(RecoveryItem item) =>
+            item.Kind != HybridCacheRecoveryKind.MarkerBump
+            && (message.Timestamp is null || item.EnqueuedAt < message.Timestamp.Value);
 
         if (message.FlushAll)
         {
             foreach (var pair in _items)
             {
-                if (IsOlder(pair.Value))
+                if (IsConflicting(pair.Value))
                 {
                     _TryRemoveConflicting(pair);
                 }
@@ -223,7 +237,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var pair in _items)
             {
-                if (pair.Key.StartsWith(message.Prefix, StringComparison.Ordinal) && IsOlder(pair.Value))
+                if (pair.Key.StartsWith(message.Prefix, StringComparison.Ordinal) && IsConflicting(pair.Value))
                 {
                     _TryRemoveConflicting(pair);
                 }
@@ -236,7 +250,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var key in message.Keys)
             {
-                if (_items.TryGetValue(key, out var item) && IsOlder(item))
+                if (_items.TryGetValue(key, out var item) && IsConflicting(item))
                 {
                     _TryRemoveConflicting(new(key, item));
                 }
@@ -245,7 +259,11 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             return;
         }
 
-        if (!string.IsNullOrEmpty(message.Key) && _items.TryGetValue(message.Key, out var single) && IsOlder(single))
+        if (
+            !string.IsNullOrEmpty(message.Key)
+            && _items.TryGetValue(message.Key, out var single)
+            && IsConflicting(single)
+        )
         {
             _TryRemoveConflicting(new(message.Key, single));
         }
