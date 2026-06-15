@@ -290,7 +290,7 @@ public sealed partial class HybridCache(
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
                 _OpenDistributedCacheCircuit(exception, key);
-                _logger.LogFailedToWriteToL2Cache(exception, key);
+                _logger.LogFailedToRefreshL2Cache(exception, key);
             }
         }
 
