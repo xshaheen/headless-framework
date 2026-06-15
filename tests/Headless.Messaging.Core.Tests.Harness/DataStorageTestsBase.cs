@@ -829,7 +829,7 @@ public abstract class DataStorageTestsBase : TestBase
             .Should()
             .NotContain(m => m.StorageId == deadOwned.StorageId || m.StorageId == liveOwned.StorageId);
 
-        var reclaimed = await storage.ReclaimDeadPublishedOwnersAsync([liveOwner.ToString()], AbortToken);
+        var reclaimed = await storage.ReclaimDeadPublishedOwnersAsync([deadOwner.ToString()], AbortToken);
 
         reclaimed.Should().Be(1);
         var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
@@ -855,7 +855,7 @@ public abstract class DataStorageTestsBase : TestBase
             .Should()
             .NotContain(m => m.StorageId == deadOwned.StorageId || m.StorageId == liveOwned.StorageId);
 
-        var reclaimed = await storage.ReclaimDeadReceivedOwnersAsync([liveOwner.ToString()], AbortToken);
+        var reclaimed = await storage.ReclaimDeadReceivedOwnersAsync([deadOwner.ToString()], AbortToken);
 
         reclaimed.Should().Be(1);
         var retriable = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
@@ -892,7 +892,9 @@ public abstract class DataStorageTestsBase : TestBase
     public virtual async Task should_not_reclaim_rows_of_live_or_restarted_incarnation()
     {
         var storage = GetStorage();
-        NodeMembership.SetIdentity("restart-node", incarnation: 7);
+        // The crashed incarnation (@7) is the dead owner; the restarted incarnation (@8) is live.
+        // Reclaiming the dead set must fence the restart: @8's rows stay untouched.
+        var deadOwner = NodeMembership.SetIdentity("restart-node", incarnation: 7);
         var oldPublished = await _StoreFailedPublishedMessageAsync("old-incarnation-published");
         (await storage.LeasePublishAsync(oldPublished, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
         var oldReceived = await _StoreFailedReceivedMessageAsync("old-incarnation-received", "old-incarnation-group");
@@ -907,14 +909,15 @@ public abstract class DataStorageTestsBase : TestBase
         );
         (await storage.LeaseReceiveAsync(liveReceived, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
 
-        var liveOwners = new[] { liveOwner.ToString() };
+        deadOwner.ToString().Should().NotBe(liveOwner.ToString());
+        var deadOwners = new[] { deadOwner.ToString() };
 
-        (await storage.ReclaimDeadPublishedOwnersAsync(liveOwners, AbortToken)).Should().Be(1);
+        (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
         var publishedRetriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
         publishedRetriable.Should().Contain(m => m.StorageId == oldPublished.StorageId);
         publishedRetriable.Should().NotContain(m => m.StorageId == livePublished.StorageId);
 
-        (await storage.ReclaimDeadReceivedOwnersAsync(liveOwners, AbortToken)).Should().Be(1);
+        (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
         var receivedRetriable = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
         receivedRetriable.Should().Contain(m => m.StorageId == oldReceived.StorageId);
         receivedRetriable.Should().NotContain(m => m.StorageId == liveReceived.StorageId);
@@ -923,7 +926,7 @@ public abstract class DataStorageTestsBase : TestBase
     public virtual async Task should_not_reclaim_terminal_rows()
     {
         var storage = GetStorage();
-        NodeMembership.SetIdentity("terminal-dead-owner");
+        var deadOwner = NodeMembership.SetIdentity("terminal-dead-owner");
         var published = await _StoreFailedPublishedMessageAsync("terminal-published");
         (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
         (
@@ -952,15 +955,18 @@ public abstract class DataStorageTestsBase : TestBase
             .Should()
             .BeTrue();
 
-        var liveOwner = NodeMembership.SetIdentity("terminal-live-owner");
-        var liveOwners = new[] { liveOwner.ToString() };
+        var deadOwners = new[] { deadOwner.ToString() };
 
-        (await storage.ReclaimDeadPublishedOwnersAsync(liveOwners, AbortToken)).Should().Be(0);
+        // A terminal row owned by a dead owner is matched by the owner clause but excluded by the
+        // terminal-row guard, so reclaim leaves it alone.
+        (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken))
+            .Should()
+            .Be(0);
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .NotContain(m => m.StorageId == published.StorageId);
 
-        (await storage.ReclaimDeadReceivedOwnersAsync(liveOwners, AbortToken)).Should().Be(0);
+        (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .NotContain(m => m.StorageId == received.StorageId);
@@ -1011,23 +1017,48 @@ public abstract class DataStorageTestsBase : TestBase
     public virtual async Task should_reclaim_dead_owner_rows_idempotently()
     {
         var storage = GetStorage();
-        NodeMembership.SetIdentity("idempotent-dead-owner");
+        var deadOwner = NodeMembership.SetIdentity("idempotent-dead-owner");
         var published = await _StoreFailedPublishedMessageAsync("idempotent-published");
         (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
         var received = await _StoreFailedReceivedMessageAsync("idempotent-received", "idempotent-group");
         (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
 
-        var liveOwner = NodeMembership.SetIdentity("idempotent-live-owner");
-        var liveOwners = new[] { liveOwner.ToString() };
+        var deadOwners = new[] { deadOwner.ToString() };
 
-        (await storage.ReclaimDeadPublishedOwnersAsync(liveOwners, AbortToken)).Should().Be(1);
-        (await storage.ReclaimDeadPublishedOwnersAsync(liveOwners, AbortToken)).Should().Be(0);
+        (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
+        (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .Contain(m => m.StorageId == published.StorageId);
 
-        (await storage.ReclaimDeadReceivedOwnersAsync(liveOwners, AbortToken)).Should().Be(1);
-        (await storage.ReclaimDeadReceivedOwnersAsync(liveOwners, AbortToken)).Should().Be(0);
+        (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(1);
+        (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == received.StorageId);
+    }
+
+    public virtual async Task should_not_reclaim_dead_owner_rows_with_expired_lease()
+    {
+        // AE4: the LockedUntil floor — a dead owner's row whose lease has already expired is left
+        // untouched by reclaim (the `LockedUntil > now` clause excludes it); normal lease-expiry
+        // pickup recovers it. Reclaim only fast-forwards leases still in the future.
+        var storage = GetStorage();
+        var deadOwner = NodeMembership.SetIdentity("expired-lease-dead-owner");
+        var published = await _StoreFailedPublishedMessageAsync("expired-lease-published");
+        (await storage.LeasePublishAsync(published, DateTime.UtcNow.AddSeconds(-1), AbortToken)).Should().BeTrue();
+        var received = await _StoreFailedReceivedMessageAsync("expired-lease-received", "expired-lease-group");
+        (await storage.LeaseReceiveAsync(received, DateTime.UtcNow.AddSeconds(-1), AbortToken)).Should().BeTrue();
+
+        var deadOwners = new[] { deadOwner.ToString() };
+
+        (await storage.ReclaimDeadPublishedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
+        (await storage.ReclaimDeadReceivedOwnersAsync(deadOwners, AbortToken)).Should().Be(0);
+
+        // The floor still recovers them: an expired lease is already retriable via normal pickup.
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == published.StorageId);
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .Contain(m => m.StorageId == received.StorageId);

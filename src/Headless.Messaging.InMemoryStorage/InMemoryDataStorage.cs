@@ -628,11 +628,11 @@ internal sealed class InMemoryDataStorage(
     }
 
     public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult(_ReclaimDeadOwners(PublishedMessages, liveOwners, cancellationToken));
+        return ValueTask.FromResult(_ReclaimDeadOwners(PublishedMessages, deadOwners, cancellationToken));
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
@@ -643,11 +643,11 @@ internal sealed class InMemoryDataStorage(
     }
 
     public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult(_ReclaimDeadOwners(ReceivedMessages, liveOwners, cancellationToken));
+        return ValueTask.FromResult(_ReclaimDeadOwners(ReceivedMessages, deadOwners, cancellationToken));
     }
 
     private IEnumerable<MediumMessage> _ClaimMessagesOfNeedRetry(
@@ -780,15 +780,15 @@ internal sealed class InMemoryDataStorage(
 
     private int _ReclaimDeadOwners(
         ConcurrentDictionary<Guid, MemoryMessage> messages,
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Empty liveOwners is a no-op (IDataStorage contract) — an empty set would otherwise reclaim
-        // every leased owned row, matching the PostgreSQL/SqlServer guards.
-        if (liveOwners.Count == 0)
+        // Empty deadOwners trivially matches zero rows — short-circuit as an optimization (no row scan),
+        // matching the PostgreSQL/SqlServer early returns and the IDataStorage no-op contract.
+        if (deadOwners.Count == 0)
         {
             return 0;
         }
@@ -796,7 +796,7 @@ internal sealed class InMemoryDataStorage(
         // Always build an Ordinal HashSet so the owner comparison matches the PostgreSQL/SqlServer
         // exact-string semantics. The previous `as ISet<string>` fast path was both dead (the sole
         // caller passes a string[]) and a latent trap (a non-Ordinal ISet would silently diverge).
-        var liveOwnerSet = new HashSet<string>(liveOwners, StringComparer.Ordinal);
+        var deadOwnerSet = new HashSet<string>(deadOwners, StringComparer.Ordinal);
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var reclaimed = 0;
 
@@ -806,7 +806,7 @@ internal sealed class InMemoryDataStorage(
 
             lock (message)
             {
-                if (message.Owner is null || liveOwnerSet.Contains(message.Owner))
+                if (message.Owner is null || !deadOwnerSet.Contains(message.Owner))
                 {
                     continue;
                 }

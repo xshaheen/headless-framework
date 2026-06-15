@@ -309,6 +309,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_reclaim_dead_owner_rows_idempotently() =>
         base.should_reclaim_dead_owner_rows_idempotently();
 
+    [Fact]
+    public override Task should_not_reclaim_dead_owner_rows_with_expired_lease() =>
+        base.should_not_reclaim_dead_owner_rows_with_expired_lease();
+
     #endregion
 
     #region PostgreSQL-Specific Tests

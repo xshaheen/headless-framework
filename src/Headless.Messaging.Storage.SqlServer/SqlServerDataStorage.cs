@@ -458,11 +458,11 @@ public sealed class SqlServerDataStorage(
     }
 
     public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
     )
     {
-        return _ReclaimDeadOwnersAsync(_publishedTable, liveOwners, cancellationToken);
+        return _ReclaimDeadOwnersAsync(_publishedTable, deadOwners, cancellationToken);
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
@@ -473,11 +473,11 @@ public sealed class SqlServerDataStorage(
     }
 
     public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
     )
     {
-        return _ReclaimDeadOwnersAsync(_receivedTable, liveOwners, cancellationToken);
+        return _ReclaimDeadOwnersAsync(_receivedTable, deadOwners, cancellationToken);
     }
 
     public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
@@ -918,24 +918,26 @@ public sealed class SqlServerDataStorage(
 
     private async ValueTask<int> _ReclaimDeadOwnersAsync(
         string tableName,
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken
     )
     {
-        if (liveOwners.Count == 0)
+        // Empty deadOwners trivially matches zero rows (`Owner IN ()` is never satisfied), so the early
+        // return is an optimization that skips the round-trip, not a safety guard.
+        if (deadOwners.Count == 0)
         {
             return 0;
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         List<SqlParameter> sqlParams = [new("@Now", SqlDbType.DateTime2) { Value = now }];
-        var liveOwnerParams = _AddLiveOwnerParameters(liveOwners, sqlParams);
+        var deadOwnerParams = _AddDeadOwnerParameters(deadOwners, sqlParams);
         var sql = $"""
             UPDATE target
             SET LockedUntil = @Now
             FROM {tableName} AS target
             WHERE target.Owner IS NOT NULL
-              AND target.Owner NOT IN ({liveOwnerParams})
+              AND target.Owner IN ({deadOwnerParams})
               AND target.LockedUntil > @Now
               AND {_TerminalRowGuardSimple};
             """;
@@ -951,17 +953,17 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
-    private string _AddLiveOwnerParameters(IReadOnlyCollection<string> liveOwners, List<SqlParameter> sqlParams)
+    private string _AddDeadOwnerParameters(IReadOnlyCollection<string> deadOwners, List<SqlParameter> sqlParams)
     {
-        var parameterNames = new List<string>(liveOwners.Count);
+        var parameterNames = new List<string>(deadOwners.Count);
         var index = 0;
 
         // Defensive de-dup: ReclaimDead* is a public IDataStorage contract method, so a direct
-        // caller may pass duplicate owner tags. The processor already de-dups its cached set, but
-        // this keeps the storage method self-sufficient and avoids emitting duplicate NOT IN params.
-        foreach (var owner in liveOwners.Distinct(StringComparer.Ordinal))
+        // caller may pass duplicate owner tags. The bridge already de-dups its reclaimed set, but
+        // this keeps the storage method self-sufficient and avoids emitting duplicate IN params.
+        foreach (var owner in deadOwners.Distinct(StringComparer.Ordinal))
         {
-            var parameterName = $"@LiveOwner{index++}";
+            var parameterName = $"@DeadOwner{index++}";
             parameterNames.Add(parameterName);
             sqlParams.Add(
                 new SqlParameter(parameterName, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
