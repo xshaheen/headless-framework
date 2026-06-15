@@ -277,6 +277,109 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         snapshot.Should().ContainSingle(x => x.Identity == secondIdentity && x.State == NodeLivenessState.Alive);
     }
 
+    public virtual async Task should_read_targeted_node_liveness_across_states()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        // Alive immediately after register.
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+
+        // Aged into the suspicion band -> Suspected.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Suspected);
+
+        // Aged past the dead threshold but still inside the retention window -> Dead.
+        await TimeProvider.System.Delay(
+            CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
+            AbortToken
+        );
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Dead);
+    }
+
+    public virtual async Task should_read_dead_targeted_state_after_graceful_leave()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        await node.Membership.LeaveAsync(AbortToken);
+
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Dead);
+    }
+
+    public virtual async Task should_read_null_targeted_state_for_superseded_incarnation()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+        var store = second.Services.GetRequiredService<IMembershipStore>();
+
+        secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
+        // The superseded prior incarnation is not current-generation -> absent (null).
+        (await store.ReadNodeLivenessAsync(firstIdentity, AbortToken)).Should().BeNull();
+        (await store.ReadNodeLivenessAsync(secondIdentity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+    }
+
+    public virtual async Task should_read_null_without_pruning_for_retention_expired_node()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        // Age past the retention window, then read the TARGETED path first — before any snapshot read, whose
+        // prune side effect would delete the row and mask a divergence. The targeted path must reproduce the
+        // snapshot's post-prune "absent" view by returning null, never by classifying the row as Dead.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+
+        var targeted = await store.ReadNodeLivenessAsync(identity, AbortToken);
+
+        targeted.Should().BeNull();
+        // The snapshot (read after) agrees the node is absent — and only now is the row eligible to be pruned.
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+        snapshot.Should().NotContain(x => x.Identity == identity);
+    }
+
+    public virtual async Task should_agree_between_targeted_read_and_snapshot()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+        var unregistered = new NodeIdentity(new NodeId("node-z"), new NodeIncarnation(1));
+
+        // Within the retention window the targeted read must equal the snapshot's per-identity state across all
+        // states, and null exactly when the identity is absent from the snapshot.
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+        var present = await store.ReadNodeLivenessAsync(identity, AbortToken);
+        var absent = await store.ReadNodeLivenessAsync(unregistered, AbortToken);
+
+        present.Should().Be(snapshot.FirstOrDefault(x => x.Identity == identity)?.State);
+        absent.Should().Be(snapshot.FirstOrDefault(x => x.Identity == unregistered)?.State);
+        absent.Should().BeNull();
+    }
+
+    public virtual async Task should_derive_is_alive_from_targeted_read()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        // The current incarnation is alive; the superseded prior incarnation is not.
+        (await second.Membership.IsAliveAsync(secondIdentity, AbortToken)).Should().BeTrue();
+        (await second.Membership.IsAliveAsync(firstIdentity, AbortToken)).Should().BeFalse();
+    }
+
     private static string _Cluster()
     {
         return "conformance-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
