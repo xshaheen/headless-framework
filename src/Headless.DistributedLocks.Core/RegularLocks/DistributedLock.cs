@@ -244,7 +244,7 @@ public sealed class DistributedLock(
 
         if (!acquireResult.Acquired)
         {
-            DistributedLockMetrics.LockFailed.Add(1);
+            DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
 
             if (cts.IsCancellationRequested)
             {
@@ -306,6 +306,7 @@ public sealed class DistributedLock(
 
         var attemptToken = linkedCts?.Token ?? safetyCts.Token;
         DistributedLockAcquireResult acquireResult;
+        var safetyDeadlineFired = false;
 
         try
         {
@@ -325,10 +326,14 @@ public sealed class DistributedLock(
                 throw;
             }
 
-            // Safety deadline fired (caller has not cancelled). Treat as
-            // "lock not acquired" — surface the same null shape as a normal
-            // contended try-once result. Distinguishing this from a normal
-            // contended result via a dedicated EventId is tracked by #320.
+            // Caller has not cancelled, so an OCE here is the safety deadline firing
+            // (the lock-store stalled past `_NonBlockingAcquireDeadline`). Confirm via the
+            // safety CTS rather than inferring from the caller token alone, so an unrelated
+            // storage-thrown OCE falls through to `reason=contended` instead of being
+            // mislabeled a stall. Treat as "lock not acquired" (same null shape as a
+            // contended try-once) but flag it so the failure surfaces a distinct EventId +
+            // `reason=stalled` metric instead of looking like routine contention (#320).
+            safetyDeadlineFired = safetyCts.IsCancellationRequested;
             acquireResult = DistributedLockAcquireResult.Failed;
         }
         catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
@@ -342,8 +347,17 @@ public sealed class DistributedLock(
 
         if (!acquireResult.Acquired)
         {
-            DistributedLockMetrics.LockFailed.Add(1);
-            logger.LogFailedToAcquireLockAfter(resource, leaseId, timeWaitedForLock);
+            if (safetyDeadlineFired)
+            {
+                DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonStalled);
+                logger.LogTryOnceSafetyDeadlineFired(resource, leaseId, timeWaitedForLock);
+            }
+            else
+            {
+                DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
+                logger.LogFailedToAcquireLockAfter(resource, leaseId, timeWaitedForLock);
+            }
+
             return null;
         }
 

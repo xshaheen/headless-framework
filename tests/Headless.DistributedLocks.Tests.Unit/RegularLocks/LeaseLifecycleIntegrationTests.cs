@@ -161,8 +161,15 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         (await provider.GetLeaseIdAsync(resource, AbortToken)).Should().BeNull();
         (await provider.GetExpirationAsync(resource, AbortToken)).Should().BeNull();
 
-        _timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await _DrainUntilAsync(() => handle!.LostToken.IsCancellationRequested);
+        // Re-advance each iteration until the monitor observes the lost lease. A single advance can
+        // race the monitor re-parking on its next cadence wait (FakeTimeProvider only fires timers
+        // already registered at advance time), so under heavy parallel load one advance can be
+        // silently lost — re-advancing is the deterministic pattern the other monitor tests use.
+        for (var i = 0; i < 20 && !handle!.LostToken.IsCancellationRequested; i++)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await _DrainUntilAsync(() => handle!.LostToken.IsCancellationRequested);
+        }
 
         // then
         handle!.LostToken.IsCancellationRequested.Should().BeTrue();

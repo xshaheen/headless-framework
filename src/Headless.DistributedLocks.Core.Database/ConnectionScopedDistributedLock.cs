@@ -117,10 +117,13 @@ public sealed class ConnectionScopedDistributedLock(
 
         // Records the wait-time histogram plus the failure counter for any non-acquiring outcome (timeout,
         // past-deadline, or fencing failure), mirroring the sibling DistributedLock's instrumentation.
+        // Always `reason=contended`: this connection-scoped provider has no `_NonBlockingAcquireDeadline`
+        // safety-deadline path (the database driver's own command/connection timeout bounds a stalled
+        // call), so the `stalled` reason emitted by the in-memory/Redis providers does not apply here.
         void recordFailedAcquisition()
         {
             DistributedLockMetrics.LockWaitTime.Record(timeProvider.GetElapsedTime(started).TotalMilliseconds);
-            DistributedLockMetrics.LockFailed.Add(1);
+            DistributedLockMetrics.LockFailed.Add(1, DistributedLockMetrics.ReasonContended);
         }
 
         try

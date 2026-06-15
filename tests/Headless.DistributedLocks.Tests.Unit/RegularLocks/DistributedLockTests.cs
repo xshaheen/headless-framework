@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.Metrics;
 using Headless.Abstractions;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
@@ -686,7 +687,7 @@ public sealed class DistributedLockTests : TestBase
     // lock-store call cannot hang the caller indefinitely, even when the caller's
     // CancellationToken does not fire.
 
-    private const int _SafetyDeadlineSeconds = 10; // Mirrors _NonBlockingAcquireDeadline in DistributedLock.
+    private const int _SafetyDeadlineSeconds = DistributedLockTestSupport.NonBlockingAcquireDeadlineSeconds; // Mirrors _NonBlockingAcquireDeadline.
 
     private static Func<NSubstitute.Core.CallInfo, ValueTask<DistributedLockAcquireResult>> _HangForeverInsert =>
         ci => new ValueTask<DistributedLockAcquireResult>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3)));
@@ -765,6 +766,84 @@ public sealed class DistributedLockTests : TestBase
         callerCts
             .IsCancellationRequested.Should()
             .BeFalse("safety deadline must fire before the caller's much-later deadline");
+    }
+
+    // EventId values live in DistributedLockTestSupport (single source across the lock test classes).
+    private const int _SafetyDeadlineFiredEventId = DistributedLockTestSupport.SafetyDeadlineFiredEventId;
+    private const int _FailedToAcquireLockAfterEventId = DistributedLockTestSupport.FailedToAcquireLockAfterEventId;
+
+    [Fact]
+    public async Task should_log_safety_deadline_eventid_and_tag_metric_stalled_when_deadline_fires()
+    {
+        // given — storage that hangs so the safety deadline (not contention) ends the attempt
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_HangForeverInsert);
+
+        var captured = new List<int>();
+        var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
+
+        using var meterListener = new MeterListener();
+        var failedReasons = DistributedLockTestSupport.CaptureFailedReasons(meterListener, "headless.lock.failed");
+
+        var provider = _CreateProvider(storage: storage, logger: logger);
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var acquireTask = provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
+        );
+        _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
+        // Parked wait (not a busy spin): the safety CTS fired by Advance cancels the hung storage
+        // call, so the acquire completes promptly. WaitAsync fails fast if it ever hangs.
+        (await acquireTask.WaitAsync(TimeSpan.FromSeconds(30), AbortToken))
+            .Should()
+            .BeNull();
+
+        // then — distinct safety-deadline signal fires; routine-contention signal does NOT.
+        // Exclusivity is asserted on the per-provider substitute logger (isolated); the metric
+        // assertion only proves the `stalled` tag is wired, since the `headless.lock.failed`
+        // instrument is process-wide and shared with parallel tests (incl. the reader/writer lock).
+        captured.Should().Contain(_SafetyDeadlineFiredEventId);
+        captured.Should().NotContain(_FailedToAcquireLockAfterEventId);
+        failedReasons.Should().Contain(DistributedLockMetrics.ReasonStalled);
+    }
+
+    [Fact]
+    public async Task should_log_failed_to_acquire_and_tag_metric_contended_when_resource_is_held()
+    {
+        // given — storage that promptly returns "not acquired" (routine contention, no stall)
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(DistributedLockAcquireResult.Failed));
+
+        var captured = new List<int>();
+        var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
+
+        using var meterListener = new MeterListener();
+        var failedReasons = DistributedLockTestSupport.CaptureFailedReasons(meterListener, "headless.lock.failed");
+
+        var provider = _CreateProvider(storage: storage, logger: logger);
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
+        );
+
+        // then — routine contention keeps its existing signal; the safety-deadline EventId stays
+        // silent (exclusivity via the isolated substitute logger; metric assertion is Contain-only
+        // because the instrument is process-wide).
+        result.Should().BeNull();
+        captured.Should().Contain(_FailedToAcquireLockAfterEventId);
+        captured.Should().NotContain(_SafetyDeadlineFiredEventId);
+        failedReasons.Should().Contain(DistributedLockMetrics.ReasonContended);
     }
 
     [Fact]
