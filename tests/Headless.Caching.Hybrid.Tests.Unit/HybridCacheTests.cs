@@ -821,6 +821,8 @@ public sealed class HybridCacheTests : TestBase
             CancellationToken ct = default
         ) => _cache.GetSetAsync<T>(key, pageIndex, pageSize, ct);
 
+        public ValueTask RefreshAsync(string key, CancellationToken ct = default) => _cache.RefreshAsync(key, ct);
+
         public ValueTask<bool> RemoveAsync(string key, CancellationToken ct = default) => _cache.RemoveAsync(key, ct);
 
         public ValueTask<bool> ExpireAsync(string key, CancellationToken ct = default) => _cache.ExpireAsync(key, ct);

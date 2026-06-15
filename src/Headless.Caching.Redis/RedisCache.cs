@@ -146,6 +146,55 @@ public sealed class RedisCache(
         return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var redisKey = _GetKey(key);
+
+        try
+        {
+            var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+
+            if (!redisValue.HasValue)
+            {
+                return;
+            }
+
+            var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+            if (!frame.IsFramed || frame.SlidingExpiration is null)
+            {
+                return;
+            }
+
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+
+            if (_IsExpired(frame.PhysicalExpiresAt, now))
+            {
+                return;
+            }
+
+            var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+
+            if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
+            {
+                return;
+            }
+
+            await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogSlidingExpirationRearmFailed(exception, redisKey.ToString());
+            }
+        }
+    }
+
     #region Update
 
     public async ValueTask<bool> UpsertAsync<T>(

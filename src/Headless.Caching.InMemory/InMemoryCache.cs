@@ -128,6 +128,23 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedabl
         return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+
+        if (_memory.TryGetValue(key, out var existingEntry))
+        {
+            _TryRearmSlidingEntry(key, existingEntry, _timeProvider.GetUtcNow().UtcDateTime);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     #region Update
 
     public ValueTask<bool> UpsertAsync<T>(

@@ -128,6 +128,16 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     public override Task should_not_rearm_non_sliding_entry() => base.should_not_rearm_non_sliding_entry();
 
     [Fact]
+    public override Task should_refresh_sliding_entry_without_reading_value() =>
+        base.should_refresh_sliding_entry_without_reading_value();
+
+    [Fact]
+    public override Task should_not_refresh_non_sliding_entry() => base.should_not_refresh_non_sliding_entry();
+
+    [Fact]
+    public override Task should_ignore_refresh_for_missing_entry() => base.should_ignore_refresh_for_missing_entry();
+
+    [Fact]
     public override Task should_extend_entry_when_conditional_factory_reports_not_modified() =>
         base.should_extend_entry_when_conditional_factory_reports_not_modified();
 

@@ -331,6 +331,12 @@ internal sealed class GatedRemoteCache(TimeProvider timeProvider) : IRemoteCache
         return await _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
     }
 
+    public async ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
+        await _cache.RefreshAsync(key, cancellationToken);
+    }
+
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
         _cache.RemoveAsync(key, cancellationToken);
 

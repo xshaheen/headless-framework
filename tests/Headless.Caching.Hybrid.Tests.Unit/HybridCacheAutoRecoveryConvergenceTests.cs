@@ -714,6 +714,9 @@ internal sealed class SharedFaultableRemoteCache(InMemoryCache backend) : IRemot
         CancellationToken cancellationToken = default
     ) => backend.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
 
+    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) =>
+        backend.RefreshAsync(key, cancellationToken);
+
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         RemoveAttempts++;
