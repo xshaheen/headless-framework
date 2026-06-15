@@ -6,7 +6,8 @@ using Headless.Serializer;
 namespace Headless.Caching;
 
 /// <summary>
-/// Identity serializer for the BCL distributed-cache named instance, whose values are already raw
+/// Identity serializer for adapter-owned named cache instances — shared by the BCL <c>IDistributedCache</c>
+/// adapter and the ASP.NET Core <c>IOutputCacheStore</c> adapter — whose values are already raw
 /// <see cref="byte"/> arrays. Supports only <see cref="byte"/> arrays by construction (the adapter never
 /// stores anything else) and throws for any other type.
 /// </summary>
@@ -64,7 +65,7 @@ internal sealed class RawBytesSerializer : IBinarySerializer
     {
         // Fast path: a publicly-visible MemoryStream exposes its buffer, so copy the segment once instead of
         // the growth-doubling MemoryStream + trailing ToArray (two full copies).
-        if (data is MemoryStream { } memory && memory.TryGetBuffer(out var buffer))
+        if (data is MemoryStream memory && memory.TryGetBuffer(out var buffer))
         {
             return buffer.AsSpan().ToArray();
         }
