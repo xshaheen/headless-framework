@@ -145,8 +145,9 @@ public static class JobsServiceExtensions
         // Override the default owner identity (U1) with the node@incarnation adapter over INodeMembership.
         services.AddSingleton<IJobsOwnerIdentity, JobsOwnerIdentityAdapter>();
 
-        // Event-driven dead-node recovery (U2) and the registration startup gate (R6).
-        services.AddHostedService<MembershipRecoveryBridge>();
+        // Event-driven dead-node recovery (U2, shared bridge) and the registration startup gate (R6).
+        services.AddSingleton<JobsDeadOwnerReclaimer>();
+        services.AddHostedService<DeadOwnerRecoveryBridge<JobsDeadOwnerReclaimer>>();
         services.AddHostedService<JobsCoordinationStartupGate>();
     }
 }
