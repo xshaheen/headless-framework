@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Serializer;
+using Headless.Caching;
 
 namespace Tests;
 

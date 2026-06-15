@@ -289,6 +289,8 @@ public sealed class CachingSetupBuilderTests
         cacheProvider.GetCache("orders").Should().BeSameAs(namedCache);
     }
 
+    // The public WithSerializer overloads live in the Redis provider package (serialization is a Redis-tier
+    // concern); these tests cover the provider-agnostic slot mechanics directly via the internal setter.
     [Fact]
     public void named_instance_should_capture_serializer_factory()
     {
@@ -297,7 +299,7 @@ public sealed class CachingSetupBuilderTests
         var instance = new HeadlessCacheInstanceBuilder("orders");
 
         // when
-        instance.WithSerializer(serializer);
+        instance.SetSerializerFactory(_ => serializer);
 
         // then
         using var provider = new ServiceCollection().BuildServiceProvider();
@@ -310,27 +312,13 @@ public sealed class CachingSetupBuilderTests
     {
         // given
         var instance = new HeadlessCacheInstanceBuilder("orders");
-        instance.WithSerializer(new TestSerializer());
+        instance.SetSerializerFactory(_ => new TestSerializer());
 
         // when
-        var action = () => instance.WithSerializer(new TestSerializer());
+        var action = () => instance.SetSerializerFactory(_ => new TestSerializer());
 
         // then
         action.Should().Throw<InvalidOperationException>().WithMessage("*serializer*already configured*'orders'*");
-    }
-
-    [Fact]
-    public void named_instance_should_create_serializer_from_type()
-    {
-        // given
-        var instance = new HeadlessCacheInstanceBuilder("orders");
-
-        // when
-        instance.WithSerializer<TestSerializer>();
-
-        // then
-        using var provider = new ServiceCollection().BuildServiceProvider();
-        instance.SerializerFactory!(provider).Should().BeOfType<TestSerializer>();
     }
 
     private sealed class TestSerializer : ISerializer

@@ -151,7 +151,56 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
         await host.StopAsync(AbortToken);
     }
 
-    private sealed class PrefixIntSerializer(string prefix) : ISerializer
+    [Fact]
+    public async Task named_redis_cache_should_resolve_serializer_from_generic_overload()
+    {
+        // given - the generic WithSerializer<TSerializer>() overload (ActivatorUtilities-resolved)
+        var instanceName = $"gen-{Faker.Random.AlphaNumeric(8)}";
+        var keyPrefix = $"{instanceName}:";
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddHeadlessCaching(setup =>
+        {
+            setup.UseRedis(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer);
+            setup.AddNamed(
+                instanceName,
+                instance =>
+                {
+                    instance.UseRedis(options =>
+                    {
+                        options.ConnectionMultiplexer = fixture.ConnectionMultiplexer;
+                        options.KeyPrefix = keyPrefix;
+                    });
+                    instance.WithSerializer<FixedPrefixIntSerializer>();
+                }
+            );
+        });
+
+        using var host = builder.Build();
+        await host.StartAsync(AbortToken);
+
+        var named = host.Services.GetRequiredService<ICacheProvider>().GetCache(instanceName);
+        var key = Faker.Random.AlphaNumeric(12);
+
+        // when
+        await named.UpsertAsync(key, 77, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then - the value segment was encoded by the generic-resolved serializer
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        var stored = await db.StringGetAsync(keyPrefix + key);
+        RedisCacheEntryFrame
+            .Decode(stored)
+            .ValueSegment.ToArray()
+            .Should()
+            .Equal(Encoding.UTF8.GetBytes("gen:77"));
+        (await named.GetAsync<int>(key, AbortToken)).Value.Should().Be(77);
+
+        await host.StopAsync(AbortToken);
+    }
+
+    private sealed class FixedPrefixIntSerializer() : PrefixIntSerializer("gen:");
+
+    private class PrefixIntSerializer(string prefix) : ISerializer
     {
         public T? Deserialize<T>(Stream data)
         {

@@ -23,7 +23,8 @@ public sealed class HeadlessDistributedCacheAdapterTests(BclRedisFixture fixture
         var distributedCache = host.Services.GetRequiredService<IDistributedCache>();
         var cacheProvider = host.Services.GetRequiredService<ICacheProvider>();
 
-        distributedCache.Should().BeOfType<HeadlessDistributedCacheAdapter>();
+        // The adapter is internal; assert by type name rather than referencing the concrete type.
+        distributedCache.GetType().Name.Should().Be("HeadlessDistributedCacheAdapter");
         cacheProvider.GetCache(cacheName).Should().NotBeNull();
     }
 
@@ -110,7 +111,7 @@ public sealed class HeadlessDistributedCacheAdapterTests(BclRedisFixture fixture
         builder.Services.AddHeadlessCaching(setup =>
         {
             setup.UseRedis(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer);
-            setup.AddHeadlessDistributedCache(
+            setup.UseBclCache(
                 options =>
                 {
                     options.CacheName = cacheName;

@@ -96,16 +96,35 @@ public sealed class DistributedCacheEntryOptionsMapperTests
     }
 
     [Fact]
-    public void should_reject_expired_absolute_timestamp()
+    public void should_map_absolute_timestamp_with_sliding_expiration()
     {
-        var act = () =>
-            DistributedCacheEntryOptionsMapper.Map(
-                new DistributedCacheEntryOptions { AbsoluteExpiration = _timeProvider.GetUtcNow().AddSeconds(-1) },
-                TimeSpan.FromHours(8),
-                _timeProvider
-            );
+        var mapped = DistributedCacheEntryOptionsMapper.Map(
+            new DistributedCacheEntryOptions
+            {
+                AbsoluteExpiration = _timeProvider.GetUtcNow().AddHours(3),
+                SlidingExpiration = TimeSpan.FromMinutes(15),
+            },
+            TimeSpan.FromHours(8),
+            _timeProvider
+        );
 
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        mapped.Duration.Should().Be(TimeSpan.FromHours(3));
+        mapped.SlidingExpiration.Should().Be(TimeSpan.FromMinutes(15));
+    }
+
+    [Fact]
+    public void should_map_expired_absolute_timestamp_to_non_positive_duration_for_immediate_expiry()
+    {
+        // A past absolute timestamp must not throw; it maps to a non-positive duration so the engine expires the
+        // entry immediately (matching Microsoft's RedisCache).
+        var mapped = DistributedCacheEntryOptionsMapper.Map(
+            new DistributedCacheEntryOptions { AbsoluteExpiration = _timeProvider.GetUtcNow().AddSeconds(-1) },
+            TimeSpan.FromHours(8),
+            _timeProvider
+        );
+
+        mapped.Duration.Should().Be(TimeSpan.FromSeconds(-1));
+        mapped.SlidingExpiration.Should().BeNull();
     }
 
     [Fact]

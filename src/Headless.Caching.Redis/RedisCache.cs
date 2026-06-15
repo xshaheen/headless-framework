@@ -156,43 +156,88 @@ public sealed class RedisCache(
 
         try
         {
-            var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+            // Read only the fixed header plus the sliding field (its first optional section) — never the value
+            // payload. For a large session entry this re-arms the TTL without transferring the whole value.
+            var headerBytes = await _database
+                .StringGetRangeAsync(
+                    redisKey,
+                    0,
+                    RedisCacheEntryFrame.HeaderLength + sizeof(long) - 1,
+                    options.ReadMode
+                )
+                .ConfigureAwait(false);
 
-            if (!redisValue.HasValue)
-            {
-                return;
-            }
-
-            var frame = RedisCacheEntryFrame.Decode(redisValue);
-
-            if (!frame.IsFramed || frame.SlidingExpiration is null)
+            if (
+                !RedisCacheEntryFrame.TryDecodeHeader(((byte[]?)headerBytes).AsSpan(), out var header)
+                || header.SlidingExpiration is not { } slidingExpiration
+                || header.PhysicalExpiresAt is not { } physicalExpiresAt
+            )
             {
                 return;
             }
 
             var now = timeProvider.GetUtcNow().UtcDateTime;
 
-            if (_IsExpired(frame.PhysicalExpiresAt, now))
+            if (_IsExpired(physicalExpiresAt, now))
             {
                 return;
             }
 
-            var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+            if (header.HasTags)
+            {
+                // A tagged entry needs its full tag list to resolve per-tag invalidation markers, which the
+                // header prefix does not carry — fall back to the full-value read for correctness.
+                await _RefreshSlidingFromFullFrameAsync(redisKey, now).ConfigureAwait(false);
 
-            if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
+                return;
+            }
+
+            // Untagged: only the global clear/remove markers (resolved in-process) can invalidate the entry.
+            var newestMarker = await _ResolveNewestMarkerAsync(tags: null).ConfigureAwait(false);
+
+            if (CacheTagInvalidation.IsInvalidated(header.CreatedAt, newestMarker))
             {
                 return;
             }
 
-            await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
+            await _RearmSlidingTtlAsync(redisKey, slidingExpiration, physicalExpiresAt, now, header.LogicalExpiresAt)
+                .ConfigureAwait(false);
         }
         catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
         {
-            if (_logger.IsEnabled(LogLevel.Debug))
+            if (_logger.IsEnabled(LogLevel.Warning))
             {
-                _logger.LogSlidingExpirationRearmFailed(exception, redisKey.ToString());
+                _logger.LogSlidingExpirationRefreshFailed(exception, redisKey.ToString());
             }
         }
+    }
+
+    // Fallback for the rare tagged sliding entry: the header-only read cannot recover the tag list, so read the
+    // full frame and resolve per-tag invalidation markers before re-arming.
+    private async ValueTask _RefreshSlidingFromFullFrameAsync(RedisKey redisKey, DateTime now)
+    {
+        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+
+        if (!redisValue.HasValue)
+        {
+            return;
+        }
+
+        var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+        if (!frame.IsFramed || frame.SlidingExpiration is null || _IsExpired(frame.PhysicalExpiresAt, now))
+        {
+            return;
+        }
+
+        var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+
+        if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
+        {
+            return;
+        }
+
+        await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
     }
 
     #region Update
@@ -2698,4 +2743,12 @@ internal static partial class RedisCacheLog
         Message = "Unable to re-arm sliding expiration for cache key {Key}; the value will still be returned."
     )]
     public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "SlidingExpirationRefreshFailed",
+        Level = LogLevel.Warning,
+        Message = "Unable to refresh sliding expiration for cache key {Key}."
+    )]
+    public static partial void LogSlidingExpirationRefreshFailed(this ILogger logger, Exception exception, string key);
 }

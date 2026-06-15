@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Serializer;
 using Microsoft.Extensions.Caching.Distributed;
@@ -7,23 +8,29 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Caching;
 
 /// <summary>DI registration extensions for the BCL <see cref="IDistributedCache"/> adapter.</summary>
 [PublicAPI]
-public static class SetupHeadlessDistributedCache
+[SuppressMessage(
+    "Naming",
+    "CA1708:Identifiers should differ by more than case",
+    Justification = "C# 14 extension member blocks emit compiler-generated marker members differing only by case."
+)]
+public static class SetupBclCache
 {
     extension(HeadlessCachingSetupBuilder setup)
     {
         /// <summary>
         /// Adds a named Headless cache configured for raw <see cref="byte"/> array values and exposes it as
-        /// <see cref="IDistributedCache"/> for ASP.NET Core integrations such as session state.
+        /// <see cref="IDistributedCache"/> for ASP.NET Core integrations such as session state. The adapter owns
+        /// the raw-bytes codec internally; the <paramref name="configureCache"/> callback only selects the
+        /// backing provider (for example <c>UseRedis</c>) — do not configure a serializer on it.
         /// </summary>
         /// <param name="setupAction">Configuration for the adapter options.</param>
         /// <param name="configureCache">Configuration for the named Headless cache provider.</param>
         /// <returns>The setup builder for chaining.</returns>
-        public HeadlessCachingSetupBuilder AddHeadlessDistributedCache(
+        public HeadlessCachingSetupBuilder UseBclCache(
             Action<HeadlessDistributedCacheAdapterOptions> setupAction,
             Action<HeadlessCacheInstanceBuilder> configureCache
         )
@@ -37,26 +44,10 @@ public static class SetupHeadlessDistributedCache
             var cacheName = Argument.IsNotNullOrWhiteSpace(configuredOptions.CacheName);
             Argument.IsPositive(configuredOptions.DefaultAbsoluteExpiration);
 
-            if (CacheConstants.IsReservedProviderKey(cacheName))
-            {
-                throw new ArgumentException(
-                    $"The cache name '{cacheName}' is reserved for Headless caching provider registrations.",
-                    nameof(setupAction)
-                );
-            }
+            // AddNamed validates the reserved-key/uniqueness rules and the single-provider invariant.
+            setup.AddNamed(cacheName, configureCache);
 
-            setup.AddNamed(
-                cacheName,
-                instance =>
-                {
-                    configureCache(instance);
-                    instance.WithSerializer(new RawBytesSerializer());
-                }
-            );
-
-            setup.RegisterCrossCuttingExtension(services =>
-                services._AddHeadlessDistributedCacheCore(configuredOptions)
-            );
+            setup.RegisterCrossCuttingExtension(services => services._AddBclCacheCore(configuredOptions));
 
             return setup;
         }
@@ -64,11 +55,17 @@ public static class SetupHeadlessDistributedCache
 
     extension(IServiceCollection services)
     {
-        private IServiceCollection _AddHeadlessDistributedCacheCore(
-            HeadlessDistributedCacheAdapterOptions configuredOptions
-        )
+        private IServiceCollection _AddBclCacheCore(HeadlessDistributedCacheAdapterOptions configuredOptions)
         {
+            var cacheName = configuredOptions.CacheName;
+
             services.TryAddSingleton(TimeProvider.System);
+
+            // The adapter's named cache is byte[]-only by construction. Register the raw codec keyed by the
+            // cache name so the Redis named-core resolution (GetKeyedService(name) ?? global) picks it up
+            // without the caller configuring a serializer on the instance.
+            services.AddKeyedSingleton<ISerializer>(cacheName, (_, _) => new RawBytesSerializer());
+
             services.Configure<HeadlessDistributedCacheAdapterOptions, HeadlessDistributedCacheAdapterOptionsValidator>(
                 options =>
                 {
@@ -77,19 +74,19 @@ public static class SetupHeadlessDistributedCache
                 }
             );
 
-            services.TryAddSingleton<HeadlessDistributedCacheAdapter>(provider =>
+            // The adapter owns the IDistributedCache slot. TryAdd defers to a consumer-registered
+            // IDistributedCache if one already exists; consumers wanting the Headless adapter must not also
+            // register a competing IDistributedCache (e.g. AddStackExchangeRedisCache).
+            services.TryAddSingleton<IDistributedCache>(provider =>
             {
-                var options = provider.GetRequiredService<IOptions<HeadlessDistributedCacheAdapterOptions>>().Value;
+                var options = provider.GetRequiredService<IOptions<HeadlessDistributedCacheAdapterOptions>>();
 
                 return new HeadlessDistributedCacheAdapter(
-                    provider.GetRequiredKeyedService<ICache>(options.CacheName),
-                    provider.GetRequiredService<IOptions<HeadlessDistributedCacheAdapterOptions>>(),
+                    provider.GetRequiredKeyedService<ICache>(options.Value.CacheName),
+                    options,
                     provider.GetRequiredService<TimeProvider>()
                 );
             });
-            services.TryAddSingleton<IDistributedCache>(provider =>
-                provider.GetRequiredService<HeadlessDistributedCacheAdapter>()
-            );
 
             return services;
         }

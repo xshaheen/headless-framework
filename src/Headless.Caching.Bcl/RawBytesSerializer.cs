@@ -1,16 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Serializer;
+using Headless.Checks;
+using Headless.Serializer;
+
+namespace Headless.Caching;
 
 /// <summary>
-/// Identity serializer for cache instances whose values are already raw <see cref="byte"/> arrays.
+/// Identity serializer for the BCL distributed-cache named instance, whose values are already raw
+/// <see cref="byte"/> arrays. Supports only <see cref="byte"/> arrays by construction (the adapter never
+/// stores anything else) and throws for any other type.
 /// </summary>
-/// <remarks>
-/// This serializer intentionally supports only <see cref="byte"/> arrays. It is intended for named caches that
-/// are byte-oriented by construction, such as BCL <c>IDistributedCache</c> adapters.
-/// </remarks>
-[PublicAPI]
-public sealed class RawBytesSerializer : IBinarySerializer
+internal sealed class RawBytesSerializer : IBinarySerializer
 {
     /// <inheritdoc />
     public T? Deserialize<T>(Stream data)
@@ -26,7 +26,7 @@ public sealed class RawBytesSerializer : IBinarySerializer
     /// <inheritdoc />
     public void Serialize<T>(T value, Stream output)
     {
-        ArgumentNullException.ThrowIfNull(value);
+        Argument.IsNotNull(value);
 
         if (value is not byte[] bytes)
         {
@@ -50,7 +50,7 @@ public sealed class RawBytesSerializer : IBinarySerializer
     /// <inheritdoc />
     public void Serialize(object? value, Stream output)
     {
-        ArgumentNullException.ThrowIfNull(value);
+        Argument.IsNotNull(value);
 
         if (value is not byte[] bytes)
         {
@@ -62,8 +62,32 @@ public sealed class RawBytesSerializer : IBinarySerializer
 
     private static byte[] _ReadAllBytes(Stream data)
     {
+        // Fast path: a publicly-visible MemoryStream exposes its buffer, so copy the segment once instead of
+        // the growth-doubling MemoryStream + trailing ToArray (two full copies).
+        if (data is MemoryStream { } memory && memory.TryGetBuffer(out var buffer))
+        {
+            return buffer.AsSpan().ToArray();
+        }
+
+        // Seekable but not buffer-visible (e.g. a MemoryStream over a fixed array): pre-size and read once.
+        if (data.CanSeek)
+        {
+            var remaining = data.Length - data.Position;
+
+            if (remaining == 0)
+            {
+                return [];
+            }
+
+            var bytes = new byte[remaining];
+            data.ReadExactly(bytes);
+
+            return bytes;
+        }
+
         using var output = new MemoryStream();
         data.CopyTo(output);
+
         return output.ToArray();
     }
 

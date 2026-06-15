@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Caching;
 
 /// <summary>Adapts a named Headless <see cref="ICache"/> instance to BCL <see cref="IDistributedCache"/>.</summary>
-public sealed class HeadlessDistributedCacheAdapter(
+internal sealed class HeadlessDistributedCacheAdapter(
     ICache cache,
     IOptions<HeadlessDistributedCacheAdapterOptions> options,
     TimeProvider timeProvider
