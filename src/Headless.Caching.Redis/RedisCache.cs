@@ -1507,6 +1507,7 @@ public sealed class RedisCache(
     )
     {
         Argument.IsNotNullOrEmpty(tag);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
         await _RaiseDurableMarkerAsync((RedisKey)_GetTagMarkerKey(tag), ms, cancellationToken).ConfigureAwait(false);
@@ -1519,6 +1520,8 @@ public sealed class RedisCache(
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
         await _RaiseDurableMarkerAsync((RedisKey)_GetClearMarkerKey(), ms, cancellationToken).ConfigureAwait(false);
         SeedClearMarker(invalidatedAt);
@@ -1530,6 +1533,8 @@ public sealed class RedisCache(
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
         await _RaiseDurableMarkerAsync((RedisKey)_GetRemoveMarkerKey(), ms, cancellationToken).ConfigureAwait(false);
         SeedRemoveMarker(invalidatedAt);

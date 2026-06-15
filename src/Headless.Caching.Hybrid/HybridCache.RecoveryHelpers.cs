@@ -222,7 +222,11 @@ public sealed partial class HybridCache
             async ct =>
             {
                 await writeMarker(writer, ct).ConfigureAwait(false);
-                await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
+                // Re-broadcast best-effort, exactly like the live path: the durable marker has already landed
+                // (raise-only), so a publish failure must NOT fail the replay (which would re-run the idempotent
+                // durable write every retry and ultimately drop the item). _PublishInvalidationAsync logs and
+                // honours ReThrowBackplaneExceptions; peers also converge via their L2 marker refresh window.
+                await _PublishInvalidationAsync(message, ct).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;
             },
             // Intent timestamp = the original invalidation instant, so a value op written later (newer EnqueuedAt)

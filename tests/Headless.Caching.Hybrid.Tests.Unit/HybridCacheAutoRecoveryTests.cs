@@ -571,7 +571,7 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
     public async Task should_queue_failed_tag_marker_bump_and_replay_when_l2_recovers()
     {
         // given — an entry present in both tiers, tagged
-        var (cache, l1, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        var (cache, l1, l2, publisher) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
         await using var _ = cache;
         var key = Faker.Random.AlphaNumeric(10);
         var tag = Faker.Random.AlphaNumeric(8);
@@ -599,6 +599,74 @@ public sealed class HybridCacheAutoRecoveryTests : TestBase
         await cache.RecoveryQueue.ProcessAsync(AbortToken);
 
         // then — the replay wrote the L2 marker; the L2 read now misses and the queue drained
+        cache.RecoveryQueue.Count.Should().Be(0);
+        (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
+
+        // and — the tag invalidation was re-broadcast on replay (live publish + replay publish)
+        await publisher
+            .Received(2)
+            .PublishAsync(
+                Arg.Is<CacheInvalidationMessage>(m => m.Tag == tag),
+                Arg.Any<PublishOptions?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_queue_marker_bump_without_attempting_l2_when_circuit_is_open()
+    {
+        // given — the distributed circuit is already open from a prior L2 read failure
+        var (cache, _, l2, _) = _CreateCache(
+            new HybridCacheOptions
+            {
+                EnableAutoRecovery = true,
+                DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30),
+            }
+        );
+        await using var _ = cache;
+
+        var primer = Faker.Random.AlphaNumeric(10);
+        await l2.UpsertAsync(primer, 1, TimeSpan.FromMinutes(5), AbortToken);
+        l2.FailReads = true;
+        await cache.GetAsync<int>(primer, AbortToken); // opens the circuit
+        l2.FailReads = false;
+
+        var attemptsBefore = l2.RemoveAttempts;
+
+        // when — a tag invalidation runs while the circuit is open; the marker bump must be queued, not attempted
+        await cache.RemoveByTagAsync(Faker.Random.AlphaNumeric(8), AbortToken);
+
+        // then — queued for replay; no live L2 marker write was attempted (FailMarkerBumps was never set, yet the
+        // circuit-open path skipped the live write entirely)
+        cache.RecoveryQueue!.Count.Should().Be(1);
+        l2.RemoveAttempts.Should().Be(attemptsBefore);
+    }
+
+    [Fact]
+    public async Task should_queue_failed_clear_marker_bump_and_replay_when_l2_recovers()
+    {
+        // given — an entry present in both tiers
+        var (cache, l1, l2, _) = _CreateCache(new HybridCacheOptions { EnableAutoRecovery = true });
+        await using var _ = cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertEntryAsync(key, 42, new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) }, AbortToken);
+
+        // when — a logical clear while the L2 marker bump fails
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        l2.FailMarkerBumps = true;
+        await cache.ClearAsync(AbortToken);
+
+        // then — L1 cleared locally, the bump is queued, and the L2 clear marker was not written
+        cache.RecoveryQueue!.Count.Should().Be(1);
+        (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
+        (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue();
+
+        // when — L2 recovers and the recovery pass runs
+        l2.FailMarkerBumps = false;
+        _timeProvider.Advance(_Delay);
+        await cache.RecoveryQueue.ProcessAsync(AbortToken);
+
+        // then — the replay wrote the L2 clear marker; the L2 read now misses and the queue drained
         cache.RecoveryQueue.Count.Should().Be(0);
         (await l2.GetAsync<int>(key, AbortToken)).HasValue.Should().BeFalse();
     }

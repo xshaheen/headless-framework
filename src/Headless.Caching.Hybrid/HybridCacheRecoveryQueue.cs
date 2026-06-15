@@ -202,6 +202,29 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     }
 
     /// <summary>
+    /// Clears a queued <see cref="HybridCacheRecoveryKind.MarkerBump"/> after a successful live marker write, but
+    /// ONLY when this write's generation (<paramref name="writtenAt"/>) is at least as new as the queued bump's
+    /// intent timestamp. Marker bumps of different generations for the same tag coalesce onto one synthetic key, and
+    /// the durable write is raise-only — so an OLDER live write must not drop a queued NEWER bump (that would leave
+    /// the shared marker behind the newer invalidation). Unlike the scalar path, where any success for a key means
+    /// the latest value landed, marker generations are not interchangeable.
+    /// </summary>
+    public void OnSuccessfulMarkerBump(string key, DateTimeOffset writtenAt)
+    {
+        if (!_items.TryGetValue(key, out var item) || item.EnqueuedAt > writtenAt)
+        {
+            return;
+        }
+
+        // Remove only if the slot still holds the same item we inspected (a newer bump may have replaced it).
+        if (_items.TryRemove(KeyValuePair.Create(key, item)))
+        {
+            Volatile.Write(ref _minExpiryItem, null);
+            _logger.LogAutoRecoveryItemSuperseded(key, item.Kind);
+        }
+    }
+
+    /// <summary>
     /// Conflict check for incoming (foreign-instance) invalidations: a queued item older than the incoming
     /// message lost the race — another node wrote/invalidated the key after us, so replaying ours would
     /// resurrect stale data. A message without a timestamp is treated as newer (conservative drop). Tag
@@ -214,8 +237,12 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
             return;
         }
 
-        // A queued marker bump (raise-only, idempotent) never resurrects stale data, so it is exempt from the
-        // conflict drop: replaying it only re-asserts the same generation timestamp via the raise-only durable write.
+        // A queued marker bump never resurrects stale data, so it is exempt from the conflict drop. This rests on two
+        // invariants the caller (HybridCache._QueueMarkerRecovery / _BumpL2MarkerBestEffortAsync) must uphold:
+        // (1) every MarkerBump replay uses a raise-only durable write (the ISeedableTagMarkerCache.Write* contract),
+        // so replaying an old marker only re-asserts its generation and cannot lower a newer one; and (2) synthetic
+        // marker keys (the "\0hybrid-marker:*" namespace) are never emitted as real cache keys in invalidation
+        // messages, so they never match the key/prefix branches below.
         bool IsConflicting(RecoveryItem item) =>
             item.Kind != HybridCacheRecoveryKind.MarkerBump
             && (message.Timestamp is null || item.EnqueuedAt < message.Timestamp.Value);

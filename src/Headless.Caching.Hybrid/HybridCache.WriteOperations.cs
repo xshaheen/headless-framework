@@ -1047,8 +1047,10 @@ public sealed partial class HybridCache
                 await fallbackBump(cancellationToken).ConfigureAwait(false);
             }
 
-            // A successful live bump supersedes any bump queued during an earlier outage for this marker.
-            RecoveryQueue?.OnSuccessfulL2Operation(recoveryKey);
+            // A successful live bump supersedes a queued bump for the SAME marker only when this write's generation
+            // is at least as new — an older live write (raise-only, so it left a newer marker intact) must not drop
+            // a queued newer-generation bump, or that newer invalidation would be lost on the shared store.
+            RecoveryQueue?.OnSuccessfulMarkerBump(recoveryKey, message.Timestamp ?? _timeProvider.GetUtcNow());
         }
         catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
         {
