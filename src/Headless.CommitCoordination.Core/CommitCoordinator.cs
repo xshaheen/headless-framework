@@ -154,16 +154,36 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
 
     private static async Task _DrainThenAsync(CommitTerminalClaim claim, IServiceProvider services, Action? afterDrain)
     {
+        ExceptionDispatchInfo? drainFault = null;
+
         try
         {
             await DrainAsync(claim, services).ConfigureAwait(false);
         }
-        finally
+        catch (Exception ex)
         {
-            // Runs after the drain completes (or faults) so a caller offloading the drain can order post-drain work
-            // — e.g. disposing promoted child registrations only once the rollback drain has invoked them.
+            drainFault = ExceptionDispatchInfo.Capture(ex);
+        }
+
+        // Runs after the drain completes (or faults) so a caller offloading the drain can order post-drain work
+        // — e.g. disposing promoted child registrations only once the rollback drain has invoked them. A cleanup
+        // fault must NOT mask the drain fault (a bare finally would): prefer the drain exception, and surface both
+        // via AggregateException when afterDrain also throws.
+        try
+        {
             afterDrain?.Invoke();
         }
+        catch (Exception afterDrainEx)
+        {
+            if (drainFault is null)
+            {
+                throw;
+            }
+
+            throw new AggregateException(drainFault.SourceException, afterDrainEx);
+        }
+
+        drainFault?.Throw();
     }
 
     /// <inheritdoc />
