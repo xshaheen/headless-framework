@@ -29,23 +29,20 @@ public interface IHeadlessDbContext
     /// helpers to enlist with the correct scope for the post-commit drain.
     /// </summary>
     IServiceProvider ServiceProvider { get; }
-
-    /// <summary>
-    /// Optional service scope owned by the context — set by <c>HeadlessDbContextFactory</c> when the context
-    /// is created via <c>IDbContextFactory&lt;TDbContext&gt;</c>, and disposed with the context (see
-    /// <see cref="HeadlessDbContextDisposal"/>). Read-only on the public surface: ownership is assigned through
-    /// the internal <see cref="IHeadlessDbContextScopeOwner"/> seam so consumers cannot reassign it.
-    /// </summary>
-    IServiceScope? OwnedScope { get; }
 }
 
 /// <summary>
-/// Internal seam letting <c>HeadlessDbContextFactory</c> hand scope ownership to a freshly created context
-/// without exposing a public setter on <see cref="IHeadlessDbContext.OwnedScope"/>.
+/// Internal lifecycle seam for the service scope a factory-created context owns. Kept off the public
+/// <see cref="IHeadlessDbContext"/> entirely: only <c>HeadlessDbContextFactory</c> (set) and
+/// <c>HeadlessDbContextDisposal</c> (get) touch it, so consumers neither read nor reassign it.
 /// </summary>
 internal interface IHeadlessDbContextScopeOwner
 {
-    void AttachOwnedScope(IServiceScope scope);
+    /// <summary>
+    /// Optional service scope owned by the context — set by <c>HeadlessDbContextFactory</c> when the context is
+    /// created via <c>IDbContextFactory&lt;TDbContext&gt;</c>, and disposed with the context.
+    /// </summary>
+    IServiceScope? OwnedScope { get; set; }
 }
 
 /// <summary>
@@ -113,9 +110,11 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
 
     IServiceProvider IHeadlessDbContext.ServiceProvider => _runtime.ServiceProvider;
 
-    IServiceScope? IHeadlessDbContext.OwnedScope => _ownedScope;
-
-    void IHeadlessDbContextScopeOwner.AttachOwnedScope(IServiceScope scope) => _ownedScope = scope;
+    IServiceScope? IHeadlessDbContextScopeOwner.OwnedScope
+    {
+        get => _ownedScope;
+        set => _ownedScope = value;
+    }
 #pragma warning restore CA1033
 
     public override int SaveChanges()

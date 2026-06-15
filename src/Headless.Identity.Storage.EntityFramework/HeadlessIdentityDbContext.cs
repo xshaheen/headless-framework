@@ -88,9 +88,11 @@ public abstract class HeadlessIdentityDbContext<
 
     IServiceProvider IHeadlessDbContext.ServiceProvider => _runtime.ServiceProvider;
 
-    IServiceScope? IHeadlessDbContext.OwnedScope => _ownedScope;
-
-    void IHeadlessDbContextScopeOwner.AttachOwnedScope(IServiceScope scope) => _ownedScope = scope;
+    IServiceScope? IHeadlessDbContextScopeOwner.OwnedScope
+    {
+        get => _ownedScope;
+        set => _ownedScope = value;
+    }
 #pragma warning restore CA1033
 
     protected HeadlessIdentityDbContext(HeadlessDbContextServices services, DbContextOptions options)

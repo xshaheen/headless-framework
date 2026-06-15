@@ -11,7 +11,7 @@ namespace Headless.EntityFramework;
 /// <see cref="HeadlessDbContext"/> and the Identity context). Creates a dedicated service scope per call so
 /// the context's scoped dependencies (<see cref="HeadlessDbContextServices"/>, save-changes pipeline, audit
 /// persistence) resolve cleanly, then hands scope ownership to the returned context via
-/// <see cref="IHeadlessDbContext.OwnedScope"/> — disposing the context disposes the scope.
+/// the internal <see cref="IHeadlessDbContextScopeOwner"/> seam — disposing the context disposes the scope.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -75,9 +75,9 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
     private static TDbContext _AttachScope(IServiceScope scope)
     {
         var context = scope.ServiceProvider.GetRequiredService<TDbContext>();
-        // Hand scope ownership through the internal seam — the public IHeadlessDbContext.OwnedScope is read-only.
+        // Hand scope ownership through the internal seam — OwnedScope is not on the public IHeadlessDbContext.
         // Every Headless context base implements IHeadlessDbContextScopeOwner, so the cast always succeeds.
-        ((IHeadlessDbContextScopeOwner)context).AttachOwnedScope(scope);
+        ((IHeadlessDbContextScopeOwner)context).OwnedScope = scope;
 
         return context;
     }

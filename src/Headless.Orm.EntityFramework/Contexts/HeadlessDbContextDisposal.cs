@@ -23,7 +23,7 @@ internal static class HeadlessDbContextDisposal
 {
     public static void DisposeOwnedScope(this IHeadlessDbContext context)
     {
-        var ownedScope = context.OwnedScope;
+        var ownedScope = ((IHeadlessDbContextScopeOwner)context).OwnedScope;
 
         if (ownedScope is null)
         {
@@ -48,7 +48,7 @@ internal static class HeadlessDbContextDisposal
 
     public static async ValueTask DisposeOwnedScopeAsync(this IHeadlessDbContext context)
     {
-        var ownedScope = context.OwnedScope;
+        var ownedScope = ((IHeadlessDbContextScopeOwner)context).OwnedScope;
 
         if (ownedScope is null)
         {
