@@ -18,8 +18,7 @@ internal static class CommitSignalSourceAttach
         ICommitScopeFactory scopeFactory,
         CommitCoordinatorBindings bindings,
         ConcurrentDictionary<object, ICommitScope> scopes,
-        Action<object> logDuplicate,
-        string duplicateMessage,
+        Func<object, Exception> duplicateFault,
         CancellationToken cancellationToken
     )
     {
@@ -60,8 +59,9 @@ internal static class CommitSignalSourceAttach
         }
 
         trackedScope.Dispose();
-        logDuplicate(key);
 
-        throw new InvalidOperationException(duplicateMessage);
+        // The provider both logs the duplicate and builds the exception, keeping the log+throw decision in one
+        // place per provider (its own [LoggerMessage] + message wording).
+        throw duplicateFault(key);
     }
 }

@@ -153,7 +153,9 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
         var drainTask = drain.AsTask();
         _drains.TryAdd(drainTask, 0);
 
-        // Observe faults off the diagnostic thread; the relay recovers any uncommitted buffer on restart.
+        // Observe faults off the diagnostic thread; the relay recovers any uncommitted buffer on restart. The
+        // cleanup continuation runs on the thread pool (no ExecuteSynchronously): TryAdd above already settled,
+        // so a synchronously-completed drainTask cannot inline TryRemove ahead of it and leave a phantom entry.
         _ = drainTask.ContinueWith(
             static (t, state) =>
             {
@@ -167,7 +169,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
             },
             this,
             CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
+            TaskContinuationOptions.None,
             TaskScheduler.Default
         );
     }

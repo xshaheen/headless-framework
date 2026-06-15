@@ -28,8 +28,14 @@ public sealed partial class EntityFrameworkCommitSignalSource(
             scopeFactory,
             bindings,
             _scopes,
-            key => LogDuplicateScope(_logger, key),
-            "An EF Core commit coordination scope is already attached for this provider transaction key.",
+            key =>
+            {
+                LogDuplicateScope(_logger, key);
+
+                return new InvalidOperationException(
+                    "An EF Core commit coordination scope is already attached for this provider transaction key."
+                );
+            },
             cancellationToken
         );
 

@@ -36,8 +36,14 @@ public sealed partial class PostgreSqlCommitSignalSource(
             scopeFactory,
             bindings,
             _scopes,
-            key => LogDuplicateScope(_logger, key),
-            "A PostgreSQL commit coordination scope is already attached for this provider transaction key.",
+            key =>
+            {
+                LogDuplicateScope(_logger, key);
+
+                return new InvalidOperationException(
+                    "A PostgreSQL commit coordination scope is already attached for this provider transaction key."
+                );
+            },
             cancellationToken
         );
 

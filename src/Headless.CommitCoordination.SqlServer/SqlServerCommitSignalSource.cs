@@ -46,8 +46,14 @@ public sealed partial class SqlServerCommitSignalSource(
             scopeFactory,
             bindings,
             _scopes,
-            key => LogDuplicateScope(_logger, key),
-            "A SQL Server commit coordination scope is already attached for this provider transaction key.",
+            key =>
+            {
+                LogDuplicateScope(_logger, key);
+
+                return new InvalidOperationException(
+                    "A SQL Server commit coordination scope is already attached for this provider transaction key."
+                );
+            },
             cancellationToken
         );
 

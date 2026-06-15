@@ -153,7 +153,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
             );
     }
 
-    private static async Task _DrainThenAsync(CommitTerminalClaim claim, IServiceProvider services, Action? afterDrain)
+    internal static async Task _DrainThenAsync(CommitTerminalClaim claim, IServiceProvider services, Action? afterDrain)
     {
         ExceptionDispatchInfo? drainFault = null;
 
@@ -169,8 +169,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
         // Runs after the drain completes (or faults) so a caller offloading the drain can order post-drain work
         // — e.g. disposing promoted child registrations only once the rollback drain has invoked them. A cleanup
         // fault must NOT mask the drain fault (a bare finally would): if only one side throws it propagates alone;
-        // if both throw, surface them together via AggregateException (the drain fault's original stack is
-        // preserved on the captured ExceptionDispatchInfo's SourceException).
+        // if both throw, surface them together via AggregateException with the drain fault first.
         try
         {
             afterDrain?.Invoke();
@@ -182,7 +181,16 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
                 throw;
             }
 
-            throw new AggregateException(drainFault.SourceException, afterDrainEx);
+            // Re-throw the drain fault through its ExceptionDispatchInfo so the aggregate's first inner carries the
+            // original throw site rather than this re-packaging frame, then combine with the cleanup fault.
+            try
+            {
+                drainFault.Throw();
+            }
+            catch (Exception drainEx)
+            {
+                throw new AggregateException(drainEx, afterDrainEx);
+            }
         }
 
         drainFault?.Throw();
