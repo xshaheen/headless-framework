@@ -16,7 +16,7 @@ Provides a provider-agnostic caching API so applications can switch between memo
   - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
   - Set operations (SetAdd, SetRemove, GetSet)
   - Tag invalidation (`UpsertEntryAsync` with `CacheEntryOptions.Tags`; `RemoveByTagAsync` — O(1) logical, returns `ValueTask`)
-  - Logical whole-cache clear (`ClearAsync` — O(1), reserve-preserving) vs. physical wipe (`FlushAsync`)
+  - Logical whole-cache clear (`ClearAsync` — O(1), reserve-preserving) vs. reserve-dropping flush (`FlushAsync` — physical in-process, logical remove-generation marker on a distributed tier)
 - `IInMemoryCache` - in-memory (L1) tier contract; a marker interface (`: ICache`) with no extra members.
 - `IRemoteCache` - remote (L2) tier contract; adds `GetAllWithExpirationAsync<T>` / `GetWithExpirationAsync<T>` for single-round-trip value-plus-TTL reads (a remote store doesn't expose its TTL locally the way an in-memory tier does).
 - `[PublicAPI] ISeedableTagMarkerCache` - optional capability a remote/L2 cache implements so a multi-tier host can push a tag/clear marker learned out-of-band (e.g. from a backplane invalidation notification) into the provider's process-local marker cache, avoiding the refresh-window wait. Providers that do not implement it simply fall back to window-bounded refresh.
@@ -43,7 +43,7 @@ The conditional `GetOrAddAsync` overload exists for origins that can answer "has
 
 `Tags` are persisted with the entry for later one-call invalidation through `RemoveByTagAsync`. On a factory-backed read, call-provided tags win over the tags carried by an existing entry; `null` carries the existing tags forward. Each tag must be non-empty, and both the tag count and each tag's UTF-8 byte length must fit in an unsigned 16-bit value (provider envelope limits) — violations throw `ArgumentException` before anything is written. `RemoveByTagAsync` is O(1) logical (Family-2) invalidation: it writes one per-tag timestamp marker and returns `ValueTask`, without enumerating members. On the next read the shared predicate compares the entry's birth time (`CreatedAt`) against the newest applicable marker; an older entry is a miss for direct reads and a fail-safe reserve under the coordinator. Memberships are version-pinned by birth time, so a key re-created after the marker (newer `CreatedAt`) is not invalidated.
 
-`ClearAsync` is the logical, O(1) whole-cache counterpart: it bumps one reserved clear-generation marker compared on every read, so every entry born before the bump reads as a miss while its fail-safe reserve is preserved. `FlushAsync` is the physical wipe — it drops the keyspace and no reserve survives. Prefer `ClearAsync` when fail-safe coverage must outlive the clear; use `FlushAsync` to reclaim memory/keyspace.
+`ClearAsync` is the logical, O(1) whole-cache counterpart: it bumps one reserved clear-generation marker compared on every read, so every entry born before the bump reads as a miss while its fail-safe reserve is preserved. `FlushAsync` drops every entry including its fail-safe reserve — physical in-process, a logical remove-generation marker on a distributed (Redis) tier (cluster-safe, no `FLUSHDB`; physical memory reclaimed by each entry's TTL). Prefer `ClearAsync` when fail-safe coverage must outlive the clear; use `FlushAsync` to drop everything including reserves.
 
 `UpsertEntryAsync(key, value, options)` is the direct-write path that honors full `CacheEntryOptions` semantics (fail-safe physical retention, eager stamp, sliding clamp, tags). It performs a read-before-write and stamps a fresh birth time so a prior tag/clear marker does not invalidate the new value, so prefer the plain `UpsertAsync(key, value, TimeSpan?)` on hot paths that need none of the per-entry option semantics. It is named distinctly because the `TimeSpan`-to-options implicit conversion would otherwise make every bare-`TimeSpan` upsert ambiguous.
 
@@ -167,7 +167,7 @@ await cache.UpsertEntryAsync(
 
 await cache.RemoveByTagAsync("products", ct); // O(1) logical invalidation: bumps the "products" marker
 
-// Logical whole-cache clear (reserves preserved); FlushAsync would physically wipe instead.
+// Logical whole-cache clear (reserves preserved); FlushAsync drops reserves instead.
 await cache.ClearAsync(ct);
 ```
 

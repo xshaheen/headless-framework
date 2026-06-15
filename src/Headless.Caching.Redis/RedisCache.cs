@@ -56,6 +56,13 @@ public sealed class RedisCache(
     /// </summary>
     private const string _ClearMarkerSuffix = "__clear";
 
+    /// <summary>
+    /// Reserved key for the Family-2 global remove-generation marker (Unix-ms string). Bumped by the logical
+    /// <c>FlushAsync</c>; compared on every read. Entries born before it read as a hard miss with no fail-safe
+    /// reserve (distinct from the clear marker, which preserves reserves). Cannot collide with user keys.
+    /// </summary>
+    private const string _RemoveMarkerSuffix = "__remove";
+
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
 
@@ -73,6 +80,11 @@ public sealed class RedisCache(
     // correct we store the two longs behind a single reference cell.
     private long _clearMarkerMs = long.MinValue;
     private long _clearMarkerFetchedTicks = long.MinValue;
+
+    // Cached remove-generation marker (logical FlushAsync). Same shape and refresh-window semantics as the clear
+    // marker; an entry older than this reads as a hard miss with no fail-safe reserve.
+    private long _removeMarkerMs = long.MinValue;
+    private long _removeMarkerFetchedTicks = long.MinValue;
     private const long _MarkerAbsent = long.MinValue;
 
     /// <inheritdoc />
@@ -1481,6 +1493,24 @@ public sealed class RedisCache(
         Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
     }
 
+    /// <inheritdoc />
+    public void SeedRemoveMarker(DateTimeOffset invalidatedAt)
+    {
+        var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
+
+        // Raise-only CAS: a stale push must not lower a newer remove generation this node already observed.
+        long current;
+        while ((current = Interlocked.Read(ref _removeMarkerMs)) < ms)
+        {
+            if (Interlocked.CompareExchange(ref _removeMarkerMs, ms, current) == current)
+            {
+                break;
+            }
+        }
+
+        Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
+    }
+
     public async ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
@@ -1526,20 +1556,20 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Empty prefix = dedicated-DB mode: this cache owns the whole Redis database, so flush it atomically with
-        // a single FLUSHDB instead of an O(N), non-atomic SCAN+UNLINK sweep over every key. FLUSHDB runs on the
-        // db connection bound to _database (no IServer/allowAdmin needed — the connection's admin flag only gates
-        // SE.Redis's typed IServer admin methods, not a direct command), matching how this type already issues
-        // server-scoped work via the database/server APIs.
-        if (_keyPrefix.Length is 0)
-        {
-            await _database.ExecuteAsync("FLUSHDB").ConfigureAwait(false);
-            return;
-        }
+        // Logical flush (FusionCache Clear(false) parity): a physical wipe of a distributed Redis is unsafe —
+        // FLUSHDB only affects the addressed node on a Redis Cluster (and destroys co-tenant data on a shared
+        // instance), and an O(N) prefix SCAN+UNLINK does not span shards atomically. Instead bump the reserved
+        // remove-generation marker: every entry born before it reads as a hard miss with NO fail-safe reserve
+        // (distinct from ClearAsync, which preserves reserves). One marker key — cluster-safe; physical memory is
+        // reclaimed by each entry's TTL, so GetCountAsync may still count logically-removed entries until they age out.
+        var nowMs = RedisCacheEntryFrame.ToUnixTimeMilliseconds(timeProvider.GetUtcNow().UtcDateTime);
 
-        // Prefixed cache: clear only this instance's keyspace (its KeyPrefix), not the whole Redis database, since
-        // a shared Redis may host other caches and application data.
-        await _RemoveByPatternAsync($"{_keyPrefix}*", cancellationToken).ConfigureAwait(false);
+        await _database
+            .StringSetAsync((RedisKey)_GetRemoveMarkerKey(), nowMs.ToString(CultureInfo.InvariantCulture))
+            .ConfigureAwait(false);
+
+        Interlocked.Exchange(ref _removeMarkerMs, nowMs);
+        Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
     }
 
     #endregion
@@ -1554,6 +1584,8 @@ public sealed class RedisCache(
     private string _GetTagMarkerKey(string tag) => string.Concat(_keyPrefix, _TagMarkerNamespace, tag);
 
     private string _GetClearMarkerKey() => string.Concat(_keyPrefix, _ClearMarkerSuffix);
+
+    private string _GetRemoveMarkerKey() => string.Concat(_keyPrefix, _RemoveMarkerSuffix);
 
     private static long _StopwatchTicks() => Stopwatch.GetTimestamp();
 
@@ -1576,8 +1608,15 @@ public sealed class RedisCache(
     /// </summary>
     private async ValueTask<DateTime?> _ResolveNewestMarkerAsync(IReadOnlyCollection<string>? tags)
     {
-        // The clear-generation marker is compared on every read (tagged or not).
+        // The clear- and remove-generation markers are compared on every read (tagged or not).
         var newestMs = await _ResolveClearMarkerAsync().ConfigureAwait(false);
+
+        var removeMs = await _ResolveRemoveMarkerAsync().ConfigureAwait(false);
+
+        if (removeMs > newestMs)
+        {
+            newestMs = removeMs;
+        }
 
         if (tags is { Count: > 0 })
         {
@@ -1607,6 +1646,24 @@ public sealed class RedisCache(
         var ms = _ParseMarkerMs(value);
         Interlocked.Exchange(ref _clearMarkerMs, ms);
         Interlocked.Exchange(ref _clearMarkerFetchedTicks, _StopwatchTicks());
+        return ms;
+    }
+
+    private async ValueTask<long> _ResolveRemoveMarkerAsync()
+    {
+        var fetchedTicks = Interlocked.Read(ref _removeMarkerFetchedTicks);
+
+        if (_MarkerIsFresh(fetchedTicks))
+        {
+            return Interlocked.Read(ref _removeMarkerMs);
+        }
+
+        var value = await _database
+            .StringGetAsync((RedisKey)_GetRemoveMarkerKey(), options.ReadMode)
+            .ConfigureAwait(false);
+        var ms = _ParseMarkerMs(value);
+        Interlocked.Exchange(ref _removeMarkerMs, ms);
+        Interlocked.Exchange(ref _removeMarkerFetchedTicks, _StopwatchTicks());
         return ms;
     }
 
@@ -2025,6 +2082,18 @@ public sealed class RedisCache(
             // other sliding read paths (_RedisValueToCacheValueAsync, _RedisValueIsLogicallyPresentAsync).
             var logicalExpiresAt = frame.SlidingExpiration.HasValue ? null : frame.LogicalExpiresAt;
             var slidingExpiration = frame.SlidingExpiration;
+
+            // Remove-generation (logical FlushAsync): a hard miss with NO fail-safe reserve — distinct from the
+            // clear/tag markers below, which demote to a still-servable reserve. Checked first so a removed entry
+            // never surfaces as a stale candidate the coordinator could serve.
+            var removeMs = await _ResolveRemoveMarkerAsync().ConfigureAwait(false);
+            var removeMarker =
+                removeMs == _MarkerAbsent ? (DateTime?)null : RedisCacheEntryFrame.FromUnixTimeMilliseconds(removeMs);
+
+            if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, removeMarker))
+            {
+                return CacheStoreEntry<T>.NotFound;
+            }
 
             // Family-2 logical tag/clear invalidation: demote the entry to logically-expired-but-physically-
             // present so the coordinator re-runs the factory but can still serve this reserve stale on failure.

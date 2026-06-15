@@ -9,6 +9,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
 {
     private const string _TagMarkerNamespace = "__tag:";
     private const string _ClearMarkerSuffix = "__clear";
+    private const string _RemoveMarkerSuffix = "__remove";
 
     private IDatabase _Database => Fixture.ConnectionMultiplexer.GetDatabase();
 
@@ -193,6 +194,49 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
             .HasValue.Should()
             .BeFalse();
         (await _Database.KeyExistsAsync($"{prefix}{key}")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_logically_remove_with_flush_async_dropping_reserves_keeping_keys_physical()
+    {
+        await FlushAsync();
+        var prefix = $"{Faker.Random.AlphaNumeric(8)}:";
+        using var cache = CreateCache(prefix);
+        var key = Faker.Random.AlphaNumeric(10);
+        var failSafeOptions = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(30),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(1),
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), failSafeOptions, AbortToken);
+
+        await Task.Delay(5, AbortToken);
+        await cache.FlushAsync(AbortToken);
+
+        // Logical flush (FusionCache Clear(false)): no FLUSHDB — the entry key is physically retained and the
+        // remove-generation marker is written under its reserved key.
+        (await _Database.KeyExistsAsync($"{prefix}{key}"))
+            .Should()
+            .BeTrue();
+        (await _Database.KeyExistsAsync($"{prefix}{_RemoveMarkerSuffix}")).Should().BeTrue();
+
+        // ...yet the entry reads as a hard miss.
+        (await cache.GetAsync<string>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse();
+
+        // Unlike ClearAsync, FlushAsync drops the fail-safe reserve: a failing factory cannot serve the stale value.
+        var act = async () =>
+            await cache.GetOrAddAsync<string>(
+                key,
+                _ => throw new InvalidOperationException("downstream unavailable"),
+                failSafeOptions,
+                AbortToken
+            );
+        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
     [Fact]

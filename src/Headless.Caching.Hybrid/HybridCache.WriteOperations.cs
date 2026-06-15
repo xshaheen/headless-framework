@@ -1066,12 +1066,27 @@ public sealed partial class HybridCache
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
-        await l2Cache.FlushAsync(cancellationToken).ConfigureAwait(false);
+        // Single-clock model (see RemoveByTagAsync): physically wipe L1 first and unconditionally (in-process,
+        // infallible — this drops the local fail-safe reserves), then broadcast FlushAll carrying the timestamp,
+        // then bump the L2 remove-generation marker best-effort under the circuit breaker. On a distributed tier
+        // FlushAsync is a logical remove marker (cluster-safe, no physical wipe); receivers physically wipe their
+        // own L1 on the FlushAll broadcast and seed their L2 remove marker from the origin timestamp.
+        var invalidatedAt = _timeProvider.GetUtcNow();
+
         await LocalCache.FlushAsync(cancellationToken).ConfigureAwait(false);
+
         await _PublishInvalidationAsync(
-                new CacheInvalidationMessage { InstanceId = _instanceId, FlushAll = true },
+                new CacheInvalidationMessage
+                {
+                    InstanceId = _instanceId,
+                    FlushAll = true,
+                    Timestamp = invalidatedAt,
+                },
                 cancellationToken
             )
+            .ConfigureAwait(false);
+
+        await _BumpL2MarkerBestEffortAsync(ct => l2Cache.FlushAsync(ct), "__flush", cancellationToken)
             .ConfigureAwait(false);
     }
 

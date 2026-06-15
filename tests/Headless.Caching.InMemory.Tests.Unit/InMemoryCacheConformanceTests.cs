@@ -151,6 +151,5 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
         base.should_logically_clear_with_clear_async_preserving_reserves();
 
     [Fact]
-    public override Task should_physically_wipe_with_flush_async_dropping_reserves() =>
-        base.should_physically_wipe_with_flush_async_dropping_reserves();
+    public override Task should_drop_reserves_with_flush_async() => base.should_drop_reserves_with_flush_async();
 }

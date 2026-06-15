@@ -263,10 +263,11 @@ public interface ICache
     /// LOGICALLY clears the cache in O(1) by bumping a single reserved clear-generation marker: every entry born
     /// before the bump is treated as a miss by direct reads and demoted to a fail-safe reserve by the factory
     /// coordinator, so a failing factory can still serve stale values (the fail-safe reserves are preserved).
-    /// This is the logical counterpart of <see cref="FlushAsync"/>, which physically wipes the store (no reserves
-    /// survive). Prefer <see cref="ClearAsync"/> when you want fail-safe coverage to outlive the clear; use
-    /// <see cref="FlushAsync"/> to reclaim memory/keyspace. The marker is per-tier and, on a two-tier cache, is
-    /// bumped on both tiers and propagated to other instances. A re-created entry (newer birth time) is unaffected.
+    /// This is the reserve-preserving counterpart of <see cref="FlushAsync"/>, which drops the fail-safe reserves.
+    /// Prefer <see cref="ClearAsync"/> when you want fail-safe coverage to outlive the clear; use
+    /// <see cref="FlushAsync"/> to drop everything including reserves. The marker is per-tier and, on a two-tier
+    /// cache, is bumped on both tiers and propagated to other instances. A re-created entry (newer birth time) is
+    /// unaffected.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     ValueTask ClearAsync(CancellationToken cancellationToken = default);
@@ -279,7 +280,14 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Flush all cached item.</summary>
+    /// <summary>
+    /// Flushes the whole cache, dropping every entry <em>including its fail-safe reserve</em> — the reserve-dropping
+    /// counterpart of <see cref="ClearAsync"/>. After a flush a failing factory cannot serve a stale value. The
+    /// removal mechanism is tier-specific: an in-process cache wipes physically (freeing memory immediately); a
+    /// distributed cache bumps a reserved remove-generation marker (cluster-safe, no physical <c>FLUSHDB</c>), so its
+    /// entries read as a hard miss while physical memory is reclaimed lazily by each entry's TTL.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     ValueTask FlushAsync(CancellationToken cancellationToken = default);
 
     #endregion

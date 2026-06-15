@@ -114,6 +114,30 @@ public sealed class HybridCacheTagTests : TestBase
     }
 
     [Fact]
+    public async Task should_seed_l2_remove_marker_when_receiving_foreign_flush_all()
+    {
+        // given — a peer's flush arrives over the backplane
+        var (cache, _, l2, _) = _CreateCache();
+        await using var _ = cache;
+        var at = _timeProvider.GetUtcNow();
+
+        // when
+        await cache.HandleInvalidationAsync(
+            new CacheInvalidationMessage
+            {
+                InstanceId = "other-instance",
+                FlushAll = true,
+                Timestamp = at,
+            },
+            AbortToken
+        );
+
+        // then — the remove generation is pushed into the L2 marker cache immediately (the receiver also wipes L1)
+        var adapter = (InMemoryRemoteCacheAdapter)l2;
+        adapter.SeededRemoveMarkers.Should().ContainSingle().Which.Should().Be(at);
+    }
+
+    [Fact]
     public async Task should_publish_clear_when_clearing()
     {
         // given

@@ -929,7 +929,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         recreated.Value.Should().Be("recreated");
     }
 
-    public virtual async Task should_physically_wipe_with_flush_async_dropping_reserves()
+    public virtual async Task should_drop_reserves_with_flush_async()
     {
         await ResetAsync();
         var cache = CreateCache(Faker.Random.AlphaNumeric(8));
@@ -944,7 +944,13 @@ public abstract class CacheConformanceTestsBase : TestBase
 
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), failSafe, AbortToken);
 
-        // Physical wipe: unlike ClearAsync, no reserve survives, so a failing factory cannot serve a stale value.
+        // Advance so the logical remove-generation marker (distributed providers) is strictly newer than the
+        // entry's birth time; a physical wipe is unaffected by the gap.
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+
+        // Flush drops reserves: unlike ClearAsync, no fail-safe reserve survives, so a failing factory cannot serve
+        // a stale value. Removal may be physical (in-process L1) or logical (distributed remove-generation marker);
+        // this contract is about the observable outcome, not the mechanism.
         await cache.FlushAsync(AbortToken);
 
         (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();

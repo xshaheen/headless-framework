@@ -23,4 +23,12 @@ public interface ISeedableTagMarkerCache
 
     /// <summary>Seeds the local copy of the global clear-generation marker with a timestamp learned out-of-band.</summary>
     void SeedClearMarker(DateTimeOffset invalidatedAt);
+
+    /// <summary>
+    /// Seeds the local copy of the global remove-generation marker with a timestamp learned out-of-band. This is the
+    /// logical <c>FlushAsync</c> marker: entries born before it read as a hard miss with <em>no</em> fail-safe
+    /// reserve, unlike <see cref="SeedClearMarker"/> (which preserves reserves). Caches whose <c>FlushAsync</c> wipes
+    /// physically have no such marker and implement this as a no-op.
+    /// </summary>
+    void SeedRemoveMarker(DateTimeOffset invalidatedAt);
 }

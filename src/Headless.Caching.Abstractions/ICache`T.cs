@@ -164,7 +164,10 @@ public interface ICache<T>
     /// <summary>Removes all cached items for the specified cache keys.</summary>
     ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
 
-    /// <summary>Flush all cached items.</summary>
+    /// <summary>
+    /// Flushes the whole cache, dropping every entry including its fail-safe reserve (reserve-dropping counterpart of
+    /// <see cref="ClearAsync"/>). See <see cref="ICache.FlushAsync"/> for the tier-specific removal mechanism.
+    /// </summary>
     ValueTask FlushAsync(CancellationToken cancellationToken = default);
 
     #endregion

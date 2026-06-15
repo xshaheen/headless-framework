@@ -13,7 +13,7 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 - `GetWithExpirationAsync<T>` returns the cached value and its remaining TTL in one round-trip; used internally by `Headless.Caching.Hybrid` to avoid a double L2 read.
 - Supports strongly typed `ICache<T>` (the single typed facade; `IRemoteCache<T>` is not registered).
 - Named cache instances via `setup.AddNamed(name, i => i.UseRedis(...))`, each owning its own scripts loader bound to its own multiplexer.
-- Prefix-based key management. `FlushAsync` clears only this cache's `KeyPrefix` (scan + `UNLINK`), not the whole Redis database — a shared Redis keeps its other keyspaces. (An unprefixed cache has nothing to scope to, so it still clears the database.)
+- Prefix-based key management. `FlushAsync` is a **logical** whole-cache flush (FusionCache `Clear(false)` parity): it bumps a reserved remove-generation marker so every entry reads as a hard miss with no fail-safe reserve, rather than a physical `FLUSHDB`/`SCAN`+`UNLINK`. This is cluster-safe (one marker key, not a per-node command) and never touches co-tenant keyspaces; physical memory is reclaimed lazily by each entry's TTL, so `GetCountAsync` may still count logically-removed entries until they age out. (`ClearAsync` is the reserve-preserving logical counterpart; `RemoveByPrefixAsync` still physically removes a prefix via `SCAN`+`UNLINK`.)
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower).
 - Set/list operations with pagination.
 - Lua scripts for atomic multi-key operations.

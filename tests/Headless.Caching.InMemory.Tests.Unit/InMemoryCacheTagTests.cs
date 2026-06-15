@@ -39,6 +39,23 @@ public sealed class InMemoryCacheTagTests : TestBase
     }
 
     [Fact]
+    public async Task should_no_op_seed_remove_marker_leaving_entries_readable()
+    {
+        using var cache = _CreateCache();
+
+        await cache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // SeedRemoveMarker is a documented no-op for the in-process cache (its FlushAsync wipes physically, so there
+        // is no logical remove-generation marker to seed). Even a future-dated seed must not invalidate any entry.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        ((ISeedableTagMarkerCache)cache).SeedRemoveMarker(_timeProvider.GetUtcNow());
+
+        var value = await cache.GetAsync<string>("key", AbortToken);
+        value.HasValue.Should().BeTrue();
+        value.Value.Should().Be("value");
+    }
+
+    [Fact]
     public async Task should_not_invalidate_entry_lacking_the_tag()
     {
         using var cache = _CreateCache();

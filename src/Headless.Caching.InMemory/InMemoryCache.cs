@@ -1623,6 +1623,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedabl
         } while (Interlocked.CompareExchange(ref _clearGenerationTicks, ticks, current) != current);
     }
 
+    /// <inheritdoc />
+    public void SeedRemoveMarker(DateTimeOffset invalidatedAt)
+    {
+        // No-op by design: the remove-generation marker is a distributed-tier (logical FlushAsync) concept. This
+        // in-process cache's FlushAsync wipes physically and a FlushAll backplane broadcast wipes the receiver's L1
+        // the same way, so there is no local logical remove marker to seed.
+    }
+
     /// <summary>
     /// Computes the newest invalidation marker applicable to <paramref name="entry"/> — the max of the global
     /// clear-generation marker and every per-tag marker the entry carries — or <see langword="null"/> when none

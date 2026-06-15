@@ -14,7 +14,7 @@ Provides one `ICache` implementation that reads from a fast local cache first, f
 - Supports strongly typed `ICache<T>`.
 - Uses `DefaultLocalExpiration` to keep L1 fresher than L2.
 - O(1) logical tag invalidation across both tiers plus a `Tag` invalidation message on the backplane so peers bump their own L1 tag marker.
-- O(1) logical `ClearAsync` across both tiers plus a `Clear` invalidation message on the backplane so peers bump their L1 clear-generation marker (reserves preserved); distinct from `FlushAll` (physical wipe).
+- O(1) logical `ClearAsync` across both tiers plus a `Clear` invalidation message on the backplane so peers bump their L1 clear-generation marker (reserves preserved); distinct from `FlushAll` (drops reserves — physical L1 wipe on the receiver plus a logical L2 remove-generation marker seeded from the origin timestamp).
 - `ExpireAsync` across both tiers plus an `Expire` invalidation message on the backplane so peers logically expire their L1 copy (fail-safe reserve preserved) instead of removing it.
 - Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `setup.AddNamed(name, i => i.UseHybrid(...))`.
 - Opt-in auto-recovery: transient L2/backplane outages queue failed single-key operations and replay them on recovery.

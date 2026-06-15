@@ -236,16 +236,26 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
         // given
         await FlushAsync();
         using var cache = CreateCache();
+        var keys = new List<string>();
         for (var i = 0; i < 5; i++)
         {
-            await cache.UpsertAsync(Faker.Random.AlphaNumeric(10), "value", TimeSpan.FromMinutes(5), AbortToken);
+            var key = Faker.Random.AlphaNumeric(10);
+            keys.Add(key);
+            await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
         }
+
+        // Small delay so the logical remove-generation marker postdates the writes (both are ms-precision).
+        await Task.Delay(5, AbortToken);
 
         // when
         await cache.FlushAsync(AbortToken);
 
-        // then
-        var count = await cache.GetCountAsync(cancellationToken: AbortToken);
-        count.Should().Be(0);
+        // then — every entry reads as a miss. FlushAsync is a logical remove-generation marker (FusionCache
+        // Clear(false) parity), not a physical FLUSHDB, so entries are physically retained until TTL; the observable
+        // contract is the read miss, not GetCountAsync == 0.
+        foreach (var key in keys)
+        {
+            (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeFalse();
+        }
     }
 }

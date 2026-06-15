@@ -16,9 +16,14 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
     /// <summary>Records clear-generation pushes received from the backplane receiver.</summary>
     public List<DateTimeOffset> SeededClearMarkers { get; } = [];
 
+    /// <summary>Records remove-generation (logical flush) pushes received from the backplane receiver.</summary>
+    public List<DateTimeOffset> SeededRemoveMarkers { get; } = [];
+
     public void SeedTagMarker(string tag, DateTimeOffset invalidatedAt) => SeededTagMarkers.Add((tag, invalidatedAt));
 
     public void SeedClearMarker(DateTimeOffset invalidatedAt) => SeededClearMarkers.Add(invalidatedAt);
+
+    public void SeedRemoveMarker(DateTimeOffset invalidatedAt) => SeededRemoveMarkers.Add(invalidatedAt);
 
     public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;
 
