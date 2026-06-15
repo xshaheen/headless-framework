@@ -16,7 +16,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
 - **Durable Intent Dispatch**: Outbox rows carry bus/queue intent so retry drainers use the matching transport
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
-- **Extension System**: Pluggable storage and transport providers
+- **Extension System**: Pluggable storage and transport providers, with exactly one storage provider required
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
@@ -57,7 +57,7 @@ builder.Services.AddHeadlessMessaging(setup =>
         c.UseVersion("v1");
     });
 
-    // Add storage (required)
+    // Add exactly one storage provider (required)
     setup.UsePostgreSql("connection_string");
 
     // Add transport (required)
@@ -146,6 +146,7 @@ setup.ForMessage<OrderPlaced>(message =>
 - Wait for `BootstrapAsync(...)` to complete before publishing when you bootstrap manually.
 - `BootstrapAsync(...)` completes only after initial transport consumers report broker-side readiness, not merely after their background tasks are queued.
 - Startup fails when a required messaging processor cannot start; partial logged startup is not treated as success.
+- Startup fails when zero or multiple storage providers are configured.
 - Runtime delegate subscriptions attached before the consumer register is ready are picked up by the initial startup path.
 - Runtime delegate subscriptions attached after the consumer register is ready trigger a consumer refresh so they are not missed during late startup.
 
