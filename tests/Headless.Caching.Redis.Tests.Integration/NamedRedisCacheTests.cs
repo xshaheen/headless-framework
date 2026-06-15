@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
+using System.Text;
 using Headless.Caching;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using System.Globalization;
-using System.Text;
 
 namespace Tests;
 
@@ -130,7 +130,9 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
         await defaultCache.UpsertAsync(defaultKey, 456, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        (await named.GetAsync<int>(key, AbortToken)).Value.Should().Be(123);
+        (await named.GetAsync<int>(key, AbortToken))
+            .Value.Should()
+            .Be(123);
         (await defaultCache.GetAsync<int>(defaultKey, AbortToken)).Value.Should().Be(456);
 
         var db = fixture.ConnectionMultiplexer.GetDatabase();
@@ -188,11 +190,7 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
         // then - the value segment was encoded by the generic-resolved serializer
         var db = fixture.ConnectionMultiplexer.GetDatabase();
         var stored = await db.StringGetAsync(keyPrefix + key);
-        RedisCacheEntryFrame
-            .Decode(stored)
-            .ValueSegment.ToArray()
-            .Should()
-            .Equal(Encoding.UTF8.GetBytes("gen:77"));
+        RedisCacheEntryFrame.Decode(stored).ValueSegment.ToArray().Should().Equal(Encoding.UTF8.GetBytes("gen:77"));
         (await named.GetAsync<int>(key, AbortToken)).Value.Should().Be(77);
 
         await host.StopAsync(AbortToken);

@@ -194,8 +194,7 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         CancellationToken cancellationToken = default
     ) => new(CacheValue<ICollection<T>>.NoValue);
 
-    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) =>
-        ValueTask.CompletedTask;
+    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) => new(true);
 

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Testing.Testcontainers;
 using Headless.Redis;
+using Headless.Testing.Testcontainers;
 using StackExchange.Redis;
 
 namespace Tests;
