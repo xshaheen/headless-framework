@@ -127,6 +127,17 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
     public override Task should_ignore_refresh_for_missing_entry() => base.should_ignore_refresh_for_missing_entry();
 
     [Fact]
+    public override Task should_refresh_tagged_sliding_entry() => base.should_refresh_tagged_sliding_entry();
+
+    [Fact]
+    public override Task should_not_resurrect_tag_invalidated_entry_on_refresh() =>
+        base.should_not_resurrect_tag_invalidated_entry_on_refresh();
+
+    [Fact]
+    public override Task should_expire_immediately_when_upsert_duration_is_non_positive() =>
+        base.should_expire_immediately_when_upsert_duration_is_non_positive();
+
+    [Fact]
     public override Task should_extend_entry_when_conditional_factory_reports_not_modified() =>
         base.should_extend_entry_when_conditional_factory_reports_not_modified();
 

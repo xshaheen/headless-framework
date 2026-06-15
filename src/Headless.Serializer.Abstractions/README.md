@@ -12,7 +12,6 @@ Provides provider-agnostic serialization contracts supporting both text (JSON) a
 - `IBinarySerializer` - Marker interface for binary serializers
 - `ITextSerializer` - Marker interface for text-based serializers
 - `IJsonSerializer` - Specific interface for JSON serialization
-- `RawBytesSerializer` - `IBinarySerializer` implementation that round-trips only `byte[]` values unchanged
 - Extension methods for common serialization patterns
 
 ## Installation

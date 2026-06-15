@@ -34,8 +34,9 @@ public readonly record struct CacheEntryOptions
     }
 
     /// <summary>
-    /// Gets the cache entry duration. Must be a positive value; zero or negative durations are
-    /// rejected with an <see cref="ArgumentOutOfRangeException"/> when the entry is created.
+    /// Gets the cache entry duration. A positive value sets the entry's lifetime; a non-positive value (zero or
+    /// negative — for example a BCL absolute expiration already in the past) is treated as "expire immediately":
+    /// the write becomes an immediate eviction across every provider rather than throwing.
     /// </summary>
     public TimeSpan Duration { get; init; }
 

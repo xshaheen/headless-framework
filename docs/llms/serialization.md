@@ -41,7 +41,6 @@ packages: Serializer.Abstractions, Serializer.Json, Serializer.MessagePack
 - Install `Headless.Serializer.Abstractions` to depend on interfaces only (e.g., in domain/application layers).
 - Install `Headless.Serializer.Json` for JSON serialization via System.Text.Json. Register `SystemJsonSerializer` as `IJsonSerializer`.
 - Install `Headless.Serializer.MessagePack` for compact binary serialization. Register `MessagePackSerializer` as `IBinarySerializer`.
-- Use `RawBytesSerializer` only for byte-array-only paths such as BCL `IDistributedCache` adapters; it writes `byte[]` values unchanged and rejects other types.
 - Interface hierarchy: `ISerializer` (base, Stream-based) -> `ITextSerializer` / `IBinarySerializer` (markers) -> `IJsonSerializer` (JSON-specific).
 - Customize JSON behavior by implementing `IJsonOptionsProvider` with separate serialize/deserialize options.
 - MessagePack uses contractless serialization by default (no `[Key]`/`[MessagePackObject]` attributes needed).
@@ -70,7 +69,6 @@ Provides provider-agnostic serialization contracts supporting both text (JSON) a
 - `IBinarySerializer` - Marker interface for binary serializers
 - `ITextSerializer` - Marker interface for text-based serializers
 - `IJsonSerializer` - Specific interface for JSON serialization
-- `RawBytesSerializer` - `IBinarySerializer` implementation that round-trips only `byte[]` values unchanged
 - Extension methods for common serialization patterns
 
 ## Installation

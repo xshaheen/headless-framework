@@ -20,7 +20,6 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 - `FactoryCacheCoordinator.IsCallerCancellation` - shared predicate provider composites use so caller cancellation propagates while an unrelated/downstream `OperationCanceledException` activates fail-safe consistently.
 - `SetupCachingCore.AddHeadlessCaching` - the single registration entry point: provider packages contribute deferred extensions through `Use*`/`Add*Tier`/`AddNamed` on the setup builder, and contributions are applied only after the setup gates pass.
 - `HeadlessCachingSetupBuilder` / `HeadlessCacheInstanceBuilder` / `ICacheProviderOptionsExtension` - the builder surface provider packages extend: a default slot (exactly one `Use*`), role-keyed tier slots (at most one per reserved role), named instances (unlimited, unique non-reserved names, exactly one provider each), and cross-cutting extensions.
-- `HeadlessCacheInstanceBuilder.WithSerializer(...)` - per-named-cache serializer selection for serializing providers; Redis resolves the keyed serializer by cache name and falls back to the global `ISerializer`.
 - `ICacheProvider` over the container's keyed `ICache` registrations; `AddHeadlessCaching` registers it automatically.
 - Fail-safe, factory timeout, eager refresh, and background completion logs.
 
@@ -64,20 +63,6 @@ services.AddHeadlessCaching(setup =>
 ```
 
 Beyond the entry point, consumers do not use this package directly. Provider packages reference it to implement `GetOrAddAsync` and the options-based `UpsertEntryAsync`.
-
-Named Redis instances can override the value serializer without affecting the default cache:
-
-```csharp
-builder.Services.AddHeadlessCaching(setup =>
-{
-    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
-    setup.AddNamed("binary-values", instance =>
-    {
-        instance.WithSerializer<MyBinarySerializer>();
-        instance.UseRedis(options => options.ConnectionMultiplexer = redis);
-    });
-});
-```
 
 ## Configuration
 

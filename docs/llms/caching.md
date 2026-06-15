@@ -88,7 +88,7 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 - Single-instance or development: `Headless.Caching.InMemory` with `setup.UseInMemory()`.
 - Multi-instance shared cache: `Headless.Caching.Redis` with `setup.UseRedis(...)`.
 - Local hot path plus shared L2: `Headless.Caching.Hybrid` with `setup.AddMemoryTier()`, `setup.AddRedisTier(...)`, messaging, then `setup.UseHybrid()`.
-- BCL `IDistributedCache` consumers such as ASP.NET Core Session: add `Headless.Caching.Bcl` and call `setup.AddHeadlessDistributedCache(...)` inside the same `AddHeadlessCaching` setup.
+- BCL `IDistributedCache` consumers such as ASP.NET Core Session: add `Headless.Caching.Bcl` and call `setup.UseBclCache(...)` inside the same `AddHeadlessCaching` setup.
 - Cross-node factory single-flight: add `Headless.Caching.DistributedLocks`, call `setup.UseDistributedFactoryLock()`, and opt in per entry with `CacheEntryOptions.UseDistributedFactoryLock`.
 
 `ICache` supports scalar reads/writes, bulk operations, prefix operations, atomic compare/replace and numeric operations, set operations, tag invalidation (`RemoveByTagAsync`), and a logical whole-cache clear (`ClearAsync`). Invalidation comes in shapes that differ by what survives. `RemoveAsync` hard-deletes a single entry (including any fail-safe reserve); `ExpireAsync` logically expires a single entry — normal reads miss immediately but the fail-safe reserve is preserved. `RemoveByTagAsync` is an O(1) logical tag invalidation (it writes a per-tag timestamp marker; it does not enumerate or delete member keys), and `ClearAsync` is an O(1) logical whole-cache clear (it bumps one reserved generation marker); both preserve fail-safe reserves. `FlushAsync` is the whole-cache flush that drops reserves — physical in-process, a logical remove-generation marker on a distributed (Redis) tier (cluster-safe, no `FLUSHDB`); the reserve-dropping counterpart of `ClearAsync`. `GetOrAddAsync` is the factory-backed path: it is governed by `CacheEntryOptions` (fail-safe, factory timeouts, sliding expiration, eager refresh, tags, distributed lock) and has a conditional overload taking a `CacheFactoryContext<T>` factory for HTTP-304-style refresh. `UpsertEntryAsync` is the only direct-write path that also honors `CacheEntryOptions`. Named cache instances are added with `setup.AddNamed(name, i => i.Use{InMemory,Redis,Hybrid}(...))` and resolved through `ICacheProvider`.
@@ -104,9 +104,10 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 - `setup.UseDistributedFactoryLock()` comes in three overload shapes: parameterless, `Action<CacheFactoryLockOptions>`, and `Action<CacheFactoryLockOptions, IServiceProvider>`. `CacheFactoryLockOptions.TimeUntilExpires`, when set, must be finite and positive — zero, negative, or `Timeout.InfiniteTimeSpan` are rejected at startup.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value`; cache misses return `HasValue = false`.
 - `GetOrAddAsync` takes `CacheEntryOptions`. Passing a `TimeSpan` still works through implicit conversion when only duration is needed.
+- A non-positive `CacheEntryOptions.Duration` (zero or negative — for example a BCL absolute expiration already in the past) means "expire immediately": the write becomes an immediate eviction across every provider (Redis, InMemory, Hybrid) instead of throwing `ArgumentOutOfRangeException`.
 - The option-less `GetOrAddAsync` extension overloads use `ICache.DefaultEntryOptions` and throw `InvalidOperationException` when it is unset. Set `options.DefaultEntryOptions` at registration to opt in; never assume a magic default duration exists.
 - Set `CacheEntryOptions.SlidingExpiration` when a factory-backed entry should expire after an idle window while still respecting `Duration` as the absolute cap. Value reads re-arm; metadata reads such as `GetExpirationAsync` do not.
-- Use `ICache.RefreshAsync(key)` when a caller needs to re-arm a sliding entry without materializing its value. It is a no-op for misses and non-sliding entries.
+- Use `ICache.RefreshAsync(key)` when a caller needs to re-arm a sliding entry without materializing its value. It is a no-op for misses and non-sliding entries. On Redis, an untagged entry re-arms from the frame header only — the value payload is never transferred, a measurable win for large session payloads; tagged entries fall back to a full read.
 - Do not combine sliding expiration with fail-safe, and do not combine sliding expiration with eager refresh; the coordinator rejects both combinations.
 - Enable fail-safe per factory-backed entry with `CacheEntryOptions.IsFailSafeEnabled = true`. When the factory throws and a logically expired value is still physically retained, `GetOrAddAsync` serves that value and returns `CacheValue<T>.IsStale = true`.
 - Fail-safe retention is bounded by `max(Duration, FailSafeMaxDuration)` from entry creation. `FailSafeThrottleDuration` restamps logical expiration to avoid hammering a failing factory, but never extends physical retention.
@@ -124,7 +125,7 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 - Logical tag/clear invalidation is lazy and eventually visible on a shared L2: another instance sees an L2 marker bump only after its process-local marker cache refreshes (Redis `TagMarkerRefreshWindow`, default 2s); the physical TTL backstops staleness if a marker is ever lost. On a backplane hybrid the receiver seeds both its L1 and its L2 marker immediately from the notification timestamp (via `ISeedableTagMarkerCache`), so neither is window-bounded; the window bounds only no-backplane (pure-Redis) deployments and recovery after a missed backplane message.
 - `CacheEntryOptions.UseDistributedFactoryLock` requires the `Headless.Caching.DistributedLocks` adapter (`setup.UseDistributedFactoryLock()`) plus a registered `IDistributedLock`; enabling it without the provider fails the read with `InvalidOperationException`. Reserve it for expensive factories — per-node single-flight already exists without it.
 - Named cache instances must not use a reserved name — the `CacheConstants` role keys (`Headless.Caching:Memory`, `Headless.Caching:Remote`, `Headless.Caching:Hybrid`), or any name under the `Headless.Caching:` namespace; `setup.AddNamed` throws `ArgumentException` for reserved names and rejects duplicates. Resolve named instances through `ICacheProvider.GetCache(name)` / `GetCacheOrNull(name)`.
-- Configure a named Redis cache with `instance.WithSerializer(...)` when that instance needs a different value codec from the default cache. This is how `Headless.Caching.Bcl` stores `byte[]` payloads without JSON/base64 encoding.
+- Named Redis cache instances can select their serializer with `instance.WithSerializer(...)` (a Redis-provider capability shipped in `Headless.Caching.Redis`) when that instance needs a different value codec from the default cache. InMemory stores object references and never serializes, so `WithSerializer` is not offered there; on a hybrid instance it governs L2 (Redis) only. `Headless.Caching.Bcl` rides the same keyed-serializer mechanism internally — `UseBclCache` wires a raw-bytes codec automatically so `byte[]` payloads avoid JSON/base64 encoding — but exposes no serializer knob to the caller.
 - Named hybrid instances publish invalidations with `CacheInvalidationMessage.CacheName`, and `HybridCacheInvalidationConsumer` routes them through `ICacheProvider` to the matching named hybrid. Default hybrid messages use a null `CacheName` and resolve through the `CacheConstants.HybridCacheProvider` role key.
 - Hybrid `AllowBackgroundDistributedCacheOperations = true` fire-and-forgets the L2 write and backplane publish on additive writes (the `GetOrAddAsync` factory write-through, `UpsertAsync`, `UpsertAllAsync`): the caller returns after the L1 write, so L2 and peers briefly lag L1. A failed background write queues for replay when `EnableAutoRecovery` is on, else is logged best-effort. Removes, `Try*`, atomic/set ops, and reads stay synchronous because their result is the L2 answer.
 - Hybrid `DistributedCacheSoftTimeout` / `DistributedCacheHardTimeout` bound slow L2 reads. A factory-backed read with an L1 stale reserve serves that reserve on L2 soft timeout and skips the origin factory; a plain read degrades to a miss. `DistributedCacheCircuitBreakerDuration` skips L2 operations for a short window after non-cancellation L2 failures.
@@ -213,7 +214,7 @@ Every entry carries two clocks. **Logical expiration** ends the fresh window tha
 - **stale reserve** — reads miss; `GetOrAddAsync` runs the factory and serves this value *only if the factory fails* (`CacheValue<T>.IsStale = true`), then throttles retries for `FailSafeThrottleDuration`.
 - **gone** — reads miss; `GetOrAddAsync` runs the factory with no fallback.
 
-`physical expiry = max(Duration, FailSafeMaxDuration)`. With fail-safe off, the two clocks coincide, the stale-reserve window collapses to zero, and `ExpireAsync` becomes equivalent to `RemoveAsync` (no reserve to preserve).
+`physical expiry = max(Duration, FailSafeMaxDuration)`. With fail-safe off, the two clocks coincide, the stale-reserve window collapses to zero, and `ExpireAsync` becomes equivalent to `RemoveAsync` (no reserve to preserve). A non-positive `Duration` (zero or negative) is a degenerate case meaning "expire immediately": every provider turns such a write into an immediate eviction rather than rejecting it, which is what lets the BCL adapter honor a `Set` whose absolute expiration is already in the past.
 
 ### Operation semantics and entry model
 
@@ -485,7 +486,6 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 - `FactoryCacheCoordinator.IsCallerCancellation` - shared predicate provider composites use so caller cancellation propagates while an unrelated/downstream `OperationCanceledException` activates fail-safe consistently.
 - `SetupCachingCore.AddHeadlessCaching` - the single registration entry point: provider packages contribute deferred extensions through `Use*`/`Add*Tier`/`AddNamed` on the setup builder, and contributions are applied only after the setup gates pass.
 - `HeadlessCachingSetupBuilder` / `HeadlessCacheInstanceBuilder` / `ICacheProviderOptionsExtension` - the builder surface provider packages extend: a default slot (exactly one `Use*`), role-keyed tier slots (at most one per reserved role), named instances (unlimited, unique non-reserved names, exactly one provider each), and cross-cutting extensions.
-- `HeadlessCacheInstanceBuilder.WithSerializer(...)` - per-named-cache serializer selection for serializing providers; Redis resolves the keyed serializer by cache name and falls back to the global `ISerializer`.
 - `ICacheProvider` over the container's keyed `ICache` registrations; `AddHeadlessCaching` registers it automatically.
 - Fail-safe, factory timeout, eager refresh, and background completion logs.
 
@@ -529,20 +529,6 @@ services.AddHeadlessCaching(setup =>
 ```
 
 Beyond the entry point, consumers do not use this package directly. Provider packages reference it to implement `GetOrAddAsync` and the options-based `UpsertEntryAsync`.
-
-Named Redis instances can override the value serializer without affecting the default cache:
-
-```csharp
-builder.Services.AddHeadlessCaching(setup =>
-{
-    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
-    setup.AddNamed("binary-values", instance =>
-    {
-        instance.WithSerializer<MyBinarySerializer>();
-        instance.UseRedis(options => options.ConnectionMultiplexer = redis);
-    });
-});
-```
 
 ### Configuration
 
@@ -951,6 +937,7 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 - `GetWithExpirationAsync<T>` returns the cached value and its remaining TTL in one round-trip; used internally by `Headless.Caching.Hybrid` to avoid a double L2 read.
 - Supports strongly typed `ICache<T>` (the single typed facade; `IRemoteCache<T>` is not registered).
 - Named cache instances via `setup.AddNamed(name, i => i.UseRedis(...))`, each owning its own scripts loader bound to its own multiplexer.
+- `HeadlessCacheInstanceBuilder.WithSerializer(...)` - per-named-Redis-instance value-codec selection (instance, factory, and generic `<TSerializer>()` overloads); Redis resolves the keyed serializer by cache name and falls back to the global `ISerializer`. Serialization is a Redis-tier concern, so this lives in the Redis package; InMemory stores object references and never serializes, so it is not offered there. On a hybrid instance it governs L2 (Redis) only.
 - Prefix-based key management.
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower).
 - Set/list operations with pagination.
@@ -1034,6 +1021,20 @@ public sealed class SessionService(ICacheProvider cacheProvider)
 
 Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{Memory,Remote,Hybrid}`) and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
+A named Redis instance can override its value serializer without affecting the default cache (`WithSerializer` and `UseRedis` chain in either order):
+
+```csharp
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
+    setup.AddNamed("binary-values", instance =>
+    {
+        instance.WithSerializer<MyBinarySerializer>();
+        instance.UseRedis(options => options.ConnectionMultiplexer = redis);
+    });
+});
+```
+
 ### Configuration
 
 | Option | Default | Description |
@@ -1077,20 +1078,20 @@ Provides standard BCL distributed-cache interop for ASP.NET Core Session and thi
 
 ### Key Features
 
-- `HeadlessDistributedCacheAdapter` implements `IDistributedCache` over a named `ICache`.
-- `setup.AddHeadlessDistributedCache(...)` provisions a dedicated named cache and registers it as `IDistributedCache`.
+- Registers `IDistributedCache` over an internal adapter backed by a named `ICache`; consumers only ever see `IDistributedCache`.
+- `setup.UseBclCache(...)` provisions a dedicated named cache and registers it as `IDistributedCache`.
 - Maps `DistributedCacheEntryOptions` absolute, relative, and sliding expiration to `CacheEntryOptions`.
 - Uses `ICache.RefreshAsync` for `IDistributedCache.Refresh`/`RefreshAsync`, so sliding entries can be re-armed without returning their value.
-- Wires the named cache with `RawBytesSerializer`, so `byte[]` payloads are stored in the Redis value segment unchanged rather than JSON/base64 encoded.
+- Wires the named cache with an internal raw-bytes codec automatically, so `byte[]` payloads are stored in the Redis value segment unchanged rather than JSON/base64 encoded.
 - Supports ASP.NET Core Session round-trips when backed by a Redis named cache.
 
 ### Design Notes
 
 This package is an interop adapter, not a general application-cache abstraction. Prefer injecting `ICache` for code you own; use `IDistributedCache` only where a framework or third-party component demands the BCL contract.
 
-The adapter always targets a dedicated named cache because `RawBytesSerializer` is byte-array-only by design. Mixing that serializer into the application's default cache would make typed cache values fail. The named cache still uses the normal Headless provider pipeline, so Redis entries retain the Headless frame header for logical expiration, physical expiration, sliding metadata, tags, and rolling-upgrade behavior; only the value segment is raw bytes.
+The adapter always targets a dedicated named cache because the internal raw-bytes codec is byte-array-only by design. Mixing that codec into the application's default cache would make typed cache values fail. `UseBclCache` wires the codec automatically as a keyed `ISerializer` for the named cache — it is internal and not a configurable serializer. The named cache still uses the normal Headless provider pipeline, so Redis entries retain the Headless frame header for logical expiration, physical expiration, sliding metadata, tags, and rolling-upgrade behavior; only the value segment is raw bytes.
 
-`DistributedCacheEntryOptions` must always become a positive `CacheEntryOptions.Duration`, so sliding-only or option-less BCL writes use `HeadlessDistributedCacheAdapterOptions.DefaultAbsoluteExpiration` as the absolute cap. The default cap is one day. A past absolute expiration or non-positive relative/sliding duration is rejected at the adapter boundary.
+`DistributedCacheEntryOptions` maps to `CacheEntryOptions.Duration`, so sliding-only or option-less BCL writes use `HeadlessDistributedCacheAdapterOptions.DefaultAbsoluteExpiration` as the absolute cap. The default cap is one day. A `Set` whose absolute expiration is already in the past yields a non-positive duration, which the engine treats as "expire immediately" (an immediate eviction across every provider), matching `Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache` rather than throwing.
 
 The sync BCL methods block on the async implementation with `GetAwaiter().GetResult()`, matching the Microsoft Redis adapter. Prefer the async BCL methods in ASP.NET Core code paths.
 
@@ -1109,7 +1110,7 @@ var redis = ConnectionMultiplexer.Connect("localhost:6379");
 builder.Services.AddHeadlessCaching(setup =>
 {
     setup.UseRedis(options => options.ConnectionMultiplexer = redis);
-    setup.AddHeadlessDistributedCache(
+    setup.UseBclCache(
         options =>
         {
             options.CacheName = "aspnet-session";
@@ -1136,7 +1137,7 @@ Consumers that need the standard contract can inject `IDistributedCache`; applic
 | `CacheName` | `"bcl-distributed-cache"` | Named cache instance used by the adapter. Must be non-empty and must not be a reserved Headless cache provider key or under the reserved `Headless.Caching:` namespace. |
 | `DefaultAbsoluteExpiration` | `1 day` | Absolute lifetime cap used when BCL callers provide only sliding expiration or no expiration options. Must be greater than zero. |
 
-The `configureCache` callback passed to `AddHeadlessDistributedCache(...)` must select exactly one named cache provider, usually `instance.UseRedis(...)`. Do not configure another serializer in that callback; this adapter owns the raw-byte serializer for the named cache.
+The `configureCache` callback passed to `UseBclCache(...)` selects only the backing provider for the named cache — exactly one, usually `instance.UseRedis(...)`. The raw-bytes codec is wired automatically; the callback does not configure a serializer.
 
 ### Dependencies
 
@@ -1149,7 +1150,7 @@ The `configureCache` callback passed to `AddHeadlessDistributedCache(...)` must 
 
 ### Side Effects
 
-- Adds a named cache instance through `setup.AddNamed(...)`, configured with `RawBytesSerializer`.
-- Registers `HeadlessDistributedCacheAdapter` as singleton and `IDistributedCache` as singleton (`TryAdd`).
+- Adds a named cache instance through `setup.AddNamed(...)`, wired with the internal raw-bytes codec as a keyed `ISerializer`.
+- Registers the internal adapter as singleton and `IDistributedCache` as singleton (`TryAdd`).
 - Registers `HeadlessDistributedCacheAdapterOptions` with FluentValidation and startup validation.
 - Registers `TimeProvider.System` when no `TimeProvider` is already registered.

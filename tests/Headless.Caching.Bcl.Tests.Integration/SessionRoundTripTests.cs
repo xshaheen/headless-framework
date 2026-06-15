@@ -85,7 +85,7 @@ public sealed class SessionRoundTripTests(BclRedisFixture fixture) : TestBase
                     services.AddHeadlessCaching(setup =>
                     {
                         setup.UseRedis(options => options.ConnectionMultiplexer = fixture.ConnectionMultiplexer);
-                        setup.AddHeadlessDistributedCache(
+                        setup.UseBclCache(
                             options =>
                             {
                                 options.CacheName = cacheName;

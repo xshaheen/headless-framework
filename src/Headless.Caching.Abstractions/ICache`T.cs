@@ -142,6 +142,8 @@ public interface ICache<T>
     /// This is a no-op when the key is absent, when the entry is not sliding, or when the entry is already past
     /// its absolute physical cap. Implementations apply the same throttling used by value-returning reads.
     /// </remarks>
+    /// <param name="cacheKey">The cache key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     ValueTask RefreshAsync(string cacheKey, CancellationToken cancellationToken = default);
 
     #endregion
