@@ -23,13 +23,13 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     private readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _CronOccurrences = new();
 
     private readonly TimeProvider _timeProvider;
-    private readonly string _lockHolder;
+    private readonly string _ownerId;
 
     public JobsInMemoryPersistenceProvider(IServiceProvider serviceProvider)
     {
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         var optionsBuilder = serviceProvider.GetService<SchedulerOptionsBuilder>();
-        _lockHolder = optionsBuilder?.NodeIdentifier ?? Environment.MachineName;
+        _ownerId = optionsBuilder?.NodeIdentifier ?? Environment.MachineName;
     }
 
     #region Time Job Methods
@@ -52,7 +52,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 {
                     // Update the job
                     var updatedTicker = _CloneTicker(existingTicker);
-                    updatedTicker.LockHolder = _lockHolder;
+                    updatedTicker.OwnerId = _ownerId;
                     updatedTicker.LockedAt = now;
                     updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.Queued;
@@ -60,7 +60,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     if (_TimeJobs.TryUpdate(timeJob.Id, updatedTicker, existingTicker))
                     {
                         timeJob.UpdatedAt = now;
-                        timeJob.LockHolder = _lockHolder;
+                        timeJob.OwnerId = _ownerId;
                         timeJob.LockedAt = now;
                         timeJob.Status = JobStatus.Queued;
 
@@ -98,7 +98,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 if (existingTicker.UpdatedAt <= job.UpdatedAt)
                 {
                     var updatedTicker = _CloneTicker(existingTicker);
-                    updatedTicker.LockHolder = _lockHolder;
+                    updatedTicker.OwnerId = _ownerId;
                     updatedTicker.LockedAt = now;
                     updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.InProgress;
@@ -126,7 +126,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 if (_CanAcquire(job))
                 {
                     var updatedTicker = _CloneTicker(job);
-                    updatedTicker.LockHolder = null;
+                    updatedTicker.OwnerId = null;
                     updatedTicker.LockedAt = null;
                     updatedTicker.Status = JobStatus.Idle;
                     updatedTicker.UpdatedAt = now;
@@ -258,7 +258,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             }
 
             var updatedTicker = _CloneTicker(job);
-            updatedTicker.LockHolder = _lockHolder;
+            updatedTicker.OwnerId = _ownerId;
             updatedTicker.LockedAt = now;
             updatedTicker.Status = JobStatus.InProgress;
             updatedTicker.UpdatedAt = now;
@@ -505,7 +505,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Phase 1: release the dead node's Idle/Queued rows (strict owner match — mirrors EF WhereOwnedBy; R4).
         var releasable = _TimeJobs
             .Values.Where(x =>
-                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued) && x.LockHolder == instanceIdentifier
+                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued) && x.OwnerId == instanceIdentifier
             )
             .ToArray();
 
@@ -517,7 +517,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             }
 
             var updatedTicker = _CloneTicker(currentTicker);
-            updatedTicker.LockHolder = null;
+            updatedTicker.OwnerId = null;
             updatedTicker.LockedAt = null;
             updatedTicker.Status = JobStatus.Idle;
             updatedTicker.UpdatedAt = now;
@@ -530,7 +530,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         // Phase 2: mark in-progress jobs for that node as skipped
         var inProgress = _TimeJobs
-            .Values.Where(x => x.LockHolder == instanceIdentifier && x.Status == JobStatus.InProgress)
+            .Values.Where(x => x.OwnerId == instanceIdentifier && x.Status == JobStatus.InProgress)
             .ToArray();
 
         foreach (var job in inProgress)
@@ -742,7 +742,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             {
                 // Update existing occurrence (should be rare - only if re-queuing)
                 var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
-                updatedOccurrence.LockHolder = _lockHolder;
+                updatedOccurrence.OwnerId = _ownerId;
                 updatedOccurrence.LockedAt = now;
                 updatedOccurrence.UpdatedAt = now;
                 updatedOccurrence.Status = JobStatus.Queued;
@@ -761,7 +761,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     CronJobId = context.Id,
                     ExecutionTime = cronJobOccurrences.Key,
                     Status = JobStatus.Queued,
-                    LockHolder = _lockHolder,
+                    OwnerId = _ownerId,
                     LockedAt = now,
                     CreatedAt = context.NextCronOccurrence?.CreatedAt ?? now,
                     UpdatedAt = now,
@@ -803,7 +803,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 if (existingOccurrence.UpdatedAt <= occurrence.UpdatedAt)
                 {
                     var updatedOccurrence = _CloneCronOccurrence(existingOccurrence);
-                    updatedOccurrence.LockHolder = _lockHolder;
+                    updatedOccurrence.OwnerId = _ownerId;
                     updatedOccurrence.LockedAt = now;
                     updatedOccurrence.UpdatedAt = now;
                     updatedOccurrence.Status = JobStatus.InProgress;
@@ -845,7 +845,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 if (_CanAcquireCronOccurrence(occurrence))
                 {
                     var updatedOccurrence = _CloneCronOccurrence(occurrence);
-                    updatedOccurrence.LockHolder = null;
+                    updatedOccurrence.OwnerId = null;
                     updatedOccurrence.LockedAt = null;
                     updatedOccurrence.Status = JobStatus.Idle;
                     updatedOccurrence.UpdatedAt = now;
@@ -907,7 +907,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Phase 1: release the dead node's Idle/Queued occurrences (strict owner match — mirrors EF WhereOwnedBy; R4).
         var releasable = _CronOccurrences
             .Values.Where(x =>
-                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued) && x.LockHolder == instanceIdentifier
+                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued) && x.OwnerId == instanceIdentifier
             )
             .ToArray();
 
@@ -919,7 +919,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             }
 
             var updatedOccurrence = _CloneCronOccurrence(currentOccurrence);
-            updatedOccurrence.LockHolder = null;
+            updatedOccurrence.OwnerId = null;
             updatedOccurrence.LockedAt = null;
             updatedOccurrence.Status = JobStatus.Idle;
             updatedOccurrence.UpdatedAt = now;
@@ -932,7 +932,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         // Phase 2: mark in-progress occurrences for that node as skipped
         var inProgress = _CronOccurrences
-            .Values.Where(x => x.LockHolder == instanceIdentifier && x.Status == JobStatus.InProgress)
+            .Values.Where(x => x.OwnerId == instanceIdentifier && x.Status == JobStatus.InProgress)
             .ToArray();
 
         foreach (var occurrence in inProgress)
@@ -1074,7 +1074,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             }
 
             var updated = _CloneCronOccurrence(occurrence);
-            updated.LockHolder = _lockHolder;
+            updated.OwnerId = _ownerId;
             updated.LockedAt = now;
             updated.Status = JobStatus.InProgress;
             updated.UpdatedAt = now;
@@ -1237,18 +1237,18 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     private bool _CanAcquire(TTimeJob job)
     {
         // Match EF provider logic: WhereCanAcquire
-        // Can acquire if: (Status is Idle OR Queued) AND (LockHolder matches current OR LockedAt is null)
-        return ((job.Status == JobStatus.Idle || job.Status == JobStatus.Queued) && job.LockHolder == _lockHolder)
+        // Can acquire if: (Status is Idle OR Queued) AND (OwnerId matches current OR LockedAt is null)
+        return ((job.Status == JobStatus.Idle || job.Status == JobStatus.Queued) && job.OwnerId == _ownerId)
             || ((job.Status == JobStatus.Idle || job.Status == JobStatus.Queued) && job.LockedAt == null);
     }
 
     private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
     {
         // Match EF provider logic: WhereCanAcquire
-        // Can acquire if: (Status is Idle OR Queued) AND (LockHolder matches current OR LockedAt is null)
+        // Can acquire if: (Status is Idle OR Queued) AND (OwnerId matches current OR LockedAt is null)
         return (
                 (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
-                && occurrence.LockHolder == _lockHolder
+                && occurrence.OwnerId == _ownerId
             )
             || (
                 (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
@@ -1267,7 +1267,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             RetryCount = job.RetryCount,
             ExecutionTime = job.ExecutionTime,
             InitIdentifier = job.InitIdentifier,
-            LockHolder = job.LockHolder,
+            OwnerId = job.OwnerId,
             LockedAt = job.LockedAt,
             ParentId = job.ParentId,
             Request = job.Request,
@@ -1296,7 +1296,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             Status = occurrence.Status,
             RetryCount = occurrence.RetryCount,
             ExecutionTime = occurrence.ExecutionTime,
-            LockHolder = occurrence.LockHolder,
+            OwnerId = occurrence.OwnerId,
             LockedAt = occurrence.LockedAt,
             ExceptionMessage = occurrence.ExceptionMessage,
             SkippedReason = occurrence.SkippedReason,
@@ -1352,7 +1352,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // RELEASE LOCK
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
         {
-            job.LockHolder = null;
+            job.OwnerId = null;
             job.LockedAt = null;
         }
 
@@ -1408,7 +1408,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // RELEASE LOCK
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
         {
-            occurrence.LockHolder = null;
+            occurrence.OwnerId = null;
             occurrence.LockedAt = null;
         }
 

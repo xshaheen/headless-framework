@@ -12,7 +12,7 @@ public class TimeJobConfigurations<TTimeJob>(string schema = Constants.DefaultSc
     {
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.LockHolder).IsRequired(false);
+        builder.Property(x => x.OwnerId).IsRequired(false);
 
         builder.Property(x => x.ExecutionTime).IsRequired(false);
 

@@ -7,7 +7,7 @@ public class CronJobOccurrenceEntity<TCronJob>
 {
     public virtual Guid Id { get; set; }
     public virtual JobStatus Status { get; set; }
-    public virtual string? LockHolder { get; set; }
+    public virtual string? OwnerId { get; set; }
     public virtual DateTime ExecutionTime { get; set; }
     public virtual Guid CronJobId { get; set; }
     public virtual DateTime? LockedAt { get; set; }

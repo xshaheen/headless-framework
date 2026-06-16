@@ -307,8 +307,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         // Combine counts using LINQ GroupBy across both sources, filtering out null lock holders
         return timeJobs
-            .Select(x => x.LockHolder)
-            .Concat(cronJobOccurrences.Select(x => x.LockHolder))
+            .Select(x => x.OwnerId)
+            .Concat(cronJobOccurrences.Select(x => x.OwnerId))
             .Where(holder => holder is not null)
             .GroupBy(holder => holder!, StringComparer.OrdinalIgnoreCase)
             .Select(g => (g.Key, g.Count()))

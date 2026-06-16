@@ -349,7 +349,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, owner)
+                        .SetProperty(x => x.OwnerId, owner)
                         .SetProperty(x => x.LockedAt, now)
                         .SetProperty(x => x.Status, JobStatus.InProgress)
                         .SetProperty(x => x.UpdatedAt, now),
@@ -366,7 +366,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Where(x => occurrenceIds.Contains(x.Id) && x.LockHolder == owner && x.Status == JobStatus.InProgress)
+            .Where(x => occurrenceIds.Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.InProgress)
             .Include(x => x.CronJob)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);

@@ -45,7 +45,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             owner.Should().StartWith("node-a@");
 
             var jobId = Guid.NewGuid();
-            await fixture.SeedTimeJobAsync(jobId, "Stamp_Sample", (int)JobStatus.Idle, lockHolder: null, ct);
+            await fixture.SeedTimeJobAsync(jobId, "Stamp_Sample", (int)JobStatus.Idle, ownerId: null, ct);
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
@@ -56,9 +56,9 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var stamped = await persistence.QueueTimeJobs(idle, ct).ToListAsync(ct);
             stamped.Should().ContainSingle();
 
-            var (status, lockHolder) = await fixture.ReadTimeJobAsync(jobId, ct);
+            var (status, ownerId) = await fixture.ReadTimeJobAsync(jobId, ct);
             status.Should().Be((int)JobStatus.Queued);
-            lockHolder.Should().Be(owner);
+            ownerId.Should().Be(owner);
         }
         finally
         {
@@ -88,7 +88,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             await fixture.SeedTimeJobAsync(reclaimedId, "Reclaimed", (int)JobStatus.Queued, dead, ct);
             await fixture.SeedTimeJobAsync(skippedId, "Skipped", (int)JobStatus.InProgress, dead, ct);
             await fixture.SeedTimeJobAsync(terminalId, "Terminal", (int)JobStatus.Done, dead, ct);
-            await fixture.SeedTimeJobAsync(unownedId, "Unowned", (int)JobStatus.Idle, lockHolder: null, ct);
+            await fixture.SeedTimeJobAsync(unownedId, "Unowned", (int)JobStatus.Idle, ownerId: null, ct);
             await fixture.SeedTimeJobAsync(otherIncarnationId, "Other", (int)JobStatus.Queued, "node-a@6", ct);
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
@@ -170,16 +170,16 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             await _WaitUntilAsync(
                 async () =>
                 {
-                    var (status, lockHolder) = await fixture.ReadTimeJobAsync(jobId, ct);
-                    return status == (int)JobStatus.Idle && lockHolder is null;
+                    var (status, ownerId) = await fixture.ReadTimeJobAsync(jobId, ct);
+                    return status == (int)JobStatus.Idle && ownerId is null;
                 },
                 timeout: TimeSpan.FromSeconds(20),
                 ct
             );
 
-            var (finalStatus, finalLockHolder) = await fixture.ReadTimeJobAsync(jobId, ct);
+            var (finalStatus, finalOwnerId) = await fixture.ReadTimeJobAsync(jobId, ct);
             finalStatus.Should().Be((int)JobStatus.Idle);
-            finalLockHolder.Should().BeNull();
+            finalOwnerId.Should().BeNull();
         }
         finally
         {

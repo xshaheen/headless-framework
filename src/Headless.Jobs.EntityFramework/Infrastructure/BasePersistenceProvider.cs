@@ -67,7 +67,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .Where(x => x.UpdatedAt == timeJob.UpdatedAt)
                 .ExecuteUpdateAsync(
                     prop =>
-                        prop.SetProperty(x => x.LockHolder, owner)
+                        prop.SetProperty(x => x.OwnerId, owner)
                             .SetProperty(x => x.LockedAt, now)
                             .SetProperty(x => x.UpdatedAt, now)
                             .SetProperty(x => x.Status, JobStatus.Queued),
@@ -80,7 +80,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             }
 
             timeJob.UpdatedAt = now;
-            timeJob.LockHolder = owner;
+            timeJob.OwnerId = owner;
             timeJob.LockedAt = now;
             timeJob.Status = JobStatus.Queued;
 
@@ -124,7 +124,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
-                            .SetProperty(x => x.LockHolder, owner)
+                            .SetProperty(x => x.OwnerId, owner)
                             .SetProperty(x => x.LockedAt, now)
                             .SetProperty(x => x.UpdatedAt, now)
                             .SetProperty(x => x.Status, JobStatus.InProgress),
@@ -164,7 +164,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, _ => null)
+                        .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedAt, _ => null)
                         .SetProperty(x => x.Status, _ => JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, _ => now),
@@ -308,7 +308,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, _ => null)
+                        .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedAt, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
@@ -366,7 +366,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, owner)
+                        .SetProperty(x => x.OwnerId, owner)
                         .SetProperty(x => x.LockedAt, now)
                         .SetProperty(x => x.Status, JobStatus.InProgress)
                         .SetProperty(x => x.UpdatedAt, now),
@@ -384,7 +384,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .AsNoTracking()
             .Where(x =>
-                ((IEnumerable<Guid>)ids).Contains(x.Id) && x.LockHolder == owner && x.Status == JobStatus.InProgress
+                ((IEnumerable<Guid>)ids).Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.InProgress
             )
             .Include(x => x.Children.Where(y => y.ExecutionTime == null))
             .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
@@ -637,7 +637,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
-                            .SetProperty(x => x.LockHolder, owner)
+                            .SetProperty(x => x.OwnerId, owner)
                             .SetProperty(x => x.LockedAt, now)
                             .SetProperty(x => x.UpdatedAt, now)
                             .SetProperty(x => x.Status, JobStatus.InProgress),
@@ -677,7 +677,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, _ => null)
+                        .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedAt, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
@@ -732,7 +732,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, _ => null)
+                        .SetProperty(x => x.OwnerId, _ => null)
                         .SetProperty(x => x.LockedAt, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
@@ -770,7 +770,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 {
                     Id = Guid.NewGuid(),
                     Status = JobStatus.Queued,
-                    LockHolder = owner,
+                    OwnerId = owner,
                     ExecutionTime = executionTime,
                     CronJobId = item.Id,
                     LockedAt = now,
@@ -809,7 +809,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     .WhereCanAcquire(owner)
                     .ExecuteUpdateAsync(
                         prop =>
-                            prop.SetProperty(y => y.LockHolder, owner)
+                            prop.SetProperty(y => y.OwnerId, owner)
                                 .SetProperty(y => y.LockedAt, now)
                                 .SetProperty(y => y.UpdatedAt, now)
                                 .SetProperty(y => y.Status, JobStatus.Queued),
@@ -828,7 +828,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     CronJobId = item.Id,
                     ExecutionTime = executionTime,
                     Status = JobStatus.Queued,
-                    LockHolder = owner,
+                    OwnerId = owner,
                     LockedAt = now,
                     UpdatedAt = now,
                     CreatedAt = item.NextCronOccurrence.CreatedAt,

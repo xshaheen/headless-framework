@@ -9,7 +9,7 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     where TTicker : TimeJobEntity<TTicker>
 {
     public virtual JobStatus Status { get; internal set; }
-    public virtual string? LockHolder { get; internal set; }
+    public virtual string? OwnerId { get; internal set; }
     public virtual byte[]? Request { get; set; }
     public virtual DateTime? ExecutionTime { get; set; }
     public virtual DateTime? LockedAt { get; internal set; }

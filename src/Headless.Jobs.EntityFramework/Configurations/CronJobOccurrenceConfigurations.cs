@@ -14,7 +14,7 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = Constants
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
-        builder.Property(x => x.LockHolder).IsRequired(false);
+        builder.Property(x => x.OwnerId).IsRequired(false);
 
         builder.HasIndex("CronJobId").HasDatabaseName("IX_CronJobOccurrence_CronJobId");
 

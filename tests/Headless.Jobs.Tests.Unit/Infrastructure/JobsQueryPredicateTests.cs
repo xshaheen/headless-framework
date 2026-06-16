@@ -14,25 +14,25 @@ public sealed class JobsQueryPredicateTests
 
     private const string _Owner = "node-a@5";
 
-    private static FakeTimeJob TimeJob(JobStatus status, string? lockHolder, DateTime? lockedAt = null) =>
+    private static FakeTimeJob TimeJob(JobStatus status, string? ownerId, DateTime? lockedAt = null) =>
         new()
         {
             Id = Guid.NewGuid(),
             Status = status,
-            LockHolder = lockHolder,
+            OwnerId = ownerId,
             LockedAt = lockedAt,
         };
 
     private static CronJobOccurrenceEntity<FakeCronJob> Occurrence(
         JobStatus status,
-        string? lockHolder,
+        string? ownerId,
         DateTime? lockedAt = null
     ) =>
         new()
         {
             Id = Guid.NewGuid(),
             Status = status,
-            LockHolder = lockHolder,
+            OwnerId = ownerId,
             LockedAt = lockedAt,
         };
 
@@ -52,7 +52,7 @@ public sealed class JobsQueryPredicateTests
     public void WhereOwnedBy_drops_the_loose_unowned_idle_arm()
     {
         // The core behavior change from WhereCanAcquire: an unowned, never-locked idle row is NOT reclaimed.
-        var unowned = TimeJob(JobStatus.Idle, lockHolder: null, lockedAt: null);
+        var unowned = TimeJob(JobStatus.Idle, ownerId: null, lockedAt: null);
 
         var selected = new[] { unowned }.AsQueryable().WhereOwnedBy(_Owner).ToArray();
 
@@ -63,7 +63,7 @@ public sealed class JobsQueryPredicateTests
     public void WhereOwnedBy_does_not_touch_a_fast_restart_incarnation()
     {
         // Reclaiming node-a@5 must never select node-a@6's freshly-stamped rows (R4 / R-2).
-        var fastRestart = TimeJob(JobStatus.Queued, lockHolder: "node-a@6", lockedAt: DateTime.UtcNow);
+        var fastRestart = TimeJob(JobStatus.Queued, ownerId: "node-a@6", lockedAt: DateTime.UtcNow);
 
         var selected = new[] { fastRestart }.AsQueryable().WhereOwnedBy(_Owner).ToArray();
 
@@ -89,7 +89,7 @@ public sealed class JobsQueryPredicateTests
     public void WhereOwnedBy_for_occurrences_matches_the_same_strict_predicate()
     {
         var owned = Occurrence(JobStatus.InProgress, _Owner, lockedAt: DateTime.UtcNow);
-        var unowned = Occurrence(JobStatus.Idle, lockHolder: null, lockedAt: null);
+        var unowned = Occurrence(JobStatus.Idle, ownerId: null, lockedAt: null);
         var otherIncarnation = Occurrence(JobStatus.Queued, "node-a@6", lockedAt: DateTime.UtcNow);
         var terminalOwned = Occurrence(JobStatus.Done, _Owner, lockedAt: DateTime.UtcNow);
 
