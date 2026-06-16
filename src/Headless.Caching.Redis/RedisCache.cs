@@ -2088,7 +2088,7 @@ public sealed class RedisCache(
     /// directly into the wire buffer — skipping the generic path's intermediate <c>byte[]</c> materialization.
     /// Behavior (expiry, sliding, CreatedAt stamping, tag invalidation) is identical to the generic upsert.
     /// </summary>
-    public async ValueTask<bool> UpsertRawAsync(
+    public async ValueTask UpsertRawAsync(
         string key,
         ReadOnlySequence<byte> value,
         CacheEntryOptions options,
@@ -2113,7 +2113,7 @@ public sealed class RedisCache(
         if (expiresIn <= TimeSpan.Zero)
         {
             await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
-            return true;
+            return;
         }
 
         // Frame the sequence synchronously (Encode consumes it before the StringSet await), so the
@@ -2131,7 +2131,7 @@ public sealed class RedisCache(
             createdAt: stamps.CreatedAt
         );
 
-        return await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
+        await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
     }
 
     private CacheValue<ICollection<T>> _RedisValuesToCacheValue<T>(RedisValue[] redisValues)

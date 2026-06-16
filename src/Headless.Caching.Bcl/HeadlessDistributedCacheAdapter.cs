@@ -99,7 +99,7 @@ internal sealed class HeadlessDistributedCacheAdapter(
         // synchronously (the IBufferCache raw fast path frames it without an intermediate byte[]; the fallback
         // copies it once). Invoke the helper here in the synchronous body, before this method returns, then await
         // only the resulting task.
-        return cache.UpsertRawOrFallbackAsync(key, value, mappedOptions, token).DiscardResultAsync();
+        return cache.UpsertRawOrFallbackAsync(key, value, mappedOptions, token);
     }
 
     /// <inheritdoc />

@@ -39,9 +39,8 @@ public interface IBufferCache
     /// <param name="value">The raw payload to persist.</param>
     /// <param name="options">The cache entry options applied to the written entry.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns><see langword="true"/> when the write was issued.</returns>
     /// <exception cref="ArgumentException">Thrown when <see cref="CacheEntryOptions.Tags"/> exceeds the supported tag count/length limits.</exception>
-    ValueTask<bool> UpsertRawAsync(
+    ValueTask UpsertRawAsync(
         string key,
         ReadOnlySequence<byte> value,
         CacheEntryOptions options,

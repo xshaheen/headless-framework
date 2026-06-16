@@ -38,7 +38,7 @@ public static class BufferCacheExtensions
     /// cache supports it and the <c>byte[]</c> path otherwise. The sequence is materialized synchronously before
     /// any await, so callers may hand in pooled buffers valid only for the duration of the call.
     /// </summary>
-    public static ValueTask<bool> UpsertRawOrFallbackAsync(
+    public static ValueTask UpsertRawOrFallbackAsync(
         this ICache cache,
         string key,
         ReadOnlySequence<byte> value,
@@ -57,17 +57,11 @@ public static class BufferCacheExtensions
         // sequence may be pooled (valid only for this call), so the copy must happen before the first await.
         var bytes = value.ToArray();
 
-        return cache.UpsertEntryAsync(key, bytes, options, cancellationToken);
+        // UpsertEntryAsync reports insert-vs-update via a bool the raw write contract does not surface; drop it.
+        return _DiscardResultAsync(cache.UpsertEntryAsync(key, bytes, options, cancellationToken));
     }
 
-    /// <summary>
-    /// Awaits an already-started <see cref="UpsertRawOrFallbackAsync"/> task and discards the upsert-occurred bool.
-    /// Callers (the BCL and output-cache buffer adapters) start the upsert synchronously so the pooled
-    /// <see cref="ReadOnlySequence{T}"/> is consumed before the first await; this helper only awaits the result,
-    /// preserving that timing. Their store contracts have no notion of insert-vs-update, so the bool is dropped.
-    /// </summary>
-    internal static async ValueTask DiscardResultAsync(this ValueTask<bool> pending) =>
-        await pending.ConfigureAwait(false);
+    private static async ValueTask _DiscardResultAsync(ValueTask<bool> pending) => await pending.ConfigureAwait(false);
 
     private static async ValueTask<bool> _FallbackGetAsync(
         ICache cache,

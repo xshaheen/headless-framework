@@ -1510,7 +1510,7 @@ public sealed class InMemoryCache
     /// work. The sequence is materialized into a stable owned <c>byte[]</c> synchronously before any await — the
     /// cache retains it — so callers may hand in pooled buffers valid only for the duration of the call.
     /// </summary>
-    public ValueTask<bool> UpsertRawAsync(
+    public async ValueTask UpsertRawAsync(
         string key,
         ReadOnlySequence<byte> value,
         CacheEntryOptions options,
@@ -1548,7 +1548,7 @@ public sealed class InMemoryCache
             SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
         };
 
-        return _SetEntryCoreWithResultAsync(key, entry);
+        await _SetEntryCoreWithResultAsync(key, entry).ConfigureAwait(false);
     }
 
     #endregion

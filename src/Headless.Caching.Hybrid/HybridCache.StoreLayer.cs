@@ -731,7 +731,7 @@ public sealed partial class HybridCache
     /// auto-recovery booking, circuit breaking, and the peer-invalidation publish (with InstanceId self-filtering)
     /// are all identical to <see cref="UpsertEntryAsync{T}"/> for a <c>byte[]</c> value.
     /// </summary>
-    public async ValueTask<bool> UpsertRawAsync(
+    public async ValueTask UpsertRawAsync(
         string key,
         ReadOnlySequence<byte> value,
         CacheEntryOptions options,
@@ -769,6 +769,6 @@ public sealed partial class HybridCache
             SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
         };
 
-        return await _SetEntryCoreAsync(key, entry, cancellationToken).ConfigureAwait(false);
+        await _SetEntryCoreAsync(key, entry, cancellationToken).ConfigureAwait(false);
     }
 }

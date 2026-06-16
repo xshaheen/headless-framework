@@ -91,7 +91,7 @@ internal sealed class HeadlessOutputCacheStore(ICache cache, IOptions<HeadlessOu
         var tagsCopy = tags.IsEmpty ? null : tags.ToArray();
         var entryOptions = new CacheEntryOptions { Duration = _ResolveDuration(validFor), Tags = tagsCopy };
 
-        return cache.UpsertRawOrFallbackAsync(key, value, entryOptions, cancellationToken).DiscardResultAsync();
+        return cache.UpsertRawOrFallbackAsync(key, value, entryOptions, cancellationToken);
     }
 
     private async ValueTask _UpsertAsync(
