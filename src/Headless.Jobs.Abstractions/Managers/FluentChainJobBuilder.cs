@@ -728,6 +728,12 @@ public class ParentBuilder<TTimeJob>
         _parent.RetryIntervals = intervals;
         return this;
     }
+
+    public ParentBuilder<TTimeJob> SetOnNodeDeath(NodeDeathPolicy policy)
+    {
+        _parent.OnNodeDeath = policy;
+        return this;
+    }
 }
 
 /// <summary>
@@ -779,6 +785,12 @@ public class ChildBuilder<TTimeJob>
         _child.RetryIntervals = intervals;
         return this;
     }
+
+    public ChildBuilder<TTimeJob> SetOnNodeDeath(NodeDeathPolicy policy)
+    {
+        _child.OnNodeDeath = policy;
+        return this;
+    }
 }
 
 /// <summary>
@@ -828,6 +840,12 @@ public class GrandChildBuilder<TTimeJob>
     {
         _grandChild.Retries = retries;
         _grandChild.RetryIntervals = intervals;
+        return this;
+    }
+
+    public GrandChildBuilder<TTimeJob> SetOnNodeDeath(NodeDeathPolicy policy)
+    {
+        _grandChild.OnNodeDeath = policy;
         return this;
     }
 }
