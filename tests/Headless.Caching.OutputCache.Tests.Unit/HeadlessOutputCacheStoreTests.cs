@@ -4,6 +4,7 @@ using System.Buffers;
 using System.IO.Pipelines;
 using Headless.Caching;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
 
 namespace Tests;
@@ -168,6 +169,46 @@ public sealed class HeadlessOutputCacheStoreTests
         await pipe.Writer.CompleteAsync();
 
         // then
+        found.Should().BeFalse();
+        (await _ReadAllAsync(pipe.Reader)).Should().BeEmpty();
+    }
+
+    // The tests above mock ICache, which never satisfies `is IBufferCache`, so they only exercise the byte[]
+    // fallback. These two drive the store over a REAL IBufferCache (InMemoryCache) so the zero-intermediate-copy
+    // buffer fast path (UpsertRawAsync / TryGetToAsync) is actually traversed end to end.
+    [Fact]
+    public async Task buffer_round_trips_byte_identical_content_through_the_real_ibuffercache_fast_path()
+    {
+        // given — InMemoryCache implements IBufferCache, so the store takes the raw fast path, not the byte[] copy
+        using var bufferCache = new InMemoryCache(new FakeTimeProvider(), new InMemoryCacheOptions());
+        var store = new HeadlessOutputCacheStore(bufferCache, Options.Create(_options));
+        var expected = new byte[] { 1, 2, 3, 4, 5, 6 };
+        var sequence = _MultiSegment([1, 2], [3, 4], [5, 6]);
+        var pipe = new Pipe();
+
+        // when — write via the buffer SetAsync, then read back via the PipeWriter buffer TryGetAsync
+        await store.SetAsync(_Key, sequence, new[] { "products" }, _ValidFor, CancellationToken.None);
+        var found = await store.TryGetAsync(_Key, pipe.Writer, CancellationToken.None);
+        await pipe.Writer.CompleteAsync();
+
+        // then — the IBufferCache branch round-trips the payload verbatim
+        found.Should().BeTrue();
+        (await _ReadAllAsync(pipe.Reader)).Should().Equal(expected);
+    }
+
+    [Fact]
+    public async Task buffer_try_get_async_returns_false_and_writes_nothing_on_a_real_ibuffercache_miss()
+    {
+        // given — a real IBufferCache with nothing stored under the key
+        using var bufferCache = new InMemoryCache(new FakeTimeProvider(), new InMemoryCacheOptions());
+        var store = new HeadlessOutputCacheStore(bufferCache, Options.Create(_options));
+        var pipe = new Pipe();
+
+        // when
+        var found = await store.TryGetAsync(_Key, pipe.Writer, CancellationToken.None);
+        await pipe.Writer.CompleteAsync();
+
+        // then — the buffer fast path reports a miss and leaves the pipe empty
         found.Should().BeFalse();
         (await _ReadAllAsync(pipe.Reader)).Should().BeEmpty();
     }

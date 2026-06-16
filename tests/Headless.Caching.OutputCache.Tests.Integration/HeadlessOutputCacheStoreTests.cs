@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
+using System.IO.Pipelines;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.OutputCaching;
@@ -27,6 +29,41 @@ public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixtur
 
         (await store.GetAsync(key, AbortToken)).Should().Equal(payload);
         (await store.GetAsync(Faker.Random.AlphaNumeric(12), AbortToken)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task buffer_try_get_round_trips_a_byte_identical_blob_over_the_real_redis_ibuffercache()
+    {
+        // Redis implements IBufferCache, so the buffer store writes straight into the PipeWriter with no
+        // intermediate byte[]. The formatter upcasts IOutputCacheStore to IOutputCacheBufferStore via
+        // pattern-match; mirror that here to exercise the PipeWriter-flush interaction under a real backend.
+        using var host = await _CreateHostAsync();
+        var store = (IOutputCacheBufferStore)host.Services.GetRequiredService<IOutputCacheStore>();
+        var payload = Faker.Random.Bytes(2048);
+        var key = Faker.Random.AlphaNumeric(12);
+
+        await store.SetAsync(key, payload, tags: null, TimeSpan.FromMinutes(5), AbortToken);
+
+        var pipe = new Pipe();
+        var found = await store.TryGetAsync(key, pipe.Writer, AbortToken);
+        await pipe.Writer.CompleteAsync();
+
+        found.Should().BeTrue();
+        (await _ReadAllAsync(pipe.Reader)).Should().Equal(payload);
+    }
+
+    [Fact]
+    public async Task buffer_try_get_returns_false_and_writes_nothing_for_an_unknown_key_over_real_redis()
+    {
+        using var host = await _CreateHostAsync();
+        var store = (IOutputCacheBufferStore)host.Services.GetRequiredService<IOutputCacheStore>();
+        var pipe = new Pipe();
+
+        var found = await store.TryGetAsync(Faker.Random.AlphaNumeric(12), pipe.Writer, AbortToken);
+        await pipe.Writer.CompleteAsync();
+
+        found.Should().BeFalse();
+        (await _ReadAllAsync(pipe.Reader)).Should().BeEmpty();
     }
 
     [Fact]
@@ -113,5 +150,15 @@ public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixtur
         await host.StartAsync(AbortToken);
 
         return host;
+    }
+
+    private static async Task<byte[]> _ReadAllAsync(PipeReader reader)
+    {
+        var result = await reader.ReadAsync();
+        var bytes = result.Buffer.ToArray();
+        reader.AdvanceTo(result.Buffer.End);
+        await reader.CompleteAsync();
+
+        return bytes;
     }
 }
