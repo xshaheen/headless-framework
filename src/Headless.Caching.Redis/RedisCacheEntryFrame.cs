@@ -54,6 +54,100 @@ internal static class RedisCacheEntryFrame
     )
     {
         var valueBytes = isNull ? [] : _ToBytes(value);
+
+        var buffer = _BuildFrame(
+            valueBytes.Length,
+            isNull,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            slidingExpiration,
+            eagerRefreshAt,
+            etag,
+            lastModifiedAt,
+            tags,
+            createdAt,
+            out var payloadOffset
+        );
+
+        valueBytes.CopyTo(buffer.AsSpan(payloadOffset));
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// Encodes a framed entry whose value payload comes from a <see cref="ReadOnlySequence{T}"/> instead of a
+    /// contiguous <c>byte[]</c>. The header/section layout is identical to the <see cref="RedisValue"/> overload;
+    /// only the payload boundary changes, so the zero-intermediate-copy buffer path produces byte-identical frames.
+    /// The sequence is copied directly into the single frame buffer at the value offset (one copy, no intermediate
+    /// materialization).
+    /// </summary>
+    public static byte[] Encode(
+        ReadOnlySequence<byte> payload,
+        bool isNull,
+        DateTime? logicalExpiresAt,
+        DateTime? physicalExpiresAt,
+        TimeSpan? slidingExpiration,
+        DateTime? eagerRefreshAt = null,
+        string? etag = null,
+        DateTime? lastModifiedAt = null,
+        IReadOnlyCollection<string>? tags = null,
+        DateTime? createdAt = null
+    )
+    {
+        // Frame length must index a byte[]: surface an oversized payload as a clear contract error rather than the
+        // implicit OverflowException a checked cast would throw (Redis itself caps a value at 512 MB regardless).
+        if (!isNull && payload.Length > Array.MaxLength)
+        {
+            throw new ArgumentException(
+                $"Cache payload of {payload.Length} bytes exceeds the maximum supported size of {Array.MaxLength} bytes.",
+                nameof(payload)
+            );
+        }
+
+        var length = isNull ? 0 : (int)payload.Length;
+
+        var buffer = _BuildFrame(
+            length,
+            isNull,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            slidingExpiration,
+            eagerRefreshAt,
+            etag,
+            lastModifiedAt,
+            tags,
+            createdAt,
+            out var payloadOffset
+        );
+
+        if (!isNull)
+        {
+            payload.CopyTo(buffer.AsSpan(payloadOffset));
+        }
+
+        return buffer;
+    }
+
+    /// <summary>
+    /// Builds the framed buffer sized <c>payloadOffset + valueLength</c> with the full header and every present
+    /// optional section written, leaving the value segment (from <paramref name="payloadOffset"/> to the end)
+    /// uninitialized for the caller to fill. This is the payload-agnostic core shared by both <c>Encode</c>
+    /// overloads, so the only difference between them is how the value bytes are copied into the tail.
+    /// </summary>
+    private static byte[] _BuildFrame(
+        int valueLength,
+        bool isNull,
+        DateTime? logicalExpiresAt,
+        DateTime? physicalExpiresAt,
+        TimeSpan? slidingExpiration,
+        DateTime? eagerRefreshAt,
+        string? etag,
+        DateTime? lastModifiedAt,
+        IReadOnlyCollection<string>? tags,
+        DateTime? createdAt,
+        out int payloadOffset
+    )
+    {
         var etagBytes = etag is null ? null : Encoding.UTF8.GetBytes(etag);
         if (etagBytes is not null)
         {
@@ -80,7 +174,7 @@ internal static class RedisCacheEntryFrame
 
         try
         {
-            var payloadOffset = HeaderLength;
+            payloadOffset = HeaderLength;
             var flags = isNull ? NullFlag : (byte)0;
 
             if (logicalExpiresAt.HasValue)
@@ -126,7 +220,7 @@ internal static class RedisCacheEntryFrame
                 payloadOffset += tagLength;
             }
 
-            var buffer = new byte[payloadOffset + valueBytes.Length];
+            var buffer = new byte[payloadOffset + valueLength];
             buffer[0] = Magic;
             buffer[1] = Version;
             buffer[2] = flags;
@@ -203,8 +297,8 @@ internal static class RedisCacheEntryFrame
                 offset += tagLength;
             }
 
-            valueBytes.CopyTo(buffer.AsSpan(offset));
-
+            // The value segment (offset == payloadOffset here) is left for the caller to fill; both Encode
+            // overloads copy their payload into buffer[payloadOffset..] after this method returns.
             return buffer;
         }
         finally

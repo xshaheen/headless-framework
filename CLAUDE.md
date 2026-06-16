@@ -111,6 +111,7 @@ public static class SetupRedisCache
 Single-backend packages with no provider choice keep plain `Add{Feature}` extensions on `IServiceCollection` (same overload trio).
 
 - Name the shared private helper `_Add{Feature}Core`.
+- The overload trio applies to **provider** `Use{Provider}` / `Add{Feature}` members that bind that backend's options. **Cross-cutting consumer extensions** that adapt an already-composed feature (for example `UseOutputCache` / `UseBclCache`, which consume a named `ICache` rather than supply a provider) intentionally expose a single `Action<TOptions>` overload plus the consumed feature's builder — they do not bind a provider's option section, so the `IConfiguration` / `Action<TOptions, IServiceProvider>` overloads do not apply.
 
 **Public API Discipline:**
 

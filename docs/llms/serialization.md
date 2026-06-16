@@ -41,7 +41,7 @@ packages: Serializer.Abstractions, Serializer.Json, Serializer.MessagePack
 - Install `Headless.Serializer.Abstractions` to depend on interfaces only (e.g., in domain/application layers).
 - Install `Headless.Serializer.Json` for JSON serialization via System.Text.Json. Register `SystemJsonSerializer` as `IJsonSerializer`.
 - Install `Headless.Serializer.MessagePack` for compact binary serialization. Register `MessagePackSerializer` as `IBinarySerializer`.
-- Interface hierarchy: `ISerializer` (base, Stream-based) -> `ITextSerializer` / `IBinarySerializer` (markers) -> `IJsonSerializer` (JSON-specific).
+- Interface hierarchy: `ISerializer` (base, Stream-based) -> `ITextSerializer` / `IBinarySerializer` (markers) -> `IJsonSerializer` (JSON-specific). `IBinarySerializer` is a plain marker with no members beyond `ISerializer`.
 - Customize JSON behavior by implementing `IJsonOptionsProvider` with separate serialize/deserialize options.
 - MessagePack uses contractless serialization by default (no `[Key]`/`[MessagePackObject]` attributes needed).
 
@@ -66,7 +66,7 @@ Provides provider-agnostic serialization contracts supporting both text (JSON) a
 ## Key Features
 
 - `ISerializer` - Base serialization interface with Stream-based operations
-- `IBinarySerializer` - Marker interface for binary serializers
+- `IBinarySerializer` - Marker interface for binary serializers (no extra members beyond `ISerializer`). The cache treats `byte[]` and `string` as native wire types handled without the serializer, so its `IBufferCache` fast path is serializer-independent.
 - `ITextSerializer` - Marker interface for text-based serializers
 - `IJsonSerializer` - Specific interface for JSON serialization
 - Extension methods for common serialization patterns
