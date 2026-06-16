@@ -71,7 +71,7 @@ public sealed class JobsQueryPredicateTests
     }
 
     [Theory]
-    [InlineData(JobStatus.Done)]
+    [InlineData(JobStatus.Succeeded)]
     [InlineData(JobStatus.DueDone)]
     [InlineData(JobStatus.Failed)]
     [InlineData(JobStatus.Cancelled)]
@@ -91,7 +91,7 @@ public sealed class JobsQueryPredicateTests
         var owned = Occurrence(JobStatus.InProgress, _Owner, lockedAt: DateTime.UtcNow);
         var unowned = Occurrence(JobStatus.Idle, ownerId: null, lockedAt: null);
         var otherIncarnation = Occurrence(JobStatus.Queued, "node-a@6", lockedAt: DateTime.UtcNow);
-        var terminalOwned = Occurrence(JobStatus.Done, _Owner, lockedAt: DateTime.UtcNow);
+        var terminalOwned = Occurrence(JobStatus.Succeeded, _Owner, lockedAt: DateTime.UtcNow);
 
         var selected = new[] { owned, unowned, otherIncarnation, terminalOwned }
             .AsQueryable()

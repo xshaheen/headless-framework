@@ -274,7 +274,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var allStatuses = timeJobStatuses.Concat(cronJobStatuses).ToList();
 
         // Count per type
-        var doneOrDueDoneCount = allStatuses.Count(x => x is JobStatus.Done or JobStatus.DueDone);
+        var doneOrDueDoneCount = allStatuses.Count(x => x is JobStatus.Succeeded or JobStatus.DueDone);
         var failedCount = allStatuses.Count(x => x == JobStatus.Failed);
         var totalCount = allStatuses.Count;
 

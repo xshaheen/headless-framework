@@ -87,7 +87,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             await fixture.SeedTimeJobAsync(reclaimedId, "Reclaimed", (int)JobStatus.Queued, dead, ct);
             await fixture.SeedTimeJobAsync(skippedId, "Skipped", (int)JobStatus.InProgress, dead, ct);
-            await fixture.SeedTimeJobAsync(terminalId, "Terminal", (int)JobStatus.Done, dead, ct);
+            await fixture.SeedTimeJobAsync(terminalId, "Terminal", (int)JobStatus.Succeeded, dead, ct);
             await fixture.SeedTimeJobAsync(unownedId, "Unowned", (int)JobStatus.Idle, ownerId: null, ct);
             await fixture.SeedTimeJobAsync(otherIncarnationId, "Other", (int)JobStatus.Queued, "node-a@6", ct);
 
@@ -100,7 +100,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             (await fixture.ReadTimeJobAsync(reclaimedId, ct)).Should().Be(((int)JobStatus.Idle, null));
             (await fixture.ReadTimeJobAsync(skippedId, ct)).Should().Be(((int)JobStatus.Skipped, dead));
-            (await fixture.ReadTimeJobAsync(terminalId, ct)).Should().Be(((int)JobStatus.Done, dead));
+            (await fixture.ReadTimeJobAsync(terminalId, ct)).Should().Be(((int)JobStatus.Succeeded, dead));
             (await fixture.ReadTimeJobAsync(unownedId, ct)).Should().Be(((int)JobStatus.Idle, null));
             (await fixture.ReadTimeJobAsync(otherIncarnationId, ct)).Should().Be(((int)JobStatus.Queued, "node-a@6"));
         }
