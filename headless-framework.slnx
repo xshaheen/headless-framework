@@ -81,6 +81,7 @@
         <Project Path="tests\Headless.Caching.InMemory.Tests.Unit\Headless.Caching.InMemory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.Redis.Tests.Integration\Headless.Caching.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Caching.Tests.Harness\Headless.Caching.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.Caching.Hybrid.Tests.Harness\Headless.Caching.Hybrid.Tests.Harness.csproj" />
         <Project Path="tests\Headless.Caching.Benchmarks.Tests.Unit\Headless.Caching.Benchmarks.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Caching.Hybrid.Tests.Unit/Headless.Caching.Hybrid.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.OutputCache.Tests.Integration\Headless.Caching.OutputCache.Tests.Integration.csproj" />

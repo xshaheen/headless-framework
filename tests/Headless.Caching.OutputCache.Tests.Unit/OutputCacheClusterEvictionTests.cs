@@ -132,31 +132,3 @@ internal sealed class TwoNodeStoreHarness : IAsyncDisposable
 
 /// <summary>One node: its hybrid cache, its private L1, and the output-cache store wrapping the cache.</summary>
 internal sealed record StoreNode(HybridCache Cache, InMemoryCache L1, HeadlessOutputCacheStore Store);
-
-/// <summary>
-/// Synchronous in-memory backplane: routes a published <see cref="CacheInvalidationMessage"/> to every attached
-/// cache's invalidation handler. Each cache's InstanceId self-filter drops its own echo.
-/// </summary>
-internal sealed class FakeBackplaneBus : IBus
-{
-    private readonly List<HybridCache> _subscribers = [];
-
-    public void Attach(HybridCache cache) => _subscribers.Add(cache);
-
-    public async Task PublishAsync<T>(
-        T? contentObj,
-        PublishOptions? options = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (contentObj is not CacheInvalidationMessage message)
-        {
-            return;
-        }
-
-        foreach (var subscriber in _subscribers)
-        {
-            await subscriber.HandleInvalidationAsync(message, cancellationToken);
-        }
-    }
-}

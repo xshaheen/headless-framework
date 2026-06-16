@@ -4,9 +4,9 @@
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <!-- The output-cache adapter's two-node convergence test reuses the engine's backplane test pattern, which
-         routes peer invalidations through the internal HybridCache.HandleInvalidationAsync. -->
-    <InternalsVisibleTo Include="Headless.Caching.OutputCache.Tests.Unit" />
+    <!-- The shared Hybrid test harness's FakeBackplaneBus routes peer invalidations through the internal
+         HybridCache.HandleInvalidationAsync; the Hybrid/OutputCache unit tests consume the bus from the harness. -->
+    <InternalsVisibleTo Include="Headless.Caching.Hybrid.Tests.Harness" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
