@@ -48,6 +48,33 @@ public sealed class SetupOutputCacheTests
     }
 
     [Fact]
+    public void should_reject_a_serializer_configured_on_the_named_instance()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — byte[] is the cache's native wire format, so a serializer on the instance is meaningless; the guard
+        // fails fast rather than silently ignoring it. WithSerializer (Redis package) sets the same SerializerFactory
+        // this checks; the factory is never invoked, so a null-returning stub is enough to make it non-null.
+        var action = () =>
+            services.AddHeadlessCaching(setup =>
+            {
+                setup.UseInMemory();
+                setup.UseOutputCache(
+                    options => options.CacheName = _CacheName,
+                    instance =>
+                    {
+                        instance.UseInMemory(_ => { });
+                        instance.SetSerializerFactory(static _ => null!);
+                    }
+                );
+            });
+
+        // then
+        action.Should().Throw<InvalidOperationException>().WithMessage("*serializer*");
+    }
+
+    [Fact]
     public void should_resolve_the_headless_store_when_add_output_cache_is_called_before_use_output_cache()
     {
         // given — AddOutputCache registers MemoryOutputCacheStore via TryAdd first

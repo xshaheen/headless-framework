@@ -35,4 +35,35 @@ public sealed class SetupBclCacheTests
         // then — the adapter owns the IDistributedCache slot
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IDistributedCache));
     }
+
+    [Fact]
+    public void should_reject_a_serializer_configured_on_the_named_instance()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — byte[] is the cache's native wire format, so a serializer on the instance is meaningless; the guard
+        // fails fast rather than silently ignoring it. WithSerializer (Redis package) sets the same SerializerFactory
+        // this checks; the factory is never invoked, so a null-returning stub is enough to make it non-null.
+        var action = () =>
+            services.AddHeadlessCaching(setup =>
+            {
+                setup.RegisterDefaultProvider(CacheConstants.MemoryCacheProvider, static _ => { });
+                setup.UseBclCache(
+                    options =>
+                    {
+                        options.CacheName = _CacheName;
+                        options.DefaultAbsoluteExpiration = TimeSpan.FromHours(1);
+                    },
+                    instance =>
+                    {
+                        instance.RegisterProvider(static _ => { });
+                        instance.SetSerializerFactory(static _ => null!);
+                    }
+                );
+            });
+
+        // then
+        action.Should().Throw<InvalidOperationException>().WithMessage("*serializer*");
+    }
 }

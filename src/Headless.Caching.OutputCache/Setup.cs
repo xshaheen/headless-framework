@@ -27,6 +27,11 @@ public static class SetupOutputCache
         /// serializer), so the <paramref name="configureCache"/> callback only selects the backing provider (for
         /// example <c>UseRedis</c>).
         /// </summary>
+        /// <remarks>
+        /// Output caching is a consumer of Headless caching, not a provider, so <c>AddHeadlessCaching</c> still
+        /// requires a default cache provider: configure one of <c>UseInMemory</c>/<c>UseRedis</c>/<c>UseHybrid</c>
+        /// alongside this call.
+        /// </remarks>
         /// <param name="setupAction">Configuration for the store options.</param>
         /// <param name="configureCache">Configuration for the named Headless cache provider.</param>
         /// <returns>The setup builder for chaining.</returns>
@@ -45,8 +50,24 @@ public static class SetupOutputCache
             Argument.IsPositive(configuredOptions.DefaultExpiration);
 
             // AddNamed validates the reserved-key/uniqueness rules and the single-provider invariant. byte[] is the
-            // cache's native wire format, so the callback only selects the backing provider.
-            setup.AddNamed(cacheName, configureCache);
+            // cache's native wire format, so the callback only selects the backing provider; reject a serializer
+            // configured on the instance (it would be silently ignored on the byte[] path) to fail fast on the
+            // meaningless configuration.
+            setup.AddNamed(
+                cacheName,
+                instance =>
+                {
+                    configureCache(instance);
+
+                    if (instance.SerializerFactory is not null)
+                    {
+                        throw new InvalidOperationException(
+                            "The output-cache adapter stores byte[] verbatim (the cache's native wire format); "
+                                + "do not configure a serializer on the named cache instance via WithSerializer."
+                        );
+                    }
+                }
+            );
 
             setup.RegisterCrossCuttingExtension(services => services._AddOutputCacheCore(configuredOptions));
 
