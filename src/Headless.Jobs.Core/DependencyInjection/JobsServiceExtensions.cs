@@ -45,8 +45,8 @@ public static class JobsServiceExtensions
             "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
         );
 
-        // TODO(U4): lease/fallback ordering warning — a LeaseDuration shorter than FallbackIntervalChecker risks a
-        // double-claim window. Emit a startup warning once a logger is in scope at this stage.
+        // The soft lease/fallback ordering warning (LeaseDuration < FallbackIntervalChecker) is emitted at startup by
+        // JobsInitializationHostedService, where an ILogger is available.
 
         CronScheduleCache.TimeZoneInfo = schedulerOptionsBuilder.SchedulerTimeZone;
 
