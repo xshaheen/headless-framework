@@ -94,6 +94,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>
                 {
                     await sideEffects(ct).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // Clean host shutdown cancelled the post-commit drain. The row is already committed and the
+                    // fallback poll sweep recovers the deferred work, so this is expected teardown — not the
+                    // recoverable failure the Warning below is for.
+                    Log.DeferredJobSideEffectsCancelled(_logger, jobScope);
+                }
                 catch (Exception e)
                 {
                     Log.DeferredJobSideEffectsFailed(_logger, jobScope, e);
@@ -149,5 +156,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>
             string jobScope,
             Exception exception
         );
+
+        [LoggerMessage(
+            LogLevel.Debug,
+            "Deferred post-commit side effects for {JobScope} were cancelled by host shutdown. The job row is "
+                + "committed; the fallback poll sweep is the recovery path."
+        )]
+        public static partial void DeferredJobSideEffectsCancelled(ILogger logger, string jobScope);
     }
 }

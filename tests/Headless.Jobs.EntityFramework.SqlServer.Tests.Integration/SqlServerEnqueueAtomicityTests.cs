@@ -20,6 +20,13 @@ public sealed class SqlServerEnqueueAtomicityTests(SqlServerJobsCoordinationFixt
         base.two_enqueues_in_one_scope_both_commit();
 
     [Fact]
+    public override Task batch_enqueue_commits_atomically() =>
+        base.batch_enqueue_commits_atomically();
+
+    [Fact]
+    public override Task batch_enqueue_rolls_back() => base.batch_enqueue_rolls_back();
+
+    [Fact]
     public override Task enqueue_without_coordinator_inserts_directly() =>
         base.enqueue_without_coordinator_inserts_directly();
 

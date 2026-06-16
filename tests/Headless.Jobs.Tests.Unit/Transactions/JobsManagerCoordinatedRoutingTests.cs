@@ -176,6 +176,40 @@ public sealed class JobsManagerCoordinatedRoutingTests
     }
 
     [Fact]
+    public async Task Deferred_side_effect_cancellation_on_shutdown_is_not_logged_as_failure()
+    {
+        // A deferred side effect cancelled by host shutdown (OperationCanceledException while the drain token is
+        // cancelled) is clean teardown, not a recoverable failure — it must not log at Warning.
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var cancelledToken = cts.Token;
+        sut.Notification.AddTimeJobNotifyAsync(Arg.Any<Guid>())
+            .Returns(Task.FromException(new OperationCanceledException(cancelledToken)));
+
+        await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+
+        var drain = () => sut.Coordinator!.DrainCommitAsync(cancelledToken);
+        await drain.Should().NotThrowAsync();
+
+        sut.Logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
+        sut.Logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug);
+    }
+
+    [Fact]
+    public async Task Coordinated_enqueue_registers_no_rollback_callbacks()
+    {
+        // Coordinated side effects must fire only on commit — a rollback discards the row, so the manager must
+        // never register a rollback callback (which would run side effects for work that was rolled back).
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+
+        await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+
+        sut.Coordinator!.OnCommitCount.Should().Be(1);
+        sut.Coordinator.OnRollbackCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task TimeJob_live_coordinator_defers_immediate_dispatch_to_commit()
     {
         var sut = _CreateSut(
@@ -463,8 +497,11 @@ public sealed class JobsManagerCoordinatedRoutingTests
         : ICommitCoordinator
     {
         private readonly List<Func<CommitContext, CancellationToken, ValueTask>> _onCommit = [];
+        private readonly List<Func<CommitContext, CancellationToken, ValueTask>> _onRollback = [];
 
         public int OnCommitCount => _onCommit.Count;
+
+        public int OnRollbackCount => _onRollback.Count;
 
         public CommitCoordinatorState State => CommitCoordinatorState.Active;
 
@@ -475,8 +512,12 @@ public sealed class JobsManagerCoordinatedRoutingTests
             return _NoopDisposable.Instance;
         }
 
-        public IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work) =>
-            _NoopDisposable.Instance;
+        public IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work)
+        {
+            _onRollback.Add(work);
+
+            return _NoopDisposable.Instance;
+        }
 
         public TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
             where TBuffer : class, ICommitWorkBuffer => factory(this);

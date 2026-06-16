@@ -19,10 +19,21 @@ namespace Tests;
 /// take the direct path and auto-commit the row, leaving it after the coordinated rollback).</item>
 /// <item>AE2 — two enqueues in one scope both commit.</item>
 /// <item>AE4 — no coordinator → <c>AddAsync</c> inserts directly.</item>
+/// <item>R5 — <c>AddBatchAsync</c> commits / rolls back atomically with the caller's transaction.</item>
 /// <item>R6 — cron <c>AddAsync</c> commits / rolls back atomically.</item>
 /// </list>
 /// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
 /// <c>[Fact]</c> so the runner discovers them per provider.
+/// <para>
+/// AE3's fail-loud modes (dead-transaction throw; non-relational fallback) are intentionally <b>not</b> covered
+/// here: the real EF/Postgres/SqlServer enlist always captures a non-null transaction and always exposes
+/// <c>IRelationalCommitContext</c>, so neither state can arise through the production coordinator. Reproducing them
+/// would require injecting a fake relational context into a real host, which just relocates the unit test with no
+/// added fidelity — so they stay unit-only in <c>JobsManagerCoordinatedRoutingTests</c>
+/// (<c>TimeJob_dead_transaction_throws_and_persists_nothing</c>,
+/// <c>TimeJob_coordinator_without_relational_capability_takes_direct_path</c>,
+/// <c>TimeJob_relational_coordinator_but_non_coordinated_provider_throws_mis_wire</c>).
+/// </para>
 /// </summary>
 public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fixture)
     where TFixture : class, IJobsCoordinationFixture
@@ -127,6 +138,69 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             );
 
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(2);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    // R5: a batched AddBatchAsync writes every row inside the caller's transaction and commits with it.
+    public virtual async Task batch_enqueue_commits_atomically()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var host = await _StartHostAsync(ct);
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (_, _, innerCt) =>
+                {
+                    var jobs = new List<TimeJobEntity> { _TimeJob(), _TimeJob() };
+                    (await manager.AddBatchAsync(jobs, innerCt)).IsSucceeded.Should().BeTrue();
+                },
+                ct
+            );
+
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(2);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    // R5 (rollback): the whole batch discards with the caller's transaction — no partial commit, no stranded rows.
+    public virtual async Task batch_enqueue_rolls_back()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var host = await _StartHostAsync(ct);
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+            var sentinel = new InvalidOperationException("force rollback");
+
+            var act = () =>
+                fixture.RunCoordinatedTransactionAsync(
+                    host.Services,
+                    async (_, _, innerCt) =>
+                    {
+                        var jobs = new List<TimeJobEntity> { _TimeJob(), _TimeJob() };
+                        await manager.AddBatchAsync(jobs, innerCt);
+
+                        throw sentinel;
+                    },
+                    ct
+                );
+
+            (await act.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(sentinel);
+            (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
         }
         finally
         {
