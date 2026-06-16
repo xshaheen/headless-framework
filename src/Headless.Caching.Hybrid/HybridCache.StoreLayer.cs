@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 
@@ -549,5 +550,149 @@ public sealed partial class HybridCache
         await l1Store.SetEntryAsync(key, in localWrite, cancellationToken).ConfigureAwait(false);
 
         return localWrite.PhysicalExpiresAt;
+    }
+
+    /// <summary>
+    /// Zero-intermediate-copy buffer read. Mirrors <see cref="GetAsync{T}"/>'s tier composition exactly: an L1 hit
+    /// returns straight from L1 (zero-intermediate-copy when L1 implements <see cref="IBufferCache"/> — the stored
+    /// bytes flow into <paramref name="destination"/> without a typed deserialize), and an L1 miss falls through to
+    /// the same <see cref="_ReadFromL2Async{T}"/> wrapper (circuit breaker, soft timeout, degrade-to-miss) before
+    /// seeding L1. Expiry, sliding re-arm, and Family-2 tag/clear invalidation are applied identically because the
+    /// per-tier reads are the same primitives the generic path uses.
+    /// </summary>
+    /// <remarks>
+    /// The cold L1-miss -> L2 path materializes the L2 payload as a <c>byte[]</c> (via the typed
+    /// <c>GetWithExpirationAsync&lt;byte[]&gt;</c> read) so it can both seed L1 — which retains an owned array — and
+    /// write to <paramref name="destination"/>. Two copies on this cold path are inherent to populating two tiers;
+    /// the L1-hit hot path stays single-copy. Routing the L2 read through the typed byte[] primitive (rather than
+    /// L2's own <see cref="IBufferCache.TryGetToAsync"/>) is deliberate: it returns the bytes plus expiration the L1
+    /// seed needs in one round-trip, where the raw path would write the buffer but leave nothing to seed L1 with.
+    /// </remarks>
+    public async ValueTask<bool> TryGetToAsync(
+        string key,
+        IBufferWriter<byte> destination,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(destination);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // L1 hit (hot path): when L1 supports the buffer contract, its TryGetToAsync applies the same expiry,
+        // sliding re-arm, and tag/clear-invalidation checks the generic L1 read does, and writes the stored bytes
+        // straight into destination — fully zero-intermediate-copy.
+        if (LocalCache is IBufferCache l1Buffer)
+        {
+            if (await l1Buffer.TryGetToAsync(key, destination, cancellationToken).ConfigureAwait(false))
+            {
+                _logger.LogLocalCacheHit(key);
+                Interlocked.Increment(ref _localCacheHits);
+                return true;
+            }
+        }
+        else
+        {
+            // L1 lacks the buffer contract: mirror the generic L1 read and write the materialized bytes out.
+            var l1Value = await LocalCache.GetAsync<byte[]>(key, cancellationToken).ConfigureAwait(false);
+
+            if (l1Value is { HasValue: true, Value: { } l1Bytes })
+            {
+                _logger.LogLocalCacheHit(key);
+                Interlocked.Increment(ref _localCacheHits);
+                destination.Write(l1Bytes);
+                return true;
+            }
+        }
+
+        _logger.LogLocalCacheMiss(key);
+
+        // L1 miss -> L2: identical wrapper to GetAsync<T> (circuit, soft timeout, degrade-to-miss). The typed
+        // byte[] read yields the bytes plus expiration the L1 seed needs in one round-trip.
+        var l2Read = await _ReadFromL2Async(
+                key,
+                ct => l2Cache.GetWithExpirationAsync<byte[]>(key, ct),
+                _SelectDistributedReadTimeout(hasLocalFallback: false, softCanDegradeToMiss: true),
+                DistributedCacheTimeoutKind.Soft,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (!l2Read.IsSuccess)
+        {
+            if (l2Read.Exception is { } exception)
+            {
+                _logger.LogFailedToReadFromL2Cache(exception, key);
+            }
+
+            return false;
+        }
+
+        var cacheValue = l2Read.Value.Value;
+
+        // Miss everywhere / null-sentinel / tag-invalidated (all surfaced as no value by the L2 read): false,
+        // nothing written — parity with the byte[] fallback.
+        if (!cacheValue.HasValue || cacheValue.Value is not { } l2Bytes)
+        {
+            return false;
+        }
+
+        // Seed L1 (bounded by the local ceiling) exactly as GetAsync<T> does, then write the same bytes out.
+        var localExpiration = _GetLocalExpiration(l2Read.Value.Expiration);
+        _logger.LogSettingLocalCacheKey(key, localExpiration);
+        await LocalCache.UpsertAsync(key, l2Bytes, localExpiration, cancellationToken).ConfigureAwait(false);
+
+        destination.Write(l2Bytes);
+        return true;
+    }
+
+    /// <summary>
+    /// Zero-intermediate-copy buffer write. Materializes the sequence into a stable owned <c>byte[]</c>
+    /// synchronously before any await (the cache retains it, so a caller-pooled buffer must not be aliased),
+    /// validates + stamps via <see cref="CacheEntryStamps"/> exactly as
+    /// <c>FactoryCacheStoreExtensions.UpsertEntryAsync</c>, then routes the framed entry through the same
+    /// <see cref="_SetEntryCoreAsync{T}"/> the generic upsert uses — so L2 mirror, L1 write (local ceiling),
+    /// auto-recovery booking, circuit breaking, and the peer-invalidation publish (with InstanceId self-filtering)
+    /// are all identical to <see cref="UpsertEntryAsync{T}"/> for a <c>byte[]</c> value.
+    /// </summary>
+    public async ValueTask<bool> UpsertRawAsync(
+        string key,
+        ReadOnlySequence<byte> value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Materialize a stable owned copy synchronously, before any stamping/await: the cache retains this array,
+        // so it must not alias a caller-pooled buffer that is recycled after the call returns.
+        var bytes = value.ToArray();
+
+        // Validate then stamp, matching the UpsertEntryAsync extension exactly: Compute does the stamp math but
+        // does NOT validate, so ValidateOptions (which also validates Tags) runs first at this single choke point.
+        CacheEntryStamps.ValidateOptions(options);
+
+        var now = _GetUtcNow();
+        var stamps = CacheEntryStamps.Compute(options, now);
+
+        var entry = new CacheStoreEntryWrite<byte[]>
+        {
+            Value = bytes,
+            IsNull = false,
+            LogicalExpiresAt = stamps.LogicalExpiresAt,
+            PhysicalExpiresAt = stamps.PhysicalExpiresAt,
+            SlidingExpiration = options.SlidingExpiration,
+            EagerRefreshAt = stamps.EagerRefreshAt,
+            // Stamp the birth time so a prior tag/clear marker does not logically invalidate this fresh write
+            // (Family-2 version-pinning compares CreatedAt against the newest applicable marker).
+            CreatedAt = stamps.CreatedAt,
+            Tags = options.Tags,
+            SkipMemoryCacheWrite = options.SkipMemoryCacheWrite,
+            SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
+        };
+
+        return await _SetEntryCoreAsync(key, entry, cancellationToken).ConfigureAwait(false);
     }
 }
