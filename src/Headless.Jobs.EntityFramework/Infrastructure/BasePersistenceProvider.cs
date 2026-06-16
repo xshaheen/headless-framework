@@ -304,11 +304,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Database.BeginTransactionAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
-        // Release the dead node's Idle/Queued rows back to Idle so a live node re-acquires them.
+        // Per-policy dead-node transition (#315). The three phases partition the WhereOwnedBy set disjointly:
+        // an Idle/Queued row never started (safe to re-run regardless of policy); an InProgress row is split by
+        // OnNodeDeath. Retry rows are released to Idle — InProgress is invisible to the claim predicate, so a
+        // Retry row must be handed back rather than left in place for the lease-expiry arm.
         var released = await dbContext
             .Set<TTimeJob>()
             .WhereOwnedBy(instanceIdentifier)
-            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+            .Where(x =>
+                x.Status == JobStatus.Idle || x.Status == JobStatus.Queued || x.OnNodeDeath == NodeDeathPolicy.Retry
+            )
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -320,11 +325,26 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             )
             .ConfigureAwait(false);
 
-        // Mark rows the dead node was mid-execution on as Skipped (cannot safely resume).
+        // MarkFailed: non-idempotent job that must not retry on node death — terminal Failed.
+        var failed = await dbContext
+            .Set<TTimeJob>()
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.MarkFailed)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.Status, JobStatus.Failed)
+                        .SetProperty(x => x.ExecutedAt, now)
+                        .SetProperty(x => x.UpdatedAt, now),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        // Skip: idempotency-critical job that must never run twice — terminal Skipped.
         var skipped = await dbContext
             .Set<TTimeJob>()
             .WhereOwnedBy(instanceIdentifier)
-            .Where(x => x.Status == JobStatus.InProgress)
+            .Where(x => x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.Skip)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -338,7 +358,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
-        return released + skipped;
+        return released + failed + skipped;
     }
     #endregion
 
@@ -674,10 +694,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Database.BeginTransactionAsync(CancellationToken.None)
             .ConfigureAwait(false);
 
+        // Per-policy dead-node transition (#315) — mirrors ReleaseDeadNodeTimeJobResources. Disjoint phases:
+        // Idle/Queued or InProgress-Retry → released to Idle; InProgress-MarkFailed → Failed; InProgress-Skip → Skipped.
         var released = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .WhereOwnedBy(instanceIdentifier)
-            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+            .Where(x =>
+                x.Status == JobStatus.Idle || x.Status == JobStatus.Queued || x.OnNodeDeath == NodeDeathPolicy.Retry
+            )
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -689,10 +713,24 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             )
             .ConfigureAwait(false);
 
+        var failed = await dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.MarkFailed)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.Status, JobStatus.Failed)
+                        .SetProperty(x => x.ExecutedAt, now)
+                        .SetProperty(x => x.UpdatedAt, now),
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
         var skipped = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .WhereOwnedBy(instanceIdentifier)
-            .Where(x => x.Status == JobStatus.InProgress)
+            .Where(x => x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.Skip)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -706,7 +744,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
-        return released + skipped;
+        return released + failed + skipped;
     }
 
     public async Task ReleaseAcquiredCronJobOccurrences(

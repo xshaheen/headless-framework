@@ -504,53 +504,79 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var affected = 0;
 
-        // Phase 1: release the dead node's Idle/Queued rows (strict owner match — mirrors EF WhereOwnedBy; R4).
-        var releasable = _TimeJobs
-            .Values.Where(x =>
-                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued) && x.OwnerId == instanceIdentifier
-            )
-            .ToArray();
-
-        foreach (var job in releasable)
+        bool TryApply(Guid id, Action<TTimeJob> mutate)
         {
-            if (!_TimeJobs.TryGetValue(job.Id, out var currentTicker))
+            if (!_TimeJobs.TryGetValue(id, out var current))
             {
-                continue;
+                return false;
             }
 
-            var updatedTicker = _CloneTicker(currentTicker);
-            updatedTicker.OwnerId = null;
-            updatedTicker.LockedUntil = null;
-            updatedTicker.Status = JobStatus.Idle;
-            updatedTicker.UpdatedAt = now;
-
-            if (_TimeJobs.TryUpdate(job.Id, updatedTicker, currentTicker))
-            {
-                affected++;
-            }
+            var updated = _CloneTicker(current);
+            mutate(updated);
+            updated.UpdatedAt = now;
+            return _TimeJobs.TryUpdate(id, updated, current);
         }
 
-        // Phase 2: mark in-progress jobs for that node as skipped
-        var inProgress = _TimeJobs
-            .Values.Where(x => x.OwnerId == instanceIdentifier && x.Status == JobStatus.InProgress)
-            .ToArray();
+        // Per-policy dead-node transition (#315) — mirrors EF ReleaseDeadNodeTimeJobResources. Disjoint over the
+        // dead node's non-terminal rows (terminal rows untouched, R4): Idle/Queued or InProgress-Retry → released
+        // to Idle; InProgress-MarkFailed → Failed; InProgress-Skip → Skipped.
+        var owned = _TimeJobs.Values.Where(x => x.OwnerId == instanceIdentifier).ToArray();
 
-        foreach (var job in inProgress)
+        foreach (var job in owned)
         {
-            if (!_TimeJobs.TryGetValue(job.Id, out var currentTicker))
+            var release =
+                job.Status is JobStatus.Idle or JobStatus.Queued
+                || (job.Status == JobStatus.InProgress && job.OnNodeDeath == NodeDeathPolicy.Retry);
+
+            if (release)
             {
-                continue;
+                if (
+                    TryApply(
+                        job.Id,
+                        t =>
+                        {
+                            t.OwnerId = null;
+                            t.LockedUntil = null;
+                            t.Status = JobStatus.Idle;
+                        }
+                    )
+                )
+                {
+                    affected++;
+                }
             }
-
-            var updatedTicker = _CloneTicker(currentTicker);
-            updatedTicker.Status = JobStatus.Skipped;
-            updatedTicker.SkippedReason = "Node is not alive!";
-            updatedTicker.ExecutedAt = now;
-            updatedTicker.UpdatedAt = now;
-
-            if (_TimeJobs.TryUpdate(job.Id, updatedTicker, currentTicker))
+            else if (job.Status == JobStatus.InProgress && job.OnNodeDeath == NodeDeathPolicy.MarkFailed)
             {
-                affected++;
+                if (
+                    TryApply(
+                        job.Id,
+                        t =>
+                        {
+                            t.Status = JobStatus.Failed;
+                            t.ExecutedAt = now;
+                        }
+                    )
+                )
+                {
+                    affected++;
+                }
+            }
+            else if (job.Status == JobStatus.InProgress && job.OnNodeDeath == NodeDeathPolicy.Skip)
+            {
+                if (
+                    TryApply(
+                        job.Id,
+                        t =>
+                        {
+                            t.Status = JobStatus.Skipped;
+                            t.SkippedReason = "Node is not alive!";
+                            t.ExecutedAt = now;
+                        }
+                    )
+                )
+                {
+                    affected++;
+                }
             }
         }
 
@@ -906,53 +932,79 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var affected = 0;
 
-        // Phase 1: release the dead node's Idle/Queued occurrences (strict owner match — mirrors EF WhereOwnedBy; R4).
-        var releasable = _CronOccurrences
-            .Values.Where(x =>
-                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued) && x.OwnerId == instanceIdentifier
-            )
-            .ToArray();
-
-        foreach (var occurrence in releasable)
+        bool TryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
         {
-            if (!_CronOccurrences.TryGetValue(occurrence.Id, out var currentOccurrence))
+            if (!_CronOccurrences.TryGetValue(id, out var current))
             {
-                continue;
+                return false;
             }
 
-            var updatedOccurrence = _CloneCronOccurrence(currentOccurrence);
-            updatedOccurrence.OwnerId = null;
-            updatedOccurrence.LockedUntil = null;
-            updatedOccurrence.Status = JobStatus.Idle;
-            updatedOccurrence.UpdatedAt = now;
-
-            if (_CronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, currentOccurrence))
-            {
-                affected++;
-            }
+            var updated = _CloneCronOccurrence(current);
+            mutate(updated);
+            updated.UpdatedAt = now;
+            return _CronOccurrences.TryUpdate(id, updated, current);
         }
 
-        // Phase 2: mark in-progress occurrences for that node as skipped
-        var inProgress = _CronOccurrences
-            .Values.Where(x => x.OwnerId == instanceIdentifier && x.Status == JobStatus.InProgress)
-            .ToArray();
+        // Per-policy dead-node transition (#315) — mirrors EF ReleaseDeadNodeOccurrenceResources. Disjoint over the
+        // dead node's non-terminal rows (terminal rows untouched, R4): Idle/Queued or InProgress-Retry → released
+        // to Idle; InProgress-MarkFailed → Failed; InProgress-Skip → Skipped.
+        var owned = _CronOccurrences.Values.Where(x => x.OwnerId == instanceIdentifier).ToArray();
 
-        foreach (var occurrence in inProgress)
+        foreach (var occurrence in owned)
         {
-            if (!_CronOccurrences.TryGetValue(occurrence.Id, out var currentOccurrence))
+            var release =
+                occurrence.Status is JobStatus.Idle or JobStatus.Queued
+                || (occurrence.Status == JobStatus.InProgress && occurrence.OnNodeDeath == NodeDeathPolicy.Retry);
+
+            if (release)
             {
-                continue;
+                if (
+                    TryApply(
+                        occurrence.Id,
+                        o =>
+                        {
+                            o.OwnerId = null;
+                            o.LockedUntil = null;
+                            o.Status = JobStatus.Idle;
+                        }
+                    )
+                )
+                {
+                    affected++;
+                }
             }
-
-            var updatedOccurrence = _CloneCronOccurrence(currentOccurrence);
-            updatedOccurrence.Status = JobStatus.Skipped;
-            updatedOccurrence.SkippedReason = "Node is not alive!";
-            updatedOccurrence.ExecutedAt = now;
-            updatedOccurrence.UpdatedAt = now;
-
-            if (_CronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, currentOccurrence))
+            else if (occurrence.Status == JobStatus.InProgress && occurrence.OnNodeDeath == NodeDeathPolicy.MarkFailed)
             {
-                affected++;
+                if (
+                    TryApply(
+                        occurrence.Id,
+                        o =>
+                        {
+                            o.Status = JobStatus.Failed;
+                            o.ExecutedAt = now;
+                        }
+                    )
+                )
+                {
+                    affected++;
+                }
+            }
+            else if (occurrence.Status == JobStatus.InProgress && occurrence.OnNodeDeath == NodeDeathPolicy.Skip)
+            {
+                if (
+                    TryApply(
+                        occurrence.Id,
+                        o =>
+                        {
+                            o.Status = JobStatus.Skipped;
+                            o.SkippedReason = "Node is not alive!";
+                            o.ExecutedAt = now;
+                        }
+                    )
+                )
+                {
+                    affected++;
+                }
             }
         }
 
