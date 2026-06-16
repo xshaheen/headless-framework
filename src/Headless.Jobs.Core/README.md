@@ -93,7 +93,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 ### Node Identity (durable path)
 
-On the in-memory single-process path, the scheduler uses `SchedulerOptionsBuilder.NodeId`. Its default is unique by construction — `{MachineName}:{ProcessId}:{Guid8}` — so co-located processes, and K8s pods that share a machine name, never collide on the same owner string (the former machine-name default did). On the durable operational-store path (`Headless.Jobs.EntityFramework` + `AddHeadlessCoordination`), node identity is `node@incarnation` (store-allocated) and durable job rows are stamped with it. If the local node loses membership, the durable scheduler fail-stops (stops processing) rather than stamping a stale owner. See `Headless.Jobs.EntityFramework` for setup.
+On the in-memory single-process path, the scheduler uses `SchedulerOptionsBuilder.NodeId` (defaults to the machine name) as the row owner. On the durable operational-store path (`Headless.Jobs.EntityFramework` + `AddHeadlessCoordination`), `SchedulerOptionsBuilder.NodeId` is **not** the owner: node identity is `node@incarnation` (store-allocated by Coordination) and durable job rows are stamped with it. Node identity for that path — including K8s pod-collision handling (via `POD_NAME`/`POD_NAMESPACE`) — is configured on `Headless.Coordination`, not on this option; `SchedulerOptionsBuilder.NodeId` only acts as a display fallback before membership registration completes. If the local node loses membership, the durable scheduler fail-stops (stops processing) rather than stamping a stale owner. See `Headless.Jobs.EntityFramework` for setup.
 
 ### Pickup Lease and Node-Death Policy
 

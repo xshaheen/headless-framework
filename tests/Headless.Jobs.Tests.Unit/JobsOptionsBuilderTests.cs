@@ -178,20 +178,12 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void Default_NodeId_Matches_Machine_Process_Guid_Shape()
+    public void Default_NodeId_Is_MachineName()
     {
+        // In-memory single-process identity only; the durable path stamps with Coordination's node@incarnation.
         var schedulerOptions = new SchedulerOptionsBuilder();
 
-        schedulerOptions.NodeId.Should().MatchRegex(@"^.+:\d+:[0-9a-fA-F]{8}$");
-    }
-
-    [Fact]
-    public void Default_NodeId_Is_Unique_Per_Instance()
-    {
-        var first = new SchedulerOptionsBuilder();
-        var second = new SchedulerOptionsBuilder();
-
-        first.NodeId.Should().NotBe(second.NodeId);
+        schedulerOptions.NodeId.Should().Be(Environment.MachineName);
     }
 
     [Fact]

@@ -187,12 +187,13 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 public sealed class SchedulerOptionsBuilder
 {
     /// <summary>
-    /// Identifies this node on the in-memory single-process path (the durable path uses
-    /// <c>node@incarnation</c> instead). Defaults to a unique-by-construction value of the shape
-    /// <c>{MachineName}:{ProcessId}:{Guid8}</c> so co-located processes — and K8s pods that share a
-    /// machine name — never collide on the same owner string.
+    /// Identifies this node on the in-memory single-process path; defaults to <see cref="Environment.MachineName"/>.
+    /// The durable (Coordination) path does NOT use this value — it stamps rows with the membership
+    /// <c>node@incarnation</c> owner, and node identity there (including K8s pod-collision handling via
+    /// <c>POD_NAME</c>) is owned by <c>Headless.Coordination</c>'s node-id provider, not this option. This value
+    /// only serves as the durable path's pre-registration display fallback.
     /// </summary>
-    public string NodeId { get; set; } = _BuildDefaultNodeId();
+    public string NodeId { get; set; } = Environment.MachineName;
 
     public int MaxConcurrency { get; set; } = Environment.ProcessorCount;
     public TimeSpan IdleWorkerTimeOut { get; set; } = TimeSpan.FromMinutes(1);
@@ -222,7 +223,4 @@ public sealed class SchedulerOptionsBuilder
     /// Controls how job processing starts. Defaults to <see cref="JobsStartMode.Immediate"/>.
     /// </summary>
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
-
-    private static string _BuildDefaultNodeId() =>
-        $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid().ToString("N")[..8]}";
 }
