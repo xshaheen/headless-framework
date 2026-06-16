@@ -10,7 +10,14 @@ namespace Tests;
 [Collection(nameof(RedisCacheFixture))]
 public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : CacheConformanceTestsBase
 {
-    protected override ICache CreateCache(string keyPrefix)
+    protected override ICache CreateCache(string keyPrefix) => _CreateCache(keyPrefix, new SystemJsonSerializer());
+
+    // Cross-path byte fidelity (raw write read by the generic byte[] path and vice-versa) only holds when the
+    // generic path does not re-frame the payload. Redis runs byte[] through the configured serializer, so use a
+    // raw passthrough here — the exact serializer the output-cache / BCL adapters wire (RawBytesSerializer).
+    protected override ICache CreateRawBufferCache(string keyPrefix) => _CreateCache(keyPrefix, new RawByteSerializer());
+
+    private ICache _CreateCache(string keyPrefix, ISerializer serializer)
     {
         var options = new RedisCacheOptions
         {
@@ -19,7 +26,33 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
         };
 
         var logger = LoggerFactory.CreateLogger<RedisCache>();
-        return new RedisCache(new SystemJsonSerializer(), TimeProvider.System, options, fixture.ScriptsLoader, logger);
+        return new RedisCache(serializer, TimeProvider.System, options, fixture.ScriptsLoader, logger);
+    }
+
+    /// <summary>
+    /// Test-local stand-in for the framework's internal <c>RawBytesSerializer</c> (not visible across the assembly
+    /// boundary): a zero-transform <c>byte[]</c> passthrough so a value written raw and read via the generic path is
+    /// byte-identical. Only <c>byte[]</c> is supported — the cross-path tests deal exclusively in raw payloads.
+    /// </summary>
+    private sealed class RawByteSerializer : ISerializer
+    {
+        public T? Deserialize<T>(Stream data)
+        {
+            using var buffer = new MemoryStream();
+            data.CopyTo(buffer);
+
+            return (T)(object)buffer.ToArray();
+        }
+
+        public void Serialize<T>(T value, Stream output)
+        {
+            var bytes = (byte[])(object)value!;
+            output.Write(bytes, 0, bytes.Length);
+        }
+
+        public object? Deserialize(Stream data, Type objectType) => Deserialize<byte[]>(data);
+
+        public void Serialize(object? value, Stream output) => Serialize((byte[])value!, output);
     }
 
     protected override async ValueTask ResetAsync()
@@ -184,4 +217,36 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 
     [Fact]
     public override Task should_drop_reserves_with_flush_async() => base.should_drop_reserves_with_flush_async();
+
+    [Fact]
+    public override Task should_round_trip_raw_payload_via_buffer_path() =>
+        base.should_round_trip_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_round_trip_multi_segment_raw_payload_via_buffer_path() =>
+        base.should_round_trip_multi_segment_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_read_raw_written_payload_via_generic_path() =>
+        base.should_read_raw_written_payload_via_generic_path();
+
+    [Fact]
+    public override Task should_read_generic_written_payload_via_buffer_path() =>
+        base.should_read_generic_written_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_invalidate_raw_written_payload_by_tag() =>
+        base.should_invalidate_raw_written_payload_by_tag();
+
+    [Fact]
+    public override Task should_return_false_and_write_nothing_on_buffer_miss() =>
+        base.should_return_false_and_write_nothing_on_buffer_miss();
+
+    [Fact]
+    public override Task should_round_trip_empty_raw_payload_via_buffer_path() =>
+        base.should_round_trip_empty_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_expire_raw_written_payload_after_duration() =>
+        base.should_expire_raw_written_payload_after_duration();
 }
