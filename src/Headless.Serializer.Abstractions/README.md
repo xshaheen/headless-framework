@@ -9,7 +9,7 @@ Provides provider-agnostic serialization contracts supporting both text (JSON) a
 ## Key Features
 
 - `ISerializer` - Base serialization interface with Stream-based operations
-- `IBinarySerializer` - Marker interface for binary serializers
+- `IBinarySerializer` - Marker interface for binary serializers, plus buffer overloads `Serialize<T>(T, IBufferWriter<byte>)` / `Deserialize<T>(ReadOnlySequence<byte>)` as default interface methods that bridge through the `Stream` API. Existing serializers keep compiling unchanged; perf-critical ones override the overloads for a zero-transform passthrough.
 - `ITextSerializer` - Marker interface for text-based serializers
 - `IJsonSerializer` - Specific interface for JSON serialization
 - Extension methods for common serialization patterns

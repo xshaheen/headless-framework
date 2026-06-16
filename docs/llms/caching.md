@@ -14,6 +14,7 @@ packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.
     - [Read path](#read-path)
     - [Fail-safe and the expiration timeline](#fail-safe-and-the-expiration-timeline)
     - [Operation semantics and entry model](#operation-semantics-and-entry-model)
+    - [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Caching.Abstractions](#headlesscachingabstractions)
     - [Problem Solved](#problem-solved)
@@ -136,6 +137,8 @@ Install `Headless.Caching.Abstractions` plus one provider. All registration flow
 - `CacheEntryOptions.UseDistributedFactoryLock` requires the `Headless.Caching.DistributedLocks` adapter (`setup.UseDistributedFactoryLock()`) plus a registered `IDistributedLock`; enabling it without the provider fails the read with `InvalidOperationException`. Reserve it for expensive factories — per-node single-flight already exists without it.
 - Named cache instances must not use a reserved name — the `CacheConstants` role keys (`Headless.Caching:Memory`, `Headless.Caching:Remote`, `Headless.Caching:Hybrid`), or any name under the `Headless.Caching:` namespace; `setup.AddNamed` throws `ArgumentException` for reserved names and rejects duplicates. Resolve named instances through `ICacheProvider.GetCache(name)` / `GetCacheOrNull(name)`.
 - Named Redis cache instances can select their serializer with `instance.WithSerializer(...)` (a Redis-provider capability shipped in `Headless.Caching.Redis`) when that instance needs a different value codec from the default cache. InMemory stores object references and never serializes, so `WithSerializer` is not offered there; on a hybrid instance it governs L2 (Redis) only. `Headless.Caching.Bcl` rides the same keyed-serializer mechanism internally — `UseBclCache` wires a raw-bytes codec automatically so `byte[]` payloads avoid JSON/base64 encoding — but exposes no serializer knob to the caller.
+- For opaque-byte payloads, prefer the `IBufferCache` fast path over `GetAsync<byte[]>`/`UpsertEntryAsync<byte[]>`: it reads the payload into a caller buffer and writes from a `ReadOnlySequence<byte>` without the 1–2 intermediate `byte[]` materializations the generic path allocates (read drops from 3 payload copies to 1, write from 2 to 1; the one remaining copy is the unavoidable network I/O — zero-copy across a network boundary is impossible). Redis, InMemory, and Hybrid implement it; call it through `BufferCacheExtensions.TryGetToOrFallbackAsync(key, IBufferWriter<byte>)` / `UpsertRawOrFallbackAsync(key, ReadOnlySequence<byte>, options)` so a non-byte-oriented provider transparently falls back to the generic `byte[]` path. `PipeWriter` is an `IBufferWriter<byte>`, so a response/body pipe is a valid destination.
+- **`IBufferCache` bypasses the serializer — it stores the payload verbatim.** A raw-written value is byte-cross-compatible with the typed `GetAsync<T>`/`UpsertEntryAsync<T>` path **only when the named instance's serializer is the identity `RawBytesSerializer`.** Under a JSON or other binary serializer, a raw write is NOT what a typed read expects (a typed write would be JSON/base64-encoded, a typed read would try to parse the raw bytes and fail). Direct `IBufferCache` use is therefore supported only on a raw-bytes-configured named instance — which is exactly what `Headless.Caching.OutputCache` and `Headless.Caching.Bcl` wire (each registers `RawBytesSerializer` keyed by its cache name). Do not call `TryGetToAsync`/`UpsertRawAsync` against a JSON-serialized cache and expect the typed path to read it back. All other entry semantics (expiry, Family-2 tag invalidation, sliding, `CreatedAt` stamping) are identical to the generic path.
 - Named hybrid instances publish invalidations with `CacheInvalidationMessage.CacheName`, and `HybridCacheInvalidationConsumer` routes them through `ICacheProvider` to the matching named hybrid. Default hybrid messages use a null `CacheName` and resolve through the `CacheConstants.HybridCacheProvider` role key.
 - Hybrid `AllowBackgroundDistributedCacheOperations = true` fire-and-forgets the L2 write and backplane publish on additive writes (the `GetOrAddAsync` factory write-through, `UpsertAsync`, `UpsertAllAsync`): the caller returns after the L1 write, so L2 and peers briefly lag L1. A failed background write queues for replay when `EnableAutoRecovery` is on, else is logged best-effort. Removes, `Try*`, atomic/set ops, and reads stay synchronous because their result is the L2 answer.
 - Hybrid `DistributedCacheSoftTimeout` / `DistributedCacheHardTimeout` bound slow L2 reads. A factory-backed read with an L1 stale reserve serves that reserve on L2 soft timeout and skips the origin factory; a plain read degrades to a miss. `DistributedCacheCircuitBreakerDuration` skips L2 operations for a short window after non-cancellation L2 failures.
@@ -277,6 +280,28 @@ Background completion is per-key, not global. The keyed lock prevents duplicate 
 
 FusionCache alignment is intentional but not exact. Headless uses FusionCache-like factory soft/hard timeout selection, L2 read soft/hard timeouts, waiter lock timeout behavior, eager refresh, conditional/adaptive factories, auto-recovery, a simple L2 circuit breaker, and the same Family-2 logical tag-version invalidation, but Headless detaches the background refresh token from the caller token and abandons the factory path on hard timeout instead of allowing background completion after the hard limit.
 
+### Zero-intermediate-copy buffer path
+
+`IBufferCache` is an opt-in capability interface (in `Headless.Caching.Abstractions`) for consumers that hold opaque byte payloads — the ASP.NET Core output-cache adapter and the BCL distributed-cache adapter — and want to read/write those bytes without the intermediate `byte[]` materializations the generic `ICache.GetAsync<byte[]>`/`UpsertEntryAsync<byte[]>` path allocates. Redis, InMemory, and Hybrid implement it alongside `ICache`.
+
+```csharp
+public interface IBufferCache
+{
+    ValueTask<bool> TryGetToAsync(string key, IBufferWriter<byte> destination, CancellationToken ct = default);
+    ValueTask<bool> UpsertRawAsync(string key, ReadOnlySequence<byte> value, CacheEntryOptions options, CancellationToken ct = default);
+}
+```
+
+**The floor is one copy per side, not zero.** A distributed cache must put the payload on the wire and read it back, so one I/O copy per side is unavoidable — "zero-copy across a network boundary" is physically impossible. What `IBufferCache` removes is the *removable* waste: the 1–2 intermediate `byte[]` copies the generic path pays (`ToArray()`, a `MemoryStream`, the serializer round-trip). The read path drops from 3 payload copies (wire → `byte[]` → `MemoryStream` → caller) to 1 (wire slice → caller's `IBufferWriter<byte>`); the write path drops from 2 (`ToArray` → serialize → network) to 1 (sequence → framed network buffer).
+
+`PipeWriter` implements `IBufferWriter<byte>`, which is the lever: a store can stream the decoded payload straight into the caller's response pipe or body buffer. `TryGetToAsync` writes nothing on a miss and returns `false`. `UpsertRawAsync` consumes the `ReadOnlySequence<byte>` synchronously before its first await, so callers may hand in pooled buffers valid only for the duration of the call.
+
+**Critical: the raw path bypasses the serializer and stores the payload verbatim.** It is byte-cross-compatible with the typed `GetAsync<T>`/`UpsertEntryAsync<T>` path **only when the named instance's serializer is the identity `RawBytesSerializer`** (the raw-bytes codec in `Headless.Caching.Core`). Under a JSON or other binary serializer the two paths are not interchangeable — a typed write is JSON/base64-encoded (not raw), and a typed read of a raw-written payload would try to parse opaque bytes and fail. Direct `IBufferCache` use is therefore supported only on a raw-bytes-configured named instance, which is exactly what `Headless.Caching.OutputCache` and `Headless.Caching.Bcl` register (each binds `RawBytesSerializer` keyed by its cache name). Every other entry semantic — expiry, fail-safe physical retention, Family-2 tag invalidation, sliding, `CreatedAt` stamping — is identical to the generic path; `UpsertRawAsync` reuses the same stamping/framing pipeline as `UpsertEntryAsync` and the only difference is that the payload arrives as bytes rather than a serialized `T`.
+
+Consumers do not feature-detect by hand: `BufferCacheExtensions.TryGetToOrFallbackAsync` / `UpsertRawOrFallbackAsync` take the `IBufferCache` fast path when the cache implements it and fall back to the generic `byte[]` path otherwise (the fallback materializes one `byte[]` — the cost the fast path avoids). On Redis the framing is copy-neutral: the frame header rides in the same allocation as the payload, the read exposes the value as a slice of the received buffer (`DecodedFrame.ValueSegment`), and the write splices the `ReadOnlySequence<byte>` into the single frame buffer at the value offset once, so a buffer write produces byte-identical frames to a generic write.
+
+`IBinarySerializer` carries the matching buffer overloads (`Serialize<T>(T, IBufferWriter<byte>)`, `Deserialize<T>(ReadOnlySequence<byte>)`) as default interface methods that bridge through the existing `Stream` API, so existing serializers keep working unchanged; `RawBytesSerializer` overrides them for a true zero-transform passthrough.
+
 ## Choosing a Provider
 
 | Provider | Use when | Avoid when | Trade-off |
@@ -311,6 +336,8 @@ Provides a provider-agnostic caching API so applications can switch between memo
     - Set operations (SetAdd, SetRemove, GetSet)
     - Tag invalidation (`UpsertEntryAsync` with `CacheEntryOptions.Tags`; `RemoveByTagAsync` — O(1) logical, returns `ValueTask`)
     - Logical whole-cache clear (`ClearAsync` — O(1), reserve-preserving) vs. reserve-dropping flush (`FlushAsync` — physical in-process, logical remove-generation marker on a distributed tier)
+- `[PublicAPI] IBufferCache` - capability interface for byte-oriented caches (Redis, InMemory, Hybrid) that read a payload into an `IBufferWriter<byte>` (`TryGetToAsync`) and write it from a `ReadOnlySequence<byte>` (`UpsertRawAsync`) without the intermediate `byte[]` the generic path allocates. The raw path stores the payload verbatim (it bypasses the serializer), so it is only byte-cross-compatible with the typed `GetAsync<T>`/`UpsertEntryAsync<T>` path on an instance whose serializer is the identity `RawBytesSerializer`; all expiry/tag/sliding/`CreatedAt` semantics match `UpsertEntryAsync`. See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
+- `[PublicAPI] BufferCacheExtensions` - `TryGetToOrFallbackAsync` / `UpsertRawOrFallbackAsync` on `ICache`: take the `IBufferCache` fast path when the cache implements it, else fall back to the generic `byte[]` path. Lets a consumer holding opaque bytes avoid re-implementing the feature-detect.
 - `IInMemoryCache` - in-memory (L1) tier contract; a marker interface (`: ICache`) with no extra members.
 - `IRemoteCache` - remote (L2) tier contract; adds `GetAllWithExpirationAsync<T>` / `GetWithExpirationAsync<T>` for single-round-trip value-plus-TTL reads (a remote store doesn't expose its TTL locally the way an in-memory tier does).
 - `ICache<T>` - strongly typed convenience facade over the default `ICache`, exposing the full `ICache` surface (scalar reads/writes, bulk, prefix, atomic numeric ops `IncrementAsync`/`SetIfHigherAsync`/`SetIfLowerAsync`, `GetAllKeysByPrefixAsync`, `GetCountAsync`, `ExistsAsync`, `GetExpirationAsync`, `RemoveAllAsync`, `FlushAsync`) bound to a fixed type parameter. For a specific tier use the untyped `IRemoteCache`/`IInMemoryCache` (method-level generics) or `ICacheProvider.GetCache(name)`. Typed tier wrappers (`IRemoteCache<T>`, `IInMemoryCache<T>`) do not exist.
@@ -688,6 +715,7 @@ Provides one `ICache` implementation that reads from a fast local cache first, f
 - Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `setup.AddNamed(name, i => i.UseHybrid(...))`.
 - Opt-in auto-recovery: transient L2/backplane outages queue failed single-key operations and replay them on recovery.
 - L2 read soft/hard timeouts and a simple L2 circuit breaker keep slow or failing distributed reads from holding callers.
+- Implements `IBufferCache` — an L1 hit slices straight into the caller's `IBufferWriter<byte>` (single copy on the hot path); an L1 miss falls through to the same wrapped L2 read the generic path uses and seeds L1 (two copies on the cold path, inherent to populating both tiers). Raw upsert stamps both tiers plus the backplane identically to `UpsertEntryAsync`. See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ### Design Notes
@@ -837,6 +865,7 @@ Provides process-local caching through the unified `ICache` abstraction, suitabl
 - Named cache instances via `setup.AddNamed(name, i => i.UseInMemory(...))`, resolvable as keyed `ICache` services or through `ICacheProvider`.
 - Automatic memory management with configurable limits (`MaxItems` plus LRU eviction).
 - O(1) logical tag invalidation and `ClearAsync` through per-tag and clear-generation timestamp markers (Family-2), compared against each entry's birth time on read.
+- Implements `IBufferCache` — stores framed bytes, slices to the caller's `IBufferWriter<byte>` on read, copies the `ReadOnlySequence<byte>` on write, with the same stamping as the generic path. See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - Optional value cloning for isolation.
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
@@ -956,6 +985,7 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 - Lua scripts for atomic multi-key operations.
 - O(1) logical tag invalidation and `ClearAsync` through timestamp markers (Family-2), compared against each entry's birth time on read — one marker key per tag, so tagging works on Redis Cluster.
 - Redis Cluster support for all operations, including tagging and clear.
+- Implements `IBufferCache` — `TryGetToAsync` writes the decoded value slice into the caller's `IBufferWriter<byte>` and `UpsertRawAsync` splices a `ReadOnlySequence<byte>` payload into the frame buffer, both reusing the same envelope stamping so expiry/tags/sliding/`CreatedAt` match the generic path; the frame is byte-identical and the read exposes the payload as a slice of the received buffer (one copy). See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ### Design Notes
@@ -1090,7 +1120,7 @@ Provides standard BCL distributed-cache interop for ASP.NET Core Session and thi
 
 ### Key Features
 
-- Registers `IDistributedCache` over an internal adapter backed by a named `ICache`; consumers only ever see `IDistributedCache`.
+- Registers `IDistributedCache` over an internal adapter backed by a named `ICache`; consumers only ever see `IDistributedCache`. The adapter implements the buffer-oriented extension `IBufferDistributedCache`, so callers that take its `TryGet(IBufferWriter<byte>)` / `Set(ReadOnlySequence<byte>)` members stream through the `IBufferCache` fast path without an intermediate `byte[]` (transparent `byte[]` fallback when the backing cache is not byte-oriented). See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - `setup.UseBclCache(...)` provisions a dedicated named cache and registers it as `IDistributedCache`.
 - Maps `DistributedCacheEntryOptions` absolute, relative, and sliding expiration to `CacheEntryOptions`.
 - Uses `ICache.RefreshAsync` for `IDistributedCache.Refresh`/`RefreshAsync`, so sliding entries can be re-armed without returning their value.
@@ -1180,6 +1210,7 @@ ASP.NET Core's output-cache middleware ships only an in-memory store, and ASP.NE
 ### Key Features
 
 - Registers `Microsoft.AspNetCore.OutputCaching.IOutputCacheStore` over a named Headless `ICache`; the same instance also implements the optional `IOutputCacheBufferStore` that the formatter pattern-matches (only `IOutputCacheStore` is registered as a service).
+- The `IOutputCacheBufferStore` members stream through the `IBufferCache` fast path (`BufferCacheExtensions`): read slices the entry into the response `PipeWriter` (an `IBufferWriter<byte>`), write frames the response body `ReadOnlySequence<byte>` — no intermediate `byte[]` on the hot path when the backing cache is Redis/InMemory/Hybrid, and a transparent `byte[]` fallback otherwise. See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - `setup.UseOutputCache(...)` provisions a dedicated named cache and wires it as the output-cache store.
 - `EvictByTagAsync(tag)` delegates to `ICache.RemoveByTagAsync` — O(1) logical (Family-2) tag-marker invalidation. Backed by Redis, the tag marker is a single shared Redis key every instance reads, so eviction is cluster-wide.
 - `validFor` maps directly to the entry's `Duration` (a single relative TTL; no sliding/absolute reconciliation); a non-positive `validFor` falls back to `DefaultExpiration`.
