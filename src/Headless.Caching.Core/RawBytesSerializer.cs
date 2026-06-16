@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using Headless.Checks;
 using Headless.Serializer;
 
@@ -59,6 +60,34 @@ internal sealed class RawBytesSerializer : IBinarySerializer
         }
 
         output.Write(bytes);
+    }
+
+    /// <inheritdoc />
+    public void Serialize<T>(T value, IBufferWriter<byte> output)
+    {
+        Argument.IsNotNull(value);
+
+        if (value is not byte[] bytes)
+        {
+            throw _Unsupported(typeof(T));
+        }
+
+        // Identity codec: write the payload straight into the caller's buffer writer (for example a Redis frame
+        // buffer or a network pipe) with no intermediate stream or array.
+        output.Write(bytes);
+    }
+
+    /// <inheritdoc />
+    public T? Deserialize<T>(ReadOnlySequence<byte> data)
+    {
+        if (typeof(T) != typeof(byte[]))
+        {
+            throw _Unsupported(typeof(T));
+        }
+
+        // The contract returns a byte[], so the sequence must be copied once here; the zero-copy read path is
+        // IBufferCache.TryGetToAsync, which writes the payload into a caller buffer without this materialization.
+        return (T?)(object)data.ToArray();
     }
 
     private static byte[] _ReadAllBytes(Stream data)
