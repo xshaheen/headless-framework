@@ -56,6 +56,26 @@ public sealed class SetupOutputCacheTests
     }
 
     [Fact]
+    public void should_reject_a_blank_cache_name()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — a whitespace cache name is caught eagerly by the Argument guard at the UseOutputCache call site,
+        // before any named cache or store is registered
+        var action = () =>
+            services.AddHeadlessCaching(setup =>
+                setup.UseOutputCache(
+                    options => options.CacheName = "   ",
+                    instance => instance.UseInMemory(_ => { })
+                )
+            );
+
+        // then
+        action.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_resolve_the_headless_store_when_add_output_cache_is_called_before_use_output_cache()
     {
         // given — AddOutputCache registers MemoryOutputCacheStore via TryAdd first

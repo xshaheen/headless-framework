@@ -102,6 +102,9 @@ internal sealed class HeadlessOutputCacheStore(ICache cache, IOptions<HeadlessOu
         var entryOptions = new CacheEntryOptions
         {
             Duration = _ResolveDuration(validFor),
+            // The byte[] overload passes tags straight through (it may hand us an empty array); the buffer overload
+            // pre-normalizes empty to null before its copy. Coerce here so both paths index nothing for a tagless
+            // entry rather than registering an empty tag set with the engine.
             Tags = tags is { Length: > 0 } ? tags : null,
         };
 
