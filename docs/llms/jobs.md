@@ -267,13 +267,23 @@ public sealed class LongRunningCronJob
 
 ### Node-Death Policy (OnNodeDeath)
 
-When the node that owns an in-flight job row dies, the per-job `NodeDeathPolicy` decides the row's fate. Set it via the `OnNodeDeath` property on `TimeJobEntity` / `CronJobOccurrenceEntity` (default `Retry`):
+When the node that owns an in-flight job row dies, the per-job `NodeDeathPolicy` decides the row's fate (default `Retry`):
 
 | Policy | On node death | Use when |
 |--------|---------------|----------|
 | `Retry` (default) | Row is released for re-claim; the attempt counts toward the retry budget. | Job is idempotent — safe to run again. |
-| `MarkFailed` | Row transitions to terminal `Failed`; never re-run. | A second run is wrong; surface the failure. |
-| `Skip` | Row transitions to terminal `Skipped`; never re-run. | Idempotency-critical jobs that must run at most once. |
+| `MarkFailed` | Row transitions to terminal `Failed` (lease cleared, owner retained for audit, `ExceptionMessage` set); never re-run. | A second run is wrong; surface the failure. |
+| `Skip` | Row transitions to terminal `Skipped` (lease cleared, owner retained); never re-run. | Idempotency-critical jobs that must run at most once. |
+
+Select the policy with `SetOnNodeDeath(NodeDeathPolicy)` on the fluent job builder (available on the parent, child, and grandchild builders), or by assigning the `OnNodeDeath` property directly on the `TimeJobEntity` you pass to `ITimeJobManager.AddAsync`. For cron jobs, set `OnNodeDeath` on the `CronJobEntity` you register with `ICronJobManager.AddAsync` — it propagates to every generated occurrence.
+
+```csharp
+FluentChainJobBuilder<TimeJobEntity>
+    .BeginWith(p => p.SetFunction("charge-card").SetOnNodeDeath(NodeDeathPolicy.MarkFailed));
+
+// or directly
+await cronJobManager.AddAsync(new CronJobEntity { Function = "nightly-report", Expression = "0 2 * * *", OnNodeDeath = NodeDeathPolicy.Skip });
+```
 
 This couples with the pickup lease (`SchedulerOptionsBuilder.LeaseDuration`, default 5 min). Every claim stamps `LockedUntil = now + LeaseDuration`, written and compared using the injected application `TimeProvider`, not the DB server clock (mirrors `Headless.Messaging` for InMemory↔SQL parity). The lease is a **duplicate-suppression / self-heal floor, not the liveness authority** — a dead node's rows are recovered by Coordination's incarnation + heartbeat sweep; lease expiry only lets a *stalled but not-yet-declared-dead* `Idle`/`Queued` row be re-claimed.
 

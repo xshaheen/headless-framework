@@ -101,7 +101,7 @@ Every claim of a time-job or cron-occurrence row stamps a pickup lease: `LockedU
 
 The lease is a **duplicate-suppression / self-heal floor, not the liveness authority.** A dead node's rows are recovered by Coordination's incarnation + heartbeat sweep (see `Headless.Jobs.EntityFramework`); lease expiry only lets a *stalled but not-yet-declared-dead* `Idle`/`Queued` row be re-claimed. Contract: `LeaseDuration` must exceed the longest expected job runtime. If it is shorter, a still-running job's lease can expire and — for `OnNodeDeath = Retry` jobs only — be speculatively re-claimed and run a second time.
 
-`NodeDeathPolicy` (the `OnNodeDeath` property on `TimeJobEntity` / `CronJobOccurrenceEntity`) decides what happens to a row whose owning node dies mid-execution:
+`NodeDeathPolicy` decides what happens to a row whose owning node dies mid-execution. Select it with `SetOnNodeDeath(policy)` on the fluent job builder (parent/child/grandchild), by setting `OnNodeDeath` on the `TimeJobEntity` passed to `ITimeJobManager.AddAsync`, or by setting it on the `CronJobEntity` registered with `ICronJobManager.AddAsync` (cron policy propagates to every generated occurrence). Default `Retry`:
 
 | Policy | On node death | Use when |
 |--------|---------------|----------|
