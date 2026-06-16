@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.Coordination;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
+using Headless.Jobs.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -47,7 +48,7 @@ public interface IJobsCoordinationFixture
 /// <summary>
 /// Shared, provider-neutral behavior over <see cref="IJobsCoordinationFixture" />: host bootstrap (Coordination
 /// before Jobs), Jobs schema creation, database reset, and raw-SQL seed/read of TimeJob rows (raw SQL because
-/// <c>TimeJobEntity.Status/LockHolder</c> have internal setters). Mirrors the Coordination harness's
+/// <c>TimeJobEntity.Status/OwnerId</c> have internal setters). Mirrors the Coordination harness's
 /// <c>CoordinationFixtureExtensions</c> shape.
 /// </summary>
 public static class JobsCoordinationFixtureExtensions
@@ -136,8 +137,9 @@ public static class JobsCoordinationFixtureExtensions
         Guid id,
         string function,
         int status,
-        string? lockHolder,
-        CancellationToken cancellationToken
+        string? ownerId,
+        CancellationToken cancellationToken,
+        NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry
     )
     {
         await using var connection = fixture.CreateConnection();
@@ -145,19 +147,21 @@ public static class JobsCoordinationFixtureExtensions
         await using var command = connection.CreateCommand();
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}) "
-            + $"VALUES (@id, @function, @function, @status, @lockHolder, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0);";
+            + $"VALUES (@id, @function, @function, @status, @ownerId, "
+            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath);";
 
+        // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
         _AddParameter(command, "@id", id);
         _AddParameter(command, "@function", function);
-        _AddParameter(command, "@status", status);
-        _AddParameter(command, "@lockHolder", (object?)lockHolder ?? DBNull.Value);
+        _AddParameter(command, "@status", ((JobStatus)status).ToString());
+        _AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
+        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>Reads back a TimeJob's status + owner for assertions.</summary>
-    public static async Task<(int Status, string? LockHolder)> ReadTimeJobAsync(
+    public static async Task<(int Status, string? OwnerId)> ReadTimeJobAsync(
         this IJobsCoordinationFixture fixture,
         Guid id,
         CancellationToken cancellationToken
@@ -167,7 +171,7 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT \"Status\", \"LockHolder\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
+            $"SELECT \"Status\", \"OwnerId\" FROM {fixture.QualifiedTimeJobsTable} WHERE \"Id\" = @id;";
         _AddParameter(command, "@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -177,17 +181,18 @@ public static class JobsCoordinationFixtureExtensions
             throw new InvalidOperationException($"TimeJob {id} not found.");
         }
 
-        var status = reader.GetInt32(0);
-        var lockHolder = await reader.IsDBNullAsync(1, cancellationToken) ? null : reader.GetString(1);
+        // Status persists as its enum name; parse back to the ordinal the callers assert against.
+        var status = (int)Enum.Parse<JobStatus>(reader.GetString(0));
+        var ownerId = await reader.IsDBNullAsync(1, cancellationToken) ? null : reader.GetString(1);
 
-        return (status, lockHolder);
+        return (status, ownerId);
     }
 
     // Column identifiers are double-quoted: SQL Server accepts ANSI double quotes for delimited identifiers
     // (QUOTED_IDENTIFIER is ON by default for SqlClient), and Postgres requires them for the PascalCase columns.
     private const string _InsertColumns =
-        "\"Id\", \"Function\", \"Description\", \"Status\", \"LockHolder\", "
-        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\"";
+        "\"Id\", \"Function\", \"Description\", \"Status\", \"OwnerId\", "
+        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\"";
 
     // Both Npgsql and SqlClient accept the "@name" parameter form.
     private static void _AddParameter(DbCommand command, string name, object value)

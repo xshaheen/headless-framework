@@ -113,6 +113,7 @@ public static class ServiceBuilder
                 provider.GetRequiredService<IDbContextFactory<TContext>>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<IJobsOwnerIdentity>(),
+                provider.GetRequiredService<SchedulerOptionsBuilder>(),
                 provider.GetService<ICache>(),
                 provider.GetRequiredService<ILogger<JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>>>()
             )

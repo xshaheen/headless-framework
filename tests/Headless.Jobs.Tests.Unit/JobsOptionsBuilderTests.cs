@@ -170,11 +170,28 @@ public sealed class JobsOptionsBuilderTests
         builder.ConfigureScheduler(options =>
         {
             options.MaxConcurrency = 42;
-            options.NodeIdentifier = "test-node";
+            options.NodeId = "test-node";
         });
 
         schedulerOptions.MaxConcurrency.Should().Be(42);
-        schedulerOptions.NodeIdentifier.Should().Be("test-node");
+        schedulerOptions.NodeId.Should().Be("test-node");
+    }
+
+    [Fact]
+    public void Default_NodeId_Is_MachineName()
+    {
+        // In-memory single-process identity only; the durable path stamps with Coordination's node@incarnation.
+        var schedulerOptions = new SchedulerOptionsBuilder();
+
+        schedulerOptions.NodeId.Should().Be(Environment.MachineName);
+    }
+
+    [Fact]
+    public void Explicit_NodeId_Is_Preserved_Verbatim()
+    {
+        var schedulerOptions = new SchedulerOptionsBuilder { NodeId = "explicit-node" };
+
+        schedulerOptions.NodeId.Should().Be("explicit-node");
     }
 
     [Fact]

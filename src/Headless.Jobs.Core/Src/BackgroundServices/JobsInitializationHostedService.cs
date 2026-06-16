@@ -4,6 +4,7 @@ using Headless.Jobs.Interfaces.Managers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.BackgroundServices;
 
@@ -22,6 +23,19 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         var configuration = serviceProvider.GetRequiredService<IConfiguration>();
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
         var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();
+
+        // A pickup lease (LockedUntil = now + LeaseDuration) shorter than the fallback re-queue cadence can expire
+        // between fallback ticks, letting another node speculatively re-claim a still-owned Idle/Queued row. The CAS
+        // on the InProgress transition prevents double execution, but the redundant pickup is wasteful. Warn so the
+        // operator widens LeaseDuration — the Jobs analog of messaging's DeadThreshold >= DispatchTimeout guard.
+        if (schedulerOptions.LeaseDuration < schedulerOptions.FallbackIntervalChecker)
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<JobsInitializationHostedService>>();
+            logger.LeaseDurationShorterThanFallback(
+                schedulerOptions.LeaseDuration,
+                schedulerOptions.FallbackIntervalChecker
+            );
+        }
 
         // Configure scheduler start mode
         var backgroundScheduler = serviceProvider.GetService<JobsSchedulerBackgroundService>();
@@ -112,4 +126,22 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
 
         await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed).ConfigureAwait(false);
     }
+}
+
+internal static partial class JobsInitializationLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "LeaseDurationShorterThanFallback",
+        Level = LogLevel.Warning,
+        Message = "SchedulerOptionsBuilder.LeaseDuration ({LeaseDuration}) is shorter than FallbackIntervalChecker "
+            + "({FallbackInterval}). A pickup lease can expire before the fallback re-queues the row, letting another "
+            + "node speculatively re-claim a still-owned Idle/Queued job. Set LeaseDuration >= FallbackIntervalChecker "
+            + "to avoid redundant pickups."
+    )]
+    public static partial void LeaseDurationShorterThanFallback(
+        this ILogger logger,
+        TimeSpan leaseDuration,
+        TimeSpan fallbackInterval
+    );
 }

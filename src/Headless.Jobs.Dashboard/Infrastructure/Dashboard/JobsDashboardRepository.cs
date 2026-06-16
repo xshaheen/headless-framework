@@ -274,7 +274,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var allStatuses = timeJobStatuses.Concat(cronJobStatuses).ToList();
 
         // Count per type
-        var doneOrDueDoneCount = allStatuses.Count(x => x is JobStatus.Done or JobStatus.DueDone);
+        var doneOrDueDoneCount = allStatuses.Count(x => x is JobStatus.Succeeded or JobStatus.DueDone);
         var failedCount = allStatuses.Count(x => x == JobStatus.Failed);
         var totalCount = allStatuses.Count;
 
@@ -299,16 +299,16 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
     public async Task<IList<(string, int)>> GetMachineJobsAsync(CancellationToken cancellationToken = default)
     {
-        var timeJobs = await _persistenceProvider.GetTimeJobs(x => x.LockedAt != null, cancellationToken);
+        var timeJobs = await _persistenceProvider.GetTimeJobs(x => x.LockedUntil != null, cancellationToken);
         var cronJobOccurrences = await _persistenceProvider.GetAllCronJobOccurrences(
-            x => x.LockedAt != null,
+            x => x.LockedUntil != null,
             cancellationToken
         );
 
         // Combine counts using LINQ GroupBy across both sources, filtering out null lock holders
         return timeJobs
-            .Select(x => x.LockHolder)
-            .Concat(cronJobOccurrences.Select(x => x.LockHolder))
+            .Select(x => x.OwnerId)
+            .Concat(cronJobOccurrences.Select(x => x.OwnerId))
             .Where(holder => holder is not null)
             .GroupBy(holder => holder!, StringComparer.OrdinalIgnoreCase)
             .Select(g => (g.Key, g.Count()))
@@ -400,7 +400,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             Id = Guid.NewGuid(),
             Status = JobStatus.Idle,
             ExecutionTime = now,
-            LockedAt = null,
+            LockedUntil = null,
             CronJobId = id,
         };
 

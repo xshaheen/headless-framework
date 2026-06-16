@@ -186,9 +186,29 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 
 public sealed class SchedulerOptionsBuilder
 {
-    public string NodeIdentifier { get; set; } = Environment.MachineName;
+    /// <summary>
+    /// Identifies this node on the in-memory single-process path; defaults to <see cref="Environment.MachineName"/>.
+    /// The durable (Coordination) path does NOT use this value — it stamps rows with the membership
+    /// <c>node@incarnation</c> owner, and node identity there (including K8s pod-collision handling via
+    /// <c>POD_NAME</c>) is owned by <c>Headless.Coordination</c>'s node-id provider, not this option. This value
+    /// only serves as the durable path's pre-registration display fallback.
+    /// </summary>
+    public string NodeId { get; set; } = Environment.MachineName;
+
     public int MaxConcurrency { get; set; } = Environment.ProcessorCount;
     public TimeSpan IdleWorkerTimeOut { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable by the
+    /// lease-expiry self-heal arm. Stamped as <c>LockedUntil = now + LeaseDuration</c> on every claim using the
+    /// injected <see cref="TimeProvider"/> (application clock, not the DB server clock — matches Headless.Messaging
+    /// for InMemory↔SQL parity). The lease is a duplicate-suppression floor, NOT the liveness authority: a dead
+    /// node's rows are recovered by Coordination's incarnation + heartbeat sweep, not by lease expiry. Must exceed
+    /// the longest expected job runtime, or a still-running job's lease can expire and (for OnNodeDeath = Retry jobs)
+    /// be speculatively re-claimed. Defaults to five minutes.
+    /// </summary>
+    public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromMinutes(5);
+
     public TimeSpan FallbackIntervalChecker { get; set; } = TimeSpan.FromSeconds(30);
     public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Local;
 

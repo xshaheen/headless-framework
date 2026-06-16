@@ -15,7 +15,7 @@ public sealed class JobsOwnerIdentityAdapterTests
     public void should_expose_node_at_incarnation_when_registered()
     {
         var membership = new FakeNodeMembership { Identity = Identity("node-a", 5) };
-        var options = new SchedulerOptionsBuilder { NodeIdentifier = "machine-x" };
+        var options = new SchedulerOptionsBuilder { NodeId = "machine-x" };
         var adapter = new JobsOwnerIdentityAdapter(membership, options);
 
         adapter.DisplayOwner.Should().Be("node-a@5");
@@ -27,7 +27,7 @@ public sealed class JobsOwnerIdentityAdapterTests
     public void should_refuse_stamp_and_fall_back_display_when_identity_null()
     {
         var membership = new FakeNodeMembership { Identity = null };
-        var options = new SchedulerOptionsBuilder { NodeIdentifier = "machine-x" };
+        var options = new SchedulerOptionsBuilder { NodeId = "machine-x" };
         var adapter = new JobsOwnerIdentityAdapter(membership, options);
 
         adapter.TryGetStampOwner(out var owner).Should().BeFalse();
@@ -42,7 +42,7 @@ public sealed class JobsOwnerIdentityAdapterTests
     public void should_reflect_identity_transitions_without_caching_a_stale_owner()
     {
         var membership = new FakeNodeMembership { Identity = null };
-        var options = new SchedulerOptionsBuilder { NodeIdentifier = "machine-x" };
+        var options = new SchedulerOptionsBuilder { NodeId = "machine-x" };
         var adapter = new JobsOwnerIdentityAdapter(membership, options);
 
         adapter.TryGetStampOwner(out _).Should().BeFalse();
@@ -62,7 +62,7 @@ public sealed class JobsOwnerIdentityAdapterTests
     {
         using var cts = new CancellationTokenSource();
         var membership = new FakeNodeMembership { Identity = Identity("node-a", 5), LostToken = cts.Token };
-        var options = new SchedulerOptionsBuilder { NodeIdentifier = "machine-x" };
+        var options = new SchedulerOptionsBuilder { NodeId = "machine-x" };
         var adapter = new JobsOwnerIdentityAdapter(membership, options);
 
         adapter.MembershipLostToken.IsCancellationRequested.Should().BeFalse();
@@ -78,7 +78,7 @@ public sealed class JobsOwnerIdentityAdapterTests
     [Fact]
     public void default_owner_identity_uses_node_identifier_and_never_signals_loss()
     {
-        var options = new SchedulerOptionsBuilder { NodeIdentifier = "machine-x" };
+        var options = new SchedulerOptionsBuilder { NodeId = "machine-x" };
         var adapter = new DefaultJobsOwnerIdentity(options);
 
         adapter.DisplayOwner.Should().Be("machine-x");

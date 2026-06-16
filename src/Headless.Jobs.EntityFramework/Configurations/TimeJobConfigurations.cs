@@ -12,9 +12,15 @@ public class TimeJobConfigurations<TTimeJob>(string schema = Constants.DefaultSc
     {
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.LockHolder).IsRequired(false);
+        builder.Property(x => x.OwnerId).IsRequired(false);
 
         builder.Property(x => x.ExecutionTime).IsRequired(false);
+
+        // Persist enums by name (not ordinal) so the stored value is stable and self-describing, and reordering
+        // an enum never silently remaps existing rows. Matches Headless.Messaging's StatusName-as-string storage.
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.RunCondition).HasConversion<string>().HasMaxLength(32);
 
         builder
             .HasOne(x => x.Parent)

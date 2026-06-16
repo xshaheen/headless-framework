@@ -15,6 +15,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
+    SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
     ILogger logger
 )
@@ -22,6 +23,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
         timeProvider,
         ownerIdentity,
+        optionsBuilder,
         cache,
         logger
     ),
@@ -342,15 +344,15 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var query = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => occurrenceIds.Contains(x.Id))
-            .WhereCanAcquire(owner);
+            .WhereCanAcquire(owner, now);
 
         // Lock and mark InProgress
         var affected = await query
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, owner)
-                        .SetProperty(x => x.LockedAt, now)
+                        .SetProperty(x => x.OwnerId, owner)
+                        .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
                         .SetProperty(x => x.Status, JobStatus.InProgress)
                         .SetProperty(x => x.UpdatedAt, now),
                 cancellationToken
@@ -366,7 +368,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Where(x => occurrenceIds.Contains(x.Id) && x.LockHolder == owner && x.Status == JobStatus.InProgress)
+            .Where(x => occurrenceIds.Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.InProgress)
             .Include(x => x.CronJob)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);

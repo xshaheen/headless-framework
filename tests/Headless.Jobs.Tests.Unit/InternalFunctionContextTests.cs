@@ -41,7 +41,7 @@ public sealed class InternalFunctionContextTests
     {
         var context = new InternalFunctionContext() { FunctionName = "Test" };
 
-        context.SetProperty(c => c.Status, JobStatus.Done).SetProperty(c => c.ElapsedTime, 500L);
+        context.SetProperty(c => c.Status, JobStatus.Succeeded).SetProperty(c => c.ElapsedTime, 500L);
 
         context.GetPropsToUpdate().Should().NotBeEmpty();
 
@@ -55,11 +55,11 @@ public sealed class InternalFunctionContextTests
     {
         var context = new InternalFunctionContext() { FunctionName = "Test" };
 
-        context.SetProperty(c => c.Status, JobStatus.Done).SetProperty(c => c.ElapsedTime, 250L);
+        context.SetProperty(c => c.Status, JobStatus.Succeeded).SetProperty(c => c.ElapsedTime, 250L);
 
         context.ResetUpdateProps();
 
-        context.Status.Should().Be(JobStatus.Done);
+        context.Status.Should().Be(JobStatus.Succeeded);
         context.ElapsedTime.Should().Be(250L);
         context.GetPropsToUpdate().Should().BeEmpty();
     }
