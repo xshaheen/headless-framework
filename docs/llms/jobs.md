@@ -18,6 +18,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
   - [Best Practices](#best-practices)
 - [Headless.Jobs.Abstractions](#headlessjobsabstractions)
   - [Installation](#installation)
+  - [Commit Coordination (Atomic Enqueue)](#commit-coordination-atomic-enqueue)
 - [Headless.Jobs.Core](#headlessjobscore)
   - [Problem Solved](#problem-solved)
   - [Key Features](#key-features)
@@ -112,6 +113,7 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - No-Redis dead-node recovery is TTL-bounded, not immediate: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (plus a periodic reconcile backstop). Tune via the Coordination heartbeat/TTL and `SchedulerOptionsBuilder.DeadNodeReconcileInterval`.
 - Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
 - For time-based (one-off) jobs, inject `ITimeJobManager<TimeJobEntity>` and call `AddAsync()`.
+- To enqueue a job atomically with a domain write (and/or an outbox publish), run them inside a relational commit-coordinated scope (`Headless.CommitCoordination`, e.g. `db.ExecuteCoordinatedTransactionAsync(...)`). `AddAsync` then writes the row inside the caller's transaction and defers dispatch/scheduler/notify/cron-cache-invalidation to post-commit. Capture is synchronous (pre-await) — never restructure `AddAsync` to read the coordinator after an await. On the coordinated path `JobResult.IsSucceeded` means the row **committed**, not that dispatch ran (the scheduler poll sweep recovers a post-commit dispatch failure). `AddAsync` throws only when a relational transaction was offered but is dead/completed, or a relational coordinator is active but the provider can't write coordinated; a coordinated scope with no relational capability falls back to direct insert. Requires the EF operational store (`AddOperationalStore`); the in-memory path is always direct.
 - For cron jobs, the `[Jobs]` attribute takes a cron expression and optional `Priority` parameter (`JobPriority.High`, `Normal`, `LongRunning`).
 - Use `[JobsConstructor]` attribute on constructors when you need custom DI injection in job classes.
 - Dashboard authentication: call `dashboard.WithBasicAuth()`, `WithApiKey()`, or `WithHostAuthentication()` inside `config.AddDashboard()`.
@@ -281,6 +283,38 @@ Simple utilities for queuing and executing cron/time-based jobs in the backgroun
 ```bash
 dotnet add package Headless.Jobs.Abstractions
 ```
+
+## Commit Coordination (Atomic Enqueue)
+
+When a relational commit coordinator is active (see `Headless.CommitCoordination`), `ITimeJobManager.AddAsync` /
+`AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row **inside the caller's ambient
+transaction** and defer dispatch / scheduler-restart / notify / cron-cache-invalidation to post-commit — mirroring the
+messaging outbox. A domain write, an integration-event publish, and a job enqueue can commit (or roll back) as one unit:
+
+```csharp
+await db.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
+{
+    ctx.Orders.Add(order);                                       // domain write
+    await ctx.SaveChangesAsync(ct);
+
+    await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct); // message publish (outbox)
+
+    await timeJobManager.AddAsync(new TimeJobEntity              // job enqueue, written into the same transaction
+    {
+        Function = "SendOrderReminder",
+        ExecutionTime = DateTime.UtcNow.AddHours(24),
+        Request = JobsHelper.SerializeRequest(new { order.Id }),
+    }, ct);
+}, services, ct);
+// On commit: all three persist; the job's dispatch/scheduler/notify fire post-commit. On rollback: none persist.
+```
+
+- **No coordinator (or no `AddOperationalStore`)**: unchanged — direct insert + in-band dispatch.
+- **Coordinated scope with no relational capability** (messaging-only scope): falls back to the direct path — coordination is not made infectious.
+- **Fail loud**: `AddAsync` throws only when a relational transaction was offered but is unusable (dead/completed), or a relational coordinator is active but the provider cannot write coordinated.
+- **Return-contract (SLA)**: on the coordinated path `JobResult.IsSucceeded` means the row **committed**, not that deferred dispatch ran; a post-commit dispatch failure is swallowed and recovered by the scheduler's polling sweep.
+- **Tenancy** stamping inside the coordinated write is out of scope until a tenant column exists (issue #278).
+
 ---
 # Headless.Jobs.Core
 
