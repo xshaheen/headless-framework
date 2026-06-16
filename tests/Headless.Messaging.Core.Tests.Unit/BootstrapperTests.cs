@@ -150,8 +150,11 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
-    public async Task should_warn_when_coordination_membership_is_registered_but_storage_lock_is_disabled()
+    public async Task should_not_fall_back_to_floor_only_when_storage_lock_disabled_but_membership_is_real()
     {
+        // Recovery is always-on (KTD3): with a real INodeMembership the DeadOwnerRecoveryBridge reclaims
+        // dead owners regardless of UseStorageLock, so the bootstrapper must neither warn that recovery is
+        // disabled (the removed EventId 92) nor emit the floor-only fallback info (EventId 88).
         var captured = new List<(LogLevel Level, EventId EventId)>();
         var membership = Substitute.For<INodeMembership>();
         membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
@@ -169,7 +172,12 @@ public sealed class BootstrapperTests : TestBase
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.EventId.Id == 92);
+        captured
+            .Should()
+            .NotContain(
+                e => e.EventId.Id == 88 || e.EventId.Id == 92,
+                "a real membership means recovery is active via the always-on bridge, independent of UseStorageLock"
+            );
     }
 
     [Fact]
@@ -276,6 +284,57 @@ public sealed class BootstrapperTests : TestBase
         await bootstrapper.BootstrapAsync(AbortToken);
 
         captured.Should().NotContain(e => e.EventId.Id == 88);
+    }
+
+    [Fact]
+    public async Task should_warn_when_dead_threshold_is_below_dispatch_timeout_with_real_membership()
+    {
+        // given — recovery active (real membership) but DeadThreshold (30s) < DispatchTimeout (5m): a still-alive
+        // node crossing the dead threshold mid-dispatch would be reclaimed and re-dispatched.
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var membership = Substitute.For<INodeMembership>();
+        membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5),
+            extraSetup: services =>
+            {
+                services.RemoveAll<INodeMembership>();
+                services.AddSingleton(membership);
+                services.Configure<CoordinationOptions>(c => c.DeadThreshold = TimeSpan.FromSeconds(30));
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.EventId.Id == 94);
+    }
+
+    [Fact]
+    public async Task should_not_warn_when_dead_threshold_meets_dispatch_timeout()
+    {
+        // given — DeadThreshold (10m) >= DispatchTimeout (5m): the invariant holds, no duplicate-delivery window.
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var membership = Substitute.For<INodeMembership>();
+        membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5),
+            extraSetup: services =>
+            {
+                services.RemoveAll<INodeMembership>();
+                services.AddSingleton(membership);
+                services.Configure<CoordinationOptions>(c => c.DeadThreshold = TimeSpan.FromMinutes(10));
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().NotContain(e => e.EventId.Id == 94);
     }
 
     [Fact]

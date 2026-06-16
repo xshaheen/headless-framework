@@ -1,14 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
-using Headless.Jobs;
-using Headless.Jobs.Coordination;
-using Headless.Jobs.Interfaces.Managers;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
-namespace Tests.Coordination;
+namespace Tests;
 
-public sealed class MembershipRecoveryBridgeTests
+public sealed class DeadOwnerRecoveryBridgeTests
 {
     private static NodeIdentity Identity(string node, long incarnation) =>
         new(new NodeId(node), new NodeIncarnation(incarnation));
@@ -21,82 +19,126 @@ public sealed class MembershipRecoveryBridgeTests
             Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
         );
 
-    private static (MembershipRecoveryBridge Bridge, FakeMembership Membership, IInternalJobManager Manager) Create()
+    // The bridge reclaims a batch (one owner from the event path, the whole dead set from a reconcile tick), so
+    // assertions match the owner set rather than a single string.
+    private static IReadOnlyCollection<string> Batch(string owner) =>
+        Arg.Is<IReadOnlyCollection<string>>(owners => owners.Contains(owner));
+
+    private static IReadOnlyCollection<string> BatchWithout(string owner) =>
+        Arg.Is<IReadOnlyCollection<string>>(owners => !owners.Contains(owner));
+
+    private static (
+        DeadOwnerRecoveryBridge<IDeadOwnerReclaimer> Bridge,
+        FakeMembership Membership,
+        IDeadOwnerReclaimer Reclaimer
+    ) Create()
     {
         var membership = new FakeMembership();
-        var manager = Substitute.For<IInternalJobManager>();
-        var bridge = new MembershipRecoveryBridge(
+        var reclaimer = Substitute.For<IDeadOwnerReclaimer>();
+        // A positive interval keeps the reconcile snapshot-read timeout from firing during direct calls; the fake
+        // clock only advances when a test asks it to, so the bounded read never times out under test.
+        reclaimer.ReconcileInterval.Returns(TimeSpan.FromMinutes(1));
+        var bridge = new DeadOwnerRecoveryBridge<IDeadOwnerReclaimer>(
             membership,
-            manager,
-            new SchedulerOptionsBuilder(),
-            TimeProvider.System,
-            NullLogger<MembershipRecoveryBridge>.Instance
+            reclaimer,
+            new FakeTimeProvider(),
+            NullLogger<DeadOwnerRecoveryBridge<IDeadOwnerReclaimer>>.Instance
         );
 
-        return (bridge, membership, manager);
+        return (bridge, membership, reclaimer);
     }
 
     [Fact]
     public async Task should_reclaim_once_on_node_left()
     {
-        var (bridge, _, manager) = Create();
+        var (bridge, _, reclaimer) = Create();
 
         await bridge.HandleEventAsync(new NodeLeft(Identity("node-a", 5)));
 
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@5", Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_pass_none_token_to_reclaim_so_shutdown_does_not_tear_the_write()
     {
-        var (bridge, _, manager) = Create();
+        var (bridge, _, reclaimer) = Create();
 
         await bridge.HandleEventAsync(new NodeLeft(Identity("node-a", 5)));
 
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@5", CancellationToken.None);
+        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), CancellationToken.None);
     }
 
     [Fact]
-    public async Task should_not_reclaim_on_suspected_or_recovered()
+    public async Task should_not_reclaim_on_suspected_recovered_or_joined()
     {
-        var (bridge, _, manager) = Create();
+        var (bridge, _, reclaimer) = Create();
 
         await bridge.HandleEventAsync(new NodeSuspected(Identity("node-a", 5)));
         await bridge.HandleEventAsync(new NodeRecovered(Identity("node-a", 5)));
         await bridge.HandleEventAsync(new NodeJoined(Identity("node-a", 5)));
 
-        await manager.DidNotReceive().ReleaseDeadNodeResources(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await reclaimer
+            .DidNotReceive()
+            .ReclaimAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_reclaim_dead_owner_from_snapshot_and_skip_alive_and_suspected()
+    {
+        var (bridge, membership, reclaimer) = Create();
+        membership.Snapshot =
+        [
+            Dead("node-dead", 5),
+            new NodeLivenessSnapshot(
+                Identity("node-alive", 7),
+                NodeLivenessState.Alive,
+                Role: null,
+                Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            ),
+            new NodeLivenessSnapshot(
+                Identity("node-suspect", 9),
+                NodeLivenessState.Suspected,
+                Role: null,
+                Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+            ),
+        ];
+
+        await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
+
+        await reclaimer.Received(1).ReclaimAsync(Batch("node-dead@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(BatchWithout("node-alive@7"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(BatchWithout("node-suspect@9"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_dedup_between_event_and_reconcile()
     {
-        var (bridge, membership, manager) = Create();
+        var (bridge, membership, reclaimer) = Create();
         membership.Snapshot = [Dead("node-a", 5)];
 
         await bridge.HandleEventAsync(new NodeLeft(Identity("node-a", 5)));
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@5", Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_reclaim_persistent_dead_node_only_once_across_ticks()
     {
-        var (bridge, membership, manager) = Create();
+        var (bridge, membership, reclaimer) = Create();
         membership.Snapshot = [Dead("node-a", 5)];
 
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@5", Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_not_suppress_a_new_incarnation_after_predecessor_aged_out()
     {
-        var (bridge, membership, manager) = Create();
+        var (bridge, membership, reclaimer) = Create();
 
         membership.Snapshot = [Dead("node-a", 5)];
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
@@ -105,19 +147,19 @@ public sealed class MembershipRecoveryBridgeTests
         membership.Snapshot = [Dead("node-a", 6)];
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@5", Arg.Any<CancellationToken>());
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@6", Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@6"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_retry_after_a_failed_reclaim_and_not_swallow_silently()
     {
-        var (bridge, membership, manager) = Create();
+        var (bridge, membership, reclaimer) = Create();
         membership.Snapshot = [Dead("node-a", 5)];
 
         // Throw on the first reclaim, succeed afterwards.
-        manager
-            .ReleaseDeadNodeResources("node-a@5", Arg.Any<CancellationToken>())
+        reclaimer
+            .ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("boom"), _ => Task.CompletedTask);
 
         // The event-path failure must not escape the handler (loop continues).
@@ -126,7 +168,7 @@ public sealed class MembershipRecoveryBridgeTests
         // The next reconcile retries because the failed owner was removed from the reclaimed-set.
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await manager.Received(2).ReleaseDeadNodeResources("node-a@5", Arg.Any<CancellationToken>());
+        await reclaimer.Received(2).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
 
     private sealed class FakeMembership : INodeMembership

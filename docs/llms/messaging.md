@@ -460,16 +460,17 @@ services.AddHeadlessMessaging(setup =>
 - `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation.
 - Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
+- `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName)`.
 - Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`.
 
 ### Dependencies
 
-`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`.
+`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Coordination.Abstractions`, `Headless.Coordination.Core`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`. (`Headless.Coordination.Core` hosts the shared `DeadOwnerRecoveryBridge`.)
 
 ### Side Effects
 
-Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, and keyed messaging lock defaults.
+Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service.
 
 ## Headless.Messaging.Dashboard
 
@@ -566,7 +567,7 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 ### What this is and isn't (correctness vs coordination)
 
 - Per-row `LockedUntil` (set to `DispatchTimeout` before each publish/consume attempt — see the [Retry Policy](#retry-policy) section) is the **correctness primitive**. It prevents the same row from being dispatched twice and works whether or not the distributed lock is enabled.
-- Coordination membership is an **acceleration primitive**. With a real `INodeMembership`, retry pickup reconciles live `node@incarnation` owners and pulls `LockedUntil` back to now for rows still leased by dead incarnations. Without Coordination, `Owner` remains `null` and rows recover at the normal `LockedUntil` floor.
+- Dead-owner recovery is a separate **always-on acceleration primitive**, independent of this lock (see [Dead-owner recovery](#dead-owner-recovery)). With a real `INodeMembership` a recovery bridge reclaims rows owned by `Dead` incarnations and pulls `LockedUntil` back to now; without Coordination, `Owner` remains `null` and rows recover at the normal `LockedUntil` floor.
 - The distributed lock is a **coarse-grained pickup mutex**, not a correctness requirement. It gates the entire retry-pickup tick so only one replica scans the backlog at a time.
 - Disabling `UseStorageLock` does not introduce double-dispatch risk. It introduces wasted pickup work on contended backlogs. If an acquired retry lock's `LostToken` fires (EventId 79), no new pickup starts under an already-lost lease; any in-flight dispatch remains governed by the per-row `LockedUntil` lease.
 
@@ -599,18 +600,29 @@ Both names follow the literal pattern shown above. They are constructed internal
 
 `{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once), a finite lease window equal to the current polling interval, and `Monitoring = LockMonitoringMode.AutoExtend`; when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
 
-**When `UseStorageLock = false`** (default): `IDistributedLock` is never called and distributed lock wiring is not required. If a real Coordination membership provider is registered while `UseStorageLock = false`, startup emits EventId 92 because dead-incarnation owner reclaim is disabled in that configuration.
+**When `UseStorageLock = false`** (default): `IDistributedLock` is never called and distributed lock wiring is not required. Dead-owner recovery is unaffected — it runs independently of this lock (see [Dead-owner recovery](#dead-owner-recovery)).
 
-### Coordination recovery decision tree
+### Dead-owner recovery
 
-Dead-incarnation retry recovery depends on both the coarse storage lock and membership:
+Dead-incarnation retry recovery runs **always-on**, independent of `UseStorageLock`. On every messaging host a `DeadOwnerRecoveryBridge` (an `IHostedService` from `Headless.Coordination.Core`, registered unconditionally) drives reclaim from the membership substrate on two triggers:
 
-| Configuration | Behavior | Startup signal |
+- a `WatchAsync` loop that reclaims a node's rows on a `NodeLeft` event (low-latency), and
+- a periodic liveness-snapshot reconcile every `MessagingOptions.DeadNodeReconcileInterval` (default 1 minute) that reclaims every `Dead` incarnation as the authoritative backstop — a watch-loop failure degrades to reconcile, not to no recovery.
+
+Reclaim is **dead-only**: only owners the snapshot classifies `Dead` are reclaimed. A `Suspected` owner (likely still alive and mid-dispatch) is never reclaimed, so a transient GC pause, thread-pool starvation, or network blip does not trigger duplicate delivery. Reclaim is idempotent — an in-memory dedup set suppresses duplicate work between the watch and reconcile paths, and the owner-scoped conditional `UPDATE` (which only pulls leases still in the future) makes a repeated reclaim, or a peer's concurrent reclaim, a no-op. Reclaim writes use `CancellationToken.None` so a reclaim racing host shutdown is not torn mid-write.
+
+`LockedUntil` remains the correctness floor: a row whose lease has already expired is recovered by normal pickup regardless of the bridge, and an owner that ages out of the snapshot before reclaim still recovers via lease expiry.
+
+Because reclaim acts only on the `Dead` set (never `Suspected`), a transient suspect window — GC pause, thread-pool starvation, brief network blip — no longer triggers reclaim, which is the v1 duplicate-delivery footgun this design removes. One operational invariant still holds, though: set Coordination's dead threshold no lower than the largest retry `DispatchTimeout`. A node starved long enough to miss heartbeats is classified `Dead` even if it is still completing an in-flight dispatch; with `DeadThreshold >= DispatchTimeout` that node's lease has already passed its window by the time it is declared `Dead`, so reclaim's `LockedUntil > now` predicate matches nothing and the floor already owns recovery. Set it lower and reclaim can pull a still-valid lease and re-dispatch a row the original owner is still handling.
+
+With only `NullNodeMembership` (no Coordination provider) the bridge is a benign no-op and recovery falls back to the floor — startup logs EventId 88.
+
+| Configuration | Recovery behavior | Startup signal |
 | --- | --- | --- |
-| `UseStorageLock = false` and no Coordination membership | `LockedUntil` floor only; no distributed lock or owner reclaim. | None |
-| `UseStorageLock = false` with real Coordination membership | `LockedUntil` floor only; membership exists but owner reclaim is disabled. | EventId 92 Warning |
-| `UseStorageLock = true` with `NullNodeMembership` | Distributed lock reduces pickup contention; rows recover at the `LockedUntil` floor. | EventId 88 Information |
-| `UseStorageLock = true` with real Coordination membership | Distributed lock plus dead-owner reclaim. If membership query fails, reclaim skips for that tick while dispatch continues. Configure Coordination's dead threshold no lower than the largest retry `DispatchTimeout`, so reclaim cannot shorten a valid in-flight lease. | EventId 89 Debug on transient query failure; EventId 93 Error after three consecutive failures |
+| No Coordination membership (`NullNodeMembership`) | Floor-only (`LockedUntil`); the bridge is a benign no-op. | EventId 88 Information |
+| Real Coordination membership | Always-on dead-owner reclaim: `NodeLeft` watch + `DeadNodeReconcileInterval` reconcile, dead-only. | None on success; bridge EventIds 1–3 on failure |
+
+`UseStorageLock` is orthogonal to recovery — it only serializes retry *pickup* across replicas, it does not gate reclaim.
 
 ### EventIds
 
@@ -623,12 +635,17 @@ Dead-incarnation retry recovery depends on both the coarse storage lock and memb
 | 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 | 83 | `ReceivedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the received-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
 | 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
-| 88 | `MessagingRecoveryUsingLockedUntilFloorOnly` | Information | `UseStorageLock = true` but only `NullNodeMembership` is registered. | Register a Coordination provider to accelerate dead-incarnation retry recovery, or accept `LockedUntil`-floor-only recovery. |
-| 89 | `CoordinationMembershipQueryFailed` | Debug | `GetLiveNodesAsync` threw a transient exception; reclaim skipped for this tick. | Investigate Coordination store health if frequent; dispatch continues normally. |
-| 90 | `MessagingDeadOwnerReclaimFailed` | Warning | Dead-owner reclaim call threw; dispatch continues, reclaim retries next cycle. | Investigate storage health if persistent. |
-| 91 | `MessagingDeadOwnerRowsReclaimed` | Information | Dead-owner reclaim succeeded; N orphaned rows returned to the retry queue. | Informational — no action needed. |
-| 92 | `MessagingRecoveryDisabledWithoutStorageLock` | Warning | Real Coordination membership registered while `UseStorageLock = false`. | Enable `UseStorageLock` through `MessagingBuilder.UseDistributedLock(...)`, or accept `LockedUntil`-floor-only recovery. |
-| 93 | `CoordinationMembershipQueryFailureEscalated` | Error | Three consecutive membership-query failures. | Investigate Coordination store health; retry dispatch continues and recovery falls back to `LockedUntil`. |
+| 88 | `MessagingRecoveryUsingLockedUntilFloorOnly` | Information | Only `NullNodeMembership` is registered, so dead-owner recovery falls back to the `LockedUntil` floor (independent of `UseStorageLock`). | Register a Coordination provider to enable dead-owner reclaim, or accept floor-only recovery. |
+| 91 | `MessagingDeadOwnerRowsReclaimed` | Information | The dead-owner reclaimer recovered N orphaned rows (published or received) for a dead owner. | Informational — no action needed. |
+| 94 | `MessagingDeadThresholdBelowDispatchTimeout` | Warning | A real Coordination membership is registered but `DeadThreshold` is below the retry `DispatchTimeout`, so a still-alive node crossing the dead threshold mid-dispatch is reclaimed and re-dispatched. | Set Coordination `DeadThreshold` >= the retry `DispatchTimeout`. |
+
+The always-on `DeadOwnerRecoveryBridge` logs failures under its own category, `Headless.Coordination.DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` (EventIds restart at 1 within that category):
+
+| EventId | Name | Severity | Trigger | Remediation |
+| --- | --- | --- | --- | --- |
+| 1 | `MembershipWatchFailed` | Error | The `WatchAsync` event loop failed; recovery falls back to the periodic reconcile. | Investigate Coordination store health if frequent; the reconcile backstop still recovers. |
+| 2 | `DeadNodeReconcileFailed` | Error | A reconcile tick failed. | Investigate Coordination/storage health if persistent; retries on the next `DeadNodeReconcileInterval`. |
+| 3 | `DeadNodeReclaimFailed` | Error | A single dead owner's reclaim threw; the owner is removed from the dedup set and retried on the next reconcile. | Investigate storage health if persistent. |
 
 ### Pros and cons
 

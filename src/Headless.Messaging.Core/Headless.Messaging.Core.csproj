@@ -46,6 +46,7 @@
     <ProjectReference Include="..\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
