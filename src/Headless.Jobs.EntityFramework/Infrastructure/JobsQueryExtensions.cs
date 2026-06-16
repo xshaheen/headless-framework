@@ -15,9 +15,15 @@ public static class JobsQueryExtensions
         // A non-terminal row is claimable if it is already mine (crash re-pickup), never leased, or its lease
         // deadline has passed (lease-expiry self-heal). `now` is the injected application clock (KTD1), bound as a
         // parameter so EF translates `LockedUntil <= @now` — never the DB server clock, for InMemory↔SQL parity.
+        // The lease-expiry arm is gated on OnNodeDeath == Retry (KTD5/#315): only idempotent jobs are speculatively
+        // re-claimed when their lease lapses; MarkFailed/Skip rows are left for the dead-node sweep to transition.
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= now)
+            && (
+                e.OwnerId == ownerId
+                || e.LockedUntil == null
+                || (e.LockedUntil <= now && e.OnNodeDeath == NodeDeathPolicy.Retry)
+            )
         );
     }
 
@@ -30,7 +36,11 @@ public static class JobsQueryExtensions
     {
         return q.Where(e =>
             (e.Status == JobStatus.Idle || e.Status == JobStatus.Queued)
-            && (e.OwnerId == ownerId || e.LockedUntil == null || e.LockedUntil <= now)
+            && (
+                e.OwnerId == ownerId
+                || e.LockedUntil == null
+                || (e.LockedUntil <= now && e.OnNodeDeath == NodeDeathPolicy.Retry)
+            )
         );
     }
 

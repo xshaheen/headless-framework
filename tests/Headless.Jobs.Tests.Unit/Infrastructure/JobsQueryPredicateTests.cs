@@ -14,19 +14,11 @@ public sealed class JobsQueryPredicateTests
 
     private const string _Owner = "node-a@5";
 
-    private static FakeTimeJob TimeJob(JobStatus status, string? ownerId, DateTime? lockedUntil = null) =>
-        new()
-        {
-            Id = Guid.NewGuid(),
-            Status = status,
-            OwnerId = ownerId,
-            LockedUntil = lockedUntil,
-        };
-
-    private static CronJobOccurrenceEntity<FakeCronJob> Occurrence(
+    private static FakeTimeJob TimeJob(
         JobStatus status,
         string? ownerId,
-        DateTime? lockedUntil = null
+        DateTime? lockedUntil = null,
+        NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry
     ) =>
         new()
         {
@@ -34,6 +26,22 @@ public sealed class JobsQueryPredicateTests
             Status = status,
             OwnerId = ownerId,
             LockedUntil = lockedUntil,
+            OnNodeDeath = onNodeDeath,
+        };
+
+    private static CronJobOccurrenceEntity<FakeCronJob> Occurrence(
+        JobStatus status,
+        string? ownerId,
+        DateTime? lockedUntil = null,
+        NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry
+    ) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Status = status,
+            OwnerId = ownerId,
+            LockedUntil = lockedUntil,
+            OnNodeDeath = onNodeDeath,
         };
 
     [Fact]
@@ -174,6 +182,57 @@ public sealed class JobsQueryPredicateTests
         var selected = new[] { expired, liveOther, neverLeased }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
 
         selected.Should().BeEquivalentTo([expired, neverLeased]);
+    }
+
+    #endregion
+
+    #region WhereCanAcquire OnNodeDeath gate (#315)
+
+    [Fact]
+    public void WhereCanAcquire_re_claims_an_expired_lease_only_when_policy_is_Retry()
+    {
+        var retry = TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
+        var markFailed = TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.MarkFailed);
+        var skip = TimeJob(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Skip);
+
+        var selected = new[] { retry, markFailed, skip }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
+
+        // Only the idempotent (Retry) row is speculatively re-claimed on lease expiry; the others are left for the sweep.
+        selected.Should().ContainSingle().Which.Should().Be(retry);
+    }
+
+    [Fact]
+    public void WhereCanAcquire_gate_does_not_block_the_unowned_arm_for_non_Retry_policies()
+    {
+        // A never-leased Skip/MarkFailed row is still freely claimable — the gate narrows only the lease-expiry arm.
+        var skipUnowned = TimeJob(JobStatus.Idle, ownerId: null, lockedUntil: null, NodeDeathPolicy.Skip);
+        var failUnowned = TimeJob(JobStatus.Queued, ownerId: null, lockedUntil: null, NodeDeathPolicy.MarkFailed);
+
+        var selected = new[] { skipUnowned, failUnowned }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
+
+        selected.Should().BeEquivalentTo([skipUnowned, failUnowned]);
+    }
+
+    [Fact]
+    public void WhereCanAcquire_gate_does_not_block_the_self_owned_arm_for_non_Retry_policies()
+    {
+        // A future-leased Skip row owned by ME is still re-claimable (crash recovery) regardless of policy.
+        var skipMine = TimeJob(JobStatus.Queued, _Owner, _Now.AddMinutes(5), NodeDeathPolicy.Skip);
+
+        var selected = new[] { skipMine }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
+
+        selected.Should().ContainSingle().Which.Should().Be(skipMine);
+    }
+
+    [Fact]
+    public void WhereCanAcquire_gate_applies_to_occurrences_too()
+    {
+        var retry = Occurrence(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Retry);
+        var skip = Occurrence(JobStatus.Idle, "node-b@2", _Now.AddMinutes(-1), NodeDeathPolicy.Skip);
+
+        var selected = new[] { retry, skip }.AsQueryable().WhereCanAcquire(_Owner, _Now).ToArray();
+
+        selected.Should().ContainSingle().Which.Should().Be(retry);
     }
 
     #endregion

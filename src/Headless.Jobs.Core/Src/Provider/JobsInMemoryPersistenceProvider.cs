@@ -1238,21 +1238,31 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private bool _CanAcquire(TTimeJob job)
     {
-        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR lease expired).
-        // `now` comes from the injected TimeProvider (application clock, not a DB clock) for InMemory↔SQL parity.
+        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
+        // OnNodeDeath == Retry)). `now` comes from the injected TimeProvider (application clock, not a DB clock)
+        // for InMemory↔SQL parity. The lease-expiry arm is gated on Retry (KTD5/#315).
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         return (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
-            && (job.OwnerId == _ownerId || job.LockedUntil == null || job.LockedUntil <= now);
+            && (
+                job.OwnerId == _ownerId
+                || job.LockedUntil == null
+                || (job.LockedUntil <= now && job.OnNodeDeath == NodeDeathPolicy.Retry)
+            );
     }
 
     private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
     {
-        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR lease expired).
+        // Mirror EF WhereCanAcquire: (Status is Idle OR Queued) AND (mine OR never leased OR (lease expired AND
+        // OnNodeDeath == Retry)). The lease-expiry arm is gated on Retry (KTD5/#315).
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         return (occurrence.Status == JobStatus.Idle || occurrence.Status == JobStatus.Queued)
-            && (occurrence.OwnerId == _ownerId || occurrence.LockedUntil == null || occurrence.LockedUntil <= now);
+            && (
+                occurrence.OwnerId == _ownerId
+                || occurrence.LockedUntil == null
+                || (occurrence.LockedUntil <= now && occurrence.OnNodeDeath == NodeDeathPolicy.Retry)
+            );
     }
 
     private static TTimeJob _CloneTicker(TTimeJob job)
