@@ -10,17 +10,6 @@ public abstract class CacheConformanceTestsBase : TestBase
 {
     protected abstract ICache CreateCache(string keyPrefix);
 
-    /// <summary>
-    /// A cache whose serializer treats <c>byte[]</c> as an opaque passthrough (no JSON framing) — the exact
-    /// configuration the output-cache / BCL adapters wire (<c>RawBytesSerializer</c>). Cross-path byte fidelity
-    /// (raw write read by the generic path and vice-versa, <see cref="should_read_raw_written_payload_via_generic_path"/>
-    /// / <see cref="should_read_generic_written_payload_via_buffer_path"/>) is only a coherent contract when the
-    /// generic path does not re-encode the payload. Providers whose generic <c>byte[]</c> path runs through a
-    /// structured serializer (Redis) override this to supply a raw-serializer cache; in-memory providers that store
-    /// the boxed array verbatim keep the default.
-    /// </summary>
-    protected virtual ICache CreateRawBufferCache(string keyPrefix) => CreateCache(keyPrefix);
-
     protected virtual ValueTask ResetAsync() => ValueTask.CompletedTask;
 
     protected virtual ValueTask AdvancePastExpirationAsync(TimeSpan expiration) => ValueTask.CompletedTask;
@@ -1216,7 +1205,7 @@ public abstract class CacheConformanceTestsBase : TestBase
     public virtual async Task should_read_raw_written_payload_via_generic_path()
     {
         await ResetAsync();
-        var cache = CreateRawBufferCache(Faker.Random.AlphaNumeric(8));
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
         var buffer = (IBufferCache)cache;
         var key = Faker.Random.AlphaNumeric(10);
         var payload = Faker.Random.Bytes(512);
@@ -1237,7 +1226,7 @@ public abstract class CacheConformanceTestsBase : TestBase
     public virtual async Task should_read_generic_written_payload_via_buffer_path()
     {
         await ResetAsync();
-        var cache = CreateRawBufferCache(Faker.Random.AlphaNumeric(8));
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
         var buffer = (IBufferCache)cache;
         var key = Faker.Random.AlphaNumeric(10);
         var payload = Faker.Random.Bytes(512);

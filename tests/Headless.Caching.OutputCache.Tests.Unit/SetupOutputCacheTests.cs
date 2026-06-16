@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Serializer;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,30 +10,6 @@ namespace Tests;
 public sealed class SetupOutputCacheTests
 {
     private const string _CacheName = "output-cache";
-
-    [Fact]
-    public void should_reject_a_serializer_configured_on_the_output_cache_instance()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when — the caller wrongly configures a serializer on the store's named cache; it would silently compete
-        // with the raw-bytes codec the store owns (last keyed registration would win)
-        var action = () =>
-            services.AddHeadlessCaching(setup =>
-                setup.UseOutputCache(
-                    options => options.CacheName = _CacheName,
-                    instance =>
-                    {
-                        instance.RegisterProvider(static _ => { });
-                        instance.SetSerializerFactory(static _ => new RawBytesSerializer());
-                    }
-                )
-            );
-
-        // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*manages its own raw-bytes serializer*");
-    }
 
     [Fact]
     public void should_reject_a_reserved_cache_name()
@@ -102,14 +77,13 @@ public sealed class SetupOutputCacheTests
     }
 
     [Fact]
-    public void should_register_the_named_cache_and_raw_bytes_serializer_keyed_by_cache_name()
+    public void should_register_the_named_cache_keyed_by_cache_name()
     {
         // given
         using var provider = _BuildProvider(addOutputCacheFirst: true);
 
-        // when / then
+        // when / then — byte[] is the cache's native wire format, so the store wires no serializer
         provider.GetRequiredKeyedService<ICache>(_CacheName).Should().NotBeNull();
-        provider.GetRequiredKeyedService<ISerializer>(_CacheName).Should().BeOfType<RawBytesSerializer>();
     }
 
     private static ServiceProvider _BuildProvider(bool addOutputCacheFirst)

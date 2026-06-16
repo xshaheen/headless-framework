@@ -2,7 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.Serializer;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -24,8 +23,9 @@ public static class SetupOutputCache
         /// <summary>
         /// Adds a named Headless cache configured for raw <see cref="byte"/> array values and registers it as the
         /// ASP.NET Core <see cref="IOutputCacheStore"/>, making <c>AddOutputCache()</c> distributed and tag-aware.
-        /// The adapter owns the raw-bytes codec internally; the <paramref name="configureCache"/> callback only
-        /// selects the backing provider (for example <c>UseRedis</c>) — do not configure a serializer on it.
+        /// <see cref="byte"/> arrays are the cache's native wire format (stored verbatim, never through a
+        /// serializer), so the <paramref name="configureCache"/> callback only selects the backing provider (for
+        /// example <c>UseRedis</c>).
         /// </summary>
         /// <param name="setupAction">Configuration for the store options.</param>
         /// <param name="configureCache">Configuration for the named Headless cache provider.</param>
@@ -44,25 +44,9 @@ public static class SetupOutputCache
             var cacheName = Argument.IsNotNullOrWhiteSpace(configuredOptions.CacheName);
             Argument.IsPositive(configuredOptions.DefaultExpiration);
 
-            // AddNamed validates the reserved-key/uniqueness rules and the single-provider invariant. The adapter
-            // owns the raw-bytes codec (_AddOutputCacheCore registers it keyed by cache name), so a serializer set
-            // on the instance would silently compete with it — reject it loudly instead of letting last-write-wins
-            // decide.
-            setup.AddNamed(
-                cacheName,
-                instance =>
-                {
-                    configureCache(instance);
-
-                    if (instance.SerializerFactory is not null)
-                    {
-                        throw new InvalidOperationException(
-                            $"The output-cache store manages its own raw-bytes serializer for cache '{cacheName}'. "
-                                + "Do not call WithSerializer in the configureCache callback."
-                        );
-                    }
-                }
-            );
+            // AddNamed validates the reserved-key/uniqueness rules and the single-provider invariant. byte[] is the
+            // cache's native wire format, so the callback only selects the backing provider.
+            setup.AddNamed(cacheName, configureCache);
 
             setup.RegisterCrossCuttingExtension(services => services._AddOutputCacheCore(configuredOptions));
 
@@ -74,17 +58,10 @@ public static class SetupOutputCache
     {
         private IServiceCollection _AddOutputCacheCore(HeadlessOutputCacheStoreOptions configuredOptions)
         {
-            var cacheName = configuredOptions.CacheName;
-
             // The backing cache provider (InMemory/Redis named core) resolves TimeProvider from DI but does not
             // register it; supply the system clock so the named instance composes. The store itself has no clock
             // dependency — output-cache duration mapping is a straight pass-through.
             services.TryAddSingleton(TimeProvider.System);
-
-            // The store's named cache is byte[]-only by construction. Register the raw codec keyed by the cache
-            // name so the Redis named-core resolution (GetKeyedService(name) ?? global) picks it up without the
-            // caller configuring a serializer on the instance.
-            services.AddKeyedSingleton<ISerializer>(cacheName, (_, _) => new RawBytesSerializer());
 
             services.Configure<HeadlessOutputCacheStoreOptions, HeadlessOutputCacheStoreOptionsValidator>(options =>
             {

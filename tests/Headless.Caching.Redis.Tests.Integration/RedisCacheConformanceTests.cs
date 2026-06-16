@@ -12,11 +12,6 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 {
     protected override ICache CreateCache(string keyPrefix) => _CreateCache(keyPrefix, new SystemJsonSerializer());
 
-    // Cross-path byte fidelity (raw write read by the generic byte[] path and vice-versa) only holds when the
-    // generic path does not re-frame the payload. Redis runs byte[] through the configured serializer, so use a
-    // raw passthrough here — the exact serializer the output-cache / BCL adapters wire (RawBytesSerializer).
-    protected override ICache CreateRawBufferCache(string keyPrefix) => _CreateCache(keyPrefix, new RawByteSerializer());
-
     private ICache _CreateCache(string keyPrefix, ISerializer serializer)
     {
         var options = new RedisCacheOptions
@@ -27,32 +22,6 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 
         var logger = LoggerFactory.CreateLogger<RedisCache>();
         return new RedisCache(serializer, TimeProvider.System, options, fixture.ScriptsLoader, logger);
-    }
-
-    /// <summary>
-    /// Test-local stand-in for the framework's internal <c>RawBytesSerializer</c> (not visible across the assembly
-    /// boundary): a zero-transform <c>byte[]</c> passthrough so a value written raw and read via the generic path is
-    /// byte-identical. Only <c>byte[]</c> is supported — the cross-path tests deal exclusively in raw payloads.
-    /// </summary>
-    private sealed class RawByteSerializer : ISerializer
-    {
-        public T? Deserialize<T>(Stream data)
-        {
-            using var buffer = new MemoryStream();
-            data.CopyTo(buffer);
-
-            return (T)(object)buffer.ToArray();
-        }
-
-        public void Serialize<T>(T value, Stream output)
-        {
-            var bytes = (byte[])(object)value!;
-            output.Write(bytes, 0, bytes.Length);
-        }
-
-        public object? Deserialize(Stream data, Type objectType) => Deserialize<byte[]>(data);
-
-        public void Serialize(object? value, Stream output) => Serialize((byte[])value!, output);
     }
 
     protected override async ValueTask ResetAsync()
