@@ -618,13 +618,7 @@ public sealed partial class HybridCache
         // returns no tag metadata, so it would seed a tagless L1 entry that EvictByTagAsync can never invalidate.
         if (l2Cache is IFactoryCacheStore l2Store && LocalCache is IFactoryCacheStore l1StoreForSeed)
         {
-            return await _BufferColdReadFromFramedL2Async(
-                    key,
-                    destination,
-                    l2Store,
-                    l1StoreForSeed,
-                    cancellationToken
-                )
+            return await _BufferColdReadFromFramedL2Async(key, destination, l2Store, l1StoreForSeed, cancellationToken)
                 .ConfigureAwait(false);
         }
 
