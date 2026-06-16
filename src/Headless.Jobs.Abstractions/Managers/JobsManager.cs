@@ -316,7 +316,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
             _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
 
-            await notificationHubSender.AddCronJobNotifyAsync(entity);
+            await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
 
             return new JobResult<TCronJob>(entity);
         }

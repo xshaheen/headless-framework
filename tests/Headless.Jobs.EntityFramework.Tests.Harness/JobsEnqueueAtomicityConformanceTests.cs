@@ -203,7 +203,9 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     ct
                 );
 
-            await act.Should().ThrowAsync<InvalidOperationException>();
+            (await act.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(sentinel);
             (await fixture.CountCronJobsAsync(ct)).Should().Be(before);
         }
         finally
