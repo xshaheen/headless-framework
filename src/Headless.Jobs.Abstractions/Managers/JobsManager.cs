@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.CommitCoordination;

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs.BackgroundServices;
