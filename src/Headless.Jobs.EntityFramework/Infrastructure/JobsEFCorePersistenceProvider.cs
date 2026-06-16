@@ -40,6 +40,36 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     private readonly DbContextOptions<TDbContext> _coordinatedWriteOptions =
         coordinatedWriteOptions;
 
+    // Compiled (DbContextOptions<TDbContext>) constructor delegate — the same constructor EF Core's DbContext pooling
+    // requires, so any context usable with the pooled factory works here too. Cached per closed generic so coordinated
+    // writes never pay reflection, and a context missing that constructor fails with a clear message instead of the
+    // raw MissingMethodException Activator.CreateInstance would surface mid-transaction.
+    private static readonly Func<DbContextOptions<TDbContext>, TDbContext> _CreateContext =
+        _BuildContextFactory();
+
+    private static Func<DbContextOptions<TDbContext>, TDbContext> _BuildContextFactory()
+    {
+        var constructor = typeof(TDbContext).GetConstructor([typeof(DbContextOptions<TDbContext>)]);
+
+        if (constructor is null)
+        {
+            throw new InvalidOperationException(
+                $"Coordinated job writes require {typeof(TDbContext).Name} to declare a public constructor accepting a "
+                    + $"single DbContextOptions<{typeof(TDbContext).Name}> argument — the same constructor EF Core's "
+                    + "DbContext pooling requires."
+            );
+        }
+
+        var optionsParameter = Expression.Parameter(typeof(DbContextOptions<TDbContext>), "options");
+
+        return Expression
+            .Lambda<Func<DbContextOptions<TDbContext>, TDbContext>>(
+                Expression.New(constructor, optionsParameter),
+                optionsParameter
+            )
+            .Compile();
+    }
+
     #region Coordinated_Write_Implementations
 
     async Task ICoordinatedJobWriter<TTimeJob, TCronJob>.WriteTimeJobsAsync(
@@ -105,8 +135,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             reboundRelational
         );
 
-        var dbContext = (TDbContext)
-            Activator.CreateInstance(typeof(TDbContext), optionsBuilder.Options)!;
+        var dbContext = _CreateContext(optionsBuilder.Options);
         dbContext.Database.UseTransaction(transaction);
 
         return dbContext;

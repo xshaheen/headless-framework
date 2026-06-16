@@ -7,17 +7,19 @@ using Headless.Jobs.Exceptions;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Managers;
 
-internal class JobsManager<TTimeJob, TCronJob>(
+internal partial class JobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
     IJobsHostScheduler jobsHostScheduler,
     TimeProvider timeProvider,
     IJobsNotificationHubSender notificationHubSender,
     JobsExecutionContext executionContext,
     IJobsDispatcher dispatcher,
-    ICurrentCommitCoordinator currentCommitCoordinator
+    ICurrentCommitCoordinator currentCommitCoordinator,
+    ILogger<JobsManager<TTimeJob, TCronJob>> logger
 ) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -28,13 +30,15 @@ internal class JobsManager<TTimeJob, TCronJob>(
     private readonly ICurrentCommitCoordinator _currentCommitCoordinator = Argument.IsNotNull(
         currentCommitCoordinator
     );
+    private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
 
     // Captured ambient coordinator + live relational transaction for one coordinated enqueue. Captured SYNCHRONOUSLY
     // in the caller's frame before the first await — re-reading ICurrentCommitCoordinator.Current after an await could
     // observe a torn-down AsyncLocal scope and silently take the direct path, breaking atomicity.
     private readonly record struct CoordinatedJobContext(
         ICommitCoordinator Coordinator,
-        IRelationalCommitContext Relational
+        IRelationalCommitContext Relational,
+        ICoordinatedJobWriter<TTimeJob, TCronJob> Writer
     );
 
     // Routing decision read once, synchronously, before any await (KTD-1):
@@ -67,7 +71,9 @@ internal class JobsManager<TTimeJob, TCronJob>(
             );
         }
 
-        return new CoordinatedJobContext(coordinator, relational);
+        // Resolve the writer here — still synchronous, before the caller's first await — so a relational coordinator
+        // wired to a non-coordinated provider fails loud at capture (KTD-2) rather than mid-write.
+        return new CoordinatedJobContext(coordinator, relational, _RequireCoordinatedWriter());
     }
 
     private ICoordinatedJobWriter<TTimeJob, TCronJob> _RequireCoordinatedWriter()
@@ -87,11 +93,40 @@ internal class JobsManager<TTimeJob, TCronJob>(
         );
     }
 
+    // Registers a coordinated enqueue's side effects to run after the caller's transaction commits. The row is already
+    // durable when these run, so a failure cannot roll the commit back: it is logged against the job scope and the
+    // scheduler's polling sweep is the recovery path (KTD-4). Swallowing keeps one subsystem's deferred failure from
+    // aborting the shared commit; the OnCommit interceptor would otherwise absorb it without the job identity.
+    private void _DeferSideEffects(
+        ICommitCoordinator coordinator,
+        string jobScope,
+        Func<CancellationToken, Task> sideEffects
+    )
+    {
+        coordinator.OnCommit(
+            async (_, ct) =>
+            {
+                try
+                {
+                    await sideEffects(ct).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    Log.DeferredJobSideEffectsFailed(_logger, jobScope, e);
+                }
+            }
+        );
+    }
+
+    // Coordinated-path note: when a relational commit coordinator is active, AddAsync THROWS (rather than returning a
+    // failed JobResult) if the transaction is dead/completed or the provider cannot write inside it — fail-loud per
+    // KTD-2. Validation and direct-path persistence errors are still surfaced through JobResult.
     Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.AddAsync(
         TCronJob entity,
         CancellationToken cancellationToken
     ) => _AddCronJobAsync(entity, cancellationToken);
 
+    // See the coordinated-path note on ICronJobManager.AddAsync above — the same throw-vs-JobResult asymmetry applies.
     Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.AddAsync(
         TTimeJob entity,
         CancellationToken cancellationToken
@@ -177,7 +212,6 @@ internal class JobsManager<TTimeJob, TCronJob>(
         // collapsing into a failed JobResult — a swallowed failure here would let the caller's transaction commit
         // without the job row, the exact divergence this feature prevents. Both reads are synchronous (KTD-1).
         var coordinated = _TryCaptureCoordinatedContext();
-        var coordinatedWriter = coordinated is null ? null : _RequireCoordinatedWriter();
 
         try
         {
@@ -190,13 +224,14 @@ internal class JobsManager<TTimeJob, TCronJob>(
                 // JobResult.IsSucceeded here means the row was buffered into the transaction — it guarantees the row
                 // committed, not that the deferred dispatch ran. A post-commit dispatch failure is recovered by the
                 // scheduler's polling sweep.
-                await coordinatedWriter!
-                    .WriteTimeJobsAsync([entity], context.Relational, cancellationToken)
+                await context
+                    .Writer.WriteTimeJobsAsync([entity], context.Relational, cancellationToken)
                     .ConfigureAwait(false);
 
-                context.Coordinator.OnCommit(
-                    (_, ct) =>
-                        new ValueTask(_RunTimeJobSideEffectsAsync(entity, now, executionTime, ct))
+                _DeferSideEffects(
+                    context.Coordinator,
+                    entity.Id.ToString(),
+                    ct => _RunTimeJobSideEffectsAsync(entity, now, executionTime, ct)
                 );
 
                 return new JobResult<TTimeJob>(entity);
@@ -283,26 +318,25 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
         // Fail loud before the try (see _AddTimeJobAsync) so dead-transaction / mis-wire propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
-        var coordinatedWriter = coordinated is null ? null : _RequireCoordinatedWriter();
 
         try
         {
             if (coordinated is { } context)
             {
-                await coordinatedWriter!
-                    .WriteCronJobsAsync([entity], context.Relational, cancellationToken)
+                await context
+                    .Writer.WriteCronJobsAsync([entity], context.Relational, cancellationToken)
                     .ConfigureAwait(false);
 
                 // Cron has no immediate-dispatch branch; defer cache-invalidation + scheduler-restart + notify (KTD-4).
-                context.Coordinator.OnCommit(
-                    (_, ct) =>
-                        new ValueTask(
-                            _RunCoordinatedCronJobSideEffectsAsync(
-                                coordinatedWriter,
-                                entity,
-                                nextOccurrence,
-                                ct
-                            )
+                _DeferSideEffects(
+                    context.Coordinator,
+                    entity.Id.ToString(),
+                    ct =>
+                        _RunCoordinatedCronJobSideEffectsAsync(
+                            context.Writer,
+                            entity,
+                            nextOccurrence,
+                            ct
                         )
                 );
 
@@ -606,25 +640,28 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
         // Fail loud before the try (see _AddTimeJobAsync) so dead-transaction / mis-wire propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
-        var coordinatedWriter = coordinated is null ? null : _RequireCoordinatedWriter();
 
         try
         {
             if (coordinated is { } context)
             {
                 // Route every entity through the seam in insertion order; defer the batch side effects once (KTD-4/R5).
-                await coordinatedWriter!
-                    .WriteTimeJobsAsync(entities.ToArray(), context.Relational, cancellationToken)
+                await context
+                    .Writer.WriteTimeJobsAsync(
+                        entities.ToArray(),
+                        context.Relational,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
 
-                context.Coordinator.OnCommit(
-                    (_, ct) =>
-                        new ValueTask(
-                            _RunTimeJobsBatchSideEffectsAsync(
-                                immediateTickers,
-                                earliestForNonImmediate,
-                                ct
-                            )
+                _DeferSideEffects(
+                    context.Coordinator,
+                    $"time batch ({entities.Count})",
+                    ct =>
+                        _RunTimeJobsBatchSideEffectsAsync(
+                            immediateTickers,
+                            earliestForNonImmediate,
+                            ct
                         )
                 );
 
@@ -735,29 +772,28 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
         // Fail loud before the try (see _AddTimeJobAsync) so dead-transaction / mis-wire propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
-        var coordinatedWriter = coordinated is null ? null : _RequireCoordinatedWriter();
 
         try
         {
             if (coordinated is { } context)
             {
-                await coordinatedWriter!
-                    .WriteCronJobsAsync(
+                await context
+                    .Writer.WriteCronJobsAsync(
                         validEntities.ToArray(),
                         context.Relational,
                         cancellationToken
                     )
                     .ConfigureAwait(false);
 
-                context.Coordinator.OnCommit(
-                    (_, ct) =>
-                        new ValueTask(
-                            _RunCoordinatedCronJobsBatchSideEffectsAsync(
-                                coordinatedWriter,
-                                validEntities,
-                                nextOccurrences,
-                                ct
-                            )
+                _DeferSideEffects(
+                    context.Coordinator,
+                    $"cron batch ({validEntities.Count})",
+                    ct =>
+                        _RunCoordinatedCronJobsBatchSideEffectsAsync(
+                            context.Writer,
+                            validEntities,
+                            nextOccurrences,
+                            ct
                         )
                 );
 
@@ -778,7 +814,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
                 // Send notifications for all
                 foreach (var entity in validEntities)
                 {
-                    await notificationHubSender.AddCronJobNotifyAsync(entity);
+                    await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
                 }
             }
 
@@ -1013,5 +1049,19 @@ internal class JobsManager<TTimeJob, TCronJob>(
         }
 
         return new JobResult<TCronJob>(affectedRows);
+    }
+
+    private static partial class Log
+    {
+        [LoggerMessage(
+            LogLevel.Warning,
+            "Deferred post-commit side effects failed for {JobScope}. The job row is committed; the scheduler's "
+                + "polling sweep is the recovery path."
+        )]
+        public static partial void DeferredJobSideEffectsFailed(
+            ILogger logger,
+            string jobScope,
+            Exception exception
+        );
     }
 }

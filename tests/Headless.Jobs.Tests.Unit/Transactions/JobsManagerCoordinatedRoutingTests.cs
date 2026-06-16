@@ -11,6 +11,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Transactions;
 
@@ -192,10 +193,13 @@ public sealed class JobsManagerCoordinatedRoutingTests
         var result = await sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
 
         result.IsSucceeded.Should().BeTrue();
+        // R3: the batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
         await sut
             .Writer.Received(1)
             .WriteTimeJobsAsync(
-                Arg.Is<TimeJobEntity[]>(a => a.Length == 2),
+                Arg.Is<TimeJobEntity[]>(a =>
+                    a.Length == 2 && a[0].Id == jobs[0].Id && a[1].Id == jobs[1].Id
+                ),
                 Arg.Any<IRelationalCommitContext>(),
                 Arg.Any<CancellationToken>()
             );
@@ -253,9 +257,50 @@ public sealed class JobsManagerCoordinatedRoutingTests
     }
 
     [Fact]
+    public async Task Cron_batch_live_coordinator_routes_all_and_defers_side_effects_once()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
+
+        var result = await sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
+
+        result.IsSucceeded.Should().BeTrue();
+        // R3: the batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
+        await sut
+            .Writer.Received(1)
+            .WriteCronJobsAsync(
+                Arg.Is<CronJobEntity[]>(a =>
+                    a.Length == 2 && a[0].Id == crons[0].Id && a[1].Id == crons[1].Id
+                ),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+        sut.Coordinator!.OnCommitCount.Should().Be(1);
+
+        // Cache invalidation + scheduler + per-entity notify must be deferred to commit, never on a pre-commit snapshot.
+        await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
+        await sut.Notification.DidNotReceive().AddCronJobNotifyAsync(Arg.Any<CronJobEntity>());
+
+        await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
+
+        // Cache invalidation fires exactly once for the batch; scheduler restarts once; notify fires per entity.
+        await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
+        sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
+        foreach (var cron in crons)
+        {
+            await sut.Notification.Received(1).AddCronJobNotifyAsync(cron);
+        }
+    }
+
+    [Fact]
     public void Jobs_only_host_resolves_manager_with_null_coordinator_fallback()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddHeadlessJobs(options => options.DisableBackgroundServices());
         using var provider = services.BuildServiceProvider();
 
@@ -340,7 +385,8 @@ public sealed class JobsManagerCoordinatedRoutingTests
             notification,
             new JobsExecutionContext(),
             dispatcher,
-            new FakeCurrentCommitCoordinator(coordinator)
+            new FakeCurrentCommitCoordinator(coordinator),
+            NullLogger<JobsManager<TimeJobEntity, CronJobEntity>>.Instance
         );
 
         return new Sut

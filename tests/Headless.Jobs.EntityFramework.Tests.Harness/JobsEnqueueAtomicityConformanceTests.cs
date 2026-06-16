@@ -105,6 +105,8 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
+    // Two independent AddAsync calls co-commit atomically (count == 2). Cross-call ordering is caller-determined, not
+    // an R3 guarantee; R3 (insertion order within one write) is asserted at the unit level on the seam array.
     public virtual async Task two_enqueues_in_one_scope_both_commit()
     {
         var ct = TestContext.Current.CancellationToken;

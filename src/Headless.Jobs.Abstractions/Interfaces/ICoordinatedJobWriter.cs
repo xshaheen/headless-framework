@@ -20,8 +20,7 @@ namespace Headless.Jobs.Interfaces;
 /// rollback). <see cref="InvalidateCronExpressionsCacheAsync" /> is exposed here because the cron-expressions cache
 /// is owned by the provider; the manager registers it on commit rather than letting it fire on a pre-commit snapshot.
 /// </remarks>
-[PublicAPI]
-public interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
+internal interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
@@ -48,7 +47,8 @@ public interface ICoordinatedJobWriter<in TTimeJob, in TCronJob>
     /// <summary>
     /// Invalidates the cron-expressions cache. The manager registers this on <c>OnCommit</c> for the coordinated cron
     /// path so the cache is dropped only after the caller's transaction commits — never on a pre-commit snapshot.
-    /// Best-effort: the durable store remains authoritative if the cache layer is unavailable.
+    /// Best-effort and deliberately without a <see cref="CancellationToken" />: it runs post-commit as a fire-after-commit
+    /// invalidation, and the durable store remains authoritative if the cache layer is unavailable.
     /// </summary>
     Task InvalidateCronExpressionsCacheAsync();
 }
