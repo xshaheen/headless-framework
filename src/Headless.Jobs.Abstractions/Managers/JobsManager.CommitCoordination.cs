@@ -85,6 +85,8 @@ internal partial class JobsManager<TTimeJob, TCronJob>
         Func<CancellationToken, Task> sideEffects
     )
     {
+        // The IDisposable unsubscribe handle is intentionally discarded (as in MessageOutboxBuffer): once the row is
+        // written the side effects must fire unconditionally on commit, so there is nothing to cancel.
         coordinator.OnCommit(
             async (_, ct) =>
             {
@@ -106,8 +108,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>
     private async Task _RunCoordinatedCronJobSideEffectsAsync(
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
         TCronJob entity,
-        DateTime nextOccurrence,
-        CancellationToken cancellationToken
+        DateTime nextOccurrence
     )
     {
         await writer.InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
@@ -119,8 +120,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>
     private async Task _RunCoordinatedCronJobsBatchSideEffectsAsync(
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
         List<TCronJob> validEntities,
-        List<DateTime> nextOccurrences,
-        CancellationToken cancellationToken
+        List<DateTime> nextOccurrences
     )
     {
         await writer.InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);

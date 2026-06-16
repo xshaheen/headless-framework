@@ -247,12 +247,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 _DeferSideEffects(
                     context.Coordinator,
                     entity.Id.ToString(),
-                    ct =>
+                    _ =>
                         _RunCoordinatedCronJobSideEffectsAsync(
                             context.Writer,
                             entity,
-                            nextOccurrence,
-                            ct
+                            nextOccurrence
                         )
                 );
 
@@ -689,12 +688,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 _DeferSideEffects(
                     context.Coordinator,
                     $"cron batch ({validEntities.Count})",
-                    ct =>
+                    _ =>
                         _RunCoordinatedCronJobsBatchSideEffectsAsync(
                             context.Writer,
                             validEntities,
-                            nextOccurrences,
-                            ct
+                            nextOccurrences
                         )
                 );
 

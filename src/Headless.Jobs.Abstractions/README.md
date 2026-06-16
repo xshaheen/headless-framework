@@ -82,6 +82,6 @@ Behavior and caveats:
   or when a relational coordinator is active but the provider cannot write coordinated. Silent fallback there would
   reintroduce the divergence this feature prevents.
 - **Return-contract (SLA)**: on the coordinated path `JobResult.IsSucceeded` means the row **committed**, not that the
-  deferred dispatch ran. A post-commit dispatch failure is swallowed (the commit is already durable); the scheduler's
-  polling sweep is the recovery path.
+  deferred dispatch ran. A post-commit dispatch failure is swallowed (the commit is already durable); the fallback poll
+  sweep (`FallbackIntervalChecker`, default 30s) is the recovery path.
 - **Tenancy** stamping inside the coordinated write is out of scope until a tenant column exists (issue #278).
