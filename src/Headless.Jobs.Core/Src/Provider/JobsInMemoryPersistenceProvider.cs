@@ -191,6 +191,17 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         if (_TimeJobs.TryGetValue(functionContext.JobId, out var job))
         {
+            // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a
+            // non-terminal row, so a swept/reclaimed row is not clobbered by a late completion.
+            var ownedNonTerminal =
+                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
+                && job.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+
+            if (!ownedNonTerminal)
+            {
+                return Task.FromResult(0);
+            }
+
             var updatedTicker = _CloneTicker(job);
             _ApplyFunctionContextToTicker(updatedTicker, functionContext);
 
@@ -857,10 +868,18 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         if (_CronOccurrences.TryGetValue(functionContext.JobId, out var occurrence))
         {
-            var updatedOccurrence = _CloneCronOccurrence(occurrence);
-            _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
+            // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a non-terminal occurrence.
+            var ownedNonTerminal =
+                string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
+                && occurrence.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
 
-            _CronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence);
+            if (ownedNonTerminal)
+            {
+                var updatedOccurrence = _CloneCronOccurrence(occurrence);
+                _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
+
+                _CronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence);
+            }
         }
 
         return Task.CompletedTask;

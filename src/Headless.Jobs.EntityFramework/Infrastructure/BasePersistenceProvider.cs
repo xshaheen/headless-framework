@@ -179,12 +179,22 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<int> UpdateTimeJob(InternalFunctionContext functionContexts, CancellationToken cancellationToken)
     {
+        // #5 completion fence: only the still-owning node may write a completion onto a non-terminal row.
+        // A node the dead-node sweep already transitioned (MarkFailed/Skip -> terminal, or released -> owner
+        // cleared) but which is actually alive must match 0 rows here instead of clobbering the sweep's result.
+        // WhereOwnedBy = (Idle|Queued|InProgress) && OwnerId == owner, so terminal rows and reclaimed rows are excluded.
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return 0;
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
         return await dbContext
             .Set<TTimeJob>()
             .Where(x => x.Id == functionContexts.JobId)
+            .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(
                 setter => setter.UpdateTimeJob(functionContexts, TimeProvider.GetUtcNow().UtcDateTime),
                 cancellationToken
@@ -619,6 +629,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
+        // #5 completion fence (see UpdateTimeJob): only the still-owning node may complete a non-terminal occurrence.
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return;
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -626,6 +642,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => x.Id == functionContext.JobId)
+            .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(setter => setter.UpdateCronJobOccurrence(functionContext), cancellationToken)
             .ConfigureAwait(false);
     }
