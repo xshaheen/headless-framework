@@ -170,11 +170,36 @@ public sealed class JobsOptionsBuilderTests
         builder.ConfigureScheduler(options =>
         {
             options.MaxConcurrency = 42;
-            options.NodeIdentifier = "test-node";
+            options.NodeId = "test-node";
         });
 
         schedulerOptions.MaxConcurrency.Should().Be(42);
-        schedulerOptions.NodeIdentifier.Should().Be("test-node");
+        schedulerOptions.NodeId.Should().Be("test-node");
+    }
+
+    [Fact]
+    public void Default_NodeId_Matches_Machine_Process_Guid_Shape()
+    {
+        var schedulerOptions = new SchedulerOptionsBuilder();
+
+        schedulerOptions.NodeId.Should().MatchRegex(@"^.+:\d+:[0-9a-fA-F]{8}$");
+    }
+
+    [Fact]
+    public void Default_NodeId_Is_Unique_Per_Instance()
+    {
+        var first = new SchedulerOptionsBuilder();
+        var second = new SchedulerOptionsBuilder();
+
+        first.NodeId.Should().NotBe(second.NodeId);
+    }
+
+    [Fact]
+    public void Explicit_NodeId_Is_Preserved_Verbatim()
+    {
+        var schedulerOptions = new SchedulerOptionsBuilder { NodeId = "explicit-node" };
+
+        schedulerOptions.NodeId.Should().Be("explicit-node");
     }
 
     [Fact]

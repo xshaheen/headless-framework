@@ -19,7 +19,7 @@ namespace Headless.Jobs.Coordination;
 internal sealed class JobsOwnerIdentityAdapter(INodeMembership membership, SchedulerOptionsBuilder optionsBuilder)
     : IJobsOwnerIdentity
 {
-    public string DisplayOwner => membership.Identity?.ToString() ?? optionsBuilder.NodeIdentifier;
+    public string DisplayOwner => membership.Identity?.ToString() ?? optionsBuilder.NodeId;
 
     public bool TryGetStampOwner([NotNullWhen(true)] out string? owner)
     {

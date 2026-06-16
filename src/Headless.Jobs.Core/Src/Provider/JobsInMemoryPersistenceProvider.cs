@@ -29,7 +29,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         var optionsBuilder = serviceProvider.GetService<SchedulerOptionsBuilder>();
-        _ownerId = optionsBuilder?.NodeIdentifier ?? Environment.MachineName;
+        _ownerId = optionsBuilder?.NodeId ?? Environment.MachineName;
     }
 
     #region Time Job Methods

@@ -290,7 +290,7 @@ internal static class DashboardEndpoints
             {
                 maxConcurrency = schedulerOptions.MaxConcurrency,
                 schedulerOptions.IdleWorkerTimeOut,
-                currentMachine = schedulerOptions.NodeIdentifier,
+                currentMachine = schedulerOptions.NodeId,
                 executionContext.LastHostExceptionMessage,
                 schedulerTimeZone = schedulerOptions.SchedulerTimeZone?.Id,
             },
