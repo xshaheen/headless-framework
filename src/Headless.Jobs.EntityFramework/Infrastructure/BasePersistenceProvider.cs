@@ -297,7 +297,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         // KTD6: a NodeLeft reclaim may race host shutdown; the writes must not be torn down mid-statement,
-        // so they run under CancellationToken.None. The two statements are wrapped in one transaction
+        // so they run under CancellationToken.None. The three statements are wrapped in one transaction
         // (finding 3.1) so a crash between them can't leave a half-reclaimed node — the idempotent reconcile
         // (U2) re-reclaims a partial node on the next tick, but the transaction removes the transient state.
         await using var transaction = await dbContext
