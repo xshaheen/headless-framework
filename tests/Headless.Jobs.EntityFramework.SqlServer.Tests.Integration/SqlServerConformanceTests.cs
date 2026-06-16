@@ -30,4 +30,8 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     [Fact]
     public override Task dead_node_with_skip_policy_transitions_in_flight_row_to_skipped() =>
         base.dead_node_with_skip_policy_transitions_in_flight_row_to_skipped();
+
+    [Fact]
+    public override Task completion_is_fenced_on_ownership_and_non_terminal_status() =>
+        base.completion_is_fenced_on_ownership_and_non_terminal_status();
 }

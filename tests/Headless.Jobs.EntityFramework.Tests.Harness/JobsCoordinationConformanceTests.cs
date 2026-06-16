@@ -5,6 +5,7 @@ using Headless.Coordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -166,6 +167,58 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run).
             affected.Should().Be(1);
             (await fixture.ReadTimeJobAsync(id, ct)).Should().Be(((int)JobStatus.Skipped, dead));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// #5 completion fence: a completion write must touch only a non-terminal row still owned by the writer.
+    /// Protects against a falsely-dead-but-alive node clobbering the dead-node sweep's terminal transition
+    /// (owner retained on MarkFailed/Skip) or completing a row the sweep released and another node re-claimed.
+    /// </summary>
+    public virtual async Task completion_is_fenced_on_ownership_and_non_terminal_status()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // (a) Non-terminal row owned by a different owner — a late completion from the writer must not win.
+            var foreignId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(foreignId, "foreign", (int)JobStatus.InProgress, "other-node@9", ct);
+
+            // (b) Already-terminal row (e.g. swept to Failed) — a late completion must not resurrect/overwrite it.
+            var terminalId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(terminalId, "terminal", (int)JobStatus.Failed, "node-a@5", ct);
+
+            var foreignCompletion = new InternalFunctionContext
+            {
+                FunctionName = "foreign",
+                JobId = foreignId,
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
+            var terminalCompletion = new InternalFunctionContext
+            {
+                FunctionName = "terminal",
+                JobId = terminalId,
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
+
+            (await persistence.UpdateTimeJob(foreignCompletion, ct)).Should().Be(0);
+            (await persistence.UpdateTimeJob(terminalCompletion, ct)).Should().Be(0);
+
+            // Neither row was mutated by the fenced completion.
+            (await fixture.ReadTimeJobAsync(foreignId, ct))
+                .Should()
+                .Be(((int)JobStatus.InProgress, "other-node@9"));
+            (await fixture.ReadTimeJobAsync(terminalId, ct)).Should().Be(((int)JobStatus.Failed, "node-a@5"));
         }
         finally
         {
