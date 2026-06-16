@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Reflection;
@@ -12,7 +13,7 @@ using Nito.AsyncEx;
 namespace Headless.Caching;
 
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
-public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedableTagMarkerCache, IDisposable
+public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedableTagMarkerCache, IBufferCache, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
 
@@ -1422,6 +1423,127 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedabl
             var skip = (pageIndex.Value - 1) * pageSize;
             return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), true);
         }
+    }
+
+    /// <summary>
+    /// Zero-intermediate-copy buffer read. Mirrors <see cref="GetAsync{T}"/> exactly (expiry, sliding logical
+    /// expiry, Family-2 tag/clear invalidation, single-key sliding re-arm), but writes the stored payload bytes
+    /// straight into <paramref name="destination"/> instead of deserializing them — so the generic path's
+    /// intermediate <c>byte[]</c> conversion is skipped. The output-cache named instance stores values as
+    /// <c>byte[]</c> (raw-bytes serializer), so the stored array's bytes are written directly; for a pure
+    /// in-memory cache the floor is one copy (stored array -> caller buffer).
+    /// </summary>
+    public ValueTask<bool> TryGetToAsync(
+        string key,
+        IBufferWriter<byte> destination,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(destination);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+
+        if (!_memory.TryGetValue(key, out var existingEntry))
+        {
+            return new ValueTask<bool>(false);
+        }
+
+        if (existingEntry.IsExpired)
+        {
+            _TryRemoveExpiredEntry(key, existingEntry);
+            return new ValueTask<bool>(false);
+        }
+
+        if (existingEntry.IsLogicallyExpired)
+        {
+            if (existingEntry.SlidingExpiration.HasValue)
+            {
+                _TryRemoveExpiredEntry(key, existingEntry);
+            }
+
+            return new ValueTask<bool>(false);
+        }
+
+        // Logical tag/clear invalidation: a direct read of a tag-invalidated entry is a miss. The physically
+        // present reserve is left in place so the coordinator's TryGetEntryAsync can still serve it stale.
+        if (_IsTagInvalidated(existingEntry))
+        {
+            return new ValueTask<bool>(false);
+        }
+
+        try
+        {
+            var value = existingEntry.GetValue<byte[]>();
+            _TryRearmSlidingEntry(key, existingEntry, _timeProvider.GetUtcNow().UtcDateTime);
+
+            // Parity with the byte[] fallback (CacheValue<byte[]>.Value is null -> false): a null-sentinel hit
+            // reads as a miss for the buffer path. Nothing is written.
+            if (value is null)
+            {
+                return new ValueTask<bool>(false);
+            }
+
+            // The single copy: stored array -> caller-provided buffer.
+            destination.Write(value);
+            return new ValueTask<bool>(true);
+        }
+        catch (Exception ex) when (!_shouldThrowOnSerializationError)
+        {
+            _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
+            return new ValueTask<bool>(false);
+        }
+    }
+
+    /// <summary>
+    /// Zero-intermediate-copy buffer write. Mirrors <see cref="UpsertEntryAsync{T}"/> + the stamping in
+    /// <c>FactoryCacheStoreExtensions.UpsertEntryAsync</c>: validates options, computes the fresh-write stamps once
+    /// via <see cref="CacheEntryStamps.Compute"/>, then stores the payload bytes with identical stamping
+    /// (CreatedAt, expiry, tags, sliding) to the generic upsert so Family-2 tag invalidation and fail-safe still
+    /// work. The sequence is materialized into a stable owned <c>byte[]</c> synchronously before any await — the
+    /// cache retains it — so callers may hand in pooled buffers valid only for the duration of the call.
+    /// </summary>
+    public ValueTask<bool> UpsertRawAsync(
+        string key,
+        ReadOnlySequence<byte> value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Materialize a stable owned copy synchronously, before any stamping/await: the cache retains this array,
+        // so it must not alias a caller-pooled buffer that is recycled after the call returns.
+        var bytes = value.ToArray();
+
+        // Validate then stamp, matching the UpsertEntryAsync extension exactly: Compute does the stamp math but
+        // does NOT validate, so ValidateOptions (which also validates Tags) runs first at this single choke point.
+        CacheEntryStamps.ValidateOptions(options);
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var stamps = CacheEntryStamps.Compute(options, now);
+
+        var entry = new CacheStoreEntryWrite<byte[]>
+        {
+            Value = bytes,
+            IsNull = false,
+            LogicalExpiresAt = stamps.LogicalExpiresAt,
+            PhysicalExpiresAt = stamps.PhysicalExpiresAt,
+            SlidingExpiration = options.SlidingExpiration,
+            EagerRefreshAt = stamps.EagerRefreshAt,
+            // Stamp the birth time so a prior tag/clear marker does not logically invalidate this fresh write
+            // (Family-2 version-pinning compares CreatedAt against the newest applicable marker).
+            CreatedAt = stamps.CreatedAt,
+            Tags = options.Tags,
+            SkipMemoryCacheWrite = options.SkipMemoryCacheWrite,
+            SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
+        };
+
+        return _SetEntryCoreWithResultAsync(key, entry);
     }
 
     #endregion
