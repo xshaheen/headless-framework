@@ -342,6 +342,9 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
+        // Direct (non-coordinated) cron enqueue owns its cache invalidation here, post-SaveChanges. The coordinated
+        // enqueue path is a pure row write (WriteCronJobsAsync) and invalidates from the manager post-commit instead
+        // — see JobsManager._RunCoordinatedCronJob(s)(Batch)SideEffectsAsync. Keep both sites in sync.
         await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
