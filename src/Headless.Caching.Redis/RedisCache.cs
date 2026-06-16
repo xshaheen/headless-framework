@@ -929,7 +929,7 @@ public sealed class RedisCache(
             }
             catch (Exception e)
             {
-                _logger.LogDeserializationFailed(e, rawValue, typeof(T).FullName);
+                _logger.LogDeserializationFailed(e, rawValue.Length(), typeof(T).FullName);
                 throw;
             }
         }
@@ -1234,7 +1234,7 @@ public sealed class RedisCache(
         }
         catch (Exception e)
         {
-            _logger.LogDeserializationFailed(e, rawValue, typeof(T).FullName);
+            _logger.LogDeserializationFailed(e, rawValue.Length(), typeof(T).FullName);
             throw;
         }
     }
@@ -1998,7 +1998,7 @@ public sealed class RedisCache(
         }
         catch (Exception e)
         {
-            _logger.LogDeserializationFailed(e, redisValue, typeof(T).FullName);
+            _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(T).FullName);
             throw;
         }
     }
@@ -2076,7 +2076,7 @@ public sealed class RedisCache(
         }
         catch (Exception e)
         {
-            _logger.LogDeserializationFailed(e, redisValue, typeof(byte[]).FullName);
+            _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(byte[]).FullName);
             throw;
         }
     }
@@ -2156,7 +2156,7 @@ public sealed class RedisCache(
             }
             catch (Exception e)
             {
-                _logger.LogDeserializationFailed(e, redisValue, typeof(T).FullName);
+                _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(T).FullName);
                 throw;
             }
         }
@@ -2873,12 +2873,12 @@ internal static partial class RedisCacheLog
         EventId = 4,
         EventName = "DeserializationFailed",
         Level = LogLevel.Error,
-        Message = "Unable to deserialize value {Value} to type {Type}"
+        Message = "Unable to deserialize cached value of {ValueLength} bytes to type {Type}"
     )]
     public static partial void LogDeserializationFailed(
         this ILogger logger,
         Exception exception,
-        RedisValue value,
+        long valueLength,
         string? type
     );
 
