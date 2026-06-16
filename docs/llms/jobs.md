@@ -113,7 +113,7 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - No-Redis dead-node recovery is TTL-bounded, not immediate: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (plus a periodic reconcile backstop). Tune via the Coordination heartbeat/TTL and `SchedulerOptionsBuilder.DeadNodeReconcileInterval`.
 - Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
 - For time-based (one-off) jobs, inject `ITimeJobManager<TimeJobEntity>` and call `AddAsync()`.
-- To enqueue a job atomically with a domain write (and/or an outbox publish), run them inside a relational commit-coordinated scope (`Headless.CommitCoordination`, e.g. `db.ExecuteCoordinatedTransactionAsync(...)`). `AddAsync` then writes the row inside the caller's transaction and defers dispatch/scheduler/notify/cron-cache-invalidation to post-commit. Capture is synchronous (pre-await) — never restructure `AddAsync` to read the coordinator after an await. On the coordinated path `JobResult.IsSucceeded` means the row **committed**, not that dispatch ran (the scheduler poll sweep recovers a post-commit dispatch failure). `AddAsync` throws only when a relational transaction was offered but is dead/completed, or a relational coordinator is active but the provider can't write coordinated; a coordinated scope with no relational capability falls back to direct insert. Requires the EF operational store (`AddOperationalStore`); the in-memory path is always direct.
+- To enqueue a job atomically with a domain write (and/or an outbox publish), run them inside a relational commit-coordinated scope (`Headless.CommitCoordination`, e.g. `db.ExecuteCoordinatedTransactionAsync(...)`). `AddAsync` then writes the row inside the caller's transaction and defers dispatch/scheduler/notify/cron-cache-invalidation to post-commit. This needs **two** registrations on the durable path: `AddHeadlessCoordination(...)` for the operational store (the `Headless.Coordination` distributed-lock subsystem) **and** a commit-coordination provider — `services.AddPostgreSqlCommitCoordination()` or `AddSqlServerCommitCoordination()` (the separate `Headless.CommitCoordination` subsystem) — to activate the coordinated scope. Similar names, different systems; register both. Capture is synchronous (pre-await): the coordinator scope is an `AsyncLocal` captured when `AddAsync` is entered, so never put `AddAsync` behind an intermediate `async` method that `await`s first — the captured scope is lost and the enqueue silently falls back to direct insert that auto-commits even if the outer transaction rolls back. Keep coordinated enqueues in one scope sequential — the scope's single DB connection/transaction is not thread-safe. On the coordinated path `JobResult.IsSucceeded` means the row **committed**, not that dispatch ran (the scheduler poll sweep recovers a post-commit dispatch failure). `AddAsync` throws only when a relational transaction was offered but is dead/completed, or a relational coordinator is active but the provider can't write coordinated; a coordinated scope with no relational capability falls back to direct insert. Requires the EF operational store (`AddOperationalStore`); the in-memory path is always direct.
 - For cron jobs, the `[Jobs]` attribute takes a cron expression and optional `Priority` parameter (`JobPriority.High`, `Normal`, `LongRunning`).
 - Use `[JobsConstructor]` attribute on constructors when you need custom DI injection in job classes.
 - Dashboard authentication: call `dashboard.WithBasicAuth()`, `WithApiKey()`, or `WithHostAuthentication()` inside `config.AddDashboard()`.
@@ -292,6 +292,7 @@ transaction** and defer dispatch / scheduler-restart / notify / cron-cache-inval
 messaging outbox. A domain write, an integration-event publish, and a job enqueue can commit (or roll back) as one unit:
 
 ```csharp
+// db is a relational DbContext; services is the request scope; both are enlisted by the helper.
 await db.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
 {
     ctx.Orders.Add(order);                                       // domain write
@@ -306,8 +307,15 @@ await db.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
         Request = JobsHelper.SerializeRequest(new { order.Id }),
     }, ct);
 }, services, ct);
-// On commit: all three persist; the job's dispatch/scheduler/notify fire post-commit. On rollback: none persist.
+// On commit: order row + outbox message + job row all persist; the job's dispatch/scheduler/notify fire post-commit.
+// On rollback: none persist and no dispatch occurs.
 ```
+
+**Required DI registration**: atomic enqueue activates only when a `Headless.CommitCoordination` provider is registered — `services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()` (core seam: `AddCommitCoordination()`). This is a **different subsystem** from `AddHeadlessCoordination(...)`, the `Headless.Coordination` distributed-lock / node-membership provider required by the durable operational store (`AddOperationalStore`). The durable atomic-enqueue path needs **both**: `AddHeadlessCoordination(...)` for the operational store, **and** a `Add{Provider}CommitCoordination()` for the commit-coordination scope. The similar names name two distinct systems — register both.
+
+**Capture is synchronous (pre-await)**: the ambient commit-coordinator scope is an `AsyncLocal` captured at the point `AddAsync` is entered. Do **not** wrap `AddAsync` behind an intermediate `async` method that `await`s before reaching `AddAsync` — any `await` before that call executes outside the captured scope, so the enqueue silently falls back to the direct path and auto-commits even if the outer transaction rolls back.
+
+**Concurrency**: coordinated enqueues within a single coordinated scope must not run concurrently — the scope's single DB connection / transaction is not thread-safe (the same constraint as any code sharing one EF `DbContext` / connection). Keep enqueue calls in one scope sequential.
 
 - **No coordinator (or no `AddOperationalStore`)**: unchanged — direct insert + in-band dispatch.
 - **Coordinated scope with no relational capability** (messaging-only scope): falls back to the direct path — coordination is not made infectious.

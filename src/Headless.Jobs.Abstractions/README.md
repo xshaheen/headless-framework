@@ -56,6 +56,23 @@ await db.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
 // On rollback: none persist and no dispatch occurs.
 ```
 
+**Required DI registration**: atomic enqueue activates only when a `Headless.CommitCoordination` provider is registered —
+`services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()` (core seam:
+`AddCommitCoordination()`). This is a **different subsystem** from `AddHeadlessCoordination(...)`, which is the
+`Headless.Coordination` distributed-lock / node-membership provider required by the durable operational store
+(`AddOperationalStore`). The durable atomic-enqueue path needs **both**: `AddHeadlessCoordination(...)` for the
+operational store, **and** a `Add{Provider}CommitCoordination()` for the commit-coordination scope. The similar names
+name two distinct systems — register both.
+
+**Capture is synchronous (pre-await)**: the ambient commit-coordinator scope is an `AsyncLocal` captured at the point
+`AddAsync` is entered. Do **not** wrap `AddAsync` behind an intermediate `async` method that `await`s before reaching
+`AddAsync` — any `await` before that call executes outside the captured scope, so the enqueue silently falls back to the
+direct path and auto-commits even if the outer transaction rolls back.
+
+**Concurrency**: coordinated enqueues within a single coordinated scope must not run concurrently — the scope's single
+DB connection / transaction is not thread-safe (the same constraint as any code sharing one EF `DbContext` /
+connection). Keep enqueue calls in one scope sequential.
+
 Behavior and caveats:
 
 - **No coordinator (or no `AddOperationalStore`)**: unchanged — `AddAsync` direct-inserts and dispatches in-band.
