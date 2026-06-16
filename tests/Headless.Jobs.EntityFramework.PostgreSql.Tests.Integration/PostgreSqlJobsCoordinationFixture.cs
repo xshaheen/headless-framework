@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.CommitCoordination;
+using Headless.CommitCoordination.PostgreSql;
 using Headless.Coordination;
 using Headless.Coordination.PostgreSql;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -40,9 +43,53 @@ public sealed class PostgreSqlJobsCoordinationFixture
             .WithPassword("postgres");
     }
 
-    public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UsePostgreSql(ConnectionString);
+    public string QualifiedCronJobsTable => "jobs.\"CronJobs\"";
+
+    public string CreateProbeTableSql =>
+        "CREATE TABLE IF NOT EXISTS jobs_probe (id integer); DELETE FROM jobs_probe;";
+
+    public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) =>
+        setup.UsePostgreSql(ConnectionString);
 
     public void ConfigureStore(DbContextOptionsBuilder db) => db.UseNpgsql(ConnectionString);
 
     public DbConnection CreateConnection() => new NpgsqlConnection(ConnectionString);
+
+    public void ConfigureCommitCoordination(IServiceCollection services) =>
+        services.AddPostgreSqlCommitCoordination();
+
+    public async Task RunCoordinatedTransactionAsync(
+        IServiceProvider services,
+        Func<DbConnection, DbTransaction, CancellationToken, Task> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(ConnectionString);
+
+        await connection.ExecuteCoordinatedTransactionAsync(
+            async (conn, ct) =>
+            {
+                // Reach the live transaction through the same relational capability production participants use.
+                var coordinator =
+                    services.GetRequiredService<ICurrentCommitCoordinator>().Current
+                    ?? throw new InvalidOperationException(
+                        "No ambient coordinator — the helper did not enlist."
+                    );
+
+                if (
+                    !coordinator.TryGetCapability<IRelationalCommitContext>(out var relational)
+                    || relational.Transaction is null
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The coordinated scope exposed no live relational transaction."
+                    );
+                }
+
+                await operation(conn, relational.Transaction, ct);
+            },
+            services,
+            cancellationToken: cancellationToken
+        );
+    }
 }

@@ -10,6 +10,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.CommitCoordination.SqlServer\Headless.CommitCoordination.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />

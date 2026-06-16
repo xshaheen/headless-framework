@@ -1,0 +1,464 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
+using Headless.CommitCoordination;
+using Headless.Jobs;
+using Headless.Jobs.DependencyInjection;
+using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Managers;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Tests.Transactions;
+
+/// <summary>
+/// Unit coverage for <see cref="JobsManager{TTimeJob,TCronJob}" /> commit-coordination routing: the synchronous
+/// capture fork, the fail-loud cases, and post-commit side-effect deferral. Atomicity itself (rows committing /
+/// discarding with the caller's transaction) is integration-only — see the EF harness conformance suite.
+/// </summary>
+public sealed class JobsManagerCoordinatedRoutingTests
+{
+    private const string FunctionName = "routing-test-fn";
+
+    static JobsManagerCoordinatedRoutingTests()
+    {
+        // AddHeadlessJobs normally seeds this from the scheduler options; the manager's cron-expression validation
+        // needs it set or GetNextOccurrenceOrDefault returns null and AddAsync reports a parse failure.
+        CronScheduleCache.TimeZoneInfo = TimeZoneInfo.Utc;
+
+        // The manager validates the function exists before routing. No other unit test mutates JobFunctionProvider, so
+        // a one-time static registration is stable for this assembly.
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>(
+                StringComparer.Ordinal
+            )
+            {
+                [FunctionName] = (
+                    "0 0 * * *",
+                    JobPriority.LongRunning,
+                    (_, _, _) => Task.CompletedTask,
+                    1
+                ),
+            }
+        );
+        JobFunctionProvider.Build();
+    }
+
+    [Fact]
+    public async Task TimeJob_without_coordinator_takes_direct_path()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+
+        var result = await sut.Time.AddAsync(
+            _FutureTimeJob(),
+            TestContext.Current.CancellationToken
+        );
+
+        result.IsSucceeded.Should().BeTrue();
+        await sut
+            .Persistence.Received(1)
+            .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
+        await sut.Notification.Received(1).AddTimeJobNotifyAsync(Arg.Any<Guid>());
+    }
+
+    [Fact]
+    public async Task TimeJob_coordinator_without_relational_capability_takes_direct_path()
+    {
+        // A messaging-only coordinated scope: coordination must not become infectious — fall back to direct insert.
+        var sut = _CreateSut(CoordinatorMode.NonRelational, withWriter: true);
+
+        var result = await sut.Time.AddAsync(
+            _FutureTimeJob(),
+            TestContext.Current.CancellationToken
+        );
+
+        result.IsSucceeded.Should().BeTrue();
+        await sut
+            .Persistence.Received(1)
+            .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        sut.Coordinator!.OnCommitCount.Should().Be(0);
+        await sut
+            .Writer.DidNotReceive()
+            .WriteTimeJobsAsync(
+                Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task TimeJob_dead_transaction_throws_and_persists_nothing()
+    {
+        var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
+
+        var act = () => sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Writer.DidNotReceive()
+            .WriteTimeJobsAsync(
+                Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task TimeJob_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
+    {
+        // Live relational coordinator, but the provider cannot write inside the ambient transaction (in-memory shape).
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
+
+        var act = () => sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TimeJob_live_coordinator_writes_in_transaction_and_defers_side_effects()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        var job = _FutureTimeJob();
+
+        var result = await sut.Time.AddAsync(job, TestContext.Current.CancellationToken);
+
+        result.IsSucceeded.Should().BeTrue();
+        await sut
+            .Writer.Received(1)
+            .WriteTimeJobsAsync(
+                Arg.Is<TimeJobEntity[]>(a => a.Length == 1 && a[0].Id == job.Id),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+        sut.Coordinator!.OnCommitCount.Should().Be(1);
+
+        // Side effects must NOT have fired synchronously and the row must NOT have gone through the direct insert.
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
+        await sut.Notification.DidNotReceive().AddTimeJobNotifyAsync(Arg.Any<Guid>());
+
+        await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
+
+        sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
+        await sut.Notification.Received(1).AddTimeJobNotifyAsync(job.Id);
+    }
+
+    [Fact]
+    public async Task TimeJob_live_coordinator_defers_immediate_dispatch_to_commit()
+    {
+        var sut = _CreateSut(
+            CoordinatorMode.LiveRelational,
+            withWriter: true,
+            dispatcherEnabled: true
+        );
+        sut.Persistence.AcquireImmediateTimeJobsAsync(
+                Arg.Any<Guid[]>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns([]);
+
+        await sut.Time.AddAsync(_ImmediateTimeJob(), TestContext.Current.CancellationToken);
+
+        // The immediate-acquire probe is part of the deferred side effects, not the synchronous enqueue.
+        await sut
+            .Persistence.DidNotReceive()
+            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+
+        await sut.Coordinator!.DrainCommitAsync(TestContext.Current.CancellationToken);
+
+        await sut
+            .Persistence.Received(1)
+            .AcquireImmediateTimeJobsAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TimeJob_batch_live_coordinator_routes_all_and_defers_side_effects_once()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
+
+        var result = await sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
+
+        result.IsSucceeded.Should().BeTrue();
+        await sut
+            .Writer.Received(1)
+            .WriteTimeJobsAsync(
+                Arg.Is<TimeJobEntity[]>(a => a.Length == 2),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+        sut.Coordinator!.OnCommitCount.Should().Be(1);
+        await sut.Notification.DidNotReceive().AddTimeJobsBatchNotifyAsync();
+
+        await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
+
+        await sut.Notification.Received(1).AddTimeJobsBatchNotifyAsync();
+    }
+
+    [Fact]
+    public async Task Cron_without_coordinator_takes_direct_path()
+    {
+        var sut = _CreateSut(CoordinatorMode.None, withWriter: false);
+
+        var result = await sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
+
+        result.IsSucceeded.Should().BeTrue();
+        await sut
+            .Persistence.Received(1)
+            .InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Cron_live_coordinator_writes_in_transaction_and_defers_cache_invalidation()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        var cron = _CronJob();
+
+        var result = await sut.Cron.AddAsync(cron, TestContext.Current.CancellationToken);
+
+        result.IsSucceeded.Should().BeTrue();
+        await sut
+            .Writer.Received(1)
+            .WriteCronJobsAsync(
+                Arg.Is<CronJobEntity[]>(a => a.Length == 1 && a[0].Id == cron.Id),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+        sut.Coordinator!.OnCommitCount.Should().Be(1);
+
+        // Cache invalidation + scheduler + notify must be deferred — never on a pre-commit snapshot.
+        await sut.Writer.DidNotReceive().InvalidateCronExpressionsCacheAsync();
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        sut.Scheduler.DidNotReceive().RestartIfNeeded(Arg.Any<DateTime>());
+
+        await sut.Coordinator.DrainCommitAsync(TestContext.Current.CancellationToken);
+
+        await sut.Writer.Received(1).InvalidateCronExpressionsCacheAsync();
+        sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
+        await sut.Notification.Received(1).AddCronJobNotifyAsync(cron);
+    }
+
+    [Fact]
+    public void Jobs_only_host_resolves_manager_with_null_coordinator_fallback()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessJobs(options => options.DisableBackgroundServices());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetService<ITimeJobManager<TimeJobEntity>>().Should().NotBeNull();
+        provider.GetRequiredService<ICurrentCommitCoordinator>().Current.Should().BeNull();
+    }
+
+    private static TimeJobEntity _FutureTimeJob() =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = FunctionName,
+            Description = FunctionName,
+            Request = [],
+            ExecutionTime = DateTime.UtcNow.AddHours(1),
+        };
+
+    private static TimeJobEntity _ImmediateTimeJob() =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = FunctionName,
+            Description = FunctionName,
+            Request = [],
+            ExecutionTime = DateTime.UtcNow,
+        };
+
+    private static CronJobEntity _CronJob() =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Function = FunctionName,
+            Description = FunctionName,
+            // CronScheduleCache parses with IncludingSeconds = true, so the expression has six fields.
+            Expression = "0 0 0 * * *",
+            Request = [],
+        };
+
+    private enum CoordinatorMode
+    {
+        None,
+        NonRelational,
+        LiveRelational,
+        DeadRelational,
+    }
+
+    private static Sut _CreateSut(
+        CoordinatorMode mode,
+        bool withWriter,
+        bool dispatcherEnabled = false
+    )
+    {
+        var persistence = withWriter
+            ? Substitute.For<
+                IJobPersistenceProvider<TimeJobEntity, CronJobEntity>,
+                ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>
+            >()
+            : Substitute.For<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        var scheduler = Substitute.For<IJobsHostScheduler>();
+        var notification = Substitute.For<IJobsNotificationHubSender>();
+        var dispatcher = Substitute.For<IJobsDispatcher>();
+        dispatcher.IsEnabled.Returns(dispatcherEnabled);
+
+        FakeCommitCoordinator? coordinator = mode switch
+        {
+            CoordinatorMode.None => null,
+            CoordinatorMode.NonRelational => new FakeCommitCoordinator(relational: null),
+            CoordinatorMode.LiveRelational => new FakeCommitCoordinator(
+                new FakeRelationalCommitContext(Substitute.For<DbTransaction>())
+            ),
+            CoordinatorMode.DeadRelational => new FakeCommitCoordinator(
+                new FakeRelationalCommitContext(transaction: null)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+        };
+
+        var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
+            persistence,
+            scheduler,
+            TimeProvider.System,
+            notification,
+            new JobsExecutionContext(),
+            dispatcher,
+            new FakeCurrentCommitCoordinator(coordinator)
+        );
+
+        return new Sut
+        {
+            Persistence = persistence,
+            Scheduler = scheduler,
+            Notification = notification,
+            Dispatcher = dispatcher,
+            Coordinator = coordinator,
+            Manager = manager,
+        };
+    }
+
+    private sealed class Sut
+    {
+        public required IJobPersistenceProvider<
+            TimeJobEntity,
+            CronJobEntity
+        > Persistence { get; init; }
+        public required IJobsHostScheduler Scheduler { get; init; }
+        public required IJobsNotificationHubSender Notification { get; init; }
+        public required IJobsDispatcher Dispatcher { get; init; }
+        public required FakeCommitCoordinator? Coordinator { get; init; }
+        public required JobsManager<TimeJobEntity, CronJobEntity> Manager { get; init; }
+
+        public ITimeJobManager<TimeJobEntity> Time => Manager;
+
+        public ICronJobManager<CronJobEntity> Cron => Manager;
+
+        public ICoordinatedJobWriter<TimeJobEntity, CronJobEntity> Writer =>
+            (ICoordinatedJobWriter<TimeJobEntity, CronJobEntity>)Persistence;
+    }
+
+    private sealed class FakeCurrentCommitCoordinator(ICommitCoordinator? current)
+        : ICurrentCommitCoordinator
+    {
+        public ICommitCoordinator? Current { get; } = current;
+    }
+
+    private sealed class FakeRelationalCommitContext(DbTransaction? transaction)
+        : IRelationalCommitContext
+    {
+        public DbConnection? Connection => Transaction?.Connection;
+
+        public DbTransaction? Transaction { get; } = transaction;
+    }
+
+    // Captures registered OnCommit callbacks so a test can assert deferral, then drive them to assert the deferred
+    // work fires post-commit. Mirrors the real coordinator's "register now, drain after commit" contract.
+    private sealed class FakeCommitCoordinator(IRelationalCommitContext? relational)
+        : ICommitCoordinator
+    {
+        private readonly List<Func<CommitContext, CancellationToken, ValueTask>> _onCommit = [];
+
+        public int OnCommitCount => _onCommit.Count;
+
+        public CommitCoordinatorState State => CommitCoordinatorState.Active;
+
+        public IDisposable OnCommit(Func<CommitContext, CancellationToken, ValueTask> work)
+        {
+            _onCommit.Add(work);
+
+            return _NoopDisposable.Instance;
+        }
+
+        public IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work) =>
+            _NoopDisposable.Instance;
+
+        public TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
+            where TBuffer : class, ICommitWorkBuffer => factory(this);
+
+        public TBuffer GetOrAdd<TBuffer, TState>(
+            TState state,
+            Func<ICommitCoordinator, TState, TBuffer> factory
+        )
+            where TBuffer : class, ICommitWorkBuffer => factory(this, state);
+
+        public bool TryGetCapability<TCapability>([NotNullWhen(true)] out TCapability? capability)
+            where TCapability : class, ICommitCapability
+        {
+            if (relational is TCapability typed)
+            {
+                capability = typed;
+
+                return true;
+            }
+
+            capability = null;
+
+            return false;
+        }
+
+        public async Task DrainCommitAsync(CancellationToken cancellationToken)
+        {
+            var context = new CommitContext
+            {
+                Services = _EmptyServiceProvider.Instance,
+                Outcome = CommitOutcome.Committed,
+            };
+
+            foreach (var work in _onCommit)
+            {
+                await work(context, cancellationToken);
+            }
+        }
+
+        private sealed class _NoopDisposable : IDisposable
+        {
+            public static readonly _NoopDisposable Instance = new();
+
+            public void Dispose() { }
+        }
+    }
+
+    private sealed class _EmptyServiceProvider : IServiceProvider
+    {
+        public static readonly _EmptyServiceProvider Instance = new();
+
+        public object? GetService(Type serviceType) => null;
+    }
+}

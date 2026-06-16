@@ -1,3 +1,4 @@
+using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
@@ -10,6 +11,7 @@ using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
+using Headless.Jobs.Transactions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -56,6 +58,9 @@ public static class JobsServiceExtensions
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         >();
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
+        // Null-coordinator fallback so the JobsManager resolves and takes the direct path in standalone Jobs hosts
+        // (no CommitCoordination, no Messaging). AddCommitCoordination's unconditional registration wins when present.
+        services.TryAddSingleton<ICurrentCommitCoordinator, JobsNullCommitCoordinator>();
         services.TryAddSingleton(TimeProvider.System);
 
         // Core initialization — registered before background services to guarantee startup order
@@ -68,8 +73,12 @@ public static class JobsServiceExtensions
             services.AddSingleton<IJobsHostScheduler>(provider =>
                 provider.GetRequiredService<JobsSchedulerBackgroundService>()
             );
-            services.AddHostedService(provider => provider.GetRequiredService<JobsSchedulerBackgroundService>());
-            services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
+            services.AddHostedService(provider =>
+                provider.GetRequiredService<JobsSchedulerBackgroundService>()
+            );
+            services.AddHostedService(provider =>
+                provider.GetRequiredService<JobsFallbackBackgroundService>()
+            );
             services.AddSingleton<JobsFallbackBackgroundService>();
             services.AddSingleton<JobsExecutionTaskHandler>();
             services.AddSingleton<IJobsDispatcher, JobsDispatcher>();
@@ -109,7 +118,10 @@ public static class JobsServiceExtensions
 
         if (optionInstance.JobExceptionHandlerType != null)
         {
-            services.AddSingleton(typeof(IJobExceptionHandler), optionInstance.JobExceptionHandlerType);
+            services.AddSingleton(
+                typeof(IJobExceptionHandler),
+                optionInstance.JobExceptionHandlerType
+            );
         }
 
         services.AddSingleton(_ => optionInstance);
