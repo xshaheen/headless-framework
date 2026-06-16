@@ -99,12 +99,8 @@ internal sealed class HeadlessDistributedCacheAdapter(
         // synchronously (the IBufferCache raw fast path frames it without an intermediate byte[]; the fallback
         // copies it once). Invoke the helper here in the synchronous body, before this method returns, then await
         // only the resulting task.
-        return _AwaitUpsert(cache.UpsertRawOrFallbackAsync(key, value, mappedOptions, token));
+        return cache.UpsertRawOrFallbackAsync(key, value, mappedOptions, token).DiscardResultAsync();
     }
-
-    // Discard the upsert-occurred bool: IDistributedCache has no notion of insert-vs-update. The pending task is
-    // created by the synchronous caller (which has already consumed the pooled sequence); this only awaits.
-    private static async ValueTask _AwaitUpsert(ValueTask<bool> pending) => await pending.ConfigureAwait(false);
 
     /// <inheritdoc />
     public void Refresh(string key) => RefreshAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();

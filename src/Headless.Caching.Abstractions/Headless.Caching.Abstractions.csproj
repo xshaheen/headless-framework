@@ -4,6 +4,10 @@
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Caching.Bcl" />
+    <InternalsVisibleTo Include="Headless.Caching.OutputCache" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
 </Project>

@@ -60,6 +60,15 @@ public static class BufferCacheExtensions
         return cache.UpsertEntryAsync(key, bytes, options, cancellationToken);
     }
 
+    /// <summary>
+    /// Awaits an already-started <see cref="UpsertRawOrFallbackAsync"/> task and discards the upsert-occurred bool.
+    /// Callers (the BCL and output-cache buffer adapters) start the upsert synchronously so the pooled
+    /// <see cref="ReadOnlySequence{T}"/> is consumed before the first await; this helper only awaits the result,
+    /// preserving that timing. Their store contracts have no notion of insert-vs-update, so the bool is dropped.
+    /// </summary>
+    internal static async ValueTask DiscardResultAsync(this ValueTask<bool> pending) =>
+        await pending.ConfigureAwait(false);
+
     private static async ValueTask<bool> _FallbackGetAsync(
         ICache cache,
         string key,
