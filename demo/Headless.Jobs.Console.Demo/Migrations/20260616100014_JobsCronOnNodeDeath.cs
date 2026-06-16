@@ -1,0 +1,26 @@
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace Headless.Jobs.Console.Demo.Migrations;
+
+public partial class JobsCronOnNodeDeath : Migration
+{
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.AddColumn<string>(
+            name: "OnNodeDeath",
+            schema: "jobs",
+            table: "CronJobs",
+            type: "character varying(32)",
+            maxLength: 32,
+            nullable: false,
+            defaultValue: "Retry"
+        );
+    }
+
+    protected override void Down(MigrationBuilder migrationBuilder)
+    {
+        migrationBuilder.DropColumn(name: "OnNodeDeath", schema: "jobs", table: "CronJobs");
+    }
+}
