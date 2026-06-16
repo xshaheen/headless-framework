@@ -15,7 +15,7 @@ ASP.NET Core's output-cache middleware ships only an in-memory store; its own gu
 - `validFor` maps directly to the entry's `Duration` (a single relative TTL); a non-positive `validFor` falls back to `DefaultExpiration`.
 - Tags pass straight through to the engine, persisted on the entry via `UpsertEntryAsync`; tag-count/length limits are enforced by the engine's write-time check.
 - Uses `services.Replace` for `IOutputCacheStore`, so the Headless store wins regardless of whether `AddOutputCache()` runs before or after `AddHeadlessCaching(...)`.
-- Wires the named cache with an internal raw-bytes codec automatically, so the middleware's serialized output-cache entries are stored in the value segment unchanged rather than JSON/base64 encoded.
+- Stores the middleware's `byte[]` output-cache entries in the value segment unchanged rather than JSON/base64 encoded, because `byte[]` is the cache's native wire format (stored verbatim, never through a serializer); no serializer is wired.
 
 ## Design Notes
 
@@ -25,9 +25,9 @@ It is a separate package from `Headless.Caching.Bcl` because an `IOutputCacheSto
 
 `EvictByTagAsync` is **logical** eviction, not physical deletion. `RemoveByTagAsync` bumps a per-tag timestamp marker so matching entries read as misses (the marker's timestamp postdates their `CreatedAt`); they are not physically removed until their TTL lapses. This satisfies the ASP.NET output-cache contract and is cluster-safe — one marker key per tag, no key enumeration, works on Redis Cluster. With a Redis-backed store the marker lives in Redis, so a tag evicted on node A becomes a miss on node B on its next read (no L1 to invalidate, no backplane required).
 
-The adapter owns its raw-bytes codec internally, registered as a keyed `ISerializer` bound to the cache name. The `configureCache` callback must select **only** the backing provider (for example `instance.UseRedis(...)`) and must **not** call `WithSerializer` — doing so throws `InvalidOperationException` rather than letting a caller-supplied serializer silently compete with the raw-bytes codec. That identity codec is also what makes the `IBufferCache` fast path safe here: the raw read/write bypasses the serializer and stores the payload verbatim, which is byte-compatible with the typed path only when the instance's serializer is the raw-bytes identity codec — and this adapter guarantees exactly that.
+`byte[]` is the cache's native wire format, stored verbatim (never through a serializer), so the middleware's `byte[]` entries land as raw bytes under any serializer — no serializer is wired, and the `configureCache` callback selects **only** the backing provider (for example `instance.UseRedis(...)`). Because `byte[]` is native, the `IBufferCache` fast path and the typed `byte[]` path are always byte-consistent, so the buffer-oriented read/write is safe here without any serializer configuration.
 
-Distribution is a function of the backing provider the consumer composes, not the adapter. With an InMemory-only backing cache the raw-bytes codec is a no-op (InMemory stores object references and never serializes) and eviction is single-node only. Back the named instance with Redis (`instance.UseRedis(...)`) for distributed, cluster-wide output caching: the value blobs and the tag markers both live in Redis, shared by every instance.
+Distribution is a function of the backing provider the consumer composes, not the adapter. With an InMemory-only backing cache (which stores object references and never serializes) eviction is single-node only. Back the named instance with Redis (`instance.UseRedis(...)`) for distributed, cluster-wide output caching: the value blobs and the tag markers both live in Redis, shared by every instance.
 
 ## Installation
 
@@ -75,7 +75,7 @@ Because the Redis-backed store keeps both the value blobs and the tag markers in
 | `CacheName` | `"output-cache"` | Named cache instance used by the store. Must be non-empty and must not be a reserved Headless cache provider key. Output-cache entries live in their own namespace, isolated from the default cache. |
 | `DefaultExpiration` | `1 minute` | Duration applied only when ASP.NET hands the store a non-positive `validFor`; a positive `validFor` always passes through unchanged as the entry `Duration`. Must be greater than zero. |
 
-Options are validated through the Hosting FluentValidation pipeline with startup validation. The `configureCache` callback passed to `UseOutputCache(...)` selects only the backing provider for the named cache — exactly one, usually `instance.UseRedis(...)`. The raw-bytes codec is wired automatically; calling `WithSerializer` in the callback throws `InvalidOperationException`.
+Options are validated through the Hosting FluentValidation pipeline with startup validation. The `configureCache` callback passed to `UseOutputCache(...)` selects only the backing provider for the named cache — exactly one, usually `instance.UseRedis(...)`. `byte[]` is the cache's native wire format, so no serializer configuration is needed.
 
 ## Dependencies
 
@@ -87,7 +87,7 @@ Options are validated through the Hosting FluentValidation pipeline with startup
 
 ## Side Effects
 
-- Adds a named cache instance through `setup.AddNamed(...)`, wired with the internal raw-bytes codec as a keyed `ISerializer`.
+- Adds a named cache instance through `setup.AddNamed(...)`.
 - Replaces (`services.Replace`) the `IOutputCacheStore` registration with the Headless store as singleton. Only `IOutputCacheStore` is registered; the same instance also implements `IOutputCacheBufferStore`, which the formatter discovers by pattern-matching the resolved store (no separate registration).
 - Registers `HeadlessOutputCacheStoreOptions` with FluentValidation and startup validation.
 - Registers `TimeProvider.System` when no `TimeProvider` is already registered.
