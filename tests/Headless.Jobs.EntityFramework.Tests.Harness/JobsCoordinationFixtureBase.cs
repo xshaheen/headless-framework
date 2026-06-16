@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.Coordination;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
+using Headless.Jobs.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -137,7 +138,8 @@ public static class JobsCoordinationFixtureExtensions
         string function,
         int status,
         string? ownerId,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        NodeDeathPolicy onNodeDeath = NodeDeathPolicy.Retry
     )
     {
         await using var connection = fixture.CreateConnection();
@@ -146,12 +148,13 @@ public static class JobsCoordinationFixtureExtensions
         command.CommandText =
             $"INSERT INTO {fixture.QualifiedTimeJobsTable} ({_InsertColumns}) "
             + $"VALUES (@id, @function, @function, @status, @ownerId, "
-            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0);";
+            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath);";
 
         _AddParameter(command, "@id", id);
         _AddParameter(command, "@function", function);
         _AddParameter(command, "@status", status);
         _AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
+        _AddParameter(command, "@onNodeDeath", (int)onNodeDeath);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -187,7 +190,7 @@ public static class JobsCoordinationFixtureExtensions
     // (QUOTED_IDENTIFIER is ON by default for SqlClient), and Postgres requires them for the PascalCase columns.
     private const string _InsertColumns =
         "\"Id\", \"Function\", \"Description\", \"Status\", \"OwnerId\", "
-        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\"";
+        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\"";
 
     // Both Npgsql and SqlClient accept the "@name" parameter form.
     private static void _AddParameter(DbCommand command, string name, object value)

@@ -20,6 +20,13 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     /// </summary>
     public virtual DateTime? LockedUntil { get; internal set; }
     public virtual DateTime? ExecutedAt { get; internal set; }
+
+    /// <summary>
+    /// Policy applied when the owning node dies mid-execution. Gates the claim predicate's lease-expiry arm
+    /// (only <see cref="NodeDeathPolicy.Retry"/> is speculatively re-claimable) and drives the dead-node
+    /// sweep's terminal transitions. Defaults to <see cref="NodeDeathPolicy.Retry"/>.
+    /// </summary>
+    public virtual NodeDeathPolicy OnNodeDeath { get; internal set; } = NodeDeathPolicy.Retry;
     public virtual string? ExceptionMessage { get; internal set; }
     public virtual string? SkippedReason { get; internal set; }
     public virtual long ElapsedTime { get; internal set; }
