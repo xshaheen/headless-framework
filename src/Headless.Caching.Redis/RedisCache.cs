@@ -1897,6 +1897,15 @@ public sealed class RedisCache(
             return s;
         }
 
+        // byte[] is the cache's native wire format — it IS the serialized form, so store it verbatim and never
+        // route it through the ISerializer (a JSON serializer would base64-bloat it, and it would diverge from the
+        // IBufferCache raw path). This sits alongside the string fast path; both feed the frame value segment and
+        // the CAS `expected` operand from this single choke point, so encode/decode/compare stay consistent.
+        if (value is byte[] bytes)
+        {
+            return bytes;
+        }
+
         return serializer.SerializeToBytes(value);
     }
 
@@ -1915,6 +1924,12 @@ public sealed class RedisCache(
         if (typeof(T) == typeof(string))
         {
             return (T?)(object?)redisValue.ToString();
+        }
+
+        // Native byte[]: return the wire bytes verbatim (mirror of the string fast path in _ToRedisValue).
+        if (typeof(T) == typeof(byte[]))
+        {
+            return (T?)(object?)(byte[]?)redisValue;
         }
 
         return serializer.Deserialize<T>((byte[])redisValue!);
@@ -2555,6 +2570,13 @@ public sealed class RedisCache(
         if (typeof(T) == typeof(string))
         {
             return (T?)(object)Encoding.UTF8.GetString(segment.Span);
+        }
+
+        // Native byte[]: the framed value segment IS the payload — copy it out verbatim, no serializer. (The
+        // IBufferCache.TryGetToAsync path avoids even this copy by writing the segment straight to the caller.)
+        if (typeof(T) == typeof(byte[]))
+        {
+            return (T?)(object)segment.ToArray();
         }
 
         // Avoid copying segment into a new byte[] via ToArray(). If the backing store is a managed array
