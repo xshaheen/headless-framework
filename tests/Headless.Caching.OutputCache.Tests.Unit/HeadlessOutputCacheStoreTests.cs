@@ -41,7 +41,9 @@ public sealed class HeadlessOutputCacheStoreTests
     {
         // given
         var bytes = new byte[] { 1, 2, 3, 4 };
-        _cache.GetAsync<byte[]>(_Key, Arg.Any<CancellationToken>()).Returns(new CacheValue<byte[]>(bytes, hasValue: true));
+        _cache
+            .GetAsync<byte[]>(_Key, Arg.Any<CancellationToken>())
+            .Returns(new CacheValue<byte[]>(bytes, hasValue: true));
         var store = _CreateStore();
 
         // when
@@ -138,7 +140,9 @@ public sealed class HeadlessOutputCacheStoreTests
     {
         // given
         var bytes = new byte[] { 10, 20, 30 };
-        _cache.GetAsync<byte[]>(_Key, Arg.Any<CancellationToken>()).Returns(new CacheValue<byte[]>(bytes, hasValue: true));
+        _cache
+            .GetAsync<byte[]>(_Key, Arg.Any<CancellationToken>())
+            .Returns(new CacheValue<byte[]>(bytes, hasValue: true));
         var pipe = new Pipe();
         var store = _CreateStore();
 
@@ -204,7 +208,13 @@ public sealed class HeadlessOutputCacheStoreTests
         await FluentActions
             .Awaiting(() =>
                 store
-                    .SetAsync("", ReadOnlySequence<byte>.Empty, ReadOnlyMemory<string>.Empty, _ValidFor, CancellationToken.None)
+                    .SetAsync(
+                        "",
+                        ReadOnlySequence<byte>.Empty,
+                        ReadOnlyMemory<string>.Empty,
+                        _ValidFor,
+                        CancellationToken.None
+                    )
                     .AsTask()
             )
             .Should()

@@ -40,10 +40,7 @@ public sealed class SetupOutputCacheTests
         // before any named cache or store is registered
         var action = () =>
             services.AddHeadlessCaching(setup =>
-                setup.UseOutputCache(
-                    options => options.CacheName = "   ",
-                    instance => instance.UseInMemory(_ => { })
-                )
+                setup.UseOutputCache(options => options.CacheName = "   ", instance => instance.UseInMemory(_ => { }))
             );
 
         // then

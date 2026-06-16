@@ -1233,7 +1233,12 @@ public abstract class CacheConformanceTestsBase : TestBase
         var writer = new ArrayBufferWriter<byte>();
 
         // Typed byte[] write must be readable by the buffer path (cross-path fidelity, the reverse direction).
-        await cache.UpsertEntryAsync(key, payload, new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) }, AbortToken);
+        await cache.UpsertEntryAsync(
+            key,
+            payload,
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
         var found = await buffer.TryGetToAsync(key, writer, AbortToken);
 
         found.Should().BeTrue();

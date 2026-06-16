@@ -13,7 +13,12 @@ using Nito.AsyncEx;
 namespace Headless.Caching;
 
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
-public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, ISeedableTagMarkerCache, IBufferCache, IDisposable
+public sealed class InMemoryCache
+    : IInMemoryCache,
+        IFactoryCacheStore,
+        ISeedableTagMarkerCache,
+        IBufferCache,
+        IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
 

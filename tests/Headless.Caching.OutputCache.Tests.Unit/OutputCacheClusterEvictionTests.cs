@@ -39,7 +39,9 @@ public sealed class OutputCacheClusterEvictionTests
         await harness.A.Store.EvictByTagAsync("products", CancellationToken.None);
 
         // then — node B observes the eviction without any call to its own store's evict
-        (await harness.B.Store.GetAsync(key, CancellationToken.None)).Should().BeNull();
+        (await harness.B.Store.GetAsync(key, CancellationToken.None))
+            .Should()
+            .BeNull();
     }
 
     [Fact]
@@ -56,7 +58,9 @@ public sealed class OutputCacheClusterEvictionTests
         await harness.A.Store.EvictByTagAsync("products", CancellationToken.None);
 
         // then — only the "products" entry is gone; the "catalog" entry is untouched (no over-eviction)
-        (await harness.B.Store.GetAsync("ock:products:1", CancellationToken.None)).Should().BeNull();
+        (await harness.B.Store.GetAsync("ock:products:1", CancellationToken.None))
+            .Should()
+            .BeNull();
         (await harness.B.Store.GetAsync("ock:catalog:1", CancellationToken.None)).Should().Equal(survivor);
     }
 
@@ -74,7 +78,9 @@ public sealed class OutputCacheClusterEvictionTests
         await harness.A.Store.EvictByTagAsync("products", CancellationToken.None);
 
         // then
-        (await harness.A.Store.GetAsync(key, CancellationToken.None)).Should().BeNull();
+        (await harness.A.Store.GetAsync(key, CancellationToken.None))
+            .Should()
+            .BeNull();
     }
 }
 

@@ -22,7 +22,9 @@ public sealed class BufferCacheExtensionsTests
     {
         // given — the mock cache does not implement IBufferCache, so the helper takes the byte[] fallback branch
         var bytes = new byte[] { 10, 20, 30, 40 };
-        _cache.GetAsync<byte[]>(_Key, Arg.Any<CancellationToken>()).Returns(new CacheValue<byte[]>(bytes, hasValue: true));
+        _cache
+            .GetAsync<byte[]>(_Key, Arg.Any<CancellationToken>())
+            .Returns(new CacheValue<byte[]>(bytes, hasValue: true));
         var writer = new ArrayBufferWriter<byte>();
 
         // when

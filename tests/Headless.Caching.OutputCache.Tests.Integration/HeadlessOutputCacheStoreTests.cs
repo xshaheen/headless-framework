@@ -61,7 +61,9 @@ public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixtur
         await store.EvictByTagAsync("a", AbortToken);
 
         // the entry tagged "a" is gone; the entry tagged only "b" survives
-        (await store.GetAsync(tagged, AbortToken)).Should().BeNull();
+        (await store.GetAsync(tagged, AbortToken))
+            .Should()
+            .BeNull();
         (await store.GetAsync(other, AbortToken)).Should().Equal([0xB]);
     }
 
@@ -75,7 +77,13 @@ public sealed class HeadlessOutputCacheStoreTests(OutputCacheRedisFixture fixtur
         // R7: the store delegates tag-limit validation to the engine's write-time choke point rather than
         // re-implementing it.
         var act = async () =>
-            await store.SetAsync(Faker.Random.AlphaNumeric(12), [0x1], [oversizedTag], TimeSpan.FromMinutes(5), AbortToken);
+            await store.SetAsync(
+                Faker.Random.AlphaNumeric(12),
+                [0x1],
+                [oversizedTag],
+                TimeSpan.FromMinutes(5),
+                AbortToken
+            );
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
