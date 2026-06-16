@@ -15,6 +15,7 @@ Provides process-local caching through the unified `ICache` abstraction, suitabl
 - Automatic memory management with configurable limits (`MaxItems` plus LRU eviction).
 - O(1) logical tag invalidation and `ClearAsync` through per-tag and clear-generation timestamp markers (Family-2), compared against each entry's birth time on read.
 - Optional value cloning for isolation.
+- Implements `IBufferCache` — stores framed bytes, slices to the caller's `IBufferWriter<byte>` on read, copies the `ReadOnlySequence<byte>` on write, with the same stamping as the generic path (no intermediate `byte[]` on the fast path).
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ## Design Notes

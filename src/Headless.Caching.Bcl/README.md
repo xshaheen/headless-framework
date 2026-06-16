@@ -75,7 +75,6 @@ The `configureCache` callback passed to `UseBclCache(...)` selects only the back
 - `Headless.Caching.Abstractions`
 - `Headless.Caching.Core`
 - `Headless.Hosting`
-- `Headless.Serializer.Abstractions`
 - `Microsoft.Extensions.Caching.Abstractions`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 

@@ -19,6 +19,7 @@ Provides one `ICache` implementation that reads from a fast local cache first, f
 - Named tier selection (`LocalCacheName`/`RemoteCacheName`) and named hybrid instances via `setup.AddNamed(name, i => i.UseHybrid(...))`.
 - Opt-in auto-recovery: transient L2/backplane outages queue failed single-key operations and replay them on recovery.
 - L2 read soft/hard timeouts and a simple L2 circuit breaker keep slow or failing distributed reads from holding callers.
+- Implements `IBufferCache` — an L1 hit slices straight into the caller's `IBufferWriter<byte>` (single copy on the hot path); an L1 miss falls through to the same wrapped L2 read the generic path uses and seeds L1 (two copies on the cold path, inherent to populating both tiers). Raw upsert stamps both tiers plus the backplane identically to `UpsertEntryAsync`.
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ## Design Notes

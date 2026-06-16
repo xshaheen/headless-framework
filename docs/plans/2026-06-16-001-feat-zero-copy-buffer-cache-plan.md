@@ -4,6 +4,14 @@ Plan for a byte-streaming fast path through the caching stack so the ASP.NET Cor
 adapter (and the BCL `IDistributedCache` adapter) can read/write payloads without the intermediate
 `byte[]` materializations they pay today.
 
+> **Resolution note (implemented differently from R2/U2):** the `IBinarySerializer` DIM buffer
+> overloads + `RawBytesSerializer` override described in R2 and U2 were **not** shipped. During
+> implementation `byte[]` (and `string`) were made the cache's *native wire format* — stored verbatim,
+> never routed through a serializer — so the serializer never sits on the buffer path and the DIM
+> bridges had nothing to do. `RawBytesSerializer` was deleted instead of promoted. The buffer
+> zero-copy goal is fully met through the provider codecs (`IBufferCache` on Redis/InMemory/Hybrid);
+> do not re-implement the DIM overloads. See `docs/llms/serialization.md` / `docs/llms/caching.md`.
+
 ## Context
 
 `HeadlessOutputCacheStore` implements `IOutputCacheBufferStore`, whose purpose is to let a store
