@@ -79,14 +79,14 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         {
             const string dead = "node-a@5";
 
-            var reclaimedId = Guid.NewGuid(); // dead owner, Queued -> released back to Idle
-            var skippedId = Guid.NewGuid(); // dead owner, InProgress -> Skipped
-            var terminalId = Guid.NewGuid(); // dead owner, Done -> untouched (terminal)
+            var reclaimedId = Guid.NewGuid(); // dead owner, Queued (Retry) -> released back to Idle
+            var retryInFlightId = Guid.NewGuid(); // dead owner, InProgress + Retry -> released back to Idle (#315)
+            var terminalId = Guid.NewGuid(); // dead owner, Succeeded -> untouched (terminal)
             var unownedId = Guid.NewGuid(); // no owner, Idle -> untouched
             var otherIncarnationId = Guid.NewGuid(); // node-a@6, Queued -> untouched (different incarnation)
 
             await fixture.SeedTimeJobAsync(reclaimedId, "Reclaimed", (int)JobStatus.Queued, dead, ct);
-            await fixture.SeedTimeJobAsync(skippedId, "Skipped", (int)JobStatus.InProgress, dead, ct);
+            await fixture.SeedTimeJobAsync(retryInFlightId, "RetryInFlight", (int)JobStatus.InProgress, dead, ct);
             await fixture.SeedTimeJobAsync(terminalId, "Terminal", (int)JobStatus.Succeeded, dead, ct);
             await fixture.SeedTimeJobAsync(unownedId, "Unowned", (int)JobStatus.Idle, ownerId: null, ct);
             await fixture.SeedTimeJobAsync(otherIncarnationId, "Other", (int)JobStatus.Queued, "node-a@6", ct);
@@ -95,14 +95,77 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
 
-            // One Queued row released + one InProgress row skipped.
+            // One Queued row + one InProgress-Retry row, both released back to Idle (default policy is Retry).
             affected.Should().Be(2);
 
             (await fixture.ReadTimeJobAsync(reclaimedId, ct)).Should().Be(((int)JobStatus.Idle, null));
-            (await fixture.ReadTimeJobAsync(skippedId, ct)).Should().Be(((int)JobStatus.Skipped, dead));
+            (await fixture.ReadTimeJobAsync(retryInFlightId, ct)).Should().Be(((int)JobStatus.Idle, null));
             (await fixture.ReadTimeJobAsync(terminalId, ct)).Should().Be(((int)JobStatus.Succeeded, dead));
             (await fixture.ReadTimeJobAsync(unownedId, ct)).Should().Be(((int)JobStatus.Idle, null));
             (await fixture.ReadTimeJobAsync(otherIncarnationId, ct)).Should().Be(((int)JobStatus.Queued, "node-a@6"));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            const string dead = "node-a@5";
+            var id = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(
+                id,
+                "MarkFailed",
+                (int)JobStatus.InProgress,
+                dead,
+                ct,
+                NodeDeathPolicy.MarkFailed
+            );
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
+
+            // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit.
+            affected.Should().Be(1);
+            (await fixture.ReadTimeJobAsync(id, ct)).Should().Be(((int)JobStatus.Failed, dead));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task dead_node_with_skip_policy_transitions_in_flight_row_to_skipped()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            const string dead = "node-a@5";
+            var id = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(id, "Skip", (int)JobStatus.InProgress, dead, ct, NodeDeathPolicy.Skip);
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+            var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
+
+            // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run).
+            affected.Should().Be(1);
+            (await fixture.ReadTimeJobAsync(id, ct)).Should().Be(((int)JobStatus.Skipped, dead));
         }
         finally
         {
