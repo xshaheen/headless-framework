@@ -34,4 +34,8 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     [Fact]
     public override Task completion_is_fenced_on_ownership_and_non_terminal_status() =>
         base.completion_is_fenced_on_ownership_and_non_terminal_status();
+
+    [Fact]
+    public override Task cron_occurrence_is_stamped_with_the_node_death_policy() =>
+        base.cron_occurrence_is_stamped_with_the_node_death_policy();
 }

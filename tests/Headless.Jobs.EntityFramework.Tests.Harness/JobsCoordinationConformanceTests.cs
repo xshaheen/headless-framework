@@ -130,15 +130,21 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 (int)JobStatus.InProgress,
                 dead,
                 ct,
-                NodeDeathPolicy.MarkFailed
+                NodeDeathPolicy.MarkFailed,
+                lockedUntil: DateTime.UtcNow.AddMinutes(-1)
             );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
 
-            // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit.
+            // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit,
+            // lease cleared (#4) and a node-death ExceptionMessage set so it's distinguishable from a run failure (#8).
             affected.Should().Be(1);
-            (await fixture.ReadTimeJobAsync(id, ct)).Should().Be(((int)JobStatus.Failed, dead));
+            var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
+            detail.Status.Should().Be((int)JobStatus.Failed);
+            detail.OwnerId.Should().Be(dead);
+            detail.LockedUntil.Should().BeNull();
+            detail.ExceptionMessage.Should().Be("Node is not alive!");
         }
         finally
         {
@@ -159,14 +165,27 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         {
             const string dead = "node-a@5";
             var id = Guid.NewGuid();
-            await fixture.SeedTimeJobAsync(id, "Skip", (int)JobStatus.InProgress, dead, ct, NodeDeathPolicy.Skip);
+            await fixture.SeedTimeJobAsync(
+                id,
+                "Skip",
+                (int)JobStatus.InProgress,
+                dead,
+                ct,
+                NodeDeathPolicy.Skip,
+                lockedUntil: DateTime.UtcNow.AddMinutes(-1)
+            );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
 
-            // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run).
+            // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run), owner retained,
+            // lease cleared (#4) and SkippedReason set.
             affected.Should().Be(1);
-            (await fixture.ReadTimeJobAsync(id, ct)).Should().Be(((int)JobStatus.Skipped, dead));
+            var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
+            detail.Status.Should().Be((int)JobStatus.Skipped);
+            detail.OwnerId.Should().Be(dead);
+            detail.LockedUntil.Should().BeNull();
+            detail.SkippedReason.Should().Be("Node is not alive!");
         }
         finally
         {
@@ -219,6 +238,46 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 .Should()
                 .Be(((int)JobStatus.InProgress, "other-node@9"));
             (await fixture.ReadTimeJobAsync(terminalId, ct)).Should().Be(((int)JobStatus.Failed, "node-a@5"));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// #315 cron propagation: a cron job's node-death policy must flow onto every generated occurrence. The
+    /// manager carries the policy on the queue context; the provider stamps and persists it on the new occurrence.
+    /// </summary>
+    public virtual async Task cron_occurrence_is_stamped_with_the_node_death_policy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "cron-skip", "* * * * *", NodeDeathPolicy.Skip, ct);
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // The context mirrors what the manager builds from the cron entity (OnNodeDeath copied off the cron).
+            var context = new InternalManagerContext(cronId)
+            {
+                FunctionName = "cron-skip",
+                Expression = "* * * * *",
+                OnNodeDeath = NodeDeathPolicy.Skip,
+            };
+
+            var occurrences = await persistence
+                .QueueCronJobOccurrences((DateTime.UtcNow.AddMinutes(1), [context]), ct)
+                .ToListAsync(ct);
+
+            occurrences.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
         }
         finally
         {
