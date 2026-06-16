@@ -100,7 +100,7 @@ headless.jobs.job.execute.timeticker (main job execution span)
 | `headless.jobs.job.is_child` | Whether this is a child job | `true`, `false` |
 | `headless.jobs.job.retries` | Maximum retry attempts | `3` |
 | `headless.jobs.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
-| `headless.jobs.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
+| `headless.jobs.job.final_status` | Final execution status | `Succeeded`, `Failed`, `Cancelled`, `Skipped` |
 | `headless.jobs.job.final_retry_count` | Final retry count reached | `2` |
 | `headless.jobs.job.execution_time_ms` | Execution time in milliseconds | `1250` |
 | `headless.jobs.job.success` | Whether execution was successful | `true`, `false` |
@@ -130,7 +130,7 @@ The instrumentation provides structured logging for all job events:
 This package maps Jobs error/retry behavior into traces and logs:
 
 - Retry attempts include attempt metadata (`retry_count`, `current_attempt`).
-- Final outcomes map to status tags (`Failed`, `Cancelled`, `Skipped`, `Done`).
+- Final outcomes map to status tags (`Failed`, `Cancelled`, `Skipped`, `Succeeded`).
 - `TerminateExecutionException` outcomes are visible as skipped/final status telemetry.
 - Exception message/type/stack are emitted for failed executions.
 
