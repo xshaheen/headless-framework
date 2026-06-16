@@ -11,7 +11,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace Tests.Transactions;
 
@@ -154,6 +154,25 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         sut.Scheduler.Received(1).RestartIfNeeded(Arg.Any<DateTime>());
         await sut.Notification.Received(1).AddTimeJobNotifyAsync(job.Id);
+    }
+
+    [Fact]
+    public async Task Deferred_side_effect_failure_is_swallowed_and_logged()
+    {
+        // KTD-4 crash isolation: once the row is durably committed, a deferred post-commit side-effect failure must
+        // NOT propagate out of the commit drain (which would surface as a caller error after a successful commit) —
+        // it is swallowed and logged against the job scope so the polling sweep can recover.
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
+        var boom = new InvalidOperationException("deferred side effect boom");
+        sut.Notification.AddTimeJobNotifyAsync(Arg.Any<Guid>()).Returns(Task.FromException(boom));
+
+        await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
+
+        var drain = () => sut.Coordinator!.DrainCommitAsync(TestContext.Current.CancellationToken);
+        await drain.Should().NotThrowAsync();
+
+        sut.Logger.Entries.Should()
+            .ContainSingle(e => e.Level == LogLevel.Warning && ReferenceEquals(e.Exception, boom));
     }
 
     [Fact]
@@ -378,6 +397,8 @@ public sealed class JobsManagerCoordinatedRoutingTests
             _ => throw new ArgumentOutOfRangeException(nameof(mode)),
         };
 
+        var logger = new CapturingLogger<JobsManager<TimeJobEntity, CronJobEntity>>();
+
         var manager = new JobsManager<TimeJobEntity, CronJobEntity>(
             persistence,
             scheduler,
@@ -386,7 +407,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
             new JobsExecutionContext(),
             dispatcher,
             new FakeCurrentCommitCoordinator(coordinator),
-            NullLogger<JobsManager<TimeJobEntity, CronJobEntity>>.Instance
+            logger
         );
 
         return new Sut
@@ -397,6 +418,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
             Dispatcher = dispatcher,
             Coordinator = coordinator,
             Manager = manager,
+            Logger = logger,
         };
     }
 
@@ -411,6 +433,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
         public required IJobsDispatcher Dispatcher { get; init; }
         public required FakeCommitCoordinator? Coordinator { get; init; }
         public required JobsManager<TimeJobEntity, CronJobEntity> Manager { get; init; }
+        public required CapturingLogger<JobsManager<TimeJobEntity, CronJobEntity>> Logger { get; init; }
 
         public ITimeJobManager<TimeJobEntity> Time => Manager;
 
@@ -506,5 +529,31 @@ public sealed class JobsManagerCoordinatedRoutingTests
         public static readonly _EmptyServiceProvider Instance = new();
 
         public object? GetService(Type serviceType) => null;
+    }
+
+    // Records the LoggerMessage-emitted entries so a test can assert the deferred-failure log without a logging mock.
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull => _NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => Entries.Add((logLevel, exception));
+
+        private sealed class _NullScope : IDisposable
+        {
+            public static readonly _NullScope Instance = new();
+
+            public void Dispose() { }
+        }
     }
 }

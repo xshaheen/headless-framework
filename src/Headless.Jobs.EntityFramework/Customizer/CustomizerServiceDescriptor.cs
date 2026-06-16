@@ -138,6 +138,10 @@ public static class ServiceBuilder
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
+        // Fail loud at DI-build time when the context cannot back coordinated writes, rather than at first
+        // coordinated write where the provider's static factory would surface it as a TypeInitializationException.
+        CoordinatedWriteContextFactory.RequireOptionsConstructor<TContext>();
+
         // ICache is resolved with GetService (optional): cron-expression caching is enabled only when the host
         // application registers a default Headless.Caching provider; otherwise Jobs reads cron expressions from the DB.
         services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(

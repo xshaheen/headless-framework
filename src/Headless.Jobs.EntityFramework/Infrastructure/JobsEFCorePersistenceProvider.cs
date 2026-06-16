@@ -49,16 +49,10 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     private static Func<DbContextOptions<TDbContext>, TDbContext> _BuildContextFactory()
     {
-        var constructor = typeof(TDbContext).GetConstructor([typeof(DbContextOptions<TDbContext>)]);
-
-        if (constructor is null)
-        {
-            throw new InvalidOperationException(
-                $"Coordinated job writes require {typeof(TDbContext).Name} to declare a public constructor accepting a "
-                    + $"single DbContextOptions<{typeof(TDbContext).Name}> argument — the same constructor EF Core's "
-                    + "DbContext pooling requires."
-            );
-        }
+        // Registration validates this constructor up front (see CoordinatedWriteContextFactory) so a misconfigured
+        // context fails at DI-build with the direct message; this call is the defense-in-depth net for a provider
+        // constructed outside that path.
+        var constructor = CoordinatedWriteContextFactory.RequireOptionsConstructor<TDbContext>();
 
         var optionsParameter = Expression.Parameter(typeof(DbContextOptions<TDbContext>), "options");
 
