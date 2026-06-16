@@ -59,16 +59,18 @@ internal sealed class HeadlessOutputCacheStore(ICache cache, IOptions<HeadlessOu
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(destination);
 
-        var value = await cache.GetAsync<byte[]>(key, cancellationToken).ConfigureAwait(false);
+        // PipeWriter is an IBufferWriter<byte>: when the named cache implements IBufferCache (Redis/InMemory/Hybrid)
+        // the payload is written straight into the pipe with no intermediate byte[]; otherwise the helper falls back
+        // to GetAsync<byte[]> + a single copy. The helper writes via IBufferWriter.Write (Advance, no implicit
+        // flush), so flush the pipe on a hit to match the previous WriteAsync semantics the formatter relies on.
+        var hit = await cache.TryGetToOrFallbackAsync(key, destination, cancellationToken).ConfigureAwait(false);
 
-        if (!value.HasValue)
+        if (hit)
         {
-            return false;
+            await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await destination.WriteAsync(value.Value, cancellationToken).ConfigureAwait(false);
-
-        return true;
+        return hit;
     }
 
     /// <inheritdoc />
@@ -82,14 +84,19 @@ internal sealed class HeadlessOutputCacheStore(ICache cache, IOptions<HeadlessOu
     {
         Argument.IsNotNullOrEmpty(key);
 
-        // The pooled buffer and tags span are valid only for the duration of this call (the buffer-store
-        // contract), so materialize both before the first await that may yield — reading recycled memory after
-        // the engine resumes would corrupt the entry.
-        var bytes = value.ToArray();
+        // The pooled tags span is valid only for this call, so materialize it before delegating. The value
+        // sequence is consumed synchronously by UpsertRawOrFallbackAsync (the IBufferCache raw fast path frames it
+        // without an intermediate byte[]; the fallback copies it once) — invoked here in the synchronous body,
+        // before this method returns and ASP.NET recycles the buffers.
         var tagsCopy = tags.IsEmpty ? null : tags.ToArray();
+        var entryOptions = new CacheEntryOptions { Duration = _ResolveDuration(validFor), Tags = tagsCopy };
 
-        return _UpsertAsync(key, bytes, tagsCopy, validFor, cancellationToken);
+        return _AwaitUpsert(cache.UpsertRawOrFallbackAsync(key, value, entryOptions, cancellationToken));
     }
+
+    // Discard the upsert-occurred bool: the output-cache contract has no notion of insert-vs-update. The pending
+    // task is created by the synchronous caller (which has already consumed the pooled sequence); this only awaits.
+    private static async ValueTask _AwaitUpsert(ValueTask<bool> pending) => await pending.ConfigureAwait(false);
 
     private async ValueTask _UpsertAsync(
         string key,
@@ -102,9 +109,8 @@ internal sealed class HeadlessOutputCacheStore(ICache cache, IOptions<HeadlessOu
         var entryOptions = new CacheEntryOptions
         {
             Duration = _ResolveDuration(validFor),
-            // The byte[] overload passes tags straight through (it may hand us an empty array); the buffer overload
-            // pre-normalizes empty to null before its copy. Coerce here so both paths index nothing for a tagless
-            // entry rather than registering an empty tag set with the engine.
+            // The byte[] SetAsync overload passes tags straight through (it may hand us an empty array); coerce an
+            // empty set to null so a tagless entry indexes nothing rather than registering an empty tag set.
             Tags = tags is { Length: > 0 } ? tags : null,
         };
 
