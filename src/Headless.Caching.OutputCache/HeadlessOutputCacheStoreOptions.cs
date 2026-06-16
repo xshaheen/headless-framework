@@ -13,7 +13,10 @@ public sealed class HeadlessOutputCacheStoreOptions
 
     /// <summary>
     /// Gets or sets the named Headless cache instance resolved by the store. The name must not be a reserved
-    /// cache provider key. Output-cache entries live in their own namespace, isolated from the default cache.
+    /// cache provider key. The store uses a dedicated named <see cref="ICache"/> instance; key-level isolation from
+    /// the default cache is the backing provider's responsibility — when the named instance shares a Redis
+    /// connection/database with the default cache, give it a distinct <c>KeyPrefix</c> (or its own
+    /// connection/database) so the keyspaces do not collide.
     /// </summary>
     public string CacheName { get; set; } = DefaultCacheName;
 

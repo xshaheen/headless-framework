@@ -29,6 +29,8 @@ It is a separate package from `Headless.Caching.Bcl` because an `IOutputCacheSto
 
 Distribution is a function of the backing provider the consumer composes, not the adapter. With an InMemory-only backing cache (which stores object references and never serializes) eviction is single-node only. Back the named instance with Redis (`instance.UseRedis(...)`) for distributed, cluster-wide output caching: the value blobs and the tag markers both live in Redis, shared by every instance.
 
+When the named instance is **Hybrid** rather than Redis-only, cross-node eviction additionally rides the backplane to drop peers' L1 copies, and that publish is best-effort: with the engine default `ReThrowBackplaneExceptions = false`, a failed publish is logged but not surfaced, so a successful `EvictByTagAsync` guarantees only local-node invalidation — peers then rely on the shared L2 marker (and, worst case, the entry's TTL). A Redis-only backing — the Quick Start default — has no L1 and no backplane, so this caveat does not apply.
+
 ## Installation
 
 ```bash
@@ -72,10 +74,10 @@ Because the Redis-backed store keeps both the value blobs and the tag markers in
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `CacheName` | `"output-cache"` | Named cache instance used by the store. Must be non-empty and must not be a reserved Headless cache provider key. Output-cache entries live in their own namespace, isolated from the default cache. |
+| `CacheName` | `"output-cache"` | Named cache instance used by the store. Must be non-empty and must not be a reserved Headless cache provider key. The store uses a dedicated named cache instance; key-level isolation from the default cache is the backing provider's responsibility — give the instance a distinct `KeyPrefix` (or its own connection/database) when it shares Redis infrastructure with the default cache. |
 | `DefaultExpiration` | `1 minute` | Duration applied only when ASP.NET hands the store a non-positive `validFor`; a positive `validFor` always passes through unchanged as the entry `Duration`. Must be greater than zero. |
 
-Options are validated through the Hosting FluentValidation pipeline with startup validation. The `configureCache` callback passed to `UseOutputCache(...)` selects only the backing provider for the named cache — exactly one, usually `instance.UseRedis(...)`. `byte[]` is the cache's native wire format, so no serializer configuration is needed.
+Options are validated through the Hosting FluentValidation pipeline with startup validation. The `configureCache` callback passed to `UseOutputCache(...)` selects only the backing provider for the named cache — exactly one, usually `instance.UseRedis(...)`. `byte[]` is the cache's native wire format, so no serializer configuration is needed — configuring one on the named instance throws at registration. `UseOutputCache` is a consumer of Headless caching, so `AddHeadlessCaching` still requires a default provider (`UseInMemory`/`UseRedis`/`UseHybrid`) alongside it.
 
 ## Dependencies
 
