@@ -30,6 +30,7 @@ internal static class MappingExtensions
             UpdatedAt = e.UpdatedAt,
             ParentId = e.ParentId,
             ExecutionTime = e.ExecutionTime,
+            OnNodeDeath = e.OnNodeDeath,
             Children = e
                 .Children.Select(ch => new TimeJobEntity
                 {
@@ -38,6 +39,7 @@ internal static class MappingExtensions
                     Retries = ch.Retries,
                     RetryIntervals = ch.RetryIntervals,
                     RunCondition = ch.RunCondition,
+                    OnNodeDeath = ch.OnNodeDeath,
                     Children = ch
                         .Children.Select(gch => new TimeJobEntity
                         {
@@ -46,6 +48,7 @@ internal static class MappingExtensions
                             RetryIntervals = gch.RetryIntervals,
                             Id = gch.Id,
                             RunCondition = gch.RunCondition,
+                            OnNodeDeath = gch.OnNodeDeath,
                         })
                         .ToArray(),
                 })
@@ -63,12 +66,14 @@ internal static class MappingExtensions
             Id = e.Id,
             UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
+            OnNodeDeath = e.OnNodeDeath,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
                 Function = e.CronJob.Function,
                 RetryIntervals = e.CronJob.RetryIntervals,
                 Retries = e.CronJob.Retries,
+                OnNodeDeath = e.CronJob.OnNodeDeath,
             },
         };
 

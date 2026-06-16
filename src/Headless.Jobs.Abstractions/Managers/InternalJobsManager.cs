@@ -283,6 +283,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                     Expression = cronJob.Expression,
                     Retries = cronJob.Retries,
                     RetryIntervals = cronJob.RetryIntervals,
+                    OnNodeDeath = cronJob.OnNodeDeath,
                 };
 
                 ties = null;
@@ -297,6 +298,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                         Expression = cronJob.Expression,
                         Retries = cronJob.Retries,
                         RetryIntervals = cronJob.RetryIntervals,
+                        OnNodeDeath = cronJob.OnNodeDeath,
                     }
                 );
             }
@@ -312,6 +314,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                 Expression = earliestStored.CronJob.Expression,
                 Retries = earliestStored.CronJob.Retries,
                 RetryIntervals = earliestStored.CronJob.RetryIntervals,
+                OnNodeDeath = earliestStored.CronJob.OnNodeDeath,
                 NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt),
             };
 

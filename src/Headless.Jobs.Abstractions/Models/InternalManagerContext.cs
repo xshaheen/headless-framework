@@ -1,3 +1,5 @@
+using Headless.Jobs.Enums;
+
 namespace Headless.Jobs.Models;
 
 public class InternalManagerContext(Guid id)
@@ -7,6 +9,9 @@ public class InternalManagerContext(Guid id)
     public required string Expression { get; set; }
     public int Retries { get; set; }
     public int[]? RetryIntervals { get; set; }
+
+    /// <summary>Node-death policy carried from the cron definition to stamp onto generated occurrences.</summary>
+    public NodeDeathPolicy OnNodeDeath { get; set; } = NodeDeathPolicy.Retry;
     public NextCronOccurrence? NextCronOccurrence { get; set; }
 }
 

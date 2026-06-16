@@ -800,6 +800,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 if (_CronJobs.TryGetValue(context.Id, out var cronJob))
                 {
                     newOccurrence.CronJob = cronJob;
+                    // Propagate the cron job's node-death policy to the occurrence (single source of truth).
+                    newOccurrence.OnNodeDeath = cronJob.OnNodeDeath;
                 }
 
                 if (_CronOccurrences.TryAdd(newOccurrence.Id, newOccurrence))
@@ -1189,6 +1191,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             UpdatedAt = job.UpdatedAt,
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime,
+            OnNodeDeath = job.OnNodeDeath,
             Children = [],
         };
 
@@ -1217,6 +1220,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     Retries = ch.Retries,
                     RetryIntervals = ch.RetryIntervals,
                     RunCondition = ch.RunCondition,
+                    OnNodeDeath = ch.OnNodeDeath,
                     Children = [],
                 };
 
@@ -1240,6 +1244,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                                 Retries = gch.Retries,
                                 RetryIntervals = gch.RetryIntervals,
                                 RunCondition = gch.RunCondition,
+                                OnNodeDeath = gch.OnNodeDeath,
                             }
                         );
                     }

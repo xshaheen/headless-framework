@@ -816,6 +816,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     ExecutionTime = executionTime,
                     CronJobId = item.Id,
                     LockedUntil = now.Add(LeaseDuration),
+                    OnNodeDeath = item.OnNodeDeath,
                     CreatedAt = now,
                     UpdatedAt = now,
                 };
@@ -872,6 +873,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     Status = JobStatus.Queued,
                     OwnerId = owner,
                     LockedUntil = now.Add(LeaseDuration),
+                    OnNodeDeath = item.OnNodeDeath,
                     UpdatedAt = now,
                     CreatedAt = item.NextCronOccurrence.CreatedAt,
                     CronJob = new TCronJob
