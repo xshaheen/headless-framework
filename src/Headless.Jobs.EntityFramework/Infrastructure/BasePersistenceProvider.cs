@@ -312,7 +312,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .WhereOwnedBy(instanceIdentifier)
             .Where(x =>
-                x.Status == JobStatus.Idle || x.Status == JobStatus.Queued || x.OnNodeDeath == NodeDeathPolicy.Retry
+                x.Status == JobStatus.Idle
+                || x.Status == JobStatus.Queued
+                || (x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.Retry)
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -334,6 +336,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setter =>
                     setter
                         .SetProperty(x => x.Status, JobStatus.Failed)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
                 CancellationToken.None
@@ -349,6 +353,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setter =>
                     setter
                         .SetProperty(x => x.Status, JobStatus.Skipped)
+                        .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
@@ -700,7 +705,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .WhereOwnedBy(instanceIdentifier)
             .Where(x =>
-                x.Status == JobStatus.Idle || x.Status == JobStatus.Queued || x.OnNodeDeath == NodeDeathPolicy.Retry
+                x.Status == JobStatus.Idle
+                || x.Status == JobStatus.Queued
+                || (x.Status == JobStatus.InProgress && x.OnNodeDeath == NodeDeathPolicy.Retry)
             )
             .ExecuteUpdateAsync(
                 setter =>
@@ -721,6 +728,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setter =>
                     setter
                         .SetProperty(x => x.Status, JobStatus.Failed)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
                 CancellationToken.None
@@ -735,6 +744,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setter =>
                     setter
                         .SetProperty(x => x.Status, JobStatus.Skipped)
+                        .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),

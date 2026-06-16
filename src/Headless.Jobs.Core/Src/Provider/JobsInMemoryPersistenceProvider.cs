@@ -553,6 +553,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         t =>
                         {
                             t.Status = JobStatus.Failed;
+                            t.LockedUntil = null;
+                            t.ExceptionMessage = "Node is not alive!";
                             t.ExecutedAt = now;
                         }
                     )
@@ -569,6 +571,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
+                            t.LockedUntil = null;
                             t.SkippedReason = "Node is not alive!";
                             t.ExecutedAt = now;
                         }
@@ -983,6 +986,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         o =>
                         {
                             o.Status = JobStatus.Failed;
+                            o.LockedUntil = null;
+                            o.ExceptionMessage = "Node is not alive!";
                             o.ExecutedAt = now;
                         }
                     )
@@ -999,6 +1004,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         o =>
                         {
                             o.Status = JobStatus.Skipped;
+                            o.LockedUntil = null;
                             o.SkippedReason = "Node is not alive!";
                             o.ExecutedAt = now;
                         }
