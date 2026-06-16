@@ -8,7 +8,7 @@ public enum RunCondition
 {
     /// <summary>
     /// Run only if the parent completed successfully
-    /// (i.e., status is Done or DueDone).
+    /// (i.e., status is Succeeded or DueDone).
     /// </summary>
     OnSuccess,
 
@@ -29,7 +29,7 @@ public enum RunCondition
 
     /// <summary>
     /// Run after the parent reaches any terminal state
-    /// except skipped (Done, DueDone, Failed, Cancelled).
+    /// except skipped (Succeeded, DueDone, Failed, Cancelled).
     /// This is like "finally" semantics but excludes Skipped.
     /// </summary>
     OnAnyCompletedStatus,

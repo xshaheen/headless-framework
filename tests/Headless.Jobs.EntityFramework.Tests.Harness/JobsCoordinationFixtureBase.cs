@@ -150,11 +150,12 @@ public static class JobsCoordinationFixtureExtensions
             + $"VALUES (@id, @function, @function, @status, @ownerId, "
             + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, 0, @onNodeDeath);";
 
+        // Status and OnNodeDeath persist as enum names (HasConversion<string>), so seed the names, not ordinals.
         _AddParameter(command, "@id", id);
         _AddParameter(command, "@function", function);
-        _AddParameter(command, "@status", status);
+        _AddParameter(command, "@status", ((JobStatus)status).ToString());
         _AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
-        _AddParameter(command, "@onNodeDeath", (int)onNodeDeath);
+        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -180,7 +181,8 @@ public static class JobsCoordinationFixtureExtensions
             throw new InvalidOperationException($"TimeJob {id} not found.");
         }
 
-        var status = reader.GetInt32(0);
+        // Status persists as its enum name; parse back to the ordinal the callers assert against.
+        var status = (int)Enum.Parse<JobStatus>(reader.GetString(0));
         var ownerId = await reader.IsDBNullAsync(1, cancellationToken) ? null : reader.GetString(1);
 
         return (status, ownerId);
