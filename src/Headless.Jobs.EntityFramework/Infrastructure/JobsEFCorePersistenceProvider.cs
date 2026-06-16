@@ -15,6 +15,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
+    SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
     ILogger logger
 )
@@ -22,6 +23,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
         timeProvider,
         ownerIdentity,
+        optionsBuilder,
         cache,
         logger
     ),
@@ -342,7 +344,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var query = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => occurrenceIds.Contains(x.Id))
-            .WhereCanAcquire(owner);
+            .WhereCanAcquire(owner, now);
 
         // Lock and mark InProgress
         var affected = await query
@@ -350,7 +352,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 setter =>
                     setter
                         .SetProperty(x => x.OwnerId, owner)
-                        .SetProperty(x => x.LockedAt, now)
+                        .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
                         .SetProperty(x => x.Status, JobStatus.InProgress)
                         .SetProperty(x => x.UpdatedAt, now),
                 cancellationToken

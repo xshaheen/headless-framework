@@ -132,6 +132,7 @@ public sealed class CronExpressionCacheTests
             new ThrowingDbContextFactory(),
             TimeProvider.System,
             new TestOwnerIdentity(),
+            new SchedulerOptionsBuilder(),
             cache,
             NullLogger.Instance
         );
@@ -267,6 +268,7 @@ public sealed class CronExpressionCacheTests
                 new TestDbContextFactory(_options),
                 TimeProvider.System,
                 new TestOwnerIdentity(),
+                new SchedulerOptionsBuilder(),
                 cache,
                 NullLogger.Instance
             );

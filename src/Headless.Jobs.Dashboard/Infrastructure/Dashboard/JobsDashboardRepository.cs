@@ -299,9 +299,9 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
     public async Task<IList<(string, int)>> GetMachineJobsAsync(CancellationToken cancellationToken = default)
     {
-        var timeJobs = await _persistenceProvider.GetTimeJobs(x => x.LockedAt != null, cancellationToken);
+        var timeJobs = await _persistenceProvider.GetTimeJobs(x => x.LockedUntil != null, cancellationToken);
         var cronJobOccurrences = await _persistenceProvider.GetAllCronJobOccurrences(
-            x => x.LockedAt != null,
+            x => x.LockedUntil != null,
             cancellationToken
         );
 
@@ -400,7 +400,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             Id = Guid.NewGuid(),
             Status = JobStatus.Idle,
             ExecutionTime = now,
-            LockedAt = null,
+            LockedUntil = null,
             CronJobId = id,
         };
 

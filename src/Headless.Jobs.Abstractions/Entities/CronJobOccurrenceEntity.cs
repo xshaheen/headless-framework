@@ -10,7 +10,13 @@ public class CronJobOccurrenceEntity<TCronJob>
     public virtual string? OwnerId { get; set; }
     public virtual DateTime ExecutionTime { get; set; }
     public virtual Guid CronJobId { get; set; }
-    public virtual DateTime? LockedAt { get; set; }
+
+    /// <summary>
+    /// UTC lease deadline: the occurrence's pickup lease is held until this instant, after which the
+    /// lease-expiry self-heal arm of the claim predicate may re-claim it. Stamped as <c>now + LeaseDuration</c>
+    /// using the injected <see cref="TimeProvider"/> (application clock, not the DB server clock). Null means unleased.
+    /// </summary>
+    public virtual DateTime? LockedUntil { get; set; }
     public virtual DateTime? ExecutedAt { get; set; }
     public virtual TCronJob CronJob { get; set; } = null!;
     public virtual string? ExceptionMessage { get; set; }

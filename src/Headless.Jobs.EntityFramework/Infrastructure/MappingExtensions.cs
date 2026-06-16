@@ -146,7 +146,7 @@ internal static class MappingExtensions
         // RELEASE LOCK
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
         {
-            setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedAt, (DateTime?)null);
+            setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedUntil, (DateTime?)null);
         }
 
         // EXECUTION TIME
@@ -210,7 +210,7 @@ internal static class MappingExtensions
         // RELEASE LOCK
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
         {
-            setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedAt, (DateTime?)null);
+            setters.SetProperty(x => x.OwnerId, (string?)null).SetProperty(x => x.LockedUntil, (DateTime?)null);
         }
 
         // UPDATED_AT ALWAYS

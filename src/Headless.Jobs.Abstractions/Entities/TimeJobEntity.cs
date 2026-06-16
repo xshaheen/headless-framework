@@ -12,7 +12,13 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     public virtual string? OwnerId { get; internal set; }
     public virtual byte[]? Request { get; set; }
     public virtual DateTime? ExecutionTime { get; set; }
-    public virtual DateTime? LockedAt { get; internal set; }
+
+    /// <summary>
+    /// UTC lease deadline: the row's pickup lease is held until this instant, after which the lease-expiry
+    /// self-heal arm of the claim predicate may re-claim it. Stamped as <c>now + LeaseDuration</c> using the
+    /// injected <see cref="TimeProvider"/> (application clock, not the DB server clock). Null means unleased.
+    /// </summary>
+    public virtual DateTime? LockedUntil { get; internal set; }
     public virtual DateTime? ExecutedAt { get; internal set; }
     public virtual string? ExceptionMessage { get; internal set; }
     public virtual string? SkippedReason { get; internal set; }

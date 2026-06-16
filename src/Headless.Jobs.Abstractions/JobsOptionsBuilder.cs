@@ -196,6 +196,18 @@ public sealed class SchedulerOptionsBuilder
 
     public int MaxConcurrency { get; set; } = Environment.ProcessorCount;
     public TimeSpan IdleWorkerTimeOut { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable by the
+    /// lease-expiry self-heal arm. Stamped as <c>LockedUntil = now + LeaseDuration</c> on every claim using the
+    /// injected <see cref="TimeProvider"/> (application clock, not the DB server clock — matches Headless.Messaging
+    /// for InMemory↔SQL parity). The lease is a duplicate-suppression floor, NOT the liveness authority: a dead
+    /// node's rows are recovered by Coordination's incarnation + heartbeat sweep, not by lease expiry. Must exceed
+    /// the longest expected job runtime, or a still-running job's lease can expire and (for OnNodeDeath = Retry jobs)
+    /// be speculatively re-claimed. Defaults to five minutes.
+    /// </summary>
+    public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromMinutes(5);
+
     public TimeSpan FallbackIntervalChecker { get; set; } = TimeSpan.FromSeconds(30);
     public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Local;
 

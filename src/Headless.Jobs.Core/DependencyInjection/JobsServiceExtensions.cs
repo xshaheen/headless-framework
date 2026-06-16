@@ -1,3 +1,4 @@
+using Headless.Checks;
 using Headless.Coordination;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
@@ -36,6 +37,17 @@ public static class JobsServiceExtensions
             schedulerOptionsBuilder
         );
         optionsBuilder?.Invoke(optionInstance);
+
+        // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
+        // lease that is already expired, defeating duplicate-suppression entirely (KTD2).
+        Ensure.True(
+            schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,
+            "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
+        );
+
+        // TODO(U4): lease/fallback ordering warning — a LeaseDuration shorter than FallbackIntervalChecker risks a
+        // double-claim window. Emit a startup warning once a logger is in scope at this stage.
+
         CronScheduleCache.TimeZoneInfo = schedulerOptionsBuilder.SchedulerTimeZone;
 
         // Apply JSON serializer options for job requests if configured during service registration
