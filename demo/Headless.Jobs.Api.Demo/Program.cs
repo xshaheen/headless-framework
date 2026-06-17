@@ -44,21 +44,23 @@ app.MapPost(
     "/schedule-sample",
     async (ITimeJobManager<TimeJobEntity> manager) =>
     {
-        var result = await manager.AddAsync(
-            new TimeJobEntity
-            {
-                Function = "WebApiSample_HelloWorld",
-                Description = "Sample API demo job",
-                ExecutionTime = DateTime.UtcNow.AddSeconds(5),
-            }
-        );
-
-        if (!result.IsSucceeded || result.Result is null)
+        try
         {
-            return Results.Problem(result.Exception?.Message ?? "Failed to schedule sample job.");
-        }
+            var job = await manager.AddAsync(
+                new TimeJobEntity
+                {
+                    Function = "WebApiSample_HelloWorld",
+                    Description = "Sample API demo job",
+                    ExecutionTime = DateTime.UtcNow.AddSeconds(5),
+                }
+            );
 
-        return Results.Ok(new { result.Result.Id, ScheduledFor = result.Result.ExecutionTime });
+            return Results.Ok(new { job.Id, ScheduledFor = job.ExecutionTime });
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return Results.Problem(e.Message);
+        }
     }
 );
 await app.RunAsync();

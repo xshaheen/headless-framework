@@ -19,6 +19,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
   - [Best Practices](#best-practices)
 - [Headless.Jobs.Abstractions](#headlessjobsabstractions)
   - [Installation](#installation)
+  - [Commit Coordination (Atomic Enqueue)](#commit-coordination-atomic-enqueue)
 - [Headless.Jobs.Core](#headlessjobscore)
   - [Problem Solved](#problem-solved)
   - [Key Features](#key-features)
@@ -114,6 +115,7 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - No-Redis dead-node recovery is TTL-bounded, not immediate: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (plus a periodic reconcile backstop). Tune via the Coordination heartbeat/TTL and `SchedulerOptionsBuilder.DeadNodeReconcileInterval`.
 - Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
 - For time-based (one-off) jobs, inject `ITimeJobManager<TimeJobEntity>` and call `AddAsync()`.
+- To enqueue a job atomically with a domain write (and/or an outbox publish), run them inside a relational commit-coordinated scope (`Headless.CommitCoordination`, e.g. `db.ExecuteCoordinatedTransactionAsync(...)`). `AddAsync` then writes the row inside the caller's transaction and defers dispatch/scheduler/notify/cron-cache-invalidation to post-commit. This needs **two** registrations on the durable path: `AddHeadlessCoordination(...)` for the operational store (the `Headless.Coordination` distributed-lock subsystem) **and** a commit-coordination provider — `services.AddPostgreSqlCommitCoordination()` or `AddSqlServerCommitCoordination()` (the separate `Headless.CommitCoordination` subsystem) — to activate the coordinated scope. Similar names, different systems; register both. Capture is synchronous (pre-await): the coordinator scope is an `AsyncLocal` captured when `AddAsync` is entered, so never put `AddAsync` behind an intermediate `async` method that `await`s first — the captured scope is lost and the enqueue silently falls back to direct insert that auto-commits even if the outer transaction rolls back. Keep coordinated enqueues in one scope sequential — the scope's single DB connection/transaction is not thread-safe. On the coordinated path `AddAsync` / `AddBatchAsync` (time **and** cron) return the persisted entity and **throw** on any failure — wrap the call in `try/catch`. A thrown failure rolls the caller's transaction back rather than committing without the job row, which is the whole point; a returned entity means the row was enlisted (it commits with the transaction), not that dispatch ran (the fallback poll sweep — `FallbackIntervalChecker`, default 30s — recovers a post-commit dispatch failure). Failures that throw: validation (`JobValidatorException` — its `Errors` lists every failure for a batch), a relational transaction offered but dead/completed, or a relational coordinator active but the provider can't write coordinated (`InvalidOperationException`); a coordinated scope with no relational capability falls back to direct insert. `Update`/`Delete` keep returning `JobResult` — only the transaction-enlisting Add path throws. Requires the EF operational store (`AddOperationalStore`) whose `DbContext` must expose a `public MyContext(DbContextOptions<MyContext> options)` constructor; the in-memory path is always direct.
 - For cron jobs, the `[Jobs]` attribute takes a cron expression and optional `Priority` parameter (`JobPriority.High`, `Normal`, `LongRunning`).
 - Use `[JobsConstructor]` attribute on constructors when you need custom DI injection in job classes.
 - Dashboard authentication: call `dashboard.WithBasicAuth()`, `WithApiKey()`, or `WithHostAuthentication()` inside `config.AddDashboard()`.
@@ -298,6 +300,46 @@ Simple utilities for queuing and executing cron/time-based jobs in the backgroun
 ```bash
 dotnet add package Headless.Jobs.Abstractions
 ```
+
+## Commit Coordination (Atomic Enqueue)
+
+When a relational commit coordinator is active (see `Headless.CommitCoordination`), `ITimeJobManager.AddAsync` /
+`AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row **inside the caller's ambient
+transaction** and defer dispatch / scheduler-restart / notify / cron-cache-invalidation to post-commit — mirroring the
+messaging outbox. A domain write, an integration-event publish, and a job enqueue can commit (or roll back) as one unit:
+
+```csharp
+// db is a relational DbContext; services is the request scope; both are enlisted by the helper.
+await db.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
+{
+    ctx.Orders.Add(order);                                       // domain write
+    await ctx.SaveChangesAsync(ct);
+
+    await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct); // message publish (outbox)
+
+    await timeJobManager.AddAsync(new TimeJobEntity              // job enqueue, written into the same transaction
+    {
+        Function = "SendOrderReminder",
+        ExecutionTime = DateTime.UtcNow.AddHours(24),
+        Request = JobsHelper.SerializeRequest(new { order.Id }),
+    }, ct);
+}, services, ct);
+// On commit: order row + outbox message + job row all persist; the job's dispatch/scheduler/notify fire post-commit.
+// On rollback: none persist and no dispatch occurs.
+```
+
+**Required DI registration**: atomic enqueue activates only when a `Headless.CommitCoordination` provider is registered — `services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()` (core seam: `AddCommitCoordination()`). This is a **different subsystem** from `AddHeadlessCoordination(...)`, the `Headless.Coordination` distributed-lock / node-membership provider required by the durable operational store (`AddOperationalStore`). The durable atomic-enqueue path needs **both**: `AddHeadlessCoordination(...)` for the operational store, **and** a `Add{Provider}CommitCoordination()` for the commit-coordination scope. The similar names name two distinct systems — register both.
+
+**Capture is synchronous (pre-await)**: the ambient commit-coordinator scope is an `AsyncLocal` captured at the point `AddAsync` is entered. Do **not** wrap `AddAsync` behind an intermediate `async` method that `await`s before reaching `AddAsync` — any `await` before that call executes outside the captured scope, so the enqueue silently falls back to the direct path and auto-commits even if the outer transaction rolls back.
+
+**Concurrency**: coordinated enqueues within a single coordinated scope must not run concurrently — the scope's single DB connection / transaction is not thread-safe (the same constraint as any code sharing one EF `DbContext` / connection). Keep enqueue calls in one scope sequential.
+
+- **No coordinator (or no `AddOperationalStore`)**: unchanged — direct insert + in-band dispatch.
+- **Coordinated scope with no relational capability** (messaging-only scope): falls back to the direct path — coordination is not made infectious.
+- **Fail loud**: `AddAsync` / `AddBatchAsync` (time and cron) **throw** on any failure — validation (`JobValidatorException`), a relational transaction offered but unusable (dead/completed), or a relational coordinator active but the provider cannot write coordinated (`InvalidOperationException`). Wrap coordinated enqueues in `try/catch`; a thrown failure rolls the caller's transaction back.
+- **Return-contract (SLA)**: on the coordinated path Add returns the persisted entity, meaning the row was **enlisted** (it commits with the caller's transaction) — not that deferred dispatch ran; a post-commit dispatch failure is swallowed and recovered by the fallback poll sweep (`FallbackIntervalChecker`, default 30s). `Update`/`Delete` keep returning `JobResult`; only the Add path throws.
+- **Tenancy** stamping inside the coordinated write is out of scope until a tenant column exists (issue #278).
+
 ---
 # Headless.Jobs.Core
 
