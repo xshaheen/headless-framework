@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Linq.Expressions;
 using System.Reflection;
 using Headless.Jobs.Enums;
@@ -26,6 +28,12 @@ public class InternalFunctionContext
     public DateTime ExecutedAt { get; set; }
     public int[]? RetryIntervals { get; set; }
     public bool ReleaseLock { get; set; }
+
+    // #1/#463 transient runtime flag (not persisted, not part of ParametersToUpdate): set by the renewal loop when it
+    // cancels the job on lease loss, so the cancellation handler leaves the row InProgress for the stalled-reclaim /
+    // OnNodeDeath sweep instead of writing a terminal Cancelled (which would drop a still-valid Retry job).
+    public bool LeaseLost { get; set; }
+
     public DateTime ExecutionTime { get; set; }
     public RunCondition RunCondition { get; set; }
     public List<InternalFunctionContext> TimeJobChildren { get; set; } = [];

@@ -45,6 +45,11 @@ namespace Headless.Jobs.Console.Demo.Migrations
                     b.Property<string>("InitIdentifier")
                         .HasColumnType("text");
 
+                    b.Property<string>("OnNodeDeath")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<byte[]>("Request")
                         .HasColumnType("bytea");
 

@@ -29,6 +29,10 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string QualifiedTimeJobsTable => "jobs.\"TimeJobs\"";
 
+    public string QualifiedCronJobsTable => "jobs.\"CronJobs\"";
+
+    public string QualifiedCronJobOccurrencesTable => "jobs.\"CronJobOccurrences\"";
+
     public string UtcNowSqlExpression => "now()";
 
     public string ResetSql =>
@@ -42,8 +46,6 @@ public sealed class PostgreSqlJobsCoordinationFixture
             .WithUsername("postgres")
             .WithPassword("postgres");
     }
-
-    public string QualifiedCronJobsTable => "jobs.\"CronJobs\"";
 
     public string CreateProbeTableSql => "CREATE TABLE IF NOT EXISTS jobs_probe (id integer); DELETE FROM jobs_probe;";
 

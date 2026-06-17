@@ -26,6 +26,10 @@ public sealed class SqlServerJobsCoordinationFixture
 {
     public string QualifiedTimeJobsTable => "[jobs].[TimeJobs]";
 
+    public string QualifiedCronJobsTable => "[jobs].[CronJobs]";
+
+    public string QualifiedCronJobOccurrencesTable => "[jobs].[CronJobOccurrences]";
+
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs),
@@ -38,8 +42,6 @@ public sealed class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [coordination_liveness];"
         + "DROP TABLE IF EXISTS [coordination_descriptor];"
         + "DROP TABLE IF EXISTS [coordination_node_generation];";
-
-    public string QualifiedCronJobsTable => "[jobs].[CronJobs]";
 
     public string CreateProbeTableSql =>
         "IF OBJECT_ID(N'jobs_probe', N'U') IS NULL CREATE TABLE jobs_probe (id int); DELETE FROM jobs_probe;";

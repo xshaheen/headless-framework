@@ -1,4 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -56,7 +58,7 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
             type: "character varying(32)",
             maxLength: 32,
             nullable: false,
-            defaultValue: ""
+            defaultValue: "Retry"
         );
 
         migrationBuilder.AlterColumn<string>(
@@ -77,7 +79,7 @@ public partial class JobsLeaseAndNodeDeathPolicy : Migration
             type: "character varying(32)",
             maxLength: 32,
             nullable: false,
-            defaultValue: ""
+            defaultValue: "Retry"
         );
     }
 

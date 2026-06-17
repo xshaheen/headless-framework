@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Linq.Expressions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -30,6 +32,7 @@ internal static class MappingExtensions
             UpdatedAt = e.UpdatedAt,
             ParentId = e.ParentId,
             ExecutionTime = e.ExecutionTime,
+            OnNodeDeath = e.OnNodeDeath,
             Children = e
                 .Children.Select(ch => new TimeJobEntity
                 {
@@ -38,6 +41,7 @@ internal static class MappingExtensions
                     Retries = ch.Retries,
                     RetryIntervals = ch.RetryIntervals,
                     RunCondition = ch.RunCondition,
+                    OnNodeDeath = ch.OnNodeDeath,
                     Children = ch
                         .Children.Select(gch => new TimeJobEntity
                         {
@@ -46,6 +50,7 @@ internal static class MappingExtensions
                             RetryIntervals = gch.RetryIntervals,
                             Id = gch.Id,
                             RunCondition = gch.RunCondition,
+                            OnNodeDeath = gch.OnNodeDeath,
                         })
                         .ToArray(),
                 })
@@ -63,12 +68,14 @@ internal static class MappingExtensions
             Id = e.Id,
             UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
+            OnNodeDeath = e.OnNodeDeath,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
                 Function = e.CronJob.Function,
                 RetryIntervals = e.CronJob.RetryIntervals,
                 Retries = e.CronJob.Retries,
+                OnNodeDeath = e.CronJob.OnNodeDeath,
             },
         };
 
@@ -83,6 +90,12 @@ internal static class MappingExtensions
             CreatedAt = e.CreatedAt,
             CronJobId = e.CronJobId,
             ExecutionTime = e.ExecutionTime,
+            // Carry the stored death policy through the executor-pick projection (mirrors ForQueueCronJobOccurrence,
+            // which stamps BOTH the occurrence-level and the nested CronJob.OnNodeDeath). The sole consumer,
+            // InternalJobsManager._EarliestCronJobGroup, reads the NESTED `earliestStored.CronJob.OnNodeDeath`, so the
+            // nested stamp below is the load-bearing one — without it a MarkFailed/Skip occurrence degrades to the
+            // Retry enum default when re-queued.
+            OnNodeDeath = e.OnNodeDeath,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,
@@ -90,6 +103,7 @@ internal static class MappingExtensions
                 Expression = e.CronJob.Expression,
                 RetryIntervals = e.CronJob.RetryIntervals,
                 Retries = e.CronJob.Retries,
+                OnNodeDeath = e.CronJob.OnNodeDeath,
             },
         };
 

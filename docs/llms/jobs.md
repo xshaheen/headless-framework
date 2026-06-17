@@ -110,7 +110,7 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - Use `Jobs.EntityFramework` for job persistence. Without it, jobs are in-memory only and lost on restart.
 - For the durable operational store, register a coordination provider with `AddHeadlessCoordination(c => c.UsePostgreSql(conn))` (or another provider) BEFORE `AddHeadlessJobs(o => o.AddOperationalStore(...))`. Without it, the durable path throws `InvalidOperationException` naming `AddHeadlessCoordination`. The in-memory path (no `AddOperationalStore`) needs no coordination.
 - On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not the machine name, and `SchedulerOptionsBuilder.NodeId` is not used as the owner there (it is only a pre-registration display fallback). Node identity for the durable path — including K8s pod-collision handling via `POD_NAME`/`POD_NAMESPACE` — is owned by `Headless.Coordination`. On the in-memory single-process path, the row owner comes from `SchedulerOptionsBuilder.NodeId` (defaults to the machine name).
-- The pickup lease (`SchedulerOptionsBuilder.LeaseDuration`, default 5 min) must exceed the longest expected job runtime. If it is shorter, a still-running `OnNodeDeath = Retry` job can be speculatively re-claimed and run twice. Set `OnNodeDeath = MarkFailed` or `Skip` on the job entity for non-idempotent jobs so the lease-expiry arm never re-claims them.
+- Running jobs slide their pickup lease forward on the `SchedulerOptionsBuilder.LeaseRenewalInterval` cadence (#316; defaults to ≈ `LeaseDuration / 3`, must be positive and `< LeaseDuration` if set), so `LeaseDuration` (default 5 min) **no longer needs to exceed the longest job runtime** — only the `Idle`/`Queued` claim→start window does (keep `LeaseDuration` ≥ `FallbackIntervalChecker`). A running job that stops renewing (crashed/wedged) is reclaimed per its `OnNodeDeath` policy within ≈ one `LeaseDuration`. Still set `OnNodeDeath = MarkFailed`/`Skip` on non-idempotent jobs so neither the claim predicate nor the stalled-job reclaim ever re-runs them.
 - Do NOT install a Jobs-specific Redis cache package. Jobs cron-expression caching uses the host application's default `Headless.Caching.ICache`; pick `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` based on deployment needs.
 - No-Redis dead-node recovery is TTL-bounded, not immediate: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (plus a periodic reconcile backstop). Tune via the Coordination heartbeat/TTL and `SchedulerOptionsBuilder.DeadNodeReconcileInterval`.
 - Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
@@ -269,17 +269,33 @@ public sealed class LongRunningCronJob
 
 ### Node-Death Policy (OnNodeDeath)
 
-When the node that owns an in-flight job row dies, the per-job `NodeDeathPolicy` decides the row's fate. Set it via the `OnNodeDeath` property on `TimeJobEntity` / `CronJobOccurrenceEntity` (default `Retry`):
+When the node that owns an in-flight job row dies, the per-job `NodeDeathPolicy` decides the row's fate (default `Retry`):
 
 | Policy | On node death | Use when |
 |--------|---------------|----------|
 | `Retry` (default) | Row is released for re-claim; the attempt counts toward the retry budget. | Job is idempotent — safe to run again. |
-| `MarkFailed` | Row transitions to terminal `Failed`; never re-run. | A second run is wrong; surface the failure. |
-| `Skip` | Row transitions to terminal `Skipped`; never re-run. | Idempotency-critical jobs that must run at most once. |
+| `MarkFailed` | Row transitions to terminal `Failed` (lease cleared, owner retained for audit, `ExceptionMessage` set); never re-run. | A second run is wrong; surface the failure. |
+| `Skip` | Row transitions to terminal `Skipped` (lease cleared, owner retained); never re-run. | Idempotency-critical jobs that must run at most once. |
+
+Select the policy with `SetOnNodeDeath(NodeDeathPolicy)` on the fluent job builder (available on the parent, child, and grandchild builders), or by assigning the `OnNodeDeath` property directly on the `TimeJobEntity` you pass to `ITimeJobManager.AddAsync`. For cron jobs, set `OnNodeDeath` on the `CronJobEntity` you register with `ICronJobManager.AddAsync` — it propagates to every generated occurrence.
+
+```csharp
+FluentChainJobBuilder<TimeJobEntity>
+    .BeginWith(p => p.SetFunction("charge-card").SetOnNodeDeath(NodeDeathPolicy.MarkFailed));
+
+// or directly
+await cronJobManager.AddAsync(new CronJobEntity { Function = "nightly-report", Expression = "0 2 * * *", OnNodeDeath = NodeDeathPolicy.Skip });
+```
 
 This couples with the pickup lease (`SchedulerOptionsBuilder.LeaseDuration`, default 5 min). Every claim stamps `LockedUntil = now + LeaseDuration`, written and compared using the injected application `TimeProvider`, not the DB server clock (mirrors `Headless.Messaging` for InMemory↔SQL parity). The lease is a **duplicate-suppression / self-heal floor, not the liveness authority** — a dead node's rows are recovered by Coordination's incarnation + heartbeat sweep; lease expiry only lets a *stalled but not-yet-declared-dead* `Idle`/`Queued` row be re-claimed.
 
-The claim predicate's lease-expiry arm is gated on `OnNodeDeath == Retry`, so clock skew can never speculatively re-run a `Skip` or `MarkFailed` job. Contract: `LeaseDuration` must exceed the longest expected job runtime — otherwise a still-running `Retry` job's lease can expire and be re-claimed (duplicate execution). The unowned and self-owned (crash-recovery) claim arms are unaffected by the policy.
+The claim predicate's lease-expiry arm is gated on `OnNodeDeath == Retry`, so clock skew can never speculatively re-run a `Skip` or `MarkFailed` job. The unowned and self-owned (crash-recovery) claim arms are unaffected by the policy.
+
+**Sliding lease for running jobs (#316).** A running job renews its lease on the `SchedulerOptionsBuilder.LeaseRenewalInterval` cadence (≈ `LeaseDuration / 3` by default; an explicit value must be positive and `< LeaseDuration`, validated at startup). Each renewal slides `LockedUntil` forward, fenced on still-owned + **running** (`InProgress`) status; a renewal affecting **zero rows** means the lease was lost, and a renewal that errors or cannot complete within the renewal cadence (a hung or unreachable store, #463) is treated the same — in either case the worker cancels that job's `CancellationToken` (cancel-on-loss, best-effort). On EF storage the lease deadline compares against the **database clock** (`now()`/`GETUTCDATE()`), not any one node's `TimeProvider`, so cross-node clock skew cannot reclaim a healthy renewing job. Consequences:
+
+- **`LeaseDuration` no longer needs to exceed the longest job runtime** — a healthy long job keeps renewing. It sizes only the `Idle`/`Queued` claim→start window and the stalled-job recovery latency.
+- A job stuck `InProgress` whose lease lapses (stopped renewing) is reclaimed per its `OnNodeDeath` policy on the fallback cadence — `Retry` → released to `Idle`, `MarkFailed` → `Failed`, `Skip` → `Skipped` — **independent of node death**, closing the gap where a job wedged on a still-heartbeating node was recovered by neither the claim predicate nor the dead-node sweep.
+- The dead-node sweep now **defers `InProgress` rows to the lease**: a busy node's still-leased running jobs survive a membership blip and are recovered only once their lease lapses; `Idle`/`Queued` rows are still reclaimed immediately on node death.
 
 ### Best Practices
 

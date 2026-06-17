@@ -5,6 +5,7 @@ using Headless.Coordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -86,7 +87,15 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             var otherIncarnationId = Guid.NewGuid(); // node-a@6, Queued -> untouched (different incarnation)
 
             await fixture.SeedTimeJobAsync(reclaimedId, "Reclaimed", (int)JobStatus.Queued, dead, ct);
-            await fixture.SeedTimeJobAsync(retryInFlightId, "RetryInFlight", (int)JobStatus.InProgress, dead, ct);
+            // #316/U4: a dead node's InProgress row is reclaimed by the sweep only once its lease has lapsed.
+            await fixture.SeedTimeJobAsync(
+                retryInFlightId,
+                "RetryInFlight",
+                (int)JobStatus.InProgress,
+                dead,
+                ct,
+                lockedUntil: DateTime.UtcNow.AddMinutes(-1)
+            );
             await fixture.SeedTimeJobAsync(terminalId, "Terminal", (int)JobStatus.Succeeded, dead, ct);
             await fixture.SeedTimeJobAsync(unownedId, "Unowned", (int)JobStatus.Idle, ownerId: null, ct);
             await fixture.SeedTimeJobAsync(otherIncarnationId, "Other", (int)JobStatus.Queued, "node-a@6", ct);
@@ -129,15 +138,21 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
                 (int)JobStatus.InProgress,
                 dead,
                 ct,
-                NodeDeathPolicy.MarkFailed
+                NodeDeathPolicy.MarkFailed,
+                lockedUntil: DateTime.UtcNow.AddMinutes(-1)
             );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
 
-            // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit.
+            // MarkFailed in-flight row becomes terminal Failed (never retried), owner retained for audit,
+            // lease cleared (#4) and a node-death ExceptionMessage set so it's distinguishable from a run failure (#8).
             affected.Should().Be(1);
-            (await fixture.ReadTimeJobAsync(id, ct)).Should().Be(((int)JobStatus.Failed, dead));
+            var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
+            detail.Status.Should().Be((int)JobStatus.Failed);
+            detail.OwnerId.Should().Be(dead);
+            detail.LockedUntil.Should().BeNull();
+            detail.ExceptionMessage.Should().Be("Node is not alive!");
         }
         finally
         {
@@ -158,14 +173,119 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         {
             const string dead = "node-a@5";
             var id = Guid.NewGuid();
-            await fixture.SeedTimeJobAsync(id, "Skip", (int)JobStatus.InProgress, dead, ct, NodeDeathPolicy.Skip);
+            await fixture.SeedTimeJobAsync(
+                id,
+                "Skip",
+                (int)JobStatus.InProgress,
+                dead,
+                ct,
+                NodeDeathPolicy.Skip,
+                lockedUntil: DateTime.UtcNow.AddMinutes(-1)
+            );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var affected = await persistence.ReleaseDeadNodeTimeJobResources(dead, ct);
 
-            // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run).
+            // Skip in-flight row becomes terminal Skipped (idempotency-critical: never re-run), owner retained,
+            // lease cleared (#4) and SkippedReason set.
             affected.Should().Be(1);
-            (await fixture.ReadTimeJobAsync(id, ct)).Should().Be(((int)JobStatus.Skipped, dead));
+            var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
+            detail.Status.Should().Be((int)JobStatus.Skipped);
+            detail.OwnerId.Should().Be(dead);
+            detail.LockedUntil.Should().BeNull();
+            detail.SkippedReason.Should().Be("Node is not alive!");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// #5 completion fence: a completion write must touch only a non-terminal row still owned by the writer.
+    /// Protects against a falsely-dead-but-alive node clobbering the dead-node sweep's terminal transition
+    /// (owner retained on MarkFailed/Skip) or completing a row the sweep released and another node re-claimed.
+    /// </summary>
+    public virtual async Task completion_is_fenced_on_ownership_and_non_terminal_status()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // (a) Non-terminal row owned by a different owner — a late completion from the writer must not win.
+            var foreignId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(foreignId, "foreign", (int)JobStatus.InProgress, "other-node@9", ct);
+
+            // (b) Already-terminal row (e.g. swept to Failed) — a late completion must not resurrect/overwrite it.
+            var terminalId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(terminalId, "terminal", (int)JobStatus.Failed, "node-a@5", ct);
+
+            var foreignCompletion = new InternalFunctionContext
+            {
+                FunctionName = "foreign",
+                JobId = foreignId,
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
+            var terminalCompletion = new InternalFunctionContext
+            {
+                FunctionName = "terminal",
+                JobId = terminalId,
+            }.SetProperty(x => x.Status, JobStatus.Succeeded);
+
+            (await persistence.UpdateTimeJob(foreignCompletion, ct)).Should().Be(0);
+            (await persistence.UpdateTimeJob(terminalCompletion, ct)).Should().Be(0);
+
+            // Neither row was mutated by the fenced completion.
+            (await fixture.ReadTimeJobAsync(foreignId, ct))
+                .Should()
+                .Be(((int)JobStatus.InProgress, "other-node@9"));
+            (await fixture.ReadTimeJobAsync(terminalId, ct)).Should().Be(((int)JobStatus.Failed, "node-a@5"));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// #315 cron propagation: a cron job's node-death policy must flow onto every generated occurrence. The
+    /// manager carries the policy on the queue context; the provider stamps and persists it on the new occurrence.
+    /// </summary>
+    public virtual async Task cron_occurrence_is_stamped_with_the_node_death_policy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "cron-skip", "* * * * *", NodeDeathPolicy.Skip, ct);
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // The context mirrors what the manager builds from the cron entity (OnNodeDeath copied off the cron).
+            var context = new InternalManagerContext(cronId)
+            {
+                FunctionName = "cron-skip",
+                Expression = "* * * * *",
+                OnNodeDeath = NodeDeathPolicy.Skip,
+            };
+
+            var occurrences = await persistence
+                .QueueCronJobOccurrences((DateTime.UtcNow.AddMinutes(1), [context]), ct)
+                .ToListAsync(ct);
+
+            occurrences.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
         }
         finally
         {
@@ -186,7 +306,15 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         {
             const string dead = "node-a@5";
             await fixture.SeedTimeJobAsync(Guid.NewGuid(), "A", (int)JobStatus.Queued, dead, ct);
-            await fixture.SeedTimeJobAsync(Guid.NewGuid(), "B", (int)JobStatus.InProgress, dead, ct);
+            // #316/U4: InProgress reclaim defers to the lease — seed a lapsed lease so the row is swept this pass.
+            await fixture.SeedTimeJobAsync(
+                Guid.NewGuid(),
+                "B",
+                (int)JobStatus.InProgress,
+                dead,
+                ct,
+                lockedUntil: DateTime.UtcNow.AddMinutes(-1)
+            );
 
             var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
 
@@ -254,6 +382,491 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
 
             await hostB.StopAsync(ct);
             hostB.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// #316/U1+U2: a running job slides its own lease forward, fenced on ownership + non-terminal status. A row
+    /// owned by another node renews zero rows (the cancel-on-loss signal).
+    /// </summary>
+    public virtual async Task running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var membership = host.Services.GetRequiredService<INodeMembership>();
+            var owner = membership.Identity!.Value.ToString();
+
+            var seededLease = DateTime.UtcNow.AddMinutes(1);
+            var ownedId = Guid.NewGuid();
+            var foreignId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(
+                ownedId,
+                "Owned",
+                (int)JobStatus.InProgress,
+                owner,
+                ct,
+                lockedUntil: seededLease
+            );
+            await fixture.SeedTimeJobAsync(
+                foreignId,
+                "Foreign",
+                (int)JobStatus.InProgress,
+                "other-node@9",
+                ct,
+                lockedUntil: seededLease
+            );
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            (await persistence.RenewTimeJobLease(ownedId, ct)).Should().Be(1);
+            (await persistence.RenewTimeJobLease(foreignId, ct)).Should().Be(0); // lease lost -> cancel-on-loss
+
+            var ownedDetail = await fixture.ReadTimeJobDetailAsync(ownedId, ct);
+            ownedDetail.Status.Should().Be((int)JobStatus.InProgress);
+            ownedDetail.LockedUntil.Should().NotBeNull();
+            ownedDetail.LockedUntil!.Value.Should().BeAfter(seededLease); // lease slid forward
+
+            // The foreign row was not renewed: its lease is unchanged.
+            (await fixture.ReadTimeJobDetailAsync(foreignId, ct))
+                .LockedUntil.Should()
+                .BeCloseTo(seededLease, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// #316/U3: a job stuck InProgress whose lease lapsed is reclaimed per OnNodeDeath, independent of node death.
+    /// A healthy (future-lease) row is untouched, and a second pass is idempotent.
+    /// </summary>
+    public virtual async Task stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            const string owner = "node-a@5"; // still the live node from the sweep's view — only the lease lapsed
+            var lapsed = DateTime.UtcNow.AddMinutes(-1);
+            var future = DateTime.UtcNow.AddMinutes(10);
+
+            var retryId = Guid.NewGuid();
+            var failId = Guid.NewGuid();
+            var skipId = Guid.NewGuid();
+            var healthyId = Guid.NewGuid();
+
+            await fixture.SeedTimeJobAsync(
+                retryId,
+                "Retry",
+                (int)JobStatus.InProgress,
+                owner,
+                ct,
+                NodeDeathPolicy.Retry,
+                lapsed
+            );
+            await fixture.SeedTimeJobAsync(
+                failId,
+                "Fail",
+                (int)JobStatus.InProgress,
+                owner,
+                ct,
+                NodeDeathPolicy.MarkFailed,
+                lapsed
+            );
+            await fixture.SeedTimeJobAsync(
+                skipId,
+                "Skip",
+                (int)JobStatus.InProgress,
+                owner,
+                ct,
+                NodeDeathPolicy.Skip,
+                lapsed
+            );
+            await fixture.SeedTimeJobAsync(
+                healthyId,
+                "Healthy",
+                (int)JobStatus.InProgress,
+                owner,
+                ct,
+                NodeDeathPolicy.Retry,
+                future
+            );
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            (await persistence.ReclaimStalledTimeJobs(ct)).Should().Be(3);
+
+            (await fixture.ReadTimeJobAsync(retryId, ct)).Should().Be(((int)JobStatus.Idle, null));
+
+            var fail = await fixture.ReadTimeJobDetailAsync(failId, ct);
+            fail.Status.Should().Be((int)JobStatus.Failed);
+            fail.OwnerId.Should().Be(owner);
+            fail.LockedUntil.Should().BeNull();
+            fail.ExceptionMessage.Should().Be("Lease lapsed while running!");
+
+            var skip = await fixture.ReadTimeJobDetailAsync(skipId, ct);
+            skip.Status.Should().Be((int)JobStatus.Skipped);
+            skip.LockedUntil.Should().BeNull();
+            skip.SkippedReason.Should().Be("Lease lapsed while running!");
+
+            // Healthy renewing job (future lease) is untouched.
+            (await fixture.ReadTimeJobAsync(healthyId, ct))
+                .Should()
+                .Be(((int)JobStatus.InProgress, owner));
+
+            // Idempotency: a second pass over already-reclaimed rows affects zero.
+            (await persistence.ReclaimStalledTimeJobs(ct))
+                .Should()
+                .Be(0);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    // A TimeProvider whose wall clock is deliberately offset from real time, to prove the EF lease-expiry path reads
+    // the DB clock rather than this node's TimeProvider (#316 clock-skew). Only GetUtcNow is exercised by the test.
+    private sealed class SkewedTimeProvider(TimeSpan offset) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow.Add(offset);
+    }
+
+    /// <summary>
+    /// #316 clock-skew: the stalled-lease reclaim decides expiry from the DB clock, not the reclaiming node's local
+    /// TimeProvider. A node whose clock runs an hour fast must NOT terminalize a lease still valid per the DB clock,
+    /// yet must still reclaim a lease genuinely lapsed per the DB clock.
+    /// </summary>
+    public virtual async Task stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        // Reclaiming node's wall clock is 1 hour ahead of the DB. With the pre-fix TimeProvider-based comparison this
+        // would make every fresh lease look lapsed; the DB-clock authority must ignore the skew. No StartAsync: the
+        // reclaim is a direct persistence call and must not depend on the skewed clock driving membership.
+        var skewedClock = new SkewedTimeProvider(TimeSpan.FromHours(1));
+
+        using var host = fixture.BuildHost("node-skew", timeProvider: skewedClock);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var validId = Guid.NewGuid(); // lease valid per DB clock (~5 min out), but "lapsed" per the +1h skew
+        var lapsedId = Guid.NewGuid(); // genuinely lapsed per the DB clock
+
+        // Wide margins (+10 min valid / -5 min lapsed) so container/schema-setup latency between seed and assert can
+        // never drift the DB clock enough to flip either row's lapsed/valid classification.
+        await fixture.SeedTimeJobAsync(
+            validId,
+            "Valid",
+            (int)JobStatus.InProgress,
+            "node-a@1",
+            ct,
+            NodeDeathPolicy.MarkFailed,
+            DateTime.UtcNow.AddMinutes(10)
+        );
+        await fixture.SeedTimeJobAsync(
+            lapsedId,
+            "Lapsed",
+            (int)JobStatus.InProgress,
+            "node-a@1",
+            ct,
+            NodeDeathPolicy.Retry,
+            DateTime.UtcNow.AddMinutes(-5)
+        );
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        // Only the genuinely-lapsed row is reclaimed; the skewed local clock must not terminalize the still-valid
+        // MarkFailed lease (pre-fix this would have returned 2 and recorded the valid row Failed mid-flight).
+        (await persistence.ReclaimStalledTimeJobs(ct))
+            .Should()
+            .Be(1);
+
+        (await fixture.ReadTimeJobAsync(validId, ct)).Should().Be(((int)JobStatus.InProgress, "node-a@1"));
+        (await fixture.ReadTimeJobAsync(lapsedId, ct)).Should().Be(((int)JobStatus.Idle, null));
+    }
+
+    /// <summary>
+    /// #316 clock-skew (cron mirror): ReclaimStalledCronJobOccurrences decides expiry from the DB clock, not the
+    /// reclaiming node's TimeProvider, AND terminalizes per the occurrence's OnNodeDeath. A +1h-skewed reclaimer must
+    /// not touch a still-valid lease, yet must reclaim genuinely-lapsed occurrences (Retry->Idle, MarkFailed->Failed,
+    /// Skip->Skipped).
+    /// </summary>
+    public virtual async Task cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        var skewedClock = new SkewedTimeProvider(TimeSpan.FromHours(1));
+        using var host = fixture.BuildHost("node-skew", timeProvider: skewedClock);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var cronId = Guid.NewGuid();
+        await fixture.SeedCronJobAsync(cronId, "Cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+        var validId = Guid.NewGuid(); // valid per DB clock, "lapsed" per the +1h skew
+        var retryId = Guid.NewGuid();
+        var failId = Guid.NewGuid();
+        var skipId = Guid.NewGuid();
+        var valid = DateTime.UtcNow.AddMinutes(10);
+        var lapsed = DateTime.UtcNow.AddMinutes(-5);
+        // Distinct ExecutionTimes: the (CronJobId, ExecutionTime) unique index forbids duplicates.
+        var baseTime = DateTime.UtcNow.AddHours(-1);
+
+        await fixture.SeedCronOccurrenceAsync(
+            validId,
+            cronId,
+            (int)JobStatus.InProgress,
+            "n@1",
+            NodeDeathPolicy.MarkFailed,
+            valid,
+            baseTime,
+            ct
+        );
+        await fixture.SeedCronOccurrenceAsync(
+            retryId,
+            cronId,
+            (int)JobStatus.InProgress,
+            "n@1",
+            NodeDeathPolicy.Retry,
+            lapsed,
+            baseTime.AddSeconds(1),
+            ct
+        );
+        await fixture.SeedCronOccurrenceAsync(
+            failId,
+            cronId,
+            (int)JobStatus.InProgress,
+            "n@1",
+            NodeDeathPolicy.MarkFailed,
+            lapsed,
+            baseTime.AddSeconds(2),
+            ct
+        );
+        await fixture.SeedCronOccurrenceAsync(
+            skipId,
+            cronId,
+            (int)JobStatus.InProgress,
+            "n@1",
+            NodeDeathPolicy.Skip,
+            lapsed,
+            baseTime.AddSeconds(3),
+            ct
+        );
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        (await persistence.ReclaimStalledCronJobOccurrences(ct)).Should().Be(3);
+
+        (await fixture.ReadCronOccurrenceAsync(validId, ct)).Should().Be(((int)JobStatus.InProgress, "n@1"));
+        (await fixture.ReadCronOccurrenceAsync(retryId, ct)).Should().Be(((int)JobStatus.Idle, null));
+        (await fixture.ReadCronOccurrenceAsync(failId, ct)).Status.Should().Be((int)JobStatus.Failed);
+        (await fixture.ReadCronOccurrenceAsync(skipId, ct)).Status.Should().Be((int)JobStatus.Skipped);
+    }
+
+    /// <summary>
+    /// #316/#13 (cron mirror): a running occurrence slides its own lease, fenced on ownership + InProgress status. A
+    /// Queued occurrence (not started) and a foreign-owned occurrence both renew zero rows (the cancel-on-loss signal).
+    /// </summary>
+    public virtual async Task cron_running_occurrence_renews_but_queued_or_foreign_renews_zero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var lease = DateTime.UtcNow.AddMinutes(1);
+
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "Cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            var runningId = Guid.NewGuid();
+            var queuedId = Guid.NewGuid();
+            var foreignId = Guid.NewGuid();
+            // Distinct ExecutionTimes: the (CronJobId, ExecutionTime) unique index forbids duplicates.
+            var baseTime = DateTime.UtcNow.AddHours(-1);
+            await fixture.SeedCronOccurrenceAsync(
+                runningId,
+                cronId,
+                (int)JobStatus.InProgress,
+                owner,
+                NodeDeathPolicy.Retry,
+                lease,
+                baseTime,
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                queuedId,
+                cronId,
+                (int)JobStatus.Queued,
+                owner,
+                NodeDeathPolicy.Retry,
+                lease,
+                baseTime.AddSeconds(1),
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                foreignId,
+                cronId,
+                (int)JobStatus.InProgress,
+                "other-node@9",
+                NodeDeathPolicy.Retry,
+                lease,
+                baseTime.AddSeconds(2),
+                ct
+            );
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            (await persistence.RenewCronJobOccurrenceLease(runningId, ct)).Should().Be(1);
+            (await persistence.RenewCronJobOccurrenceLease(queuedId, ct)).Should().Be(0); // not running -> InProgress fence
+            (await persistence.RenewCronJobOccurrenceLease(foreignId, ct)).Should().Be(0); // not ours -> cancel-on-loss
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// #5/#466 (cron mirror): UpdateCronJobOccurrence is fenced on ownership + non-terminal status and now returns the
+    /// affected-row count — 1 when applied, 0 when a foreign or already-terminal occurrence is excluded.
+    /// </summary>
+    public virtual async Task cron_completion_is_fenced_on_ownership_and_non_terminal_status()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "Cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            var baseTime = DateTime.UtcNow.AddHours(-1);
+            var ownedId = Guid.NewGuid(); // ours, InProgress -> completion applies (1)
+            var foreignId = Guid.NewGuid(); // other owner -> fenced (0)
+            var terminalId = Guid.NewGuid(); // already terminal -> fenced (0)
+            await fixture.SeedCronOccurrenceAsync(
+                ownedId,
+                cronId,
+                (int)JobStatus.InProgress,
+                owner,
+                NodeDeathPolicy.Retry,
+                null,
+                baseTime,
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                foreignId,
+                cronId,
+                (int)JobStatus.InProgress,
+                "other-node@9",
+                NodeDeathPolicy.Retry,
+                null,
+                baseTime.AddSeconds(1),
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                terminalId,
+                cronId,
+                (int)JobStatus.Failed,
+                "node-a@5",
+                NodeDeathPolicy.Retry,
+                null,
+                baseTime.AddSeconds(2),
+                ct
+            );
+
+            var owned = new InternalFunctionContext { FunctionName = "Cron", JobId = ownedId }.SetProperty(
+                x => x.Status,
+                JobStatus.Succeeded
+            );
+            var foreign = new InternalFunctionContext { FunctionName = "Cron", JobId = foreignId }.SetProperty(
+                x => x.Status,
+                JobStatus.Succeeded
+            );
+            var terminal = new InternalFunctionContext { FunctionName = "Cron", JobId = terminalId }.SetProperty(
+                x => x.Status,
+                JobStatus.Succeeded
+            );
+
+            (await persistence.UpdateCronJobOccurrence(owned, ct)).Should().Be(1);
+            (await persistence.UpdateCronJobOccurrence(foreign, ct)).Should().Be(0);
+            (await persistence.UpdateCronJobOccurrence(terminal, ct)).Should().Be(0);
+
+            (await fixture.ReadCronOccurrenceAsync(ownedId, ct)).Status.Should().Be((int)JobStatus.Succeeded);
+            (await fixture.ReadCronOccurrenceAsync(foreignId, ct))
+                .Should()
+                .Be(((int)JobStatus.InProgress, "other-node@9"));
+            (await fixture.ReadCronOccurrenceAsync(terminalId, ct)).Should().Be(((int)JobStatus.Failed, "node-a@5"));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// #316/U4: the dead-node sweep defers a still-leased InProgress row to the lease (recovered later by U3) but
+    /// reclaims Idle/Queued rows immediately.
+    /// </summary>
+    public virtual async Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            const string dead = "node-a@5";
+            var future = DateTime.UtcNow.AddMinutes(10);
+
+            var validId = Guid.NewGuid();
+            var idleId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(validId, "Valid", (int)JobStatus.InProgress, dead, ct, lockedUntil: future);
+            await fixture.SeedTimeJobAsync(idleId, "Idle", (int)JobStatus.Idle, dead, ct, lockedUntil: future);
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // Only the Idle row is reclaimed now; the valid-lease InProgress row is left to the lease (U3).
+            (await persistence.ReleaseDeadNodeTimeJobResources(dead, ct))
+                .Should()
+                .Be(1);
+
+            (await fixture.ReadTimeJobAsync(validId, ct)).Should().Be(((int)JobStatus.InProgress, dead));
+            (await fixture.ReadTimeJobAsync(idleId, ct)).Should().Be(((int)JobStatus.Idle, null));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
         }
     }
 

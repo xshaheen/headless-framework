@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Diagnostics;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
@@ -7,6 +9,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs;
 
@@ -14,9 +17,14 @@ internal class JobsExecutionTaskHandler(
     IServiceProvider serviceProvider,
     TimeProvider timeProvider,
     IJobsInstrumentation jobsInstrumentation,
-    IInternalJobManager internalJobsManager
+    IInternalJobManager internalJobsManager,
+    SchedulerOptionsBuilder schedulerOptions,
+    ILogger<JobsExecutionTaskHandler> logger
 )
 {
+    // #316 sliding lease: cadence at which a running job renews its own lease (≈ LeaseDuration/3 by default).
+    private readonly TimeSpan _leaseRenewalInterval = schedulerOptions.ResolveLeaseRenewalInterval();
+
     public async Task ExecuteTaskAsync(
         InternalFunctionContext context,
         bool isDue,
@@ -146,7 +154,11 @@ internal class JobsExecutionTaskHandler(
         }
 
         var stopWatch = new Stopwatch();
+        // CA2000: ownership is registered into JobsCancellationTokenManager and the CTS is disposed on every exit
+        // path below (after StopRenewalAsync stops the renewal loop that references it).
+#pragma warning disable CA2000
         var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+#pragma warning restore CA2000
 
         // IMPORTANT: Register the job FIRST, before creating the SkipIfAlreadyRunningAction callback
         // This ensures the current occurrence is properly tracked when the callback checks for siblings
@@ -186,6 +198,29 @@ internal class JobsExecutionTaskHandler(
             },
         };
 
+        // #316 sliding lease: renew this job's lease on a cadence for the whole execution (every retry attempt and
+        // backoff wait). A renewal affecting 0 rows means the lease was lost (reclaimed / owner changed /
+        // terminalized); the loop then cancels cancellationTokenSource, cancelling the running job (U1/U2/KTD3).
+        using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var renewalTask = _RenewLeaseLoopAsync(context, cancellationTokenSource, renewalCts.Token);
+
+        async Task StopRenewalAsync()
+        {
+            await renewalCts.CancelAsync().ConfigureAwait(false);
+            // ERP022: renewal-loop teardown errors are non-fatal to job completion.
+            // VSTHRD003: renewalTask is started locally (above) and intentionally awaited to bound the loop's lifetime.
+#pragma warning disable ERP022, VSTHRD003
+            try
+            {
+                await renewalTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignored
+            }
+#pragma warning restore ERP022, VSTHRD003
+        }
+
         Exception? lastException = null;
         var success = false;
 
@@ -216,6 +251,20 @@ internal class JobsExecutionTaskHandler(
             }
             catch (TaskCanceledException ex)
             {
+                if (context.LeaseLost)
+                {
+                    // #1/#463: the renewal loop cancelled this job because it could no longer vouch for the lease
+                    // (lost/reclaimed, or the renewal timed out / errored). Do NOT write a terminal status — leave the
+                    // row InProgress so the stalled-reclaim sweep recovers it per OnNodeDeath (Retry re-runs,
+                    // MarkFailed/Skip terminalize). Writing Cancelled here would terminalize a row that is still ours
+                    // when the loss was a false positive (slow-but-healthy store), permanently dropping a Retry job.
+                    logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
+                    await StopRenewalAsync();
+                    cancellationTokenSource?.Dispose();
+                    JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
+                    return;
+                }
+
                 context
                     .SetProperty(x => x.Status, JobStatus.Cancelled)
                     .SetProperty(x => x.ExecutedAt, timeProvider.GetUtcNow().UtcDateTime)
@@ -234,9 +283,12 @@ internal class JobsExecutionTaskHandler(
                     await handler.HandleCanceledExceptionAsync(ex, context.JobId, context.Type);
                 }
 
-                await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+                // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
+                // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
+                await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
 
                 // Clean up and exit early on cancellation
+                await StopRenewalAsync();
                 cancellationTokenSource?.Dispose();
                 JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                 return;
@@ -265,9 +317,12 @@ internal class JobsExecutionTaskHandler(
                 // Log job skipped
                 jobsInstrumentation.LogJobSkipped(context.JobId, context.FunctionName, ex.Message);
 
-                await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+                // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
+                // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
+                await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
 
                 // Clean up and exit early on termination
+                await StopRenewalAsync();
                 cancellationTokenSource.Dispose();
                 JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                 return;
@@ -300,7 +355,8 @@ internal class JobsExecutionTaskHandler(
                 true
             );
 
-            await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+            // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
+            await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
         }
         else if (lastException != null)
         {
@@ -327,12 +383,88 @@ internal class JobsExecutionTaskHandler(
                 await handler.HandleExceptionAsync(lastException, context.JobId, context.Type);
             }
 
-            await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+            // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
+            await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
         }
+
+        // Stop renewal before disposing the job CTS it cancels on loss.
+        await StopRenewalAsync();
 
         // IMPORTANT: Always dispose CancellationTokenSource to prevent memory leaks
         cancellationTokenSource?.Dispose();
         JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
+    }
+
+    private async Task _RenewLeaseLoopAsync(
+        InternalFunctionContext context,
+        CancellationTokenSource jobCts,
+        CancellationToken renewalLoopToken
+    )
+    {
+        // #316 sliding-lease renewal loop (U1 renewal + U2 cancel-on-loss). Runs concurrently with the job for its
+        // whole execution and stops when renewalLoopToken is cancelled by StopRenewalAsync on completion.
+        try
+        {
+            while (!renewalLoopToken.IsCancellationRequested)
+            {
+                // Delay BEFORE the first renew: a job finishing within one cadence writes no renewal.
+                await timeProvider.Delay(_leaseRenewalInterval, renewalLoopToken).ConfigureAwait(false);
+
+                if (!await _TryRenewLeaseAsync(context, renewalLoopToken).ConfigureAwait(false))
+                {
+                    // Lease lost (reclaimed / owner changed / terminalized) OR the renewal could not be confirmed
+                    // within the cadence (hung / unreachable store, #463). Flag lease-loss so the cancellation handler
+                    // leaves the row InProgress for the stalled-reclaim/OnNodeDeath sweep (#1) rather than writing a
+                    // terminal Cancelled, then best-effort cancel the running job (a job ignoring its token still
+                    // relies on OnNodeDeath for correctness).
+                    context.LeaseLost = true;
+                    await jobCts.CancelAsync().ConfigureAwait(false);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected stop signal when renewalLoopToken fires on normal completion — not a failure.
+        }
+    }
+
+    /// <summary>
+    /// One renewal attempt. Returns <c>true</c> while the lease is still held; <c>false</c> when it was lost OR the
+    /// renewal could not be confirmed within the renewal cadence (#463: a hung / slow / unreachable store must not
+    /// silently let the lease lapse while another node reclaims the row — a renewal that cannot complete in one
+    /// interval, or that errors, is treated as a loss so the caller cancels the job and OnNodeDeath governs).
+    /// </summary>
+    private async Task<bool> _TryRenewLeaseAsync(InternalFunctionContext context, CancellationToken renewalLoopToken)
+    {
+        // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline.
+        using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, timeProvider);
+        using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(renewalLoopToken, timeoutCts.Token);
+
+        try
+        {
+            return await internalJobsManager.RenewLeaseAsync(context, renewalCts.Token).ConfigureAwait(false) != 0;
+        }
+        catch (OperationCanceledException) when (renewalLoopToken.IsCancellationRequested)
+        {
+            // Normal stop (job completed) raced the renewal — propagate so the loop's outer catch treats it as a
+            // clean stop rather than a lease loss.
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // Renewal deadline elapsed: the store did not confirm the lease within the cadence. Treat as lost.
+            return false;
+        }
+        catch (Exception exception)
+        {
+            // Renewal write failed (DB unreachable / transient error). The two preceding catches already consume every
+            // OperationCanceledException, so only non-OCE exceptions reach here. We can no longer vouch for the lease —
+            // treat it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal). Log
+            // at Warning so a DB-error renewal loss is observable and distinguishable from a programming bug (#463/R2).
+            logger.LogJobLeaseRenewalFailed(exception, context.JobId, context.FunctionName);
+            return false;
+        }
     }
 
     private async Task<bool> _WaitForRetry(
@@ -440,12 +572,52 @@ internal class JobsExecutionTaskHandler(
             return ExecuteTaskAsync(context, isDue, cancellationToken);
         }
 #pragma warning disable ERP022 // Scheduler must continue running even if task execution throws synchronously.
-        catch
+        catch (Exception exception)
         {
-            // ignored
+            // A synchronous throw (e.g. during scope creation before the first await) leaves the child InProgress
+            // until the stalled-reclaim sweep recovers it per OnNodeDeath. Swallow so the parent scheduler loop
+            // survives, but log at Warning so the otherwise-silent failure is observable (#465).
+            logger.LogJobChildExecutionThrewSynchronously(exception, context.JobId, context.FunctionName);
         }
 #pragma warning restore ERP022
 
         return Task.CompletedTask;
     }
+}
+
+internal static partial class JobsExecutionTaskHandlerLog
+{
+    [LoggerMessage(
+        EventId = 3100,
+        Level = LogLevel.Warning,
+        Message = "Lease renewal for job {JobId} ({Function}) failed; treating the lease as lost and cancelling the "
+            + "running job. The row is left InProgress for the stalled-reclaim sweep to recover per OnNodeDeath."
+    )]
+    public static partial void LogJobLeaseRenewalFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3101,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) was cancelled on lease loss; row left InProgress for the stalled-reclaim "
+            + "sweep to recover per OnNodeDeath (no terminal status written)."
+    )]
+    public static partial void LogJobLeaseLostCancellation(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3102,
+        Level = LogLevel.Warning,
+        Message = "Child job {JobId} ({Function}) threw synchronously before execution started; it stays InProgress "
+            + "until the stalled-reclaim sweep recovers it per OnNodeDeath. The parent scheduler loop continues."
+    )]
+    public static partial void LogJobChildExecutionThrewSynchronously(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
 }

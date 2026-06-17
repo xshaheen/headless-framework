@@ -199,15 +199,29 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan IdleWorkerTimeOut { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
-    /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable by the
-    /// lease-expiry self-heal arm. Stamped as <c>LockedUntil = now + LeaseDuration</c> on every claim using the
-    /// injected <see cref="TimeProvider"/> (application clock, not the DB server clock — matches Headless.Messaging
-    /// for InMemory↔SQL parity). The lease is a duplicate-suppression floor, NOT the liveness authority: a dead
-    /// node's rows are recovered by Coordination's incarnation + heartbeat sweep, not by lease expiry. Must exceed
-    /// the longest expected job runtime, or a still-running job's lease can expire and (for OnNodeDeath = Retry jobs)
-    /// be speculatively re-claimed. Defaults to five minutes.
+    /// How long a per-row pickup lease is held before it expires and the row becomes re-claimable. Stamped as
+    /// <c>LockedUntil = now + LeaseDuration</c> on every claim using the injected <see cref="TimeProvider"/>
+    /// (application clock, not the DB server clock — matches Headless.Messaging for InMemory↔SQL parity).
+    /// <para>
+    /// Running jobs slide this lease forward on the <see cref="LeaseRenewalInterval"/> cadence (#316), so
+    /// <c>LeaseDuration</c> no longer needs to exceed the longest job runtime — a healthy long job keeps renewing.
+    /// It now sizes two things: the <c>Idle</c>/<c>Queued</c> claim→start window (a row claimed but not yet started
+    /// can lapse and be re-claimed — keep it ≥ <see cref="FallbackIntervalChecker"/>), and the recovery latency for
+    /// a stalled running job (a job that stops renewing is reclaimed within ≈ one <c>LeaseDuration</c>). Defaults to
+    /// five minutes.
+    /// </para>
     /// </summary>
     public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How often a running job's lease is renewed (slides <c>LockedUntil</c> forward) while it executes, so a
+    /// healthy long-running job is never falsely reclaimed (#316). The owning worker's execution loop extends the
+    /// lease on this cadence; a job that stops renewing (crashed or wedged) has its lease lapse and is reclaimed
+    /// per its <c>OnNodeDeath</c> policy. <c>null</c> (the default) derives ≈ <see cref="LeaseDuration"/> / 3 so a
+    /// single missed renewal cannot lapse the lease. An explicit value must be positive and strictly less than
+    /// <see cref="LeaseDuration"/>; see <see cref="ResolveLeaseRenewalInterval"/>.
+    /// </summary>
+    public TimeSpan? LeaseRenewalInterval { get; set; }
 
     public TimeSpan FallbackIntervalChecker { get; set; } = TimeSpan.FromSeconds(30);
     public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Local;
@@ -223,4 +237,37 @@ public sealed class SchedulerOptionsBuilder
     /// Controls how job processing starts. Defaults to <see cref="JobsStartMode.Immediate"/>.
     /// </summary>
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
+
+    /// <summary>
+    /// Resolves the effective lease-renewal cadence (#316): an explicit <see cref="LeaseRenewalInterval"/> when
+    /// set, otherwise the derived ≈ <see cref="LeaseDuration"/> / 3. Validates an explicit value — it must be
+    /// positive and strictly less than <see cref="LeaseDuration"/>, so a renewal always lands before the lease
+    /// deadline. Throws <see cref="InvalidOperationException"/> on a misconfigured explicit value; the startup
+    /// initialization service calls this once (ValidateOnStart-equivalent), and the execution handler calls it to
+    /// read the cadence.
+    /// </summary>
+    internal TimeSpan ResolveLeaseRenewalInterval()
+    {
+        if (LeaseRenewalInterval is not { } interval)
+        {
+            return TimeSpan.FromTicks(LeaseDuration.Ticks / 3);
+        }
+
+        if (interval <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException(
+                $"SchedulerOptionsBuilder.LeaseRenewalInterval ({interval}) must be positive."
+            );
+        }
+
+        if (interval >= LeaseDuration)
+        {
+            throw new InvalidOperationException(
+                $"SchedulerOptionsBuilder.LeaseRenewalInterval ({interval}) must be strictly less than "
+                    + $"LeaseDuration ({LeaseDuration}) so a renewal lands before the lease deadline."
+            );
+        }
+
+        return interval;
+    }
 }
