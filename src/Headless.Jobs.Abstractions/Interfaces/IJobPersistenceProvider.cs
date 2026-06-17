@@ -63,7 +63,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrences(
         CancellationToken cancellationToken = default
     );
-    Task UpdateCronJobOccurrence(
+
+    // Returns the affected-row count: 0 when the #5 completion fence excluded the row (foreign owner or terminal
+    // status), 1 when the completion was applied — mirroring UpdateTimeJob so the cron fence is observable/testable.
+    Task<int> UpdateCronJobOccurrence(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     );

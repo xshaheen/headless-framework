@@ -747,6 +747,91 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
+    /// #5/#466 (cron mirror): UpdateCronJobOccurrence is fenced on ownership + non-terminal status and now returns the
+    /// affected-row count — 1 when applied, 0 when a foreign or already-terminal occurrence is excluded.
+    /// </summary>
+    public virtual async Task cron_completion_is_fenced_on_ownership_and_non_terminal_status()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var owner = host.Services.GetRequiredService<INodeMembership>().Identity!.Value.ToString();
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            var cronId = Guid.NewGuid();
+            await fixture.SeedCronJobAsync(cronId, "Cron", "* * * * *", NodeDeathPolicy.Retry, ct);
+
+            var baseTime = DateTime.UtcNow.AddHours(-1);
+            var ownedId = Guid.NewGuid(); // ours, InProgress -> completion applies (1)
+            var foreignId = Guid.NewGuid(); // other owner -> fenced (0)
+            var terminalId = Guid.NewGuid(); // already terminal -> fenced (0)
+            await fixture.SeedCronOccurrenceAsync(
+                ownedId,
+                cronId,
+                (int)JobStatus.InProgress,
+                owner,
+                NodeDeathPolicy.Retry,
+                null,
+                baseTime,
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                foreignId,
+                cronId,
+                (int)JobStatus.InProgress,
+                "other-node@9",
+                NodeDeathPolicy.Retry,
+                null,
+                baseTime.AddSeconds(1),
+                ct
+            );
+            await fixture.SeedCronOccurrenceAsync(
+                terminalId,
+                cronId,
+                (int)JobStatus.Failed,
+                "node-a@5",
+                NodeDeathPolicy.Retry,
+                null,
+                baseTime.AddSeconds(2),
+                ct
+            );
+
+            var owned = new InternalFunctionContext { FunctionName = "Cron", JobId = ownedId }.SetProperty(
+                x => x.Status,
+                JobStatus.Succeeded
+            );
+            var foreign = new InternalFunctionContext { FunctionName = "Cron", JobId = foreignId }.SetProperty(
+                x => x.Status,
+                JobStatus.Succeeded
+            );
+            var terminal = new InternalFunctionContext { FunctionName = "Cron", JobId = terminalId }.SetProperty(
+                x => x.Status,
+                JobStatus.Succeeded
+            );
+
+            (await persistence.UpdateCronJobOccurrence(owned, ct)).Should().Be(1);
+            (await persistence.UpdateCronJobOccurrence(foreign, ct)).Should().Be(0);
+            (await persistence.UpdateCronJobOccurrence(terminal, ct)).Should().Be(0);
+
+            (await fixture.ReadCronOccurrenceAsync(ownedId, ct)).Status.Should().Be((int)JobStatus.Succeeded);
+            (await fixture.ReadCronOccurrenceAsync(foreignId, ct))
+                .Should()
+                .Be(((int)JobStatus.InProgress, "other-node@9"));
+            (await fixture.ReadCronOccurrenceAsync(terminalId, ct)).Should().Be(((int)JobStatus.Failed, "node-a@5"));
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>
     /// #316/U4: the dead-node sweep defers a still-leased InProgress row to the lease (recovered later by U3) but
     /// reclaims Idle/Queued rows immediately.
     /// </summary>

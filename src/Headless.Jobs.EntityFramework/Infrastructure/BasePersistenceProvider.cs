@@ -785,22 +785,23 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     #endregion
 
     #region Core_Cron_TickerOccurrence_Methods
-    public async Task UpdateCronJobOccurrence(
+    public async Task<int> UpdateCronJobOccurrence(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken
     )
     {
         // #5 completion fence (see UpdateTimeJob): only the still-owning node may complete a non-terminal occurrence.
+        // Returns 0 when fenced out (foreign owner / terminal row), 1 when applied — mirroring UpdateTimeJob.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return;
+            return 0;
         }
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext
+        return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => x.Id == functionContext.JobId)
             .WhereOwnedBy(owner)

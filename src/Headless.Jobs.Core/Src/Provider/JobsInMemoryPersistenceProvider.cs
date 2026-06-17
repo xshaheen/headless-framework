@@ -982,7 +982,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    public Task UpdateCronJobOccurrence(
+    public Task<int> UpdateCronJobOccurrence(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     )
@@ -999,11 +999,15 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 var updatedOccurrence = _CloneCronOccurrence(occurrence);
                 _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
 
-                _CronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence);
+                // Return 1 only when the completion was actually applied (mirror EF affected-row count).
+                if (_CronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence))
+                {
+                    return Task.FromResult(1);
+                }
             }
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(0);
     }
 
     public Task<int> RenewCronJobOccurrenceLease(Guid occurrenceId, CancellationToken cancellationToken = default)

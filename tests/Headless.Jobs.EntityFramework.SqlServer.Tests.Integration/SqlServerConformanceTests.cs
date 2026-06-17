@@ -60,6 +60,10 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
         base.cron_running_occurrence_renews_but_queued_or_foreign_renews_zero();
 
     [Fact]
+    public override Task cron_completion_is_fenced_on_ownership_and_non_terminal_status() =>
+        base.cron_completion_is_fenced_on_ownership_and_non_terminal_status();
+
+    [Fact]
     public override Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease() =>
         base.node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease();
 }
