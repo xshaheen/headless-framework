@@ -1,9 +1,12 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -97,7 +100,8 @@ public sealed class RetryBehaviorTests
             {
                 LeaseDuration = TimeSpan.FromMinutes(5),
                 LeaseRenewalInterval = TimeSpan.FromMilliseconds(100),
-            }
+            },
+            NullLogger<JobsExecutionTaskHandler>.Instance
         );
 
         var context = new InternalFunctionContext
@@ -116,7 +120,65 @@ public sealed class RetryBehaviorTests
 
         await handler.ExecuteTaskAsync(context, isDue: true);
 
-        context.Status.Should().Be(JobStatus.Cancelled);
+        // #1: a lease-loss cancellation must NOT write a terminal status — the row is left InProgress for the
+        // stalled-reclaim/OnNodeDeath sweep. So the job stops, LeaseLost is flagged, and no UpdateTicker write fires.
+        context.LeaseLost.Should().BeTrue();
+        context.Status.Should().NotBe(JobStatus.Cancelled);
+        await internalManager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteTaskAsync_renewal_deadline_elapsing_trips_cancel_on_loss_without_terminalizing()
+    {
+        // #6/#463: exercises the DEADLINE branch of _TryRenewLeaseAsync (the per-cadence timeout CTS firing while the
+        // renewal call hangs), distinct from the throw branch above. The blocking renewal is cancelled by the linked
+        // timeout token, the job is cancelled on loss, and no terminal status is written (#1).
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Renewal hangs until its (linked timeout) token cancels — i.e. it never completes within the cadence.
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call => await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()));
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder
+            {
+                LeaseDuration = TimeSpan.FromMinutes(5),
+                LeaseRenewalInterval = TimeSpan.FromMilliseconds(100),
+            },
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+
+        var context = new InternalFunctionContext
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LongJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true);
+
+        context.LeaseLost.Should().BeTrue();
+        await internalManager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
     }
 
     private sealed record Attempt(DateTime Timestamp, int RetryCount);
@@ -149,7 +211,8 @@ public sealed class RetryBehaviorTests
             TimeProvider.System,
             instrumentation,
             internalManager,
-            new SchedulerOptionsBuilder()
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance
         );
 
         var attempts = new List<Attempt>();

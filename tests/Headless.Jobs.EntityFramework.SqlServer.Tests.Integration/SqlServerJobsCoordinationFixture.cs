@@ -25,6 +25,8 @@ public sealed class SqlServerJobsCoordinationFixture
 
     public string QualifiedCronJobsTable => "[jobs].[CronJobs]";
 
+    public string QualifiedCronJobOccurrencesTable => "[jobs].[CronJobOccurrences]";
+
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs),

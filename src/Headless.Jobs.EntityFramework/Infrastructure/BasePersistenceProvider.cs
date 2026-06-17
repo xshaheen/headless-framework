@@ -40,6 +40,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // one default ICache across features — matches the permissions:/features:/settings: convention.
     private const string CronExpressionsCacheKey = "jobs:cron:expressions";
 
+    // EF Core provider names for the DB-clock dispatch in GetDatabaseUtcNowAsync. Named so a silent TimeProvider
+    // fallback (a provider rename, or a new backend without a switch arm) is grep-locatable rather than a magic string.
+    private const string _NpgsqlProviderName = "Npgsql.EntityFrameworkCore.PostgreSQL";
+    private const string _SqlServerProviderName = "Microsoft.EntityFrameworkCore.SqlServer";
+
     private static readonly CacheEntryOptions CronExpressionsCacheOptions = TimeSpan.FromMinutes(10);
 
     protected ICache? Cache { get; } = cache;
@@ -59,8 +64,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     {
         var sql = dbContext.Database.ProviderName switch
         {
-            "Npgsql.EntityFrameworkCore.PostgreSQL" => "SELECT (now() AT TIME ZONE 'UTC') AS \"Value\"",
-            "Microsoft.EntityFrameworkCore.SqlServer" => "SELECT GETUTCDATE() AS [Value]",
+            _NpgsqlProviderName => "SELECT (now() AT TIME ZONE 'UTC') AS \"Value\"",
+            _SqlServerProviderName => "SELECT GETUTCDATE() AS [Value]",
             _ => null,
         };
 

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Diagnostics;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
@@ -7,6 +9,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs;
 
@@ -15,7 +18,8 @@ internal class JobsExecutionTaskHandler(
     TimeProvider timeProvider,
     IJobsInstrumentation jobsInstrumentation,
     IInternalJobManager internalJobsManager,
-    SchedulerOptionsBuilder schedulerOptions
+    SchedulerOptionsBuilder schedulerOptions,
+    ILogger<JobsExecutionTaskHandler> logger
 )
 {
     // #316 sliding lease: cadence at which a running job renews its own lease (≈ LeaseDuration/3 by default).
@@ -247,6 +251,20 @@ internal class JobsExecutionTaskHandler(
             }
             catch (TaskCanceledException ex)
             {
+                if (context.LeaseLost)
+                {
+                    // #1/#463: the renewal loop cancelled this job because it could no longer vouch for the lease
+                    // (lost/reclaimed, or the renewal timed out / errored). Do NOT write a terminal status — leave the
+                    // row InProgress so the stalled-reclaim sweep recovers it per OnNodeDeath (Retry re-runs,
+                    // MarkFailed/Skip terminalize). Writing Cancelled here would terminalize a row that is still ours
+                    // when the loss was a false positive (slow-but-healthy store), permanently dropping a Retry job.
+                    logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
+                    await StopRenewalAsync();
+                    cancellationTokenSource?.Dispose();
+                    JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
+                    return;
+                }
+
                 context
                     .SetProperty(x => x.Status, JobStatus.Cancelled)
                     .SetProperty(x => x.ExecutedAt, timeProvider.GetUtcNow().UtcDateTime)
@@ -395,8 +413,11 @@ internal class JobsExecutionTaskHandler(
                 if (!await _TryRenewLeaseAsync(context, renewalLoopToken).ConfigureAwait(false))
                 {
                     // Lease lost (reclaimed / owner changed / terminalized) OR the renewal could not be confirmed
-                    // within the cadence (hung / unreachable store, #463). Best-effort cancellation of the running
-                    // job; a job ignoring its token still relies on OnNodeDeath for correctness.
+                    // within the cadence (hung / unreachable store, #463). Flag lease-loss so the cancellation handler
+                    // leaves the row InProgress for the stalled-reclaim/OnNodeDeath sweep (#1) rather than writing a
+                    // terminal Cancelled, then best-effort cancel the running job (a job ignoring its token still
+                    // relies on OnNodeDeath for correctness).
+                    context.LeaseLost = true;
                     await jobCts.CancelAsync().ConfigureAwait(false);
                     return;
                 }
@@ -435,11 +456,13 @@ internal class JobsExecutionTaskHandler(
             // Renewal deadline elapsed: the store did not confirm the lease within the cadence. Treat as lost.
             return false;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             // Renewal write failed (DB unreachable / transient error). The two preceding catches already consume every
             // OperationCanceledException, so only non-OCE exceptions reach here. We can no longer vouch for the lease —
-            // treat it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal).
+            // treat it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal). Log
+            // at Warning so a DB-error renewal loss is observable and distinguishable from a programming bug (#463/R2).
+            logger.LogJobLeaseRenewalFailed(exception, context.JobId, context.FunctionName);
             return false;
         }
     }
@@ -557,4 +580,28 @@ internal class JobsExecutionTaskHandler(
 
         return Task.CompletedTask;
     }
+}
+
+internal static partial class JobsExecutionTaskHandlerLog
+{
+    [LoggerMessage(
+        EventId = 3100,
+        Level = LogLevel.Warning,
+        Message = "Lease renewal for job {JobId} ({Function}) failed; treating the lease as lost and cancelling the "
+            + "running job. The row is left InProgress for the stalled-reclaim sweep to recover per OnNodeDeath."
+    )]
+    public static partial void LogJobLeaseRenewalFailed(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3101,
+        Level = LogLevel.Information,
+        Message = "Job {JobId} ({Function}) was cancelled on lease loss; row left InProgress for the stalled-reclaim "
+            + "sweep to recover per OnNodeDeath (no terminal status written)."
+    )]
+    public static partial void LogJobLeaseLostCancellation(this ILogger logger, Guid jobId, string function);
 }

@@ -41,6 +41,9 @@ public interface IJobsCoordinationFixture
     /// <summary>Fully-qualified, provider-quoted CronJobs table (Postgres: <c>jobs."CronJobs"</c>; SqlServer: <c>[jobs].[CronJobs]</c>).</summary>
     string QualifiedCronJobsTable { get; }
 
+    /// <summary>Fully-qualified, provider-quoted CronJobOccurrences table (Postgres: <c>jobs."CronJobOccurrences"</c>; SqlServer: <c>[jobs].[CronJobOccurrences]</c>).</summary>
+    string QualifiedCronJobOccurrencesTable { get; }
+
     /// <summary>Provider SQL expression for "now in UTC" (Postgres: <c>now()</c>; SqlServer: <c>SYSUTCDATETIME()</c>).</summary>
     string UtcNowSqlExpression { get; }
 
@@ -198,6 +201,70 @@ public static class JobsCoordinationFixtureExtensions
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Inserts a CronJobOccurrence row with an exact status/owner/lease — bypasses the entity's internal setters.
+    /// Requires a parent CronJob (FK <c>CronJobId</c>) to already exist (seed it via <see cref="SeedCronJobAsync" />).
+    /// </summary>
+    public static async Task SeedCronOccurrenceAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        Guid cronJobId,
+        int status,
+        string? ownerId,
+        NodeDeathPolicy onNodeDeath,
+        DateTime? lockedUntil,
+        DateTime executionTime,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // ExecutionTime is an explicit parameter, not now(): the (CronJobId, ExecutionTime) unique index requires
+        // distinct execution times when several occurrences of the same cron are seeded together.
+        command.CommandText =
+            $"INSERT INTO {fixture.QualifiedCronJobOccurrencesTable} ({_CronOccurrenceInsertColumns}) "
+            + $"VALUES (@id, @cronJobId, @status, @ownerId, @executionTime, "
+            + $"{fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, 0, 0, @onNodeDeath, @lockedUntil);";
+
+        _AddParameter(command, "@id", id);
+        _AddParameter(command, "@cronJobId", cronJobId);
+        _AddParameter(command, "@status", ((JobStatus)status).ToString());
+        _AddParameter(command, "@ownerId", (object?)ownerId ?? DBNull.Value);
+        _AddParameter(command, "@executionTime", executionTime);
+        _AddParameter(command, "@onNodeDeath", onNodeDeath.ToString());
+        _AddParameter(command, "@lockedUntil", (object?)lockedUntil ?? DBNull.Value);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Reads back a CronJobOccurrence's status + owner for assertions.</summary>
+    public static async Task<(int Status, string? OwnerId)> ReadCronOccurrenceAsync(
+        this IJobsCoordinationFixture fixture,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"Status\", \"OwnerId\" FROM {fixture.QualifiedCronJobOccurrencesTable} WHERE \"Id\" = @id;";
+        _AddParameter(command, "@id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException($"CronJobOccurrence {id} not found.");
+        }
+
+        var status = (int)Enum.Parse<JobStatus>(reader.GetString(0));
+        var ownerId = await reader.IsDBNullAsync(1, cancellationToken) ? null : reader.GetString(1);
+
+        return (status, ownerId);
+    }
+
     /// <summary>Reads back a TimeJob's status + owner for assertions.</summary>
     public static async Task<(int Status, string? OwnerId)> ReadTimeJobAsync(
         this IJobsCoordinationFixture fixture,
@@ -255,6 +322,10 @@ public static class JobsCoordinationFixtureExtensions
 
     private const string _CronInsertColumns =
         "\"Id\", \"Function\", \"Description\", \"Expression\", \"Retries\", \"CreatedAt\", \"UpdatedAt\", \"OnNodeDeath\"";
+
+    private const string _CronOccurrenceInsertColumns =
+        "\"Id\", \"CronJobId\", \"Status\", \"OwnerId\", \"ExecutionTime\", "
+        + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
 
     // Both Npgsql and SqlClient accept the "@name" parameter form.
     private static void _AddParameter(DbCommand command, string name, object value)

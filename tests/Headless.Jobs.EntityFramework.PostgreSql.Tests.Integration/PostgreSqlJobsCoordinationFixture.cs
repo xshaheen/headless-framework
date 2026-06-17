@@ -28,6 +28,8 @@ public sealed class PostgreSqlJobsCoordinationFixture
 
     public string QualifiedCronJobsTable => "jobs.\"CronJobs\"";
 
+    public string QualifiedCronJobOccurrencesTable => "jobs.\"CronJobOccurrences\"";
+
     public string UtcNowSqlExpression => "now()";
 
     public string ResetSql =>

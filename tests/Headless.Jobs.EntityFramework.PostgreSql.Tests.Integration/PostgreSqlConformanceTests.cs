@@ -52,6 +52,14 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
         base.stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock();
 
     [Fact]
+    public override Task cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy() =>
+        base.cron_stalled_reclaim_uses_the_db_clock_and_terminalizes_per_policy();
+
+    [Fact]
+    public override Task cron_running_occurrence_renews_but_queued_or_foreign_renews_zero() =>
+        base.cron_running_occurrence_renews_but_queued_or_foreign_renews_zero();
+
+    [Fact]
     public override Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease() =>
         base.node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease();
 }
