@@ -29,9 +29,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
-    private readonly ICurrentCommitCoordinator _currentCommitCoordinator = Argument.IsNotNull(
-        currentCommitCoordinator
-    );
+    private readonly ICurrentCommitCoordinator _currentCommitCoordinator = Argument.IsNotNull(currentCommitCoordinator);
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
 
     // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
@@ -39,16 +37,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     // and persistence faults all propagate. On the coordinated path a propagated failure is the point: it lets the
     // caller's ambient transaction roll back rather than commit without the job row. Update/Delete are plain CRUD and
     // keep returning JobResult.
-    Task<TCronJob> ICronJobManager<TCronJob>.AddAsync(
-        TCronJob entity,
-        CancellationToken cancellationToken
-    ) => _AddCronJobAsync(entity, cancellationToken);
+    Task<TCronJob> ICronJobManager<TCronJob>.AddAsync(TCronJob entity, CancellationToken cancellationToken) =>
+        _AddCronJobAsync(entity, cancellationToken);
 
     // See the throw-on-failure note on ICronJobManager.AddAsync above — the same applies to the time-job Add path.
-    Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(
-        TTimeJob entity,
-        CancellationToken cancellationToken
-    ) => _AddTimeJobAsync(entity, cancellationToken);
+    Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(TTimeJob entity, CancellationToken cancellationToken) =>
+        _AddTimeJobAsync(entity, cancellationToken);
 
     Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.UpdateAsync(
         TCronJob cronJob,
@@ -60,15 +54,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     ) => _UpdateTimeJobAsync(timeJob, cancellationToken);
 
-    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteAsync(
-        Guid id,
-        CancellationToken cancellationToken
-    ) => _DeleteCronJobAsync(id, cancellationToken);
+    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+        _DeleteCronJobAsync(id, cancellationToken);
 
-    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteAsync(
-        Guid id,
-        CancellationToken cancellationToken
-    ) => _DeleteTimeJobAsync(id, cancellationToken);
+    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+        _DeleteTimeJobAsync(id, cancellationToken);
 
     Task<List<TTimeJob>> ITimeJobManager<TTimeJob>.AddBatchAsync(
         List<TTimeJob> entities,
@@ -145,13 +135,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _DeferSideEffects(
                 context.Coordinator,
                 entity.Id.ToString(),
-                ct =>
-                    _RunTimeJobSideEffectsAsync(
-                        entity,
-                        timeProvider.GetUtcNow().UtcDateTime,
-                        executionTime,
-                        ct
-                    )
+                ct => _RunTimeJobSideEffectsAsync(entity, timeProvider.GetUtcNow().UtcDateTime, executionTime, ct)
             );
 
             return entity;
@@ -210,10 +194,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         if (
-            CronScheduleCache.GetNextOccurrenceOrDefault(
-                entity.Expression,
-                timeProvider.GetUtcNow().UtcDateTime
-            )
+            CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
             is not { } nextOccurrence
         )
         {
@@ -251,10 +232,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return entity;
     }
 
-    private async Task<JobResult<TTimeJob>> _UpdateTimeJobAsync(
-        TTimeJob timeJob,
-        CancellationToken cancellationToken
-    )
+    private async Task<JobResult<TTimeJob>> _UpdateTimeJobAsync(TTimeJob timeJob, CancellationToken cancellationToken)
     {
         if (timeJob is null)
         {
@@ -263,9 +241,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (timeJob.ExecutionTime == null)
         {
-            return new JobResult<TTimeJob>(
-                new JobValidatorException($"Job ExecutionTime must not be null!")
-            );
+            return new JobResult<TTimeJob>(new JobValidatorException($"Job ExecutionTime must not be null!"));
         }
 
         timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
@@ -301,9 +277,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         if (cronJob is null)
         {
-            return new JobResult<TCronJob>(
-                new ArgumentNullException(nameof(cronJob), @"Cron job must not be null!")
-            );
+            return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), @"Cron job must not be null!"));
         }
 
         if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
@@ -314,16 +288,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
 
         if (
-            CronScheduleCache.GetNextOccurrenceOrDefault(
-                cronJob.Expression,
-                timeProvider.GetUtcNow().UtcDateTime
-            )
+            CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
             is not { } nextOccurrence
         )
         {
-            return new JobResult<TCronJob>(
-                new JobValidatorException($"Cannot parse expression {cronJob.Expression}")
-            );
+            return new JobResult<TCronJob>(new JobValidatorException($"Cannot parse expression {cronJob.Expression}"));
         }
 
         try
@@ -335,14 +304,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 cancellationToken: cancellationToken
             );
 
-            if (
-                _executionContext.Functions.FirstOrDefault(x => x.ParentId == cronJob.Id) is
-                { } internalFunction
-            )
+            if (_executionContext.Functions.FirstOrDefault(x => x.ParentId == cronJob.Id) is { } internalFunction)
             {
-                internalFunction
-                    .ResetUpdateProps()
-                    .SetProperty(x => x.ExecutionTime, nextOccurrence);
+                internalFunction.ResetUpdateProps().SetProperty(x => x.ExecutionTime, nextOccurrence);
 
                 await persistenceProvider
                     .UpdateCronJobOccurrence(internalFunction, cancellationToken: cancellationToken)
@@ -361,15 +325,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    private async Task<JobResult<TCronJob>> _DeleteCronJobAsync(
-        Guid id,
-        CancellationToken cancellationToken = default
-    )
+    private async Task<JobResult<TCronJob>> _DeleteCronJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var affectedRows = await persistenceProvider.RemoveCronJobs(
-            [id],
-            cancellationToken: cancellationToken
-        );
+        var affectedRows = await persistenceProvider.RemoveCronJobs([id], cancellationToken: cancellationToken);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.ParentId == id))
         {
@@ -379,15 +337,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         return new JobResult<TCronJob>(affectedRows);
     }
 
-    private async Task<JobResult<TTimeJob>> _DeleteTimeJobAsync(
-        Guid id,
-        CancellationToken cancellationToken = default
-    )
+    private async Task<JobResult<TTimeJob>> _DeleteTimeJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var affectedRows = await persistenceProvider.RemoveTimeJobs(
-            [id],
-            cancellationToken: cancellationToken
-        );
+        var affectedRows = await persistenceProvider.RemoveTimeJobs([id], cancellationToken: cancellationToken);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.JobId == id))
         {
@@ -404,10 +356,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             DateTimeKind.Utc => dateTime,
             DateTimeKind.Local => dateTime.ToUniversalTime(),
-            DateTimeKind.Unspecified => TimeZoneInfo.ConvertTimeToUtc(
-                dateTime,
-                CronScheduleCache.TimeZoneInfo
-            ),
+            DateTimeKind.Unspecified => TimeZoneInfo.ConvertTimeToUtc(dateTime, CronScheduleCache.TimeZoneInfo),
             _ => dateTime,
         };
     }
@@ -418,12 +367,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         for (var i = 0; i < functions.Length; i++)
         {
             ref var context = ref functions[i];
-            if (
-                JobFunctionProvider.JobFunctions.TryGetValue(
-                    context.FunctionName,
-                    out var tickerItem
-                )
-            )
+            if (JobFunctionProvider.JobFunctions.TryGetValue(context.FunctionName, out var tickerItem))
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;
@@ -438,9 +382,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    private InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(
-        IEnumerable<TimeJobEntity> jobs
-    )
+    private InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
     {
         return jobs.Select(_BuildContextFromNonGeneric).ToArray();
     }
@@ -471,10 +413,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return entities ?? [];
         }
 
-        var jobFunctionsHashSet = new HashSet<string>(
-            JobFunctionProvider.JobFunctions.Keys,
-            StringComparer.Ordinal
-        );
+        var jobFunctionsHashSet = new HashSet<string>(JobFunctionProvider.JobFunctions.Keys, StringComparer.Ordinal);
         var immediateTickers = new List<Guid>();
         var now = timeProvider.GetUtcNow().UtcDateTime;
         DateTime earliestForNonImmediate = default;
@@ -505,10 +444,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             {
                 immediateTickers.Add(entity.Id);
             }
-            else if (
-                earliestForNonImmediate == default
-                || entity.ExecutionTime <= earliestForNonImmediate
-            )
+            else if (earliestForNonImmediate == default || entity.ExecutionTime <= earliestForNonImmediate)
             {
                 earliestForNonImmediate = entity.ExecutionTime.Value;
             }
@@ -599,10 +535,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(
-                    entity.Expression,
-                    timeProvider.GetUtcNow().UtcDateTime
-                )
+                CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
                 is not { } nextOccurrence
             )
             {
@@ -635,13 +568,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _DeferSideEffects(
                 context.Coordinator,
                 $"cron batch ({validEntities.Count})",
-                ct =>
-                    _RunCoordinatedCronJobsBatchSideEffectsAsync(
-                        context.Writer,
-                        validEntities,
-                        nextOccurrences,
-                        ct
-                    )
+                ct => _RunCoordinatedCronJobsBatchSideEffectsAsync(context.Writer, validEntities, nextOccurrences, ct)
             );
 
             return validEntities;
@@ -743,46 +670,30 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             if (cronJob is null)
             {
-                errors.Add(
-                    new ArgumentNullException(nameof(cronJobs), @"Cron job must not be null!")
-                );
+                errors.Add(new ArgumentNullException(nameof(cronJobs), @"Cron job must not be null!"));
                 continue;
             }
 
             if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
             {
-                errors.Add(
-                    new JobValidatorException(
-                        $"Cannot find JobFunction with name {cronJob.Function}"
-                    )
-                );
+                errors.Add(new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}"));
                 continue;
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(
-                    cronJob.Expression,
-                    timeProvider.GetUtcNow().UtcDateTime
-                )
+                CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
                 is not { } nextOccurrence
             )
             {
-                errors.Add(
-                    new JobValidatorException($"Cannot parse expression {cronJob.Expression}")
-                );
+                errors.Add(new JobValidatorException($"Cannot parse expression {cronJob.Expression}"));
                 continue;
             }
 
             cronJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
-            if (
-                _executionContext.Functions.FirstOrDefault(x => x.ParentId == cronJob.Id) is
-                { } internalFunction
-            )
+            if (_executionContext.Functions.FirstOrDefault(x => x.ParentId == cronJob.Id) is { } internalFunction)
             {
-                internalFunction
-                    .ResetUpdateProps()
-                    .SetProperty(x => x.ExecutionTime, nextOccurrence);
+                internalFunction.ResetUpdateProps().SetProperty(x => x.ExecutionTime, nextOccurrence);
                 internalFunctionsToUpdate.Add(internalFunction);
                 needsRestart = true;
             }
@@ -857,10 +768,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             cancellationToken: cancellationToken
         );
 
-        if (
-            affectedRows > 0
-            && _executionContext.Functions.Any(x => ids.Contains(x.ParentId ?? Guid.Empty))
-        )
+        if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.ParentId ?? Guid.Empty)))
         {
             _jobsHostScheduler.Restart();
         }

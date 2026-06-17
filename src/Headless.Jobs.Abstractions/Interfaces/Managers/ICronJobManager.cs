@@ -34,10 +34,7 @@ public interface ICronJobManager<TCronJob>
     /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">
     /// One or more jobs failed validation; <see cref="Headless.Jobs.Exceptions.JobValidatorException.Errors" /> lists each.
     /// </exception>
-    Task<List<TCronJob>> AddBatchAsync(
-        List<TCronJob> entities,
-        CancellationToken cancellationToken = default
-    );
+    Task<List<TCronJob>> AddBatchAsync(List<TCronJob> entities, CancellationToken cancellationToken = default);
     Task<JobResult<List<TCronJob>>> UpdateBatchAsync(
         List<TCronJob> cronJobs,
         CancellationToken cancellationToken = default

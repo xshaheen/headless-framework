@@ -173,21 +173,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>
             "Deferred post-commit side effects failed for {JobScope}. The job row is committed; the scheduler's "
                 + "polling sweep is the recovery path."
         )]
-        public static partial void DeferredJobSideEffectsFailed(
-            ILogger logger,
-            string jobScope,
-            Exception exception
-        );
+        public static partial void DeferredJobSideEffectsFailed(ILogger logger, string jobScope, Exception exception);
 
         [LoggerMessage(
             LogLevel.Warning,
             "Deferred post-commit side effects for {JobScope} did not finish within {Timeout}. The job row is "
                 + "committed; the scheduler's polling sweep is the recovery path."
         )]
-        public static partial void DeferredJobSideEffectsTimedOut(
-            ILogger logger,
-            string jobScope,
-            TimeSpan timeout
-        );
+        public static partial void DeferredJobSideEffectsTimedOut(ILogger logger, string jobScope, TimeSpan timeout);
     }
 }

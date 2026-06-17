@@ -40,9 +40,7 @@ public class SampleScheduler(ITimeJobManager<TimeJobEntity> timeJobManager) : IH
             return;
         }
 
-        System.Console.WriteLine(
-            $"Scheduled console sample job with Id={job.Id}, ScheduledFor={job.ExecutionTime:O}"
-        );
+        System.Console.WriteLine($"Scheduled console sample job with Id={job.Id}, ScheduledFor={job.ExecutionTime:O}");
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

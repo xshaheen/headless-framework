@@ -44,15 +44,13 @@ public sealed class SqlServerJobsCoordinationFixture
     public string CreateProbeTableSql =>
         "IF OBJECT_ID(N'jobs_probe', N'U') IS NULL CREATE TABLE jobs_probe (id int); DELETE FROM jobs_probe;";
 
-    public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) =>
-        setup.UseSqlServer(ConnectionString);
+    public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
 
     public void ConfigureStore(DbContextOptionsBuilder db) => db.UseSqlServer(ConnectionString);
 
     public DbConnection CreateConnection() => new SqlConnection(ConnectionString);
 
-    public void ConfigureCommitCoordination(IServiceCollection services) =>
-        services.AddSqlServerCommitCoordination();
+    public void ConfigureCommitCoordination(IServiceCollection services) => services.AddSqlServerCommitCoordination();
 
     public async Task RunCoordinatedTransactionAsync(
         IServiceProvider services,
@@ -68,9 +66,7 @@ public sealed class SqlServerJobsCoordinationFixture
                 // Reach the live transaction through the same relational capability production participants use.
                 var coordinator =
                     services.GetRequiredService<ICurrentCommitCoordinator>().Current
-                    ?? throw new InvalidOperationException(
-                        "No ambient coordinator — the helper did not enlist."
-                    );
+                    ?? throw new InvalidOperationException("No ambient coordinator — the helper did not enlist.");
 
                 if (
                     !coordinator.TryGetCapability<IRelationalCommitContext>(out var relational)

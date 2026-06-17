@@ -16,12 +16,10 @@ public sealed class PostgreSqlEnqueueAtomicityTests(PostgreSqlJobsCoordinationFi
         base.rollback_discards_enqueue_and_domain_write();
 
     [Fact]
-    public override Task two_enqueues_in_one_scope_both_commit() =>
-        base.two_enqueues_in_one_scope_both_commit();
+    public override Task two_enqueues_in_one_scope_both_commit() => base.two_enqueues_in_one_scope_both_commit();
 
     [Fact]
-    public override Task batch_enqueue_commits_atomically() =>
-        base.batch_enqueue_commits_atomically();
+    public override Task batch_enqueue_commits_atomically() => base.batch_enqueue_commits_atomically();
 
     [Fact]
     public override Task batch_enqueue_rolls_back() => base.batch_enqueue_rolls_back();
@@ -31,8 +29,7 @@ public sealed class PostgreSqlEnqueueAtomicityTests(PostgreSqlJobsCoordinationFi
         base.enqueue_without_coordinator_inserts_directly();
 
     [Fact]
-    public override Task cron_enqueue_commits_atomically() =>
-        base.cron_enqueue_commits_atomically();
+    public override Task cron_enqueue_commits_atomically() => base.cron_enqueue_commits_atomically();
 
     [Fact]
     public override Task cron_enqueue_rolls_back() => base.cron_enqueue_rolls_back();

@@ -51,11 +51,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                 host.Services,
                 async (connection, transaction, innerCt) =>
                 {
-                    await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(
-                        connection,
-                        transaction,
-                        innerCt
-                    );
+                    await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                     var result = await manager.AddAsync(_TimeJob(), innerCt);
                     result.Should().NotBeNull();
                 },
@@ -86,11 +82,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     host.Services,
                     async (connection, transaction, innerCt) =>
                     {
-                        await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(
-                            connection,
-                            transaction,
-                            innerCt
-                        );
+                        await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(connection, transaction, innerCt);
                         await manager.AddAsync(_TimeJob(), innerCt);
 
                         // Abandon the scope after the writes are buffered: the transaction never commits.
@@ -99,9 +91,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     ct
                 );
 
-            (await act.Should().ThrowAsync<InvalidOperationException>())
-                .Which.Should()
-                .BeSameAs(sentinel);
+            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(sentinel);
 
             // The regression net: a stranded AsyncLocal capture would have direct-inserted (own connection, committed)
             // and left the row behind. Both writes must be gone.
@@ -197,9 +187,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     ct
                 );
 
-            (await act.Should().ThrowAsync<InvalidOperationException>())
-                .Which.Should()
-                .BeSameAs(sentinel);
+            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(sentinel);
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(0);
         }
         finally
@@ -279,9 +267,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     ct
                 );
 
-            (await act.Should().ThrowAsync<InvalidOperationException>())
-                .Which.Should()
-                .BeSameAs(sentinel);
+            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(sentinel);
             (await fixture.CountCronJobsAsync(ct)).Should().Be(before);
         }
         finally
@@ -315,9 +301,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                     ct
                 );
 
-            (await act.Should().ThrowAsync<InvalidOperationException>())
-                .Which.Should()
-                .BeSameAs(sentinel);
+            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(sentinel);
             (await fixture.CountCronJobsAsync(ct)).Should().Be(before);
         }
         finally

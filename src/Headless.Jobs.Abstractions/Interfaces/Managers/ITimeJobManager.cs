@@ -32,10 +32,7 @@ public interface ITimeJobManager<TTimeJob>
     /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">
     /// One or more jobs failed validation; <see cref="Headless.Jobs.Exceptions.JobValidatorException.Errors" /> lists each.
     /// </exception>
-    Task<List<TTimeJob>> AddBatchAsync(
-        List<TTimeJob> entities,
-        CancellationToken cancellationToken = default
-    );
+    Task<List<TTimeJob>> AddBatchAsync(List<TTimeJob> entities, CancellationToken cancellationToken = default);
     Task<JobResult<List<TTimeJob>>> UpdateBatchAsync(
         List<TTimeJob> timeJobs,
         CancellationToken cancellationToken = default

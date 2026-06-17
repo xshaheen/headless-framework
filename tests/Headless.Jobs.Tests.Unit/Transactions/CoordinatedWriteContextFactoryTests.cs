@@ -19,10 +19,7 @@ public sealed class CoordinatedWriteContextFactoryTests
         var act = CoordinatedWriteContextFactory.RequireOptionsConstructor<WellFormedContext>;
 
         act.Should().NotThrow();
-        CoordinatedWriteContextFactory
-            .RequireOptionsConstructor<WellFormedContext>()
-            .Should()
-            .NotBeNull();
+        CoordinatedWriteContextFactory.RequireOptionsConstructor<WellFormedContext>().Should().NotBeNull();
     }
 
     [Fact]
@@ -35,8 +32,7 @@ public sealed class CoordinatedWriteContextFactoryTests
             .WithMessage("*MissingOptionsCtorContext*single DbContextOptions*");
     }
 
-    private sealed class WellFormedContext(DbContextOptions<WellFormedContext> options)
-        : DbContext(options) { }
+    private sealed class WellFormedContext(DbContextOptions<WellFormedContext> options) : DbContext(options) { }
 
     // No single-arg DbContextOptions<TContext> ctor (only the implicit parameterless one), so
     // RequireOptionsConstructor must reject it. Never instantiated — the check is pure reflection.
