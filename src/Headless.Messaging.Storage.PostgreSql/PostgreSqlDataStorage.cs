@@ -465,11 +465,11 @@ public sealed class PostgreSqlDataStorage(
     }
 
     public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
     )
     {
-        return _ReclaimDeadOwnersAsync(_publishedTable, liveOwners, cancellationToken);
+        return _ReclaimDeadOwnersAsync(_publishedTable, deadOwners, cancellationToken);
     }
 
     public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
@@ -480,11 +480,11 @@ public sealed class PostgreSqlDataStorage(
     }
 
     public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
     )
     {
-        return _ReclaimDeadOwnersAsync(_receivedTable, liveOwners, cancellationToken);
+        return _ReclaimDeadOwnersAsync(_receivedTable, deadOwners, cancellationToken);
     }
 
     public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
@@ -909,15 +909,13 @@ public sealed class PostgreSqlDataStorage(
 
     private async ValueTask<int> _ReclaimDeadOwnersAsync(
         string tableName,
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken
     )
     {
-        // Guard the empty-set case: PostgreSQL evaluates `x <> ALL(ARRAY[]::varchar[])` as vacuously
-        // TRUE, so an empty liveOwners would reclaim every leased owned row. Mirror the SqlServer guard
-        // and the IDataStorage contract (empty liveOwners is a no-op). The processor never passes an
-        // empty set (its self-check guarantees the local identity is present), but direct callers might.
-        if (liveOwners.Count == 0)
+        // Empty deadOwners trivially matches zero rows (`x = ANY(ARRAY[]::varchar[])` is always FALSE),
+        // so the early return is an optimization that skips the round-trip, not a safety guard.
+        if (deadOwners.Count == 0)
         {
             return 0;
         }
@@ -930,7 +928,7 @@ public sealed class PostgreSqlDataStorage(
             UPDATE {tableName}
             SET "LockedUntil" = @Now
             WHERE "Owner" IS NOT NULL
-              AND "Owner" <> ALL(@LiveOwners)
+              AND "Owner" = ANY(@DeadOwners)
               AND "LockedUntil" > @Now
               AND {_TerminalRowGuardSimple};
             """;
@@ -943,9 +941,9 @@ public sealed class PostgreSqlDataStorage(
                 sqlParams:
                 [
                     new NpgsqlParameter("@Now", now),
-                    new NpgsqlParameter("@LiveOwners", NpgsqlDbType.Array | NpgsqlDbType.Varchar)
+                    new NpgsqlParameter("@DeadOwners", NpgsqlDbType.Array | NpgsqlDbType.Varchar)
                     {
-                        Value = liveOwners.ToArray(),
+                        Value = deadOwners.ToArray(),
                     },
                 ],
                 cancellationToken: cancellationToken

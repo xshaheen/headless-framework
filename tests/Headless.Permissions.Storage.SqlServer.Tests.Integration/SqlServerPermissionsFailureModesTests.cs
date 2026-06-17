@@ -105,6 +105,8 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
             IF OBJECT_ID(N'{schema}.PermissionGrants', N'U') IS NOT NULL DROP TABLE [{schema}].[PermissionGrants];
             IF OBJECT_ID(N'{schema}.PermissionDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[PermissionDefinitions];
             IF OBJECT_ID(N'{schema}.PermissionGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[PermissionGroupDefinitions];
+            IF TYPE_ID(N'{schema}.HeadlessPermissionsIdList') IS NOT NULL DROP TYPE [{schema}].[HeadlessPermissionsIdList];
+            IF TYPE_ID(N'{schema}.HeadlessPermissionsNameList') IS NOT NULL DROP TYPE [{schema}].[HeadlessPermissionsNameList];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
             """,
             connection

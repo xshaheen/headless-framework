@@ -20,18 +20,35 @@ public sealed class GetOrAddAsyncTests : TestBase
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public async Task should_throw_when_options_duration_is_not_positive(int seconds)
+    public async Task should_expire_immediately_when_options_duration_is_not_positive(int seconds)
     {
-        // given
+        // given — a non-positive Duration (e.g. a past BCL absolute expiration) is "expire immediately"
+        // across providers, not an error: the factory still runs and returns its value, but the entry is
+        // written already-expired and is never observable on a later read.
         using var cache = _CreateCache();
         var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(seconds) };
+        var factoryCalls = 0;
 
         // when
-        var act = async () =>
-            await cache.GetOrAddAsync<string>("key", _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        var result = await cache.GetOrAddAsync<string>(
+            "key",
+            _ =>
+            {
+                factoryCalls++;
+                return ValueTask.FromResult<string?>("value");
+            },
+            options,
+            AbortToken
+        );
 
-        // then
-        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        // then — the factory ran and its value was returned to the caller...
+        factoryCalls.Should().Be(1);
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be("value");
+
+        // ...but nothing was cached: a subsequent read misses (immediate eviction).
+        var second = await cache.GetAsync<string>("key", AbortToken);
+        second.HasValue.Should().BeFalse();
     }
 
     [Fact]

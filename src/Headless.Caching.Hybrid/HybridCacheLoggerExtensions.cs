@@ -184,4 +184,12 @@ internal static partial class HybridCacheLoggerExtensions
         Message = "Distributed L2 cache circuit closed; L2 operations are enabled again"
     )]
     public static partial void LogDistributedCacheCircuitClosed(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 23,
+        EventName = "FailedToRefreshL2Cache",
+        Level = LogLevel.Warning,
+        Message = "Failed to refresh sliding TTL on L2 cache for key {Key}; L1 TTL was still re-armed"
+    )]
+    public static partial void LogFailedToRefreshL2Cache(this ILogger logger, Exception exception, string key);
 }

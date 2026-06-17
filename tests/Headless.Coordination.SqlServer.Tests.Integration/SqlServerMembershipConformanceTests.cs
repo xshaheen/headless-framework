@@ -58,4 +58,28 @@ public sealed class SqlServerMembershipConformanceTests(SqlServerMembershipFixtu
     [Fact]
     public override Task should_not_evict_current_incarnation_when_prior_incarnation_leaves() =>
         base.should_not_evict_current_incarnation_when_prior_incarnation_leaves();
+
+    [Fact]
+    public override Task should_read_targeted_node_liveness_across_states() =>
+        base.should_read_targeted_node_liveness_across_states();
+
+    [Fact]
+    public override Task should_read_dead_targeted_state_after_graceful_leave() =>
+        base.should_read_dead_targeted_state_after_graceful_leave();
+
+    [Fact]
+    public override Task should_read_null_targeted_state_for_superseded_incarnation() =>
+        base.should_read_null_targeted_state_for_superseded_incarnation();
+
+    [Fact]
+    public override Task should_read_null_without_pruning_for_retention_expired_node() =>
+        base.should_read_null_without_pruning_for_retention_expired_node();
+
+    [Fact]
+    public override Task should_agree_between_targeted_read_and_snapshot() =>
+        base.should_agree_between_targeted_read_and_snapshot();
+
+    [Fact]
+    public override Task should_derive_is_alive_from_targeted_read() =>
+        base.should_derive_is_alive_from_targeted_read();
 }

@@ -355,6 +355,56 @@ internal sealed class SqlServerMembershipStore(
         return snapshots;
     }
 
+    protected override async ValueTask<NodeLivenessState?> ReadCurrentNodeLivenessCoreAsync(
+        string clusterName,
+        NodeIdentity identity,
+        CancellationToken cancellationToken
+    )
+    {
+        var generationTable = _Qualified(SqlServerMembershipSchema.Generation.Table);
+        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
+
+        // Targeted single-row read: join to the generation authority so a non-current incarnation yields no
+        // row (absent -> null), classify with the store clock identically to ReadCurrentLivenessCoreAsync, and
+        // exclude retention-expired rows in the WHERE so they read as absent (null) exactly as the snapshot's
+        // prune would remove them. Plain read: no SERIALIZABLE transaction, no deadlock retry, no prune.
+        var sql = $$"""
+            SELECT
+                CASE
+                    WHEN l.[{{SqlServerMembershipSchema.Liveness.LeftAt}}] IS NOT NULL THEN @DeadState
+                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @DeadThresholdMs THEN @DeadState
+                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @SuspicionThresholdMs THEN @SuspectedState
+                    ELSE @AliveState
+                END AS [state]
+            FROM {{livenessTable}} l
+            JOIN {{generationTable}} g
+              ON g.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
+             AND g.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
+             AND g.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
+            WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND l.[{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+              AND l.[{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
+              AND DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) < @RetentionThresholdMs;
+            """;
+
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = _CreateCommand(connection, sql);
+        command.Parameters.AddWithValue("ClusterName", clusterName);
+        command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
+        command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
+        command.Parameters.AddWithValue("DeadThresholdMs", _ToMilliseconds(DeadThreshold));
+        command.Parameters.AddWithValue("SuspicionThresholdMs", _ToMilliseconds(SuspicionThreshold));
+        command.Parameters.AddWithValue("RetentionThresholdMs", _ToMilliseconds(DeadThreshold + DeadRetentionWindow));
+        command.Parameters.AddWithValue("AliveState", nameof(NodeLivenessState.Alive));
+        command.Parameters.AddWithValue("SuspectedState", nameof(NodeLivenessState.Suspected));
+        command.Parameters.AddWithValue("DeadState", nameof(NodeLivenessState.Dead));
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        return result is string stateText ? Enum.Parse<NodeLivenessState>(stateText) : null;
+    }
+
     private async ValueTask _PruneExpiredRowsAsync(
         SqlConnection connection,
         string clusterName,

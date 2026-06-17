@@ -70,26 +70,18 @@ public static class ServiceBuilder
 
                 if (serviceDescriptor?.ImplementationFactory == null)
                 {
-                    throw new InvalidOperationException(
-                        $"Cannot resolve DbContextOptions<{typeof(TContext).Name}>"
-                    );
+                    throw new InvalidOperationException($"Cannot resolve DbContextOptions<{typeof(TContext).Name}>");
                 }
 
-                return (DbContextOptions<TContext>)
-                    serviceDescriptor.ImplementationFactory(provider);
+                return (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(provider);
             }
 
-            services.TryAddSingleton<IDbContextFactory<TContext>>(
-                provider => new PooledDbContextFactory<TContext>(
-                    ResolveOptionsTemplate(provider),
-                    builder.PoolSize
-                )
-            );
+            services.TryAddSingleton<IDbContextFactory<TContext>>(provider => new PooledDbContextFactory<TContext>(
+                ResolveOptionsTemplate(provider),
+                builder.PoolSize
+            ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(
-                services,
-                ResolveOptionsTemplate
-            );
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, ResolveOptionsTemplate);
         };
     }
 
@@ -116,17 +108,12 @@ public static class ServiceBuilder
                 return optionsBuilder.Options;
             }
 
-            services.TryAddSingleton<IDbContextFactory<TContext>>(
-                sp => new PooledDbContextFactory<TContext>(
-                    ResolveOptionsTemplate(sp),
-                    builder.PoolSize
-                )
-            );
+            services.TryAddSingleton<IDbContextFactory<TContext>>(sp => new PooledDbContextFactory<TContext>(
+                ResolveOptionsTemplate(sp),
+                builder.PoolSize
+            ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(
-                services,
-                ResolveOptionsTemplate
-            );
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, ResolveOptionsTemplate);
         };
     }
 
@@ -150,19 +137,17 @@ public static class ServiceBuilder
                 coordinatedWriteOptionsFactory(provider),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<IJobsOwnerIdentity>(),
+                provider.GetRequiredService<SchedulerOptionsBuilder>(),
                 provider.GetService<ICache>(),
-                provider.GetRequiredService<
-                    ILogger<JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>>
-                >()
+                provider.GetRequiredService<ILogger<JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>>>()
             )
         );
     }
 
-    private static DbContextOptions<TContext> _UpdateDbContextOptionsService<
-        TContext,
-        TTimeJob,
-        TCronJob
-    >(IServiceProvider serviceProvider, Func<IServiceProvider, object> oldFactory)
+    private static DbContextOptions<TContext> _UpdateDbContextOptionsService<TContext, TTimeJob, TCronJob>(
+        IServiceProvider serviceProvider,
+        Func<IServiceProvider, object> oldFactory
+    )
         where TContext : DbContext
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()

@@ -16,11 +16,11 @@ namespace Headless.Jobs.Coordination;
 /// </remarks>
 internal sealed class DefaultJobsOwnerIdentity(SchedulerOptionsBuilder optionsBuilder) : IJobsOwnerIdentity
 {
-    public string DisplayOwner => optionsBuilder.NodeIdentifier;
+    public string DisplayOwner => optionsBuilder.NodeId;
 
     public bool TryGetStampOwner([NotNullWhen(true)] out string? owner)
     {
-        owner = optionsBuilder.NodeIdentifier;
+        owner = optionsBuilder.NodeId;
 
         return true;
     }

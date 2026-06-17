@@ -5,7 +5,7 @@ public enum JobStatus
     Idle,
     Queued,
     InProgress,
-    Done,
+    Succeeded,
     DueDone,
     Failed,
     Cancelled,

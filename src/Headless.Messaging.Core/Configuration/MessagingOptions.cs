@@ -222,6 +222,19 @@ public sealed class MessagingOptions
     public TimeSpan OutboxFlushTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets the cadence of the dead-owner recovery reconcile backstop. Default is 1 minute.
+    /// </summary>
+    /// <remarks>
+    /// The dead-owner recovery bridge reclaims orphaned outbox/inbox rows on two triggers: a low-latency
+    /// <c>NodeLeft</c> membership-watch path and this periodic liveness-snapshot reconcile. The reconcile is
+    /// the authoritative backstop that catches any death missed while the watch loop was not subscribed; the
+    /// watch path is best-effort acceleration. This cadence does not bound correctness — the per-row
+    /// <c>LockedUntil</c> lease floor recovers any row independently — so it can safely run longer than the
+    /// retry-poll interval. Mirrors <c>SchedulerOptionsBuilder.DeadNodeReconcileInterval</c> on the Jobs side.
+    /// </remarks>
+    public TimeSpan DeadNodeReconcileInterval { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
     /// <see cref="IConsumerBuilderBase{TConsumer, TBuilder}.WithCircuitBreaker"/>.
@@ -276,6 +289,7 @@ public sealed class MessagingOptions
         target.TransportPublishTimeout = TransportPublishTimeout;
         target.CommandTimeout = CommandTimeout;
         target.OutboxFlushTimeout = OutboxFlushTimeout;
+        target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
@@ -461,6 +475,11 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("OutboxFlushTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("OutboxFlushTimeout must not exceed 5 minutes.");
+        // No upper bound: the reconcile is a backstop cadence, not a correctness deadline (the per-row
+        // LockedUntil floor recovers rows independently), so a long interval is a legitimate choice.
+        RuleFor(x => x.DeadNodeReconcileInterval)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
     }
 

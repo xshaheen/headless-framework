@@ -165,6 +165,7 @@ public sealed class SqlServerFeaturesStorageTests(SqlServerFeaturesFixture fixtu
             IF OBJECT_ID(N'{_Schema}.FeatureValues', N'U') IS NOT NULL DROP TABLE [{_Schema}].[FeatureValues];
             IF OBJECT_ID(N'{_Schema}.FeatureDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[FeatureDefinitions];
             IF OBJECT_ID(N'{_Schema}.FeatureGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[FeatureGroupDefinitions];
+            IF TYPE_ID(N'{_Schema}.HeadlessFeaturesIdList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessFeaturesIdList];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'DROP SCHEMA [{_Schema}]');
             """,
             connection

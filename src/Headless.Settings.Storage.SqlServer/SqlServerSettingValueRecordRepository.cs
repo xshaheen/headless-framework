@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Domain;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
@@ -15,7 +16,6 @@ internal sealed class SqlServerSettingValueRecordRepository(
     IServiceProvider services
 ) : ISettingValueRecordRepository
 {
-    private const int _MaxDeleteParameters = 2000;
     private const string _ValueColumns = "[Id],[Name],[Value],[ProviderName],[ProviderKey],[DateCreated],[DateUpdated]";
 
     public async Task<SettingValueRecord?> FindAsync(
@@ -82,15 +82,18 @@ internal sealed class SqlServerSettingValueRecordRepository(
             return Task.FromResult(new List<SettingValueRecord>());
         }
 
-        var nameParameters = names.Select((_, index) => $"@Name{index}").ToArray();
-        var parameters = names.Select((name, index) => _Param($"Name{index}", name)).ToList();
-        parameters.Add(_Param("ProviderName", providerName));
-        parameters.Add(_Param("ProviderKey", providerKey));
-
+        // Pass the names through the HeadlessSettingsNameList TVP: one cached plan regardless of count and
+        // no 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
         var sql =
-            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Name] IN ({string.Join(",", nameParameters)}) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
+            $"SELECT {_ValueColumns} FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Name] IN (SELECT [Name] FROM @Names) AND [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
 
-        return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
+        return _ReadValuesAsync(
+            sql,
+            cancellationToken,
+            _BuildNameListTvpParameter(names),
+            _Param("ProviderName", providerName),
+            _Param("ProviderKey", providerKey)
+        );
     }
 
     public Task<List<SettingValueRecord>> GetListAsync(
@@ -164,15 +167,13 @@ internal sealed class SqlServerSettingValueRecordRepository(
             return;
         }
 
-        foreach (var chunk in settings.Chunk(_MaxDeleteParameters))
-        {
-            var idParameters = chunk.Select((_, index) => $"@Id{index}").ToArray();
-            var parameters = chunk.Select((setting, index) => _Param($"Id{index}", setting.Id)).ToArray();
-            var sql =
-                $"DELETE FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Id] IN ({string.Join(",", idParameters)});";
+        // Pass ids through the HeadlessSettingsIdList TVP: one cached plan regardless of count, no
+        // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        var sql =
+            $"DELETE FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE [Id] IN (SELECT [Id] FROM @Ids);";
 
-            await _ExecuteAsync(sql, cancellationToken, parameters).ConfigureAwait(false);
-        }
+        await _ExecuteAsync(sql, cancellationToken, _BuildIdListTvpParameter(settings.Select(setting => setting.Id)))
+            .ConfigureAwait(false);
 
         foreach (var setting in settings)
         {
@@ -241,6 +242,38 @@ internal sealed class SqlServerSettingValueRecordRepository(
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
     private TimeProvider _TimeProvider() => services.GetService<TimeProvider>() ?? TimeProvider.System;
+
+    private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
+    {
+        var idsTable = new DataTable();
+        idsTable.Columns.Add("Id", typeof(Guid));
+        foreach (var id in ids)
+        {
+            idsTable.Rows.Add(id);
+        }
+
+        return new SqlParameter("@Ids", SqlDbType.Structured)
+        {
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessSettingsIdList]",
+            Value = idsTable,
+        };
+    }
+
+    private SqlParameter _BuildNameListTvpParameter(IEnumerable<string> names)
+    {
+        var namesTable = new DataTable();
+        namesTable.Columns.Add("Name", typeof(string));
+        foreach (var name in names)
+        {
+            namesTable.Rows.Add(name);
+        }
+
+        return new SqlParameter("@Names", SqlDbType.Structured)
+        {
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessSettingsNameList]",
+            Value = namesTable,
+        };
+    }
 
     private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
 }

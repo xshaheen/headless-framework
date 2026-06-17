@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Domain;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
@@ -15,8 +16,6 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     IServiceProvider services
 ) : IFeatureValueRecordRepository
 {
-    private const int _MaxDeleteParameters = 2000;
-
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
         string? providerName,
@@ -128,15 +127,13 @@ internal sealed class SqlServerFeatureValueRecordRepository(
             return;
         }
 
-        foreach (var chunk in features.Chunk(_MaxDeleteParameters))
-        {
-            var idParameters = chunk.Select((_, index) => $"@Id{index}").ToArray();
-            var parameters = chunk.Select((feature, index) => _Param($"Id{index}", feature.Id)).ToArray();
-            var sql =
-                $"DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Id] IN ({string.Join(",", idParameters)});";
+        // Pass ids through the HeadlessFeaturesIdList TVP: one cached plan regardless of count, no
+        // 2100-parameter ceiling, portable to older engines (no OPENJSON / compatibility level 130).
+        var sql =
+            $"DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Id] IN (SELECT [Id] FROM @Ids);";
 
-            await _ExecuteAsync(sql, cancellationToken, parameters).ConfigureAwait(false);
-        }
+        await _ExecuteAsync(sql, cancellationToken, _BuildIdListTvpParameter(features.Select(feature => feature.Id)))
+            .ConfigureAwait(false);
 
         foreach (var feature in features)
         {
@@ -199,6 +196,22 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     }
 
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+
+    private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
+    {
+        var idsTable = new DataTable();
+        idsTable.Columns.Add("Id", typeof(Guid));
+        foreach (var id in ids)
+        {
+            idsTable.Rows.Add(id);
+        }
+
+        return new SqlParameter("@Ids", SqlDbType.Structured)
+        {
+            TypeName = $"[{storageOptions.Value.Schema}].[HeadlessFeaturesIdList]",
+            Value = idsTable,
+        };
+    }
 
     private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
 }

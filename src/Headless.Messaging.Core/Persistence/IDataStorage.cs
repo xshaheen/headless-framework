@@ -239,16 +239,16 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Accelerates retry visibility for published rows leased by owners that are no longer live.
+    /// Accelerates retry visibility for published rows leased by dead node-incarnation owners.
     /// </summary>
-    /// <param name="liveOwners">
-    /// Serialized live node-incarnation owners. An empty collection is treated as a no-op and returns
-    /// <c>0</c> — it never reclaims all leased rows.
+    /// <param name="deadOwners">
+    /// Serialized dead node-incarnation owners whose still-leased rows should be reclaimed. An empty
+    /// collection is a no-op and returns <c>0</c>.
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The number of rows reclaimed.</returns>
     ValueTask<int> ReclaimDeadPublishedOwnersAsync(
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
     );
 
@@ -292,16 +292,16 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Accelerates retry visibility for received rows leased by owners that are no longer live.
+    /// Accelerates retry visibility for received rows leased by dead node-incarnation owners.
     /// </summary>
-    /// <param name="liveOwners">
-    /// Serialized live node-incarnation owners. An empty collection is treated as a no-op and returns
-    /// <c>0</c> — it never reclaims all leased rows.
+    /// <param name="deadOwners">
+    /// Serialized dead node-incarnation owners whose still-leased rows should be reclaimed. An empty
+    /// collection is a no-op and returns <c>0</c>.
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The number of rows reclaimed.</returns>
     ValueTask<int> ReclaimDeadReceivedOwnersAsync(
-        IReadOnlyCollection<string> liveOwners,
+        IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
     );
 

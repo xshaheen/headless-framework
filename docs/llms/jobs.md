@@ -15,6 +15,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
   - [TerminateExecutionException and Status Control](#terminateexecutionexception-and-status-control)
   - [Cron Occurrence Skipping](#cron-occurrence-skipping)
   - [Job Status After Errors](#job-status-after-errors)
+  - [Node-Death Policy (OnNodeDeath)](#node-death-policy-onnodedeath)
   - [Best Practices](#best-practices)
 - [Headless.Jobs.Abstractions](#headlessjobsabstractions)
   - [Installation](#installation)
@@ -108,7 +109,8 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - Mark job methods with `[Jobs("cron-expression")]` attribute. Add `Headless.Jobs.SourceGenerator` to the project for compile-time job registration (eliminates reflection).
 - Use `Jobs.EntityFramework` for job persistence. Without it, jobs are in-memory only and lost on restart.
 - For the durable operational store, register a coordination provider with `AddHeadlessCoordination(c => c.UsePostgreSql(conn))` (or another provider) BEFORE `AddHeadlessJobs(o => o.AddOperationalStore(...))`. Without it, the durable path throws `InvalidOperationException` naming `AddHeadlessCoordination`. The in-memory path (no `AddOperationalStore`) needs no coordination.
-- On the durable path, node identity is `node@incarnation` (store-allocated), not the machine name. Durable job rows are stamped with this owner.
+- On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not the machine name, and `SchedulerOptionsBuilder.NodeId` is not used as the owner there (it is only a pre-registration display fallback). Node identity for the durable path — including K8s pod-collision handling via `POD_NAME`/`POD_NAMESPACE` — is owned by `Headless.Coordination`. On the in-memory single-process path, the row owner comes from `SchedulerOptionsBuilder.NodeId` (defaults to the machine name).
+- The pickup lease (`SchedulerOptionsBuilder.LeaseDuration`, default 5 min) must exceed the longest expected job runtime. If it is shorter, a still-running `OnNodeDeath = Retry` job can be speculatively re-claimed and run twice. Set `OnNodeDeath = MarkFailed` or `Skip` on the job entity for non-idempotent jobs so the lease-expiry arm never re-claims them.
 - Do NOT install a Jobs-specific Redis cache package. Jobs cron-expression caching uses the host application's default `Headless.Caching.ICache`; pick `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` based on deployment needs.
 - No-Redis dead-node recovery is TTL-bounded, not immediate: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (plus a periodic reconcile backstop). Tune via the Coordination heartbeat/TTL and `SchedulerOptionsBuilder.DeadNodeReconcileInterval`.
 - Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
@@ -260,9 +262,24 @@ public sealed class LongRunningCronJob
 
 ### Job Status After Errors
 
+- `Succeeded`: job completed without error (the terminal-success status; retry-success retains `DueDone`).
 - `Failed`: retries exhausted or unhandled exception.
 - `Cancelled`: cancellation requested via token or `context.RequestCancellation()`.
 - `Skipped`: terminated explicitly (`TerminateExecutionException`) or overlapping cron occurrence skipped.
+
+### Node-Death Policy (OnNodeDeath)
+
+When the node that owns an in-flight job row dies, the per-job `NodeDeathPolicy` decides the row's fate. Set it via the `OnNodeDeath` property on `TimeJobEntity` / `CronJobOccurrenceEntity` (default `Retry`):
+
+| Policy | On node death | Use when |
+|--------|---------------|----------|
+| `Retry` (default) | Row is released for re-claim; the attempt counts toward the retry budget. | Job is idempotent — safe to run again. |
+| `MarkFailed` | Row transitions to terminal `Failed`; never re-run. | A second run is wrong; surface the failure. |
+| `Skip` | Row transitions to terminal `Skipped`; never re-run. | Idempotency-critical jobs that must run at most once. |
+
+This couples with the pickup lease (`SchedulerOptionsBuilder.LeaseDuration`, default 5 min). Every claim stamps `LockedUntil = now + LeaseDuration`, written and compared using the injected application `TimeProvider`, not the DB server clock (mirrors `Headless.Messaging` for InMemory↔SQL parity). The lease is a **duplicate-suppression / self-heal floor, not the liveness authority** — a dead node's rows are recovered by Coordination's incarnation + heartbeat sweep; lease expiry only lets a *stalled but not-yet-declared-dead* `Idle`/`Queued` row be re-claimed.
+
+The claim predicate's lease-expiry arm is gated on `OnNodeDeath == Retry`, so clock skew can never speculatively re-run a `Skip` or `MarkFailed` job. Contract: `LeaseDuration` must exceed the longest expected job runtime — otherwise a still-running `Retry` job's lease can expire and be re-claimed (duplicate execution). The unowned and self-owned (crash-recovery) claim arms are unaffected by the policy.
 
 ### Best Practices
 
@@ -741,7 +758,7 @@ headless.jobs.job.execute.timeticker (main job execution span)
 | `headless.jobs.job.is_child` | Whether this is a child job | `true`, `false` |
 | `headless.jobs.job.retries` | Maximum retry attempts | `3` |
 | `headless.jobs.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
-| `headless.jobs.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
+| `headless.jobs.job.final_status` | Final execution status | `Succeeded`, `Failed`, `Cancelled`, `Skipped` |
 | `headless.jobs.job.final_retry_count` | Final retry count reached | `2` |
 | `headless.jobs.job.execution_time_ms` | Execution time in milliseconds | `1250` |
 | `headless.jobs.job.success` | Whether execution was successful | `true`, `false` |

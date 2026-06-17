@@ -9,6 +9,7 @@ using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Serialization;
@@ -346,6 +347,14 @@ public static class SetupMessaging
         //Queue's message processor
         services.TryAddSingleton<MessageNeedToRetryProcessor>();
         services.TryAddSingleton<IRetryProcessorMonitor>(sp => sp.GetRequiredService<MessageNeedToRetryProcessor>());
+
+        // Dead-owner recovery bridge: always-on, decoupled from UseStorageLock (KTD3). When no real
+        // INodeMembership is wired the registered NullNodeMembership makes the bridge a benign no-op
+        // (empty snapshot, no NodeLeft events). Cross-node safety rests on the owner-scoped conditional
+        // reclaim UPDATE being idempotent, not on a held lock.
+        services.TryAddSingleton<MessagingDeadOwnerReclaimer>();
+        services.AddHostedService<DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>>();
+
         services.TryAddSingleton<TransportCheckProcessor>();
         services.TryAddSingleton<MessageDelayedProcessor>();
         services.TryAddSingleton<CollectorProcessor>();

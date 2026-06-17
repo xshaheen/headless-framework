@@ -145,6 +145,24 @@ internal sealed class SqlServerPermissionsStorageInitializer(
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
+
+            -- Table-valued parameter types for batched id/name queries (single cached plan, no 2100-parameter
+            -- ceiling, portable to older engines). The name type is a heap (no PK) so trailing-space / collation
+            -- duplicate names cannot raise a PK violation the dynamic IN-list never had.
+            BEGIN TRY
+                IF TYPE_ID(N'{options.Schema}.HeadlessPermissionsIdList') IS NULL
+                    CREATE TYPE [{options.Schema}].[HeadlessPermissionsIdList] AS TABLE ([Id] uniqueidentifier NOT NULL PRIMARY KEY);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+            BEGIN TRY
+                IF TYPE_ID(N'{options.Schema}.HeadlessPermissionsNameList') IS NULL
+                    CREATE TYPE [{options.Schema}].[HeadlessPermissionsNameList] AS TABLE ([Name] nvarchar({PermissionGrantRecordConstants.NameMaxLength}) NOT NULL);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
             """;
 
         // Wrap the DDL body in BEGIN TRAN / COMMIT TRAN so a mid-script failure cannot leave the

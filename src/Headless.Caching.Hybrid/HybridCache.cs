@@ -34,7 +34,7 @@ public sealed partial class HybridCache(
     ILogger<HybridCache>? logger = null,
     TimeProvider? timeProvider = null,
     ICacheFactoryLockProvider? factoryLockProvider = null
-) : ICache, IFactoryCacheStore, IAsyncDisposable
+) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -271,6 +271,30 @@ public sealed partial class HybridCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_IsDistributedCacheCircuitClosed())
+        {
+            try
+            {
+                await l2Cache.RefreshAsync(key, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            {
+                _OpenDistributedCacheCircuit(exception, key);
+                _logger.LogFailedToRefreshL2Cache(exception, key);
+            }
+        }
+
+        await LocalCache.RefreshAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

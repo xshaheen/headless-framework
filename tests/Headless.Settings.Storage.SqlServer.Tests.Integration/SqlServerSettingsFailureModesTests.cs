@@ -115,6 +115,8 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
             $"""
             IF OBJECT_ID(N'{schema}.SettingValues', N'U') IS NOT NULL DROP TABLE [{schema}].[SettingValues];
             IF OBJECT_ID(N'{schema}.SettingDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[SettingDefinitions];
+            IF TYPE_ID(N'{schema}.HeadlessSettingsIdList') IS NOT NULL DROP TYPE [{schema}].[HeadlessSettingsIdList];
+            IF TYPE_ID(N'{schema}.HeadlessSettingsNameList') IS NOT NULL DROP TYPE [{schema}].[HeadlessSettingsNameList];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
             """,
             connection

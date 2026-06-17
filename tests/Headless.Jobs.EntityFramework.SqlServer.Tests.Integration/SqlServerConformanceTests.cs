@@ -22,4 +22,12 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     [Fact]
     public override Task surviving_node_recovers_a_crashed_nodes_work_via_node_left_event() =>
         base.surviving_node_recovers_a_crashed_nodes_work_via_node_left_event();
+
+    [Fact]
+    public override Task dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed() =>
+        base.dead_node_with_mark_failed_policy_transitions_in_flight_row_to_failed();
+
+    [Fact]
+    public override Task dead_node_with_skip_policy_transitions_in_flight_row_to_skipped() =>
+        base.dead_node_with_skip_policy_transitions_in_flight_row_to_skipped();
 }

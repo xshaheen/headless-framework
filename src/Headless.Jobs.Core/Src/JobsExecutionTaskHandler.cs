@@ -286,7 +286,7 @@ internal class JobsExecutionTaskHandler(
 
         if (success)
         {
-            context.SetProperty(x => x.Status, isDue ? JobStatus.DueDone : JobStatus.Done);
+            context.SetProperty(x => x.Status, isDue ? JobStatus.DueDone : JobStatus.Succeeded);
 
             // Add success tags to activity
             jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
@@ -400,12 +400,12 @@ internal class JobsExecutionTaskHandler(
         return childContext.RunCondition switch
         {
             RunCondition.InProgress => parentStatus == JobStatus.InProgress,
-            RunCondition.OnSuccess => parentStatus is JobStatus.Done or JobStatus.DueDone,
+            RunCondition.OnSuccess => parentStatus is JobStatus.Succeeded or JobStatus.DueDone,
             RunCondition.OnFailure => parentStatus == JobStatus.Failed,
             RunCondition.OnCancelled => parentStatus == JobStatus.Cancelled,
             RunCondition.OnFailureOrCancelled => parentStatus is JobStatus.Failed or JobStatus.Cancelled,
             RunCondition.OnAnyCompletedStatus => parentStatus
-                is JobStatus.Done
+                is JobStatus.Succeeded
                     or JobStatus.DueDone
                     or JobStatus.Failed
                     or JobStatus.Cancelled,

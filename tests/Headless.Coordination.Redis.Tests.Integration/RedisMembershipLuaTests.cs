@@ -201,6 +201,107 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         identity.Should().Be(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1)));
     }
 
+    [Fact]
+    public async Task should_classify_targeted_node_liveness_across_states()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        // Alive immediately after register.
+        (await store.ReadNodeLivenessAsync(identity, AbortToken))
+            .Should()
+            .Be(NodeLivenessState.Alive);
+
+        // Aged into the suspicion band -> Suspected.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspectedWait, AbortToken);
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Suspected);
+
+        // Aged past the dead threshold but still inside the retention window -> Dead.
+        await TimeProvider.System.Delay(
+            CoordinationFixtureExtensions.DeadButRetainedWait - CoordinationFixtureExtensions.SuspectedWait,
+            AbortToken
+        );
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Dead);
+    }
+
+    [Fact]
+    public async Task should_return_dead_for_targeted_read_after_graceful_leave()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+
+        await store.LeaveAsync(identity, AbortToken);
+
+        (await store.ReadNodeLivenessAsync(identity, AbortToken)).Should().Be(NodeLivenessState.Dead);
+    }
+
+    [Fact]
+    public async Task should_return_null_for_targeted_read_of_stale_and_unregistered_identities()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+        var store = second.Services.GetRequiredService<IMembershipStore>();
+        var unregistered = new NodeIdentity(new NodeId("node-z"), new NodeIncarnation(1));
+
+        (await store.ReadNodeLivenessAsync(firstIdentity, AbortToken)).Should().BeNull();
+        (await store.ReadNodeLivenessAsync(unregistered, AbortToken)).Should().BeNull();
+        (await store.ReadNodeLivenessAsync(secondIdentity, AbortToken)).Should().Be(NodeLivenessState.Alive);
+    }
+
+    [Fact]
+    public async Task should_resolve_generation_via_gen_key_without_backfilling_mirror_on_targeted_read()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+        var knownKey = _KnownKey(cluster);
+        var generationField = _GenerationField(identity.NodeId);
+
+        // Drop the generation mirror: the targeted read must fall back to the authoritative gen: key.
+        _ = await db.HashDeleteAsync(knownKey, generationField);
+
+        var state = await store.ReadNodeLivenessAsync(identity, AbortToken);
+
+        state.Should().Be(NodeLivenessState.Alive);
+        // Unlike the snapshot read, the targeted read is write-free: it must NOT repair the mirror.
+        (await db.HashExistsAsync(knownKey, generationField))
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public async Task should_return_null_without_pruning_for_retention_expired_targeted_read()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var store = node.Services.GetRequiredService<IMembershipStore>();
+        var knownKey = _KnownKey(cluster);
+
+        // Age past the operational prune window, then read the targeted path FIRST — before any snapshot or
+        // cleanup tick could delete the member. The targeted path reports absence (null) without writing.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+
+        var state = await store.ReadNodeLivenessAsync(identity, AbortToken);
+
+        state.Should().BeNull();
+        // The retention-expired member must still be present in :known: the targeted read classifies, never prunes.
+        (await db.HashExistsAsync(knownKey, identity.ToString()))
+            .Should()
+            .BeTrue();
+    }
+
     private static string _Cluster()
     {
         return "native-" + Guid.NewGuid().ToString("N");

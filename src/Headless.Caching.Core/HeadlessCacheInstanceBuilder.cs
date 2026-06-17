@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Caching;
@@ -22,7 +23,23 @@ public sealed class HeadlessCacheInstanceBuilder
 
     internal Action<IServiceCollection>? Action { get; private set; }
 
+    internal Func<IServiceProvider, ISerializer>? SerializerFactory { get; private set; }
+
     internal int RegistrationCount { get; private set; }
+
+    internal void SetSerializerFactory(Func<IServiceProvider, ISerializer> serializerFactory)
+    {
+        Argument.IsNotNull(serializerFactory);
+
+        if (SerializerFactory is not null)
+        {
+            throw new InvalidOperationException(
+                $"A serializer is already configured for named cache instance '{Name}'."
+            );
+        }
+
+        SerializerFactory = serializerFactory;
+    }
 
     /// <summary>Captures the provider contribution for this instance. Must be called exactly once.</summary>
     /// <param name="action">The provider's deferred service registration action.</param>

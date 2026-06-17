@@ -1,0 +1,16 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Caching</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Caching.Bcl.Tests.Unit" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Caching.Core\Headless.Caching.Core.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+</Project>

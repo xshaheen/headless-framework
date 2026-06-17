@@ -91,11 +91,16 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<DateTime>("ExecutionTime")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("LockHolder")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("LockedAt")
+                    b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OnNodeDeath")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("text");
 
                     b.Property<int>("RetryCount")
                         .HasColumnType("integer");
@@ -103,8 +108,10 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("SkippedReason")
                         .HasColumnType("text");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -159,11 +166,16 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.Property<string>("InitIdentifier")
                         .HasColumnType("text");
 
-                    b.Property<string>("LockHolder")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("LockedAt")
+                    b.Property<DateTime?>("LockedUntil")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OnNodeDeath")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("text");
 
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("uuid");
@@ -180,14 +192,17 @@ namespace Headless.Jobs.Api.Demo.Migrations
                     b.PrimitiveCollection<int[]>("RetryIntervals")
                         .HasColumnType("integer[]");
 
-                    b.Property<int?>("RunCondition")
-                        .HasColumnType("integer");
+                    b.Property<string>("RunCondition")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("SkippedReason")
                         .HasColumnType("text");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");

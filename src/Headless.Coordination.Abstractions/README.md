@@ -11,6 +11,7 @@ Gives consumers a provider-independent way to stamp process incarnation identity
 - `NodeIdentity`, `NodeId`, and `NodeIncarnation`.
 - `INodeMembership` for register, heartbeat, leave, live reads, snapshot reads, and event watch.
 - `NodeJoined`, `NodeSuspected`, `NodeRecovered`, `NodeLeft`, and `LocalMembershipLost`.
+- `IDeadOwnerReclaimer` — the per-domain reclaim sink driven by the shared dead-owner recovery bridge (carries `ReconcileInterval` and `ReclaimAsync(owners, ct)`, where `owners` is a single owner from the event path or the whole dead set from a reconcile tick so a consumer can collapse the reclaim into one batched write); implemented by each consumer (Jobs, Messaging).
 - `CoordinationOptions` for thresholds, cluster name, node id, role, metadata, and membership-loss behavior.
 
 ## Design Notes

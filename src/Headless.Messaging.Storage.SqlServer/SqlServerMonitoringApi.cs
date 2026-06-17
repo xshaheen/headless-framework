@@ -398,17 +398,27 @@ public sealed class SqlServerMonitoringApi(
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
 
-        // Build @Id0,@Id1,... IN-list for SQL Server (no array parameter support).
-        var paramNames = new string[storageIds.Count];
-        var sqlParams = new object[storageIds.Count];
-        for (var i = 0; i < storageIds.Count; i++)
+        // Pass the id set through the HeadlessMessagingIdList table-valued parameter (provisioned by the
+        // storage initializer and already used by SqlServerDataStorage). The SQL text and the @Ids shape
+        // stay constant regardless of id count, so SQL Server reuses one cached query plan instead of
+        // compiling a fresh plan per dynamic IN-list length — and it stays portable to older engines
+        // (table types need no OPENJSON / compatibility level 130).
+        var tvpTypeName = $"[{_options.Schema}].[HeadlessMessagingIdList]";
+
+        var idsTable = new DataTable();
+        idsTable.Columns.Add("Id", typeof(Guid));
+        foreach (var id in storageIds)
         {
-            paramNames[i] = $"@Id{i}";
-            sqlParams[i] = new SqlParameter($"@Id{i}", storageIds[i]);
+            idsTable.Rows.Add(id);
         }
 
+        var sqlParams = new object[]
+        {
+            new SqlParameter("@Ids", SqlDbType.Structured) { TypeName = tvpTypeName, Value = idsTable },
+        };
+
         var sql =
-            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id IN ({string.Join(',', paramNames)})";
+            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id IN (SELECT Id FROM @Ids)";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 

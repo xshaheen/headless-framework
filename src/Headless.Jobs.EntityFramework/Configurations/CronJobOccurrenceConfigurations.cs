@@ -14,7 +14,11 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = Constants
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
-        builder.Property(x => x.LockHolder).IsRequired(false);
+        builder.Property(x => x.OwnerId).IsRequired(false);
+
+        // Persist enums by name (not ordinal) — see TimeJobConfigurations.
+        builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder.Property(x => x.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
 
         builder.HasIndex("CronJobId").HasDatabaseName("IX_CronJobOccurrence_CronJobId");
 

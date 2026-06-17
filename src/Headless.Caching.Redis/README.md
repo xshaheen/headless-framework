@@ -13,12 +13,14 @@ Provides Redis-backed caching through the unified `ICache` abstraction, enabling
 - `GetWithExpirationAsync<T>` returns the cached value and its remaining TTL in one round-trip; used internally by `Headless.Caching.Hybrid` to avoid a double L2 read.
 - Supports strongly typed `ICache<T>` (the single typed facade; `IRemoteCache<T>` is not registered).
 - Named cache instances via `setup.AddNamed(name, i => i.UseRedis(...))`, each owning its own scripts loader bound to its own multiplexer.
+- `HeadlessCacheInstanceBuilder.WithSerializer(...)` - per-named-Redis-instance value-codec selection (instance, factory, and generic `<TSerializer>()` overloads); Redis resolves the keyed serializer by cache name and falls back to the global `ISerializer`. Serialization is a Redis-tier concern, so this lives in the Redis package; InMemory stores object references and never serializes, so it is not offered there. On a hybrid instance it governs L2 (Redis) only.
 - Prefix-based key management. `FlushAsync` is a **logical** whole-cache flush (FusionCache `Clear(false)` parity): it bumps a reserved remove-generation marker so every entry reads as a hard miss with no fail-safe reserve, rather than a physical `FLUSHDB`/`SCAN`+`UNLINK`. This is cluster-safe (one marker key, not a per-node command) and never touches co-tenant keyspaces; physical memory is reclaimed lazily by each entry's TTL, so `GetCountAsync` may still count logically-removed entries until they age out. (`ClearAsync` is the reserve-preserving logical counterpart; `RemoveByPrefixAsync` still physically removes a prefix via `SCAN`+`UNLINK`.)
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower).
 - Set/list operations with pagination.
 - Lua scripts for atomic multi-key operations.
 - O(1) logical tag invalidation and `ClearAsync` through timestamp markers (Family-2), compared against each entry's birth time on read — one marker key per tag, so tagging works on Redis Cluster.
 - Redis Cluster support for all operations, including tagging and clear.
+- Implements `IBufferCache` — `TryGetToAsync` writes the decoded value slice into the caller's `IBufferWriter<byte>` and `UpsertRawAsync` splices a `ReadOnlySequence<byte>` payload into the frame buffer, both reusing the same envelope stamping so expiry/tags/sliding/`CreatedAt` match the generic path; the frame is byte-identical and the read exposes the payload as a slice of the received buffer (one copy, no intermediate `byte[]`).
 - Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
 
 ## Design Notes
@@ -96,6 +98,20 @@ public sealed class SessionService(ICacheProvider cacheProvider)
 
 Names must be non-empty and must not be reserved: the `CacheConstants` role keys (`Headless.Caching:{Memory,Remote,Hybrid}`) and any name under the `Headless.Caching:` namespace are rejected with `ArgumentException`, and duplicate names throw. Each named instance must select exactly one provider. Named instances never touch the default (unkeyed) `ICache`.
 
+A named Redis instance can override its value serializer without affecting the default cache (`WithSerializer` and `UseRedis` chain in either order):
+
+```csharp
+builder.Services.AddHeadlessCaching(setup =>
+{
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis);
+    setup.AddNamed("binary-values", instance =>
+    {
+        instance.WithSerializer<MyBinarySerializer>();
+        instance.UseRedis(options => options.ConnectionMultiplexer = redis);
+    });
+});
+```
+
 ## Configuration
 
 | Option | Default | Description |
@@ -124,4 +140,5 @@ Names must be non-empty and must not be reserved: the `CacheConstants` role keys
 - Registers `ICacheProvider` (shared, `TryAdd`).
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`, plus a hosted `IInitializer` that warms the cache Lua scripts on host start.
 - `setup.AddNamed(name, i => i.UseRedis(...))` registers a keyed `ICache` under the instance name with a per-instance scripts loader and initializer bound to that instance's multiplexer.
+- Named Redis instances use the keyed `ISerializer` configured by `HeadlessCacheInstanceBuilder.WithSerializer(...)` when present; otherwise they use the global `ISerializer`.
 - `RemoveByTagAsync`/`ClearAsync` write timestamp marker keys in the reserved `{KeyPrefix}__tag:{tag}` / `{KeyPrefix}__clear` namespaces (one `StringSet` per call; no key enumeration).

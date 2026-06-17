@@ -192,6 +192,41 @@ public sealed class ScopedCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_scope_key_for_refresh()
+    {
+        // given
+        var sut = _CreateSut();
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(2),
+            SlidingExpiration = TimeSpan.FromMilliseconds(400),
+        };
+
+        _currentScope = "scope-a";
+        await sut.UpsertEntryAsync("key", "value-a", options, AbortToken);
+
+        _currentScope = "scope-b";
+        await sut.UpsertEntryAsync("key", "value-b", options, AbortToken);
+
+        // when
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(300));
+        _currentScope = "scope-a";
+        await sut.RefreshAsync("key", AbortToken);
+
+        // then
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(200));
+
+        _currentScope = "scope-a";
+        var resultA = await sut.GetAsync("key", AbortToken);
+        resultA.HasValue.Should().BeTrue();
+        resultA.Value.Should().Be("value-a");
+
+        _currentScope = "scope-b";
+        var resultB = await sut.GetAsync("key", AbortToken);
+        resultB.HasValue.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_not_scope_tags_for_remove_by_tag()
     {
         // given — tags are documented as NOT scope-isolated: only keys are scoped

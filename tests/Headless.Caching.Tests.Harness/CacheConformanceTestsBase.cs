@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using Headless.Caching;
 using Headless.Testing.Tests;
 
@@ -598,6 +599,117 @@ public abstract class CacheConformanceTestsBase : TestBase
         expired.HasValue.Should().BeFalse();
     }
 
+    public virtual async Task should_refresh_sliding_entry_without_reading_value()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateSlidingOptions(sliding: TimeSpan.FromMilliseconds(150));
+
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+
+        await cache.RefreshAsync(key, AbortToken);
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(90));
+        var refreshed = await cache.GetAsync<string>(key, AbortToken);
+
+        refreshed.HasValue.Should().BeTrue();
+        refreshed.Value.Should().Be("value");
+    }
+
+    public virtual async Task should_not_refresh_non_sliding_entry()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMilliseconds(180) };
+
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(120));
+
+        await cache.RefreshAsync(key, AbortToken);
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+        var expired = await cache.GetAsync<string>(key, AbortToken);
+
+        expired.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_ignore_refresh_for_missing_entry()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+
+        var act = async () => await cache.RefreshAsync(Faker.Random.AlphaNumeric(10), AbortToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    public virtual async Task should_refresh_tagged_sliding_entry()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMilliseconds(700),
+            SlidingExpiration = TimeSpan.FromMilliseconds(150),
+            Tags = [tag],
+        };
+
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+
+        // A tagged entry exercises the Redis full-frame fallback (the header-only read cannot recover tags).
+        await cache.RefreshAsync(key, AbortToken);
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(90));
+        var refreshed = await cache.GetAsync<string>(key, AbortToken);
+
+        refreshed.HasValue.Should().BeTrue();
+        refreshed.Value.Should().Be("value");
+    }
+
+    public virtual async Task should_not_resurrect_tag_invalidated_entry_on_refresh()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            SlidingExpiration = TimeSpan.FromMilliseconds(200),
+            Tags = [tag],
+        };
+
+        await cache.UpsertEntryAsync(key, "value", options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // Refresh must not re-arm (or otherwise revive) a tag-invalidated entry: the read stays a miss.
+        await cache.RefreshAsync(key, AbortToken);
+
+        var invalidated = await cache.GetAsync<string>(key, AbortToken);
+        invalidated.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_expire_immediately_when_upsert_duration_is_non_positive()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // A non-positive Duration (e.g. a past BCL absolute expiration) is "expire immediately" across providers,
+        // not an error: the write is an immediate eviction and the entry is never observable.
+        await cache.UpsertEntryAsync(key, "value", new CacheEntryOptions { Duration = TimeSpan.Zero }, AbortToken);
+
+        var immediate = await cache.GetAsync<string>(key, AbortToken);
+        immediate.HasValue.Should().BeFalse();
+    }
+
     public virtual async Task should_extend_entry_when_conditional_factory_reports_not_modified()
     {
         await ResetAsync();
@@ -1042,6 +1154,216 @@ public abstract class CacheConformanceTestsBase : TestBase
 
     private static CacheEntryOptions _CreateEagerOptions() =>
         new() { Duration = TimeSpan.FromMilliseconds(400), EagerRefreshThreshold = 0.5f };
+
+    #region IBufferCache (zero-intermediate-copy buffer path)
+
+    public virtual async Task should_round_trip_raw_payload_via_buffer_path()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var buffer = (IBufferCache)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var payload = Faker.Random.Bytes(1024);
+        var writer = new ArrayBufferWriter<byte>();
+
+        await buffer.UpsertRawAsync(
+            key,
+            new ReadOnlySequence<byte>(payload),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+        var found = await buffer.TryGetToAsync(key, writer, AbortToken);
+
+        found.Should().BeTrue();
+        writer.WrittenSpan.ToArray().Should().Equal(payload);
+    }
+
+    public virtual async Task should_round_trip_multi_segment_raw_payload_via_buffer_path()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var buffer = (IBufferCache)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var first = Faker.Random.Bytes(300);
+        var second = Faker.Random.Bytes(300);
+        var third = Faker.Random.Bytes(300);
+        var expected = first.Concat(second).Concat(third).ToArray();
+        var writer = new ArrayBufferWriter<byte>();
+
+        await buffer.UpsertRawAsync(
+            key,
+            _MultiSegment(first, second, third),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+        var found = await buffer.TryGetToAsync(key, writer, AbortToken);
+
+        found.Should().BeTrue();
+        writer.WrittenSpan.ToArray().Should().Equal(expected);
+    }
+
+    public virtual async Task should_read_raw_written_payload_via_generic_path()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var buffer = (IBufferCache)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var payload = Faker.Random.Bytes(512);
+
+        // Raw write must be readable by the typed byte[] path: the framing is identical to UpsertEntryAsync.
+        await buffer.UpsertRawAsync(
+            key,
+            new ReadOnlySequence<byte>(payload),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+        var cached = await cache.GetAsync<byte[]>(key, AbortToken);
+
+        cached.HasValue.Should().BeTrue();
+        cached.Value.Should().Equal(payload);
+    }
+
+    public virtual async Task should_read_generic_written_payload_via_buffer_path()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var buffer = (IBufferCache)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var payload = Faker.Random.Bytes(512);
+        var writer = new ArrayBufferWriter<byte>();
+
+        // Typed byte[] write must be readable by the buffer path (cross-path fidelity, the reverse direction).
+        await cache.UpsertEntryAsync(
+            key,
+            payload,
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+        var found = await buffer.TryGetToAsync(key, writer, AbortToken);
+
+        found.Should().BeTrue();
+        writer.WrittenSpan.ToArray().Should().Equal(payload);
+    }
+
+    public virtual async Task should_invalidate_raw_written_payload_by_tag()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var buffer = (IBufferCache)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var payload = Faker.Random.Bytes(256);
+        var writer = new ArrayBufferWriter<byte>();
+
+        await buffer.UpsertRawAsync(
+            key,
+            new ReadOnlySequence<byte>(payload),
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+
+        // Advance so the invalidation marker is strictly newer than the entry's birth time (Family-2 compares
+        // CreatedAt against the marker; with a frozen test clock they would otherwise tie).
+        await AdvanceAsync(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+        var found = await buffer.TryGetToAsync(key, writer, AbortToken);
+
+        found.Should().BeFalse();
+        writer.WrittenCount.Should().Be(0);
+    }
+
+    public virtual async Task should_return_false_and_write_nothing_on_buffer_miss()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var buffer = (IBufferCache)cache;
+        var writer = new ArrayBufferWriter<byte>();
+
+        var found = await buffer.TryGetToAsync(Faker.Random.AlphaNumeric(10), writer, AbortToken);
+
+        found.Should().BeFalse();
+        writer.WrittenCount.Should().Be(0);
+    }
+
+    public virtual async Task should_round_trip_empty_raw_payload_via_buffer_path()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var buffer = (IBufferCache)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var writer = new ArrayBufferWriter<byte>();
+
+        await buffer.UpsertRawAsync(
+            key,
+            ReadOnlySequence<byte>.Empty,
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+        var found = await buffer.TryGetToAsync(key, writer, AbortToken);
+
+        // An empty raw upsert is a present-but-empty entry across every provider: the read is a hit that writes
+        // zero bytes (distinct from a miss, which the previous test pins to false + nothing written).
+        found.Should().BeTrue();
+        writer.WrittenCount.Should().Be(0);
+    }
+
+    public virtual async Task should_expire_raw_written_payload_after_duration()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var buffer = (IBufferCache)cache;
+        var key = Faker.Random.AlphaNumeric(10);
+        var payload = Faker.Random.Bytes(128);
+        var expiration = TimeSpan.FromMilliseconds(250);
+
+        await buffer.UpsertRawAsync(
+            key,
+            new ReadOnlySequence<byte>(payload),
+            new CacheEntryOptions { Duration = expiration },
+            AbortToken
+        );
+
+        var beforeWriter = new ArrayBufferWriter<byte>();
+        var beforeExpiry = await buffer.TryGetToAsync(key, beforeWriter, AbortToken);
+
+        await AdvancePastExpirationAsync(expiration);
+
+        var afterWriter = new ArrayBufferWriter<byte>();
+        var afterExpiry = await buffer.TryGetToAsync(key, afterWriter, AbortToken);
+
+        beforeExpiry.Should().BeTrue();
+        beforeWriter.WrittenSpan.ToArray().Should().Equal(payload);
+        afterExpiry.Should().BeFalse();
+        afterWriter.WrittenCount.Should().Be(0);
+    }
+
+    private static ReadOnlySequence<byte> _MultiSegment(params byte[][] segments)
+    {
+        BufferSegment? first = null;
+        BufferSegment? last = null;
+
+        foreach (var segment in segments)
+        {
+            last = last is null ? first = new BufferSegment(segment) : last.Append(segment);
+        }
+
+        return new ReadOnlySequence<byte>(first!, 0, last!, last!.Memory.Length);
+    }
+
+    private sealed class BufferSegment : ReadOnlySequenceSegment<byte>
+    {
+        public BufferSegment(ReadOnlyMemory<byte> memory) => Memory = memory;
+
+        public BufferSegment Append(ReadOnlyMemory<byte> memory)
+        {
+            var next = new BufferSegment(memory) { RunningIndex = RunningIndex + Memory.Length };
+            Next = next;
+
+            return next;
+        }
+    }
+
+    #endregion
 
     protected sealed record CacheConformanceObject(Guid Id, string Name);
 }

@@ -15,6 +15,7 @@ internal sealed class CoordinationRedisScriptsInitializer(
         RedisMembershipAllocateIncarnationScriptDefinition.Instance,
         RedisMembershipHeartbeatScriptDefinition.Instance,
         RedisMembershipReadScriptDefinition.Instance,
+        RedisMembershipReadNodeLivenessScriptDefinition.Instance,
         RedisMembershipLeaveScriptDefinition.Instance,
         RedisMembershipCleanupScriptDefinition.Instance,
     ];

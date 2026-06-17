@@ -613,35 +613,15 @@ internal static partial class LoggerExtensions
     public static partial void MessagingRecoveryUsingLockedUntilFloorOnly(this ILogger logger);
 
     [LoggerMessage(
-        EventId = 89,
-        EventName = "CoordinationMembershipQueryFailed",
-        Level = LogLevel.Debug,
-        Message = "Coordination membership query failed; dead-incarnation retry recovery falls back to the per-row LockedUntil floor for this tick."
-    )]
-    public static partial void CoordinationMembershipQueryFailed(this ILogger logger, Exception exception);
-
-    [LoggerMessage(
-        EventId = 93,
-        EventName = "CoordinationMembershipQueryFailureEscalated",
-        Level = LogLevel.Error,
-        Message = "Coordination membership query has failed for {ConsecutiveFailures} consecutive cycles; dead-incarnation retry recovery is falling back to the per-row LockedUntil floor."
-    )]
-    public static partial void CoordinationMembershipQueryFailureEscalated(
-        this ILogger logger,
-        Exception exception,
-        int consecutiveFailures
-    );
-
-    [LoggerMessage(
-        EventId = 90,
-        EventName = "MessagingDeadOwnerReclaimFailed",
+        EventId = 94,
+        EventName = "MessagingDeadThresholdBelowDispatchTimeout",
         Level = LogLevel.Warning,
-        Message = "{RetryKind} retry dead-owner reclaim failed. Dispatch continues for this tick; reclaim will retry on the next cycle."
+        Message = "Coordination DeadThreshold ({DeadThreshold}) is below the retry DispatchTimeout ({DispatchTimeout}). A still-alive node that crosses the dead threshold mid-dispatch will be reclaimed and its message re-dispatched (a redundant at-least-once delivery). Set DeadThreshold >= DispatchTimeout to avoid it."
     )]
-    public static partial void MessagingDeadOwnerReclaimFailed(
+    public static partial void MessagingDeadThresholdBelowDispatchTimeout(
         this ILogger logger,
-        Exception exception,
-        string retryKind
+        TimeSpan deadThreshold,
+        TimeSpan dispatchTimeout
     );
 
     [LoggerMessage(
@@ -655,14 +635,6 @@ internal static partial class LoggerExtensions
         string retryKind,
         int reclaimedRows
     );
-
-    [LoggerMessage(
-        EventId = 92,
-        EventName = "MessagingRecoveryDisabledWithoutStorageLock",
-        Level = LogLevel.Warning,
-        Message = "Messaging Coordination membership is registered but UseStorageLock is disabled. Dead-incarnation retry recovery is disabled; enable UseStorageLock through MessagingBuilder.UseDistributedLock(...) or rely on the per-row LockedUntil floor."
-    )]
-    public static partial void MessagingRecoveryDisabledWithoutStorageLock(this ILogger logger);
 
     [LoggerMessage(
         EventId = 79,

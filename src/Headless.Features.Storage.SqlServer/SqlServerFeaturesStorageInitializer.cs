@@ -158,6 +158,14 @@ internal sealed class SqlServerFeaturesStorageInitializer(
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
+
+            BEGIN TRY
+                IF TYPE_ID(N'{options.Schema}.HeadlessFeaturesIdList') IS NULL
+                    CREATE TYPE [{options.Schema}].[HeadlessFeaturesIdList] AS TABLE ([Id] uniqueidentifier NOT NULL PRIMARY KEY);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
             """;
 
         // Wrap the DDL body in BEGIN TRAN / COMMIT TRAN so a mid-script failure cannot leave the

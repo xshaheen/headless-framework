@@ -216,6 +216,65 @@ public sealed class ConnectionMonitorTests : TestBase
         handle.ConnectionLostToken.IsCancellationRequested.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_not_fire_a_handle_registered_after_reactivation_when_the_monitor_is_cleanly_stopped()
+    {
+        // Regression for #403: the contested worker-start race (Active flip at _StartMonitorWorkerIfNeededNoLock vs. the
+        // worker continuation actually running). Drives the AutoStopped -> reactivate -> register-handle -> StopAsync
+        // interleaving and asserts the registered handle's token is NOT fired. A clean StopAsync is proper disposal, not
+        // connection loss: the only path that may fire ConnectionLostToken is a real Open -> closed state change (proven
+        // by the sibling _on_connection_loss test below), so there is no firing obligation to strand here.
+
+        // given (Idle)
+        var (connection, fake) = _CreateConnection();
+        await using var _ = connection;
+
+        // when (Idle -> AutoStopped on connection loss, then AutoStopped -> Idle on reactivation)
+        fake.SetState(ConnectionState.Closed);
+        fake.SetState(ConnectionState.Open);
+
+        // register a handle in the reactivated window: Idle -> Active, starting the worker
+        using var handle = connection.GetConnectionMonitoringHandle();
+        handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
+
+        // close the worker-start window deterministically: wait until the worker has actually issued a probe
+        await _DrainUntilAsync(() => fake.ExecuteNonQueryCount > 0);
+
+        // a clean stop tears down registrations without cancelling them (isCancel: false)
+        await connection.ConnectionMonitor.StopAsync();
+
+        // then (the token never fired — clean stop is not a connection loss; give any racing cancel a chance to surface)
+        await _DrainUntilAsync(() => false, iterations: 50);
+        handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_fire_a_handle_registered_after_reactivation_when_the_connection_is_actually_lost()
+    {
+        // Sibling to the clean-stop regression above: the same AutoStopped -> reactivate -> register-handle window, but
+        // here the connection is genuinely lost (Open -> closed) instead of cleanly stopped. This proves the reactivated
+        // worker still wires the handle to the real connection-loss path, so a handle from that window is never stranded.
+
+        // given (Idle)
+        var (connection, fake) = _CreateConnection();
+        await using var _ = connection;
+
+        // when (Idle -> AutoStopped -> Idle reactivation, then register in the reactivated window: Idle -> Active)
+        fake.SetState(ConnectionState.Closed);
+        fake.SetState(ConnectionState.Open);
+
+        using var handle = connection.GetConnectionMonitoringHandle();
+        await _DrainUntilAsync(() => fake.ExecuteNonQueryCount > 0);
+        handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
+
+        // the connection actually dies
+        fake.SetState(ConnectionState.Closed);
+
+        // then (the handle's token is cancelled — the reactivated worker honored the real connection-loss path)
+        await _DrainUntilAsync(() => handle.ConnectionLostToken.IsCancellationRequested);
+        handle.ConnectionLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
     private (TestDatabaseConnection Connection, FakeDbConnection Fake) _CreateConnection()
     {
         var fake = new FakeDbConnection();

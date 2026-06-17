@@ -135,6 +135,17 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Re-arms a sliding cache entry's idle window without materializing its value.
+    /// </summary>
+    /// <remarks>
+    /// This is a no-op when the key is absent, when the entry is not sliding, or when the entry is already past
+    /// its absolute physical cap. Implementations apply the same throttling used by value-returning reads.
+    /// </remarks>
+    /// <param name="cacheKey">The cache key.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask RefreshAsync(string cacheKey, CancellationToken cancellationToken = default);
+
     #endregion
 
     #region Remove
@@ -359,6 +370,11 @@ public class Cache<T>(ICache cache) : ICache<T>
     )
     {
         return cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
+
+    public ValueTask RefreshAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        return cache.RefreshAsync(cacheKey, cancellationToken);
     }
 
     public ValueTask<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)

@@ -112,6 +112,42 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
         base.should_not_stampede_eager_refresh_across_concurrent_readers();
 
     [Fact]
+    public override Task should_keep_sliding_entry_alive_when_read_within_idle_window() =>
+        base.should_keep_sliding_entry_alive_when_read_within_idle_window();
+
+    [Fact]
+    public override Task should_expire_sliding_entry_at_absolute_duration_cap() =>
+        base.should_expire_sliding_entry_at_absolute_duration_cap();
+
+    [Fact]
+    public override Task should_not_rearm_sliding_entry_when_metadata_is_read() =>
+        base.should_not_rearm_sliding_entry_when_metadata_is_read();
+
+    [Fact]
+    public override Task should_not_rearm_non_sliding_entry() => base.should_not_rearm_non_sliding_entry();
+
+    [Fact]
+    public override Task should_refresh_sliding_entry_without_reading_value() =>
+        base.should_refresh_sliding_entry_without_reading_value();
+
+    [Fact]
+    public override Task should_not_refresh_non_sliding_entry() => base.should_not_refresh_non_sliding_entry();
+
+    [Fact]
+    public override Task should_ignore_refresh_for_missing_entry() => base.should_ignore_refresh_for_missing_entry();
+
+    [Fact]
+    public override Task should_refresh_tagged_sliding_entry() => base.should_refresh_tagged_sliding_entry();
+
+    [Fact]
+    public override Task should_not_resurrect_tag_invalidated_entry_on_refresh() =>
+        base.should_not_resurrect_tag_invalidated_entry_on_refresh();
+
+    [Fact]
+    public override Task should_expire_immediately_when_upsert_duration_is_non_positive() =>
+        base.should_expire_immediately_when_upsert_duration_is_non_positive();
+
+    [Fact]
     public override Task should_extend_entry_when_conditional_factory_reports_not_modified() =>
         base.should_extend_entry_when_conditional_factory_reports_not_modified();
 
@@ -147,4 +183,36 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
 
     [Fact]
     public override Task should_drop_reserves_with_flush_async() => base.should_drop_reserves_with_flush_async();
+
+    [Fact]
+    public override Task should_round_trip_raw_payload_via_buffer_path() =>
+        base.should_round_trip_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_round_trip_multi_segment_raw_payload_via_buffer_path() =>
+        base.should_round_trip_multi_segment_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_read_raw_written_payload_via_generic_path() =>
+        base.should_read_raw_written_payload_via_generic_path();
+
+    [Fact]
+    public override Task should_read_generic_written_payload_via_buffer_path() =>
+        base.should_read_generic_written_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_invalidate_raw_written_payload_by_tag() =>
+        base.should_invalidate_raw_written_payload_by_tag();
+
+    [Fact]
+    public override Task should_return_false_and_write_nothing_on_buffer_miss() =>
+        base.should_return_false_and_write_nothing_on_buffer_miss();
+
+    [Fact]
+    public override Task should_round_trip_empty_raw_payload_via_buffer_path() =>
+        base.should_round_trip_empty_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_expire_raw_written_payload_after_duration() =>
+        base.should_expire_raw_written_payload_after_duration();
 }

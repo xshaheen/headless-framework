@@ -291,20 +291,27 @@ internal sealed class Bootstrapper(
 
     private void _WarnIfNullNodeMembership()
     {
+        // Dead-owner recovery runs unconditionally via DeadOwnerRecoveryBridge, independent of UseStorageLock.
+        // It can only accelerate recovery when a real INodeMembership reports dead nodes; with the
+        // NullNodeMembership default the bridge is a benign no-op and recovery falls back to the per-row
+        // LockedUntil lease floor.
         var membership = serviceProvider.GetService<INodeMembership>();
-        if (!options.Value.UseStorageLock)
+        if (membership is null or NullNodeMembership)
         {
-            if (membership is not null and not NullNodeMembership)
-            {
-                logger.MessagingRecoveryDisabledWithoutStorageLock();
-            }
-
+            logger.MessagingRecoveryUsingLockedUntilFloorOnly();
             return;
         }
 
-        if (membership is NullNodeMembership)
+        // Recovery is active. Dead-only reclaim avoids duplicate delivery only when a node is classified Dead
+        // no sooner than its in-flight dispatch could still be running — i.e. Coordination's DeadThreshold must
+        // be >= the retry DispatchTimeout. Otherwise a still-alive node that crosses the dead threshold
+        // mid-dispatch is reclaimed and its message re-dispatched. Warn rather than fail: a redundant delivery
+        // is within the at-least-once contract, and the two thresholds live in separate option packages.
+        var deadThreshold = serviceProvider.GetService<IOptions<CoordinationOptions>>()?.Value.DeadThreshold;
+        var dispatchTimeout = options.Value.RetryPolicy.DispatchTimeout;
+        if (deadThreshold is { } threshold && threshold < dispatchTimeout)
         {
-            logger.MessagingRecoveryUsingLockedUntilFloorOnly();
+            logger.MessagingDeadThresholdBelowDispatchTimeout(threshold, dispatchTimeout);
         }
     }
 
@@ -331,15 +338,22 @@ internal sealed class Bootstrapper(
             );
         }
 
-        var databaseMarker = serviceProvider.GetService<MessageStorageMarkerService>();
+        var databaseMarkers = serviceProvider.GetServices<MessageStorageMarkerService>().ToArray();
 
-        if (databaseMarker == null)
+        if (databaseMarkers.Length == 0)
         {
             throw new InvalidOperationException(
                 "Messaging requires a storage provider. Register one (e.g., UseSqlServer, UsePostgreSql, "
                     + "UseInMemoryStorage) so persisted publishes and the inbox/outbox can be backed."
                     + Environment.NewLine
                     + "Example: services.AddHeadlessMessaging(setup => { setup.UseSqlServer(...); });"
+            );
+        }
+
+        if (databaseMarkers.Length > 1)
+        {
+            throw new InvalidOperationException(
+                "Messaging requires exactly one storage provider. Multiple storage providers were configured."
             );
         }
 

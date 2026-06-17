@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -286,5 +287,48 @@ public sealed class CachingSetupBuilderTests
 
         // then
         cacheProvider.GetCache("orders").Should().BeSameAs(namedCache);
+    }
+
+    // The public WithSerializer overloads live in the Redis provider package (serialization is a Redis-tier
+    // concern); these tests cover the provider-agnostic slot mechanics directly via the internal setter.
+    [Fact]
+    public void named_instance_should_capture_serializer_factory()
+    {
+        // given
+        var serializer = new TestSerializer();
+        var instance = new HeadlessCacheInstanceBuilder("orders");
+
+        // when
+        instance.SetSerializerFactory(_ => serializer);
+
+        // then
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        instance.SerializerFactory.Should().NotBeNull();
+        instance.SerializerFactory!(provider).Should().BeSameAs(serializer);
+    }
+
+    [Fact]
+    public void named_instance_should_reject_multiple_serializer_configurations()
+    {
+        // given
+        var instance = new HeadlessCacheInstanceBuilder("orders");
+        instance.SetSerializerFactory(_ => new TestSerializer());
+
+        // when
+        var action = () => instance.SetSerializerFactory(_ => new TestSerializer());
+
+        // then
+        action.Should().Throw<InvalidOperationException>().WithMessage("*serializer*already configured*'orders'*");
+    }
+
+    private sealed class TestSerializer : ISerializer
+    {
+        public T? Deserialize<T>(Stream data) => throw new NotSupportedException();
+
+        public void Serialize<T>(T value, Stream output) => throw new NotSupportedException();
+
+        public object? Deserialize(Stream data, Type objectType) => throw new NotSupportedException();
+
+        public void Serialize(object? value, Stream output) => throw new NotSupportedException();
     }
 }

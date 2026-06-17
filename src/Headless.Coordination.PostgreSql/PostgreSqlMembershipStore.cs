@@ -256,6 +256,53 @@ internal sealed class PostgreSqlMembershipStore(
         return snapshots;
     }
 
+    protected override async ValueTask<NodeLivenessState?> ReadCurrentNodeLivenessCoreAsync(
+        string clusterName,
+        NodeIdentity identity,
+        CancellationToken cancellationToken
+    )
+    {
+        // Targeted single-row read: join to the generation authority so a non-current incarnation yields no
+        // row (absent -> null), classify with the store clock identically to ReadCurrentLivenessCoreAsync, and
+        // exclude retention-expired rows in the WHERE so they read as absent (null) exactly as the snapshot's
+        // prune would remove them. Read-only: no prune, no descriptor join (state only).
+        const string sql = $"""
+            SELECT
+                CASE
+                    WHEN l.{PostgreSqlMembershipSchema.Liveness.LeftAt} IS NOT NULL THEN @DeadState
+                    WHEN l.{PostgreSqlMembershipSchema.Liveness.LastBeat} <= clock_timestamp() - @DeadThreshold THEN @DeadState
+                    WHEN l.{PostgreSqlMembershipSchema.Liveness.LastBeat} <= clock_timestamp() - @SuspicionThreshold THEN @SuspectedState
+                    ELSE @AliveState
+                END AS state
+            FROM {PostgreSqlMembershipSchema.Liveness.Table} l
+            JOIN {PostgreSqlMembershipSchema.Generation.Table} g
+              ON g.{PostgreSqlMembershipSchema.ClusterName} = l.{PostgreSqlMembershipSchema.ClusterName}
+             AND g.{PostgreSqlMembershipSchema.NodeId} = l.{PostgreSqlMembershipSchema.NodeId}
+             AND g.{PostgreSqlMembershipSchema.Generation.CurrentIncarnation} = l.{PostgreSqlMembershipSchema.Incarnation}
+            WHERE l.{PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+              AND l.{PostgreSqlMembershipSchema.NodeId} = @NodeId
+              AND l.{PostgreSqlMembershipSchema.Incarnation} = @Incarnation
+              AND l.{PostgreSqlMembershipSchema.Liveness.LastBeat} > clock_timestamp() - @RetentionThreshold;
+            """;
+
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = _CreateCommand(connection, sql);
+        command.Parameters.AddWithValue("ClusterName", clusterName);
+        command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
+        command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
+        command.Parameters.AddWithValue("DeadThreshold", DeadThreshold);
+        command.Parameters.AddWithValue("SuspicionThreshold", SuspicionThreshold);
+        command.Parameters.AddWithValue("RetentionThreshold", DeadThreshold + DeadRetentionWindow);
+        command.Parameters.AddWithValue("AliveState", nameof(NodeLivenessState.Alive));
+        command.Parameters.AddWithValue("SuspectedState", nameof(NodeLivenessState.Suspected));
+        command.Parameters.AddWithValue("DeadState", nameof(NodeLivenessState.Dead));
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        return result is string stateText ? Enum.Parse<NodeLivenessState>(stateText) : null;
+    }
+
     private async ValueTask _PruneExpiredRowsAsync(
         NpgsqlConnection connection,
         string clusterName,

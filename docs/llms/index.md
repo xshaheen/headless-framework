@@ -7,7 +7,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 ### Package selection
 
 - **Abstraction + provider pattern.** Depend on `Headless.*.Abstractions` interfaces. Add exactly one provider package per feature (e.g., `Headless.Caching.Redis`, `Headless.Blobs.Azure`). Never reference a provider type from application code.
-- **Caching.** Use `ICache` from `Headless.Caching.Abstractions`. Do not use `Microsoft.Extensions.Caching.Distributed.IDistributedCache` or `IMemoryCache` directly.
+- **Caching.** Use `ICache` from `Headless.Caching.Abstractions` for application cache operations. Use `Headless.Caching.Bcl` only when ASP.NET Core Session or another standard integration requires `Microsoft.Extensions.Caching.Distributed.IDistributedCache`. Do not use `IMemoryCache` directly.
 - **Coordination.** Use `INodeMembership` from `Headless.Coordination.Abstractions` for node liveness and `node@incarnation` identity. Do not use it as a consensus system or ownership ledger.
 - **Blob storage.** Use `IBlobStorage` from `Headless.Blobs.Abstractions`. Do not call cloud SDK clients (`Amazon.S3.IAmazonS3`, `Azure.Storage.Blobs.BlobServiceClient`) from application code.
 - **Serialization.** Use `ISerializer` from `Headless.Serializer.Abstractions`. Default to `Headless.Serializer.Json`; use `Headless.Serializer.MessagePack` only when binary performance is required. Do not call `System.Text.Json.JsonSerializer` directly.
@@ -164,9 +164,11 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Caching
 - `Headless.Caching.Abstractions` — `ICache` interface.
+- `Headless.Caching.Bcl` — BCL `IDistributedCache` adapter over a named Headless cache, for ASP.NET Core Session and standard integrations.
 - `Headless.Caching.Core` — Shared factory-backed cache orchestration.
 - `Headless.Caching.DistributedLocks` — Distributed factory-lock adapter for multi-node stampede protection.
 - `Headless.Caching.InMemory` — In-process single-instance cache.
+- `Headless.Caching.OutputCache` — ASP.NET Core `IOutputCacheStore` adapter over a named Headless cache; makes `AddOutputCache()` distributed and tag-aware.
 - `Headless.Caching.Redis` — Redis distributed cache.
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
 

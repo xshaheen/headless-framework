@@ -195,6 +195,8 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             IF OBJECT_ID(N'{_Schema}.PermissionGrants', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionGrants];
             IF OBJECT_ID(N'{_Schema}.PermissionDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionDefinitions];
             IF OBJECT_ID(N'{_Schema}.PermissionGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionGroupDefinitions];
+            IF TYPE_ID(N'{_Schema}.HeadlessPermissionsIdList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessPermissionsIdList];
+            IF TYPE_ID(N'{_Schema}.HeadlessPermissionsNameList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessPermissionsNameList];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'DROP SCHEMA [{_Schema}]');
             """,
             connection

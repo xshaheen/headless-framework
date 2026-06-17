@@ -19,6 +19,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     DbContextOptions<TDbContext> coordinatedWriteOptions,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
+    SchedulerOptionsBuilder optionsBuilder,
     ICache? cache,
     ILogger logger
 )
@@ -26,6 +27,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
         timeProvider,
         ownerIdentity,
+        optionsBuilder,
         cache,
         logger
     ),
@@ -37,15 +39,13 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 {
     // The registered options template, cloned per coordinated write so the context attaches to the caller's
     // connection while reusing the cached compiled model / internal service provider — no model recompilation.
-    private readonly DbContextOptions<TDbContext> _coordinatedWriteOptions =
-        coordinatedWriteOptions;
+    private readonly DbContextOptions<TDbContext> _coordinatedWriteOptions = coordinatedWriteOptions;
 
     // Compiled (DbContextOptions<TDbContext>) constructor delegate — the same constructor EF Core's DbContext pooling
     // requires, so any context usable with the pooled factory works here too. Cached per closed generic so coordinated
     // writes never pay reflection, and a context missing that constructor fails with a clear message instead of the
     // raw MissingMethodException Activator.CreateInstance would surface mid-transaction.
-    private static readonly Func<DbContextOptions<TDbContext>, TDbContext> _CreateContext =
-        _BuildContextFactory();
+    private static readonly Func<DbContextOptions<TDbContext>, TDbContext> _CreateContext = _BuildContextFactory();
 
     private static Func<DbContextOptions<TDbContext>, TDbContext> _BuildContextFactory()
     {
@@ -73,10 +73,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     )
     {
         await using var dbContext = _CreateCoordinatedContext(relationalContext);
-        await dbContext
-            .Set<TTimeJob>()
-            .AddRangeAsync(jobs, cancellationToken)
-            .ConfigureAwait(false);
+        await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -87,10 +84,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     )
     {
         await using var dbContext = _CreateCoordinatedContext(relationalContext);
-        await dbContext
-            .Set<TCronJob>()
-            .AddRangeAsync(jobs, cancellationToken)
-            .ConfigureAwait(false);
+        await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -124,12 +118,10 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Extract(_coordinatedWriteOptions)
             .WithConnection(connection, owned: false);
 
-        var optionsBuilder = new DbContextOptionsBuilder<TDbContext>(_coordinatedWriteOptions);
-        ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(
-            reboundRelational
-        );
+        var coordinatedOptionsBuilder = new DbContextOptionsBuilder<TDbContext>(_coordinatedWriteOptions);
+        ((IDbContextOptionsBuilderInfrastructure)coordinatedOptionsBuilder).AddOrUpdateExtension(reboundRelational);
 
-        var dbContext = _CreateContext(optionsBuilder.Options);
+        var dbContext = _CreateContext(coordinatedOptionsBuilder.Options);
         dbContext.Database.UseTransaction(transaction);
 
         return dbContext;
@@ -139,10 +131,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     #region Time_Ticker_Implementations
 
-    public async Task<TTimeJob?> GetTimeJobById(
-        Guid id,
-        CancellationToken cancellationToken = default
-    )
+    public async Task<TTimeJob?> GetTimeJobById(Guid id, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -165,11 +154,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var baseQuery = dbContext
-            .Set<TTimeJob>()
-            .Include(x => x.Children)
-                .ThenInclude(x => x.Children)
-            .AsNoTracking();
+        var baseQuery = dbContext.Set<TTimeJob>().Include(x => x.Children).ThenInclude(x => x.Children).AsNoTracking();
 
         if (predicate != null)
         {
@@ -194,30 +179,19 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var baseQuery = dbContext
-            .Set<TTimeJob>()
-            .Include(x => x.Children)
-                .ThenInclude(x => x.Children)
-            .AsNoTracking();
+        var baseQuery = dbContext.Set<TTimeJob>().Include(x => x.Children).ThenInclude(x => x.Children).AsNoTracking();
 
         if (predicate != null)
         {
             baseQuery = baseQuery.Where(predicate);
         }
 
-        baseQuery = baseQuery
-            .Where(x => x.ParentId == null)
-            .OrderByDescending(x => x.ExecutionTime);
+        baseQuery = baseQuery.Where(x => x.ParentId == null).OrderByDescending(x => x.ExecutionTime);
 
-        return await baseQuery
-            .ToPaginatedListAsync(pageNumber, pageSize, cancellationToken)
-            .ConfigureAwait(false);
+        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> AddTimeJobs(
-        TTimeJob[] jobs,
-        CancellationToken cancellationToken = default
-    )
+    public async Task<int> AddTimeJobs(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -228,10 +202,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> UpdateTimeJobs(
-        TTimeJob[] timeJobs,
-        CancellationToken cancellationToken = default
-    )
+    public async Task<int> UpdateTimeJobs(TTimeJob[] timeJobs, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -242,10 +213,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> RemoveTimeJobs(
-        Guid[] timeJobIds,
-        CancellationToken cancellationToken = default
-    )
+    public async Task<int> RemoveTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -324,9 +292,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         baseQuery = baseQuery.OrderByDescending(x => x.CreatedAt);
 
-        return await baseQuery
-            .ToPaginatedListAsync(pageNumber, pageSize, cancellationToken)
-            .ConfigureAwait(false);
+        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> InsertCronJobs(TCronJob[] jobs, CancellationToken cancellationToken)
@@ -335,10 +301,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext
-            .Set<TCronJob>()
-            .AddRangeAsync(jobs, cancellationToken)
-            .ConfigureAwait(false);
+        await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
@@ -392,9 +355,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var cronJobOccurrenceContext = dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .AsNoTracking();
+        var cronJobOccurrenceContext = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AsNoTracking();
 
         var query =
             predicate == null
@@ -407,9 +368,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<
-        PaginationResult<CronJobOccurrenceEntity<TCronJob>>
-    > GetAllCronJobOccurrencesPaginated(
+    public async Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginated(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>> predicate,
         int pageNumber,
         int pageSize,
@@ -420,10 +379,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var baseQuery = dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Include(x => x.CronJob)
-            .AsNoTracking();
+        var baseQuery = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().Include(x => x.CronJob).AsNoTracking();
 
         if (predicate != null)
         {
@@ -432,9 +388,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         baseQuery = baseQuery.OrderByDescending(x => x.ExecutionTime);
 
-        return await baseQuery
-            .ToPaginatedListAsync(pageNumber, pageSize, cancellationToken)
-            .ConfigureAwait(false);
+        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> InsertCronJobOccurrences(
@@ -454,10 +408,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> RemoveCronJobOccurrences(
-        Guid[] cronJobOccurrences,
-        CancellationToken cancellationToken
-    )
+    public async Task<int> RemoveCronJobOccurrences(Guid[] cronJobOccurrences, CancellationToken cancellationToken)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -493,15 +444,15 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var query = dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => occurrenceIds.Contains(x.Id))
-            .WhereCanAcquire(owner);
+            .WhereCanAcquire(owner, now);
 
         // Lock and mark InProgress
         var affected = await query
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, owner)
-                        .SetProperty(x => x.LockedAt, now)
+                        .SetProperty(x => x.OwnerId, owner)
+                        .SetProperty(x => x.LockedUntil, now.Add(LeaseDuration))
                         .SetProperty(x => x.Status, JobStatus.InProgress)
                         .SetProperty(x => x.UpdatedAt, now),
                 cancellationToken
@@ -517,11 +468,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Where(x =>
-                occurrenceIds.Contains(x.Id)
-                && x.LockHolder == owner
-                && x.Status == JobStatus.InProgress
-            )
+            .Where(x => occurrenceIds.Contains(x.Id) && x.OwnerId == owner && x.Status == JobStatus.InProgress)
             .Include(x => x.CronJob)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);

@@ -5,7 +5,7 @@ using Headless.Caching;
 namespace Tests;
 
 /// <summary>Simple adapter to use InMemoryCache as IRemoteCache for testing.</summary>
-internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
+public sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
     : IRemoteCache,
         IFactoryCacheStore,
         ISeedableTagMarkerCache
@@ -246,6 +246,9 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
         int pageSize = 100,
         CancellationToken cancellationToken = default
     ) => cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+
+    public ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default) =>
+        cache.RefreshAsync(key, cancellationToken);
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
         cache.RemoveAsync(key, cancellationToken);

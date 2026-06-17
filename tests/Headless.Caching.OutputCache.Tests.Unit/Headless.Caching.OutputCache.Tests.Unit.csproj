@@ -1,0 +1,20 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Caching.OutputCache\Headless.Caching.OutputCache.csproj" />
+    <ProjectReference Include="..\Headless.Caching.Hybrid.Tests.Harness\Headless.Caching.Hybrid.Tests.Harness.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.Hybrid\Headless.Caching.Hybrid.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+  </ItemGroup>
+</Project>

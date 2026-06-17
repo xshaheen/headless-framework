@@ -28,6 +28,9 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
     /// <summary>When true, the Family-2 marker bumps (RemoveByTagAsync / ClearAsync / FlushAsync) throw.</summary>
     public bool FailMarkerBumps { get; set; }
 
+    /// <summary>When true, sliding-refresh re-arms throw, simulating an L2 outage during a value-free Refresh.</summary>
+    public bool FailRefresh { get; set; }
+
     public int ReadAttempts { get; private set; }
 
     public int SetEntryAttempts { get; private set; }
@@ -295,6 +298,18 @@ internal sealed class TogglableRemoteCache(TimeProvider timeProvider)
         await _WaitReadGateAsync(cancellationToken);
 
         return await _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+    }
+
+    public async ValueTask RefreshAsync(string key, CancellationToken cancellationToken = default)
+    {
+        await _WaitReadGateAsync(cancellationToken);
+
+        if (FailRefresh)
+        {
+            throw new InvalidOperationException("L2 refresh failed");
+        }
+
+        await _cache.RefreshAsync(key, cancellationToken);
     }
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)

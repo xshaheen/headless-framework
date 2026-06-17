@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs.BackgroundServices;
@@ -40,6 +41,17 @@ public static class JobsServiceExtensions
             schedulerOptionsBuilder
         );
         optionsBuilder?.Invoke(optionInstance);
+
+        // The pickup lease is stamped as LockedUntil = now + LeaseDuration; a non-positive duration would write a
+        // lease that is already expired, defeating duplicate-suppression entirely (KTD2).
+        Ensure.True(
+            schedulerOptionsBuilder.LeaseDuration > TimeSpan.Zero,
+            "SchedulerOptionsBuilder.LeaseDuration must be greater than TimeSpan.Zero."
+        );
+
+        // The soft lease/fallback ordering warning (LeaseDuration < FallbackIntervalChecker) is emitted at startup by
+        // JobsInitializationHostedService, where an ILogger is available.
+
         CronScheduleCache.TimeZoneInfo = schedulerOptionsBuilder.SchedulerTimeZone;
 
         // Apply JSON serializer options for job requests if configured during service registration
@@ -75,12 +87,8 @@ public static class JobsServiceExtensions
             services.AddSingleton<IJobsHostScheduler>(provider =>
                 provider.GetRequiredService<JobsSchedulerBackgroundService>()
             );
-            services.AddHostedService(provider =>
-                provider.GetRequiredService<JobsSchedulerBackgroundService>()
-            );
-            services.AddHostedService(provider =>
-                provider.GetRequiredService<JobsFallbackBackgroundService>()
-            );
+            services.AddHostedService(provider => provider.GetRequiredService<JobsSchedulerBackgroundService>());
+            services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
             services.AddSingleton<JobsFallbackBackgroundService>();
             services.AddSingleton<JobsExecutionTaskHandler>();
             services.AddSingleton<IJobsDispatcher, JobsDispatcher>();
@@ -120,10 +128,7 @@ public static class JobsServiceExtensions
 
         if (optionInstance.JobExceptionHandlerType != null)
         {
-            services.AddSingleton(
-                typeof(IJobExceptionHandler),
-                optionInstance.JobExceptionHandlerType
-            );
+            services.AddSingleton(typeof(IJobExceptionHandler), optionInstance.JobExceptionHandlerType);
         }
 
         services.AddSingleton(_ => optionInstance);
@@ -159,8 +164,9 @@ public static class JobsServiceExtensions
         // Override the default owner identity (U1) with the node@incarnation adapter over INodeMembership.
         services.AddSingleton<IJobsOwnerIdentity, JobsOwnerIdentityAdapter>();
 
-        // Event-driven dead-node recovery (U2) and the registration startup gate (R6).
-        services.AddHostedService<MembershipRecoveryBridge>();
+        // Event-driven dead-node recovery (U2, shared bridge) and the registration startup gate (R6).
+        services.AddSingleton<JobsDeadOwnerReclaimer>();
+        services.AddHostedService<DeadOwnerRecoveryBridge<JobsDeadOwnerReclaimer>>();
         services.AddHostedService<JobsCoordinationStartupGate>();
     }
 }

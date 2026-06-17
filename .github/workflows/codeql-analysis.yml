@@ -64,7 +64,7 @@ jobs:
         shell: bash
 
       - name: "Restore"
-        run: dotnet restore headless-framework.slnx
+        run: make restore
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -73,7 +73,7 @@ jobs:
           build-mode: manual
 
       - name: "Build"
-        run: dotnet build headless-framework.slnx --configuration Release --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly
+        run: make rebuild-no-restore
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

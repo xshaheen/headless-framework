@@ -93,7 +93,23 @@ builder.Services.AddHeadlessJobs(options =>
 
 ### Node Identity (durable path)
 
-On the in-memory single-process path, the scheduler uses `SchedulerOptionsBuilder.NodeIdentifier` (defaults to the machine name) and needs no coordination. On the durable operational-store path (`Headless.Jobs.EntityFramework` + `AddHeadlessCoordination`), node identity is `node@incarnation` (store-allocated) and durable job rows are stamped with it. If the local node loses membership, the durable scheduler fail-stops (stops processing) rather than stamping a stale owner. See `Headless.Jobs.EntityFramework` for setup.
+On the in-memory single-process path, the scheduler uses `SchedulerOptionsBuilder.NodeId` (defaults to the machine name) as the row owner. On the durable operational-store path (`Headless.Jobs.EntityFramework` + `AddHeadlessCoordination`), `SchedulerOptionsBuilder.NodeId` is **not** the owner: node identity is `node@incarnation` (store-allocated by Coordination) and durable job rows are stamped with it. Node identity for that path — including K8s pod-collision handling (via `POD_NAME`/`POD_NAMESPACE`) — is configured on `Headless.Coordination`, not on this option; `SchedulerOptionsBuilder.NodeId` only acts as a display fallback before membership registration completes. If the local node loses membership, the durable scheduler fail-stops (stops processing) rather than stamping a stale owner. See `Headless.Jobs.EntityFramework` for setup.
+
+### Pickup Lease and Node-Death Policy
+
+Every claim of a time-job or cron-occurrence row stamps a pickup lease: `LockedUntil = now + SchedulerOptionsBuilder.LeaseDuration` (default 5 minutes). The lease deadline is written and compared using the injected application `TimeProvider`, never the database server clock — this mirrors `Headless.Messaging` so the InMemory and SQL providers share identical pickup semantics and a fake clock in tests stays honest.
+
+The lease is a **duplicate-suppression / self-heal floor, not the liveness authority.** A dead node's rows are recovered by Coordination's incarnation + heartbeat sweep (see `Headless.Jobs.EntityFramework`); lease expiry only lets a *stalled but not-yet-declared-dead* `Idle`/`Queued` row be re-claimed. Contract: `LeaseDuration` must exceed the longest expected job runtime. If it is shorter, a still-running job's lease can expire and — for `OnNodeDeath = Retry` jobs only — be speculatively re-claimed and run a second time.
+
+`NodeDeathPolicy` (the `OnNodeDeath` property on `TimeJobEntity` / `CronJobOccurrenceEntity`) decides what happens to a row whose owning node dies mid-execution:
+
+| Policy | On node death | Use when |
+|--------|---------------|----------|
+| `Retry` (default) | Row is released for re-claim; the attempt counts toward the retry budget. | Job is idempotent — safe to run again. |
+| `MarkFailed` | Row transitions to terminal `Failed`; never re-run. | A second run is wrong; surface the failure. |
+| `Skip` | Row transitions to terminal `Skipped`; never re-run. | Idempotency-critical jobs that must run at most once. |
+
+Safety interaction: the claim predicate's lease-expiry arm is gated on `OnNodeDeath == Retry`. Clock skew can therefore never speculatively re-run a `Skip` or `MarkFailed` job — #315's per-job policy and the #268 lease deadline are the same safety mechanism viewed from two angles. The unowned arm (never leased) and the self-owned arm (crash-recovery re-pickup of your own row) are unaffected by the policy.
 
 ### Cron-Expression Caching (durable path)
 

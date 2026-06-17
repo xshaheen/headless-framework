@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using Headless.Caching;
 using Headless.Messaging;
 using Headless.Testing.Tests;
@@ -276,6 +277,42 @@ public sealed class HybridCacheTagTests : TestBase
             .HasValue.Should()
             .BeTrue();
         cache.InvalidateCacheCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_invalidate_buffer_cold_seeded_entry_when_removing_by_tag()
+    {
+        // given — a tagged byte[] entry lives in L2 only (a fresh node whose L1 has never held it). Writing through
+        // the L2 adapter stamps Tags + CreatedAt without ever touching the hybrid's L1.
+        var (cache, l1, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var tag = Faker.Random.AlphaNumeric(8);
+        var payload = Faker.Random.Bytes(16);
+
+        await l2.UpsertEntryAsync<byte[]>(
+            key,
+            payload,
+            new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },
+            AbortToken
+        );
+        (await l1.GetAsync<byte[]>(key, AbortToken)).HasValue.Should().BeFalse("the seed must start with an empty L1");
+
+        // when — the buffer cold path (L1 miss -> L2 hit) seeds L1 with the entry's value AND its tag metadata.
+        var coldReader = new ArrayBufferWriter<byte>();
+        (await cache.TryGetToAsync(key, coldReader, AbortToken)).Should().BeTrue();
+        coldReader.WrittenSpan.ToArray().Should().Equal(payload);
+
+        // advance so the tag marker postdates the seeded entry's birth time, then invalidate the tag.
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.RemoveByTagAsync(tag, AbortToken);
+
+        // then — the buffer-seeded L1 entry carries the tag, so the next read misses on both the buffer path and the
+        // generic path. Before the fix the cold seed dropped the tags and this entry survived until physical TTL.
+        var afterEvict = new ArrayBufferWriter<byte>();
+        (await cache.TryGetToAsync(key, afterEvict, AbortToken)).Should().BeFalse();
+        (await cache.GetAsync<byte[]>(key, AbortToken)).HasValue.Should().BeFalse();
     }
 
     [Fact]

@@ -98,7 +98,9 @@ The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Se
 
 ### Liveness States
 
-`Alive` means the store-clock heartbeat age is below `SuspicionThreshold`. `Suspected` is a soft signal between `SuspicionThreshold` and `DeadThreshold`. `Dead` means the hard threshold passed or the node left gracefully. `GetLiveNodesAsync()` returns Alive identities only; `GetLivenessSnapshotAsync()` returns full state.
+`Alive` means the store-clock heartbeat age is below `SuspicionThreshold`. `Suspected` is a soft signal between `SuspicionThreshold` and `DeadThreshold`. `Dead` means the hard threshold passed or the node left gracefully. `GetLiveNodesAsync()` returns Alive identities only; `GetLivenessSnapshotAsync()` returns full state. `IsAliveAsync(identity)` checks a single node — it is a targeted O(1) read (one guarded single-row query / small Lua), not a full cluster snapshot, so per-request liveness checks do not scale with cluster size. It returns the same answer the snapshot would for that identity: current-generation-only, store-clock classified, and retention-bounded (a node at or past the retention window reads as absent, i.e. not alive).
+
+Provider SPI note: a custom `IMembershipStore` must implement `ReadNodeLivenessAsync(identity)` returning `NodeLivenessState?` — the targeted, read-only (no prune, no backfill) counterpart to `ReadLivenessAsync`, where `null` means the identity is absent from the current-generation view.
 
 ### Operational Read Model
 
@@ -132,6 +134,7 @@ Defines the public coordination contract: node identity, liveness snapshots, mem
 - `INodeMembership` for register, heartbeat, leave, live reads, snapshot reads, and event watch.
 - `NodeJoined`, `NodeSuspected`, `NodeRecovered`, `NodeLeft`, and `LocalMembershipLost` event contracts.
 - `IMembershipEventSource.WatchAsync(...)` for lifecycle events.
+- `IDeadOwnerReclaimer` — the per-domain reclaim sink driven by the shared dead-owner recovery bridge (carries `ReconcileInterval` and `ReclaimAsync(owners, ct)`, where `owners` is a single owner from the event path or the whole dead set from a reconcile tick so a consumer can collapse the reclaim into one batched write); implemented by each consumer (Jobs, Messaging).
 - `CoordinationOptions` for thresholds, cluster name, node id, role, metadata, and membership-loss behavior.
 
 ### Design Notes
@@ -190,6 +193,8 @@ Implements the provider-agnostic membership engine over an `IMembershipStore`.
 `RegisterAsync` durably establishes both the cold descriptor and an initial store-clock liveness entry in one guarded write, so a node is `Alive` (and its role/metadata are visible) immediately after register — without waiting for the first heartbeat. The background loop owns every subsequent beat. Registration is incarnation-guarded: a stale or superseded incarnation establishes no liveness.
 
 Self-heartbeat rejection is a local fencing failure. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
+
+Core also hosts the shared dead-owner recovery bridge — a generic `BackgroundService` parameterized by an `IDeadOwnerReclaimer` that reclaims dead-incarnation resources on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). It is internal infrastructure consumed by registering a closed generic from the owning assembly (Jobs, Messaging) via `InternalsVisibleTo`; each closed type yields a distinct hosted service and logger category. Coordination.Core does not register it — the consuming feature does.
 
 ### Installation
 
