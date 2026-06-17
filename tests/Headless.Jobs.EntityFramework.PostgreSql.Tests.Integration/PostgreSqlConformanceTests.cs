@@ -38,4 +38,16 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
     [Fact]
     public override Task cron_occurrence_is_stamped_with_the_node_death_policy() =>
         base.cron_occurrence_is_stamped_with_the_node_death_policy();
+
+    [Fact]
+    public override Task running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows() =>
+        base.running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows();
+
+    [Fact]
+    public override Task stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy() =>
+        base.stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy();
+
+    [Fact]
+    public override Task node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease() =>
+        base.node_death_sweep_leaves_a_valid_lease_inprogress_row_to_the_lease();
 }
