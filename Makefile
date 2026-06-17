@@ -53,6 +53,20 @@ restore-project: ## Restore one project; preferred for focused project work.
 hooks: ## Point git at the committed hooks (per clone/worktree).
 	git config core.hooksPath .husky
 
+.PHONY: hook-pre-commit
+hook-pre-commit: ## Git hook: format staged C# files before commit.
+	@files=(); \
+	while IFS= read -r file; do files+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACM -- '*.cs'); \
+	if [ "$${#files[@]}" -eq 0 ]; then exit 0; fi; \
+	$(DOTNET) csharpier format "$${files[@]}"; \
+	git add -- "$${files[@]}"
+
+.PHONY: hook-pre-push
+hook-pre-push: ## Git hook: verify formatting and do a clean build before push.
+	@printf '\033[36m[pre-push]\033[0m format-check + clean build (~1-2 min; skip with --no-verify)...\n'
+	$(MAKE) format-check
+	$(MAKE) rebuild
+
 .PHONY: build
 build: restore ## Build the solution.
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
