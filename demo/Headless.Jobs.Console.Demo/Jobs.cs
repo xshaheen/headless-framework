@@ -21,24 +21,27 @@ public class SampleScheduler(ITimeJobManager<TimeJobEntity> timeJobManager) : IH
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var result = await timeJobManager.AddAsync(
-            new TimeJobEntity
-            {
-                Function = "ConsoleSample_HelloWorld",
-                Description = "Sample console demo job",
-                ExecutionTime = DateTime.UtcNow.AddSeconds(5),
-            },
-            cancellationToken
-        );
-
-        if (!result.IsSucceeded)
+        TimeJobEntity job;
+        try
         {
-            System.Console.WriteLine($"Failed to schedule console sample job. Exception: {result.Exception}");
+            job = await timeJobManager.AddAsync(
+                new TimeJobEntity
+                {
+                    Function = "ConsoleSample_HelloWorld",
+                    Description = "Sample console demo job",
+                    ExecutionTime = DateTime.UtcNow.AddSeconds(5),
+                },
+                cancellationToken
+            );
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            System.Console.WriteLine($"Failed to schedule console sample job. Exception: {e}");
             return;
         }
 
         System.Console.WriteLine(
-            $"Scheduled console sample job with Id={result.Result.Id}, ScheduledFor={result.Result.ExecutionTime:O}"
+            $"Scheduled console sample job with Id={job.Id}, ScheduledFor={job.ExecutionTime:O}"
         );
     }
 

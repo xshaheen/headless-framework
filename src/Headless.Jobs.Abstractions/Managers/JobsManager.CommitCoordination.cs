@@ -75,6 +75,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>
         );
     }
 
+    // Liveness bound for the post-commit drain. The coordinator drains OnCommit callbacks with CancellationToken.None
+    // (a committed job's dispatch must not be abandoned because the request was cancelled), so the incoming token can
+    // never carry a deadline. Without an independent one, a hung dispatch / notify / cache call would hold the commit
+    // thread, DI scope, and DB connection indefinitely. Mirrors MessageOutboxBuffer's _flushTimeout. The constant
+    // matches the fallback poll-sweep cadence; making it a configurable option is a clean follow-up.
+    private static readonly TimeSpan _PostCommitDrainTimeout = TimeSpan.FromSeconds(30);
+
     // Registers a coordinated enqueue's side effects to run after the caller's transaction commits. The row is already
     // durable when these run, so a failure cannot roll the commit back: it is logged against the job scope and the
     // scheduler's polling sweep is the recovery path (KTD-4). Swallowing keeps one subsystem's deferred failure from
@@ -88,18 +95,22 @@ internal partial class JobsManager<TTimeJob, TCronJob>
         // The IDisposable unsubscribe handle is intentionally discarded (as in MessageOutboxBuffer): once the row is
         // written the side effects must fire unconditionally on commit, so there is nothing to cancel.
         coordinator.OnCommit(
-            async (_, ct) =>
+            // The drain passes CancellationToken.None (discarded), so bound the work with an independent deadline; the
+            // side effects observe the timeout token, not the drain's.
+            async (_, _) =>
             {
+                using var timeoutCts = new CancellationTokenSource(_PostCommitDrainTimeout, timeProvider);
+
                 try
                 {
-                    await sideEffects(ct).ConfigureAwait(false);
+                    await sideEffects(timeoutCts.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
                 {
-                    // Clean host shutdown cancelled the post-commit drain. The row is already committed and the
-                    // fallback poll sweep recovers the deferred work, so this is expected teardown — not the
-                    // recoverable failure the Warning below is for.
-                    Log.DeferredJobSideEffectsCancelled(_logger, jobScope);
+                    // The deadline elapsed before the side effects finished (e.g. a hung dispatch). The row is
+                    // committed and the fallback poll sweep recovers the deferred work, so this is a bounded-wait
+                    // timeout — not the recoverable failure the Warning below is for.
+                    Log.DeferredJobSideEffectsTimedOut(_logger, jobScope, _PostCommitDrainTimeout);
                 }
                 catch (Exception e)
                 {
@@ -115,11 +126,16 @@ internal partial class JobsManager<TTimeJob, TCronJob>
     private async Task _RunCoordinatedCronJobSideEffectsAsync(
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
         TCronJob entity,
-        DateTime nextOccurrence
+        DateTime nextOccurrence,
+        CancellationToken cancellationToken
     )
     {
+        // Honor the drain deadline (the cron side-effect calls below are not themselves cancellable, so the token is
+        // checked between steps) — symmetric with the time-job side-effect path.
+        cancellationToken.ThrowIfCancellationRequested();
         await writer.InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
         _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
+        cancellationToken.ThrowIfCancellationRequested();
         await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
     }
 
@@ -127,9 +143,11 @@ internal partial class JobsManager<TTimeJob, TCronJob>
     private async Task _RunCoordinatedCronJobsBatchSideEffectsAsync(
         ICoordinatedJobWriter<TTimeJob, TCronJob> writer,
         List<TCronJob> validEntities,
-        List<DateTime> nextOccurrences
+        List<DateTime> nextOccurrences,
+        CancellationToken cancellationToken
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         await writer.InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         if (validEntities.Count != 0)
@@ -139,6 +157,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>
 
             foreach (var entity in validEntities)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
             }
         }
@@ -158,10 +177,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>
         );
 
         [LoggerMessage(
-            LogLevel.Debug,
-            "Deferred post-commit side effects for {JobScope} were cancelled by host shutdown. The job row is "
-                + "committed; the fallback poll sweep is the recovery path."
+            LogLevel.Warning,
+            "Deferred post-commit side effects for {JobScope} did not finish within {Timeout}. The job row is "
+                + "committed; the scheduler's polling sweep is the recovery path."
         )]
-        public static partial void DeferredJobSideEffectsCancelled(ILogger logger, string jobScope);
+        public static partial void DeferredJobSideEffectsTimedOut(
+            ILogger logger,
+            string jobScope,
+            TimeSpan timeout
+        );
     }
 }

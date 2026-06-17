@@ -57,7 +57,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                         innerCt
                     );
                     var result = await manager.AddAsync(_TimeJob(), innerCt);
-                    result.IsSucceeded.Should().BeTrue();
+                    result.Should().NotBeNull();
                 },
                 ct
             );
@@ -131,8 +131,8 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                 host.Services,
                 async (_, _, innerCt) =>
                 {
-                    (await manager.AddAsync(_TimeJob(), innerCt)).IsSucceeded.Should().BeTrue();
-                    (await manager.AddAsync(_TimeJob(), innerCt)).IsSucceeded.Should().BeTrue();
+                    (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
+                    (await manager.AddAsync(_TimeJob(), innerCt)).Should().NotBeNull();
                 },
                 ct
             );
@@ -160,7 +160,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                 async (_, _, innerCt) =>
                 {
                     var jobs = new List<TimeJobEntity> { _TimeJob(), _TimeJob() };
-                    (await manager.AddBatchAsync(jobs, innerCt)).IsSucceeded.Should().BeTrue();
+                    (await manager.AddBatchAsync(jobs, innerCt)).Should().HaveCount(2);
                 },
                 ct
             );
@@ -220,7 +220,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
             // No ambient coordinated scope: AddAsync takes the direct path and the row is immediately visible.
             var result = await manager.AddAsync(_TimeJob(), ct);
 
-            result.IsSucceeded.Should().BeTrue();
+            result.Should().NotBeNull();
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(1);
         }
         finally
@@ -243,7 +243,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
                 host.Services,
                 async (_, _, innerCt) =>
                 {
-                    (await manager.AddAsync(_CronJob(), innerCt)).IsSucceeded.Should().BeTrue();
+                    (await manager.AddAsync(_CronJob(), innerCt)).Should().NotBeNull();
                 },
                 ct
             );

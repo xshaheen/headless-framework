@@ -34,16 +34,18 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     );
     private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
 
-    // Coordinated-path note: when a relational commit coordinator is active, AddAsync THROWS (rather than returning a
-    // failed JobResult) if the transaction is dead/completed or the provider cannot write inside it — fail-loud per
-    // KTD-2. Validation and direct-path persistence errors are still surfaced through JobResult.
-    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.AddAsync(
+    // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
+    // (JobValidatorException), a dead/completed coordinated transaction or a mis-wired provider (InvalidOperationException),
+    // and persistence faults all propagate. On the coordinated path a propagated failure is the point: it lets the
+    // caller's ambient transaction roll back rather than commit without the job row. Update/Delete are plain CRUD and
+    // keep returning JobResult.
+    Task<TCronJob> ICronJobManager<TCronJob>.AddAsync(
         TCronJob entity,
         CancellationToken cancellationToken
     ) => _AddCronJobAsync(entity, cancellationToken);
 
-    // See the coordinated-path note on ICronJobManager.AddAsync above — the same throw-vs-JobResult asymmetry applies.
-    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.AddAsync(
+    // See the throw-on-failure note on ICronJobManager.AddAsync above — the same applies to the time-job Add path.
+    Task<TTimeJob> ITimeJobManager<TTimeJob>.AddAsync(
         TTimeJob entity,
         CancellationToken cancellationToken
     ) => _AddTimeJobAsync(entity, cancellationToken);
@@ -68,7 +70,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     ) => _DeleteTimeJobAsync(id, cancellationToken);
 
-    Task<JobResult<List<TTimeJob>>> ITimeJobManager<TTimeJob>.AddBatchAsync(
+    Task<List<TTimeJob>> ITimeJobManager<TTimeJob>.AddBatchAsync(
         List<TTimeJob> entities,
         CancellationToken cancellationToken
     ) => _AddTimeJobsBatchAsync(entities, cancellationToken);
@@ -83,7 +85,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     ) => _DeleteTimeJobsBatchAsync(ids, cancellationToken);
 
-    Task<JobResult<List<TCronJob>>> ICronJobManager<TCronJob>.AddBatchAsync(
+    Task<List<TCronJob>> ICronJobManager<TCronJob>.AddBatchAsync(
         List<TCronJob> entities,
         CancellationToken cancellationToken
     ) => _AddCronJobsBatchAsync(entities, cancellationToken);
@@ -98,10 +100,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     ) => _DeleteCronJobsBatchAsync(ids, cancellationToken);
 
-    private async Task<JobResult<TTimeJob>> _AddTimeJobAsync(
-        TTimeJob entity,
-        CancellationToken cancellationToken
-    )
+    private async Task<TTimeJob> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
         if (entity.Id == Guid.Empty)
         {
@@ -110,9 +109,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
         {
-            return new JobResult<TTimeJob>(
-                new JobValidatorException($"Cannot find JobFunction with name {entity.Function}")
-            );
+            throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
 
         entity.ExecutionTime =
@@ -123,47 +120,38 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
         entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
-        // Capture + writer resolution run BEFORE the try so the fail-loud cases (dead/completed transaction, or a
-        // relational coordinator wired to a non-coordinated provider) propagate to the caller (KTD-2) instead of
-        // collapsing into a failed JobResult — a swallowed failure here would let the caller's transaction commit
-        // without the job row, the exact divergence this feature prevents. Both reads are synchronous (KTD-1).
+        // Synchronous capture before the first await (KTD-1): a dead/completed coordinated transaction or a mis-wired
+        // provider throws here and propagates (KTD-2). Add never swallows a failure into a result — the write and any
+        // persistence fault propagate too, so on the coordinated path the caller's transaction rolls back rather than
+        // committing without the job row, the exact divergence this feature prevents.
         var coordinated = _TryCaptureCoordinatedContext();
 
-        try
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var executionTime = entity.ExecutionTime!.Value;
+
+        if (coordinated is { } context)
         {
-            var now = timeProvider.GetUtcNow().UtcDateTime;
-            var executionTime = entity.ExecutionTime!.Value;
-
-            if (coordinated is { } context)
-            {
-                // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit (KTD-4).
-                // JobResult.IsSucceeded here means the row was buffered into the transaction — it guarantees the row
-                // committed, not that the deferred dispatch ran. A post-commit dispatch failure is recovered by the
-                // scheduler's polling sweep.
-                await context
-                    .Writer.WriteTimeJobsAsync([entity], context.Relational, cancellationToken)
-                    .ConfigureAwait(false);
-
-                _DeferSideEffects(
-                    context.Coordinator,
-                    entity.Id.ToString(),
-                    ct => _RunTimeJobSideEffectsAsync(entity, now, executionTime, ct)
-                );
-
-                return new JobResult<TTimeJob>(entity);
-            }
-
-            // Direct path (no coordinator / non-relational scope): persist then run side effects in-band.
-            await persistenceProvider.AddTimeJobs([entity], cancellationToken: cancellationToken);
-            await _RunTimeJobSideEffectsAsync(entity, now, executionTime, cancellationToken)
+            // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit (KTD-4). A
+            // returned entity means the row was enlisted into the transaction (it commits with it), not that the
+            // deferred dispatch ran — a post-commit dispatch failure is recovered by the scheduler's polling sweep.
+            await context
+                .Writer.WriteTimeJobsAsync([entity], context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
-            return new JobResult<TTimeJob>(entity);
+            _DeferSideEffects(
+                context.Coordinator,
+                entity.Id.ToString(),
+                ct => _RunTimeJobSideEffectsAsync(entity, now, executionTime, ct)
+            );
+
+            return entity;
         }
-        catch (Exception e)
-        {
-            return new JobResult<TTimeJob>(e);
-        }
+
+        // Direct path (no coordinator / non-relational scope): persist then run side effects in-band.
+        await persistenceProvider.AddTimeJobs([entity], cancellationToken: cancellationToken);
+        await _RunTimeJobSideEffectsAsync(entity, now, executionTime, cancellationToken).ConfigureAwait(false);
+
+        return entity;
     }
 
     // Side effects for a single time-job enqueue: immediate dispatch (when due) or scheduler restart, then notify.
@@ -199,10 +187,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         await notificationHubSender.AddTimeJobNotifyAsync(entity.Id).ConfigureAwait(false);
     }
 
-    private async Task<JobResult<TCronJob>> _AddCronJobAsync(
-        TCronJob entity,
-        CancellationToken cancellationToken
-    )
+    private async Task<TCronJob> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
         if (entity.Id == Guid.Empty)
         {
@@ -211,9 +196,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
         if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
         {
-            return new JobResult<TCronJob>(
-                new JobValidatorException($"Cannot find JobFunction with name {entity.Function}")
-            );
+            throw new JobValidatorException($"Cannot find JobFunction with name {entity.Function}");
         }
 
         if (
@@ -224,55 +207,38 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             is not { } nextOccurrence
         )
         {
-            return new JobResult<TCronJob>(
-                new JobValidatorException($"Cannot parse expression {entity.Expression}")
-            );
+            throw new JobValidatorException($"Cannot parse expression {entity.Expression}");
         }
 
         entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
         entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
-        // Fail loud before the try (see _AddTimeJobAsync) so dead-transaction / mis-wire propagate (KTD-2).
+        // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
 
-        try
+        if (coordinated is { } context)
         {
-            if (coordinated is { } context)
-            {
-                await context
-                    .Writer.WriteCronJobsAsync([entity], context.Relational, cancellationToken)
-                    .ConfigureAwait(false);
+            await context
+                .Writer.WriteCronJobsAsync([entity], context.Relational, cancellationToken)
+                .ConfigureAwait(false);
 
-                // Cron has no immediate-dispatch branch; defer cache-invalidation + scheduler-restart + notify (KTD-4).
-                _DeferSideEffects(
-                    context.Coordinator,
-                    entity.Id.ToString(),
-                    _ =>
-                        _RunCoordinatedCronJobSideEffectsAsync(
-                            context.Writer,
-                            entity,
-                            nextOccurrence
-                        )
-                );
-
-                return new JobResult<TCronJob>(entity);
-            }
-
-            await persistenceProvider.InsertCronJobs(
-                [entity],
-                cancellationToken: cancellationToken
+            // Cron has no immediate-dispatch branch; defer cache-invalidation + scheduler-restart + notify (KTD-4).
+            _DeferSideEffects(
+                context.Coordinator,
+                entity.Id.ToString(),
+                ct => _RunCoordinatedCronJobSideEffectsAsync(context.Writer, entity, nextOccurrence, ct)
             );
 
-            _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
-
-            await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
-
-            return new JobResult<TCronJob>(entity);
+            return entity;
         }
-        catch (Exception e)
-        {
-            return new JobResult<TCronJob>(e);
-        }
+
+        await persistenceProvider.InsertCronJobs([entity], cancellationToken: cancellationToken);
+
+        _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
+
+        await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
+
+        return entity;
     }
 
     private async Task<JobResult<TTimeJob>> _UpdateTimeJobAsync(
@@ -485,14 +451,14 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         };
     }
 
-    private async Task<JobResult<List<TTimeJob>>> _AddTimeJobsBatchAsync(
+    private async Task<List<TTimeJob>> _AddTimeJobsBatchAsync(
         List<TTimeJob> entities,
         CancellationToken cancellationToken = default
     )
     {
         if (entities == null || entities.Count == 0)
         {
-            return new JobResult<List<TTimeJob>>(entities ?? []);
+            return entities ?? [];
         }
 
         var jobFunctionsHashSet = new HashSet<string>(
@@ -502,6 +468,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         var immediateTickers = new List<Guid>();
         var now = timeProvider.GetUtcNow().UtcDateTime;
         DateTime earliestForNonImmediate = default;
+        List<string>? errors = null;
         foreach (var entity in entities)
         {
             if (entity.Id == Guid.Empty)
@@ -511,11 +478,10 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (!jobFunctionsHashSet.Contains(entity.Function))
             {
-                return new JobResult<List<TTimeJob>>(
-                    new JobValidatorException(
-                        $"Cannot find JobFunction with name {entity.Function}"
-                    )
-                );
+                // Aggregate every invalid entity and throw once after the loop so the caller sees them all; the batch
+                // is all-or-nothing, so a single invalid entity writes nothing.
+                (errors ??= []).Add($"Cannot find JobFunction with name {entity.Function}");
+                continue;
             }
 
             entity.ExecutionTime ??= now;
@@ -538,53 +504,35 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             }
         }
 
-        // Fail loud before the try (see _AddTimeJobAsync) so dead-transaction / mis-wire propagate (KTD-2).
+        if (errors is not null)
+        {
+            throw new JobValidatorException(errors);
+        }
+
+        // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
 
-        try
+        if (coordinated is { } context)
         {
-            if (coordinated is { } context)
-            {
-                // Route every entity through the seam in insertion order; defer the batch side effects once (KTD-4/R5).
-                await context
-                    .Writer.WriteTimeJobsAsync(
-                        entities.ToArray(),
-                        context.Relational,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                _DeferSideEffects(
-                    context.Coordinator,
-                    $"time batch ({entities.Count})",
-                    ct =>
-                        _RunTimeJobsBatchSideEffectsAsync(
-                            immediateTickers,
-                            earliestForNonImmediate,
-                            ct
-                        )
-                );
-
-                return new JobResult<List<TTimeJob>>(entities);
-            }
-
-            await persistenceProvider.AddTimeJobs(
-                entities.ToArray(),
-                cancellationToken: cancellationToken
-            );
-            await _RunTimeJobsBatchSideEffectsAsync(
-                    immediateTickers,
-                    earliestForNonImmediate,
-                    cancellationToken
-                )
+            // Route every entity through the seam in insertion order; defer the batch side effects once (KTD-4/R5).
+            await context
+                .Writer.WriteTimeJobsAsync(entities.ToArray(), context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
-            return new JobResult<List<TTimeJob>>(entities);
+            _DeferSideEffects(
+                context.Coordinator,
+                $"time batch ({entities.Count})",
+                ct => _RunTimeJobsBatchSideEffectsAsync(immediateTickers, earliestForNonImmediate, ct)
+            );
+
+            return entities;
         }
-        catch (Exception e)
-        {
-            return new JobResult<List<TTimeJob>>(e);
-        }
+
+        await persistenceProvider.AddTimeJobs(entities.ToArray(), cancellationToken: cancellationToken);
+        await _RunTimeJobsBatchSideEffectsAsync(immediateTickers, earliestForNonImmediate, cancellationToken)
+            .ConfigureAwait(false);
+
+        return entities;
     }
 
     // Batch time-job side effects: notify-batch first (preserve the existing notify-before-dispatch ordering), then
@@ -618,13 +566,13 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    private async Task<JobResult<List<TCronJob>>> _AddCronJobsBatchAsync(
+    private async Task<List<TCronJob>> _AddCronJobsBatchAsync(
         List<TCronJob> entities,
         CancellationToken cancellationToken = default
     )
     {
         var validEntities = new List<TCronJob>();
-        var errors = new List<Exception>();
+        List<string>? errors = null;
         var nextOccurrences = new List<DateTime>();
 
         foreach (var entity in entities)
@@ -636,11 +584,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
 
             if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
             {
-                errors.Add(
-                    new JobValidatorException(
-                        $"Cannot find JobFunction with name {entity.Function}"
-                    )
-                );
+                (errors ??= []).Add($"Cannot find JobFunction with name {entity.Function}");
                 continue;
             }
 
@@ -652,9 +596,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 is not { } nextOccurrence
             )
             {
-                errors.Add(
-                    new JobValidatorException($"Cannot parse expression {entity.Expression}")
-                );
+                (errors ??= []).Add($"Cannot parse expression {entity.Expression}");
                 continue;
             }
 
@@ -665,64 +607,52 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             nextOccurrences.Add(nextOccurrence);
         }
 
-        if (errors.Count != 0)
+        // Batch is all-or-nothing: any invalid entity aggregates here and throws, writing nothing.
+        if (errors is not null)
         {
-            return new JobResult<List<TCronJob>>(errors.First());
+            throw new JobValidatorException(errors);
         }
 
-        // Fail loud before the try (see _AddTimeJobAsync) so dead-transaction / mis-wire propagate (KTD-2).
+        // Synchronous capture before the first await; dead-transaction / mis-wire / write faults propagate (KTD-2).
         var coordinated = _TryCaptureCoordinatedContext();
 
-        try
+        if (coordinated is { } context)
         {
-            if (coordinated is { } context)
-            {
-                await context
-                    .Writer.WriteCronJobsAsync(
-                        validEntities.ToArray(),
-                        context.Relational,
-                        cancellationToken
+            await context
+                .Writer.WriteCronJobsAsync(validEntities.ToArray(), context.Relational, cancellationToken)
+                .ConfigureAwait(false);
+
+            _DeferSideEffects(
+                context.Coordinator,
+                $"cron batch ({validEntities.Count})",
+                ct =>
+                    _RunCoordinatedCronJobsBatchSideEffectsAsync(
+                        context.Writer,
+                        validEntities,
+                        nextOccurrences,
+                        ct
                     )
-                    .ConfigureAwait(false);
-
-                _DeferSideEffects(
-                    context.Coordinator,
-                    $"cron batch ({validEntities.Count})",
-                    _ =>
-                        _RunCoordinatedCronJobsBatchSideEffectsAsync(
-                            context.Writer,
-                            validEntities,
-                            nextOccurrences
-                        )
-                );
-
-                return new JobResult<List<TCronJob>>(validEntities);
-            }
-
-            await persistenceProvider.InsertCronJobs(
-                validEntities.ToArray(),
-                cancellationToken: cancellationToken
             );
 
-            if (validEntities.Count != 0)
-            {
-                // Restart scheduler for earliest occurrence
-                var earliestOccurrence = nextOccurrences.Min();
-                _jobsHostScheduler.RestartIfNeeded(earliestOccurrence);
-
-                // Send notifications for all
-                foreach (var entity in validEntities)
-                {
-                    await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
-                }
-            }
-
-            return new JobResult<List<TCronJob>>(validEntities);
+            return validEntities;
         }
-        catch (Exception e)
+
+        await persistenceProvider.InsertCronJobs(validEntities.ToArray(), cancellationToken: cancellationToken);
+
+        if (validEntities.Count != 0)
         {
-            return new JobResult<List<TCronJob>>(e);
+            // Restart scheduler for earliest occurrence
+            var earliestOccurrence = nextOccurrences.Min();
+            _jobsHostScheduler.RestartIfNeeded(earliestOccurrence);
+
+            // Send notifications for all
+            foreach (var entity in validEntities)
+            {
+                await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
+            }
         }
+
+        return validEntities;
     }
 
     private async Task<JobResult<List<TTimeJob>>> _UpdateTimeJobsBatchAsync(

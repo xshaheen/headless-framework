@@ -58,7 +58,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
             TestContext.Current.CancellationToken
         );
 
-        result.IsSucceeded.Should().BeTrue();
+        result.Should().NotBeNull();
         await sut
             .Persistence.Received(1)
             .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
@@ -77,7 +77,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
             TestContext.Current.CancellationToken
         );
 
-        result.IsSucceeded.Should().BeTrue();
+        result.Should().NotBeNull();
         await sut
             .Persistence.Received(1)
             .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
@@ -133,7 +133,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         var result = await sut.Time.AddAsync(job, TestContext.Current.CancellationToken);
 
-        result.IsSucceeded.Should().BeTrue();
+        result.Should().BeSameAs(job);
         await sut
             .Writer.Received(1)
             .WriteTimeJobsAsync(
@@ -175,26 +175,10 @@ public sealed class JobsManagerCoordinatedRoutingTests
             .ContainSingle(e => e.Level == LogLevel.Warning && ReferenceEquals(e.Exception, boom));
     }
 
-    [Fact]
-    public async Task Deferred_side_effect_cancellation_on_shutdown_is_not_logged_as_failure()
-    {
-        // A deferred side effect cancelled by host shutdown (OperationCanceledException while the drain token is
-        // cancelled) is clean teardown, not a recoverable failure — it must not log at Warning.
-        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
-        using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
-        var cancelledToken = cts.Token;
-        sut.Notification.AddTimeJobNotifyAsync(Arg.Any<Guid>())
-            .Returns(Task.FromException(new OperationCanceledException(cancelledToken)));
-
-        await sut.Time.AddAsync(_FutureTimeJob(), TestContext.Current.CancellationToken);
-
-        var drain = () => sut.Coordinator!.DrainCommitAsync(cancelledToken);
-        await drain.Should().NotThrowAsync();
-
-        sut.Logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
-        sut.Logger.Entries.Should().Contain(e => e.Level == LogLevel.Debug);
-    }
+    // Note: the former shutdown-cancellation test was removed with the OCE-on-shutdown branch it covered. The drain
+    // now bounds side effects with its own timeout token (the coordinator always drains with CancellationToken.None),
+    // so a deferred failure is exercised by Deferred_side_effect_failure_is_swallowed_and_logged above. The deferred
+    // timeout path mirrors MessageOutboxBuffer's bounded flush; a deterministic timeout test is a follow-up.
 
     [Fact]
     public async Task Coordinated_enqueue_registers_no_rollback_callbacks()
@@ -245,7 +229,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         var result = await sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
 
-        result.IsSucceeded.Should().BeTrue();
+        result.Should().HaveCount(2);
         // R3: the batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
         await sut
             .Writer.Received(1)
@@ -271,7 +255,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         var result = await sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
 
-        result.IsSucceeded.Should().BeTrue();
+        result.Should().NotBeNull();
         await sut
             .Persistence.Received(1)
             .InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
@@ -285,7 +269,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         var result = await sut.Cron.AddAsync(cron, TestContext.Current.CancellationToken);
 
-        result.IsSucceeded.Should().BeTrue();
+        result.Should().BeSameAs(cron);
         await sut
             .Writer.Received(1)
             .WriteCronJobsAsync(
@@ -317,7 +301,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
 
         var result = await sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
 
-        result.IsSucceeded.Should().BeTrue();
+        result.Should().HaveCount(2);
         // R3: the batch reaches the seam as one array in insertion order (AddRange preserves it downstream).
         await sut
             .Writer.Received(1)

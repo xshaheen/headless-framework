@@ -8,26 +8,31 @@ namespace Headless.Jobs.Interfaces.Managers;
 public interface ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>
 {
-    /// <summary>Enqueues a time job.</summary>
+    /// <summary>Enqueues a time job and returns the persisted entity.</summary>
     /// <remarks>
     /// When a relational commit coordinator is active, the row is written inside the caller's ambient transaction and
-    /// dispatch / scheduler-restart / notify are deferred to post-commit — a succeeded <see cref="JobResult{TTimeJob}" />
-    /// then means the row committed with the transaction, not that dispatch ran. With no coordinator (or a coordinated
-    /// scope exposing no relational capability) the row is inserted directly and the side effects run in-band.
+    /// dispatch / scheduler-restart / notify are deferred to post-commit; the returned entity then means the row was
+    /// enlisted into the transaction (it commits with it), not that dispatch ran. With no coordinator (or a coordinated
+    /// scope exposing no relational capability) the row is inserted directly and the side effects run in-band. Any
+    /// failure throws — so a coordinated caller's transaction rolls back rather than committing without the job row.
+    /// (Update/Delete keep returning <see cref="JobResult{TTimeJob}" />; only the transaction-enlisting Add path throws.)
     /// </remarks>
+    /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">The job failed validation (unknown function).</exception>
     /// <exception cref="InvalidOperationException">
     /// A relational coordinator is active but its transaction is dead/completed, or the configured persistence provider
-    /// cannot write inside it (a mis-wire). Validation and direct-path persistence errors are surfaced through the
-    /// returned <see cref="JobResult{TTimeJob}" /> instead of thrown.
+    /// cannot write inside it (a mis-wire).
     /// </exception>
-    Task<JobResult<TTimeJob>> AddAsync(TTimeJob entity, CancellationToken cancellationToken = default);
+    Task<TTimeJob> AddAsync(TTimeJob entity, CancellationToken cancellationToken = default);
     Task<JobResult<TTimeJob>> UpdateAsync(TTimeJob timeJob, CancellationToken cancellationToken = default);
     Task<JobResult<TTimeJob>> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     // Batch operations
 
     /// <inheritdoc cref="AddAsync" />
-    Task<JobResult<List<TTimeJob>>> AddBatchAsync(
+    /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">
+    /// One or more jobs failed validation; <see cref="Headless.Jobs.Exceptions.JobValidatorException.Errors" /> lists each.
+    /// </exception>
+    Task<List<TTimeJob>> AddBatchAsync(
         List<TTimeJob> entities,
         CancellationToken cancellationToken = default
     );

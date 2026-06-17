@@ -378,17 +378,33 @@ internal static class DashboardEndpoints
             chainRoot.ExecutionTime = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
         }
 
-        var result = await timeJobsManager.AddAsync(chainRoot!, cancellationToken);
+        // AddAsync returns the persisted entity and throws on failure; the dashboard reports it as success/failure data.
+        try
+        {
+            var created = await timeJobsManager.AddAsync(chainRoot!, cancellationToken);
 
-        return Results.Json(
-            new
-            {
-                success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Chain jobs created successfully" : "Failed to create chain jobs",
-                jobId = result.Result?.Id,
-            },
-            dashboardOptions.DashboardJsonOptions
-        );
+            return Results.Json(
+                new
+                {
+                    success = true,
+                    message = "Chain jobs created successfully",
+                    jobId = (Guid?)created.Id,
+                },
+                dashboardOptions.DashboardJsonOptions
+            );
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return Results.Json(
+                new
+                {
+                    success = false,
+                    message = "Failed to create chain jobs",
+                    jobId = (Guid?)null,
+                },
+                dashboardOptions.DashboardJsonOptions
+            );
+        }
     }
 
     private static async Task<IResult> _UpdateTimeJob<TTimeJob, TCronJob>(
@@ -612,17 +628,33 @@ internal static class DashboardEndpoints
         // Use Dashboard-specific JSON options
         var cronJob = JsonSerializer.Deserialize<TCronJob>(jsonString, dashboardOptions.DashboardJsonOptions)!;
 
-        var result = await cronJobsManager.AddAsync(cronJob, cancellationToken);
+        // AddAsync returns the persisted entity and throws on failure; the dashboard reports it as success/failure data.
+        try
+        {
+            var created = await cronJobsManager.AddAsync(cronJob, cancellationToken);
 
-        return Results.Json(
-            new
-            {
-                success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Cron job added successfully" : "Failed to add cron job",
-                jobId = result.Result?.Id,
-            },
-            dashboardOptions.DashboardJsonOptions
-        );
+            return Results.Json(
+                new
+                {
+                    success = true,
+                    message = "Cron job added successfully",
+                    jobId = (Guid?)created.Id,
+                },
+                dashboardOptions.DashboardJsonOptions
+            );
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return Results.Json(
+                new
+                {
+                    success = false,
+                    message = "Failed to add cron job",
+                    jobId = (Guid?)null,
+                },
+                dashboardOptions.DashboardJsonOptions
+            );
+        }
     }
 
     private static async Task<IResult> _UpdateCronJob<TTimeJob, TCronJob>(
