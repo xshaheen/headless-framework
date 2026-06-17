@@ -44,6 +44,39 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     protected ICache? Cache { get; } = cache;
 
+    // #316 clock-skew: single lease-expiry time authority for EF storage is the durable store's UTC clock.
+    // Lease expiry and stalled/dead-node reclaim must NOT be decided by the reclaiming node's local TimeProvider —
+    // cross-node clock skew would otherwise let a fast node reclaim a job whose owner just renewed against a slower
+    // clock (double-exec for Retry, silent terminal drop for MarkFailed/Skip). Renewal stamps LockedUntil = DbNow +
+    // LeaseDuration and reclaim compares LockedUntil <= DbNow, anchoring the whole running-lease lifecycle to one
+    // clock. The claim/acquire path keeps the injected clock (WhereCanAcquire/KTD1) — it is Retry-gated against skew
+    // and runs on the per-second scheduler hot path. InMemory keeps TimeProvider throughout (parity is per-provider).
+    // Unknown providers (e.g. SQLite in tests) fall back to the injected clock so non-relational hosts still work.
+    private protected async Task<DateTime> GetDatabaseUtcNowAsync(
+        TDbContext dbContext,
+        CancellationToken cancellationToken
+    )
+    {
+        var sql = dbContext.Database.ProviderName switch
+        {
+            "Npgsql.EntityFrameworkCore.PostgreSQL" => "SELECT (now() AT TIME ZONE 'UTC') AS \"Value\"",
+            "Microsoft.EntityFrameworkCore.SqlServer" => "SELECT GETUTCDATE() AS [Value]",
+            _ => null,
+        };
+
+        if (sql is null)
+        {
+            return TimeProvider.GetUtcNow().UtcDateTime;
+        }
+
+        var dbNow = await dbContext
+            .Database.SqlQueryRaw<DateTime>(sql)
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return DateTime.SpecifyKind(dbNow, DateTimeKind.Utc);
+    }
+
     #region Core_Time_Ticker_Methods
     public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobs(
         TimeJobEntity[] timeJobs,
@@ -311,10 +344,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        // #316 clock-skew: the InProgress lease-deferral arms compare LockedUntil <= now against the DB clock, not the
+        // reclaiming node's TimeProvider, so a still-leased running row survives regardless of cross-node skew.
+        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         // KTD6: a NodeLeft reclaim may race host shutdown; the writes must not be torn down mid-statement,
         // so they run under CancellationToken.None. The three statements are wrapped in one transaction
@@ -460,11 +496,17 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        // #316 clock-skew: stamp the slid lease from the DB clock, not the local TimeProvider, so the deadline a
+        // remote sweep later compares against shares one authority with the value written here.
+        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         return await dbContext
             .Set<TTimeJob>()
             .Where(x => x.Id == jobId)
+            // Renewal slides a RUNNING lease only: an Idle/Queued row hasn't started, so extending its LockedUntil
+            // would return 1 ("lease held") and suppress the cancel-on-loss signal. WhereOwnedBy alone permits
+            // Idle|Queued|InProgress, so the explicit InProgress filter is required here.
+            .Where(x => x.Status == JobStatus.InProgress)
             .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(
                 setter =>
@@ -481,10 +523,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // death. A healthy renewing job keeps a future LockedUntil and never matches. Same per-policy transitions
         // and PR#456 terminal-row hygiene as ReleaseDeadNodeTimeJobResources, wrapped in one transaction so a crash
         // between phases can't leave a half-reclaimed view (re-run is idempotent regardless).
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        // #316 clock-skew: lease-expiry is decided by the DB clock, never the reclaiming node's TimeProvider.
+        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
@@ -492,6 +536,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var set = dbContext.Set<TTimeJob>();
 
+        // The reclaim writes run under CancellationToken.None (mirroring the dead-node sweep, KTD6): a host-stop racing
+        // the sweep must not tear down a per-policy transition mid-statement and revert the whole transaction.
         var released = await set.Where(x =>
                 x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.Retry
             )
@@ -502,7 +548,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
@@ -517,7 +563,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
@@ -532,11 +578,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         return released + failed + skipped;
     }
@@ -815,10 +861,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        // #316 clock-skew: InProgress lease-deferral arms compare LockedUntil <= now against the DB clock (see
+        // ReleaseDeadNodeTimeJobResources).
+        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         // See ReleaseDeadNodeTimeJobResources: strict WhereOwnedBy (KTD5/R4), one transaction (finding 3.1),
         // CancellationToken.None for the reclaim writes (KTD6).
@@ -901,11 +950,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
+        // #316 clock-skew: stamp the slid lease from the DB clock (see RenewTimeJobLease).
+        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => x.Id == occurrenceId)
+            // Renewal slides a RUNNING lease only (see RenewTimeJobLease) — InProgress filter required.
+            .Where(x => x.Status == JobStatus.InProgress)
             .WhereOwnedBy(owner)
             .ExecuteUpdateAsync(
                 setter =>
@@ -918,10 +970,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     public async Task<int> ReclaimStalledCronJobOccurrences(CancellationToken cancellationToken = default)
     {
         // #316/U3 — cron mirror of ReclaimStalledTimeJobs. Reclaim lapsed-lease InProgress occurrences on any node.
-        var now = TimeProvider.GetUtcNow().UtcDateTime;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        // #316 clock-skew: lease-expiry is decided by the DB clock, never the reclaiming node's TimeProvider.
+        var now = await GetDatabaseUtcNowAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         await using var transaction = await dbContext
             .Database.BeginTransactionAsync(cancellationToken)
@@ -929,6 +983,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var set = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
 
+        // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobs / KTD6).
         var released = await set.Where(x =>
                 x.Status == JobStatus.InProgress && x.LockedUntil <= now && x.OnNodeDeath == NodeDeathPolicy.Retry
             )
@@ -939,7 +994,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
@@ -954,7 +1009,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
@@ -969,11 +1024,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         return released + failed + skipped;
     }

@@ -538,6 +538,65 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
+    // A TimeProvider whose wall clock is deliberately offset from real time, to prove the EF lease-expiry path reads
+    // the DB clock rather than this node's TimeProvider (#316 clock-skew). Only GetUtcNow is exercised by the test.
+    private sealed class SkewedTimeProvider(TimeSpan offset) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow.Add(offset);
+    }
+
+    /// <summary>
+    /// #316 clock-skew: the stalled-lease reclaim decides expiry from the DB clock, not the reclaiming node's local
+    /// TimeProvider. A node whose clock runs an hour fast must NOT terminalize a lease still valid per the DB clock,
+    /// yet must still reclaim a lease genuinely lapsed per the DB clock.
+    /// </summary>
+    public virtual async Task stalled_reclaim_uses_the_db_clock_not_a_skewed_reclaimer_clock()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        // Reclaiming node's wall clock is 1 hour ahead of the DB. With the pre-fix TimeProvider-based comparison this
+        // would make every fresh lease look lapsed; the DB-clock authority must ignore the skew. No StartAsync: the
+        // reclaim is a direct persistence call and must not depend on the skewed clock driving membership.
+        var skewedClock = new SkewedTimeProvider(TimeSpan.FromHours(1));
+
+        using var host = fixture.BuildHost("node-skew", timeProvider: skewedClock);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var validId = Guid.NewGuid(); // lease valid per DB clock (~5 min out), but "lapsed" per the +1h skew
+        var lapsedId = Guid.NewGuid(); // genuinely lapsed per the DB clock
+
+        await fixture.SeedTimeJobAsync(
+            validId,
+            "Valid",
+            (int)JobStatus.InProgress,
+            "node-a@1",
+            ct,
+            NodeDeathPolicy.MarkFailed,
+            DateTime.UtcNow.AddMinutes(5)
+        );
+        await fixture.SeedTimeJobAsync(
+            lapsedId,
+            "Lapsed",
+            (int)JobStatus.InProgress,
+            "node-a@1",
+            ct,
+            NodeDeathPolicy.Retry,
+            DateTime.UtcNow.AddMinutes(-1)
+        );
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        // Only the genuinely-lapsed row is reclaimed; the skewed local clock must not terminalize the still-valid
+        // MarkFailed lease (pre-fix this would have returned 2 and recorded the valid row Failed mid-flight).
+        (await persistence.ReclaimStalledTimeJobs(ct))
+            .Should()
+            .Be(1);
+
+        (await fixture.ReadTimeJobAsync(validId, ct)).Should().Be(((int)JobStatus.InProgress, "node-a@1"));
+        (await fixture.ReadTimeJobAsync(lapsedId, ct)).Should().Be(((int)JobStatus.Idle, null));
+    }
+
     /// <summary>
     /// #316/U4: the dead-node sweep defers a still-leased InProgress row to the lease (recovered later by U3) but
     /// reclaims Idle/Queued rows immediately.

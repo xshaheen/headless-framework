@@ -88,6 +88,10 @@ internal static class MappingExtensions
             CreatedAt = e.CreatedAt,
             CronJobId = e.CronJobId,
             ExecutionTime = e.ExecutionTime,
+            // Carry the occurrence's stored death policy through the executor-pick projection (mirrors
+            // ForQueueCronJobOccurrence). Without it a MarkFailed/Skip occurrence projects the C# enum default
+            // (Retry), so any execution-time logic reading OnNodeDeath off the picked object would mis-classify it.
+            OnNodeDeath = e.OnNodeDeath,
             CronJob = new TCronJob
             {
                 Id = e.CronJob.Id,

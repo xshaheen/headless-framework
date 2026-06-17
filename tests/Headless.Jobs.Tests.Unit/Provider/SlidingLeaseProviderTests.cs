@@ -98,6 +98,31 @@ public sealed class SlidingLeaseProviderTests
         affected.Should().Be(0);
     }
 
+    [Fact]
+    public async Task RenewTimeJobLease_returns_zero_for_an_owned_queued_row()
+    {
+        // #13: renewal slides a RUNNING lease only. A Queued row hasn't started, so renewal must NOT extend it (a
+        // returned 1 would read as "lease held" and suppress the cancel-on-loss signal).
+        var (provider, _) = Create();
+        var job = TimeJob(JobStatus.Queued, NodeA, Now.AddMinutes(1));
+        await provider.AddTimeJobs([job]);
+
+        (await provider.RenewTimeJobLease(job.Id)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RenewTimeJobLease_returns_zero_after_a_retry_reclaim_released_the_row()
+    {
+        // #5 invariant: no reclaim arm leaves (InProgress, Owner==original) true, so renewal can never resurrect a
+        // reclaimed lease. After a Retry reclaim the row is Idle + ownerless, so the original owner renews 0 rows.
+        var (provider, _) = Create();
+        var job = TimeJob(JobStatus.InProgress, NodeA, Now.AddMinutes(-1), NodeDeathPolicy.Retry);
+        await provider.AddTimeJobs([job]);
+
+        (await provider.ReclaimStalledTimeJobs()).Should().Be(1);
+        (await provider.RenewTimeJobLease(job.Id)).Should().Be(0);
+    }
+
     // ── U3: stalled-job reclaim (lapsed-lease InProgress, per policy) ────────────────────────────────────────
 
     [Fact]
@@ -298,5 +323,57 @@ public sealed class SlidingLeaseProviderTests
         (await provider.ReclaimStalledCronJobOccurrences()).Should().Be(1);
         var rows = await provider.GetAllCronJobOccurrences(x => x.Id == id);
         rows.Should().ContainSingle().Which.Status.Should().Be(JobStatus.Idle);
+    }
+
+    [Fact]
+    public async Task ReclaimStalledCronJobOccurrences_markFailed_terminalizes_lapsed_row()
+    {
+        // #23: cron mirror of the time-job MarkFailed reclaim — parity gap that had no unit coverage.
+        var (provider, _) = Create();
+        var id = await SeedCronOccurrence(
+            provider,
+            JobStatus.InProgress,
+            NodeA,
+            Now.AddMinutes(-1),
+            NodeDeathPolicy.MarkFailed
+        );
+
+        await provider.ReclaimStalledCronJobOccurrences();
+
+        var row = (await provider.GetAllCronJobOccurrences(x => x.Id == id)).Should().ContainSingle().Subject;
+        row.Status.Should().Be(JobStatus.Failed);
+        row.LockedUntil.Should().BeNull();
+        row.ExceptionMessage.Should().Be("Lease lapsed while running!");
+    }
+
+    [Fact]
+    public async Task ReclaimStalledCronJobOccurrences_skip_terminalizes_lapsed_row()
+    {
+        // #23: cron mirror of the time-job Skip reclaim.
+        var (provider, _) = Create();
+        var id = await SeedCronOccurrence(
+            provider,
+            JobStatus.InProgress,
+            NodeA,
+            Now.AddMinutes(-1),
+            NodeDeathPolicy.Skip
+        );
+
+        await provider.ReclaimStalledCronJobOccurrences();
+
+        var row = (await provider.GetAllCronJobOccurrences(x => x.Id == id)).Should().ContainSingle().Subject;
+        row.Status.Should().Be(JobStatus.Skipped);
+        row.LockedUntil.Should().BeNull();
+        row.SkippedReason.Should().Be("Lease lapsed while running!");
+    }
+
+    [Fact]
+    public async Task RenewCronJobOccurrenceLease_returns_zero_for_an_owned_queued_row()
+    {
+        // #13 (cron): renewal slides a RUNNING occurrence lease only.
+        var (provider, _) = Create();
+        var id = await SeedCronOccurrence(provider, JobStatus.Queued, NodeA, Now.AddMinutes(1));
+
+        (await provider.RenewCronJobOccurrenceLease(id)).Should().Be(0);
     }
 }

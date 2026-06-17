@@ -305,11 +305,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         if (_TimeJobs.TryGetValue(jobId, out var job))
         {
-            var ownedNonTerminal =
-                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
-                && job.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+            // Renewal slides a RUNNING lease only: extending an Idle/Queued row would return 1 ("lease held") and
+            // suppress cancel-on-loss. Mirror the EF RenewTimeJobLease InProgress fence.
+            var ownedRunning =
+                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal) && job.Status is JobStatus.InProgress;
 
-            if (!ownedNonTerminal)
+            if (!ownedRunning)
             {
                 return Task.FromResult(0);
             }
@@ -920,17 +921,20 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     Status = JobStatus.Queued,
                     OwnerId = _ownerId,
                     LockedUntil = now.Add(_leaseDuration),
+                    // Death policy comes from the InternalManagerContext (canonical, sourced from the cron def via
+                    // _EarliestCronJobGroup) — set unconditionally so a MarkFailed/Skip cron never degrades to the
+                    // Retry enum default when the cron row is absent from _CronJobs. Mirrors the EF QueueCronJobOccurrences
+                    // projection, which always stamps item.OnNodeDeath.
+                    OnNodeDeath = context.OnNodeDeath,
                     CreatedAt = context.NextCronOccurrence?.CreatedAt ?? now,
                     UpdatedAt = now,
                     RetryCount = 0,
                 };
 
-                // Try to get the cron job
+                // Attach the cron navigation when the definition is in the in-memory map (execution needs Function).
                 if (_CronJobs.TryGetValue(context.Id, out var cronJob))
                 {
                     newOccurrence.CronJob = cronJob;
-                    // Propagate the cron job's node-death policy to the occurrence (single source of truth).
-                    newOccurrence.OnNodeDeath = cronJob.OnNodeDeath;
                 }
 
                 if (_CronOccurrences.TryAdd(newOccurrence.Id, newOccurrence))
@@ -1007,11 +1011,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         if (_CronOccurrences.TryGetValue(occurrenceId, out var occurrence))
         {
-            var ownedNonTerminal =
+            // Renewal slides a RUNNING lease only (see RenewTimeJobLease InProgress fence).
+            var ownedRunning =
                 string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
-                && occurrence.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+                && occurrence.Status is JobStatus.InProgress;
 
-            if (!ownedNonTerminal)
+            if (!ownedRunning)
             {
                 return Task.FromResult(0);
             }

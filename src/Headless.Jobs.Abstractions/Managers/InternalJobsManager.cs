@@ -647,8 +647,10 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
         var timeJobsTask = persistenceProvider.ReclaimStalledTimeJobs(cancellationToken);
         var cronOccurrencesTask = persistenceProvider.ReclaimStalledCronJobOccurrences(cancellationToken);
 
-        await Task.WhenAll(timeJobsTask, cronOccurrencesTask).ConfigureAwait(false);
+        // WhenAll of two Task<int> yields the results array in one await — concurrent, no double-await, and a double
+        // fault surfaces as AggregateException rather than collapsing to the first task's exception.
+        var results = await Task.WhenAll(timeJobsTask, cronOccurrencesTask).ConfigureAwait(false);
 
-        return await timeJobsTask.ConfigureAwait(false) + await cronOccurrencesTask.ConfigureAwait(false);
+        return results[0] + results[1];
     }
 }

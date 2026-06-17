@@ -265,7 +265,9 @@ internal class JobsExecutionTaskHandler(
                     await handler.HandleCanceledExceptionAsync(ex, context.JobId, context.Type);
                 }
 
-                await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+                // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
+                // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
+                await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
 
                 // Clean up and exit early on cancellation
                 await StopRenewalAsync();
@@ -297,7 +299,9 @@ internal class JobsExecutionTaskHandler(
                 // Log job skipped
                 jobsInstrumentation.LogJobSkipped(context.JobId, context.FunctionName, ex.Message);
 
-                await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+                // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
+                // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
+                await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
 
                 // Clean up and exit early on termination
                 await StopRenewalAsync();
@@ -333,7 +337,8 @@ internal class JobsExecutionTaskHandler(
                 true
             );
 
-            await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+            // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
+            await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
         }
         else if (lastException != null)
         {
@@ -360,7 +365,8 @@ internal class JobsExecutionTaskHandler(
                 await handler.HandleExceptionAsync(lastException, context.JobId, context.Type);
             }
 
-            await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+            // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
+            await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
         }
 
         // Stop renewal before disposing the job CTS it cancels on loss.

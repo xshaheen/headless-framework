@@ -84,6 +84,13 @@ public sealed class RetryBehaviorTests
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
 
+        // The renewal loop cancels the job when RenewLeaseAsync returns 0 (lease lost). NSubstitute defaults a
+        // Task<int> to 0, so without this stub every retry test is one renewal interval away from a spurious
+        // cancel-on-loss. Return 1 ("lease held") so these tests exercise retry timing, not lease loss.
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();

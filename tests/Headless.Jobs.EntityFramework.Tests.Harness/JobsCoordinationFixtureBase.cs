@@ -73,7 +73,8 @@ public static class JobsCoordinationFixtureExtensions
     public static IHost BuildHost(
         this IJobsCoordinationFixture fixture,
         string nodeId,
-        MembershipLostBehavior lostBehavior = MembershipLostBehavior.StopMembershipOnly
+        MembershipLostBehavior lostBehavior = MembershipLostBehavior.StopMembershipOnly,
+        TimeProvider? timeProvider = null
     )
     {
         var builder = Host.CreateApplicationBuilder();
@@ -105,6 +106,13 @@ public static class JobsCoordinationFixtureExtensions
                 ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
             );
         });
+
+        // Lets a test inject a deliberately skewed clock to prove the EF lease-expiry path reads the DB clock, not
+        // this node's TimeProvider (#316 clock-skew). Registered last so it wins over the framework's default.
+        if (timeProvider is not null)
+        {
+            builder.Services.AddSingleton(timeProvider);
+        }
 
         return builder.Build();
     }
@@ -179,8 +187,7 @@ public static class JobsCoordinationFixtureExtensions
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"INSERT INTO {fixture.QualifiedCronJobsTable} "
-            + "(\"Id\", \"Function\", \"Description\", \"Expression\", \"Retries\", \"CreatedAt\", \"UpdatedAt\", \"OnNodeDeath\") "
+            $"INSERT INTO {fixture.QualifiedCronJobsTable} ({_CronInsertColumns}) "
             + $"VALUES (@id, @function, @function, @expression, 0, {fixture.UtcNowSqlExpression}, {fixture.UtcNowSqlExpression}, @onNodeDeath);";
 
         _AddParameter(command, "@id", id);
@@ -245,6 +252,9 @@ public static class JobsCoordinationFixtureExtensions
     private const string _InsertColumns =
         "\"Id\", \"Function\", \"Description\", \"Status\", \"OwnerId\", "
         + "\"CreatedAt\", \"UpdatedAt\", \"ElapsedTime\", \"Retries\", \"RetryCount\", \"OnNodeDeath\", \"LockedUntil\"";
+
+    private const string _CronInsertColumns =
+        "\"Id\", \"Function\", \"Description\", \"Expression\", \"Retries\", \"CreatedAt\", \"UpdatedAt\", \"OnNodeDeath\"";
 
     // Both Npgsql and SqlClient accept the "@name" parameter form.
     private static void _AddParameter(DbCommand command, string name, object value)
