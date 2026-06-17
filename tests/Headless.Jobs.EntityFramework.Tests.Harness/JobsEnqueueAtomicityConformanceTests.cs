@@ -290,6 +290,42 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         }
     }
 
+    // R6 (batch rollback): the whole cron batch discards with the caller's transaction — no partial commit, no stranded rows.
+    public virtual async Task cron_batch_enqueue_rolls_back()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var host = await _StartHostAsync(ct);
+
+        try
+        {
+            var manager = host.Services.GetRequiredService<ICronJobManager<CronJobEntity>>();
+            var before = await fixture.CountCronJobsAsync(ct);
+            var sentinel = new InvalidOperationException("force rollback");
+
+            var act = () =>
+                fixture.RunCoordinatedTransactionAsync(
+                    host.Services,
+                    async (_, _, innerCt) =>
+                    {
+                        var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
+                        await manager.AddBatchAsync(crons, innerCt);
+
+                        throw sentinel;
+                    },
+                    ct
+                );
+
+            (await act.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(sentinel);
+            (await fixture.CountCronJobsAsync(ct)).Should().Be(before);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     private async Task<IHost> _StartHostAsync(CancellationToken cancellationToken)
     {
         await fixture.ResetDatabaseAsync(cancellationToken);

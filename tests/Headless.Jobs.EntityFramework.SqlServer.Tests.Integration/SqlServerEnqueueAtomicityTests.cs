@@ -36,4 +36,7 @@ public sealed class SqlServerEnqueueAtomicityTests(SqlServerJobsCoordinationFixt
 
     [Fact]
     public override Task cron_enqueue_rolls_back() => base.cron_enqueue_rolls_back();
+
+    [Fact]
+    public override Task cron_batch_enqueue_rolls_back() => base.cron_batch_enqueue_rolls_back();
 }

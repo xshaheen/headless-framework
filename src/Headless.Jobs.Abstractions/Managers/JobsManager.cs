@@ -138,10 +138,20 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 .Writer.WriteTimeJobsAsync([entity], context.Relational, cancellationToken)
                 .ConfigureAwait(false);
 
+            // Re-read the clock at commit time: the deferred lambda runs when the caller's transaction commits, which
+            // can be much later than enqueue. Using the enqueue-time `now` could push a job that was within the
+            // immediate-dispatch window into the scheduler/poll-sweep path. (Direct path below stays in-band, so its
+            // `now` is already current.)
             _DeferSideEffects(
                 context.Coordinator,
                 entity.Id.ToString(),
-                ct => _RunTimeJobSideEffectsAsync(entity, now, executionTime, ct)
+                ct =>
+                    _RunTimeJobSideEffectsAsync(
+                        entity,
+                        timeProvider.GetUtcNow().UtcDateTime,
+                        executionTime,
+                        ct
+                    )
             );
 
             return entity;

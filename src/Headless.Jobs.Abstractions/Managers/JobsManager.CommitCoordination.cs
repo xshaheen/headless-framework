@@ -28,6 +28,9 @@ internal partial class JobsManager<TTimeJob, TCronJob>
     //  - value → a live relational transaction is present → write rows inside it and defer side effects to commit.
     // Throws when a relational capability is present but its transaction is dead/completed: the caller opened a
     // transaction expecting atomicity, so silent fallback would reintroduce the divergence this feature prevents (KTD-2).
+    // NOTE: this is a deliberate divergence from messaging's OutboxMessageWriter, which falls back rather than throwing.
+    // Jobs fail loud here (and Add propagates write faults) because a swallowed enqueue would let the caller commit its
+    // domain writes without the job row — the exact split this feature exists to prevent. Do not "align" the two.
     private CoordinatedJobContext? _TryCaptureCoordinatedContext()
     {
         var coordinator = _currentCommitCoordinator.Current;

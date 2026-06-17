@@ -78,10 +78,15 @@ Behavior and caveats:
 - **No coordinator (or no `AddOperationalStore`)**: unchanged — `AddAsync` direct-inserts and dispatches in-band.
 - **Coordinated scope with no relational capability** (e.g. a messaging-only scope): falls back to the direct path —
   coordination is not made infectious.
-- **Fail loud**: `AddAsync` throws only when a relational transaction was offered but is unusable (dead / completed),
-  or when a relational coordinator is active but the provider cannot write coordinated. Silent fallback there would
-  reintroduce the divergence this feature prevents.
-- **Return-contract (SLA)**: on the coordinated path `JobResult.IsSucceeded` means the row **committed**, not that the
-  deferred dispatch ran. A post-commit dispatch failure is swallowed (the commit is already durable); the fallback poll
-  sweep (`FallbackIntervalChecker`, default 30s) is the recovery path.
+- **Return shape**: `AddAsync` / `AddBatchAsync` (time and cron) return the **persisted entity** and **throw** on any
+  failure; wrap coordinated enqueues in `try/catch`. `Update` / `Delete` keep returning `JobResult` — only the
+  transaction-enlisting Add path throws. The EF operational store's `DbContext` must expose a
+  `public MyContext(DbContextOptions<MyContext> options)` constructor (validated fail-loud at DI build).
+- **Fail loud**: Add **throws** on validation (`JobValidatorException`; for a batch its `Errors` lists every failure), a
+  relational transaction offered but unusable (dead / completed), or a relational coordinator active but the provider
+  cannot write coordinated (`InvalidOperationException`). A thrown failure rolls the caller's transaction back —
+  swallowing it (as a failed result the caller might ignore) would reintroduce the divergence this feature prevents.
+- **Return-contract (SLA)**: on the coordinated path a returned entity means the row was **enlisted** (it commits with
+  the caller's transaction), not that the deferred dispatch ran. A post-commit dispatch failure is swallowed (the commit
+  is already durable); the fallback poll sweep (`FallbackIntervalChecker`, default 30s) is the recovery path.
 - **Tenancy** stamping inside the coordinated write is out of scope until a tenant column exists (issue #278).

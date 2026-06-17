@@ -126,6 +126,109 @@ public sealed class JobsManagerCoordinatedRoutingTests
     }
 
     [Fact]
+    public async Task Cron_dead_transaction_throws_and_persists_nothing()
+    {
+        var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
+
+        var act = () => sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Writer.DidNotReceive()
+            .WriteCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task Cron_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
+
+        var act = () => sut.Cron.AddAsync(_CronJob(), TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TimeJob_batch_dead_transaction_throws_and_persists_nothing()
+    {
+        var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
+        var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
+
+        var act = () => sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Writer.DidNotReceive()
+            .WriteTimeJobsAsync(
+                Arg.Any<TimeJobEntity[]>(),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task TimeJob_batch_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
+        var jobs = new List<TimeJobEntity> { _FutureTimeJob(), _FutureTimeJob() };
+
+        var act = () => sut.Time.AddBatchAsync(jobs, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await sut
+            .Persistence.DidNotReceive()
+            .AddTimeJobs(Arg.Any<TimeJobEntity[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Cron_batch_dead_transaction_throws_and_persists_nothing()
+    {
+        var sut = _CreateSut(CoordinatorMode.DeadRelational, withWriter: true);
+        var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
+
+        var act = () => sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+        await sut
+            .Writer.DidNotReceive()
+            .WriteCronJobsAsync(
+                Arg.Any<CronJobEntity[]>(),
+                Arg.Any<IRelationalCommitContext>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task Cron_batch_relational_coordinator_but_non_coordinated_provider_throws_mis_wire()
+    {
+        var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: false);
+        var crons = new List<CronJobEntity> { _CronJob(), _CronJob() };
+
+        var act = () => sut.Cron.AddBatchAsync(crons, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await sut
+            .Persistence.DidNotReceive()
+            .InsertCronJobs(Arg.Any<CronJobEntity[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task TimeJob_live_coordinator_writes_in_transaction_and_defers_side_effects()
     {
         var sut = _CreateSut(CoordinatorMode.LiveRelational, withWriter: true);
