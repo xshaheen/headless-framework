@@ -566,6 +566,8 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         var validId = Guid.NewGuid(); // lease valid per DB clock (~5 min out), but "lapsed" per the +1h skew
         var lapsedId = Guid.NewGuid(); // genuinely lapsed per the DB clock
 
+        // Wide margins (+10 min valid / -5 min lapsed) so container/schema-setup latency between seed and assert can
+        // never drift the DB clock enough to flip either row's lapsed/valid classification.
         await fixture.SeedTimeJobAsync(
             validId,
             "Valid",
@@ -573,7 +575,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             "node-a@1",
             ct,
             NodeDeathPolicy.MarkFailed,
-            DateTime.UtcNow.AddMinutes(5)
+            DateTime.UtcNow.AddMinutes(10)
         );
         await fixture.SeedTimeJobAsync(
             lapsedId,
@@ -582,7 +584,7 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
             "node-a@1",
             ct,
             NodeDeathPolicy.Retry,
-            DateTime.UtcNow.AddMinutes(-1)
+            DateTime.UtcNow.AddMinutes(-5)
         );
 
         var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();

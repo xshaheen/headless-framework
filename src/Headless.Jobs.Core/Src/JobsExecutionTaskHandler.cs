@@ -435,10 +435,11 @@ internal class JobsExecutionTaskHandler(
             // Renewal deadline elapsed: the store did not confirm the lease within the cadence. Treat as lost.
             return false;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception)
         {
-            // Renewal write failed (DB unreachable / transient error). We can no longer vouch for the lease — treat
-            // it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal).
+            // Renewal write failed (DB unreachable / transient error). The two preceding catches already consume every
+            // OperationCanceledException, so only non-OCE exceptions reach here. We can no longer vouch for the lease —
+            // treat it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal).
             return false;
         }
     }
