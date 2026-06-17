@@ -215,6 +215,7 @@ throw new TerminateExecutionException(JobStatus.Failed, "Configuration is invali
 ## Dependencies
 
 - `Headless.Jobs.Abstractions`
+- `Headless.DistributedLocks.Abstractions` — optional distributed-lock hardening (off by default)
 - `Headless.Extensions`
 
 ## Side Effects

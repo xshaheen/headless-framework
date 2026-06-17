@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.DistributedLocks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -117,18 +119,7 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         return Task.CompletedTask;
     }
 
-    // KTD4: try-once (AcquireTimeout = Zero) so a contended node skips immediately instead of queuing; a generous
-    // finite TTL so a holder that dies mid-seed releases via expiry rather than wedging the resource forever; Monitor
-    // (not AutoExtend) because seeding is short and bounded — loss observability is enough and background renewal is
-    // unnecessary. AutoExtend is the escape hatch if cron-definition counts ever make seeding long-running.
-    private static readonly DistributedLockAcquireOptions _SeedLockAcquireOptions = new()
-    {
-        AcquireTimeout = TimeSpan.Zero,
-        TimeUntilExpires = TimeSpan.FromMinutes(2),
-        Monitoring = LockMonitoringMode.Monitor,
-    };
-
-    private static async Task _SeedDefinedCronJobsAsync(
+    internal static async Task _SeedDefinedCronJobsAsync(
         IServiceProvider serviceProvider,
         SchedulerOptionsBuilder schedulerOptions,
         CancellationToken cancellationToken
@@ -157,7 +148,7 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         try
         {
             lease = await lockProvider
-                .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, _SeedLockAcquireOptions, cancellationToken)
+                .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, JobsKeys.GuardAcquireOptions, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -216,7 +207,10 @@ internal static partial class JobsInitializationLog
     [LoggerMessage(
         EventId = 3,
         EventName = "CronSeedMigrationLockAcquireFailed",
-        Level = LogLevel.Debug,
+        // Warning, not Debug: a contention skip (lease == null) is normal on every rolling deploy, but an acquire
+        // *fault* signals a lock-store problem. If the store is down for all nodes at first boot, every node hits
+        // this path and the seed is skipped until the next restart — that must be operator-visible.
+        Level = LogLevel.Warning,
         Message = "Skipped cron-seed migration: acquiring the '"
             + JobsKeys.CronSeedMigrationResource
             + "' lock failed. Another node will seed or the next boot will retry."

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Abstractions;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
@@ -62,12 +61,9 @@ public sealed class JobsDistributedLockGuardTests
 
         await using var sp = services.BuildServiceProvider();
 
-        var method = typeof(JobsInitializationHostedService).GetMethod(
-            "_SeedDefinedCronJobsAsync",
-            BindingFlags.NonPublic | BindingFlags.Static
-        )!;
-
-        await (Task)method.Invoke(null, [sp, options, cancellationToken])!;
+        // Call the internal guard directly (InternalsVisibleTo covers this project) — no reflection, so a rename
+        // breaks the build rather than producing a runtime NullReferenceException.
+        await JobsInitializationHostedService._SeedDefinedCronJobsAsync(sp, options, cancellationToken);
     }
 
     [Fact]

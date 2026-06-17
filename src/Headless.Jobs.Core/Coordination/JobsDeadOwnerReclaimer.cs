@@ -21,15 +21,6 @@ internal sealed class JobsDeadOwnerReclaimer(
     ILogger<JobsDeadOwnerReclaimer> logger
 ) : IDeadOwnerReclaimer
 {
-    // KTD4/KTD6: same try-once + generous-TTL + Monitor shape as the cron-seed guard. Reclaim is short and bounded;
-    // a generous TTL lets a survivor that dies mid-sweep release via expiry, and the next reconcile tick re-runs.
-    private static readonly DistributedLockAcquireOptions _SweepLockAcquireOptions = new()
-    {
-        AcquireTimeout = TimeSpan.Zero,
-        TimeUntilExpires = TimeSpan.FromMinutes(2),
-        Monitoring = LockMonitoringMode.Monitor,
-    };
-
     public TimeSpan ReconcileInterval => optionsBuilder.DeadNodeReconcileInterval;
 
     public async Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken)
@@ -49,7 +40,7 @@ internal sealed class JobsDeadOwnerReclaimer(
             // Pass the real trigger token to acquire (a cancelled trigger should abort acquisition), but the reclaim
             // body below still uses CancellationToken.None so a sweep racing host shutdown completes.
             lease = await lockProvider
-                .TryAcquireAsync(JobsKeys.DeadNodeSweepResource, _SweepLockAcquireOptions, cancellationToken)
+                .TryAcquireAsync(JobsKeys.DeadNodeSweepResource, JobsKeys.GuardAcquireOptions, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -104,7 +95,9 @@ internal static partial class JobsDeadOwnerReclaimerLog
     [LoggerMessage(
         EventId = 2,
         EventName = "DeadNodeSweepLockAcquireFailed",
-        Level = LogLevel.Debug,
+        // Warning, not Debug: a contention skip (lease == null) is normal, but an acquire *fault* signals a
+        // lock-store problem. The reconcile backstop retries next tick, but a sustained outage must stay visible.
+        Level = LogLevel.Warning,
         Message = "Skipped dead-node reclaim: acquiring the '"
             + JobsKeys.DeadNodeSweepResource
             + "' lock failed. Another survivor will sweep or the next reconcile tick will retry."

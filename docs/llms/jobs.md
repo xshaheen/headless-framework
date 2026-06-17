@@ -413,6 +413,7 @@ builder.Services.AddHeadlessJobs(options =>
 ## Dependencies
 
 - `Headless.Jobs.Abstractions`
+- `Headless.DistributedLocks.Abstractions` — optional distributed-lock hardening (off by default)
 - `Headless.Extensions`
 
 ## Side Effects

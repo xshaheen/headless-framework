@@ -83,6 +83,25 @@ public sealed class JobsDistributedLockWiringTests
     }
 
     [Fact]
+    public void Factory_then_instance_keeps_only_the_instance()
+    {
+        var factoryOutput = new NullDistributedLock(TimeProvider.System);
+        var instance = new NullDistributedLock(TimeProvider.System);
+
+        var services = new ServiceCollection();
+        services.AddHeadlessJobs(o =>
+        {
+            o.UseDistributedLock(_ => factoryOutput);
+            o.UseDistributedLock(instance);
+        });
+
+        CountJobsLockDescriptors(services).Should().Be(1);
+
+        using var sp = services.BuildServiceProvider();
+        sp.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider).Should().BeSameAs(instance);
+    }
+
+    [Fact]
     public void Instance_then_factory_keeps_only_the_factory()
     {
         var instance = new NullDistributedLock(TimeProvider.System);

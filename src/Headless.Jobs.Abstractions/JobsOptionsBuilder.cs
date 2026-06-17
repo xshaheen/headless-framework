@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Checks;
 using Headless.DistributedLocks;
 using Headless.Jobs.Entities;
@@ -282,9 +284,11 @@ public sealed class SchedulerOptionsBuilder
 
     /// <summary>
     /// Whether the Jobs-scoped distributed lock coarse-gates startup cron-seed migration and dead-node resource
-    /// reclaim. Set implicitly to <see langword="true"/> by <c>JobsOptionsBuilder.UseDistributedLock(...)</c>;
-    /// defaults to <see langword="false"/> (no lock — every node runs both operations independently, which stays
-    /// correct via per-row predicates and per-job leases). This is an optimization flag, never a correctness gate.
+    /// reclaim. Enabled only via <c>JobsOptionsBuilder.UseDistributedLock(...)</c> (the setter is internal so the
+    /// flag can never be <see langword="true"/> while the keyed slot still holds the <c>NullDistributedLock</c>
+    /// fallback — that would silently no-op the guard on every node with no diagnostic). Defaults to
+    /// <see langword="false"/> (no lock — every node runs both operations independently, which stays correct via
+    /// per-row predicates and per-job leases). This is an optimization flag, never a correctness gate.
     /// </summary>
-    public bool UseStorageLock { get; set; }
+    public bool UseStorageLock { get; internal set; }
 }
