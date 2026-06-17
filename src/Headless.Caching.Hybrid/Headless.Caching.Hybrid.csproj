@@ -4,6 +4,11 @@
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- The shared Hybrid test harness's FakeBackplaneBus routes peer invalidations through the internal
+         HybridCache.HandleInvalidationAsync; the Hybrid/OutputCache unit tests consume the bus from the harness. -->
+    <InternalsVisibleTo Include="Headless.Caching.Hybrid.Tests.Harness" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Caching.Core\Headless.Caching.Core.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />

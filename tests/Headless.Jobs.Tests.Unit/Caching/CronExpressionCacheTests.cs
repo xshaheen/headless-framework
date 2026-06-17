@@ -128,8 +128,13 @@ public sealed class CronExpressionCacheTests
         var cache = new RecordingCache { Behavior = CacheBehavior.InvokeFactory };
         // The factory (DB load) itself throwing is a real load failure, not a cache-layer failure: factoryFailed
         // suppresses the fail-open path so the error surfaces rather than being masked as an empty cron set.
+        // The coordinated-write options template is unused on this path (no coordinator); any valid options suffices.
+        var coordinatedWriteOptions = new DbContextOptionsBuilder<JobsDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
         var sut = new JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity>(
             new ThrowingDbContextFactory(),
+            coordinatedWriteOptions,
             TimeProvider.System,
             new TestOwnerIdentity(),
             new SchedulerOptionsBuilder(),
@@ -266,6 +271,7 @@ public sealed class CronExpressionCacheTests
         ) =>
             new(
                 new TestDbContextFactory(_options),
+                _options,
                 TimeProvider.System,
                 new TestOwnerIdentity(),
                 new SchedulerOptionsBuilder(),

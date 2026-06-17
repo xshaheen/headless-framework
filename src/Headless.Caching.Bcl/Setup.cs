@@ -2,7 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.Serializer;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -23,9 +22,10 @@ public static class SetupBclCache
     {
         /// <summary>
         /// Adds a named Headless cache configured for raw <see cref="byte"/> array values and exposes it as
-        /// <see cref="IDistributedCache"/> for ASP.NET Core integrations such as session state. The adapter owns
-        /// the raw-bytes codec internally; the <paramref name="configureCache"/> callback only selects the
-        /// backing provider (for example <c>UseRedis</c>) — do not configure a serializer on it.
+        /// <see cref="IDistributedCache"/> for ASP.NET Core integrations such as session state. <see cref="byte"/>
+        /// arrays are the cache's native wire format (stored verbatim, never through a serializer), so the
+        /// <paramref name="configureCache"/> callback only selects the backing provider (for example
+        /// <c>UseRedis</c>).
         /// </summary>
         /// <param name="setupAction">Configuration for the adapter options.</param>
         /// <param name="configureCache">Configuration for the named Headless cache provider.</param>
@@ -44,9 +44,10 @@ public static class SetupBclCache
             var cacheName = Argument.IsNotNullOrWhiteSpace(configuredOptions.CacheName);
             Argument.IsPositive(configuredOptions.DefaultAbsoluteExpiration);
 
-            // AddNamed validates the reserved-key/uniqueness rules and the single-provider invariant. The adapter
-            // owns the raw-bytes codec (_AddBclCacheCore registers it keyed by cache name), so a serializer set on
-            // the instance would silently compete with it — reject it loudly instead of letting last-write-wins decide.
+            // AddNamed validates the reserved-key/uniqueness rules and the single-provider invariant. byte[] is the
+            // cache's native wire format, so the callback only selects the backing provider; reject a serializer
+            // configured on the instance (it would be silently ignored on the byte[] path) to fail fast on the
+            // meaningless configuration.
             setup.AddNamed(
                 cacheName,
                 instance =>
@@ -56,8 +57,8 @@ public static class SetupBclCache
                     if (instance.SerializerFactory is not null)
                     {
                         throw new InvalidOperationException(
-                            $"The BCL cache adapter manages its own raw-bytes serializer for cache '{cacheName}'. "
-                                + "Do not call WithSerializer in the configureCache callback."
+                            "The BCL distributed-cache adapter stores byte[] verbatim (the cache's native wire "
+                                + "format); do not configure a serializer on the named cache instance via WithSerializer."
                         );
                     }
                 }
@@ -73,14 +74,7 @@ public static class SetupBclCache
     {
         private IServiceCollection _AddBclCacheCore(HeadlessDistributedCacheAdapterOptions configuredOptions)
         {
-            var cacheName = configuredOptions.CacheName;
-
             services.TryAddSingleton(TimeProvider.System);
-
-            // The adapter's named cache is byte[]-only by construction. Register the raw codec keyed by the
-            // cache name so the Redis named-core resolution (GetKeyedService(name) ?? global) picks it up
-            // without the caller configuring a serializer on the instance.
-            services.AddKeyedSingleton<ISerializer>(cacheName, (_, _) => new RawBytesSerializer());
 
             services.Configure<HeadlessDistributedCacheAdapterOptions, HeadlessDistributedCacheAdapterOptionsValidator>(
                 options =>

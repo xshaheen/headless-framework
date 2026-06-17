@@ -34,7 +34,7 @@ public sealed partial class HybridCache(
     ILogger<HybridCache>? logger = null,
     TimeProvider? timeProvider = null,
     ICacheFactoryLockProvider? factoryLockProvider = null
-) : ICache, IFactoryCacheStore, IAsyncDisposable
+) : ICache, IFactoryCacheStore, IBufferCache, IAsyncDisposable
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;

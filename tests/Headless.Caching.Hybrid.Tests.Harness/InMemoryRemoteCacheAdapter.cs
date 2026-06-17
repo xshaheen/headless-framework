@@ -5,7 +5,7 @@ using Headless.Caching;
 namespace Tests;
 
 /// <summary>Simple adapter to use InMemoryCache as IRemoteCache for testing.</summary>
-internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
+public sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache)
     : IRemoteCache,
         IFactoryCacheStore,
         ISeedableTagMarkerCache

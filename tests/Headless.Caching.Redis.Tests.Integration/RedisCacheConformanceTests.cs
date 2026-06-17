@@ -10,7 +10,9 @@ namespace Tests;
 [Collection(nameof(RedisCacheFixture))]
 public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : CacheConformanceTestsBase
 {
-    protected override ICache CreateCache(string keyPrefix)
+    protected override ICache CreateCache(string keyPrefix) => _CreateCache(keyPrefix, new SystemJsonSerializer());
+
+    private ICache _CreateCache(string keyPrefix, ISerializer serializer)
     {
         var options = new RedisCacheOptions
         {
@@ -19,7 +21,7 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
         };
 
         var logger = LoggerFactory.CreateLogger<RedisCache>();
-        return new RedisCache(new SystemJsonSerializer(), TimeProvider.System, options, fixture.ScriptsLoader, logger);
+        return new RedisCache(serializer, TimeProvider.System, options, fixture.ScriptsLoader, logger);
     }
 
     protected override async ValueTask ResetAsync()
@@ -184,4 +186,36 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 
     [Fact]
     public override Task should_drop_reserves_with_flush_async() => base.should_drop_reserves_with_flush_async();
+
+    [Fact]
+    public override Task should_round_trip_raw_payload_via_buffer_path() =>
+        base.should_round_trip_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_round_trip_multi_segment_raw_payload_via_buffer_path() =>
+        base.should_round_trip_multi_segment_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_read_raw_written_payload_via_generic_path() =>
+        base.should_read_raw_written_payload_via_generic_path();
+
+    [Fact]
+    public override Task should_read_generic_written_payload_via_buffer_path() =>
+        base.should_read_generic_written_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_invalidate_raw_written_payload_by_tag() =>
+        base.should_invalidate_raw_written_payload_by_tag();
+
+    [Fact]
+    public override Task should_return_false_and_write_nothing_on_buffer_miss() =>
+        base.should_return_false_and_write_nothing_on_buffer_miss();
+
+    [Fact]
+    public override Task should_round_trip_empty_raw_payload_via_buffer_path() =>
+        base.should_round_trip_empty_raw_payload_via_buffer_path();
+
+    [Fact]
+    public override Task should_expire_raw_written_payload_after_duration() =>
+        base.should_expire_raw_written_payload_after_duration();
 }

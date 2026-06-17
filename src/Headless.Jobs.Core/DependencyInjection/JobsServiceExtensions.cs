@@ -1,4 +1,7 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Checks;
+using Headless.CommitCoordination;
 using Headless.Coordination;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
@@ -11,6 +14,7 @@ using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
+using Headless.Jobs.Transactions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -68,6 +72,9 @@ public static class JobsServiceExtensions
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         >();
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
+        // Null-coordinator fallback so the JobsManager resolves and takes the direct path in standalone Jobs hosts
+        // (no CommitCoordination, no Messaging). AddCommitCoordination's unconditional registration wins when present.
+        services.TryAddSingleton<ICurrentCommitCoordinator, JobsNullCommitCoordinator>();
         services.TryAddSingleton(TimeProvider.System);
 
         // Core initialization — registered before background services to guarantee startup order

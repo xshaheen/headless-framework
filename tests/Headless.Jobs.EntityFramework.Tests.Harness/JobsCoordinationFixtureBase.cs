@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Globalization;
 using Headless.Coordination;
+using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Enums;
@@ -49,6 +51,24 @@ public interface IJobsCoordinationFixture
 
     /// <summary>Provider DDL that drops every Jobs and Coordination table so each test starts empty.</summary>
     string ResetSql { get; }
+
+    /// <summary>Provider DDL that creates the atomicity probe table if absent and clears its rows.</summary>
+    string CreateProbeTableSql { get; }
+
+    /// <summary>Registers this backend's commit-coordination provider (e.g. <c>services.AddPostgreSqlCommitCoordination()</c>).</summary>
+    void ConfigureCommitCoordination(IServiceCollection services);
+
+    /// <summary>
+    /// Opens a provider connection, begins a commit-coordinated transaction, enlists it, and runs
+    /// <paramref name="operation" /> with the live connection + ambient transaction. The helper owns enlist/commit;
+    /// an operation exception propagates and rolls the transaction back — the AsyncLocal-capture regression net
+    /// (a stranded capture would take the direct path and leave a row after rollback) relies on this.
+    /// </summary>
+    Task RunCoordinatedTransactionAsync(
+        IServiceProvider services,
+        Func<DbConnection, DbTransaction, CancellationToken, Task> operation,
+        CancellationToken cancellationToken
+    );
 }
 
 /// <summary>
@@ -118,6 +138,115 @@ public static class JobsCoordinationFixtureExtensions
         }
 
         return builder.Build();
+    }
+
+    /// <summary>The time-job function the coordinated-enqueue conformance scenarios enqueue against.</summary>
+    public const string CoordinatedFunctionName = "Coordinated_Enqueue_Sample";
+
+    /// <summary>
+    /// Builds (but does not start) a host wired like <see cref="BuildHost" /> plus commit coordination, so the
+    /// <c>JobsManager</c> coordinated-enqueue path is active and <c>ExecuteCoordinatedTransactionAsync</c> can enlist.
+    /// A test time-job function is registered before the host's startup <c>Build()</c> so <c>AddAsync</c> validation
+    /// passes (empty cron expression so the startup seeder ignores it).
+    /// </summary>
+    public static IHost BuildCoordinatedEnqueueHost(this IJobsCoordinationFixture fixture, string nodeId)
+    {
+        JobFunctionProvider.RegisterFunctions(
+            new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>(StringComparer.Ordinal)
+            {
+                [CoordinatedFunctionName] = (string.Empty, JobPriority.LongRunning, (_, _, _) => Task.CompletedTask, 1),
+            }
+        );
+
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+
+        builder.Services.AddHeadlessCoordination(setup =>
+        {
+            fixture.ConfigureCoordination(setup);
+            setup.Configure(options =>
+            {
+                options.ClusterName = ClusterName;
+                options.ConfiguredNodeId = nodeId;
+                options.HeartbeatInterval = HeartbeatInterval;
+                options.SuspicionThreshold = SuspicionThreshold;
+                options.DeadThreshold = DeadThreshold;
+                options.DeadRetentionWindow = DeadRetentionWindow;
+            });
+        });
+
+        builder.Services.AddHeadlessJobs(options =>
+        {
+            options.DisableBackgroundServices();
+            options.AddOperationalStore(ef =>
+                ef.UseJobsDbContext<JobsDbContext>(fixture.ConfigureStore, schema: "jobs")
+            );
+        });
+
+        // AddCommitCoordination wins over the Jobs null-coordinator fallback (AddSingleton over TryAddSingleton),
+        // so ICurrentCommitCoordinator resolves to the real scope stack that EnlistCommitCoordination pushes onto.
+        fixture.ConfigureCommitCoordination(builder.Services);
+
+        return builder.Build();
+    }
+
+    /// <summary>Creates the atomicity probe table (outside any coordinated transaction) and clears its rows.</summary>
+    public static async Task CreateProbeTableAsync(
+        this IJobsCoordinationFixture fixture,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = fixture.CreateProbeTableSql;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Inserts one probe row inside the supplied coordinated transaction (a stand-in domain write).</summary>
+    public static async Task InsertProbeRowAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "INSERT INTO jobs_probe (id) VALUES (1);";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Counts probe rows on an independent connection (observes committed state only).</summary>
+    public static Task<int> CountProbeRowsAsync(
+        this IJobsCoordinationFixture fixture,
+        CancellationToken cancellationToken
+    ) => _CountAsync(fixture, "SELECT COUNT(*) FROM jobs_probe;", cancellationToken);
+
+    /// <summary>Counts TimeJob rows on an independent connection (observes committed state only).</summary>
+    public static Task<int> CountTimeJobsAsync(
+        this IJobsCoordinationFixture fixture,
+        CancellationToken cancellationToken
+    ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedTimeJobsTable};", cancellationToken);
+
+    /// <summary>Counts CronJob rows on an independent connection (observes committed state only).</summary>
+    public static Task<int> CountCronJobsAsync(
+        this IJobsCoordinationFixture fixture,
+        CancellationToken cancellationToken
+    ) => _CountAsync(fixture, $"SELECT COUNT(*) FROM {fixture.QualifiedCronJobsTable};", cancellationToken);
+
+    private static async Task<int> _CountAsync(
+        IJobsCoordinationFixture fixture,
+        string sql,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+
+        return Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -37,7 +38,7 @@ public sealed class RedisCache(
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null,
     ICacheFactoryLockProvider? factoryLockProvider = null
-) : IRemoteCache, IFactoryCacheStore, ISeedableTagMarkerCache, IDisposable
+) : IRemoteCache, IFactoryCacheStore, ISeedableTagMarkerCache, IBufferCache, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";
@@ -928,7 +929,7 @@ public sealed class RedisCache(
             }
             catch (Exception e)
             {
-                _logger.LogDeserializationFailed(e, rawValue, typeof(T).FullName);
+                _logger.LogDeserializationFailed(e, rawValue.Length(), typeof(T).FullName);
                 throw;
             }
         }
@@ -1233,7 +1234,7 @@ public sealed class RedisCache(
         }
         catch (Exception e)
         {
-            _logger.LogDeserializationFailed(e, rawValue, typeof(T).FullName);
+            _logger.LogDeserializationFailed(e, rawValue.Length(), typeof(T).FullName);
             throw;
         }
     }
@@ -1896,6 +1897,15 @@ public sealed class RedisCache(
             return s;
         }
 
+        // byte[] is the cache's native wire format — it IS the serialized form, so store it verbatim and never
+        // route it through the ISerializer (a JSON serializer would base64-bloat it, and it would diverge from the
+        // IBufferCache raw path). This sits alongside the string fast path; both feed the frame value segment and
+        // the CAS `expected` operand from this single choke point, so encode/decode/compare stay consistent.
+        if (value is byte[] bytes)
+        {
+            return bytes;
+        }
+
         return serializer.SerializeToBytes(value);
     }
 
@@ -1914,6 +1924,12 @@ public sealed class RedisCache(
         if (typeof(T) == typeof(string))
         {
             return (T?)(object?)redisValue.ToString();
+        }
+
+        // Native byte[]: return the wire bytes verbatim (mirror of the string fast path in _ToRedisValue).
+        if (typeof(T) == typeof(byte[]))
+        {
+            return (T?)(object?)(byte[]?)redisValue;
         }
 
         return serializer.Deserialize<T>((byte[])redisValue!);
@@ -1982,9 +1998,140 @@ public sealed class RedisCache(
         }
         catch (Exception e)
         {
-            _logger.LogDeserializationFailed(e, redisValue, typeof(T).FullName);
+            _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(T).FullName);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Zero-intermediate-copy buffer read. Mirrors <see cref="_RedisValueToCacheValueAsync{T}"/> exactly (expiry,
+    /// Family-2 tag/clear invalidation, single-key sliding re-arm), but writes the validated payload straight into
+    /// <paramref name="destination"/> instead of deserializing it — so the generic path's intermediate
+    /// <c>byte[]</c> materialization is skipped and only one copy (frame slice -> caller buffer) is paid.
+    /// </summary>
+    public async ValueTask<bool> TryGetToAsync(
+        string key,
+        IBufferWriter<byte> destination,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(destination);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var redisKey = _GetKey(key);
+        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+
+        if (!redisValue.HasValue)
+        {
+            return false;
+        }
+
+        try
+        {
+            var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+            if (frame.IsFramed)
+            {
+                var now = timeProvider.GetUtcNow().UtcDateTime;
+
+                if (
+                    _IsExpired(frame.PhysicalExpiresAt, now)
+                    || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
+                )
+                {
+                    return false;
+                }
+
+                // Family-2 logical tag/clear invalidation: a direct read of an invalidated entry is a miss.
+                var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
+
+                if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
+                {
+                    return false;
+                }
+
+                // Single-key reads re-arm the sliding idle window on the hot path.
+                await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
+
+                // Parity with the byte[] fallback: a null-sentinel hit reads as a miss for the buffer path.
+                if (frame.IsNull)
+                {
+                    return false;
+                }
+
+                // The single copy: framed value slice -> caller-provided buffer.
+                destination.Write(frame.ValueSegment.Span);
+                return true;
+            }
+
+            // Legacy non-framed entry: the whole stored value is the raw payload.
+            if (redisValue == _NullValue)
+            {
+                return false;
+            }
+
+            destination.Write((byte[])redisValue!);
+            return true;
+        }
+        catch (Exception e)
+        {
+            _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(byte[]).FullName);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Zero-intermediate-copy buffer write. Mirrors <see cref="_SetEntryCoreAsync{T}"/> + the stamping in
+    /// <c>FactoryCacheStoreExtensions.UpsertEntryAsync</c>: validates options, computes the fresh-write stamps once
+    /// via <see cref="CacheEntryStamps.Compute"/>, then frames the <see cref="ReadOnlySequence{T}"/> payload
+    /// directly into the wire buffer — skipping the generic path's intermediate <c>byte[]</c> materialization.
+    /// Behavior (expiry, sliding, CreatedAt stamping, tag invalidation) is identical to the generic upsert.
+    /// </summary>
+    public async ValueTask UpsertRawAsync(
+        string key,
+        ReadOnlySequence<byte> value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Validate then stamp, matching UpsertEntryAsync exactly: Compute does the stamp math but does NOT
+        // validate, so ValidateOptions (which also validates Tags) runs first at this single choke point.
+        CacheEntryStamps.ValidateOptions(options);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var stamps = CacheEntryStamps.Compute(options, now);
+        var redisKey = _GetKey(key);
+
+        var expiresIn = (
+            options.SlidingExpiration is null ? stamps.PhysicalExpiresAt : stamps.LogicalExpiresAt
+        ).Subtract(now);
+
+        if (expiresIn <= TimeSpan.Zero)
+        {
+            await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+            return;
+        }
+
+        // Frame the sequence synchronously (Encode consumes it before the StringSet await), so the
+        // payload is fully materialized into the wire buffer before any yield — no await precedes Encode.
+        var redisValue = RedisCacheEntryFrame.Encode(
+            value,
+            isNull: false,
+            stamps.LogicalExpiresAt,
+            stamps.PhysicalExpiresAt,
+            options.SlidingExpiration,
+            stamps.EagerRefreshAt,
+            etag: null,
+            lastModifiedAt: null,
+            options.Tags,
+            createdAt: stamps.CreatedAt
+        );
+
+        await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
     }
 
     private CacheValue<ICollection<T>> _RedisValuesToCacheValue<T>(RedisValue[] redisValues)
@@ -2009,7 +2156,7 @@ public sealed class RedisCache(
             }
             catch (Exception e)
             {
-                _logger.LogDeserializationFailed(e, redisValue, typeof(T).FullName);
+                _logger.LogDeserializationFailed(e, redisValue.Length(), typeof(T).FullName);
                 throw;
             }
         }
@@ -2425,6 +2572,13 @@ public sealed class RedisCache(
             return (T?)(object)Encoding.UTF8.GetString(segment.Span);
         }
 
+        // Native byte[]: the framed value segment IS the payload — copy it out verbatim, no serializer. (The
+        // IBufferCache.TryGetToAsync path avoids even this copy by writing the segment straight to the caller.)
+        if (typeof(T) == typeof(byte[]))
+        {
+            return (T?)(object)segment.ToArray();
+        }
+
         // Avoid copying segment into a new byte[] via ToArray(). If the backing store is a managed array
         // (the common path — RedisValue is decoded into byte[] by StackExchange.Redis), wrap it directly
         // in a non-writable MemoryStream at the right offset and length. Fall back to the copy path for
@@ -2719,12 +2873,12 @@ internal static partial class RedisCacheLog
         EventId = 4,
         EventName = "DeserializationFailed",
         Level = LogLevel.Error,
-        Message = "Unable to deserialize value {Value} to type {Type}"
+        Message = "Unable to deserialize cached value of {ValueLength} bytes to type {Type}"
     )]
     public static partial void LogDeserializationFailed(
         this ILogger logger,
         Exception exception,
-        RedisValue value,
+        long valueLength,
         string? type
     );
 

@@ -53,12 +53,34 @@ restore-project: ## Restore one project; preferred for focused project work.
 hooks: ## Point git at the committed hooks (per clone/worktree).
 	git config core.hooksPath .husky
 
+.PHONY: hook-pre-commit
+hook-pre-commit: ## Git hook: format staged C# files before commit.
+	@files=(); \
+	while IFS= read -r file; do files+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACM -- '*.cs'); \
+	if [ "$${#files[@]}" -eq 0 ]; then exit 0; fi; \
+	$(DOTNET) csharpier format "$${files[@]}"; \
+	git add -- "$${files[@]}"
+
+.PHONY: hook-pre-push
+hook-pre-push: hook-pre-push-message format-check rebuild ## Git hook: verify formatting and do a clean build before push.
+
+.PHONY: hook-pre-push-message
+hook-pre-push-message:
+	@printf '\033[36m[pre-push]\033[0m format-check + clean build (~1-2 min; skip with --no-verify)...\n'
+
+.PHONY: ci-build
+ci-build: format-check rebuild pack-built ## CI: check formatting, clean-build, then pack already-built projects.
+
 .PHONY: build
 build: restore ## Build the solution.
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: rebuild
 rebuild: restore ## Build the solution without incremental compilation.
+	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
+
+.PHONY: rebuild-no-restore
+rebuild-no-restore: ## Build without restore or incremental compilation; use after an explicit restore.
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: build-project
@@ -169,6 +191,13 @@ coverage-open: coverage-html ## Generate report and open in browser.
 pack: restore ## Pack NuGet packages with symbols.
 	@mkdir -p "$(PACKAGES_DIR)"
 	$(DOTNET) pack "$(SOLUTION)" --configuration "$(CONFIGURATION)" --include-symbols --output "$(PACKAGES_DIR)" $(MSBUILD_ARGS)
+
+.PHONY: pack-built
+pack-built: ## Pack already-built source projects without restore/build; used by CI.
+	@mkdir -p "$(PACKAGES_DIR)"
+	@for csproj in src/*/*.csproj; do \
+		$(DOTNET) pack "$$csproj" --configuration "$(CONFIGURATION)" --no-restore --no-build --include-symbols --output "$(PACKAGES_DIR)"; \
+	done
 
 .PHONY: pack-sbom
 pack-sbom: restore ## Pack NuGet packages with symbols and GenerateSBOM=true.
