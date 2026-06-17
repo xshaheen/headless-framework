@@ -1,6 +1,8 @@
+using Headless.DistributedLocks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -84,7 +86,7 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
 
         if (options is null || options.SeedDefinedCronJobs)
         {
-            await _SeedDefinedCronJobsAsync(serviceProvider).ConfigureAwait(false);
+            await _SeedDefinedCronJobsAsync(serviceProvider, schedulerOptions, cancellationToken).ConfigureAwait(false);
         }
 
         if (options?.TimeSeederAction is not null)
@@ -115,7 +117,22 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         return Task.CompletedTask;
     }
 
-    private static async Task _SeedDefinedCronJobsAsync(IServiceProvider serviceProvider)
+    // KTD4: try-once (AcquireTimeout = Zero) so a contended node skips immediately instead of queuing; a generous
+    // finite TTL so a holder that dies mid-seed releases via expiry rather than wedging the resource forever; Monitor
+    // (not AutoExtend) because seeding is short and bounded — loss observability is enough and background renewal is
+    // unnecessary. AutoExtend is the escape hatch if cron-definition counts ever make seeding long-running.
+    private static readonly DistributedLockAcquireOptions _SeedLockAcquireOptions = new()
+    {
+        AcquireTimeout = TimeSpan.Zero,
+        TimeUntilExpires = TimeSpan.FromMinutes(2),
+        Monitoring = LockMonitoringMode.Monitor,
+    };
+
+    private static async Task _SeedDefinedCronJobsAsync(
+        IServiceProvider serviceProvider,
+        SchedulerOptionsBuilder schedulerOptions,
+        CancellationToken cancellationToken
+    )
     {
         var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
 
@@ -124,7 +141,48 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
             .Select(x => (x.Key, x.Value.cronExpression))
             .ToArray();
 
-        await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed).ConfigureAwait(false);
+        // No lock configured (default): run the seed directly. The upsert/constraints in MigrateDefinedCronJobs remain
+        // the correctness boundary; the lock below only removes the redundant N-node scan/write storm on rolling
+        // deploys (KTD3) — it is never a correctness gate, so the no-lock path is intentionally unchanged.
+        if (!schedulerOptions.UseStorageLock)
+        {
+            await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
+        var logger = serviceProvider.GetRequiredService<ILogger<JobsInitializationHostedService>>();
+
+        IDistributedLease? lease;
+        try
+        {
+            lease = await lockProvider
+                .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, _SeedLockAcquireOptions, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown / caller cancellation must propagate — do not swallow it as a skip.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Lock-store hiccup (KTD3): another node seeds, or the next boot retries. Skip rather than fail startup.
+            logger.CronSeedMigrationLockAcquireFailed(ex);
+            return;
+        }
+
+        if (lease is null)
+        {
+            // Another node holds the seed lock and is migrating; skip the redundant scan (skip-on-contention, KTD3).
+            logger.CronSeedMigrationSkipped();
+            return;
+        }
+
+        await using (lease.ConfigureAwait(false))
+        {
+            await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
+        }
     }
 }
 
@@ -144,4 +202,24 @@ internal static partial class JobsInitializationLog
         TimeSpan leaseDuration,
         TimeSpan fallbackInterval
     );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "CronSeedMigrationSkipped",
+        Level = LogLevel.Debug,
+        Message = "Skipped cron-seed migration: another node holds the '"
+            + JobsKeys.CronSeedMigrationResource
+            + "' lock and is seeding."
+    )]
+    public static partial void CronSeedMigrationSkipped(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "CronSeedMigrationLockAcquireFailed",
+        Level = LogLevel.Debug,
+        Message = "Skipped cron-seed migration: acquiring the '"
+            + JobsKeys.CronSeedMigrationResource
+            + "' lock failed. Another node will seed or the next boot will retry."
+    )]
+    public static partial void CronSeedMigrationLockAcquireFailed(this ILogger logger, Exception exception);
 }

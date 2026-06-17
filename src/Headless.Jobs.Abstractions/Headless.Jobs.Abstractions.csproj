@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
   </ItemGroup>
 </Project>

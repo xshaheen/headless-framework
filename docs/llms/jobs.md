@@ -392,6 +392,24 @@ app.UseJobs(JobsStartMode.Immediate); // Start immediately (default)
 app.UseJobs(JobsStartMode.Manual);    // Wait for manual trigger
 ```
 
+### Distributed Lock Hardening (optional, off by default)
+
+Two operations are correct on every node but redundant when N nodes run them simultaneously: **startup cron-seed migration** (`jobs.cron-seed-migration`) and **dead-node resource reclaim** (`jobs.dead-node-sweep`). The cron upsert/constraints and the exact-owner reclaim predicates already make repeated runs idempotent, so an optional Jobs-scoped `IDistributedLock` only removes redundant cross-node work and contention — it is **never** the correctness boundary (per-row predicates, `node@incarnation` ownership, and per-job leases remain that boundary).
+
+```csharp
+builder.Services.AddHeadlessJobs(options =>
+{
+    // Pass any already-composed IDistributedLock (instance or factory). Off unless this is called.
+    options.UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>());
+});
+```
+
+- **Off by default** — without `UseDistributedLock`, both operations run on every node, unchanged; a `NullDistributedLock` fallback is always registered.
+- **Skip-on-contention** — each guard tries once with no wait (`AcquireTimeout = TimeSpan.Zero`); if another node holds the lock or acquisition faults, the node skips (debug-logged). Cancellation during acquisition propagates.
+- **Self-healing TTL** — a generous finite TTL with `Monitor` mode lets a holder that dies mid-operation release via expiry; the next boot/reconcile re-runs.
+- **Jobs-isolated** — kept under a Jobs-private keyed-DI slot, so it never clashes with an app-level `IDistributedLock`. Resource names are stable and Jobs-specific.
+- **Not guarded: cron-occurrence creation** — occurrences carry deterministic ids and are created via an id-keyed upsert, so storage-level dedup is already the correctness boundary; a `jobs.cron-occurrence-creation` lock would add nothing and is intentionally omitted. Mirrors the `Headless.Messaging` `UseDistributedLock` retry-pickup pattern.
+
 ## Dependencies
 
 - `Headless.Jobs.Abstractions`

@@ -783,6 +783,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+    // KTD7: cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
+    // distributed lock. Each occurrence carries a deterministic id (NextCronOccurrence.Id) and is created via an
+    // upsert keyed on that id, so concurrent creation across nodes converges on a single row — storage-level dedup
+    // is the correctness boundary here. A coarse lock would only serialize independent occurrence ids for no benefit.
+    // Revisit only if evidence shows storage dedup is insufficient (see plan #267 deferred follow-up).
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
         (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default

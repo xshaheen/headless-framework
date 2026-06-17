@@ -1,5 +1,6 @@
 using Headless.Checks;
 using Headless.Coordination;
+using Headless.DistributedLocks;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Dispatcher;
@@ -7,6 +8,7 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Provider;
@@ -69,6 +71,21 @@ public static class JobsServiceExtensions
         >();
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
         services.TryAddSingleton(TimeProvider.System);
+
+        // Jobs-scoped distributed lock (KTD1). The builder stores at most one of instance/factory (last-wins), so
+        // the keyed slot is registered at most once here; the NullDistributedLock fallback is always present so the
+        // guard sites can resolve a keyed IDistributedLock even when UseStorageLock is off. The lock only removes
+        // redundant cross-node work — it is never the correctness boundary for job-row ownership.
+        if (optionInstance.LockProviderInstance is not null)
+        {
+            services.AddKeyedSingleton(JobsKeys.LockProvider, optionInstance.LockProviderInstance);
+        }
+        else if (optionInstance.LockProviderFactory is { } lockFactory)
+        {
+            services.AddKeyedSingleton<IDistributedLock>(JobsKeys.LockProvider, (sp, _) => lockFactory(sp));
+        }
+
+        services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(JobsKeys.LockProvider);
 
         // Core initialization — registered before background services to guarantee startup order
         services.AddHostedService<JobsInitializationHostedService>();

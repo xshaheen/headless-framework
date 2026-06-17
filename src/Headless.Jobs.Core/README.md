@@ -115,6 +115,34 @@ Safety interaction: the claim predicate's lease-expiry arm is gated on `OnNodeDe
 
 Jobs does not ship a Jobs-specific Redis cache package. The durable EF path uses the host application's optional default `Headless.Caching.ICache` for cron-expression caching. Register `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` when caching is desired; without an `ICache`, Jobs reads cron expressions from the database and cache invalidation is skipped.
 
+### Distributed Lock Hardening (optional, off by default)
+
+Two startup/recovery operations are safe to run on every node but redundant when many nodes run them at once:
+
+- **Cron-seed migration** (`jobs.cron-seed-migration`) — every node, on boot, scans code-defined cron jobs and upserts them. On a rolling deploy of N nodes that is N full scans + N write storms.
+- **Dead-node resource reclaim** (`jobs.dead-node-sweep`) — `NodeLeft` events and the periodic liveness reconcile can both fire on every survivor; each runs the full reclaim batch.
+
+Both are already correct without a lock — the cron upsert/constraints and the exact-owner reclaim predicates make repeated runs idempotent (a second run touches zero rows). The optional Jobs-scoped distributed lock only removes the *redundant cross-node work and contention*; it is **never** the correctness boundary for job-row ownership (per-row predicates, `node@incarnation` ownership, and per-job leases stay that boundary).
+
+Wire it by passing any `Headless.DistributedLocks.IDistributedLock` — the same provider you already use elsewhere works:
+
+```csharp
+builder.Services.AddHeadlessJobs(options =>
+{
+    options.UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>());
+    // or: options.UseDistributedLock(myLockInstance);
+});
+```
+
+Semantics:
+
+- **Off by default.** Without `UseDistributedLock`, both operations run on every node, unchanged. A `NullDistributedLock` fallback is always registered so the guard sites resolve cleanly.
+- **Skip-on-contention.** Each guard tries to acquire once with no wait (`AcquireTimeout = TimeSpan.Zero`). If another node holds the lock — or acquisition faults — the node skips the work (debug-logged) and another node carries it. Cancellation during acquisition propagates rather than skipping.
+- **Self-healing TTL.** The lease has a generous finite TTL with `Monitor` mode, so a holder that dies mid-operation releases via expiry; the next boot or reconcile tick re-runs.
+- **Jobs-isolated, keyed registration.** The provider is kept under a Jobs-private keyed-DI slot, so it never conflicts with an unrelated app-level `IDistributedLock`. The two resource names are stable and Jobs-specific.
+
+Not guarded: **cron-occurrence creation** is intentionally left without a `jobs.cron-occurrence-creation` lock — occurrences carry deterministic ids and are created via an id-keyed upsert, so storage-level dedup is already the correctness boundary and a coarse lock would add nothing. This mirrors the `Headless.Messaging` `UseDistributedLock` retry-pickup pattern.
+
 ### Retry Configuration
 
 ```csharp
