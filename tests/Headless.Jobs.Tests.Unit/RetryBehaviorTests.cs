@@ -92,7 +92,8 @@ public sealed class RetryBehaviorTests
             serviceProvider,
             TimeProvider.System,
             instrumentation,
-            internalManager
+            internalManager,
+            new SchedulerOptionsBuilder()
         );
 
         var attempts = new List<Attempt>();
