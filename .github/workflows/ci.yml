@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
     paths:
       - '.github/workflows/**'
+      - '.husky/**'
+      - 'Makefile'
       - 'src/**'
       - 'tests/**'
       - 'Directory.*'
@@ -15,6 +17,8 @@ on:
     branches: [ "main" ]
     paths:
       - '.github/workflows/**'
+      - '.husky/**'
+      - 'Makefile'
       - 'src/**'
       - 'tests/**'
       - 'Directory.*'
@@ -82,25 +86,8 @@ jobs:
         run: dotnet nuget update source github.com --username xshaheen --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --configfile nuget.config
         shell: bash
 
-      - name: "Restore"
-        run: dotnet restore headless-framework.slnx
-
-      - name: "Format check"
-        run: |
-          dotnet tool restore
-          dotnet csharpier check .
-        shell: bash
-
-      - name: "Build"
-        run: dotnet build headless-framework.slnx --configuration ${{ env.CONFIGURATION }} --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly
-
-      - name: "Pack"
-        run: |
-          set -euo pipefail
-          for csproj in src/*/*.csproj; do
-            dotnet pack "$csproj" --configuration "${CONFIGURATION}" --no-restore --no-build --include-symbols --output "${PACKAGES_DIR}"
-          done
-        shell: bash
+      - name: "Format, build, and pack"
+        run: make ci-build
 
       - name: "Publish Artifacts"
         uses: actions/upload-artifact@v7.0.1
