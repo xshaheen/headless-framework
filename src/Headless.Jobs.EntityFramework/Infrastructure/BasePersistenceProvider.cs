@@ -1146,7 +1146,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             prop.SetProperty(y => y.OwnerId, owner)
                                 .SetProperty(y => y.LockedUntil, now.Add(LeaseDuration))
                                 .SetProperty(y => y.UpdatedAt, now)
-                                .SetProperty(y => y.Status, JobStatus.Queued),
+                                .SetProperty(y => y.Status, JobStatus.Queued)
+                                // #464: re-stamp the policy from the cron def so the column, the yielded projection
+                                // (which uses item.OnNodeDeath), and the in-memory mirror all agree after a re-queue,
+                                // and a mid-flight cron-def policy edit takes effect — matching the new-occurrence arm.
+                                .SetProperty(y => y.OnNodeDeath, item.OnNodeDeath),
                         cancellationToken
                     )
                     .ConfigureAwait(false);

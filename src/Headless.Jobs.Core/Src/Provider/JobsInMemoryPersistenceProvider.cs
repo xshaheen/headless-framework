@@ -904,6 +904,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
                 updatedOccurrence.UpdatedAt = now;
                 updatedOccurrence.Status = JobStatus.Queued;
+                // #464: re-stamp the policy from the cron def (context) so EF and in-memory agree on re-queue.
+                updatedOccurrence.OnNodeDeath = context.OnNodeDeath;
 
                 if (_CronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, existingOccurrence))
                 {

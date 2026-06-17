@@ -572,9 +572,12 @@ internal class JobsExecutionTaskHandler(
             return ExecuteTaskAsync(context, isDue, cancellationToken);
         }
 #pragma warning disable ERP022 // Scheduler must continue running even if task execution throws synchronously.
-        catch
+        catch (Exception exception)
         {
-            // ignored
+            // A synchronous throw (e.g. during scope creation before the first await) leaves the child InProgress
+            // until the stalled-reclaim sweep recovers it per OnNodeDeath. Swallow so the parent scheduler loop
+            // survives, but log at Warning so the otherwise-silent failure is observable (#465).
+            logger.LogJobChildExecutionThrewSynchronously(exception, context.JobId, context.FunctionName);
         }
 #pragma warning restore ERP022
 
@@ -604,4 +607,17 @@ internal static partial class JobsExecutionTaskHandlerLog
             + "sweep to recover per OnNodeDeath (no terminal status written)."
     )]
     public static partial void LogJobLeaseLostCancellation(this ILogger logger, Guid jobId, string function);
+
+    [LoggerMessage(
+        EventId = 3102,
+        Level = LogLevel.Warning,
+        Message = "Child job {JobId} ({Function}) threw synchronously before execution started; it stays InProgress "
+            + "until the stalled-reclaim sweep recovers it per OnNodeDeath. The parent scheduler loop continues."
+    )]
+    public static partial void LogJobChildExecutionThrewSynchronously(
+        this ILogger logger,
+        Exception exception,
+        Guid jobId,
+        string function
+    );
 }

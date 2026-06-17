@@ -376,4 +376,37 @@ public sealed class SlidingLeaseProviderTests
 
         (await provider.RenewCronJobOccurrenceLease(id)).Should().Be(0);
     }
+
+    [Fact]
+    public async Task QueueCronJobOccurrences_re_queue_restamps_OnNodeDeath_from_the_cron_definition()
+    {
+        // #464: re-queuing an existing occurrence re-stamps OnNodeDeath from the cron def (context), not the stored
+        // value, so EF and in-memory agree and a mid-flight policy edit takes effect.
+        var (provider, _) = Create();
+        var occId = await SeedCronOccurrence(
+            provider,
+            JobStatus.Queued,
+            NodeA,
+            Now.AddMinutes(1),
+            NodeDeathPolicy.Retry
+        );
+
+        var context = new InternalManagerContext(Guid.NewGuid())
+        {
+            FunctionName = "fn",
+            Expression = "* * * * *",
+            OnNodeDeath = NodeDeathPolicy.Skip, // policy changed on the def since the occurrence was created
+            NextCronOccurrence = new NextCronOccurrence(occId, Now),
+        };
+
+        var yielded = new List<CronJobOccurrenceEntity<FakeCronJob>>();
+        await foreach (var occurrence in provider.QueueCronJobOccurrences((Now.AddMinutes(-2), [context])))
+        {
+            yielded.Add(occurrence);
+        }
+
+        yielded.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
+        var stored = await provider.GetAllCronJobOccurrences(x => x.Id == occId);
+        stored.Should().ContainSingle().Which.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
+    }
 }
