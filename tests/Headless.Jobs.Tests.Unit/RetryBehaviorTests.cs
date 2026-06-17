@@ -70,6 +70,55 @@ public sealed class RetryBehaviorTests
         attempts.Last().RetryCount.Should().Be(2);
     }
 
+    [Fact]
+    public async Task ExecuteTaskAsync_cancels_the_running_job_when_renewal_fails_with_a_db_outage()
+    {
+        // #463: a renewal that errors (DB unreachable) — or that cannot complete within the renewal cadence — must
+        // trip cancel-on-loss for the in-flight job, not fault the renewal loop silently and leave the job running
+        // while another node could reclaim the still-leased row.
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Renewal fires fast (100 ms cadence) and throws on the first attempt, simulating a DB outage mid-job.
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<int>(new TimeoutException("simulated DB outage")));
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder
+            {
+                LeaseDuration = TimeSpan.FromMinutes(5),
+                LeaseRenewalInterval = TimeSpan.FromMilliseconds(100),
+            }
+        );
+
+        var context = new InternalFunctionContext
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LongJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            // Runs until cancel-on-loss fires; the infinite delay observes the job token and throws on cancellation.
+            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true);
+
+        context.Status.Should().Be(JobStatus.Cancelled);
+    }
+
     private sealed record Attempt(DateTime Timestamp, int RetryCount);
 
     // Helpers

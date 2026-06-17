@@ -392,14 +392,11 @@ internal class JobsExecutionTaskHandler(
                 // Delay BEFORE the first renew: a job finishing within one cadence writes no renewal.
                 await timeProvider.Delay(_leaseRenewalInterval, renewalLoopToken).ConfigureAwait(false);
 
-                var affected = await internalJobsManager
-                    .RenewLeaseAsync(context, renewalLoopToken)
-                    .ConfigureAwait(false);
-
-                if (affected == 0)
+                if (!await _TryRenewLeaseAsync(context, renewalLoopToken).ConfigureAwait(false))
                 {
-                    // Lease lost (reclaimed / owner changed / terminalized). Best-effort cancellation of the
-                    // running job; a job ignoring its token still relies on OnNodeDeath for correctness.
+                    // Lease lost (reclaimed / owner changed / terminalized) OR the renewal could not be confirmed
+                    // within the cadence (hung / unreachable store, #463). Best-effort cancellation of the running
+                    // job; a job ignoring its token still relies on OnNodeDeath for correctness.
                     await jobCts.CancelAsync().ConfigureAwait(false);
                     return;
                 }
@@ -408,6 +405,41 @@ internal class JobsExecutionTaskHandler(
         catch (OperationCanceledException)
         {
             // Expected stop signal when renewalLoopToken fires on normal completion — not a failure.
+        }
+    }
+
+    /// <summary>
+    /// One renewal attempt. Returns <c>true</c> while the lease is still held; <c>false</c> when it was lost OR the
+    /// renewal could not be confirmed within the renewal cadence (#463: a hung / slow / unreachable store must not
+    /// silently let the lease lapse while another node reclaims the row — a renewal that cannot complete in one
+    /// interval, or that errors, is treated as a loss so the caller cancels the job and OnNodeDeath governs).
+    /// </summary>
+    private async Task<bool> _TryRenewLeaseAsync(InternalFunctionContext context, CancellationToken renewalLoopToken)
+    {
+        // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline.
+        using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, timeProvider);
+        using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(renewalLoopToken, timeoutCts.Token);
+
+        try
+        {
+            return await internalJobsManager.RenewLeaseAsync(context, renewalCts.Token).ConfigureAwait(false) != 0;
+        }
+        catch (OperationCanceledException) when (renewalLoopToken.IsCancellationRequested)
+        {
+            // Normal stop (job completed) raced the renewal — propagate so the loop's outer catch treats it as a
+            // clean stop rather than a lease loss.
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // Renewal deadline elapsed: the store did not confirm the lease within the cadence. Treat as lost.
+            return false;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Renewal write failed (DB unreachable / transient error). We can no longer vouch for the lease — treat
+            // it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal).
+            return false;
         }
     }
 
