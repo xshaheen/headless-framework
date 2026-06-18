@@ -15,10 +15,13 @@ using NSubstitute.ExceptionExtensions;
 namespace Tests;
 
 /// <summary>
-/// U5: skip-on-contention and unchanged no-lock behavior for the two guarded operations — cron-seed migration
-/// (<see cref="JobsInitializationHostedService"/>) and dead-node reclaim (<see cref="JobsDeadOwnerReclaimer"/>).
-/// Both guards are provider-agnostic Core logic, so these are unit tests over the real in-memory lock provider shared
-/// between two simulated nodes (KTD8) — no Docker, no DB.
+/// U5: behavior of the cron-seed migration guard (<see cref="JobsInitializationHostedService"/>) — skip-on-contention,
+/// unchanged no-lock default, and lease release on the success and throw paths — plus the dead-node reclaim contract
+/// (<see cref="JobsDeadOwnerReclaimer"/>). The reclaim path is intentionally <em>not</em> lock-guarded (#267 review):
+/// the shared <c>DeadOwnerRecoveryBridge</c> marks owners reclaimed before the call and only retries on a thrown
+/// failure, so the reclaimer must propagate (not swallow) to avoid stranding dead-owner InProgress rows. The seed guard
+/// is provider-agnostic Core logic, so these are unit tests over the real in-memory lock provider shared between two
+/// simulated nodes (KTD8) — no Docker, no DB.
 /// </summary>
 public sealed class JobsDistributedLockGuardTests
 {
@@ -46,24 +49,25 @@ public sealed class JobsDistributedLockGuardTests
     private static async Task InvokeSeedAsync(
         IInternalJobManager manager,
         SchedulerOptionsBuilder options,
-        IDistributedLock? keyedLock,
+        IDistributedLock lockProvider,
         CancellationToken cancellationToken
     )
     {
         var services = new ServiceCollection();
         services.AddSingleton(manager);
-        services.AddSingleton(TimeProvider.System);
-        services.AddLogging();
-        if (keyedLock is not null)
-        {
-            services.AddKeyedSingleton(JobsKeys.LockProvider, keyedLock);
-        }
 
         await using var sp = services.BuildServiceProvider();
 
-        // Call the internal guard directly (InternalsVisibleTo covers this project) — no reflection, so a rename
-        // breaks the build rather than producing a runtime NullReferenceException.
-        await JobsInitializationHostedService._SeedDefinedCronJobsAsync(sp, options, cancellationToken);
+        // Construct the hosted service with the lock injected via its constructor (production resolves the keyed
+        // NullDistributedLock fallback the same way) and drive the seed guard directly — no StartAsync, so the test
+        // stays isolated from the global JobFunctionProvider static state. A rename breaks the build, not at runtime.
+        var hostedService = new JobsInitializationHostedService(
+            sp,
+            lockProvider,
+            NullLogger<JobsInitializationHostedService>.Instance
+        );
+
+        await hostedService._SeedDefinedCronJobsAsync(options, cancellationToken);
     }
 
     [Fact]
@@ -93,6 +97,27 @@ public sealed class JobsDistributedLockGuardTests
 
         await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
         // Lease released on completion → the resource is free again for the next boot.
+        (await lockProvider.IsLockedAsync(JobsKeys.CronSeedMigrationResource))
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public async Task Seed_releases_lease_when_body_throws()
+    {
+        var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
+        var lockProvider = CreateLock(storage);
+        var manager = Substitute.For<IInternalJobManager>();
+        manager
+            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("seed boom"));
+        var options = new SchedulerOptionsBuilder { UseStorageLock = true };
+
+        var act = async () => await InvokeSeedAsync(manager, options, lockProvider, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        // The `await using` must release the lease even when the body throws, so the resource is free for the next boot
+        // rather than wedged until the TTL expires.
         (await lockProvider.IsLockedAsync(JobsKeys.CronSeedMigrationResource))
             .Should()
             .BeFalse();
@@ -157,99 +182,43 @@ public sealed class JobsDistributedLockGuardTests
     }
 
     // ----------------------------------------------------------------------------------------------------------------
-    // Dead-node reclaim guard (U3)
+    // Dead-node reclaim (intentionally unguarded — bridge-retry contract, #267)
     // ----------------------------------------------------------------------------------------------------------------
 
     private static JobsDeadOwnerReclaimer CreateReclaimer(
         IInternalJobManager manager,
-        SchedulerOptionsBuilder options,
-        IDistributedLock lockProvider
-    ) => new(manager, options, lockProvider, NullLogger<JobsDeadOwnerReclaimer>.Instance);
+        SchedulerOptionsBuilder options
+    ) => new(manager, options);
 
     [Fact]
-    public async Task Reclaim_with_lock_disabled_reclaims_every_owner_and_never_queries_lock()
+    public async Task Reclaim_processes_every_owner_in_the_batch()
     {
         var manager = Substitute.For<IInternalJobManager>();
-        var spyLock = Substitute.For<IDistributedLock>();
-        var options = new SchedulerOptionsBuilder { UseStorageLock = false };
-        var reclaimer = CreateReclaimer(manager, options, spyLock);
+        var options = new SchedulerOptionsBuilder();
+        var reclaimer = CreateReclaimer(manager, options);
 
         await reclaimer.ReclaimAsync(["node-a@1", "node-b@2"], CancellationToken.None);
 
         await manager.Received(1).ReleaseDeadNodeResources("node-a@1", Arg.Any<CancellationToken>());
         await manager.Received(1).ReleaseDeadNodeResources("node-b@2", Arg.Any<CancellationToken>());
-        await spyLock
-            .DidNotReceive()
-            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Reclaim_with_free_lock_runs_batch_once_and_releases_lease()
+    public async Task Reclaim_propagates_when_release_throws_so_the_bridge_retries()
     {
-        var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
-        var lockProvider = CreateLock(storage);
+        // The reclaimer must NOT swallow a failure. The shared DeadOwnerRecoveryBridge marks each owner reclaimed
+        // *before* calling us and only un-marks it (→ retries on the next reconcile tick) when ReclaimAsync throws. A
+        // normal return on failure would pin the owner and strand its dead-node InProgress rows — the sole reason this
+        // path stays lock-free (a skip-on-contention that returned normally would do exactly that).
         var manager = Substitute.For<IInternalJobManager>();
-        var options = new SchedulerOptionsBuilder { UseStorageLock = true };
-        var reclaimer = CreateReclaimer(manager, options, lockProvider);
-
-        await reclaimer.ReclaimAsync(["node-a@1", "node-b@2"], CancellationToken.None);
-
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@1", Arg.Any<CancellationToken>());
-        await manager.Received(1).ReleaseDeadNodeResources("node-b@2", Arg.Any<CancellationToken>());
-        (await lockProvider.IsLockedAsync(JobsKeys.DeadNodeSweepResource)).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Reclaim_skips_entire_batch_when_another_survivor_sweeps()
-    {
-        var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
-
-        // Survivor A holds the sweep lock.
-        var nodeA = CreateLock(storage);
-        await using var held = await nodeA.TryAcquireAsync(JobsKeys.DeadNodeSweepResource, _HoldOptions);
-        held.Should().NotBeNull("pre-condition: the sweep lock must be acquirable on an empty store");
-
-        // Survivor B (same storage) attempts the guarded reclaim.
-        var nodeB = CreateLock(storage);
-        var manager = Substitute.For<IInternalJobManager>();
-        var options = new SchedulerOptionsBuilder { UseStorageLock = true };
-        var reclaimer = CreateReclaimer(manager, options, nodeB);
-
-        await reclaimer.ReclaimAsync(["node-a@1", "node-b@2"], CancellationToken.None);
-
-        await manager.DidNotReceive().ReleaseDeadNodeResources(Arg.Any<string>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Reclaim_skips_when_acquire_faults()
-    {
-        var faultingLock = Substitute.For<IDistributedLock>();
-        faultingLock
-            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("lock store down"));
-        var manager = Substitute.For<IInternalJobManager>();
-        var options = new SchedulerOptionsBuilder { UseStorageLock = true };
-        var reclaimer = CreateReclaimer(manager, options, faultingLock);
-
-        await reclaimer.ReclaimAsync(["node-a@1"], CancellationToken.None);
-
-        await manager.DidNotReceive().ReleaseDeadNodeResources(Arg.Any<string>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Reclaim_propagates_cancellation_during_acquire()
-    {
-        var cancelingLock = Substitute.For<IDistributedLock>();
-        cancelingLock
-            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new OperationCanceledException());
-        var manager = Substitute.For<IInternalJobManager>();
-        var options = new SchedulerOptionsBuilder { UseStorageLock = true };
-        var reclaimer = CreateReclaimer(manager, options, cancelingLock);
+        manager
+            .ReleaseDeadNodeResources(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("release boom"));
+        var options = new SchedulerOptionsBuilder();
+        var reclaimer = CreateReclaimer(manager, options);
 
         var act = async () => await reclaimer.ReclaimAsync(["node-a@1"], CancellationToken.None);
 
-        await act.Should().ThrowAsync<OperationCanceledException>();
-        await manager.DidNotReceive().ReleaseDeadNodeResources(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await act.Should().ThrowAsync<InvalidOperationException>();
     }
 }

@@ -117,12 +117,7 @@ Jobs does not ship a Jobs-specific Redis cache package. The durable EF path uses
 
 ### Distributed Lock Hardening (optional, off by default)
 
-Two startup/recovery operations are safe to run on every node but redundant when many nodes run them at once:
-
-- **Cron-seed migration** (`jobs.cron-seed-migration`) — every node, on boot, scans code-defined cron jobs and upserts them. On a rolling deploy of N nodes that is N full scans + N write storms.
-- **Dead-node resource reclaim** (`jobs.dead-node-sweep`) — `NodeLeft` events and the periodic liveness reconcile can both fire on every survivor; each runs the full reclaim batch.
-
-Both are already correct without a lock — the cron upsert/constraints and the exact-owner reclaim predicates make repeated runs idempotent (a second run touches zero rows). The optional Jobs-scoped distributed lock only removes the *redundant cross-node work and contention*; it is **never** the correctness boundary for job-row ownership (per-row predicates, `node@incarnation` ownership, and per-job leases stay that boundary).
+**Cron-seed migration** (`jobs.cron-seed-migration`) is safe to run on every node but redundant when many nodes run it at once: every node, on boot, scans code-defined cron jobs and upserts them, so a rolling deploy of N nodes is N full scans + N write storms. It is already correct without a lock — the cron upsert/constraints make repeated runs idempotent (a second run touches zero rows). The optional Jobs-scoped distributed lock only removes the *redundant cross-node scan/write storm*; it is **never** the correctness boundary for job-row ownership (per-row predicates, `node@incarnation` ownership, and per-job leases stay that boundary).
 
 Wire it by passing any `Headless.DistributedLocks.IDistributedLock` — the same provider you already use elsewhere works:
 
@@ -136,12 +131,15 @@ builder.Services.AddHeadlessJobs(options =>
 
 Semantics:
 
-- **Off by default.** Without `UseDistributedLock`, both operations run on every node, unchanged. A `NullDistributedLock` fallback is always registered so the guard sites resolve cleanly.
-- **Skip-on-contention.** Each guard tries to acquire once with no wait (`AcquireTimeout = TimeSpan.Zero`). If another node holds the lock — or acquisition faults — the node skips the work (debug-logged) and another node carries it. Cancellation during acquisition propagates rather than skipping.
-- **Self-healing TTL.** The lease has a generous finite TTL with `Monitor` mode, so a holder that dies mid-operation releases via expiry; the next boot or reconcile tick re-runs.
-- **Jobs-isolated, keyed registration.** The provider is kept under a Jobs-private keyed-DI slot, so it never conflicts with an unrelated app-level `IDistributedLock`. The two resource names are stable and Jobs-specific.
+- **Off by default.** Without `UseDistributedLock`, the seed runs on every node, unchanged. A `NullDistributedLock` fallback is always registered so the guard site resolves cleanly.
+- **Skip-on-contention.** The guard tries to acquire once with no wait (`AcquireTimeout = TimeSpan.Zero`). If another node holds the lock — or acquisition faults — the node skips the seed (logged) and another node carries it. Cancellation during acquisition propagates rather than skipping.
+- **Recovery is next-boot, not periodic.** The lease has a generous finite TTL (`None` monitoring — nothing observes lease-loss, so the TTL is the only safety net), so a holder that dies mid-seed releases via expiry. But the seed only runs at startup: if the lock store is down for *all* nodes at first boot, every node skips and the schedule stays unseeded until the **next process restart** — it is not retried on a timer. Operators see a warning-level log on acquire-fault for exactly this reason.
+- **Jobs-isolated, keyed registration.** The provider is kept under a Jobs-private keyed-DI slot, so it never conflicts with an unrelated app-level `IDistributedLock`. The resource name is stable and Jobs-specific.
 
-Not guarded: **cron-occurrence creation** is intentionally left without a `jobs.cron-occurrence-creation` lock — occurrences carry deterministic ids and are created via an id-keyed upsert, so storage-level dedup is already the correctness boundary and a coarse lock would add nothing. This mirrors the `Headless.Messaging` `UseDistributedLock` retry-pickup pattern.
+Not lock-guarded — and intentionally so:
+
+- **Dead-node resource reclaim.** `NodeLeft` events and the periodic liveness reconcile can both fire on every survivor; each runs the full reclaim batch. This stays lock-free because the shared `DeadOwnerRecoveryBridge` marks each dead owner reclaimed *before* the sweep and only retries it (on the next reconcile tick) when the sweep *throws* — a skip-on-contention that returned normally would pin the owner and strand its dead-node `InProgress` rows, since `ReleaseDeadNodeResources` is their sole terminal-transition path. The exact-owner predicates already make a repeated sweep touch zero rows, so letting every survivor sweep is cheap and self-healing (periodic reconcile is the authoritative backstop), whereas a coarse lock here would be the correctness boundary it must never be.
+- **Cron-occurrence creation.** No `jobs.cron-occurrence-creation` lock — occurrences carry deterministic ids and are created via an id-keyed upsert, so storage-level dedup is already the correctness boundary and a coarse lock would add nothing. This mirrors the `Headless.Messaging` `UseDistributedLock` retry-pickup pattern.
 
 ### Retry Configuration
 

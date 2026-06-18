@@ -16,7 +16,11 @@ namespace Headless.Jobs.BackgroundServices;
 /// Handles Jobs core initialization (function building, seeding, notification wiring, external provider init).
 /// Registered before the scheduler to guarantee correct startup order.
 /// </summary>
-internal sealed class JobsInitializationHostedService(IServiceProvider serviceProvider) : IHostedService
+internal sealed class JobsInitializationHostedService(
+    IServiceProvider serviceProvider,
+    [FromKeyedServices(JobsKeys.LockProvider)] IDistributedLock lockProvider,
+    ILogger<JobsInitializationHostedService> logger
+) : IHostedService
 {
     private Action<object?, CoreNotifyActionType>? _notifyCoreHandler;
     private JobsExecutionContext? _executionContext;
@@ -34,7 +38,6 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         // operator widens LeaseDuration — the Jobs analog of messaging's DeadThreshold >= DispatchTimeout guard.
         if (schedulerOptions.LeaseDuration < schedulerOptions.FallbackIntervalChecker)
         {
-            var logger = serviceProvider.GetRequiredService<ILogger<JobsInitializationHostedService>>();
             logger.LeaseDurationShorterThanFallback(
                 schedulerOptions.LeaseDuration,
                 schedulerOptions.FallbackIntervalChecker
@@ -88,7 +91,7 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
 
         if (options is null || options.SeedDefinedCronJobs)
         {
-            await _SeedDefinedCronJobsAsync(serviceProvider, schedulerOptions, cancellationToken).ConfigureAwait(false);
+            await _SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
         }
 
         if (options?.TimeSeederAction is not null)
@@ -119,8 +122,12 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         return Task.CompletedTask;
     }
 
-    internal static async Task _SeedDefinedCronJobsAsync(
-        IServiceProvider serviceProvider,
+    // Instance method (not static) so the lock + logger come from constructor injection rather than a mid-body
+    // service-locator — resolution happens at DI-build time, inside the construction fault boundary, consistent with
+    // JobsDeadOwnerReclaimer. Internal (not private) is the codebase's standard InternalsVisibleTo test seam: the guard
+    // unit test constructs the service and calls this directly, avoiding a StartAsync run over global JobFunctionProvider
+    // static state.
+    internal async Task _SeedDefinedCronJobsAsync(
         SchedulerOptionsBuilder schedulerOptions,
         CancellationToken cancellationToken
     )
@@ -140,9 +147,6 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
             await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
             return;
         }
-
-        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
-        var logger = serviceProvider.GetRequiredService<ILogger<JobsInitializationHostedService>>();
 
         IDistributedLease? lease;
         try

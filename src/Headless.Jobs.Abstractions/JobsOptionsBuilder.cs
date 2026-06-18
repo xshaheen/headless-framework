@@ -121,8 +121,10 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 
     /// <summary>
     /// Registers an <see cref="IDistributedLock"/> for the Jobs-scoped lock slot and enables
-    /// <see cref="SchedulerOptionsBuilder.UseStorageLock"/>. The lock coarse-gates startup cron-seed migration and
-    /// dead-node resource reclaim so N booting/surviving nodes do not redundantly re-run the same work.
+    /// <see cref="SchedulerOptionsBuilder.UseStorageLock"/>. The lock coarse-gates startup cron-seed migration so N
+    /// booting nodes do not redundantly re-run the same scan/upsert. (Dead-node resource reclaim is intentionally left
+    /// unguarded — the recovery bridge marks owners before the sweep and retries only on a thrown failure, so a
+    /// skip-on-contention there would strand dead-owner rows; see <c>JobsDeadOwnerReclaimer</c>.)
     /// </summary>
     /// <param name="provider">The lock provider instance to use for Jobs coordination.</param>
     /// <remarks>
@@ -283,12 +285,12 @@ public sealed class SchedulerOptionsBuilder
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
 
     /// <summary>
-    /// Whether the Jobs-scoped distributed lock coarse-gates startup cron-seed migration and dead-node resource
-    /// reclaim. Enabled only via <c>JobsOptionsBuilder.UseDistributedLock(...)</c> (the setter is internal so the
-    /// flag can never be <see langword="true"/> while the keyed slot still holds the <c>NullDistributedLock</c>
-    /// fallback — that would silently no-op the guard on every node with no diagnostic). Defaults to
-    /// <see langword="false"/> (no lock — every node runs both operations independently, which stays correct via
-    /// per-row predicates and per-job leases). This is an optimization flag, never a correctness gate.
+    /// Whether the Jobs-scoped distributed lock coarse-gates startup cron-seed migration. Enabled only via
+    /// <c>JobsOptionsBuilder.UseDistributedLock(...)</c> (the setter is internal so the flag can never be
+    /// <see langword="true"/> while the keyed slot still holds the <c>NullDistributedLock</c> fallback — that would
+    /// silently no-op the guard on every node with no diagnostic). Defaults to <see langword="false"/> (no lock —
+    /// every node runs the seed independently, which stays correct via the idempotent id-keyed upsert). This is an
+    /// optimization flag, never a correctness gate.
     /// </summary>
     public bool UseStorageLock { get; internal set; }
 }
