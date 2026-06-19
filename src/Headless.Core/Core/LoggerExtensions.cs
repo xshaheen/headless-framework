@@ -9,7 +9,7 @@ namespace Microsoft.Extensions.Logging;
 // ReSharper disable once TemplateIsNotCompileTimeConstantProblem
 #pragma warning disable CA2254 // Template should be a string literal.
 [PublicAPI]
-public static class LoggerExtensions
+public static class HeadlessLoggerExtensions
 {
     extension(ILogger logger)
     {
@@ -31,6 +31,11 @@ public static class LoggerExtensions
             params object?[] args
         )
         {
+            if (!logger.IsEnabled(LogLevel.Debug))
+            {
+                return;
+            }
+
             using (BeginScope(logger, stateBuilder))
             {
                 logger.LogDebug(message, args);
@@ -43,6 +48,11 @@ public static class LoggerExtensions
             params object?[] args
         )
         {
+            if (!logger.IsEnabled(LogLevel.Trace))
+            {
+                return;
+            }
+
             using (BeginScope(logger, stateBuilder))
             {
                 logger.LogTrace(message, args);
@@ -55,6 +65,11 @@ public static class LoggerExtensions
             params object?[] args
         )
         {
+            if (!logger.IsEnabled(LogLevel.Information))
+            {
+                return;
+            }
+
             using (BeginScope(logger, stateBuilder))
             {
                 logger.LogInformation(message, args);
@@ -67,6 +82,11 @@ public static class LoggerExtensions
             params object?[] args
         )
         {
+            if (!logger.IsEnabled(LogLevel.Warning))
+            {
+                return;
+            }
+
             using (BeginScope(logger, stateBuilder))
             {
                 logger.LogWarning(message, args);
@@ -79,6 +99,11 @@ public static class LoggerExtensions
             params object?[] args
         )
         {
+            if (!logger.IsEnabled(LogLevel.Error))
+            {
+                return;
+            }
+
             using (BeginScope(logger, stateBuilder))
             {
                 logger.LogError(message, args);
@@ -92,6 +117,11 @@ public static class LoggerExtensions
             params object?[] args
         )
         {
+            if (!logger.IsEnabled(LogLevel.Error))
+            {
+                return;
+            }
+
             using (BeginScope(logger, stateBuilder))
             {
                 logger.LogError(exception, message, args);
@@ -104,6 +134,11 @@ public static class LoggerExtensions
             params object?[] args
         )
         {
+            if (!logger.IsEnabled(LogLevel.Critical))
+            {
+                return;
+            }
+
             using (BeginScope(logger, stateBuilder))
             {
                 logger.LogCritical(message, args);

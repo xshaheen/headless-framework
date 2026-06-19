@@ -6,8 +6,6 @@ public interface IClock
 {
     TimeZoneInfo LocalTimeZone { get; }
 
-    long Ticks { get; }
-
     DateTimeOffset UtcNow { get; }
 
     DateTimeOffset LocalNow { get; }
@@ -26,8 +24,6 @@ public interface IClock
 public sealed class Clock(TimeProvider timeProvider) : IClock
 {
     public TimeZoneInfo LocalTimeZone => timeProvider.LocalTimeZone;
-
-    public long Ticks => Environment.TickCount64;
 
     public DateTimeOffset UtcNow => timeProvider.GetUtcNow();
 

@@ -9,11 +9,7 @@ public sealed class TestClock(TimeProvider? timeProvider = null) : IClock
 {
     public TimeProvider TimeProvider { get; set; } = timeProvider ?? new FakeTimeProvider();
 
-    private static DateTimeKind NormalizeKind => DateTimeKind.Utc;
-
     public TimeZoneInfo LocalTimeZone => TimeProvider.LocalTimeZone;
-
-    public long Ticks => Environment.TickCount64;
 
     public DateTimeOffset UtcNow => TimeProvider.GetUtcNow();
 
@@ -35,17 +31,12 @@ public sealed class TestClock(TimeProvider? timeProvider = null) : IClock
 
     public DateTime Normalize(DateTime v)
     {
-        if (NormalizeKind == v.Kind)
+        // Normalizes to UTC. Unspecified is assumed to already be UTC and is stamped without conversion.
+        return v.Kind switch
         {
-            return v;
-        }
-
-        return NormalizeKind switch
-        {
-            DateTimeKind.Unspecified => v,
-            DateTimeKind.Local when v.Kind is DateTimeKind.Utc => v.ToLocalTime(),
-            DateTimeKind.Utc when v.Kind is DateTimeKind.Local => v.ToUniversalTime(),
-            _ => DateTime.SpecifyKind(v, NormalizeKind),
+            DateTimeKind.Utc => v,
+            DateTimeKind.Local => v.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(v, DateTimeKind.Utc),
         };
     }
 }

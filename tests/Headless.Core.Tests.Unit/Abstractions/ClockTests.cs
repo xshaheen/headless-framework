@@ -28,16 +28,6 @@ public sealed class ClockTests
     }
 
     [Fact]
-    public void ticks_should_return_environment_tick_count()
-    {
-        // when
-        var ticks = _clock.Ticks;
-
-        // then
-        ticks.Should().Be(Environment.TickCount64);
-    }
-
-    [Fact]
     public void get_timestamp_should_return_correct_value()
     {
         // given

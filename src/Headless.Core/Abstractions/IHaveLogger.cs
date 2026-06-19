@@ -11,7 +11,7 @@ public interface IHaveLogger
 }
 
 [PublicAPI]
-public static class LoggerExtensions
+public static class HaveLoggerExtensions
 {
     public static ILogger GetLogger(this object target)
     {

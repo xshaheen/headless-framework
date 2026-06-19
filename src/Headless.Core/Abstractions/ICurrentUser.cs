@@ -10,6 +10,12 @@ public interface ICurrentUser
 {
     ClaimsPrincipal? Principal { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether an authenticated user identity is resolved. The framework
+    /// convention is "a parseable <see cref="UserId"/> claim is present" — not
+    /// <c>ClaimsIdentity.IsAuthenticated</c>. A principal authenticated without a UserId claim
+    /// reports <c>false</c>; do not use this as an authorization gate.
+    /// </summary>
     bool IsAuthenticated { get; }
 
     UserId? UserId { get; }
@@ -25,7 +31,7 @@ public interface ICurrentUser
         return Principal?.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.Ordinal));
     }
 
-    Claim[] FindClaims(string claimType)
+    IReadOnlyList<Claim> FindClaims(string claimType)
     {
         return Principal?.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal)).ToArray() ?? [];
     }
