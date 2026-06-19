@@ -199,8 +199,14 @@ public sealed class JobsDistributedLockGuardTests
 
         await reclaimer.ReclaimAsync(["node-a@1", "node-b@2"], CancellationToken.None);
 
-        await manager.Received(1).ReleaseDeadNodeResources("node-a@1", Arg.Any<CancellationToken>());
-        await manager.Received(1).ReleaseDeadNodeResources("node-b@2", Arg.Any<CancellationToken>());
+        // KTD6: the reclaimer must call ReleaseDeadNodeResources with CancellationToken.None (not the incoming token)
+        // so a reclaim racing host shutdown still completes. Assert the exact token, not Arg.Any, to enforce that.
+        await manager
+            .Received(1)
+            .ReleaseDeadNodeResources("node-a@1", Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
+        await manager
+            .Received(1)
+            .ReleaseDeadNodeResources("node-b@2", Arg.Is<CancellationToken>(ct => ct == CancellationToken.None));
     }
 
     [Fact]
