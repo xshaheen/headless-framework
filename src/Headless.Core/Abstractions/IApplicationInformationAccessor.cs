@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Abstractions;
 
 public interface IApplicationInformationAccessor
@@ -18,7 +20,7 @@ public interface IApplicationInformationAccessor
 
 public sealed class StaticApplicationInformationAccessor(string name) : IApplicationInformationAccessor
 {
-    public string ApplicationName { get; } = name;
+    public string ApplicationName { get; } = Argument.IsNotNullOrWhiteSpace(name);
 
     public string InstanceId { get; } = Guid.NewGuid().ToString();
 }

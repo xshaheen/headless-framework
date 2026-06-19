@@ -24,7 +24,10 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
     [MustDisposeResource]
     public virtual IDisposable Change(ClaimsPrincipal? principal)
     {
-        var parent = Principal;
+        // Capture the raw AsyncLocal slot (not the resolved Principal). Restoring the resolved
+        // value would write the GetClaimsPrincipal() fallback back into the slot and permanently
+        // shadow it; capturing the raw value restores null so the fallback is consulted again.
+        var parent = _currentPrincipal.Value;
         _currentPrincipal.Value = principal;
 
         return DisposableFactory.Create(() => _currentPrincipal.Value = parent);

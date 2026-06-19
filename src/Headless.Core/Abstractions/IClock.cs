@@ -25,8 +25,6 @@ public interface IClock
 
 public sealed class Clock(TimeProvider timeProvider) : IClock
 {
-    private static DateTimeKind NormalizeKind => DateTimeKind.Utc;
-
     public TimeZoneInfo LocalTimeZone => timeProvider.LocalTimeZone;
 
     public long Ticks => Environment.TickCount64;
@@ -51,17 +49,12 @@ public sealed class Clock(TimeProvider timeProvider) : IClock
 
     public DateTime Normalize(DateTime v)
     {
-        if (NormalizeKind == v.Kind)
+        // Normalizes to UTC. Unspecified is assumed to already be UTC and is stamped without conversion.
+        return v.Kind switch
         {
-            return v;
-        }
-
-        return NormalizeKind switch
-        {
-            DateTimeKind.Unspecified => v,
-            DateTimeKind.Local when v.Kind is DateTimeKind.Utc => v.ToLocalTime(),
-            DateTimeKind.Utc when v.Kind is DateTimeKind.Local => v.ToUniversalTime(),
-            _ => DateTime.SpecifyKind(v, NormalizeKind),
+            DateTimeKind.Utc => v,
+            DateTimeKind.Local => v.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(v, DateTimeKind.Utc),
         };
     }
 }

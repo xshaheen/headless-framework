@@ -35,10 +35,10 @@ public sealed partial class SnappyCompressorTests
         var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
         // when
-        var compressedData = SnappyCompressor.Compress(testObject, jsonOptions);
+        using var compressedData = SnappyCompressor.Compress(testObject, jsonOptions);
 
         // then
-        compressedData.Length.Should().BePositive();
+        compressedData.Memory.Length.Should().BePositive();
     }
 
     [Fact]
@@ -47,10 +47,13 @@ public sealed partial class SnappyCompressorTests
         // given
         var testObject = new SnappyCompressorEntityTest(1, "Headless", _clock.UtcNow);
         var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-        var compressedData = SnappyCompressor.Compress(testObject, jsonOptions);
+        using var compressedData = SnappyCompressor.Compress(testObject, jsonOptions);
 
         // when
-        var decompressedObject = SnappyCompressor.Decompress<SnappyCompressorEntityTest>(compressedData, jsonOptions);
+        var decompressedObject = SnappyCompressor.Decompress<SnappyCompressorEntityTest>(
+            compressedData.Memory,
+            jsonOptions
+        );
 
         // then
         decompressedObject.Should().NotBeNull();
@@ -71,8 +74,8 @@ public sealed partial class SnappyCompressorTests
         );
 
         // when
-        var compressed = SnappyCompressor.Compress(testObject);
-        var decompressed = SnappyCompressor.Decompress<NestedObject>(compressed);
+        using var compressed = SnappyCompressor.Compress(testObject);
+        var decompressed = SnappyCompressor.Decompress<NestedObject>(compressed.Memory);
 
         // then
         decompressed.Should().NotBeNull();
@@ -97,8 +100,8 @@ public sealed partial class SnappyCompressorTests
         };
 
         // when
-        var compressed = SnappyCompressor.Compress(testObject, customOptions);
-        var decompressed = SnappyCompressor.Decompress<SnappyCompressorEntityTest>(compressed, customOptions);
+        using var compressed = SnappyCompressor.Compress(testObject, customOptions);
+        var decompressed = SnappyCompressor.Decompress<SnappyCompressorEntityTest>(compressed.Memory, customOptions);
 
         // then
         decompressed.Should().NotBeNull();
@@ -113,8 +116,8 @@ public sealed partial class SnappyCompressorTests
         SnappyCompressorEntityTest? testObject = null;
 
         // when
-        var compressed = SnappyCompressor.Compress(testObject);
-        var decompressed = SnappyCompressor.Decompress<SnappyCompressorEntityTest>(compressed);
+        using var compressed = SnappyCompressor.Compress(testObject);
+        var decompressed = SnappyCompressor.Decompress<SnappyCompressorEntityTest>(compressed.Memory);
 
         // then
         decompressed.Should().BeNull();
@@ -127,8 +130,8 @@ public sealed partial class SnappyCompressorTests
         var testObject = new Dictionary<string, object>(StringComparer.Ordinal);
 
         // when
-        var compressed = SnappyCompressor.Compress(testObject);
-        var decompressed = SnappyCompressor.Decompress<Dictionary<string, object>>(compressed);
+        using var compressed = SnappyCompressor.Compress(testObject);
+        var decompressed = SnappyCompressor.Decompress<Dictionary<string, object>>(compressed.Memory);
 
         // then
         decompressed.Should().NotBeNull();
@@ -145,8 +148,8 @@ public sealed partial class SnappyCompressorTests
             .ToList();
 
         // when
-        var compressed = SnappyCompressor.Compress(largeList);
-        var decompressed = SnappyCompressor.Decompress<List<LargeDataItem>>(compressed);
+        using var compressed = SnappyCompressor.Compress(largeList);
+        var decompressed = SnappyCompressor.Decompress<List<LargeDataItem>>(compressed.Memory);
 
         // then
         decompressed.Should().NotBeNull();
@@ -162,13 +165,13 @@ public sealed partial class SnappyCompressorTests
         var testObject = new SnappyCompressorEntityTest(1, "Headless", _clock.UtcNow);
 
         // when
-        var compressed = SnappyCompressor.Compress(
+        using var compressed = SnappyCompressor.Compress(
             testObject,
             SnappyTestJsonContext.Default.SnappyCompressorEntityTest
         );
 
         // then
-        compressed.Length.Should().BePositive();
+        compressed.Memory.Length.Should().BePositive();
     }
 
     [Fact]
@@ -176,14 +179,15 @@ public sealed partial class SnappyCompressorTests
     {
         // given
         var testObject = new SnappyCompressorEntityTest(1, "Headless", _clock.UtcNow);
-        var compressed = SnappyCompressor.Compress(
+
+        using var compressed = SnappyCompressor.Compress(
             testObject,
             SnappyTestJsonContext.Default.SnappyCompressorEntityTest
         );
 
         // when
         var decompressed = SnappyCompressor.Decompress(
-            compressed,
+            compressed.Memory,
             SnappyTestJsonContext.Default.SnappyCompressorEntityTest
         );
 

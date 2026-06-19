@@ -4,7 +4,7 @@ Core abstractions and utilities for building applications with multi-tenancy, us
 
 ## Problem Solved
 
-Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (retry logic, compression, structured logging) enabling consistent patterns across all application layers.
+Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (compression, structured logging) enabling consistent patterns across all application layers.
 
 ## Key Features
 

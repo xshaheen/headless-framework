@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using Headless.Checks;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Logging;
@@ -173,7 +174,10 @@ public sealed class LogState : IEnumerable<KeyValuePair<string, object?>>
 
     public LogState Property(string property, object? value)
     {
-        _state.Add(property, value);
+        Argument.IsNotNull(property);
+        // Indexer (last-write-wins) rather than Dictionary.Add: Tag()/Critical()/Properties()
+        // re-write existing keys, and structured-logging state must never throw on a duplicate.
+        _state[property] = value;
 
         return this;
     }
@@ -182,7 +186,8 @@ public sealed class LogState : IEnumerable<KeyValuePair<string, object?>>
     {
         if (condition)
         {
-            _state.Add(property, value);
+            Argument.IsNotNull(property);
+            _state[property] = value;
         }
 
         return this;
@@ -193,9 +198,7 @@ public sealed class LogState : IEnumerable<KeyValuePair<string, object?>>
         return _state.ContainsKey(property);
     }
 
-    [MustDisposeResource]
     public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() => _state.GetEnumerator();
 
-    [MustDisposeResource]
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }

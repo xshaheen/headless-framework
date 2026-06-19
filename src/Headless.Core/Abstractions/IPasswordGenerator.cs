@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
 using Headless.Checks;
 
 namespace Headless.Abstractions;
@@ -51,27 +52,27 @@ public sealed class PasswordGenerator : IPasswordGenerator
         Argument.IsPositive(length);
         Argument.IsPositiveOrZero(requiredUniqueChars);
 
-        if (
-            !useDigitsInRemaining
-            && !useLowercaseInRemaining
-            && !useUppercaseInRemaining
-            && !useNonAlphanumericInRemaining
-        )
-        {
-            throw new InvalidOperationException(
-                "Invalid password configuration provided. At least one character set must be used in remaining characters."
-            );
-        }
+        var requiredCharsCount =
+            (requireDigit ? 1 : 0)
+            + (requireLowercase ? 1 : 0)
+            + (requireUppercase ? 1 : 0)
+            + (requireNonAlphanumeric ? 1 : 0);
 
-        if (
+        Ensure.True(
+            length >= requiredCharsCount,
+            "Invalid password configuration provided. The length must be greater than or equal to the number of required character sets."
+        );
+
+        Ensure.True(
+            useDigitsInRemaining || useLowercaseInRemaining || useUppercaseInRemaining || useNonAlphanumericInRemaining,
+            "Invalid password configuration provided. At least one character set must be used in remaining characters."
+        );
+
+        Ensure.True(
             requiredUniqueChars
-            > _NonAlphanumericChars.Length + _DigitsChars.Length + _LowercaseChars.Length + _UppercaseChars.Length
-        )
-        {
-            throw new InvalidOperationException(
-                "Invalid password configuration provided. Required unique characters count is greater than the total available characters."
-            );
-        }
+                <= _NonAlphanumericChars.Length + _DigitsChars.Length + _LowercaseChars.Length + _UppercaseChars.Length,
+            "Invalid password configuration provided. Required unique characters count is greater than the total available characters."
+        );
 
         requiredUniqueChars = Math.Min(requiredUniqueChars, length);
 
@@ -118,6 +119,14 @@ public sealed class PasswordGenerator : IPasswordGenerator
 
             for (var i = 0; i < remainingRequiredChars; i++)
             {
+                // The enabled "remaining" sets can hold fewer distinct chars than requiredUniqueChars
+                // (the up-front check bounds against the full pool); stop once they are exhausted
+                // instead of indexing an empty list.
+                if (baseCharacters.Count == 0)
+                {
+                    break;
+                }
+
                 var index = _GetIntInclusiveBetween(0, baseCharacters.Count - 1);
                 var character = baseCharacters[index];
                 baseCharacters.RemoveAt(index);
@@ -217,9 +226,9 @@ public sealed class PasswordGenerator : IPasswordGenerator
 
     private static char _GetCharInclusiveBetween(int min, int max) => (char)_GetIntInclusiveBetween(min, max);
 
-#pragma warning disable CA5394 // Do not use insecure randomness
-    private static int _GetIntInclusiveBetween(int min, int max) => Random.Shared.Next(min, max + 1);
-#pragma warning restore CA5394
+    // Cryptographically secure: passwords are security-sensitive material, so character selection
+    // and shuffling must not use the predictable Random.Shared PRNG.
+    private static int _GetIntInclusiveBetween(int min, int max) => RandomNumberGenerator.GetInt32(min, max + 1);
 
     #endregion
 }

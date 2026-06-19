@@ -13,6 +13,7 @@ namespace Headless.Abstractions;
 /// retry suppression) can catch this single type without sweeping unrelated
 /// <see cref="InvalidOperationException"/>s.
 /// </remarks>
+[PublicAPI]
 public sealed class MissingTenantContextException : Exception
 {
     public MissingTenantContextException()

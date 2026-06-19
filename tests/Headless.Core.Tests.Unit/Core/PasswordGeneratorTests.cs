@@ -83,4 +83,34 @@ public sealed class PasswordGeneratorTests
         // then
         action.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    [Fact]
+    public void generate_password_should_throw_when_length_is_smaller_than_required_character_sets()
+    {
+        // when (defaults require digit + lowercase + uppercase + non-alphanumeric => 4 required sets)
+        Action action = () => _passwordGenerator.GeneratePassword(length: 2);
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void generate_password_should_return_exactly_the_requested_length()
+    {
+        // when
+        var password = _passwordGenerator.GeneratePassword(length: 6);
+
+        // then
+        password.Should().HaveLength(6);
+    }
+
+    [Fact]
+    public void generate_password_should_not_crash_when_required_unique_chars_exceed_enabled_remaining_set()
+    {
+        // when (only digits are enabled for the "remaining" pool, so fewer than 20 distinct chars exist)
+        Action action = () => _passwordGenerator.GeneratePassword(length: 20, requiredUniqueChars: 20);
+
+        // then
+        action.Should().NotThrow();
+    }
 }
