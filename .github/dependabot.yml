@@ -11,6 +11,10 @@ updates:
       include: "scope"
     open-pull-requests-limit: 5
     groups:
+      # Keep AWS SDK bumps in their own PR so the R2 conformance workflow can gate them distinctly.
+      aws-sdk:
+        patterns:
+          - "AWSSDK.*"
       nuget-minor-patch:
         patterns:
           - "*"
