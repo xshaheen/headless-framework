@@ -5,6 +5,7 @@ using Amazon.S3;
 using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Aws;
+using Headless.Blobs.CloudflareR2;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -29,17 +30,17 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             "R2 credentials are not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)."
         );
 
-        var config = new AmazonS3Config
-        {
-            ServiceURL = $"https://{accountId}.r2.cloudflarestorage.com",
-            ForcePathStyle = true,
-            AuthenticationRegion = "auto",
-            RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
-            ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED,
-        };
-
+        // Build the client through the same factory the production setup uses, so the conformance suite can
+        // never drift from the real R2 client configuration (the whole point of the SDK-bump gate).
 #pragma warning disable CA2000 // Disposed by AwsBlobStorage / the test host.
-        var client = new AmazonS3Client(new BasicAWSCredentials(accessKey!, secretKey!), config);
+        var client = R2ClientFactory.Create(
+            new R2BlobStorageOptions
+            {
+                AccountId = accountId!,
+                AccessKeyId = accessKey!,
+                SecretAccessKey = secretKey!,
+            }
+        );
 #pragma warning restore CA2000
 
         // Conformance exercises the full lifecycle, so it needs bucket creation; the test token must allow it.

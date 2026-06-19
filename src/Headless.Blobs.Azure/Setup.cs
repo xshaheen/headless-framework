@@ -61,6 +61,11 @@ public static class AddAzureBlobExtensions
             services.TryAddSingleton<IBlobNamingNormalizer, AzureBlobNamingNormalizer>();
             services.AddSingleton<IBlobStorage, AzureBlobStorage>();
 
+            // The provider implements IPresignedUrlBlobStorage; expose it for direct injection too (same instance).
+            services.TryAddSingleton<IPresignedUrlBlobStorage>(serviceProvider =>
+                (IPresignedUrlBlobStorage)serviceProvider.GetRequiredService<IBlobStorage>()
+            );
+
             return services;
         }
     }

@@ -32,7 +32,9 @@ public sealed class R2BlobStorageOptions
     {
         if (!string.IsNullOrWhiteSpace(EndpointUrl))
         {
-            return string.Format(CultureInfo.InvariantCulture, EndpointUrl, AccountId);
+            // Plain token replacement, not string.Format: a custom URL may contain literal braces that are not
+            // a format placeholder, which would otherwise throw FormatException at client construction.
+            return EndpointUrl.Replace("{0}", AccountId, StringComparison.Ordinal);
         }
 
         var infix = Jurisdiction switch

@@ -7,6 +7,7 @@ using Headless.Blobs;
 using Headless.Blobs.Aws;
 using Headless.Blobs.CloudflareR2;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -83,6 +84,41 @@ public sealed class SetupCloudflareR2BlobTests : TestBase
 
         storage.Should().BeOfType<AwsBlobStorage>();
         storage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
+    }
+
+    [Fact]
+    public async Task presigned_capability_is_injectable_and_is_the_same_instance()
+    {
+        await using var sp = _BuildProvider();
+
+        var presigned = sp.GetRequiredService<IPresignedUrlBlobStorage>();
+
+        presigned.Should().BeSameAs(sp.GetRequiredService<IBlobStorage>());
+    }
+
+    [Fact]
+    public void binds_options_from_configuration_section()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["R2:AccountId"] = "acc123",
+                    ["R2:AccessKeyId"] = "key",
+                    ["R2:SecretAccessKey"] = "secret",
+                }
+            )
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IClock>(new Clock(TimeProvider.System));
+        services.AddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        services.AddLogging();
+        services.AddCloudflareR2BlobStorage(configuration.GetSection("R2"));
+
+        using var sp = services.BuildServiceProvider();
+
+        sp.GetRequiredService<IOptions<R2BlobStorageOptions>>().Value.AccountId.Should().Be("acc123");
     }
 
     [Fact]

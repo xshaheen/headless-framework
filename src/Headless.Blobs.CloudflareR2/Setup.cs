@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Amazon.Runtime;
 using Amazon.S3;
 using Headless.Blobs.Aws;
 using Microsoft.Extensions.Configuration;
@@ -13,9 +12,6 @@ namespace Headless.Blobs.CloudflareR2;
 [PublicAPI]
 public static class SetupCloudflareR2Blob
 {
-    // Cloudflare R2 signs every request against the "auto" region.
-    private const string _Region = "auto";
-
     extension(IServiceCollection services)
     {
         /// <summary>Registers Cloudflare R2 blob storage, reusing the S3 engine behind an R2-tuned client.</summary>
@@ -23,7 +19,7 @@ public static class SetupCloudflareR2Blob
         {
             services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction);
 
-            return services._AddCloudflareR2Core();
+            return services._AddCore();
         }
 
         /// <summary>Registers Cloudflare R2 blob storage, reusing the S3 engine behind an R2-tuned client.</summary>
@@ -31,7 +27,7 @@ public static class SetupCloudflareR2Blob
         {
             services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction);
 
-            return services._AddCloudflareR2Core();
+            return services._AddCore();
         }
 
         /// <summary>Registers Cloudflare R2 blob storage, reusing the S3 engine behind an R2-tuned client.</summary>
@@ -39,10 +35,10 @@ public static class SetupCloudflareR2Blob
         {
             services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(config);
 
-            return services._AddCloudflareR2Core();
+            return services._AddCore();
         }
 
-        private IServiceCollection _AddCloudflareR2Core()
+        private IServiceCollection _AddCore()
         {
             // R2-safe behavior defaults on the reused AWS engine: R2 has no ACLs, rejects chunked/payload signing,
             // and object-scoped tokens cannot create buckets.
@@ -58,23 +54,16 @@ public static class SetupCloudflareR2Blob
             {
                 var options = serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>().Value;
 
-                var config = new AmazonS3Config
-                {
-                    ServiceURL = options.GetEffectiveEndpointUrl(),
-                    ForcePathStyle = true,
-                    AuthenticationRegion = _Region,
-                    // SDK v4 defaults add CRC checksums that R2 rejects; only send them when an operation requires it.
-                    RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
-                    ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED,
-                };
-
-                var credentials = new BasicAWSCredentials(options.AccessKeyId, options.SecretAccessKey);
-
-                return new AmazonS3Client(credentials, config);
+                return R2ClientFactory.Create(options);
             });
 
             services.TryAddSingleton<IBlobNamingNormalizer, R2BlobNamingNormalizer>();
             services.AddSingleton<IBlobStorage, AwsBlobStorage>();
+
+            // The engine implements IPresignedUrlBlobStorage; expose it for direct injection too (same instance).
+            services.TryAddSingleton<IPresignedUrlBlobStorage>(serviceProvider =>
+                (IPresignedUrlBlobStorage)serviceProvider.GetRequiredService<IBlobStorage>()
+            );
 
             return services;
         }

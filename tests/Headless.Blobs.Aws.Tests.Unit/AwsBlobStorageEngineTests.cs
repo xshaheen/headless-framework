@@ -89,6 +89,32 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task concurrent_create_container_ensures_bucket_at_most_once()
+    {
+        _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>()).Returns(new PutBucketResponse());
+        var sut = _CreateSut();
+
+        // 20 concurrent first-time ensures of the same bucket.
+        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => sut.CreateContainerAsync(["bucket"]).AsTask()));
+        var concurrentCalls = _s3.ReceivedCalls().Count();
+
+        // A single ensure on a fresh instance issues the same S3 calls; concurrency must not multiply them.
+        var fresh = Substitute.For<IAmazonS3>();
+        fresh
+            .PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PutBucketResponse());
+        var freshSut = new AwsBlobStorage(
+            fresh,
+            new MimeTypeProvider(),
+            new Clock(TimeProvider.System),
+            new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions())
+        );
+        await freshSut.CreateContainerAsync(["bucket"]);
+
+        concurrentCalls.Should().Be(fresh.ReceivedCalls().Count());
+    }
+
+    [Fact]
     public void implements_presigned_url_capability()
     {
         _CreateSut().Should().BeAssignableTo<IPresignedUrlBlobStorage>();
@@ -107,7 +133,12 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         await _s3.Received(1)
             .GetPreSignedURLAsync(
                 Arg.Is<GetPreSignedUrlRequest>(r =>
-                    r.Verb == HttpVerb.GET && r.BucketName == "bucket" && r.Key == "file.txt"
+                    r.Verb == HttpVerb.GET
+                    && r.BucketName == "bucket"
+                    && r.Key == "file.txt"
+                    // Expires is the absolute deadline: roughly now + the requested 15-minute window.
+                    && r.Expires > DateTime.UtcNow.AddMinutes(14)
+                    && r.Expires < DateTime.UtcNow.AddMinutes(16)
                 )
             );
     }

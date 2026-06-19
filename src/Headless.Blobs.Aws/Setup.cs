@@ -40,6 +40,11 @@ public static class SetupAwsS3
         services.TryAddSingleton<IBlobNamingNormalizer, AwsBlobNamingNormalizer>();
         services.AddSingleton<IBlobStorage, AwsBlobStorage>();
 
+        // The engine implements IPresignedUrlBlobStorage; expose it for direct injection too (same instance).
+        services.TryAddSingleton<IPresignedUrlBlobStorage>(serviceProvider =>
+            (IPresignedUrlBlobStorage)serviceProvider.GetRequiredService<IBlobStorage>()
+        );
+
         return services;
     }
 }

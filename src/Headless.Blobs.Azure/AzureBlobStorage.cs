@@ -638,6 +638,8 @@ public sealed class AzureBlobStorage(
             BlobName = blobClient.Name,
             Resource = "b",
             ExpiresOn = clock.UtcNow.Add(expiry),
+            // The SAS is a bearer credential; restrict it to HTTPS so it can't be replayed over plaintext HTTP.
+            Protocol = SasProtocol.Https,
         };
 
         builder.SetPermissions(permissions);

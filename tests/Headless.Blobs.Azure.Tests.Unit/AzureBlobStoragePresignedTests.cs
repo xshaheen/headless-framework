@@ -52,6 +52,6 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
         var act = async () =>
             await sut.GetPresignedUploadUrlAsync(["mycontainer"], "file.txt", TimeSpan.FromMinutes(5));
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot generate a SAS*");
     }
 }

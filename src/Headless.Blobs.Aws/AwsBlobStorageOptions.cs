@@ -21,7 +21,8 @@ public sealed class AwsBlobStorageOptions
     /// already exist. The check/create runs at most once per bucket per storage instance. Set to
     /// <see langword="false"/> for backends whose credentials cannot create buckets (for example Cloudflare R2
     /// object-scoped tokens); a missing bucket then surfaces as an error from the write operation. Explicit
-    /// <see cref="IBlobStorage.CreateContainerAsync"/> calls always create regardless of this setting.
+    /// <see cref="IBlobStorage.CreateContainerAsync"/> calls ensure the container regardless of this setting
+    /// (the result is cached per instance, so the bucket is not re-probed once ensured).
     /// </summary>
     public bool AutoCreateContainer { get; set; } = true;
 }
