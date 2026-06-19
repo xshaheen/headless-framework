@@ -5,6 +5,7 @@ using Headless.Caching;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -481,10 +482,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             }
             else
             {
-                // Insert new seeded cron job
+                // Insert new seeded cron job. The id is DETERMINISTIC (derived from the function) so two nodes seeding
+                // the same new function concurrently target the same primary key — the DB dedups to a single row
+                // instead of inserting two distinct-id rows and double-scheduling the function.
                 var entity = new TCronJob
                 {
-                    Id = Guid.NewGuid(),
+                    Id = JobsSeedId.ForCronSeed(function),
                     Function = function,
                     Expression = expression,
                     InitIdentifier = $"MemoryTicker_Seeded_{function}",
@@ -496,7 +499,17 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             }
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException)
+        {
+            // Concurrent first-boot: another node inserted the same deterministic-id seed row(s) between our read and
+            // write. The primary key dedups, so there is no duplicate to clean up — discard our now-redundant tracked
+            // inserts and let the winner's rows stand. Changed expressions, if any, are reconciled on the next seed.
+            dbContext.ChangeTracker.Clear();
+        }
     }
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken = default)

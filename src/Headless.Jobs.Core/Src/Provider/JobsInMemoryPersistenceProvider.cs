@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -598,24 +599,34 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         foreach (var (function, expression) in cronJobs)
         {
-            // Check if already exists (take snapshot for thread safety)
-            var exists = _CronJobs.Values.ToArray().Any(x => x.Function == function && x.Expression == expression);
-            if (!exists)
-            {
-                var id = Guid.NewGuid();
-                var cronJob = new TCronJob
-                {
-                    Id = id,
-                    Function = function,
-                    Expression = expression,
-                    InitIdentifier = $"MemoryTicker_Seeded_{id}",
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                    Request = [],
-                };
+            // Deterministic id keyed by function (matches the durable provider's seed identity): a re-seed — including
+            // a changed expression — updates the same row in place rather than inserting a duplicate. Single-process
+            // provider, so there is no cross-node race here.
+            var id = JobsSeedId.ForCronSeed(function);
 
-                _CronJobs.TryAdd(id, cronJob);
+            if (_CronJobs.TryGetValue(id, out var existing))
+            {
+                if (!string.Equals(existing.Expression, expression, StringComparison.Ordinal))
+                {
+                    existing.Expression = expression;
+                    existing.UpdatedAt = now;
+                }
+
+                continue;
             }
+
+            var cronJob = new TCronJob
+            {
+                Id = id,
+                Function = function,
+                Expression = expression,
+                InitIdentifier = $"MemoryTicker_Seeded_{function}",
+                CreatedAt = now,
+                UpdatedAt = now,
+                Request = [],
+            };
+
+            _CronJobs.TryAdd(id, cronJob);
         }
 
         return Task.CompletedTask;

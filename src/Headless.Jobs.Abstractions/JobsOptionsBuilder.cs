@@ -241,9 +241,9 @@ public sealed class SchedulerOptionsBuilder
     /// <c>UseDistributedLock(...)</c> builder extension (the setter is internal so the flag can never be
     /// <see langword="true"/> while the keyed slot still holds the <c>NullDistributedLock</c> fallback — that would
     /// silently no-op the guard on every node with no diagnostic). Defaults to <see langword="false"/> (no lock —
-    /// every node runs the seed independently; sequential re-runs are idempotent, but simultaneous first-boot across
-    /// nodes can duplicate-seed without this gate). This is an optimization flag, never the job-execution correctness
-    /// boundary.
+    /// every node runs the seed independently; seeded rows carry a deterministic primary key, so simultaneous
+    /// first-boot still converges on a single row without this gate). This is an optimization flag, never the
+    /// job-execution correctness boundary.
     /// </summary>
     public bool UseStorageLock { get; internal set; }
 }

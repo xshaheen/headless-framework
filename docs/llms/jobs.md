@@ -394,7 +394,7 @@ app.UseJobs(JobsStartMode.Manual);    // Wait for manual trigger
 
 ### Distributed Lock Hardening (optional, off by default)
 
-**Startup cron-seed migration** (`jobs.cron-seed-migration`) runs on every node — each scans code-defined cron jobs and upserts them. It is a find-and-update with **no** unique constraint on `Function`: **sequential** re-runs are idempotent, but **simultaneous** first-boot across N nodes can each insert a distinct duplicate seed row (double-scheduling that function). An optional Jobs-scoped `IDistributedLock` removes the redundant cross-node scan/write storm and suppresses that concurrent duplicate-seed race (best-effort; the lock is single-instance). It is never the correctness boundary for job-row ownership/execution — per-row predicates, `node@incarnation` ownership, and per-job leases remain that boundary.
+**Startup cron-seed migration** (`jobs.cron-seed-migration`) runs on every node — each scans code-defined cron jobs and upserts them. Seeded rows carry a **deterministic primary key derived from the function name**, so simultaneous first-boot across N nodes converges on a single row (primary-key dedup) — no duplicate schedules (the durable provider catches the unique-violation and discards the redundant insert). An optional Jobs-scoped `IDistributedLock` then only removes the redundant cross-node scan/write storm. It is never the correctness boundary for job-row ownership/execution — per-row predicates, `node@incarnation` ownership, and per-job leases remain that boundary.
 
 ```csharp
 builder.Services.AddHeadlessJobs(options =>

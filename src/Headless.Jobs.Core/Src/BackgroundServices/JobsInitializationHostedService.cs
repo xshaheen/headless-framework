@@ -138,11 +138,10 @@ internal sealed class JobsInitializationHostedService(
             .Select(x => (x.Key, x.Value.cronExpression))
             .ToArray();
 
-        // No lock configured (default): run the seed directly. MigrateDefinedCronJobs is find-and-update, so SEQUENTIAL
-        // re-runs are idempotent (a second run updates the row in place). It is NOT unique-constrained on Function,
-        // though, so SIMULTANEOUS first-boot on N nodes can each insert a distinct duplicate seed row; the optional
-        // lock below suppresses that race. The lock is best-effort duplicate-suppression, not the job-execution
-        // correctness boundary — per-row predicates, node@incarnation ownership, and per-job leases remain that boundary.
+        // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
+        // from the function, so simultaneous first-boot on N nodes converges on a single row (PK dedup) — no duplicate
+        // schedules even without the lock. The optional lock below only removes the redundant N-node scan/write storm;
+        // it is never the correctness boundary — per-row predicates, node@incarnation ownership, and per-job leases are.
         if (!schedulerOptions.UseStorageLock)
         {
             await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
