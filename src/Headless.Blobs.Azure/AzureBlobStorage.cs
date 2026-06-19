@@ -4,6 +4,7 @@ using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
+using Azure.Storage.Sas;
 using Headless.Abstractions;
 using Headless.Blobs.Azure.Internals;
 using Headless.Blobs.Internals;
@@ -22,7 +23,7 @@ public sealed class AzureBlobStorage(
     IOptions<AzureStorageOptions> optionAccessor,
     IBlobNamingNormalizer normalizer,
     ILogger<AzureBlobStorage> logger
-) : IBlobStorage
+) : IBlobStorage, IPresignedUrlBlobStorage
 {
     private readonly AzureStorageOptions _option = optionAccessor.Value;
 
@@ -579,6 +580,72 @@ public sealed class AzureBlobStorage(
 
     #region Build URLs
 
+
+    #region Presigned Urls
+
+    public ValueTask<Uri> GetPresignedDownloadUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetPresignedUrlAsync(container, blobName, expiry, BlobSasPermissions.Read, cancellationToken);
+    }
+
+    public ValueTask<Uri> GetPresignedUploadUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetPresignedUrlAsync(
+            container,
+            blobName,
+            expiry,
+            BlobSasPermissions.Create | BlobSasPermissions.Write,
+            cancellationToken
+        );
+    }
+
+    private ValueTask<Uri> _GetPresignedUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        BlobSasPermissions permissions,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
+
+        var blobClient = _GetBlobClient(container, blobName);
+
+        if (!blobClient.CanGenerateSasUri)
+        {
+            throw new InvalidOperationException(
+                "The configured BlobServiceClient cannot generate a SAS URI. Presigned URLs require a client built "
+                    + "with an account key (StorageSharedKeyCredential) or a user delegation key; a bare SAS-token or "
+                    + "anonymous connection cannot sign."
+            );
+        }
+
+        var builder = new BlobSasBuilder
+        {
+            BlobContainerName = blobClient.BlobContainerName,
+            BlobName = blobClient.Name,
+            Resource = "b",
+            ExpiresOn = clock.UtcNow.Add(expiry),
+        };
+
+        builder.SetPermissions(permissions);
+
+        return ValueTask.FromResult(blobClient.GenerateSasUri(builder));
+    }
+
+    #endregion
 
     private BlobClient _GetBlobClient(string[] container, string blobName)
     {
