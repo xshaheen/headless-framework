@@ -252,6 +252,60 @@ public sealed class RetryBehaviorTests
     }
 
     [Fact]
+    public async Task ExecuteTaskAsync_cancels_on_loss_when_membership_stays_unknown_past_the_lease_window()
+    {
+        // #461 bound: a membership blip is tolerated only within the lease window. If membership stays unestablished
+        // for the whole LeaseDuration (e.g. a permanent partition), the lease has lapsed and the row is being
+        // reclaimed elsewhere — the loop must stop the local zombie via cancel-on-loss (leaving the row for the sweep).
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Membership never re-establishes — every renewal reports membership-unknown.
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(-1));
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder
+            {
+                LeaseDuration = TimeSpan.FromMilliseconds(250),
+                LeaseRenewalInterval = TimeSpan.FromMilliseconds(40),
+            },
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+
+        var context = new InternalFunctionContext
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LongJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            // Runs until cancel-on-loss fires — deterministic: the lease-window bound WILL trip once membership has
+            // been unknown for LeaseDuration (load only delays the moment, never changes the outcome).
+            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true);
+
+        context.LeaseLost.Should().BeTrue(); // bound tripped -> cancel-on-loss, no terminal write
+        await internalManager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteTaskAsync_logs_reconciliation_when_a_successful_completion_write_is_fenced()
     {
         // #462: a job that completes successfully but whose completion write matches 0 rows (the row was reclaimed/

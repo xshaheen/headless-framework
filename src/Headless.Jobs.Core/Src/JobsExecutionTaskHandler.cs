@@ -25,6 +25,10 @@ internal class JobsExecutionTaskHandler(
     // #316 sliding lease: cadence at which a running job renews its own lease (≈ LeaseDuration/3 by default).
     private readonly TimeSpan _leaseRenewalInterval = schedulerOptions.ResolveLeaseRenewalInterval();
 
+    // #461: how long a running job may tolerate unestablished coordination membership before the renewal loop treats
+    // it as a lost lease — the lease window, after which the row is certainly being reclaimed elsewhere.
+    private readonly TimeSpan _leaseDuration = schedulerOptions.LeaseDuration;
+
     public async Task ExecuteTaskAsync(
         InternalFunctionContext context,
         bool isDue,
@@ -412,6 +416,9 @@ internal class JobsExecutionTaskHandler(
     {
         // #316 sliding-lease renewal loop (U1 renewal + U2 cancel-on-loss). Runs concurrently with the job for its
         // whole execution and stops when renewalLoopToken is cancelled by StopRenewalAsync on completion.
+        // The lease was freshly stamped when the job was claimed (≈ loop start), so seed the last-confirmed time here:
+        // it bounds how long a membership blip may be tolerated before the lease has certainly lapsed (#461).
+        var lastConfirmedAt = timeProvider.GetUtcNow();
         try
         {
             while (!renewalLoopToken.IsCancellationRequested)
@@ -421,27 +428,34 @@ internal class JobsExecutionTaskHandler(
 
                 var outcome = await _TryRenewLeaseAsync(context, renewalLoopToken).ConfigureAwait(false);
 
-                if (outcome is RenewalOutcome.Lost)
+                if (outcome is RenewalOutcome.Held)
                 {
-                    // Lease lost (reclaimed / owner changed / terminalized) OR the renewal could not be confirmed
-                    // within the cadence (hung / unreachable store, #463). Flag lease-loss so the cancellation handler
-                    // leaves the row InProgress for the stalled-reclaim/OnNodeDeath sweep (#1) rather than writing a
-                    // terminal Cancelled, then best-effort cancel the running job (a job ignoring its token still
-                    // relies on OnNodeDeath for correctness).
-                    context.LeaseLost = true;
-                    await jobCts.CancelAsync().ConfigureAwait(false);
-                    return;
+                    lastConfirmedAt = timeProvider.GetUtcNow();
+                    continue;
                 }
 
-                if (outcome is RenewalOutcome.MembershipUnknown)
+                if (
+                    outcome is RenewalOutcome.MembershipUnknown
+                    && timeProvider.GetUtcNow() - lastConfirmedAt < _leaseDuration
+                )
                 {
                     // #461: coordination membership is momentarily unestablished (registration pending / transient
-                    // blip) — distinct from a lost lease. Skip this tick instead of cancelling a healthy job; if the
-                    // blip persists the lease lapses and the stalled-reclaim sweep recovers the row per OnNodeDeath
-                    // (same bound as a dead node). Logged at Debug since it can repeat during a partition.
+                    // blip) — distinct from a lost lease. While still inside the lease window, skip this tick and keep
+                    // the healthy job running; renewal resumes once membership re-establishes. Logged at Debug since it
+                    // can repeat during a partition.
                     logger.LogJobLeaseRenewalSkippedMembershipUnknown(context.JobId, context.FunctionName);
+                    continue;
                 }
-                // RenewalOutcome.Held or .MembershipUnknown — keep running, retry next tick.
+
+                // Lease lost (reclaimed / owner changed / terminalized, or the store could not confirm within the
+                // cadence — #463), OR membership has stayed unestablished for the whole lease window (#461 bound: the
+                // lease has now lapsed and the row is being reclaimed elsewhere, so stop the local zombie). Flag
+                // lease-loss so the cancellation handler leaves the row InProgress for the stalled-reclaim/OnNodeDeath
+                // sweep (#1) rather than writing a terminal Cancelled, then best-effort cancel the running job (a job
+                // ignoring its token still relies on OnNodeDeath for correctness).
+                context.LeaseLost = true;
+                await jobCts.CancelAsync().ConfigureAwait(false);
+                return;
             }
         }
         catch (OperationCanceledException)
