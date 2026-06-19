@@ -24,7 +24,7 @@ public sealed class AwsBlobStorage(
     IClock clock,
     IOptions<AwsBlobStorageOptions> optionsAccessor,
     ILogger<AwsBlobStorage>? logger = null
-) : IBlobStorage
+) : IBlobStorage, IPresignedUrlBlobStorage
 {
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
@@ -853,6 +853,56 @@ public sealed class AwsBlobStorage(
         )
             ? value
             : DateTimeOffset.MinValue;
+    }
+
+    #endregion
+
+    #region Presigned Urls
+
+    public ValueTask<Uri> GetPresignedDownloadUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetPresignedUrlAsync(container, blobName, expiry, HttpVerb.GET, cancellationToken);
+    }
+
+    public ValueTask<Uri> GetPresignedUploadUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetPresignedUrlAsync(container, blobName, expiry, HttpVerb.PUT, cancellationToken);
+    }
+
+    private async ValueTask<Uri> _GetPresignedUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        HttpVerb verb,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var (bucket, key) = _BuildObjectKey(blobName, container);
+
+        var request = new GetPreSignedUrlRequest
+        {
+            BucketName = bucket,
+            Key = key,
+            Verb = verb,
+            // SigV4 presigning is performed locally; Expires is the absolute deadline.
+            Expires = clock.UtcNow.Add(expiry).UtcDateTime,
+        };
+
+        var url = await s3.GetPreSignedURLAsync(request).ConfigureAwait(false);
+
+        return new Uri(url);
     }
 
     #endregion

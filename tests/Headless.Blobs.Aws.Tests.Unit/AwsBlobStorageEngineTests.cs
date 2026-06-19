@@ -4,6 +4,7 @@ using System.Net;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Headless.Abstractions;
+using Headless.Blobs;
 using Headless.Blobs.Aws;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -85,5 +86,43 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         // The second call is served from the per-instance cache and issues no further S3 calls.
         _s3.ReceivedCalls().Count().Should().Be(callsAfterFirst);
+    }
+
+    [Fact]
+    public void implements_presigned_url_capability()
+    {
+        _CreateSut().Should().BeAssignableTo<IPresignedUrlBlobStorage>();
+    }
+
+    [Fact]
+    public async Task presigned_download_url_uses_get_verb_for_the_blob()
+    {
+        _s3.GetPreSignedURLAsync(Arg.Any<GetPreSignedUrlRequest>()).Returns("https://example.com/signed-get");
+
+        var sut = _CreateSut();
+
+        var url = await sut.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(15));
+
+        url.Should().Be(new Uri("https://example.com/signed-get"));
+        await _s3.Received(1)
+            .GetPreSignedURLAsync(
+                Arg.Is<GetPreSignedUrlRequest>(r =>
+                    r.Verb == HttpVerb.GET && r.BucketName == "bucket" && r.Key == "file.txt"
+                )
+            );
+    }
+
+    [Fact]
+    public async Task presigned_upload_url_uses_put_verb_for_the_blob()
+    {
+        _s3.GetPreSignedURLAsync(Arg.Any<GetPreSignedUrlRequest>()).Returns("https://example.com/signed-put");
+
+        var sut = _CreateSut();
+
+        var url = await sut.GetPresignedUploadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(15));
+
+        url.Should().Be(new Uri("https://example.com/signed-put"));
+        await _s3.Received(1)
+            .GetPreSignedURLAsync(Arg.Is<GetPreSignedUrlRequest>(r => r.Verb == HttpVerb.PUT && r.Key == "file.txt"));
     }
 }

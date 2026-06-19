@@ -71,6 +71,26 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
+    public async Task can_round_trip_via_presigned_download_url()
+    {
+        var storage = (IPresignedUrlBlobStorage)GetStorage();
+        var container = new[] { $"presign-{Guid.NewGuid():N}" };
+        var content = "presigned-content"u8.ToArray();
+
+        using (var stream = new MemoryStream(content))
+        {
+            await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream);
+        }
+
+        var url = await storage.GetPresignedDownloadUrlAsync(container, "file.txt", TimeSpan.FromMinutes(5));
+
+        using var http = new HttpClient();
+        var downloaded = await http.GetByteArrayAsync(url);
+
+        downloaded.Should().Equal(content);
+    }
+
+    [Fact]
     public override Task can_get_empty_file_list_on_missing_directory()
     {
         return base.can_get_empty_file_list_on_missing_directory();
