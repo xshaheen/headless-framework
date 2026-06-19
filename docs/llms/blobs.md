@@ -1,6 +1,6 @@
 ---
 domain: Blob Storage
-packages: Blobs.Abstractions, Blobs.Aws, Blobs.Azure, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet
+packages: Blobs.Abstractions, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet
 ---
 
 # Blob Storage
@@ -66,6 +66,16 @@ packages: Blobs.Abstractions, Blobs.Aws, Blobs.Azure, Blobs.FileSystem, Blobs.Re
     - [SSH Key Authentication](#ssh-key-authentication)
   - [Dependencies](#dependencies-5)
   - [Side Effects](#side-effects-5)
+- [Headless.Blobs.CloudflareR2](#headlessblobscloudflarer2)
+  - [Problem Solved](#problem-solved-6)
+  - [Key Features](#key-features-6)
+  - [Installation](#installation-6)
+  - [Quick Start](#quick-start-5)
+  - [Configuration](#configuration-6)
+    - [appsettings.json](#appsettingsjson-5)
+  - [Behavior Notes](#behavior-notes)
+  - [Dependencies](#dependencies-6)
+  - [Side Effects](#side-effects-6)
 
 > Provider-agnostic file/blob storage with implementations for AWS S3, Azure Blob, local filesystem, Redis, and SFTP.
 
@@ -75,8 +85,9 @@ Install `Headless.Blobs.Abstractions` plus one provider package. Code against `I
 
 Provider selection guide:
 - **Development/testing**: `Headless.Blobs.FileSystem` — no external dependencies, stores files on disk.
-- **Production (AWS)**: `Headless.Blobs.Aws` — full S3 integration with bulk operations and pre-signed URLs.
+- **Production (AWS)**: `Headless.Blobs.Aws` — full S3 integration with bulk operations and presigned URLs.
 - **Production (Azure)**: `Headless.Blobs.Azure` — Azure Blob Storage with Batch API and Azure.Identity support.
+- **Production (Cloudflare R2)**: `Headless.Blobs.CloudflareR2` — private, S3-compatible storage on the reused AWS engine; a cost-saving S3 replacement.
 - **SFTP/legacy**: `Headless.Blobs.SshNet` — SFTP protocol for remote servers and legacy system integration.
 - **Small cached blobs**: `Headless.Blobs.Redis` — Redis-backed storage for small, ephemeral blobs only (default 10 MB limit).
 
@@ -85,7 +96,9 @@ All providers register `IBlobStorage` as singleton. Container paths are arrays o
 ## Agent Instructions
 
 - Always depend on `IBlobStorage` from `Headless.Blobs.Abstractions` — never reference `AwsS3BlobStorage`, `AzureBlobStorage`, or other concrete types in service code.
-- Use `Blobs.FileSystem` (`AddFileSystemBlobStorage()`) for local development and testing. Use `Blobs.Aws` or `Blobs.Azure` for production.
+- Use `Blobs.FileSystem` (`AddFileSystemBlobStorage()`) for local development and testing. Use `Blobs.Aws`, `Blobs.Azure`, or `Blobs.CloudflareR2` for production.
+- Presigned URLs are an opt-in capability: `IPresignedUrlBlobStorage` (presigned GET + PUT) is implemented only by AWS, Cloudflare R2, and Azure (SAS). Feature-detect with `storage is IPresignedUrlBlobStorage` — FileSystem, Redis, and SshNet do not implement it. Azure can throw at call time if its `BlobServiceClient` was wired without account-key/user-delegation-key credentials.
+- For the S3 engine (AWS and R2), bucket auto-create on upload/copy is controlled by `AwsBlobStorageOptions.AutoCreateContainer` (AWS default `true`, R2 default `false`); read/exists/delete no longer pre-check the bucket. With auto-create off, pre-create buckets or call `CreateContainerAsync`.
 - Redis blob storage (`Blobs.Redis`) is for small blobs only (metadata, thumbnails, temporary uploads). The default `MaxBlobSizeBytes` is 10 MB. For large files, use S3 or Azure.
 - Always dispose the result of `OpenReadStreamAsync()` promptly — holding it may exhaust connection pools. Use `await using`.
 - Container paths are string arrays, not slash-delimited strings: `["uploads", "images"]` not `"uploads/images"`.
@@ -177,7 +190,8 @@ Provides seamless integration with AWS S3 for blob storage using the unified `IB
 - Bulk upload/delete with optimized batching
 - Automatic path normalization for S3 object keys
 - Metadata support
-- Pre-signed URL generation capability
+- Presigned download/upload URLs via `IPresignedUrlBlobStorage`
+- Opt-in, cached bucket auto-create (`AutoCreateContainer`)
 - Integration with AWS SDK configuration
 
 ## Installation
@@ -193,20 +207,20 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: Use configuration-based AWS options
 var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddAwsS3BlobStorage(awsOptions, options =>
-{
-    options.BucketName = "my-bucket";
-});
+builder.Services.AddAwsS3BlobStorage(awsOptions);
 
 // Option 2: Manual configuration
 builder.Services.AddAwsS3BlobStorage(new AWSOptions
 {
     Region = RegionEndpoint.USEast1,
     Credentials = new BasicAWSCredentials("access-key", "secret-key")
-}, options =>
-{
-    options.BucketName = "my-bucket";
 });
+```
+
+Buckets and keys are passed per operation, not configured at registration:
+
+```csharp
+await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 ```
 
 ## Configuration
@@ -226,7 +240,11 @@ builder.Services.AddAwsS3BlobStorage(new AWSOptions
 ### Options
 
 ```csharp
-options.BucketName = "my-bucket";
+options.AutoCreateContainer = true; // create buckets on upload/copy (default true; set false for R2)
+options.CannedAcl = S3CannedACL.Private;
+options.UseChunkEncoding = true;
+options.DisablePayloadSigning = false;
+options.MaxBulkParallelism = 10;
 ```
 
 ## Dependencies
@@ -257,6 +275,7 @@ Provides seamless integration with Azure Blob Storage using the unified `IBlobSt
 - Bulk operations with Azure Batch API
 - Container management
 - Metadata support
+- Presigned download/upload URLs via `IPresignedUrlBlobStorage` (SAS-based)
 - Integration with Azure.Identity for authentication
 
 ## Installation
@@ -522,3 +541,78 @@ builder.Services.AddSshNetBlobStorage(options =>
 
 - Registers `IBlobStorage` as singleton
 - Opens SSH/SFTP connections to remote server
+---
+# Headless.Blobs.CloudflareR2
+
+Cloudflare R2 implementation of `IBlobStorage`, running R2 as a private, S3-compatible blob backend on the reused AWS S3 engine.
+
+## Problem Solved
+
+R2 speaks the S3 API but cannot use the AWS provider as-is: the endpoint, path-style addressing, and AWS SDK v4 checksum defaults need R2-specific configuration, and R2 has no ACL concept. This package configures an R2-tuned `IAmazonS3` and reuses `AwsBlobStorage`, making R2 a drop-in, cost-saving S3 replacement.
+
+## Key Features
+
+- Full `IBlobStorage` implementation for Cloudflare R2 (reuses the AWS S3 engine)
+- Presigned download/upload URLs via `IPresignedUrlBlobStorage`
+- R2-correct client config: path-style addressing, `auto` region, SDK v4 checksum settings R2 accepts
+- R2 bucket naming normalization (no dots)
+- Jurisdiction-aware endpoints (default, EU, FedRAMP)
+
+## Installation
+
+```bash
+dotnet add package Headless.Blobs.CloudflareR2
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddCloudflareR2BlobStorage(options =>
+{
+    options.AccountId = builder.Configuration["R2:AccountId"]!;
+    options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
+    options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
+    // options.Jurisdiction = R2Jurisdiction.EuropeanUnion; // optional
+});
+
+// Buckets and keys are passed per operation:
+await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "R2": {
+    "AccountId": "your-account-id",
+    "AccessKeyId": "your-access-key-id",
+    "SecretAccessKey": "your-secret-access-key",
+    "Jurisdiction": "Default"
+  }
+}
+```
+
+## Behavior Notes
+
+- Buckets are not auto-created (`AutoCreateContainer` defaults to `false`): R2 object-scoped tokens cannot create buckets. Pre-create buckets out of band or use a bucket-create-capable token with `CreateContainerAsync`.
+- No ACLs / public access: `CannedAcl` is `null`. Use presigned URLs for time-limited private access; public serving (custom domains / `r2.dev`) is out of scope.
+- Single PUT is capped at ~5 GiB, the same as S3.
+
+## Dependencies
+
+- `Headless.Blobs.Aws`
+- `Headless.Blobs.Abstractions`
+- `Headless.Core`
+- `Headless.Hosting`
+- `AWSSDK.S3`
+
+## Side Effects
+
+- Registers `IAmazonS3` (configured for R2) if not already registered
+- Configures the shared `AwsBlobStorageOptions` with R2-safe defaults
+- Registers `IBlobStorage` (the AWS S3 engine) as singleton
+- Registers `IBlobNamingNormalizer` (R2 rules) as singleton
