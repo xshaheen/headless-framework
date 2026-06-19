@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
-using Headless.DistributedLocks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -15,12 +13,14 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     where TCronJob : CronJobEntity, new()
 {
     private readonly JobsExecutionContext _tickerExecutionContext;
-    private readonly SchedulerOptionsBuilder _schedulerOptions;
+
+    /// <summary>Scheduler options instance, exposed so Core-layer extensions can toggle internal flags.</summary>
+    internal SchedulerOptionsBuilder SchedulerOptions { get; }
 
     internal JobsOptionsBuilder(JobsExecutionContext tickerExecutionContext, SchedulerOptionsBuilder schedulerOptions)
     {
         _tickerExecutionContext = tickerExecutionContext;
-        _schedulerOptions = schedulerOptions;
+        SchedulerOptions = schedulerOptions;
         // Store this instance in the execution context for later retrieval
         tickerExecutionContext.OptionsSeeding = this;
     }
@@ -61,17 +61,12 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     internal Func<IServiceProvider, Task>? CronSeederAction { get; set; }
 
     /// <summary>
-    /// Lock provider instance supplied via <see cref="UseDistributedLock(IDistributedLock)"/>. Mutually exclusive
-    /// with <see cref="LockProviderFactory"/> — setting either clears the other so the last call wins. Consumed by
-    /// <c>AddHeadlessJobs</c>, which registers it under the Jobs-scoped keyed-DI slot.
+    /// Deferred keyed-DI registration for the Jobs-scoped lock provider, set by the Core-layer
+    /// <c>UseDistributedLock</c> extensions and replayed by <c>AddHeadlessJobs</c>. Kept as an untyped
+    /// <see cref="Action{T}"/> over <see cref="IServiceCollection"/> so <c>Headless.Jobs.Abstractions</c> carries no
+    /// dependency on any distributed-lock package. Last call wins: a second <c>UseDistributedLock</c> overwrites it.
     /// </summary>
-    internal IDistributedLock? LockProviderInstance { get; private set; }
-
-    /// <summary>
-    /// Factory supplied via <see cref="UseDistributedLock(Func{IServiceProvider, IDistributedLock})"/> for a lock
-    /// provider that itself depends on DI-registered services. Mutually exclusive with <see cref="LockProviderInstance"/>.
-    /// </summary>
-    internal Func<IServiceProvider, IDistributedLock>? LockProviderFactory { get; private set; }
+    internal Action<IServiceCollection>? LockRegistrationAction { get; set; }
 
     // Explicit interface implementation for IJobsOptionsSeeding
     bool IJobsOptionsSeeding.SeedDefinedCronJobs => SeedDefinedCronJobs;
@@ -86,7 +81,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         Action<SchedulerOptionsBuilder> schedulerOptionsBuilder
     )
     {
-        schedulerOptionsBuilder?.Invoke(_schedulerOptions);
+        schedulerOptionsBuilder?.Invoke(SchedulerOptions);
         return this;
     }
 
@@ -116,49 +111,6 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     public JobsOptionsBuilder<TTimeJob, TCronJob> UseGZipCompression()
     {
         RequestGZipCompressionEnabled = true;
-        return this;
-    }
-
-    /// <summary>
-    /// Registers an <see cref="IDistributedLock"/> for the Jobs-scoped lock slot and enables
-    /// <see cref="SchedulerOptionsBuilder.UseStorageLock"/>. The lock coarse-gates startup cron-seed migration so N
-    /// booting nodes do not redundantly re-run the same scan/upsert. (Dead-node resource reclaim is intentionally left
-    /// unguarded — the recovery bridge marks owners before the sweep and retries only on a thrown failure, so a
-    /// skip-on-contention there would strand dead-owner rows; see <c>JobsDeadOwnerReclaimer</c>.)
-    /// </summary>
-    /// <param name="provider">The lock provider instance to use for Jobs coordination.</param>
-    /// <remarks>
-    /// This is an optimization, not a correctness boundary: per-row predicates, <c>node@incarnation</c> ownership,
-    /// and per-job leases stay the correctness boundary, so behavior is unchanged when no provider is registered.
-    /// Jobs keeps the provider under a Jobs-private keyed-DI key so it never conflicts with any other
-    /// <see cref="IDistributedLock"/> registered at the application level. Calling this method implicitly sets
-    /// <c>UseStorageLock = true</c>. Last-wins: calling this method (or its factory overload) more than once replaces
-    /// any prior Jobs lock provider registration.
-    /// </remarks>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> UseDistributedLock(IDistributedLock provider)
-    {
-        Argument.IsNotNull(provider);
-
-        LockProviderInstance = provider;
-        LockProviderFactory = null;
-        _schedulerOptions.UseStorageLock = true;
-        return this;
-    }
-
-    /// <summary>
-    /// Registers a factory-resolved <see cref="IDistributedLock"/> for the Jobs-scoped lock slot and enables
-    /// <see cref="SchedulerOptionsBuilder.UseStorageLock"/>. Use this overload when the provider itself depends on
-    /// other DI-registered services.
-    /// </summary>
-    /// <param name="factory">A factory delegate that receives the <see cref="IServiceProvider"/> and returns the lock provider.</param>
-    /// <remarks>See <see cref="UseDistributedLock(IDistributedLock)"/> for the correctness/optimization contract.</remarks>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> UseDistributedLock(Func<IServiceProvider, IDistributedLock> factory)
-    {
-        Argument.IsNotNull(factory);
-
-        LockProviderFactory = factory;
-        LockProviderInstance = null;
-        _schedulerOptions.UseStorageLock = true;
         return this;
     }
 
@@ -285,12 +237,13 @@ public sealed class SchedulerOptionsBuilder
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
 
     /// <summary>
-    /// Whether the Jobs-scoped distributed lock coarse-gates startup cron-seed migration. Enabled only via
-    /// <c>JobsOptionsBuilder.UseDistributedLock(...)</c> (the setter is internal so the flag can never be
+    /// Whether the Jobs-scoped distributed lock coarse-gates startup cron-seed migration. Enabled only via the
+    /// <c>UseDistributedLock(...)</c> builder extension (the setter is internal so the flag can never be
     /// <see langword="true"/> while the keyed slot still holds the <c>NullDistributedLock</c> fallback — that would
     /// silently no-op the guard on every node with no diagnostic). Defaults to <see langword="false"/> (no lock —
-    /// every node runs the seed independently, which stays correct via the idempotent id-keyed upsert). This is an
-    /// optimization flag, never a correctness gate.
+    /// every node runs the seed independently; sequential re-runs are idempotent, but simultaneous first-boot across
+    /// nodes can duplicate-seed without this gate). This is an optimization flag, never the job-execution correctness
+    /// boundary.
     /// </summary>
     public bool UseStorageLock { get; internal set; }
 }

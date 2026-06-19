@@ -74,19 +74,11 @@ public static class JobsServiceExtensions
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
         services.TryAddSingleton(TimeProvider.System);
 
-        // Jobs-scoped distributed lock. The builder stores at most one of instance/factory (last-wins), so
-        // the keyed slot is registered at most once here; the NullDistributedLock fallback is always present so the
-        // guard sites can resolve a keyed IDistributedLock even when UseStorageLock is off. The lock only removes
-        // redundant cross-node work — it is never the correctness boundary for job-row ownership.
-        if (optionInstance.LockProviderInstance is not null)
-        {
-            services.AddKeyedSingleton(JobsKeys.LockProvider, optionInstance.LockProviderInstance);
-        }
-        else if (optionInstance.LockProviderFactory is { } lockFactory)
-        {
-            services.AddKeyedSingleton<IDistributedLock>(JobsKeys.LockProvider, (sp, _) => lockFactory(sp));
-        }
-
+        // Jobs-scoped distributed lock. The Core-layer UseDistributedLock extension stashed a single deferred keyed
+        // registration on the builder (last-wins), replayed here; the NullDistributedLock fallback is always present
+        // so the guard sites can resolve a keyed IDistributedLock even when UseStorageLock is off. The lock is
+        // best-effort duplicate-suppression — never the correctness boundary for job-row ownership.
+        optionInstance.LockRegistrationAction?.Invoke(services);
         services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(JobsKeys.LockProvider);
 
         // Core initialization — registered before background services to guarantee startup order

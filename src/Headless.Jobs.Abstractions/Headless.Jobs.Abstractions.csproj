@@ -17,10 +17,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
-    <!-- Deliberate always-on dependency: the UseDistributedLock overloads live on JobsOptionsBuilder, so every
-         Jobs.Abstractions consumer transitively references this even when not using the lock. Kept structural (not
-         optional) because the dep is backend-free (only Headless.Checks + Headless.Extensions, no lock providers), so
-         the zero-lock-in cost is negligible. -->
-    <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
   </ItemGroup>
 </Project>
