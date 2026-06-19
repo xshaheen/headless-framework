@@ -12,14 +12,14 @@ public interface ITimezoneProvider
     /// Each time zone includes its display name as name (offset from UTC) and value as the identifier name.
     /// </summary>
     /// <returns>A list of <see cref="NameValue"/> objects representing Windows time zones.</returns>
-    List<NameValue> GetWindowsTimezones();
+    IReadOnlyList<NameValue> GetWindowsTimezones();
 
     /// <summary>
     /// Retrieves a list of all known IANA time zones, ordered alphabetically.
     /// Each time zone includes its display name as name (offset from UTC) and value as the identifier name.
     /// </summary>
     /// <returns>A list of <see cref="NameValue"/> objects representing IANA time zones.</returns>
-    List<NameValue> GetIanaTimezones();
+    IReadOnlyList<NameValue> GetIanaTimezones();
 
     /// <summary>
     /// Converts a Windows time zone ID to an equivalent IANA time zone name.
@@ -54,22 +54,24 @@ public interface ITimezoneProvider
 
 public sealed class TzConvertTimezoneProvider : ITimezoneProvider
 {
-    public List<NameValue> GetWindowsTimezones()
-    {
-        return TZConvert
-            .KnownWindowsTimeZoneIds.Order(StringComparer.Ordinal)
-            .Select(value => new NameValue
-            {
-                Name = $"{value} ({_GetTimezoneOffset(TZConvert.GetTimeZoneInfo(value))})",
-                Value = value,
-            })
-            .ToList();
-    }
+    // The Windows/IANA zone tables are static for the process lifetime, so the display lists
+    // (which resolve a TimeZoneInfo per entry) are built once and reused across calls.
+    private static readonly Lazy<IReadOnlyList<NameValue>> _WindowsTimezones = new(() =>
+        _BuildTimezones(TZConvert.KnownWindowsTimeZoneIds)
+    );
 
-    public List<NameValue> GetIanaTimezones()
+    private static readonly Lazy<IReadOnlyList<NameValue>> _IanaTimezones = new(() =>
+        _BuildTimezones(TZConvert.KnownIanaTimeZoneNames)
+    );
+
+    public IReadOnlyList<NameValue> GetWindowsTimezones() => _WindowsTimezones.Value;
+
+    public IReadOnlyList<NameValue> GetIanaTimezones() => _IanaTimezones.Value;
+
+    private static IReadOnlyList<NameValue> _BuildTimezones(IEnumerable<string> timeZoneIds)
     {
-        return TZConvert
-            .KnownIanaTimeZoneNames.Order(StringComparer.Ordinal)
+        return timeZoneIds
+            .Order(StringComparer.Ordinal)
             .Select(value => new NameValue
             {
                 Name = $"{value} ({_GetTimezoneOffset(TZConvert.GetTimeZoneInfo(value))})",
