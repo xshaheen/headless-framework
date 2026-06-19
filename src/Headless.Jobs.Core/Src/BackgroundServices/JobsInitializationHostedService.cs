@@ -139,9 +139,11 @@ internal sealed class JobsInitializationHostedService(
             .Select(x => (x.Key, x.Value.cronExpression))
             .ToArray();
 
-        // No lock configured (default): run the seed directly. The upsert/constraints in MigrateDefinedCronJobs remain
-        // the correctness boundary; the lock below only removes the redundant N-node scan/write storm on rolling
-        // deploys (KTD3) — it is never a correctness gate, so the no-lock path is intentionally unchanged.
+        // No lock configured (default): run the seed directly. MigrateDefinedCronJobs is find-and-update, so SEQUENTIAL
+        // re-runs are idempotent (a second run updates the row in place). It is NOT unique-constrained on Function,
+        // though, so SIMULTANEOUS first-boot on N nodes can each insert a distinct duplicate seed row; the optional
+        // lock below suppresses that race (KTD3). The lock is best-effort duplicate-suppression, not the job-execution
+        // correctness boundary — per-row predicates, node@incarnation ownership, and per-job leases remain that boundary.
         if (!schedulerOptions.UseStorageLock)
         {
             await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
@@ -155,14 +157,16 @@ internal sealed class JobsInitializationHostedService(
                 .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, JobsKeys.GuardAcquireOptions, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Shutdown / caller cancellation must propagate — do not swallow it as a skip.
+            // Host-shutdown / caller cancellation (our own token tripped) must propagate — do not swallow it as a skip.
             throw;
         }
         catch (Exception ex)
         {
-            // Lock-store hiccup (KTD3): another node seeds, or the next boot retries. Skip rather than fail startup.
+            // Lock-store hiccup (KTD3) — including a provider that surfaces an internal timeout as a
+            // (Task)OperationCanceledException while our token is NOT cancelled: another node seeds, or the next boot
+            // retries. Skip rather than fail startup instead of letting a provider-internal cancel crash host start.
             logger.CronSeedMigrationLockAcquireFailed(ex);
             return;
         }

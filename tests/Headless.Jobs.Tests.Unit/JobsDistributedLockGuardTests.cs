@@ -164,8 +164,12 @@ public sealed class JobsDistributedLockGuardTests
     }
 
     [Fact]
-    public async Task Seed_propagates_cancellation_during_acquire()
+    public async Task Seed_propagates_cancellation_when_caller_token_is_cancelled()
     {
+        // Real pre-cancelled caller token: a host-shutdown / caller cancellation must propagate out of StartAsync.
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
         var cancelingLock = Substitute.For<IDistributedLock>();
         cancelingLock
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
@@ -173,9 +177,29 @@ public sealed class JobsDistributedLockGuardTests
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        var act = async () => await InvokeSeedAsync(manager, options, cancelingLock, CancellationToken.None);
+        var act = async () => await InvokeSeedAsync(manager, options, cancelingLock, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+        await manager
+            .DidNotReceive()
+            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Seed_skips_when_acquire_throws_oce_but_caller_token_not_cancelled()
+    {
+        // A provider that surfaces its own internal timeout as an OperationCanceledException while the caller token is
+        // NOT cancelled must be treated as an acquire fault (skip), not propagated as a host-startup crash.
+        var faultingLock = Substitute.For<IDistributedLock>();
+        faultingLock
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+        var manager = Substitute.For<IInternalJobManager>();
+        var options = new SchedulerOptionsBuilder { UseStorageLock = true };
+
+        // CancellationToken.None → not cancelled → the OCE is swallowed as a skip, startup is not failed.
+        await InvokeSeedAsync(manager, options, faultingLock, CancellationToken.None);
+
         await manager
             .DidNotReceive()
             .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
