@@ -68,7 +68,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 ## Quick Orientation
 
 - **`Headless.Extensions`** — utility extensions, domain primitives (`UserId`, `AccountId`, `Money`, `PhoneNumber`), result pattern (`ApiResult<T>`, `Result<TValue, TError>`), error hierarchy (`ResultError`, `NotFoundError`, `ValidationError`), GUID generation (`SequentialGuid`, `IGuidGenerator`), collection helpers, pagination, constants (`JwtClaimTypes`, `RegexPatterns`, `HttpHeaderNames`), and validators.
-- **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`Run` retry helper, `SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
+- **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
 - **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
@@ -202,7 +202,7 @@ Core abstractions for building applications with multi-tenancy, user context, an
 
 ## Problem Solved
 
-Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (retry logic, compression, structured logging) enabling consistent patterns across all application layers.
+Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (compression, structured logging) enabling consistent patterns across all application layers.
 
 ## Key Features
 
@@ -210,6 +210,9 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
     - `IClock` - Testable time abstraction (wraps `TimeProvider`)
     - `ICurrentUser` - Current authenticated user context with roles and claims
     - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
+    - `ITenantWriteGuardBypass` - Explicit bypass scope for audited host/admin tenant writes
+    - `CrossTenantWriteException` / `MissingTenantContextException` - tenant write-guard exceptions (non-transient; exclude from retry)
+    - `ICorrelationIdProvider` / `ActivityCorrelationIdProvider` - correlation ID for tracing, audit, and structured logging
     - `ICurrentLocale` - Localization context (language, locale, culture)
     - `ICurrentTimeZone` - Timezone handling
     - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
@@ -221,7 +224,6 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
     - `IHaveLogger` / `IHaveTimeProvider` - Mixin interfaces for logger and time provider access
 
 - **Utilities**:
-    - `Run.DelayedAsync` - Deferred async invocation honoring `TimeProvider` and cancellation
     - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
     - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
     - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
@@ -261,18 +263,9 @@ logger.LogInformation(
 );
 ```
 
-### Deferred Execution
+### Retry / Deferred Execution
 
-```csharp
-await Run.DelayedAsync(
-    TimeSpan.FromSeconds(5),
-    async ct => await PublishHeartbeatAsync(ct),
-    timeProvider: TimeProvider.System,
-    cancellationToken: cancellationToken
-);
-```
-
-For retries, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
+For retries and delayed execution, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
 
 ```csharp
 private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
@@ -302,7 +295,6 @@ No configuration required for the abstractions. Host/package setup can call `Add
 - `Headless.Checks`
 - `Headless.Extensions`
 - `Headless.Serializer.Json`
-- `FluentValidation`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Snappier`
