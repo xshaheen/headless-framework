@@ -37,6 +37,40 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
+    public async Task upload_throws_when_auto_create_disabled_and_bucket_missing()
+    {
+        var s3Config = new AmazonS3Config
+        {
+            RegionEndpoint = RegionEndpoint.USEast1,
+            ServiceURL = fixture.Container.GetConnectionString(),
+            ForcePathStyle = true,
+        };
+
+        var awsCredentials = new BasicAWSCredentials("xxx", "xxx");
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        var amazonS3Client = new AmazonS3Client(awsCredentials, s3Config);
+#pragma warning restore CA2000
+
+        var options = new OptionsWrapper<AwsBlobStorageOptions>(
+            new AwsBlobStorageOptions { AutoCreateContainer = false }
+        );
+
+        await using var storage = new AwsBlobStorage(
+            amazonS3Client,
+            new MimeTypeProvider(),
+            new Clock(TimeProvider.System),
+            options
+        );
+
+        var missingBucket = $"missing-{Guid.NewGuid():N}";
+        using var stream = new MemoryStream("hello"u8.ToArray());
+
+        var act = async () => await storage.UploadAsync([missingBucket], "file.txt", stream);
+
+        await act.Should().ThrowAsync<AmazonS3Exception>();
+    }
+
+    [Fact]
     public override Task can_get_empty_file_list_on_missing_directory()
     {
         return base.can_get_empty_file_list_on_missing_directory();

@@ -15,6 +15,15 @@ public sealed class AwsBlobStorageOptions
 
     /// <summary>Maximum degree of parallelism for bulk operations. Default is 10.</summary>
     public int MaxBulkParallelism { get; set; } = 10;
+
+    /// <summary>
+    /// When <see langword="true"/> (the default), uploads and copies create the target bucket if it does not
+    /// already exist. The check/create runs at most once per bucket per storage instance. Set to
+    /// <see langword="false"/> for backends whose credentials cannot create buckets (for example Cloudflare R2
+    /// object-scoped tokens); a missing bucket then surfaces as an error from the write operation. Explicit
+    /// <see cref="IBlobStorage.CreateContainerAsync"/> calls always create regardless of this setting.
+    /// </summary>
+    public bool AutoCreateContainer { get; set; } = true;
 }
 
 internal sealed class AwsBlobStorageOptionsValidator : AbstractValidator<AwsBlobStorageOptions>
