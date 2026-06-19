@@ -74,7 +74,7 @@ public static class JobsServiceExtensions
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
         services.TryAddSingleton(TimeProvider.System);
 
-        // Jobs-scoped distributed lock (KTD1). The builder stores at most one of instance/factory (last-wins), so
+        // Jobs-scoped distributed lock. The builder stores at most one of instance/factory (last-wins), so
         // the keyed slot is registered at most once here; the NullDistributedLock fallback is always present so the
         // guard sites can resolve a keyed IDistributedLock even when UseStorageLock is off. The lock only removes
         // redundant cross-node work — it is never the correctness boundary for job-row ownership.
