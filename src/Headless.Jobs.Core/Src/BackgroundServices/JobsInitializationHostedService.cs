@@ -18,7 +18,6 @@ namespace Headless.Jobs.BackgroundServices;
 /// </summary>
 internal sealed class JobsInitializationHostedService(
     IServiceProvider serviceProvider,
-    [FromKeyedServices(JobsKeys.LockProvider)] IDistributedLock lockProvider,
     ILogger<JobsInitializationHostedService> logger
 ) : IHostedService
 {
@@ -153,6 +152,11 @@ internal sealed class JobsInitializationHostedService(
         IDistributedLease? lease;
         try
         {
+            // Resolve the keyed lock lazily INSIDE the try (not via constructor injection) so a consumer factory that
+            // throws at resolution — e.g. UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>()) when no
+            // provider is registered — is treated as an acquire fault and skipped, rather than crashing host startup
+            // when DI constructs this hosted service.
+            var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
             lease = await lockProvider
                 .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, JobsKeys.GuardAcquireOptions, cancellationToken)
                 .ConfigureAwait(false);

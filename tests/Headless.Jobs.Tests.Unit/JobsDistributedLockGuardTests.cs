@@ -55,15 +55,16 @@ public sealed class JobsDistributedLockGuardTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(manager);
+        // Register the lock under the Jobs-scoped keyed slot — production resolves it lazily from this same slot
+        // (NullDistributedLock fallback included) inside the seed guard's try/catch.
+        services.AddKeyedSingleton(JobsKeys.LockProvider, lockProvider);
 
         await using var sp = services.BuildServiceProvider();
 
-        // Construct the hosted service with the lock injected via its constructor (production resolves the keyed
-        // NullDistributedLock fallback the same way) and drive the seed guard directly — no StartAsync, so the test
-        // stays isolated from the global JobFunctionProvider static state. A rename breaks the build, not at runtime.
+        // Drive the seed guard directly — no StartAsync, so the test stays isolated from the global
+        // JobFunctionProvider static state. A rename breaks the build, not at runtime.
         var hostedService = new JobsInitializationHostedService(
             sp,
-            lockProvider,
             NullLogger<JobsInitializationHostedService>.Instance
         );
 
@@ -199,6 +200,34 @@ public sealed class JobsDistributedLockGuardTests
 
         // CancellationToken.None → not cancelled → the OCE is swallowed as a skip, startup is not failed.
         await InvokeSeedAsync(manager, options, faultingLock, CancellationToken.None);
+
+        await manager
+            .DidNotReceive()
+            .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Seed_skips_when_lock_factory_throws_at_resolution()
+    {
+        // A consumer factory that throws when DI resolves the keyed lock (e.g. a required service is missing) must be
+        // treated as an acquire fault — the seed skips — not crash host startup. The guard resolves the keyed lock
+        // lazily inside its try/catch precisely so this is recoverable.
+        var manager = Substitute.For<IInternalJobManager>();
+        var services = new ServiceCollection();
+        services.AddSingleton(manager);
+        services.AddKeyedSingleton<IDistributedLock>(
+            JobsKeys.LockProvider,
+            (_, _) => throw new InvalidOperationException("no IDistributedLock registered")
+        );
+        await using var sp = services.BuildServiceProvider();
+        var options = new SchedulerOptionsBuilder { UseStorageLock = true };
+        var hostedService = new JobsInitializationHostedService(
+            sp,
+            NullLogger<JobsInitializationHostedService>.Instance
+        );
+
+        // Must not throw — the throwing factory is swallowed as a skip.
+        await hostedService._SeedDefinedCronJobsAsync(options, CancellationToken.None);
 
         await manager
             .DidNotReceive()
