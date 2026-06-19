@@ -356,7 +356,16 @@ internal class JobsExecutionTaskHandler(
             );
 
             // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
-            await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
+            var affected = await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
+            if (affected == 0)
+            {
+                // #462: the success write matched 0 rows — the row was reclaimed/terminalized by a sweep (e.g. a
+                // GC/thread-pool stall outlasted the lease before this write committed). The job actually succeeded,
+                // but the durable record now shows the sweep's terminal status (Failed/Skipped). Log so operators can
+                // reconcile instead of treating the recorded failure as real and manually re-triggering — the very
+                // double-run that MarkFailed/Skip exist to prevent.
+                logger.LogJobCompletionFencedAfterSuccess(context.JobId, context.FunctionName);
+            }
         }
         else if (lastException != null)
         {
@@ -410,7 +419,9 @@ internal class JobsExecutionTaskHandler(
                 // Delay BEFORE the first renew: a job finishing within one cadence writes no renewal.
                 await timeProvider.Delay(_leaseRenewalInterval, renewalLoopToken).ConfigureAwait(false);
 
-                if (!await _TryRenewLeaseAsync(context, renewalLoopToken).ConfigureAwait(false))
+                var outcome = await _TryRenewLeaseAsync(context, renewalLoopToken).ConfigureAwait(false);
+
+                if (outcome is RenewalOutcome.Lost)
                 {
                     // Lease lost (reclaimed / owner changed / terminalized) OR the renewal could not be confirmed
                     // within the cadence (hung / unreachable store, #463). Flag lease-loss so the cancellation handler
@@ -421,6 +432,16 @@ internal class JobsExecutionTaskHandler(
                     await jobCts.CancelAsync().ConfigureAwait(false);
                     return;
                 }
+
+                if (outcome is RenewalOutcome.MembershipUnknown)
+                {
+                    // #461: coordination membership is momentarily unestablished (registration pending / transient
+                    // blip) — distinct from a lost lease. Skip this tick instead of cancelling a healthy job; if the
+                    // blip persists the lease lapses and the stalled-reclaim sweep recovers the row per OnNodeDeath
+                    // (same bound as a dead node). Logged at Debug since it can repeat during a partition.
+                    logger.LogJobLeaseRenewalSkippedMembershipUnknown(context.JobId, context.FunctionName);
+                }
+                // RenewalOutcome.Held or .MembershipUnknown — keep running, retry next tick.
             }
         }
         catch (OperationCanceledException)
@@ -429,13 +450,26 @@ internal class JobsExecutionTaskHandler(
         }
     }
 
+    // Outcome of a single renewal attempt. Held -> keep running; Lost -> cancel-on-loss; MembershipUnknown ->
+    // coordination membership not currently established (#461), skip this tick without cancelling.
+    private enum RenewalOutcome
+    {
+        Held,
+        Lost,
+        MembershipUnknown,
+    }
+
     /// <summary>
-    /// One renewal attempt. Returns <c>true</c> while the lease is still held; <c>false</c> when it was lost OR the
-    /// renewal could not be confirmed within the renewal cadence (#463: a hung / slow / unreachable store must not
-    /// silently let the lease lapse while another node reclaims the row — a renewal that cannot complete in one
-    /// interval, or that errors, is treated as a loss so the caller cancels the job and OnNodeDeath governs).
+    /// One renewal attempt. <see cref="RenewalOutcome.Held"/> while the lease is still held;
+    /// <see cref="RenewalOutcome.Lost"/> when it was lost OR the renewal could not be confirmed within the cadence
+    /// (#463: a hung / slow / unreachable store, or an error, must not silently let the lease lapse — treated as a
+    /// loss so the caller cancels and OnNodeDeath governs); <see cref="RenewalOutcome.MembershipUnknown"/> when
+    /// coordination membership is not currently established (#461), which the caller skips rather than cancels.
     /// </summary>
-    private async Task<bool> _TryRenewLeaseAsync(InternalFunctionContext context, CancellationToken renewalLoopToken)
+    private async Task<RenewalOutcome> _TryRenewLeaseAsync(
+        InternalFunctionContext context,
+        CancellationToken renewalLoopToken
+    )
     {
         // Bound the renewal DB call to one cadence so a hung store can't block the loop past the lease deadline.
         using var timeoutCts = new CancellationTokenSource(_leaseRenewalInterval, timeProvider);
@@ -443,7 +477,13 @@ internal class JobsExecutionTaskHandler(
 
         try
         {
-            return await internalJobsManager.RenewLeaseAsync(context, renewalCts.Token).ConfigureAwait(false) != 0;
+            var affected = await internalJobsManager.RenewLeaseAsync(context, renewalCts.Token).ConfigureAwait(false);
+
+            // >0 renewed (held); 0 the row matched no rows (genuinely lost); <0 the renew was gated because
+            // coordination membership is not established (#461) — skip, not loss.
+            return affected > 0 ? RenewalOutcome.Held
+                : affected < 0 ? RenewalOutcome.MembershipUnknown
+                : RenewalOutcome.Lost;
         }
         catch (OperationCanceledException) when (renewalLoopToken.IsCancellationRequested)
         {
@@ -454,7 +494,7 @@ internal class JobsExecutionTaskHandler(
         catch (OperationCanceledException)
         {
             // Renewal deadline elapsed: the store did not confirm the lease within the cadence. Treat as lost.
-            return false;
+            return RenewalOutcome.Lost;
         }
         catch (Exception exception)
         {
@@ -463,7 +503,7 @@ internal class JobsExecutionTaskHandler(
             // treat it as lost so OnNodeDeath governs correctness (Retry re-runs, MarkFailed/Skip stay terminal). Log
             // at Warning so a DB-error renewal loss is observable and distinguishable from a programming bug (#463/R2).
             logger.LogJobLeaseRenewalFailed(exception, context.JobId, context.FunctionName);
-            return false;
+            return RenewalOutcome.Lost;
         }
     }
 
@@ -620,4 +660,25 @@ internal static partial class JobsExecutionTaskHandlerLog
         Guid jobId,
         string function
     );
+
+    [LoggerMessage(
+        EventId = 3103,
+        Level = LogLevel.Debug,
+        Message = "Lease renewal for job {JobId} ({Function}) skipped: coordination membership is not currently "
+            + "established. The job keeps running; the renewal will resume once membership re-establishes (#461)."
+    )]
+    public static partial void LogJobLeaseRenewalSkippedMembershipUnknown(
+        this ILogger logger,
+        Guid jobId,
+        string function
+    );
+
+    [LoggerMessage(
+        EventId = 3104,
+        Level = LogLevel.Warning,
+        Message = "Job {JobId} ({Function}) completed successfully but its completion write matched 0 rows — the row "
+            + "was reclaimed/terminalized by a sweep (likely a stall outlasting the lease). The durable record may "
+            + "show a terminal failure that did not actually occur; reconcile before re-triggering (#462)."
+    )]
+    public static partial void LogJobCompletionFencedAfterSuccess(this ILogger logger, Guid jobId, string function);
 }

@@ -29,7 +29,8 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Slides the running time job's lease forward (<c>LockedUntil = now + LeaseDuration</c>), fenced on
     /// current ownership + non-terminal status (#316/KTD3). Returns the affected row count: <c>1</c> when the
     /// lease was renewed, <c>0</c> when the lease was lost (reclaimed, owner changed, or terminalized) — the
-    /// caller treats <c>0</c> as cancel-on-loss.
+    /// caller treats <c>0</c> as cancel-on-loss — or a <b>negative</b> value when coordination membership is not
+    /// currently established (#461), which the caller treats as "skip this renewal tick", not loss.
     /// </summary>
     Task<int> RenewTimeJobLease(Guid jobId, CancellationToken cancellationToken = default);
 
@@ -85,7 +86,8 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <summary>
     /// Slides the running cron occurrence's lease forward (<c>LockedUntil = now + LeaseDuration</c>), fenced on
     /// current ownership + non-terminal status (#316/KTD3). Returns <c>1</c> when renewed, <c>0</c> when the
-    /// lease was lost — the caller treats <c>0</c> as cancel-on-loss.
+    /// lease was lost — the caller treats <c>0</c> as cancel-on-loss — or a <b>negative</b> value when coordination
+    /// membership is not currently established (#461), treated as "skip this renewal tick", not loss.
     /// </summary>
     Task<int> RenewCronJobOccurrenceLease(Guid occurrenceId, CancellationToken cancellationToken = default);
 
