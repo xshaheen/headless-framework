@@ -29,10 +29,10 @@
     <value>The entered phone number don't have all the information to be dialled from anywhere inside or outside the country. Please enter the phone number in a global format.</value>
   </data>
   <data name="collection:minimum_elements" xml:space="preserve">
-    <value>{PropertyName} must contain at least {MinElements} items. The {PropertyName} contains {TotalElements} element.</value>
+    <value>{PropertyName} must contain at least {MinElements} items. The {PropertyName} contains {TotalElements} elements.</value>
   </data>
   <data name="collection:maximum_elements" xml:space="preserve">
-    <value>{PropertyName} must contain fewer than {MaxElements} items. The {PropertyName} contains {TotalElements} element.</value>
+    <value>{PropertyName} must contain fewer than {MaxElements} items. The {PropertyName} contains {TotalElements} elements.</value>
   </data>
   <data name="collection:unique_elements" xml:space="preserve">
     <value>{PropertyName} must contain unique items. The {PropertyName} contains {TotalDuplicates} duplicates.</value>

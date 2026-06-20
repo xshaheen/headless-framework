@@ -2,6 +2,7 @@
 
 using FluentValidation.Resources;
 using FluentValidation.Results;
+using Headless.Primitives;
 
 namespace FluentValidation;
 
@@ -24,80 +25,32 @@ public static class UrlValidators
 
         public IRuleBuilderOptions<T, string> HttpUrl()
         {
-            return rule.Must(maybeUrl =>
-                {
-                    if (maybeUrl is null)
-                    {
-                        return true;
-                    }
-
-                    return Uri.TryCreate(maybeUrl, UriKind.Absolute, out var uriResult)
-                        && (
-                            string.Equals(uriResult.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal)
-                            || string.Equals(uriResult.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
-                        );
-                })
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+            return _SchemeUrl(
+                rule,
+                scheme =>
+                    string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.Ordinal)
+                    || string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
+            );
         }
 
         public IRuleBuilderOptions<T, string> HttpsOnlyUrl()
         {
-            return rule.Must(maybeUrl =>
-                {
-                    if (maybeUrl is null)
-                    {
-                        return true;
-                    }
-
-                    return Uri.TryCreate(maybeUrl, UriKind.Absolute, out var uriResult)
-                        && string.Equals(uriResult.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal);
-                })
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+            return _SchemeUrl(rule, scheme => string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.Ordinal));
         }
 
         public IRuleBuilderOptions<T, string> FileUrl()
         {
-            return rule.Must(maybeUrl =>
-                {
-                    if (maybeUrl is null)
-                    {
-                        return true;
-                    }
-
-                    return Uri.TryCreate(maybeUrl, UriKind.Absolute, out var uriResult)
-                        && string.Equals(uriResult.Scheme, Uri.UriSchemeFile, StringComparison.Ordinal);
-                })
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+            return _SchemeUrl(rule, scheme => string.Equals(scheme, Uri.UriSchemeFile, StringComparison.Ordinal));
         }
 
         public IRuleBuilderOptions<T, string> FtpUrl()
         {
-            return rule.Must(maybeUrl =>
-                {
-                    if (maybeUrl is null)
-                    {
-                        return true;
-                    }
-
-                    return Uri.TryCreate(maybeUrl, UriKind.Absolute, out var uriResult)
-                        && string.Equals(uriResult.Scheme, Uri.UriSchemeFtp, StringComparison.Ordinal);
-                })
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+            return _SchemeUrl(rule, scheme => string.Equals(scheme, Uri.UriSchemeFtp, StringComparison.Ordinal));
         }
 
         public IRuleBuilderOptions<T, string> MailtoUrl()
         {
-            return rule.Must(maybeUrl =>
-                {
-                    if (maybeUrl is null)
-                    {
-                        return true;
-                    }
-
-                    return Uri.TryCreate(maybeUrl, UriKind.Absolute, out var uriResult)
-                        && string.Equals(uriResult.Scheme, Uri.UriSchemeMailto, StringComparison.Ordinal);
-                })
-                .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
+            return _SchemeUrl(rule, scheme => string.Equals(scheme, Uri.UriSchemeMailto, StringComparison.Ordinal));
         }
 
         public IRuleBuilderOptionsConditions<T, string> CorsOrigin()
@@ -110,6 +63,18 @@ public static class UrlValidators
                         return;
                     }
 
+                    // Surrounding whitespace parses (Uri.TryCreate trims) but never matches a real Origin header.
+                    if (maybeOrigin.AsSpan().Trim().Length != maybeOrigin.Length)
+                    {
+                        _BuildOriginFailure(
+                            context,
+                            maybeOrigin,
+                            FluentValidatorErrorDescriber.Urls.InvalidOriginFormat()
+                        );
+
+                        return;
+                    }
+
                     if (string.Equals(maybeOrigin, "*", StringComparison.Ordinal))
                     {
                         return;
@@ -117,7 +82,11 @@ public static class UrlValidators
 
                     if (!Uri.TryCreate(maybeOrigin, UriKind.Absolute, out var uri))
                     {
-                        _AddInvalidOriginFormatFailure(context, maybeOrigin);
+                        _BuildOriginFailure(
+                            context,
+                            maybeOrigin,
+                            FluentValidatorErrorDescriber.Urls.InvalidOriginFormat()
+                        );
 
                         return;
                     }
@@ -127,7 +96,12 @@ public static class UrlValidators
                         && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
                     )
                     {
-                        _AddInvalidOriginSchemeFailure(context, maybeOrigin, uri.Scheme);
+                        _BuildOriginFailure(
+                            context,
+                            maybeOrigin,
+                            FluentValidatorErrorDescriber.Urls.InvalidOriginScheme(),
+                            uri.Scheme
+                        );
 
                         return;
                     }
@@ -135,7 +109,11 @@ public static class UrlValidators
                     // A serialized origin (RFC 6454) is scheme://host[:port] only; userinfo is never part of it.
                     if (!string.IsNullOrEmpty(uri.UserInfo))
                     {
-                        _AddInvalidOriginFormatFailure(context, maybeOrigin);
+                        _BuildOriginFailure(
+                            context,
+                            maybeOrigin,
+                            FluentValidatorErrorDescriber.Urls.InvalidOriginFormat()
+                        );
 
                         return;
                     }
@@ -146,14 +124,22 @@ public static class UrlValidators
                         || !string.IsNullOrEmpty(uri.Fragment)
                     )
                     {
-                        _AddInvalidOriginPathFailure(context, maybeOrigin);
+                        _BuildOriginFailure(
+                            context,
+                            maybeOrigin,
+                            FluentValidatorErrorDescriber.Urls.InvalidOriginNotRootPath()
+                        );
 
                         return;
                     }
 
                     if (maybeOrigin.EndsWith('/'))
                     {
-                        _AddInvalidOriginTrailingSlashFailure(context, maybeOrigin);
+                        _BuildOriginFailure(
+                            context,
+                            maybeOrigin,
+                            FluentValidatorErrorDescriber.Urls.InvalidOriginTrailingSlash()
+                        );
                     }
                 }
             );
@@ -162,67 +148,43 @@ public static class UrlValidators
 
 #nullable restore
 
-    private static void _AddInvalidOriginFormatFailure<TObj>(ValidationContext<TObj> context, string origin)
-    {
-        var (code, description, severity) = FluentValidatorErrorDescriber.Urls.InvalidOriginFormat();
-
-        var failure = new ValidationFailure(context.PropertyPath, description)
-        {
-            AttemptedValue = origin,
-            ErrorCode = code,
-            Severity = severity.ToSeverity(),
-        };
-
-        context.AddFailure(failure);
-    }
-
-    private static void _AddInvalidOriginSchemeFailure<TObj>(
-        ValidationContext<TObj> context,
-        string origin,
-        string scheme
+    private static IRuleBuilderOptions<T, string?> _SchemeUrl<T>(
+        IRuleBuilder<T, string?> rule,
+        Func<string, bool> schemeMatches
     )
     {
-        var (code, description, severity) = FluentValidatorErrorDescriber.Urls.InvalidOriginScheme();
-
-        var failure = new ValidationFailure(context.PropertyPath, description)
-        {
-            AttemptedValue = origin,
-            ErrorCode = code,
-            Severity = severity.ToSeverity(),
-        };
-
-        (failure.FormattedMessagePlaceholderValues ??= new Dictionary<string, object>(StringComparer.Ordinal))[
-            "Scheme"
-        ] = scheme;
-
-        context.AddFailure(failure);
+        return rule.Must(maybeUrl =>
+                maybeUrl is null
+                || (Uri.TryCreate(maybeUrl, UriKind.Absolute, out var uri) && schemeMatches(uri.Scheme))
+            )
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
     }
 
-    private static void _AddInvalidOriginPathFailure<TObj>(ValidationContext<TObj> context, string origin)
+    private static void _BuildOriginFailure<TObj>(
+        ValidationContext<TObj> context,
+        string origin,
+        ErrorDescriptor descriptor,
+        string? scheme = null
+    )
     {
-        var (code, description, severity) = FluentValidatorErrorDescriber.Urls.InvalidOriginNotRootPath();
+        var (code, description, severity) = descriptor;
 
-        var failure = new ValidationFailure(context.PropertyPath, description)
+        // Custom failures bypass FluentValidation's MessageFormatter, so substitute the placeholders here
+        // rather than leaving literal "{PropertyValue}"/"{Scheme}" tokens in the rendered message.
+        var message = description.Replace("{PropertyValue}", origin, StringComparison.Ordinal);
+
+        if (scheme is not null)
         {
-            AttemptedValue = origin,
-            ErrorCode = code,
-            Severity = severity.ToSeverity(),
-        };
+            message = message.Replace("{Scheme}", scheme, StringComparison.Ordinal);
+        }
 
-        context.AddFailure(failure);
-    }
-
-    private static void _AddInvalidOriginTrailingSlashFailure<TObj>(ValidationContext<TObj> context, string origin)
-    {
-        var (code, description, severity) = FluentValidatorErrorDescriber.Urls.InvalidOriginTrailingSlash();
-
-        var failure = new ValidationFailure(context.PropertyPath, description)
-        {
-            AttemptedValue = origin,
-            ErrorCode = code,
-            Severity = severity.ToSeverity(),
-        };
-
-        context.AddFailure(failure);
+        context.AddFailure(
+            new ValidationFailure(context.PropertyPath, message)
+            {
+                AttemptedValue = origin,
+                ErrorCode = code,
+                Severity = severity.ToSeverity(),
+            }
+        );
     }
 }

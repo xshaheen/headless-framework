@@ -2,6 +2,7 @@
 
 using FluentValidation.Resources;
 using FluentValidation.Results;
+using Headless.Primitives;
 using PhoneNumbers;
 using DataAnnotationsPhoneAttribute = System.ComponentModel.DataAnnotations.PhoneAttribute;
 
@@ -15,55 +16,95 @@ public static class PhoneNumberValidators
 
     public static IRuleBuilderOptions<T, int?> PhoneCountryCode<T>(this IRuleBuilder<T, int?> builder)
     {
-        return builder.GreaterThan(0);
+        return builder
+            .GreaterThan(0)
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator());
     }
 
     public static IRuleBuilderOptions<T, int> PhoneCountryCode<T>(this IRuleBuilder<T, int> builder)
     {
-        return builder.GreaterThan(0);
+        return builder
+            .GreaterThan(0)
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator());
     }
 
-    private static void _AddInvalidCountryCodeFailure<TObj>(ValidationContext<TObj> context, string number)
+    private static void _AddPhoneFailure<TObj>(
+        ValidationContext<TObj> context,
+        string number,
+        ErrorDescriptor descriptor
+    )
     {
-        var (code, description, severity) =
-            FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator();
+        var (code, description, severity) = descriptor;
 
-        var failure = new ValidationFailure(context.PropertyPath, description)
-        {
-            AttemptedValue = number,
-            ErrorCode = code,
-            Severity = severity.ToSeverity(),
-        };
+        // Custom failures bypass FluentValidation's MessageFormatter, so substitute the placeholder here
+        // rather than leaving a literal "{PropertyValue}" token in the rendered message.
+        var message = description.Replace("{PropertyValue}", number, StringComparison.Ordinal);
 
-        context.AddFailure(failure);
+        context.AddFailure(
+            new ValidationFailure(context.PropertyPath, message)
+            {
+                AttemptedValue = number,
+                ErrorCode = code,
+                Severity = severity.ToSeverity(),
+            }
+        );
     }
 
-    private static void _AddInvalidNumberFailure<TObj>(ValidationContext<TObj> context, string number)
+    private static void _ValidateParsedNumber<TObj>(
+        ValidationContext<TObj> context,
+        string rawInput,
+        string attemptedValue
+    )
     {
-        var (code, description, severity) = FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber();
+        PhoneNumbers.PhoneNumber maybePhoneNumber;
 
-        var failure = new ValidationFailure(context.PropertyPath, description)
+        try
         {
-            AttemptedValue = number,
-            ErrorCode = code,
-            Severity = severity.ToSeverity(),
-        };
-
-        context.AddFailure(failure);
-    }
-
-    private static void _AddNotLocalValidatorFailure<TObj>(ValidationContext<TObj> context, string number)
-    {
-        var (code, description, severity) = FluentValidatorErrorDescriber.PhoneNumbers.NotLocalNumberValidator();
-
-        var failure = new ValidationFailure(context.PropertyPath, description)
+            maybePhoneNumber = _PhoneNumberUtil.Parse(rawInput, defaultRegion: null);
+        }
+        catch (NumberParseException e)
         {
-            AttemptedValue = number,
-            ErrorCode = code,
-            Severity = severity.ToSeverity(),
-        };
+            // INVALID_COUNTRY_CODE has its own code; every other parse error (incl. any future/unknown
+            // ErrorType) degrades to "invalid number" rather than throwing and turning input into a 500.
+            var descriptor =
+                e.ErrorType == ErrorType.INVALID_COUNTRY_CODE
+                    ? FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator()
+                    : FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber();
 
-        context.AddFailure(failure);
+            _AddPhoneFailure(context, attemptedValue, descriptor);
+
+            return;
+        }
+
+        switch (_PhoneNumberUtil.IsPossibleNumberWithReason(maybePhoneNumber))
+        {
+            case PhoneNumberUtil.ValidationResult.IS_POSSIBLE:
+                return;
+            case PhoneNumberUtil.ValidationResult.IS_POSSIBLE_LOCAL_ONLY:
+                _AddPhoneFailure(
+                    context,
+                    attemptedValue,
+                    FluentValidatorErrorDescriber.PhoneNumbers.NotLocalNumberValidator()
+                );
+
+                return;
+            case PhoneNumberUtil.ValidationResult.INVALID_COUNTRY_CODE:
+                _AddPhoneFailure(
+                    context,
+                    attemptedValue,
+                    FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator()
+                );
+
+                return;
+            case PhoneNumberUtil.ValidationResult.TOO_SHORT:
+            case PhoneNumberUtil.ValidationResult.INVALID_LENGTH:
+            case PhoneNumberUtil.ValidationResult.TOO_LONG:
+            default:
+                // Known short/long/length failures and any future/unknown result degrade to "invalid number".
+                _AddPhoneFailure(context, attemptedValue, FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber());
+
+                return;
+        }
     }
 
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
@@ -88,60 +129,11 @@ public static class PhoneNumberValidators
 
                     var countryCode = countryCodeFunc(context.InstanceToValidate);
 
-                    PhoneNumber maybePhoneNumber;
-
-                    try
-                    {
-                        maybePhoneNumber = _PhoneNumberUtil.Parse(
-                            "+" + countryCode.ToString(CultureInfo.InvariantCulture) + number,
-                            defaultRegion: null
-                        );
-                    }
-                    catch (NumberParseException e)
-                    {
-                        switch (e.ErrorType)
-                        {
-                            case ErrorType.INVALID_COUNTRY_CODE:
-                                _AddInvalidCountryCodeFailure(context, number);
-
-                                return;
-                            case ErrorType.NOT_A_NUMBER:
-                            case ErrorType.TOO_SHORT_AFTER_IDD:
-                            case ErrorType.TOO_SHORT_NSN:
-                            case ErrorType.TOO_LONG:
-                                _AddInvalidNumberFailure(context, number);
-
-                                return;
-                            default:
-                                throw new InvalidOperationException(
-                                    $"Unexpected phone number parse ErrorType `{e.ErrorType}`"
-                                );
-                        }
-                    }
-
-                    var validationResult = _PhoneNumberUtil.IsPossibleNumberWithReason(maybePhoneNumber);
-
-                    switch (validationResult)
-                    {
-                        case PhoneNumberUtil.ValidationResult.IS_POSSIBLE:
-                            return;
-                        case PhoneNumberUtil.ValidationResult.IS_POSSIBLE_LOCAL_ONLY:
-                            _AddNotLocalValidatorFailure(context, number);
-
-                            return;
-                        case PhoneNumberUtil.ValidationResult.INVALID_COUNTRY_CODE:
-                            _AddInvalidCountryCodeFailure(context, number);
-
-                            return;
-                        case PhoneNumberUtil.ValidationResult.TOO_SHORT:
-                        case PhoneNumberUtil.ValidationResult.INVALID_LENGTH:
-                        case PhoneNumberUtil.ValidationResult.TOO_LONG:
-                            _AddInvalidNumberFailure(context, number);
-
-                            return;
-                        default:
-                            throw new InvalidOperationException($"Unexpected validation result `{validationResult}`");
-                    }
+                    _ValidateParsedNumber(
+                        context,
+                        "+" + countryCode.ToString(CultureInfo.InvariantCulture) + number,
+                        number
+                    );
                 }
             );
         }
@@ -156,57 +148,7 @@ public static class PhoneNumberValidators
                         return;
                     }
 
-                    PhoneNumber maybePhoneNumber;
-
-                    try
-                    {
-                        maybePhoneNumber = _PhoneNumberUtil.Parse(phoneNumber, defaultRegion: null);
-                    }
-                    catch (NumberParseException e)
-                    {
-                        switch (e.ErrorType)
-                        {
-                            case ErrorType.INVALID_COUNTRY_CODE:
-                                _AddInvalidCountryCodeFailure(context, phoneNumber);
-
-                                return;
-                            case ErrorType.NOT_A_NUMBER:
-                            case ErrorType.TOO_SHORT_AFTER_IDD:
-                            case ErrorType.TOO_SHORT_NSN:
-                            case ErrorType.TOO_LONG:
-                                _AddInvalidNumberFailure(context, phoneNumber);
-
-                                return;
-                            default:
-                                throw new InvalidOperationException(
-                                    $"Unexpected phone number parse ErrorType `{e.ErrorType}`"
-                                );
-                        }
-                    }
-
-                    var validationResult = _PhoneNumberUtil.IsPossibleNumberWithReason(maybePhoneNumber);
-
-                    switch (validationResult)
-                    {
-                        case PhoneNumberUtil.ValidationResult.IS_POSSIBLE:
-                            return;
-                        case PhoneNumberUtil.ValidationResult.IS_POSSIBLE_LOCAL_ONLY:
-                            _AddNotLocalValidatorFailure(context, phoneNumber);
-
-                            return;
-                        case PhoneNumberUtil.ValidationResult.INVALID_COUNTRY_CODE:
-                            _AddInvalidCountryCodeFailure(context, phoneNumber);
-
-                            return;
-                        case PhoneNumberUtil.ValidationResult.TOO_SHORT:
-                        case PhoneNumberUtil.ValidationResult.INVALID_LENGTH:
-                        case PhoneNumberUtil.ValidationResult.TOO_LONG:
-                            _AddInvalidNumberFailure(context, phoneNumber);
-
-                            return;
-                        default:
-                            throw new InvalidOperationException($"Unexpected validation result `{validationResult}`");
-                    }
+                    _ValidateParsedNumber(context, phoneNumber, phoneNumber);
                 }
             );
         }

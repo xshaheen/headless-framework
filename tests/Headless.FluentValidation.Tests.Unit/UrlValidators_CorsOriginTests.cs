@@ -81,4 +81,28 @@ public sealed class UrlValidatorsCorsOriginTests
         var result = _sut.TestValidate(new TestModel("http://example.com/"));
         result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("url:invalid_origin_trailing_slash");
     }
+
+    // Uri.TryCreate trims surrounding whitespace, so a padded origin would otherwise validate but never
+    // match a real (ordinal-compared) Origin header.
+    [Theory]
+    [InlineData(" http://example.com")]
+    [InlineData("http://example.com ")]
+    [InlineData("http://example.com\t")]
+    public void should_report_invalid_format_for_whitespace_padding(string origin)
+    {
+        var result = _sut.TestValidate(new TestModel(origin));
+        result.ShouldHaveValidationErrorFor(x => x.Origin).WithErrorCode("url:invalid_origin_format");
+    }
+
+    [Fact]
+    public void should_substitute_placeholders_in_failure_messages()
+    {
+        var formatFailure = _sut.TestValidate(new TestModel("not-an-origin"))
+            .Errors.Single(e => e.PropertyName == nameof(TestModel.Origin));
+        formatFailure.ErrorMessage.Should().Contain("not-an-origin").And.NotContain("{PropertyValue}");
+
+        var schemeFailure = _sut.TestValidate(new TestModel("ftp://example.com"))
+            .Errors.Single(e => e.PropertyName == nameof(TestModel.Origin));
+        schemeFailure.ErrorMessage.Should().Contain("ftp").And.NotContain("{Scheme}");
+    }
 }

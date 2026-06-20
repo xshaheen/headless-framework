@@ -129,9 +129,18 @@ public static class CollectionValidators
                             return true;
                         }
 
-                        // Count excess items (matching the non-keyed overload's `count - distinct`),
-                        // not the number of keys that have duplicates.
-                        var duplicatesCount = list.GroupBy(keySelector, comparer).Sum(elements => elements.Count() - 1);
+                        // Single pass: count excess items (each repeated key adds one), matching the
+                        // non-keyed overload. Avoids GroupBy's Lookup + IGrouping allocations.
+                        var seen = new HashSet<TKey>(comparer);
+                        var duplicatesCount = 0;
+
+                        foreach (var element in list)
+                        {
+                            if (!seen.Add(keySelector(element)))
+                            {
+                                duplicatesCount++;
+                            }
+                        }
 
                         if (duplicatesCount == 0)
                         {
