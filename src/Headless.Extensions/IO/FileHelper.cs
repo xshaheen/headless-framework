@@ -149,7 +149,7 @@ public static class FileHelper
         // Windows drive-qualified (C:\x, D:/x, C:x) and UNC (\\server\share) names that a bare '/' or '\'
         // prefix check would miss. Mirrors Headless.Blobs PathValidation semantics, kept local to avoid a
         // dependency on the Blobs packages.
-        if (
+        var isSafePathSegment = !(
             name.Contains("../", StringComparison.Ordinal)
             || name.Contains("..\\", StringComparison.Ordinal)
             || name.Contains("/..", StringComparison.Ordinal)
@@ -157,13 +157,13 @@ public static class FileHelper
             || name.StartsWith("..", StringComparison.Ordinal)
             || name.EndsWith("..", StringComparison.Ordinal)
             || Path.IsPathRooted(name)
-        )
-        {
-            throw new ArgumentException(
-                "The file name must be a relative path segment without traversal sequences.",
-                nameof(name)
-            );
-        }
+        );
+
+        Argument.Is(
+            isSafePathSegment,
+            "The file name must be a relative path segment without traversal sequences.",
+            nameof(name)
+        );
     }
 
     #endregion
