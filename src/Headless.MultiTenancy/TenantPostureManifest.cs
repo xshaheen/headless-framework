@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Immutable;
 using Headless.Checks;
 
 namespace Headless.MultiTenancy;
@@ -61,7 +62,7 @@ public sealed class TenantPostureManifest
                 return;
             }
 
-            _seams[seam] = new TenantSeamPosture(seam, status, normalizedCapabilities, []);
+            _seams[seam] = new TenantSeamPosture(seam, status, normalizedCapabilities, ImmutableArray<string>.Empty);
         }
     }
 
@@ -109,7 +110,12 @@ public sealed class TenantPostureManifest
                 return;
             }
 
-            _seams[seam] = new TenantSeamPosture(seam, TenantPostureStatus.Configured, [], [marker]);
+            _seams[seam] = new TenantSeamPosture(
+                seam,
+                TenantPostureStatus.Configured,
+                ImmutableArray<string>.Empty,
+                ImmutableArray.Create(marker)
+            );
         }
     }
 
@@ -140,14 +146,16 @@ public sealed class TenantPostureManifest
         return GetSeam(seam)?.RuntimeMarkers.Contains(marker, StringComparer.Ordinal) == true;
     }
 
-    private static string[] _Normalize(IEnumerable<string> values)
+    // Returns ImmutableArray so the values exposed through TenantSeamPosture cannot be downcast to a
+    // mutable string[] and edited behind the lock, preserving the snapshot/immutability contract.
+    private static ImmutableArray<string> _Normalize(IEnumerable<string> values)
     {
-        return values.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
+        return [.. values.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal)];
     }
 
-    private static string[] _Merge(IEnumerable<string> first, IEnumerable<string> second)
+    private static ImmutableArray<string> _Merge(IEnumerable<string> first, IEnumerable<string> second)
     {
-        return first.Concat(second).Distinct(StringComparer.Ordinal).ToArray();
+        return [.. first.Concat(second).Distinct(StringComparer.Ordinal)];
     }
 }
 

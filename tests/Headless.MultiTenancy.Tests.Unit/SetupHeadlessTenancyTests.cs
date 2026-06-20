@@ -304,6 +304,20 @@ public sealed class SetupHeadlessTenancyTests
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
+    [Theory]
+    [InlineData(null, "code", "message")]
+    [InlineData(" ", "code", "message")]
+    [InlineData("seam", "", "message")]
+    [InlineData("seam", "code", "  ")]
+    public void should_reject_blank_diagnostic_fields(string? seam, string code, string message)
+    {
+        // when — direct construction must validate, not only the static factories
+        var act = () => new HeadlessTenancyDiagnostic(seam!, code, message, HeadlessTenancyDiagnosticSeverity.Error);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
     private sealed class TestValidator(
         string code = "HEADLESS_TEST",
         string message = "Http seam is missing runtime marker."

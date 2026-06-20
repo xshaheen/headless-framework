@@ -63,11 +63,14 @@ internal sealed partial class HeadlessTenancyStartupValidator(
             {
                 logger.LogTenancyValidatorThrew(validatorError, validator.GetType().Name);
 
+                // Keep the synthetic diagnostic non-PII: the exception message could carry tenant
+                // identifiers, and this text flows into the manifest-facing diagnostic and the thrown
+                // exception. Full exception detail is preserved in the LogTenancyValidatorThrew call above.
                 collected.Add(
                     HeadlessTenancyDiagnostic.Error(
                         seam: "Validator",
                         code: "VALIDATOR_THREW",
-                        message: $"{validator.GetType().Name}: {validatorError.Message}"
+                        message: $"{validator.GetType().Name} threw during validation; see logs for detail."
                     )
                 );
             }

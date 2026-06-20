@@ -19,49 +19,55 @@ public enum HeadlessTenancyDiagnosticSeverity
 }
 
 /// <summary>Non-PII diagnostic emitted by tenant posture validators.</summary>
-/// <param name="Seam">The seam that produced the diagnostic.</param>
-/// <param name="Code">A stable diagnostic code.</param>
-/// <param name="Message">A non-PII diagnostic message.</param>
-/// <param name="Severity">The diagnostic severity.</param>
 [PublicAPI]
-public sealed record HeadlessTenancyDiagnostic(
-    string Seam,
-    string Code,
-    string Message,
-    HeadlessTenancyDiagnosticSeverity Severity
-)
+public sealed record HeadlessTenancyDiagnostic
 {
-    /// <summary>Creates a startup-blocking diagnostic.</summary>
-    public static HeadlessTenancyDiagnostic Error(string seam, string code, string message)
-    {
-        return _Create(seam, code, message, HeadlessTenancyDiagnosticSeverity.Error);
-    }
-
-    /// <summary>Creates a non-blocking warning diagnostic.</summary>
-    public static HeadlessTenancyDiagnostic Warning(string seam, string code, string message)
-    {
-        return _Create(seam, code, message, HeadlessTenancyDiagnosticSeverity.Warning);
-    }
-
-    /// <summary>Creates an informational diagnostic.</summary>
-    public static HeadlessTenancyDiagnostic Information(string seam, string code, string message)
-    {
-        return _Create(seam, code, message, HeadlessTenancyDiagnosticSeverity.Information);
-    }
-
-    private static HeadlessTenancyDiagnostic _Create(
+    /// <summary>Creates a diagnostic, validating that the seam, code, and message are non-blank.</summary>
+    /// <param name="seam">The seam that produced the diagnostic.</param>
+    /// <param name="code">A stable diagnostic code.</param>
+    /// <param name="message">A non-PII diagnostic message.</param>
+    /// <param name="severity">The diagnostic severity.</param>
+    public HeadlessTenancyDiagnostic(
         string seam,
         string code,
         string message,
         HeadlessTenancyDiagnosticSeverity severity
     )
     {
-        return new(
-            Argument.IsNotNullOrWhiteSpace(seam),
-            Argument.IsNotNullOrWhiteSpace(code),
-            Argument.IsNotNullOrWhiteSpace(message),
-            severity
-        );
+        Seam = Argument.IsNotNullOrWhiteSpace(seam);
+        Code = Argument.IsNotNullOrWhiteSpace(code);
+        Message = Argument.IsNotNullOrWhiteSpace(message);
+        Severity = severity;
+    }
+
+    /// <summary>The seam that produced the diagnostic.</summary>
+    public string Seam { get; }
+
+    /// <summary>A stable diagnostic code.</summary>
+    public string Code { get; }
+
+    /// <summary>A non-PII diagnostic message.</summary>
+    public string Message { get; }
+
+    /// <summary>The diagnostic severity.</summary>
+    public HeadlessTenancyDiagnosticSeverity Severity { get; }
+
+    /// <summary>Creates a startup-blocking diagnostic.</summary>
+    public static HeadlessTenancyDiagnostic Error(string seam, string code, string message)
+    {
+        return new(seam, code, message, HeadlessTenancyDiagnosticSeverity.Error);
+    }
+
+    /// <summary>Creates a non-blocking warning diagnostic.</summary>
+    public static HeadlessTenancyDiagnostic Warning(string seam, string code, string message)
+    {
+        return new(seam, code, message, HeadlessTenancyDiagnosticSeverity.Warning);
+    }
+
+    /// <summary>Creates an informational diagnostic.</summary>
+    public static HeadlessTenancyDiagnostic Information(string seam, string code, string message)
+    {
+        return new(seam, code, message, HeadlessTenancyDiagnosticSeverity.Information);
     }
 }
 
