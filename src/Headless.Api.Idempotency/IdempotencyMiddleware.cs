@@ -31,6 +31,10 @@ internal sealed partial class IdempotencyMiddleware(
 ) : IMiddleware
 {
     private readonly IProblemDetailsCreator _problemDetailsCreator = problemDetailsCreator;
+
+    // IDistributedLock is an OPTIONAL dependency: only the WaitAndReplay in-flight strategy needs it
+    // (the default Reject strategy does not). It is validated at startup only when WaitAndReplay is
+    // configured (see IdempotencyOptions), so it is resolved lazily here rather than constructor-injected.
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly ILogger<IdempotencyMiddleware> _logger = logger;
 
@@ -321,6 +325,7 @@ internal sealed partial class IdempotencyMiddleware(
 
         if (record.Body.Length > 0)
         {
+            context.Response.ContentLength = record.Body.Length;
             await context.Response.Body.WriteAsync(record.Body, ct).ConfigureAwait(false);
         }
 
