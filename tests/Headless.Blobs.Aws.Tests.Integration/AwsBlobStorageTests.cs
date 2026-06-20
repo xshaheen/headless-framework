@@ -33,7 +33,105 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         var options = new AwsBlobStorageOptions();
         var optionsWrapper = new OptionsWrapper<AwsBlobStorageOptions>(options);
 
-        return new AwsBlobStorage(amazonS3Client, mimeTypeProvider, clock, optionsWrapper);
+        return new AwsBlobStorage(
+            amazonS3Client,
+            mimeTypeProvider,
+            clock,
+            optionsWrapper,
+            new AwsBlobNamingNormalizer()
+        );
+    }
+
+    [Fact]
+    public async Task upload_throws_when_auto_create_disabled_and_bucket_missing()
+    {
+        var s3Config = new AmazonS3Config
+        {
+            RegionEndpoint = RegionEndpoint.USEast1,
+            ServiceURL = fixture.Container.GetConnectionString(),
+            ForcePathStyle = true,
+        };
+
+        var awsCredentials = new BasicAWSCredentials("xxx", "xxx");
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        var amazonS3Client = new AmazonS3Client(awsCredentials, s3Config);
+#pragma warning restore CA2000
+
+        var options = new OptionsWrapper<AwsBlobStorageOptions>(
+            new AwsBlobStorageOptions { AutoCreateContainer = false }
+        );
+
+        await using var storage = new AwsBlobStorage(
+            amazonS3Client,
+            new MimeTypeProvider(),
+            new Clock(TimeProvider.System),
+            options,
+            new AwsBlobNamingNormalizer()
+        );
+
+        var missingBucket = $"missing-{Guid.NewGuid():N}";
+        using var stream = new MemoryStream("hello"u8.ToArray());
+
+        var act = async () => await storage.UploadAsync([missingBucket], "file.txt", stream);
+
+        await act.Should().ThrowAsync<AmazonS3Exception>();
+    }
+
+    [Fact]
+    public async Task can_round_trip_via_presigned_download_url()
+    {
+        var storage = (IPresignedUrlBlobStorage)GetStorage();
+        var container = new[] { $"presign-{Guid.NewGuid():N}" };
+        var content = "presigned-content"u8.ToArray();
+
+        using (var stream = new MemoryStream(content))
+        {
+            await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
+        }
+
+        var url = await storage.GetPresignedDownloadUrlAsync(
+            container,
+            "file.txt",
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        using var http = new HttpClient();
+        var downloaded = await http.GetByteArrayAsync(url, AbortToken);
+
+        downloaded.Should().Equal(content);
+    }
+
+    [Fact]
+    public async Task can_round_trip_via_presigned_upload_url()
+    {
+        var storage = (IPresignedUrlBlobStorage)GetStorage();
+        var container = new[] { $"presign-{Guid.NewGuid():N}" };
+        var content = "presigned-upload"u8.ToArray();
+
+        // The presigned PUT goes straight to S3 and does not create the bucket; create it first.
+        await ((IBlobStorage)storage).CreateContainerAsync(container, AbortToken);
+
+        var uploadUrl = await storage.GetPresignedUploadUrlAsync(
+            container,
+            "file.txt",
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        using (var http = new HttpClient())
+        using (var body = new ByteArrayContent(content))
+        {
+            var response = await http.PutAsync(uploadUrl, body, AbortToken);
+            response.EnsureSuccessStatusCode();
+        }
+
+        var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
+        readBack.Should().NotBeNull();
+
+        using var buffer = new MemoryStream();
+        await readBack!.Stream.CopyToAsync(buffer, AbortToken);
+        buffer.ToArray().Should().Equal(content);
     }
 
     [Fact]

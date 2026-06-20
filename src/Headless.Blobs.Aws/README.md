@@ -10,9 +10,10 @@ Provides seamless integration with AWS S3 for blob storage using the unified `IB
 
 - Full `IBlobStorage` implementation for AWS S3
 - Bulk upload/delete with optimized batching
-- Automatic path normalization for S3 object keys
+- Two-tier name normalization: the bucket name is normalized to S3 rules; object-key path segments are validated and preserved
 - Metadata support
-- Pre-signed URL generation capability
+- Presigned download/upload URLs via `IPresignedUrlBlobStorage`
+- Opt-in, cached bucket auto-create (`AutoCreateContainer`)
 - Integration with AWS SDK configuration
 
 ## Installation
@@ -28,20 +29,20 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: Use configuration-based AWS options
 var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddAwsS3BlobStorage(awsOptions, options =>
-{
-    options.BucketName = "my-bucket";
-});
+builder.Services.AddAwsS3BlobStorage(awsOptions);
 
 // Option 2: Manual configuration
 builder.Services.AddAwsS3BlobStorage(new AWSOptions
 {
     Region = RegionEndpoint.USEast1,
     Credentials = new BasicAWSCredentials("access-key", "secret-key")
-}, options =>
-{
-    options.BucketName = "my-bucket";
 });
+```
+
+Buckets and keys are passed per operation, not configured at registration:
+
+```csharp
+await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 ```
 
 ## Configuration
@@ -61,7 +62,11 @@ builder.Services.AddAwsS3BlobStorage(new AWSOptions
 ### Options
 
 ```csharp
-options.BucketName = "my-bucket";
+options.AutoCreateContainer = true; // create buckets on upload/copy (default true)
+options.CannedAcl = S3CannedACL.Private;
+options.UseChunkEncoding = true;
+options.DisablePayloadSigning = false;
+options.MaxBulkParallelism = 10;
 ```
 
 ## Dependencies
