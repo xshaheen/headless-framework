@@ -255,7 +255,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var context = _CreateContext(
             new ValidatorFilterTestRequest("Name", "test@example.com"),
             [validator],
-            cts.Token
+            cancellationToken: cts.Token
         );
         var next = _CreateNext(new object());
 
@@ -413,8 +413,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     private static EndpointFilterInvocationContext _CreateContext<TRequest>(
         TRequest? request,
         IReadOnlyList<IValidator<TRequest>>? validators = null,
-        CancellationToken cancellationToken = default,
-        IProblemDetailsCreator? creator = null
+        IProblemDetailsCreator? creator = null,
+        CancellationToken cancellationToken = default
     )
     {
         var httpContext = new DefaultHttpContext();
