@@ -22,10 +22,11 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
 {
     // This method gets called for every request that requires authentication.
     // The logic goes something like this:
-    // If no ApiKey is present on query string -> Return no result, let other handlers (if present) handle the request.
+    // If no ApiKey is present on the header (or query string when AllowApiKeyInQueryString is true) -> Return no result,
+    //   let other handlers (if present) handle the request.
     // If the api_key is present but null or empty -> Return no result.
-    // If the provided key does not exists -> Fail the authentication.
-    // If the key is valid, create a new identity based on associated with key user
+    // If the provided key does not exist -> Return no result (key not found).
+    // If the key is valid, create a new identity based on the user associated with the key.
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // This line is important to correct working the multiple authentication schemes
@@ -35,17 +36,18 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
             return AuthenticateResult.Success(new AuthenticationTicket(Context.User, "context.User"));
         }
 
-        if (
-            !Request.Headers.TryGetValue(Options.ApiKeyHeaderName, out var apiKeyValues)
-            && !Request.Query.TryGetValue(Options.ApiKeyParamName, out apiKeyValues)
-        )
+        var foundInHeader = Request.Headers.TryGetValue(Options.ApiKeyHeaderName, out var apiKeyValues);
+
+        if (!foundInHeader && Options.AllowApiKeyInQueryString)
         {
-            return AuthenticateResult.NoResult();
+            // Query-string fallback is opt-in: keys passed via the URL are visible in server access logs,
+            // CDN/proxy logs, and Referer headers, which risks unintentional exposure.
+            Request.Query.TryGetValue(Options.ApiKeyParamName, out apiKeyValues);
         }
 
         var providedApiKey = apiKeyValues.FirstOrDefault();
 
-        if (apiKeyValues.Count == 0 || string.IsNullOrWhiteSpace(providedApiKey))
+        if (string.IsNullOrWhiteSpace(providedApiKey))
         {
             return AuthenticateResult.NoResult();
         }

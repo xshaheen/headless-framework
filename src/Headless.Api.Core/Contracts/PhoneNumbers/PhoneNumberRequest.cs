@@ -17,7 +17,7 @@ public sealed record PhoneNumberRequest(int Code, string Number)
         operand is null ? null : new(operand.Code, operand.Number);
 }
 
-public sealed class PhoneNumberRequestValidator : AbstractValidator<PhoneNumberRequest>
+internal sealed class PhoneNumberRequestValidator : AbstractValidator<PhoneNumberRequest>
 {
     public PhoneNumberRequestValidator()
     {
@@ -26,6 +26,7 @@ public sealed class PhoneNumberRequestValidator : AbstractValidator<PhoneNumberR
     }
 }
 
+[PublicAPI]
 public static class FluentValidatorPhoneNumberExtensions
 {
     public static IRuleBuilderOptions<T, PhoneNumberRequest?> PhoneNumber<T>(

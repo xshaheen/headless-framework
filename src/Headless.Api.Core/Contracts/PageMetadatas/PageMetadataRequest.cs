@@ -41,7 +41,7 @@ public sealed class PageMetadataRequest
     }
 }
 
-public sealed class PageMetadataRequestValidator : AbstractValidator<PageMetadataRequest>
+internal sealed class PageMetadataRequestValidator : AbstractValidator<PageMetadataRequest>
 {
     public PageMetadataRequestValidator()
     {
@@ -53,6 +53,7 @@ public sealed class PageMetadataRequestValidator : AbstractValidator<PageMetadat
     }
 }
 
+[PublicAPI]
 public static class FluentValidatorPageMetadataExtensions
 {
     public static IRuleBuilderOptions<T, PageMetadataRequest?> PageMetadata<T>(

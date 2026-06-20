@@ -8,19 +8,19 @@ namespace Headless.Api.Contracts;
 public sealed class PageMetadataView
 {
     /// <summary>Lowercase, hyphenated identifier typically used in URLs.</summary>
-    public required string? Slug { get; init; }
+    public string? Slug { get; init; }
 
     /// <summary>Page title used for search engine optimization purposes.</summary>
-    public required string? MetaTitle { get; init; }
+    public string? MetaTitle { get; init; }
 
     /// <summary>Page description used for search engine optimization purposes.</summary>
-    public required string? MetaDescription { get; init; }
+    public string? MetaDescription { get; init; }
 
     /// <summary>Page keywords used for search engine optimization purposes.</summary>
-    public required HashSet<string>? MetaKeywords { get; init; }
+    public HashSet<string>? MetaKeywords { get; init; }
 
     /// <summary>List of arbitrary tags typically used as metadata to improve search results or associate a custom behavior.</summary>
-    public required HashSet<string>? Tags { get; init; }
+    public HashSet<string>? Tags { get; init; }
 
     [return: NotNullIfNotNull(nameof(operand))]
     public static PageMetadataView? FromPageMetadata(PageMetadata? operand) => operand;
