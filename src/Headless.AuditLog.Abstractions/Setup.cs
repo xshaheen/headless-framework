@@ -50,6 +50,7 @@ public static class SetupAuditLog
                 setup.Extensions.Count,
                 setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
                 "Headless.AuditLog",
+                ["UseEntityFramework", "UsePostgreSql", "UseSqlServer"],
                 static name => new AuditLogStorageProviderRegistration(name)
             );
 

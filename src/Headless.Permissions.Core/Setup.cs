@@ -105,6 +105,7 @@ public static class SetupPermissions
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
             "Headless.Permissions",
+            ["UseEntityFramework", "UsePostgreSql", "UseSqlServer"],
             static name => new PermissionsStorageProviderRegistration(name)
         );
 

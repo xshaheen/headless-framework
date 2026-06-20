@@ -100,6 +100,7 @@ public static class SetupCoreSettings
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
             "Headless.Settings",
+            ["UseEntityFramework", "UsePostgreSql", "UseSqlServer"],
             static name => new SettingsStorageProviderRegistration(name)
         );
 

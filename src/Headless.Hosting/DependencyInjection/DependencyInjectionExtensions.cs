@@ -391,7 +391,11 @@ public static class DependencyInjectionExtensions
     /// <returns>True if one or more fallback registrations were removed; otherwise false.</returns>
     /// <remarks>
     /// This is useful when one package registers a safe fallback and another package can provide a
-    /// stronger default without overwriting consumer-provided implementations.
+    /// stronger default without overwriting consumer-provided implementations. Only type-based
+    /// (<c>AddSingleton&lt;TService, TFallback&gt;()</c>) and instance-based fallback registrations are
+    /// detected; a factory-registered fallback (<c>AddSingleton&lt;TService&gt;(_ =&gt; new TFallback())</c>)
+    /// is indistinguishable from a consumer override here and is intentionally preserved. Register
+    /// fallbacks by type to make them replaceable.
     /// </remarks>
     public static bool AddOrReplaceFallbackSingleton<TService, TFallback, TImplementation>(
         this IServiceCollection services
@@ -414,21 +418,6 @@ public static class DependencyInjectionExtensions
             }
 
             if (descriptor.ImplementationType == typeof(TFallback) || descriptor.ImplementationInstance is TFallback)
-            {
-                services.RemoveAt(i);
-                replaced = true;
-                continue;
-            }
-
-            // Best-effort recognition of factory-backed fallback registrations. The compiler captures
-            // the lambda's declared return type as the factory's Method.ReturnType — when that matches
-            // TFallback exactly we treat the descriptor as a fallback. We intentionally do NOT invoke
-            // the factory here: at AddOrReplaceFallbackSingleton time the ServiceProvider has not been
-            // built yet, and even if it had been, invoking arbitrary factories could surface side
-            // effects. Consumers who hide the fallback behind a factory whose declared return type is
-            // TService (not TFallback) keep their registration — matches the documented contract that
-            // factory-backed consumer overrides are preserved.
-            if (descriptor.ImplementationFactory is { Method: { } method } && method.ReturnType == typeof(TFallback))
             {
                 services.RemoveAt(i);
                 replaced = true;

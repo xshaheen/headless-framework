@@ -98,6 +98,7 @@ public static class SetupCore
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
             "Headless.Features",
+            ["UseEntityFramework", "UsePostgreSql", "UseSqlServer"],
             static name => new FeaturesStorageProviderRegistration(name)
         );
 
