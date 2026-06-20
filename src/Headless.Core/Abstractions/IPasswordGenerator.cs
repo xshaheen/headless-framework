@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Headless.Checks;
 
@@ -7,18 +8,31 @@ namespace Headless.Abstractions;
 
 public interface IPasswordGenerator
 {
-    string GeneratePassword(
-        int length,
-        int requiredUniqueChars = 1,
-        bool requireDigit = true,
-        bool requireLowercase = true,
-        bool requireNonAlphanumeric = true,
-        bool requireUppercase = true,
-        bool useDigitsInRemaining = true,
-        bool useLowercaseInRemaining = false,
-        bool useUppercaseInRemaining = false,
-        bool useNonAlphanumericInRemaining = false
-    );
+    string GeneratePassword(GeneratePasswordOptions options);
+}
+
+/// <summary>Options controlling how <see cref="IPasswordGenerator.GeneratePassword"/> builds a password.</summary>
+[PublicAPI]
+public sealed record GeneratePasswordOptions(int Length)
+{
+    /// <summary>Minimum number of distinct characters the generated password must contain.</summary>
+    public int RequiredUniqueChars { get; init; } = 1;
+
+    public bool RequireDigit { get; init; } = true;
+
+    public bool RequireLowercase { get; init; } = true;
+
+    public bool RequireUppercase { get; init; } = true;
+
+    public bool RequireNonAlphanumeric { get; init; } = true;
+
+    public bool UseDigitsInRemaining { get; init; } = true;
+
+    public bool UseLowercaseInRemaining { get; init; }
+
+    public bool UseUppercaseInRemaining { get; init; }
+
+    public bool UseNonAlphanumericInRemaining { get; init; }
 }
 
 public sealed class PasswordGenerator : IPasswordGenerator
@@ -34,29 +48,23 @@ public sealed class PasswordGenerator : IPasswordGenerator
     private const string _UppercaseChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private const string _NonAlphanumericChars = "!@#$%^&*+=";
 
-    public string GeneratePassword(
-        int length,
-        int requiredUniqueChars = 1,
-        bool requireDigit = true,
-        bool requireLowercase = true,
-        bool requireNonAlphanumeric = true,
-        bool requireUppercase = true,
-        bool useDigitsInRemaining = true,
-        bool useLowercaseInRemaining = false,
-        bool useUppercaseInRemaining = false,
-        bool useNonAlphanumericInRemaining = false
-    )
+    public string GeneratePassword(GeneratePasswordOptions options)
     {
+        Argument.IsNotNull(options);
+
         /* Validate password configuration */
+
+        var length = options.Length;
+        var requiredUniqueChars = options.RequiredUniqueChars;
 
         Argument.IsPositive(length);
         Argument.IsPositiveOrZero(requiredUniqueChars);
 
         var requiredCharsCount =
-            (requireDigit ? 1 : 0)
-            + (requireLowercase ? 1 : 0)
-            + (requireUppercase ? 1 : 0)
-            + (requireNonAlphanumeric ? 1 : 0);
+            (options.RequireDigit ? 1 : 0)
+            + (options.RequireLowercase ? 1 : 0)
+            + (options.RequireUppercase ? 1 : 0)
+            + (options.RequireNonAlphanumeric ? 1 : 0);
 
         Ensure.True(
             length >= requiredCharsCount,
@@ -64,7 +72,10 @@ public sealed class PasswordGenerator : IPasswordGenerator
         );
 
         Ensure.True(
-            useDigitsInRemaining || useLowercaseInRemaining || useUppercaseInRemaining || useNonAlphanumericInRemaining,
+            options.UseDigitsInRemaining
+                || options.UseLowercaseInRemaining
+                || options.UseUppercaseInRemaining
+                || options.UseNonAlphanumericInRemaining,
             "Invalid password configuration provided. At least one character set must be used in remaining characters."
         );
 
@@ -78,105 +89,77 @@ public sealed class PasswordGenerator : IPasswordGenerator
 
         /* Generate password */
 
-        var chars = new List<char>();
+        var chars = new List<char>(length);
 
         // 1. Add required characters
 
-        if (requireDigit)
+        if (options.RequireDigit)
         {
             chars.Add(_GetDigit());
         }
 
-        if (requireLowercase)
+        if (options.RequireLowercase)
         {
             chars.Add(_GetLowercase());
         }
 
-        if (requireUppercase)
+        if (options.RequireUppercase)
         {
             chars.Add(_GetUppercase());
         }
 
-        if (requireNonAlphanumeric)
+        if (options.RequireNonAlphanumeric)
         {
             chars.Add(_GetNonAlphanumeric());
         }
 
-        // 2. Add unique characters
+        // 2. Add distinct characters drawn from the enabled "remaining" sets
 
         var remainingRequiredChars = requiredUniqueChars - chars.Count;
 
         if (remainingRequiredChars > 0)
         {
-            var baseCharacters = _GetBaseCharacters(
-                    useDigitsInRemaining,
-                    useLowercaseInRemaining,
-                    useUppercaseInRemaining,
-                    useNonAlphanumericInRemaining
-                )
-                .Where(x => !chars.Contains(x))
-                .ToList();
+            var pool = _GetBaseCharacters(options).Where(x => !chars.Contains(x)).ToList();
 
-            for (var i = 0; i < remainingRequiredChars; i++)
+            // The enabled "remaining" sets can hold fewer distinct chars than requiredUniqueChars;
+            // draw until satisfied or the pool is exhausted. Swap-with-last keeps each removal O(1).
+            for (var i = 0; i < remainingRequiredChars && pool.Count > 0; i++)
             {
-                // The enabled "remaining" sets can hold fewer distinct chars than requiredUniqueChars
-                // (the up-front check bounds against the full pool); stop once they are exhausted
-                // instead of indexing an empty list.
-                if (baseCharacters.Count == 0)
-                {
-                    break;
-                }
-
-                var index = _GetIntInclusiveBetween(0, baseCharacters.Count - 1);
-                var character = baseCharacters[index];
-                baseCharacters.RemoveAt(index);
-                chars.Add(character);
+                var index = _GetIntInclusiveBetween(0, pool.Count - 1);
+                chars.Add(pool[index]);
+                pool[index] = pool[^1];
+                pool.RemoveAt(pool.Count - 1);
             }
         }
 
-        // 3. Add remaining characters to reach the length
+        // 3. Fill the remaining length from the enabled "remaining" sets (repetition allowed)
 
         var remainingLength = length - chars.Count;
 
         if (remainingLength > 0)
         {
-            var baseCharacters = _GetBaseCharacters(
-                    useDigitsInRemaining,
-                    useLowercaseInRemaining,
-                    useUppercaseInRemaining,
-                    useNonAlphanumericInRemaining
-                )
-                .ToList();
+            var pool = _GetBaseCharacters(options).ToList();
 
             for (var i = 0; i < remainingLength; i++)
             {
-                var index = _GetIntInclusiveBetween(0, baseCharacters.Count - 1);
-                var character = baseCharacters[index];
-                chars.Add(character);
+                chars.Add(pool[_GetIntInclusiveBetween(0, pool.Count - 1)]);
             }
         }
 
-        // 4. Shuffle characters
-        var password = new StringBuilder(length);
+        // 4. Shuffle in place (Fisher-Yates) — O(n), no per-element list shifts
 
-        while (chars.Count > 0)
+        for (var i = chars.Count - 1; i > 0; i--)
         {
-            var index = _GetIntInclusiveBetween(0, chars.Count - 1);
-            password.Append(chars[index]);
-            chars.RemoveAt(index);
+            var j = _GetIntInclusiveBetween(0, i);
+            (chars[i], chars[j]) = (chars[j], chars[i]);
         }
 
-        return password.ToString();
+        return new string(CollectionsMarshal.AsSpan(chars));
     }
 
-    private static IEnumerable<char> _GetBaseCharacters(
-        bool useDigitsInRemaining,
-        bool useLowercaseInRemaining,
-        bool useUppercaseInRemaining,
-        bool useNonAlphanumericInRemaining
-    )
+    private static IEnumerable<char> _GetBaseCharacters(GeneratePasswordOptions options)
     {
-        if (useDigitsInRemaining)
+        if (options.UseDigitsInRemaining)
         {
             foreach (var c in _DigitsChars)
             {
@@ -184,7 +167,7 @@ public sealed class PasswordGenerator : IPasswordGenerator
             }
         }
 
-        if (useLowercaseInRemaining)
+        if (options.UseLowercaseInRemaining)
         {
             foreach (var c in _LowercaseChars)
             {
@@ -192,7 +175,7 @@ public sealed class PasswordGenerator : IPasswordGenerator
             }
         }
 
-        if (useUppercaseInRemaining)
+        if (options.UseUppercaseInRemaining)
         {
             foreach (var c in _UppercaseChars)
             {
@@ -200,7 +183,7 @@ public sealed class PasswordGenerator : IPasswordGenerator
             }
         }
 
-        if (useNonAlphanumericInRemaining)
+        if (options.UseNonAlphanumericInRemaining)
         {
             foreach (var c in _NonAlphanumericChars)
             {
