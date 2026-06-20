@@ -219,9 +219,10 @@ public sealed class LogState : IEnumerable<KeyValuePair<string, object?>>
 
     public LogState PropertyIf(string property, object? value, bool condition)
     {
+        Argument.IsNotNull(property);
+
         if (condition)
         {
-            Argument.IsNotNull(property);
             _state[property] = value;
         }
 

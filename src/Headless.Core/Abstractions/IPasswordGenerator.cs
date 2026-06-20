@@ -15,23 +15,34 @@ public interface IPasswordGenerator
 [PublicAPI]
 public sealed record GeneratePasswordOptions(int Length)
 {
-    /// <summary>Minimum number of distinct characters the generated password must contain.</summary>
+    /// <summary>
+    /// Target number of distinct characters to include, drawn from the enabled "remaining" sets.
+    /// Best-effort: bounded by the distinct characters those sets provide and by <see cref="Length"/>.
+    /// </summary>
     public int RequiredUniqueChars { get; init; } = 1;
 
+    /// <summary>Require at least one digit (0-9).</summary>
     public bool RequireDigit { get; init; } = true;
 
+    /// <summary>Require at least one lowercase letter (a-z).</summary>
     public bool RequireLowercase { get; init; } = true;
 
+    /// <summary>Require at least one uppercase letter (A-Z).</summary>
     public bool RequireUppercase { get; init; } = true;
 
+    /// <summary>Require at least one non-alphanumeric character.</summary>
     public bool RequireNonAlphanumeric { get; init; } = true;
 
+    /// <summary>Include digits in the pool that fills the remaining length.</summary>
     public bool UseDigitsInRemaining { get; init; } = true;
 
+    /// <summary>Include lowercase letters in the pool that fills the remaining length.</summary>
     public bool UseLowercaseInRemaining { get; init; }
 
+    /// <summary>Include uppercase letters in the pool that fills the remaining length.</summary>
     public bool UseUppercaseInRemaining { get; init; }
 
+    /// <summary>Include non-alphanumeric characters in the pool that fills the remaining length.</summary>
     public bool UseNonAlphanumericInRemaining { get; init; }
 }
 
