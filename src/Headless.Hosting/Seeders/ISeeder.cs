@@ -2,6 +2,7 @@
 
 namespace Headless.Hosting.Seeders;
 
+[PublicAPI]
 public interface ISeeder
 {
     ValueTask SeedAsync(CancellationToken cancellationToken = default);

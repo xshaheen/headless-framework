@@ -460,9 +460,14 @@ public static class DependencyInjectionExtensions
     public static void Replace<TService>(this IServiceCollection services, Func<IServiceProvider, TService> factory)
         where TService : class
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(factory);
+
         for (var i = 0; i < services.Count; i++)
         {
-            if (services[i].ServiceType == typeof(TService))
+            // Skip keyed registrations: overwriting a keyed slot with a non-keyed descriptor would
+            // corrupt it (matches the IsKeyedService guard in _TryDecorate / AddOrReplaceFallbackSingleton).
+            if (!services[i].IsKeyedService && services[i].ServiceType == typeof(TService))
             {
                 var lifetime = services[i].Lifetime;
                 services[i] = new ServiceDescriptor(typeof(TService), factory, lifetime);
@@ -477,6 +482,15 @@ public static class DependencyInjectionExtensions
 
     #region Unregister
 
+    /// <summary>
+    /// Removes all unkeyed registrations for <typeparamref name="TService"/>. Keyed registrations are
+    /// left intact, matching the <see cref="ServiceDescriptor.IsKeyedService"/> guard in
+    /// <see cref="TryDecorate{TService,TDecorator}"/> and
+    /// <see cref="AddOrReplaceFallbackSingleton{TService,TFallback,TImplementation}"/>.
+    /// </summary>
+    /// <typeparam name="TService">The service type to remove.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns><see langword="true"/> if at least one registration was removed; otherwise <see langword="false"/>.</returns>
     public static bool Unregister<TService>(this IServiceCollection services)
     {
         Argument.IsNotNull(services);
@@ -485,7 +499,7 @@ public static class DependencyInjectionExtensions
 
         for (var i = services.Count - 1; i >= 0; i--)
         {
-            if (services[i].ServiceType == typeof(TService))
+            if (!services[i].IsKeyedService && services[i].ServiceType == typeof(TService))
             {
                 services.RemoveAt(i);
                 unregistered = true;

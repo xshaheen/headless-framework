@@ -1,24 +1,33 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reactive.Disposables;
-
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+using Nito.Disposables;
+
 namespace Microsoft.Extensions.Options;
 
-/// <summary><see cref="IOptionsMonitor{TOptions}"/> wrapper that returns the options instance.</summary>
+/// <summary>An <see cref="IOptionsMonitor{TOptions}"/> that always returns a single fixed value.</summary>
+/// <remarks>
+/// This is a constant adapter, not a live monitor: <see cref="Get"/> ignores the requested name and
+/// always returns <see cref="CurrentValue"/>, and <see cref="OnChange"/> never fires — the listener is
+/// dropped and a no-op disposable is returned. Use it only when the value is immutable for the
+/// consumer's lifetime; do not use it to back code that relies on reload notifications.
+/// </remarks>
 /// <typeparam name="TOptions">Options type.</typeparam>
+[PublicAPI]
 public sealed class OptionsMonitorWrapper<TOptions>(TOptions options) : IOptionsMonitor<TOptions>
     where TOptions : class
 {
-    public TOptions CurrentValue { get; init; } = options;
+    public TOptions CurrentValue { get; } = options;
 
+    /// <summary>Returns <see cref="CurrentValue"/> regardless of <paramref name="name"/>.</summary>
     public TOptions Get(string? name)
     {
         return CurrentValue;
     }
 
-    public IDisposable OnChange(Action<TOptions, string> listener)
+    /// <summary>No-op: change notifications are not supported and <paramref name="listener"/> is never invoked.</summary>
+    public IDisposable OnChange(Action<TOptions, string?> listener)
     {
-        return Disposable.Empty;
+        return NoopDisposable.Instance;
     }
 }

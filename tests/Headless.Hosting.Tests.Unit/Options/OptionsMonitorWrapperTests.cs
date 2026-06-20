@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reactive.Disposables;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Options;
@@ -49,7 +48,8 @@ public sealed class OptionsMonitorWrapperTests
         var result = wrapper.OnChange((_, _) => listenerCalled = true);
 
         // then
-        result.Should().Be(Disposable.Empty);
+        result.Should().NotBeNull();
+        result.Dispose(); // no-op disposable: disposing must not throw
         listenerCalled.Should().BeFalse();
     }
 

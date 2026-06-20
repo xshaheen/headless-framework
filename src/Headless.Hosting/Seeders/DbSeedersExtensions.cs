@@ -29,9 +29,20 @@ public static class DbSeedersExtensions
     /// <summary>
     /// Runs all registered <see cref="ISeeder"/>s ascending by <see cref="SeederPriorityAttribute"/>
     /// (default priority <c>0</c>; migrations seed first via <see cref="int.MinValue"/>). In parallel
-    /// mode each seeder resolves in its own DI scope (DbContext is not thread-safe).
+    /// mode each seeder resolves in its own DI scope (DbContext is not thread-safe) and execution
+    /// ordering across seeders is not guaranteed.
     /// </summary>
-    public static async Task SeedAsync(this IServiceProvider services, bool runInParallel = false)
+    /// <param name="services">The root service provider.</param>
+    /// <param name="runInParallel">When <see langword="true"/>, seeders run concurrently, each in its own scope.</param>
+    /// <param name="cancellationToken">
+    /// Cancels seeding. Linked with <see cref="IHostApplicationLifetime.ApplicationStopping"/> when an
+    /// <see cref="IHostApplicationLifetime"/> is registered, so host shutdown also cancels seeding.
+    /// </param>
+    public static async Task SeedAsync(
+        this IServiceProvider services,
+        bool runInParallel = false,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(services);
 
@@ -39,25 +50,31 @@ public static class DbSeedersExtensions
 
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ISeeder>>();
 
-        // Collect types first to avoid shared DI scope in parallel mode (DbContext is not thread-safe)
-        var seederTypes = scope
+        var applicationStopping =
+            scope.ServiceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, applicationStopping);
+        var token = linkedCts.Token;
+
+        // Resolve once and order by priority. Sequential mode reuses these instances directly; parallel
+        // mode keeps only their types and re-resolves one per scope (DbContext is not thread-safe) — so
+        // parallel mode constructs each seeder twice, which is unavoidable from an IServiceProvider alone.
+        var seeders = scope
             .ServiceProvider.GetServices<ISeeder>()
-            .Select(x => x.GetType())
-            .OrderBy(x => x.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0)
+            .OrderBy(x => x.GetType().GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0)
             .ToList();
 
         logger.LogSeeding();
 
-        var cancellationToken =
-            scope.ServiceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
-
         if (runInParallel)
         {
             await Parallel.ForEachAsync(
-                seederTypes,
-                cancellationToken,
+                seeders.Select(x => x.GetType()),
+                token,
                 async (type, ct) =>
                 {
+                    var typeName = type.GetFriendlyTypeName();
+                    logger.LogSeedingUsing(typeName);
                     await using var innerScope = services.CreateAsyncScope();
                     var seeder = (ISeeder)innerScope.ServiceProvider.GetRequiredService(type);
                     await seeder.SeedAsync(ct).ConfigureAwait(false);
@@ -66,12 +83,11 @@ public static class DbSeedersExtensions
         }
         else
         {
-            foreach (var type in seederTypes)
+            foreach (var seeder in seeders)
             {
-                var typeName = type.GetFriendlyTypeName();
+                var typeName = seeder.GetType().GetFriendlyTypeName();
                 logger.LogSeedingUsing(typeName);
-                var seeder = (ISeeder)scope.ServiceProvider.GetRequiredService(type);
-                await seeder.SeedAsync(cancellationToken).ConfigureAwait(false);
+                await seeder.SeedAsync(token).ConfigureAwait(false);
             }
         }
 

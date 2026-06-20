@@ -31,8 +31,13 @@ public static class ConfigurationExtensions
             Argument.IsNotNull(configuration);
             Argument.IsNotNull(name);
 
-            return configuration.GetSection("ConnectionStrings")[name]
-                ?? throw new InvalidOperationException($"Connection string '{name}' not found.");
+            var connectionString = configuration.GetSection("ConnectionStrings")[name];
+
+            // Treat a present-but-blank value as missing so misconfiguration fails here with a clear
+            // message rather than later at the ADO/connection layer.
+            return string.IsNullOrWhiteSpace(connectionString)
+                ? throw new InvalidOperationException($"Connection string '{name}' not found.")
+                : connectionString;
         }
 
         public T GetRequired<T>(Action<BinderOptions>? configureOptions = null)
@@ -64,9 +69,22 @@ public static class ConfigurationExtensions
             return section.GetRequired<TOption, TValidator>(configureOptions);
         }
 
+        /// <summary>
+        /// Binds and returns <typeparamref name="TOption"/>, then validates it with a freshly
+        /// constructed <typeparamref name="TValidator"/>.
+        /// </summary>
+        /// <remarks>
+        /// The <c>new()</c> constraint is intentional: this helper runs at configuration-read time —
+        /// before the service provider exists — so the validator cannot be resolved from DI and must
+        /// have a parameterless constructor. For validators with injected dependencies, register the
+        /// options through the DI pipeline instead (for example
+        /// <c>services.Configure&lt;TOption, TValidator&gt;(config)</c>).
+        /// </remarks>
         public TOption GetRequired<TOption, TValidator>(Action<BinderOptions>? configureOptions = null)
             where TValidator : class, IValidator<TOption>, new()
         {
+            Argument.IsNotNull(configuration);
+
             var option = configuration.GetRequired<TOption>(configureOptions);
             var validator = new TValidator();
             var result = validator.Validate(option);

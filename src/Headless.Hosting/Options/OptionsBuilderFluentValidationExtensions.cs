@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Options;
 
+[PublicAPI]
 public static class OptionsBuilderFluentValidationExtensions
 {
     /// <summary>Register this options instance for validation of its fluent validation.</summary>
@@ -52,7 +53,17 @@ public static class OptionsBuilderFluentValidationExtensions
             var builder = new ValidateOptionsResultBuilder();
 
             using var scope = serviceProvider.CreateScope();
-            var validator = scope.ServiceProvider.GetRequiredService<IValidator<TOptions>>();
+            var validator = scope.ServiceProvider.GetService<IValidator<TOptions>>();
+
+            if (validator is null)
+            {
+                // Surface a clear options-validation failure instead of letting a raw DI
+                // InvalidOperationException escape through ValidateOnStart at host startup.
+                return ValidateOptionsResult.Fail(
+                    $"No '{typeof(IValidator<TOptions>).Name}' is registered to validate options '{typeof(TOptions).Name}'. "
+                        + "Register the validator (for example via AddOptionValidator or the AddOptions<TOptions, TValidator> overload) before calling ValidateFluentValidation()."
+                );
+            }
 
             var validationResult = validator.Validate(options);
 

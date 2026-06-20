@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+[PublicAPI]
 public static class OptionsServiceCollectionExtensions
 {
     extension(IServiceCollection services)
@@ -130,7 +131,7 @@ public static class OptionsServiceCollectionExtensions
 
         /// <summary>
         /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services' container.
-        /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+        /// Also runs FluentValidation validation and custom validation using the default failure message on application startup.
         /// </summary>
         /// <typeparam name="TOption">The type of the options.</typeparam>
         /// <typeparam name="TOptionValidator">The fluent validator of the options.</typeparam>
@@ -165,7 +166,7 @@ public static class OptionsServiceCollectionExtensions
 
         /// <summary>
         /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
-        /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+        /// Also runs FluentValidation validation and custom validation using the default failure message on application startup.
         /// </summary>
         /// <typeparam name="TOption">The type of the options.</typeparam>
         /// <typeparam name="TOptionValidator">The fluent validator of the options.</typeparam>
@@ -189,7 +190,7 @@ public static class OptionsServiceCollectionExtensions
 
         /// <summary>
         /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
-        /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+        /// Also runs FluentValidation validation and custom validation using the default failure message on application startup.
         /// </summary>
         /// <typeparam name="TOption">The type of the options.</typeparam>
         /// <typeparam name="TOptionValidator">The fluent validator of the options.</typeparam>
@@ -304,7 +305,7 @@ public static class OptionsServiceCollectionExtensions
 
         /// <summary>
         /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
-        /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+        /// Also runs FluentValidation validation and custom validation using the default failure message on application startup.
         /// </summary>
         /// <typeparam name="TOption">The type of the options.</typeparam>
         /// <param name="config">The configuration.</param>
@@ -333,7 +334,7 @@ public static class OptionsServiceCollectionExtensions
 
         /// <summary>
         /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
-        /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+        /// Also runs FluentValidation validation and custom validation using the default failure message on application startup.
         /// </summary>
         /// <typeparam name="TOption">The type of the options.</typeparam>
         /// <param name="configureOption">The configuration.</param>
@@ -360,7 +361,7 @@ public static class OptionsServiceCollectionExtensions
 
         /// <summary>
         /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
-        /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+        /// Also runs FluentValidation validation and custom validation using the default failure message on application startup.
         /// </summary>
         /// <typeparam name="TOption">The type of the options.</typeparam>
         /// <param name="configureOption">The configuration.</param>
