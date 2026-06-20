@@ -11,10 +11,9 @@ public interface ICurrentUser
     ClaimsPrincipal? Principal { get; }
 
     /// <summary>
-    /// Gets a value indicating whether an authenticated user identity is resolved. The framework
-    /// convention is "a parseable <see cref="UserId"/> claim is present" — not
-    /// <c>ClaimsIdentity.IsAuthenticated</c>. A principal authenticated without a UserId claim
-    /// reports <c>false</c>; do not use this as an authorization gate.
+    /// Gets a value indicating whether the current principal carries an authenticated identity
+    /// (<see cref="ClaimsIdentity.IsAuthenticated"/> is <c>true</c>). Do not use this as an
+    /// authorization gate on its own.
     /// </summary>
     bool IsAuthenticated { get; }
 
@@ -56,7 +55,7 @@ public sealed class PrincipalCurrentUser(ClaimsPrincipal? principal) : ICurrentU
 {
     public ClaimsPrincipal? Principal => principal;
 
-    public bool IsAuthenticated => UserId is not null;
+    public bool IsAuthenticated => principal?.Identity?.IsAuthenticated == true;
 
     public UserId? UserId => principal.GetUserId();
 
