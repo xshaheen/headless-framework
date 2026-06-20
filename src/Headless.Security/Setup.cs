@@ -18,6 +18,13 @@ public static class SetupSecurity
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers <see cref="IStringEncryptionService" /> as a singleton, binding
+        /// <see cref="StringEncryptionOptions" /> from the supplied configuration section.
+        /// </summary>
+        /// <param name="config">The configuration section that binds <see cref="StringEncryptionOptions" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="config" /> is <see langword="null" />.</exception>
         public IServiceCollection AddStringEncryptionService(IConfiguration config)
         {
             Argument.IsNotNull(config);
@@ -28,6 +35,13 @@ public static class SetupSecurity
             );
         }
 
+        /// <summary>
+        /// Registers <see cref="IStringEncryptionService" /> as a singleton, configuring
+        /// <see cref="StringEncryptionOptions" /> with the supplied delegate.
+        /// </summary>
+        /// <param name="configure">Configures <see cref="StringEncryptionOptions" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public IServiceCollection AddStringEncryptionService(Action<StringEncryptionOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -38,6 +52,14 @@ public static class SetupSecurity
             );
         }
 
+        /// <summary>
+        /// Registers <see cref="IStringEncryptionService" /> as a singleton, configuring
+        /// <see cref="StringEncryptionOptions" /> with the supplied delegate that can resolve services from the
+        /// <see cref="IServiceProvider" />.
+        /// </summary>
+        /// <param name="configure">Configures <see cref="StringEncryptionOptions" /> using resolved services.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public IServiceCollection AddStringEncryptionService(
             Action<StringEncryptionOptions, IServiceProvider> configure
         )
@@ -50,6 +72,13 @@ public static class SetupSecurity
             );
         }
 
+        /// <summary>
+        /// Registers <see cref="IStringHashService" /> as a singleton, binding <see cref="StringHashOptions" /> from
+        /// the supplied configuration section.
+        /// </summary>
+        /// <param name="config">The configuration section that binds <see cref="StringHashOptions" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="config" /> is <see langword="null" />.</exception>
         public IServiceCollection AddStringHashService(IConfiguration config)
         {
             Argument.IsNotNull(config);
@@ -57,6 +86,13 @@ public static class SetupSecurity
             return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(config));
         }
 
+        /// <summary>
+        /// Registers <see cref="IStringHashService" /> as a singleton, configuring <see cref="StringHashOptions" />
+        /// with the supplied delegate.
+        /// </summary>
+        /// <param name="configure">Configures <see cref="StringHashOptions" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public IServiceCollection AddStringHashService(Action<StringHashOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -64,6 +100,13 @@ public static class SetupSecurity
             return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(configure));
         }
 
+        /// <summary>
+        /// Registers <see cref="IStringHashService" /> as a singleton, configuring <see cref="StringHashOptions" />
+        /// with the supplied delegate that can resolve services from the <see cref="IServiceProvider" />.
+        /// </summary>
+        /// <param name="configure">Configures <see cref="StringHashOptions" /> using resolved services.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> so calls can be chained.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         public IServiceCollection AddStringHashService(Action<StringHashOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
