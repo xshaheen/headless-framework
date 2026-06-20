@@ -11,6 +11,7 @@ using Headless.Blobs.Azure.Internals;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Primitives;
+using Headless.Threading;
 using Headless.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -30,9 +31,10 @@ public sealed class AzureBlobStorage(
 
     // Containers this instance has already ensured exist, so CreateIfNotExists runs at most once per container
     // rather than on every upload/copy. A container is recorded only after a successful create, so a failed
-    // ensure is naturally retried. The lock serializes concurrent first-time ensures into a single create.
+    // ensure is naturally retried. The per-container lock serializes concurrent first-time ensures of the same
+    // container into a single create while letting distinct containers be ensured in parallel.
     private readonly ConcurrentDictionary<string, byte> _ensuredContainers = new(StringComparer.Ordinal);
-    private readonly SemaphoreSlim _ensureContainerLock = new(1, 1);
+    private readonly KeyedAsyncLock _ensureContainerLock = new();
 
     #region Create Container
 
@@ -50,9 +52,7 @@ public sealed class AzureBlobStorage(
             return;
         }
 
-        await _ensureContainerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-        try
+        using (await _ensureContainerLock.LockAsync(container, cancellationToken).ConfigureAwait(false))
         {
             // Re-check under the lock: a concurrent caller may have ensured this container while we waited.
             if (_ensuredContainers.ContainsKey(container))
@@ -67,10 +67,6 @@ public sealed class AzureBlobStorage(
 
             // Record only after a successful create so a failed ensure is retried next time.
             _ensuredContainers.TryAdd(container, 0);
-        }
-        finally
-        {
-            _ensureContainerLock.Release();
         }
     }
 

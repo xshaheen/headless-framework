@@ -10,6 +10,7 @@ using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.IO;
 using Headless.Primitives;
+using Headless.Threading;
 using Headless.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,9 +34,10 @@ public sealed class AwsBlobStorage(
 
     // Buckets this instance has already ensured exist, so the HeadBucket/PutBucket round trip runs at most once
     // per bucket rather than on every upload/copy. A bucket is recorded only after a successful ensure, so a
-    // failed ensure is naturally retried. The lock serializes concurrent first-time ensures into a single create.
+    // failed ensure is naturally retried. The per-bucket lock serializes concurrent first-time ensures of the
+    // same bucket into a single create while letting distinct buckets be ensured in parallel.
     private readonly ConcurrentDictionary<string, byte> _ensuredBuckets = new(StringComparer.Ordinal);
-    private readonly SemaphoreSlim _ensureBucketLock = new(1, 1);
+    private readonly KeyedAsyncLock _ensureBucketLock = new();
 
     #region Create Container
 
@@ -54,9 +56,7 @@ public sealed class AwsBlobStorage(
             return;
         }
 
-        await _ensureBucketLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-        try
+        using (await _ensureBucketLock.LockAsync(bucketName, cancellationToken).ConfigureAwait(false))
         {
             // Re-check under the lock: a concurrent caller may have ensured this bucket while we waited.
             if (_ensuredBuckets.ContainsKey(bucketName))
@@ -68,10 +68,6 @@ public sealed class AwsBlobStorage(
 
             // Record only after a successful create so a failed ensure is retried next time.
             _ensuredBuckets.TryAdd(bucketName, 0);
-        }
-        finally
-        {
-            _ensureBucketLock.Release();
         }
     }
 
