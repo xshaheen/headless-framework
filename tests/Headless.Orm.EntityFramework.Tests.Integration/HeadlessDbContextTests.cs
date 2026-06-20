@@ -8,7 +8,7 @@ using Tests.Fixture;
 
 namespace Tests;
 
-[TestCaseOrderer(typeof(AlfaTestsOrderer))]
+[TestCaseOrderer(typeof(AlphaTestsOrderer))]
 [Collection<HeadlessDbContextTestFixture>]
 public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture) : TestBase
 {

@@ -6,7 +6,7 @@ using Xunit.v3;
 namespace Headless.Testing.Order;
 
 [PublicAPI]
-public sealed class AlfaTestsOrderer : ITestCaseOrderer
+public sealed class AlphaTestsOrderer : ITestCaseOrderer
 {
     public IReadOnlyCollection<TTestCase> OrderTestCases<TTestCase>(IReadOnlyCollection<TTestCase> testCases)
         where TTestCase : ITestCase

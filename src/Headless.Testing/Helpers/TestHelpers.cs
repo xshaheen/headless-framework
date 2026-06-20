@@ -10,23 +10,33 @@ namespace Headless.Testing.Helpers;
 [PublicAPI]
 public static class TestHelpers
 {
-    public static readonly JsonSerializerOptions JsonSerializerOptions = new()
+    public static readonly JsonSerializerOptions JsonSerializerOptions = _CreateJsonSerializerOptions();
+
+    private static JsonSerializerOptions _CreateJsonSerializerOptions()
     {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        NumberHandling = JsonNumberHandling.Strict,
-        ReadCommentHandling = JsonCommentHandling.Disallow,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        PropertyNamingPolicy = null,
-        DictionaryKeyPolicy = null,
-        PropertyNameCaseInsensitive = false,
-        IgnoreReadOnlyProperties = false,
-        IncludeFields = false,
-        IgnoreReadOnlyFields = false,
-        WriteIndented = true,
-        AllowTrailingCommas = false,
-        ReferenceHandler = null,
-        Converters = { new JsonStringEnumConverter(allowIntegerValues: false) },
-    };
+        var options = new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            NumberHandling = JsonNumberHandling.Strict,
+            ReadCommentHandling = JsonCommentHandling.Disallow,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            PropertyNamingPolicy = null,
+            DictionaryKeyPolicy = null,
+            PropertyNameCaseInsensitive = false,
+            IgnoreReadOnlyProperties = false,
+            IncludeFields = false,
+            IgnoreReadOnlyFields = false,
+            WriteIndented = true,
+            AllowTrailingCommas = false,
+            ReferenceHandler = null,
+            Converters = { new JsonStringEnumConverter(allowIntegerValues: false) },
+        };
+
+        // Freeze the shared instance so a consumer cannot mutate it and pollute other tests.
+        options.MakeReadOnly(populateMissingResolver: true);
+
+        return options;
+    }
 
     public static string PrettyPrintJson(this string json)
     {

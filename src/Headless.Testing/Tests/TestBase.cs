@@ -5,8 +5,6 @@ using Headless.Testing.Helpers;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-[assembly: CaptureConsole]
-
 namespace Headless.Testing.Tests;
 
 // IAsyncLifetime -> to perform per-test initialization/cleanup work

@@ -189,6 +189,11 @@ public sealed class HeadlessTestServer<TProgram>(
                         await _resetConnection.OpenAsync().ConfigureAwait(false);
                     }
                 }
+                catch (DbException ex)
+                {
+                    // Final attempt failed — surface retry-exhaustion context instead of a bare DbException.
+                    throw new InvalidOperationException("Database reset failed after 3 attempts.", ex);
+                }
             }
         }
         finally

@@ -8,7 +8,7 @@ namespace Headless.Testing.Helpers;
 [PublicAPI]
 public sealed class TestClock(TimeProvider? timeProvider = null) : IClock
 {
-    public TimeProvider TimeProvider { get; set; } = timeProvider ?? new FakeTimeProvider();
+    public TimeProvider TimeProvider { get; init; } = timeProvider ?? new FakeTimeProvider();
 
     public TimeZoneInfo LocalTimeZone => TimeProvider.LocalTimeZone;
 
