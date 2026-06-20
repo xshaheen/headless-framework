@@ -292,7 +292,7 @@ public static class SetupApi
                             var appAccessor = serviceProvider.GetRequiredService<IApplicationInformationAccessor>();
                             var buildAccessor = serviceProvider.GetRequiredService<IBuildInformationAccessor>();
                             client.DefaultRequestHeaders.UserAgent.Add(
-                                new ProductInfoHeaderValue(appAccessor.ApplicationName, buildAccessor.GetBuildNumber())
+                                new ProductInfoHeaderValue(appAccessor.ApplicationName, buildAccessor.GetVersion())
                             );
                         }
                     );

@@ -10,7 +10,7 @@ public interface IBuildInformationAccessor
     string? GetProduct();
     string? GetDescription();
     string? GetCompany();
-    string? GetBuildNumber();
+    string? GetVersion();
     string? GetCommitNumber();
 }
 
@@ -24,7 +24,7 @@ public sealed class BuildInformationAccessor : IBuildInformationAccessor
 
     public string? GetCompany() => AssemblyInformation.Entry?.Company;
 
-    public string? GetBuildNumber() => AssemblyInformation.Entry?.Version;
+    public string? GetVersion() => AssemblyInformation.Entry?.Version;
 
     public string? GetCommitNumber() => AssemblyInformation.Entry?.CommitNumber;
 }

@@ -26,7 +26,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         if (buildInfo is null)
         {
             buildInfo = Substitute.For<IBuildInformationAccessor>();
-            buildInfo.GetBuildNumber().Returns("1.0.0");
+            buildInfo.GetVersion().Returns("1.0.0");
             buildInfo.GetCommitNumber().Returns("abc123");
         }
 
@@ -451,7 +451,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var buildInfo = Substitute.For<IBuildInformationAccessor>();
-        buildInfo.GetBuildNumber().Returns("2.5.0");
+        buildInfo.GetVersion().Returns("2.5.0");
         buildInfo.GetCommitNumber().Returns("xyz789");
         var creator = _CreateCreator(buildInfo: buildInfo);
         var problemDetails = new ProblemDetails { Status = 400 };
@@ -469,7 +469,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var buildInfo = Substitute.For<IBuildInformationAccessor>();
-        buildInfo.GetBuildNumber().Returns("1.0.0");
+        buildInfo.GetVersion().Returns("1.0.0");
         buildInfo.GetCommitNumber().Returns("def456");
         var creator = _CreateCreator(buildInfo: buildInfo);
         var problemDetails = new ProblemDetails { Status = 400 };

@@ -381,7 +381,7 @@ public sealed class ProblemDetailsCreator(
         }
         if (!problemDetails.Extensions.ContainsKey("buildNumber"))
         {
-            problemDetails.Extensions["buildNumber"] = buildInformationAccessor.GetBuildNumber();
+            problemDetails.Extensions["buildNumber"] = buildInformationAccessor.GetVersion();
         }
         if (!problemDetails.Extensions.ContainsKey("commitNumber"))
         {
