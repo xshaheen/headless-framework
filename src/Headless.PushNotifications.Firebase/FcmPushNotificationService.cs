@@ -29,6 +29,21 @@ public sealed class FcmPushNotificationService(
 
     private readonly ResiliencePipeline _retryPipeline = pipelineProvider.GetPipeline("Headless:FcmRetry");
 
+    /// <summary>
+    /// Sends a single notification, transparently retrying transient FCM errors before returning.
+    /// </summary>
+    /// <returns>
+    /// A success response with the FCM message id, an
+    /// <see cref="PushNotificationResponseStatus.Unregistered"/> response when FCM reports the token as
+    /// unknown, or a failure response for any other delivery error. Delivery and transport errors are
+    /// captured in the response and never thrown.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="clientToken"/>, <paramref name="title"/>, or <paramref name="body"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="clientToken"/>, <paramref name="title"/>, or <paramref name="body"/> is empty or white space;
+    /// or <paramref name="title"/> exceeds 100 characters or <paramref name="body"/> exceeds 4000 characters.
+    /// </exception>
+    /// <exception cref="InvalidOperationException"><paramref name="data"/> contains a key reserved by FCM (<c>from</c>, <c>notification</c>, or <c>message_type</c>).</exception>
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
         string title,
@@ -104,6 +119,28 @@ public sealed class FcmPushNotificationService(
         }
     }
 
+    /// <summary>
+    /// Sends the same notification to many devices, splitting the tokens into batches of 500 (the FCM
+    /// per-request limit) and retrying transient errors per batch.
+    /// </summary>
+    /// <returns>
+    /// An aggregate response whose <see cref="BatchPushNotificationResponse.Responses"/> contains one entry
+    /// per token, in the same order as <paramref name="clientTokens"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="clientTokens"/>, <paramref name="title"/>, or <paramref name="body"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="clientTokens"/> is empty; <paramref name="title"/> or <paramref name="body"/> is empty or white space;
+    /// or <paramref name="title"/> exceeds 100 characters or <paramref name="body"/> exceeds 4000 characters.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="data"/> contains a key reserved by FCM (<c>from</c>, <c>notification</c>, or <c>message_type</c>),
+    /// or FCM returns a batch whose response count does not match the number of tokens sent.
+    /// </exception>
+    /// <remarks>
+    /// Unlike <see cref="SendToDeviceAsync"/>, a transport-level failure of a batch (once retries are
+    /// exhausted) propagates to the caller instead of being captured as failed per-token responses;
+    /// per-token rejections within a successful batch call are still reported in the response.
+    /// </remarks>
     public async ValueTask<BatchPushNotificationResponse> SendMulticastAsync(
         IReadOnlyList<string> clientTokens,
         string title,

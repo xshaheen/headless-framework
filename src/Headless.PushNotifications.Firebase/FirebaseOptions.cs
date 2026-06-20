@@ -108,6 +108,10 @@ public sealed class FirebaseRetryOptions
     public bool UseJitter { get; init; } = true;
 }
 
+/// <summary>
+/// FluentValidation validator for <see cref="FirebaseOptions"/>. Wired up and executed automatically by the
+/// <c>AddFirebasePushNotifications</c> setup methods.
+/// </summary>
 public sealed class FirebaseOptionsValidator : AbstractValidator<FirebaseOptions>
 {
     public FirebaseOptionsValidator()

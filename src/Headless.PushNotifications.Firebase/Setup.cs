@@ -16,11 +16,27 @@ using Polly.Retry;
 
 namespace Headless.PushNotifications.Firebase;
 
+/// <summary>
+/// Registration helpers for the Firebase Cloud Messaging push-notification provider.
+/// </summary>
+/// <remarks>
+/// All overloads register <see cref="IPushNotificationService"/> (as <see cref="FcmPushNotificationService"/>)
+/// and the FCM retry resilience pipeline, and create the process-wide <see cref="FirebaseApp.DefaultInstance"/>
+/// from the supplied service-account JSON. Because <see cref="FirebaseApp.DefaultInstance"/> is a process-global
+/// singleton, it is created only once: if it already exists (a second registration, or another caller created
+/// it first), the credentials passed here are ignored.
+/// </remarks>
 [PublicAPI]
 public static class SetupFirebase
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers the Firebase provider, binding and validating <see cref="FirebaseOptions"/> from the
+        /// given configuration section. Validation runs eagerly during registration.
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="configuration"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">The section is missing or the bound options fail <see cref="FirebaseOptionsValidator"/> validation (for example missing JSON credentials).</exception>
         public IServiceCollection AddFirebasePushNotifications(IConfigurationSection configuration)
         {
             Argument.IsNotNull(services);
@@ -31,6 +47,11 @@ public static class SetupFirebase
             return services._AddCore(firebaseOptions);
         }
 
+        /// <summary>
+        /// Registers the Firebase provider, configuring <see cref="FirebaseOptions"/> via a delegate. Options
+        /// are validated by <see cref="FirebaseOptionsValidator"/> at application startup.
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddFirebasePushNotifications(Action<FirebaseOptions> options)
         {
             Argument.IsNotNull(services);
@@ -43,6 +64,11 @@ public static class SetupFirebase
             return services._AddCore(firebaseOptions);
         }
 
+        /// <summary>
+        /// Registers the Firebase provider from a pre-built options instance. This overload does not register
+        /// startup validation; the caller is responsible for supplying valid options.
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddFirebasePushNotifications(FirebaseOptions options)
         {
             Argument.IsNotNull(services);

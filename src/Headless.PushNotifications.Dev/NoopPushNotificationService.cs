@@ -4,6 +4,11 @@ using Headless.PushNotifications.Abstractions;
 
 namespace Headless.PushNotifications.Dev;
 
+/// <summary>
+/// No-op <see cref="IPushNotificationService"/> for local development and testing. It sends nothing and
+/// always reports success, returning a freshly generated GUID as the message id for every token. Do not
+/// use in production.
+/// </summary>
 public sealed class NoopPushNotificationService : IPushNotificationService
 {
     public ValueTask<PushNotificationResponse> SendToDeviceAsync(
