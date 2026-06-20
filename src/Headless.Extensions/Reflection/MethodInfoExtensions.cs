@@ -7,11 +7,20 @@ using Headless.Checks;
 namespace System.Reflection;
 
 #pragma warning disable RCS1047 // Remove Async suffix.
+/// <summary>
+/// Extension methods over <see cref="MethodInfo"/>.
+/// </summary>
 [PublicAPI]
 public static class MethodInfoExtensions
 {
     /// <summary>Checks if given method is an async method.</summary>
     /// <param name="method">A method to check</param>
+    /// <returns>
+    /// <see langword="true"/> if the method returns <see cref="Task"/>, <see cref="ValueTask"/>, their generic forms,
+    /// <see cref="IAsyncEnumerable{T}"/>, <see cref="IAsyncEnumerator{T}"/>, or is marked with
+    /// <see cref="System.Runtime.CompilerServices.AsyncStateMachineAttribute"/>; otherwise <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="method"/> is <see langword="null"/>.</exception>
     [MustUseReturnValue]
     public static bool IsAsync(this MethodInfo method)
     {

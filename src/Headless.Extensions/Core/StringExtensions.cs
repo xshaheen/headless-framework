@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Headless.Checks;
 using RegexPatterns = Headless.Constants.RegexPatterns;
 
@@ -269,6 +270,13 @@ public static class StringExtensions
         return input;
     }
 
+    /// <summary>Removes the given postfix character from the end of the string if it is present.</summary>
+    /// <param name="input">The string.</param>
+    /// <param name="postfix">The postfix character to remove.</param>
+    /// <returns>
+    /// The string without its trailing <paramref name="postfix"/>, the same string if it does not end with
+    /// <paramref name="postfix"/>, or <see langword="null"/> if <paramref name="input"/> is <see langword="null"/>.
+    /// </returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -282,6 +290,13 @@ public static class StringExtensions
         return input.EndsWith(postfix) ? input[..^1] : input;
     }
 
+    /// <summary>Removes every occurrence of the given character from the string.</summary>
+    /// <param name="input">The string.</param>
+    /// <param name="character">The character to remove.</param>
+    /// <returns>
+    /// A copy of <paramref name="input"/> with all occurrences of <paramref name="character"/> removed, or
+    /// <see langword="null"/> if <paramref name="input"/> is <see langword="null"/>.
+    /// </returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -290,6 +305,14 @@ public static class StringExtensions
         return input is null ? null : string.Concat(input.Split(character));
     }
 
+    /// <summary>Removes every occurrence of the given characters from the string.</summary>
+    /// <param name="input">The string.</param>
+    /// <param name="unwantedCharacters">The characters to remove.</param>
+    /// <returns>
+    /// A copy of <paramref name="input"/> with all occurrences of any character in
+    /// <paramref name="unwantedCharacters"/> removed, or <see langword="null"/> if <paramref name="input"/> is
+    /// <see langword="null"/>.
+    /// </returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -504,6 +527,10 @@ public static class StringExtensions
     }
 
     /// <summary>Remove control characters from string.</summary>
+    /// <param name="input">The string to strip control characters from.</param>
+    /// <returns>A copy of <paramref name="input"/> with all control (hidden) characters removed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="input"/> is <see langword="null"/>.</exception>
+    /// <exception cref="RegexMatchTimeoutException">Thrown when the match exceeds the pattern's 100ms timeout.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static string RemoveHiddenChars(this string input)
@@ -512,6 +539,10 @@ public static class StringExtensions
     }
 
     /// <summary>Strips any single quotes or double quotes from the beginning and end of a string.</summary>
+    /// <param name="s">The string to strip surrounding quotes from.</param>
+    /// <returns>A copy of <paramref name="s"/> with leading and trailing single or double quotes removed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="s"/> is <see langword="null"/>.</exception>
+    /// <exception cref="RegexMatchTimeoutException">Thrown when the match exceeds the pattern's 100ms timeout.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static string StripQuotes(this string s)
@@ -552,6 +583,10 @@ public static class StringExtensions
     /// <summary>
     /// Replace any white space characters [\r\n\t\f\v ] with one white space.
     /// </summary>
+    /// <param name="input">The string whose whitespace runs are collapsed.</param>
+    /// <returns>A copy of <paramref name="input"/> with each run of whitespace replaced by a single space.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="input"/> is <see langword="null"/>.</exception>
+    /// <exception cref="RegexMatchTimeoutException">Thrown when the match exceeds the pattern's 100ms timeout.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static string OneSpace(this string input)
@@ -566,6 +601,9 @@ public static class StringExtensions
     /// <param name="value">String value to convert</param>
     /// <param name="ignoreCase">Ignore a case</param>
     /// <returns>Returns enum object</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="value"/> does not match a defined name of <typeparamref name="T"/>.</exception>
+    /// <exception cref="OverflowException">Thrown when <paramref name="value"/> is outside the range of <typeparamref name="T"/>'s underlying type.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static T ToEnum<T>(this string value, bool ignoreCase = true)
@@ -680,9 +718,11 @@ public static class StringExtensions
         return string.Concat(cs).Normalize(NormalizationForm.FormC);
     }
 
-    /// <summary>Check that text not contain non-Arabic characters.</summary>
-    /// <param name="text">Unicode text</param>
-    /// <returns>True if all characters are in Arabic block.</returns>
+    /// <summary>Checks whether the text contains any right-to-left (Arabic-script) characters.</summary>
+    /// <param name="text">Unicode text to test.</param>
+    /// <returns><see langword="true"/> if at least one character falls in an RTL (Arabic-script) Unicode range; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> is <see langword="null"/>.</exception>
+    /// <exception cref="RegexMatchTimeoutException">Thrown when the match exceeds the pattern's 100ms timeout.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static bool IsRtlText(this string text)
@@ -700,6 +740,15 @@ public static class StringExtensions
         return string.IsNullOrWhiteSpace(str) ? defaultValue : str;
     }
 
+    /// <summary>
+    /// Normalizes directory separators in <paramref name="path"/> to the current platform's
+    /// <see cref="Path.DirectorySeparatorChar"/>.
+    /// </summary>
+    /// <param name="path">The path to normalize.</param>
+    /// <returns>
+    /// <paramref name="path"/> with <c>/</c> and <c>\</c> replaced by the platform separator; the original value if
+    /// it is <see langword="null"/> or empty.
+    /// </returns>
     [SystemPure]
     [JetBrainsPure]
     public static string NormalizePath(this string path)
@@ -717,6 +766,10 @@ public static class StringExtensions
         };
     }
 
+    /// <summary>Computes the MD5 hash of the UTF-8 bytes of <paramref name="str"/> and returns it as an uppercase hex string.</summary>
+    /// <param name="str">The string to hash.</param>
+    /// <returns>The MD5 hash of <paramref name="str"/> encoded as an uppercase hexadecimal string.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="str"/> is <see langword="null"/>.</exception>
     [SuppressMessage(
         "Security",
         "CA5351:Do Not Use Broken Cryptographic Algorithms",
@@ -730,6 +783,10 @@ public static class StringExtensions
         return Convert.ToHexString(data);
     }
 
+    /// <summary>Computes the SHA-256 hash of the UTF-8 bytes of <paramref name="str"/> and returns it as a lowercase hex string.</summary>
+    /// <param name="str">The string to hash.</param>
+    /// <returns>The SHA-256 hash of <paramref name="str"/> encoded as a lowercase hexadecimal string.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="str"/> is <see langword="null"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static string ToSha256(this string str)
@@ -738,6 +795,10 @@ public static class StringExtensions
         return Convert.ToHexStringLower(data);
     }
 
+    /// <summary>Computes the SHA-512 hash of the UTF-8 bytes of <paramref name="str"/> and returns it as a lowercase hex string.</summary>
+    /// <param name="str">The string to hash.</param>
+    /// <returns>The SHA-512 hash of <paramref name="str"/> encoded as a lowercase hexadecimal string.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="str"/> is <see langword="null"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static string ToSha512(this string str)
@@ -746,6 +807,13 @@ public static class StringExtensions
         return Convert.ToHexStringLower(data);
     }
 
+    /// <summary>Parses <paramref name="str"/> into a value of type <typeparamref name="T"/> using <see cref="ISpanParsable{TSelf}"/>.</summary>
+    /// <typeparam name="T">The parsable target type.</typeparam>
+    /// <param name="str">The string to parse.</param>
+    /// <param name="format">(Optional) Culture-specific formatting information. Defaults to <see langword="null"/>.</param>
+    /// <returns>The value of type <typeparamref name="T"/> parsed from <paramref name="str"/>.</returns>
+    /// <exception cref="FormatException">Thrown when <paramref name="str"/> is not in a format recognized by <typeparamref name="T"/>.</exception>
+    /// <exception cref="OverflowException">Thrown when <paramref name="str"/> represents a value outside the range of <typeparamref name="T"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static T Parse<T>(this string str, IFormatProvider? format = null)
@@ -754,6 +822,12 @@ public static class StringExtensions
         return T.Parse(str.AsSpan(), format);
     }
 
+    /// <summary>Attempts to parse <paramref name="str"/> into a value of type <typeparamref name="T"/> using <see cref="ISpanParsable{TSelf}"/>.</summary>
+    /// <typeparam name="T">The parsable target type.</typeparam>
+    /// <param name="str">The string to parse.</param>
+    /// <param name="format">Culture-specific formatting information.</param>
+    /// <param name="value">When this method returns, the parsed value if parsing succeeded; otherwise the default value of <typeparamref name="T"/>.</param>
+    /// <returns><see langword="true"/> if <paramref name="str"/> was parsed successfully; otherwise, <see langword="false"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static bool TryParse<T>(this string str, IFormatProvider? format, [NotNullWhen(true)] out T? value)
@@ -762,6 +836,11 @@ public static class StringExtensions
         return T.TryParse(str.AsSpan(), format, out value);
     }
 
+    /// <summary>Attempts to parse <paramref name="str"/> into a value of type <typeparamref name="T"/> using the invariant/default format.</summary>
+    /// <typeparam name="T">The parsable target type.</typeparam>
+    /// <param name="str">The string to parse.</param>
+    /// <param name="value">When this method returns, the parsed value if parsing succeeded; otherwise the default value of <typeparamref name="T"/>.</param>
+    /// <returns><see langword="true"/> if <paramref name="str"/> was parsed successfully; otherwise, <see langword="false"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static bool TryParse<T>(this string str, [NotNullWhen(true)] out T? value)
@@ -813,22 +892,38 @@ public static class StringExtensions
         return new string(newSpan, 0, index);
     }
 
+    /// <summary>Encodes the UTF-8 bytes of <paramref name="text"/> as a Base64 string.</summary>
+    /// <param name="text">The text to encode.</param>
+    /// <returns>The Base64 representation of the UTF-8 bytes of <paramref name="text"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="text"/> is <see langword="null"/>.</exception>
     public static string ToBase64(this string text)
     {
         var bytes = Encoding.UTF8.GetBytes(text);
         return Convert.ToBase64String(bytes);
     }
 
+    /// <summary>Encodes the given bytes as a Base64 string.</summary>
+    /// <param name="bytes">The bytes to encode.</param>
+    /// <returns>The Base64 representation of <paramref name="bytes"/>.</returns>
     public static string ToBase64(this ReadOnlySpan<byte> bytes)
     {
         return Convert.ToBase64String(bytes);
     }
 
+    /// <summary>Encodes the given bytes as a Base64 string.</summary>
+    /// <param name="bytes">The bytes to encode.</param>
+    /// <returns>The Base64 representation of <paramref name="bytes"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bytes"/> is <see langword="null"/>.</exception>
     public static string ToBase64(this byte[] bytes)
     {
         return Convert.ToBase64String(bytes);
     }
 
+    /// <summary>Decodes a Base64 string into its UTF-8 text representation.</summary>
+    /// <param name="base64Value">The Base64-encoded string to decode.</param>
+    /// <returns>The UTF-8 text decoded from <paramref name="base64Value"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="base64Value"/> is <see langword="null"/>.</exception>
+    /// <exception cref="FormatException">Thrown when <paramref name="base64Value"/> is not a valid Base64 string.</exception>
     public static string DecodeBase64(this string base64Value)
     {
         var bytes = Convert.FromBase64String(base64Value);

@@ -11,6 +11,12 @@ namespace Headless.Primitives;
 #pragma warning disable CA1036  // Override methods on comparable types
 public sealed partial class UserId : IPrimitive<string>
 {
+    /// <summary>Validates that the user identifier value is non-empty.</summary>
+    /// <param name="value">The candidate user identifier value.</param>
+    /// <returns>
+    /// <see cref="PrimitiveValidationResult.Ok"/> when <paramref name="value"/> is non-empty;
+    /// otherwise a failed result carrying the error message.
+    /// </returns>
     public static PrimitiveValidationResult Validate(string value)
     {
         return value.Length > 0 ? PrimitiveValidationResult.Ok : "Cannot be empty.";

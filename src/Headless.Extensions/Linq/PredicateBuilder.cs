@@ -12,25 +12,49 @@ namespace Headless.Linq;
 [PublicAPI]
 public static class PredicateBuilder
 {
+    /// <summary>Returns a seed predicate that always evaluates to <see langword="true"/>, suitable as the identity for AND composition.</summary>
+    /// <typeparam name="T">The type of the parameter in the predicate.</typeparam>
+    /// <returns>A predicate that always returns <see langword="true"/>.</returns>
     public static Expression<Func<T, bool>> True<T>() => _ => true;
 
+    /// <summary>Returns a seed predicate that always evaluates to <see langword="false"/>, suitable as the identity for OR composition.</summary>
+    /// <typeparam name="T">The type of the parameter in the predicate.</typeparam>
+    /// <returns>A predicate that always returns <see langword="false"/>.</returns>
     public static Expression<Func<T, bool>> False<T>() => _ => false;
 
+    /// <summary>Combines a sequence of predicates with logical OR; an empty sequence yields <see cref="False{T}"/>.</summary>
+    /// <typeparam name="T">The type of the parameter in the predicates.</typeparam>
+    /// <param name="expressions">The predicates to OR together.</param>
+    /// <returns>A single predicate that is the OR of all <paramref name="expressions"/>.</returns>
     public static Expression<Func<T, bool>> Or<T>(this IEnumerable<Expression<Func<T, bool>>> expressions)
     {
         return expressions.Aggregate(seed: False<T>(), (current, expression) => current.Or(expression));
     }
 
+    /// <summary>Combines a sequence of predicates with logical AND; an empty sequence yields <see cref="True{T}"/>.</summary>
+    /// <typeparam name="T">The type of the parameter in the predicates.</typeparam>
+    /// <param name="expressions">The predicates to AND together.</param>
+    /// <returns>A single predicate that is the AND of all <paramref name="expressions"/>.</returns>
     public static Expression<Func<T, bool>> And<T>(this IEnumerable<Expression<Func<T, bool>>> expressions)
     {
         return expressions.Aggregate(seed: True<T>(), (current, expression) => current.And(expression));
     }
 
+    /// <summary>Combines two predicates as <paramref name="f"/> AND NOT <paramref name="s"/>.</summary>
+    /// <typeparam name="T">The type of the object.</typeparam>
+    /// <param name="f">The first predicate.</param>
+    /// <param name="s">The predicate to negate and AND with <paramref name="f"/>.</param>
+    /// <returns>The combined predicate.</returns>
     public static Expression<Func<T, bool>> AndNot<T>(this Expression<Func<T, bool>> f, Expression<Func<T, bool>> s)
     {
         return f.And(s.Not());
     }
 
+    /// <summary>Combines two predicates as <paramref name="f"/> OR NOT <paramref name="s"/>.</summary>
+    /// <typeparam name="T">The type of the object.</typeparam>
+    /// <param name="f">The first predicate.</param>
+    /// <param name="s">The predicate to negate and OR with <paramref name="f"/>.</param>
+    /// <returns>The combined predicate.</returns>
     public static Expression<Func<T, bool>> OrNot<T>(this Expression<Func<T, bool>> f, Expression<Func<T, bool>> s)
     {
         return f.Or(s.Not());

@@ -179,7 +179,9 @@ public sealed class Url
 
     #region ctors and parsing methods
     /// <summary>
-    /// Constructs a Url object from a string.
+    /// Constructs a Url object from a string. Parsing is deferred until a component is first accessed, so a malformed
+    /// <paramref name="baseUrl"/> surfaces a <see cref="UriFormatException"/> on first access of a parsed member
+    /// (any property getter/setter or fluent builder method), not from this constructor.
     /// </summary>
     /// <param name="baseUrl">The URL to use as a starting point.</param>
     public Url(string? baseUrl = null)
@@ -200,8 +202,11 @@ public sealed class Url
     }
 
     /// <summary>
-    /// Parses a URL string into a Flurl.Url object.
+    /// Parses a URL string into a <see cref="Url"/> object, eagerly parsing it into its components.
     /// </summary>
+    /// <param name="url">The URL string to parse.</param>
+    /// <returns>A new <see cref="Url"/> object representing the parsed URL.</returns>
+    /// <exception cref="UriFormatException">Thrown when <paramref name="url"/> is not a valid URI.</exception>
     public static Url Parse(string url) => new Url(url)._ParseInternal();
 
     private Url _EnsureParsed() => _parsed ? this : _ParseInternal();
@@ -275,15 +280,18 @@ public sealed class Url
     }
 
     /// <summary>
-    /// Parses a URL query to a QueryParamCollection.
+    /// Parses a URL query into a <see cref="QueryParamCollection"/>.
     /// </summary>
-    /// <param name="query">The URL query to parse.</param>
+    /// <param name="query">The URL query to parse. A <see langword="null"/> value yields an empty collection.</param>
+    /// <returns>A <see cref="QueryParamCollection"/> containing the parsed name/value pairs.</returns>
     public static QueryParamCollection ParseQueryParams(string? query) => UrlParser.ParseQueryParams(query);
 
     /// <summary>
     /// Splits the given path into segments, encoding illegal characters, "?", and "#".
     /// </summary>
     /// <param name="path">The path to split.</param>
+    /// <returns>The "/"-delimited segments of the encoded path.</returns>
+    /// <exception cref="NullReferenceException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
     public static IEnumerable<string> ParsePathSegments(string path) => UrlParser.ParsePathSegments(path);
     #endregion
 
@@ -326,6 +334,7 @@ public sealed class Url
     /// </summary>
     /// <param name="segments">The segments to append</param>
     /// <returns>the Url object with the segments appended</returns>
+    /// <exception cref="ArgumentNullException">Thrown when any segment in <paramref name="segments"/> is <see langword="null"/>.</exception>
     public Url AppendPathSegments(params object[] segments)
     {
         foreach (var segment in segments)
@@ -341,6 +350,7 @@ public sealed class Url
     /// </summary>
     /// <param name="segments">The segments to append</param>
     /// <returns>the Url object with the segments appended</returns>
+    /// <exception cref="ArgumentNullException">Thrown when any segment in <paramref name="segments"/> is <see langword="null"/>.</exception>
     public Url AppendPathSegments(IEnumerable<object> segments)
     {
         foreach (var s in segments)
@@ -790,14 +800,15 @@ public sealed class Url
     /// <summary>
     /// Converts this Url object to System.Uri
     /// </summary>
-    /// <returns>The System.Uri object</returns>
+    /// <returns>The <see cref="System.Uri"/> object.</returns>
+    /// <exception cref="UriFormatException">Thrown when the string representation of this URL is not a valid URI.</exception>
     public Uri ToUri() => new(ToString(), UriKind.RelativeOrAbsolute);
 
     /// <summary>
     /// Implicit conversion from Url to String.
     /// </summary>
     /// <param name="url">The Url object</param>
-    /// <returns>The string</returns>
+    /// <returns>The string representation of <paramref name="url"/>, or <see langword="null"/> if <paramref name="url"/> is <see langword="null"/>.</returns>
     [return: NotNullIfNotNull(nameof(url))]
     public static implicit operator string?(Url? url) => url?.ToString();
 
@@ -805,17 +816,30 @@ public sealed class Url
     /// Implicit conversion from String to Url.
     /// </summary>
     /// <param name="url">The String representation of the URL</param>
-    /// <returns>The string</returns>
+    /// <returns>A new <see cref="Url"/> object built from <paramref name="url"/>.</returns>
     public static implicit operator Url(string? url) => new(url);
 
+    /// <summary>
+    /// Builds a <see cref="Url"/> from its string representation. Named alternate for the implicit string-to-Url conversion.
+    /// </summary>
+    /// <param name="url">The String representation of the URL.</param>
+    /// <returns>A new <see cref="Url"/> object built from <paramref name="url"/>.</returns>
     public static Url FromString(string? url) => url;
 
     /// <summary>
     /// Implicit conversion from System.Uri to Flurl.Url.
     /// </summary>
-    /// <returns>The string</returns>
+    /// <param name="uri">The <see cref="System.Uri"/> to convert.</param>
+    /// <returns>A new <see cref="Url"/> object built from <paramref name="uri"/>.</returns>
+    /// <exception cref="NullReferenceException">Thrown when <paramref name="uri"/> is <see langword="null"/>.</exception>
     public static implicit operator Url(Uri uri) => new(uri.ToString());
 
+    /// <summary>
+    /// Builds a <see cref="Url"/> from a <see cref="System.Uri"/>. Named alternate for the implicit Uri-to-Url conversion.
+    /// </summary>
+    /// <param name="uri">The <see cref="System.Uri"/> to convert.</param>
+    /// <returns>A new <see cref="Url"/> object built from <paramref name="uri"/>.</returns>
+    /// <exception cref="NullReferenceException">Thrown when <paramref name="uri"/> is <see langword="null"/>.</exception>
     public static Url FromUri(Uri uri) => uri;
 
     /// <summary>
@@ -833,18 +857,21 @@ public sealed class Url
     #region static utility methods
     /// <summary>
     /// Basically a Path.Combine for URLs. Ensures exactly one '/' separates each segment,
-    /// and exactly on '&amp;' separates each query parameter.
+    /// and exactly one '&amp;' separates each query parameter.
     /// URL-encodes illegal characters but not reserved characters.
     /// </summary>
     /// <param name="parts">URL parts to combine.</param>
+    /// <returns>The combined, illegal-character-encoded URL string.</returns>
+    /// <exception cref="NullReferenceException">Thrown when <paramref name="parts"/> is <see langword="null"/>.</exception>
     public static string Combine(string?[] parts) => Combine(parts.AsSpan());
 
     /// <summary>
     /// Basically a Path.Combine for URLs. Ensures exactly one '/' separates each segment,
-    /// and exactly on '&amp;' separates each query parameter.
+    /// and exactly one '&amp;' separates each query parameter.
     /// URL-encodes illegal characters but not reserved characters.
     /// </summary>
     /// <param name="parts">URL parts to combine.</param>
+    /// <returns>The combined, illegal-character-encoded URL string.</returns>
     [OverloadResolutionPriority(1)]
     public static string Combine(params ReadOnlySpan<string?> parts)
     {

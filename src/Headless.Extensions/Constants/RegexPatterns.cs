@@ -4,11 +4,23 @@ using System.Text.RegularExpressions;
 
 namespace Headless.Constants;
 
+/// <summary>
+/// Shared, source-generated (<see cref="System.Text.RegularExpressions.GeneratedRegexAttribute"/>),
+/// compiled regular expressions for common validation and parsing tasks (email, IP, URL, slug,
+/// numbers, RTL/Arabic text, etc.). Every pattern is compiled with
+/// <see cref="System.Text.RegularExpressions.RegexOptions.ExplicitCapture"/> and a
+/// <see cref="MatchTimeoutMilliseconds"/> match timeout to guard against catastrophic backtracking
+/// (ReDoS). Matching against these instances can therefore throw
+/// <see cref="System.Text.RegularExpressions.RegexMatchTimeoutException"/> if an input exceeds the
+/// timeout.
+/// </summary>
 [PublicAPI]
 public static partial class RegexPatterns
 {
+    /// <summary>Match-timeout, in milliseconds, applied to every pattern in this class to bound worst-case matching time.</summary>
     public const int MatchTimeoutMilliseconds = 100;
 
+    /// <summary><see cref="MatchTimeoutMilliseconds"/> expressed as a <see cref="TimeSpan"/>, for APIs that take a timeout duration.</summary>
     public static readonly TimeSpan MatchTimeout = TimeSpan.FromMilliseconds(MatchTimeoutMilliseconds);
 
     /// <summary>
@@ -186,6 +198,7 @@ public static partial class RegexPatterns
     )]
     public static partial Regex XmlTag { get; }
 
+    /// <summary>Matches HTML comments (<c>&lt;!-- ... --&gt;</c>), e.g. to strip them from markup.</summary>
     [GeneratedRegex(
         pattern: "<!--.*?-->",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
@@ -193,6 +206,7 @@ public static partial class RegexPatterns
     )]
     public static partial Regex HtmlComments { get; }
 
+    /// <summary>Matches HTML <c>&lt;script&gt;</c> elements (including their content; singleline), e.g. to strip them from markup.</summary>
     [GeneratedRegex(
         pattern: "(?s)<script.*?(/>|</script>)",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
@@ -200,6 +214,7 @@ public static partial class RegexPatterns
     )]
     public static partial Regex HtmlScripts { get; }
 
+    /// <summary>Matches HTML <c>&lt;style&gt;</c> elements (including their content; singleline), e.g. to strip them from markup.</summary>
     [GeneratedRegex(
         pattern: "(?s)<style.*?(/>|</style>)",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,

@@ -6,9 +6,16 @@ using System.Net.Sockets;
 
 namespace Headless.Network;
 
+/// <summary>Helpers for discovering the machine's active IPv4 network addresses.</summary>
 [PublicAPI]
 public static class IpAddressHelper
 {
+    /// <summary>
+    /// Returns the IPv4 (<see cref="AddressFamily.InterNetwork"/>) addresses of the machine's operational,
+    /// non-loopback network interfaces that have at least one gateway configured.
+    /// </summary>
+    /// <returns>The list of discovered IPv4 addresses; empty when no qualifying interface is found.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when a qualifying interface exposes more than one IPv4 unicast address.</exception>
     public static List<IPAddress> GetInterNetworkIpAddresses()
     {
         var ipAddresses = NetworkInterface

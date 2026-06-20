@@ -8,9 +8,11 @@ namespace Headless.Reflection;
 /// Use for reflection caches whose computed result can legitimately be <c>null</c>
 /// (for example, a <see cref="System.Reflection.MethodInfo"/> lookup that may not find a match).
 /// </summary>
+/// <param name="value">The value to wrap; may be <see langword="null"/>.</param>
 [PublicAPI]
 public sealed class CachedResult<T>(T? value)
     where T : class
 {
+    /// <summary>The wrapped value, which may be <see langword="null"/>.</summary>
     public T? Value { get; } = value;
 }

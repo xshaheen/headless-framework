@@ -19,17 +19,18 @@ public interface ITypeList<in TBaseType> : IList<Type>
 
     /// <summary>Adds a type to list if it's not already in the list.</summary>
     /// <typeparam name="T">Type</typeparam>
+    /// <returns><see langword="true"/> if the type was added; <see langword="false"/> if it was already present.</returns>
     bool TryAdd<T>()
         where T : TBaseType;
 
     /// <summary>Checks if a type exists in the list.</summary>
     /// <typeparam name="T">Type</typeparam>
-    /// <returns></returns>
+    /// <returns><see langword="true"/> if the type is in the list; otherwise, <see langword="false"/>.</returns>
     bool Contains<T>()
         where T : TBaseType;
 
     /// <summary>Removes a type from list</summary>
-    /// <typeparam name="T"></typeparam>
+    /// <typeparam name="T">Type</typeparam>
     void Remove<T>()
         where T : TBaseType;
 }
@@ -47,6 +48,11 @@ public class TypeList<TBaseType> : ITypeList<TBaseType>
 
     public bool IsReadOnly => false;
 
+    /// <summary>Gets or sets the <see cref="Type"/> at the specified index.</summary>
+    /// <param name="index">The zero-based index of the element to get or set.</param>
+    /// <returns>The <see cref="Type"/> at the specified index.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is not a valid index in the list.</exception>
+    /// <exception cref="ArgumentException">The assigned type is not assignable to <typeparamref name="TBaseType"/>.</exception>
     public Type this[int index]
     {
         get { return _typeList[index]; }
@@ -75,12 +81,20 @@ public class TypeList<TBaseType> : ITypeList<TBaseType>
         return true;
     }
 
+    /// <summary>Adds a <see cref="Type"/> to the end of the list.</summary>
+    /// <param name="item">The type to add.</param>
+    /// <exception cref="ArgumentException"><paramref name="item"/> is not assignable to <typeparamref name="TBaseType"/>.</exception>
     public void Add(Type item)
     {
         _CheckType(item);
         _typeList.Add(item);
     }
 
+    /// <summary>Inserts a <see cref="Type"/> into the list at the specified index.</summary>
+    /// <param name="index">The zero-based index at which <paramref name="item"/> should be inserted.</param>
+    /// <param name="item">The type to insert.</param>
+    /// <exception cref="ArgumentException"><paramref name="item"/> is not assignable to <typeparamref name="TBaseType"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is not a valid index in the list.</exception>
     public void Insert(int index, Type item)
     {
         _CheckType(item);

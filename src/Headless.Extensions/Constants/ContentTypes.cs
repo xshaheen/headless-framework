@@ -2,9 +2,14 @@
 
 namespace Headless.Constants;
 
+/// <summary>
+/// Well-known MIME (media) type strings, grouped by top-level type, for use in HTTP
+/// <c>Content-Type</c> / <c>Accept</c> headers and content negotiation.
+/// </summary>
 [PublicAPI]
 public static class ContentTypes
 {
+    /// <summary>Image media types (<c>image/*</c>).</summary>
     public static class Images
     {
         /// <summary>Icon content type.</summary>
@@ -38,6 +43,7 @@ public static class ContentTypes
         public const string Webp = "image/webp";
     }
 
+    /// <summary>Audio media types (<c>audio/*</c>).</summary>
     public static class Audios
     {
         public const string Midi = "audio/midi";
@@ -55,6 +61,7 @@ public static class ContentTypes
         public const string Ac3 = "audio/vnd.dolby.dd-raw";
     }
 
+    /// <summary>Text media types (<c>text/*</c>).</summary>
     public static class Texts
     {
         /// <summary>Textual data; Defined in RFC 2046 and RFC 3676.</summary>
@@ -74,6 +81,7 @@ public static class ContentTypes
         public const string Yaml = "text/yaml";
     }
 
+    /// <summary>Video media types (<c>video/*</c>).</summary>
     public static class Videos
     {
         public const string Threegpp = "video/3gpp";
@@ -87,6 +95,7 @@ public static class ContentTypes
         public const string Webm = "video/webm";
     }
 
+    /// <summary>Application media types (<c>application/*</c> and a few related multipart types).</summary>
     public static class Applications
     {
         public const string OctetStream = "application/octet-stream";

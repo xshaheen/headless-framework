@@ -11,11 +11,14 @@ public static class ConcurrentQueueExtensions
 {
     extension<T>(ConcurrentQueue<T> queue)
     {
+        /// <summary>Removes all objects from the <see cref="ConcurrentQueue{T}"/> by dequeuing them one at a time.</summary>
         public void Clear()
         {
             while (queue.TryDequeue(out _)) { }
         }
 
+        /// <summary>Adds the elements of the specified span to the end of the <see cref="ConcurrentQueue{T}"/>.</summary>
+        /// <param name="items">The elements to enqueue.</param>
         [OverloadResolutionPriority(1)]
         public void EnqueueRange(params ReadOnlySpan<T> items)
         {
@@ -25,11 +28,15 @@ public static class ConcurrentQueueExtensions
             }
         }
 
+        /// <summary>Adds the elements of the specified list to the end of the <see cref="ConcurrentQueue{T}"/>.</summary>
+        /// <param name="items">The elements to enqueue.</param>
         public void EnqueueRange(List<T> items)
         {
             queue.EnqueueRange(items.AsReadOnlySpan());
         }
 
+        /// <summary>Adds the elements of the specified sequence to the end of the <see cref="ConcurrentQueue{T}"/>.</summary>
+        /// <param name="items">The elements to enqueue.</param>
         public void EnqueueRange(IEnumerable<T> items)
         {
             foreach (var item in items)

@@ -2,6 +2,14 @@
 
 namespace Headless.Constants;
 
+/// <summary>
+/// Framework user/profile claim type names (the <c>snake_case</c> claim keys carried in identity
+/// tokens and <see cref="System.Security.Claims.ClaimsPrincipal"/> instances). Several keys follow
+/// OpenID Connect standard claim names (<c>updated_at</c>, <c>zoneinfo</c>, <c>locale</c>, etc.);
+/// the rest are framework conventions. Note <see cref="Name"/> and <see cref="UserName"/> both map
+/// to <c>"name"</c>, and <see cref="Roles"/> maps to the singular key <c>"role"</c>. For the
+/// registered JWT/OIDC claim keys (<c>sub</c>, <c>iss</c>, …) see <see cref="JwtClaimTypes"/>.
+/// </summary>
 [PublicAPI]
 public static class UserClaimTypes
 {

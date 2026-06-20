@@ -9,6 +9,7 @@ using File = System.IO.File;
 
 namespace Headless.IO;
 
+/// <summary>A helper class for reading, writing, and deleting files on the local file system.</summary>
 [PublicAPI]
 public static class FileHelper
 {
@@ -28,6 +29,22 @@ public static class FileHelper
         )
         .Build();
 
+    /// <summary>
+    /// Saves each blob in <paramref name="blobs"/> as a file under <paramref name="directoryPath"/>, creating the
+    /// directory if needed. Each save is attempted independently; a per-blob failure is captured as a failed
+    /// <see cref="Result{T}"/> rather than thrown, so the returned array always has one entry per input blob.
+    /// </summary>
+    /// <param name="blobs">The blobs to save, each pairing a source stream with the file name to write it under.</param>
+    /// <param name="directoryPath">The target directory; created if it does not already exist.</param>
+    /// <param name="token">A token to observe while saving.</param>
+    /// <returns>
+    /// An array with one <see cref="Result{T}"/> per input blob: a success result, or a failure result carrying the
+    /// <see cref="Exception"/> that the corresponding save raised.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="blobs"/> or <paramref name="directoryPath"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobs"/> or <paramref name="directoryPath"/> is empty.</exception>
+    /// <exception cref="IOException">Thrown when <paramref name="directoryPath"/> cannot be created.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to create <paramref name="directoryPath"/>.</exception>
     public static async ValueTask<Result<Exception>[]> SaveToLocalFileAsync(
         this IEnumerable<(Stream BlobStream, string BlobName)> blobs,
         string directoryPath,
@@ -55,6 +72,24 @@ public static class FileHelper
         return await Task.WhenAll(results).WithAggregatedExceptions().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Saves <paramref name="blobStream"/> as a file named <paramref name="blobName"/> under
+    /// <paramref name="directoryPath"/>, creating the directory if needed. The write is retried on transient
+    /// <see cref="IOException"/> failures.
+    /// </summary>
+    /// <param name="blobStream">The source stream to write.</param>
+    /// <param name="blobName">The relative file name to write under <paramref name="directoryPath"/>; must not contain path traversal sequences or be rooted.</param>
+    /// <param name="directoryPath">The target directory; created if it does not already exist.</param>
+    /// <param name="token">A token to observe while saving.</param>
+    /// <returns>A task that represents the asynchronous save operation.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="blobStream"/> is <see langword="null"/>, or when <paramref name="directoryPath"/> or <paramref name="blobName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="directoryPath"/> is empty, when <paramref name="blobName"/> is empty or white space,
+    /// or when <paramref name="blobName"/> is not a relative path segment (it contains traversal sequences or is rooted).
+    /// </exception>
+    /// <exception cref="IOException">Thrown when the directory or file cannot be created or written after retries are exhausted.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to create or write the file.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="token"/> is cancelled.</exception>
     public static async ValueTask SaveToLocalFileAsync(
         this Stream blobStream,
         string blobName,
@@ -135,8 +170,11 @@ public static class FileHelper
 
     #region Delete If Exists
 
-    /// <summary>Checks and deletes given a file if it does exist.</summary>
-    /// <param name="filePath">Path of the file</param>
+    /// <summary>Deletes the file at <paramref name="filePath"/> if it exists.</summary>
+    /// <param name="filePath">Path of the file.</param>
+    /// <returns><see langword="true"/> if the file existed and was deleted; <see langword="false"/> if it did not exist.</returns>
+    /// <exception cref="IOException">Thrown when the file is in use or cannot be deleted.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission, or the path is a directory or read-only file.</exception>
     public static bool DeleteIfExists(string filePath)
     {
         if (!File.Exists(filePath))
@@ -153,9 +191,18 @@ public static class FileHelper
 
     #region Read Content
 
-    /// <summary>Opens a text file, reads content without BOM.</summary>
+    /// <summary>
+    /// Opens a text file, reads its entire content as a string, decoding it without a byte-order mark, then closes the file.
+    /// </summary>
     /// <param name="path">The file to open for reading.</param>
-    /// <returns>A string containing all lines of the file.</returns>
+    /// <param name="cancellationToken">A token to observe while reading.</param>
+    /// <returns>The file content as a string, or <see langword="null"/> when the file is empty.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="FileNotFoundException">Thrown when the file at <paramref name="path"/> is not found.</exception>
+    /// <exception cref="DirectoryNotFoundException">Thrown when the directory in <paramref name="path"/> is not found.</exception>
+    /// <exception cref="IOException">Thrown when an I/O error occurs while reading the file.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to read the file.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public static async Task<string?> ReadFileWithoutBomAsync(
         string path,
         CancellationToken cancellationToken = default
@@ -166,11 +213,16 @@ public static class FileHelper
         return StringHelper.ConvertFromBytesWithoutBom(bytes);
     }
 
-    /// <summary>
-    /// Opens a text file, reads all lines of the file, and then closes the file.
-    /// </summary>
+    /// <summary>Opens a text file, reads its entire content as a string, and then closes the file.</summary>
     /// <param name="path">The file to open for reading.</param>
-    /// <returns>A string containing all lines of the file.</returns>
+    /// <param name="cancellationToken">A token to observe while reading.</param>
+    /// <returns>A string containing the entire content of the file.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="FileNotFoundException">Thrown when the file at <paramref name="path"/> is not found.</exception>
+    /// <exception cref="DirectoryNotFoundException">Thrown when the directory in <paramref name="path"/> is not found.</exception>
+    /// <exception cref="IOException">Thrown when an I/O error occurs while reading the file.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to read the file.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public static async Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
     {
         using var reader = File.OpenText(path);
@@ -178,9 +230,16 @@ public static class FileHelper
         return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Opens a text file, reads all lines of the file, and then closes the file.</summary>
+    /// <summary>Opens a binary file, reads its entire content into a byte array, and then closes the file.</summary>
     /// <param name="path">The file to open for reading.</param>
-    /// <returns>A string containing all lines of the file.</returns>
+    /// <param name="cancellationToken">A token to observe while reading.</param>
+    /// <returns>A byte array containing the entire content of the file.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="FileNotFoundException">Thrown when the file at <paramref name="path"/> is not found.</exception>
+    /// <exception cref="DirectoryNotFoundException">Thrown when the directory in <paramref name="path"/> is not found.</exception>
+    /// <exception cref="IOException">Thrown when an I/O error occurs while reading the file.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to read the file.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public static Task<byte[]> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default)
     {
         return File.ReadAllBytesAsync(path, cancellationToken);
@@ -204,7 +263,13 @@ public static class FileHelper
     /// asynchronous reading.) and SequentialScan (The file is to be accessed sequentially from beginning
     /// to end.)
     /// </param>
-    /// <returns>A string containing all lines of the file.</returns>
+    /// <param name="cancellationToken">A token to observe while reading.</param>
+    /// <returns>An array containing all lines of the file, one element per line.</returns>
+    /// <exception cref="FileNotFoundException">Thrown when the file at <paramref name="path"/> is not found.</exception>
+    /// <exception cref="DirectoryNotFoundException">Thrown when the directory in <paramref name="path"/> is not found.</exception>
+    /// <exception cref="IOException">Thrown when an I/O error occurs while reading the file.</exception>
+    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to read the file.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public static async Task<string[]> ReadAllLinesAsync(
         string path,
         Encoding? encoding = null,

@@ -4,9 +4,14 @@ using System.Text.RegularExpressions;
 
 namespace Headless.Constants;
 
+/// <summary>
+/// Database identifier rules (validation pattern and maximum length) for the supported SQL
+/// providers, used to validate schema/table/column names before they are emitted into raw DDL.
+/// </summary>
 [PublicAPI]
 public static partial class StorageIdentifier
 {
+    /// <summary>SQL Server identifier rules.</summary>
     public static partial class SqlServer
     {
         /// <summary>
@@ -27,6 +32,7 @@ public static partial class StorageIdentifier
         public const int IdentifierMaxLength = 128;
     }
 
+    /// <summary>PostgreSQL identifier rules.</summary>
     public static partial class PostgreSql
     {
         /// <summary>

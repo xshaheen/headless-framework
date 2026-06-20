@@ -6,7 +6,8 @@ using Headless.Checks;
 namespace Headless.Urls;
 
 /// <summary>
-/// CommonExtensions for objects.
+/// Extension methods used by the URL builder for converting objects to query name/value pairs and for ordinal
+/// string comparisons.
 /// </summary>
 [PublicAPI]
 public static class CommonExtensions
@@ -55,6 +56,7 @@ public static class CommonExtensions
     /// <param name="s">The string to split.</param>
     /// <param name="separator">The separator to split on.</param>
     /// <returns>Array of at most 2 strings. (1 if separator is not found.)</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="separator"/> is <see langword="null"/> and <paramref name="s"/> is neither <see langword="null"/> nor empty.</exception>
     public static string[] SplitOnFirstOccurence(this string s, string separator)
     {
         if (string.IsNullOrEmpty(s))

@@ -4,6 +4,16 @@ using System.Reflection;
 
 namespace Headless.Reflection;
 
+/// <summary>
+/// Immutable snapshot of an assembly's metadata attributes (title, product, description, company, version,
+/// and the commit number parsed from the informational version).
+/// </summary>
+/// <param name="Title">The assembly title, or <see langword="null"/> when not declared.</param>
+/// <param name="Product">The assembly product name, or <see langword="null"/> when not declared.</param>
+/// <param name="Description">The assembly description, or <see langword="null"/> when not declared.</param>
+/// <param name="Company">The assembly company, or <see langword="null"/> when not declared.</param>
+/// <param name="Version">The assembly file version, or <see langword="null"/> when not declared.</param>
+/// <param name="CommitNumber">The commit number parsed from the informational version, or <see langword="null"/> when not available.</param>
 [PublicAPI]
 public sealed record AssemblyInformation(
     string? Title,
@@ -23,6 +33,11 @@ public sealed record AssemblyInformation(
         ? new(entryAssembly)
         : null;
 
+    /// <summary>
+    /// Initializes a new <see cref="AssemblyInformation"/> by reading the metadata attributes of the given assembly.
+    /// The commit number is taken from the last <c>+</c>-delimited segment of the informational version.
+    /// </summary>
+    /// <param name="assembly">The assembly whose metadata is read.</param>
     public AssemblyInformation(Assembly assembly)
         : this(
             Title: assembly.GetAssemblyTitle(),

@@ -80,11 +80,15 @@ public sealed class KeyedAsyncLock : IDisposable
     }
 
     /// <summary>
-    /// Asynchronously acquires a lock for the specified key.
+    /// Asynchronously acquires a lock for the specified key, waiting until it becomes available.
     /// </summary>
     /// <param name="key">The key to lock on.</param>
     /// <param name="cancellationToken">Optional cancellation token.</param>
     /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when this lock has already been disposed.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled before the lock is acquired.</exception>
     [MustDisposeResource]
     public async Task<IDisposable> LockAsync(string key, CancellationToken cancellationToken = default)
     {
@@ -112,6 +116,9 @@ public sealed class KeyedAsyncLock : IDisposable
     /// </summary>
     /// <param name="key">The key to lock on.</param>
     /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed, or <see langword="null"/> when the lock is already held.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when this lock has already been disposed.</exception>
     [MustDisposeResource]
     public IDisposable? TryLock(string key)
     {
@@ -138,6 +145,11 @@ public sealed class KeyedAsyncLock : IDisposable
     /// <param name="timeProvider">The time provider used for deterministic timeout scheduling.</param>
     /// <param name="cancellationToken">Optional cancellation token.</param>
     /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed, or <see langword="null"/> on timeout.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> or <paramref name="timeProvider"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="timeout"/> is not positive and is not <see cref="Timeout.InfiniteTimeSpan"/>.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when this lock has already been disposed.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled before the lock is acquired.</exception>
     [MustDisposeResource]
     public async Task<IDisposable?> LockAsync(
         string key,

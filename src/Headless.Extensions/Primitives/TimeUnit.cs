@@ -4,9 +4,19 @@ using Headless.Checks;
 
 namespace Headless.Primitives;
 
+/// <summary>
+/// Parses human-friendly duration strings into <see cref="TimeSpan"/> values. The numeric magnitude is followed by a
+/// unit suffix: <c>nanos</c> (nanoseconds), <c>micros</c> (microseconds), <c>ms</c> (milliseconds), <c>s</c>
+/// (seconds), <c>m</c> (minutes), <c>h</c> (hours), or <c>d</c> (days). For example, <c>"30s"</c> or <c>"2h"</c>.
+/// </summary>
 [PublicAPI]
 public static class TimeUnit
 {
+    /// <summary>Parses <paramref name="value"/> into a <see cref="TimeSpan"/>.</summary>
+    /// <param name="value">The duration string to parse (for example <c>"30s"</c> or <c>"2h"</c>).</param>
+    /// <returns>The parsed <see cref="TimeSpan"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="value"/> is empty or cannot be parsed as a valid time value.</exception>
     public static TimeSpan Parse(string value)
     {
         Argument.IsNotNullOrEmpty(value);
@@ -21,6 +31,10 @@ public static class TimeUnit
         throw new ArgumentException($"Unable to parse value '{value}' as a valid time value", nameof(value));
     }
 
+    /// <summary>Attempts to parse <paramref name="value"/> into a <see cref="TimeSpan"/> without throwing.</summary>
+    /// <param name="value">The duration string to parse (for example <c>"30s"</c> or <c>"2h"</c>).</param>
+    /// <param name="time">When this method returns, contains the parsed <see cref="TimeSpan"/>, or <see langword="null"/> when parsing fails.</param>
+    /// <returns><see langword="true"/> if <paramref name="value"/> was parsed successfully; otherwise, <see langword="false"/>.</returns>
     public static bool TryParse(string value, out TimeSpan? time)
     {
         time = null;

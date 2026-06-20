@@ -51,7 +51,8 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     ///     to true north. Must range from 0 to 360.0, or be Double.NaN.
     /// </param>
     /// <exception cref="ArgumentOutOfRangeException">
-    ///     If latitude, longitude, horizontalAccuracy, verticalAccuracy, course is out of range.
+    ///     If <paramref name="latitude"/>, <paramref name="longitude"/>, <paramref name="horizontalAccuracy"/>,
+    ///     <paramref name="verticalAccuracy"/>, <paramref name="speed"/>, or <paramref name="course"/> is out of range.
     /// </exception>
     public FullGeoCoordinate(
         double latitude = double.NaN,
@@ -234,6 +235,10 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     ///     The distance between the two coordinates, in meters.
     /// </returns>
     /// <param name="other">The GeoCoordinate for the location to calculate the distance to.</param>
+    /// <exception cref="ArgumentException">
+    ///     Thrown when the latitude or longitude of either this coordinate or <paramref name="other"/> is
+    ///     <see cref="double.NaN"/>.
+    /// </exception>
     public double GetDistanceTo(FullGeoCoordinate other)
     {
         Argument.IsNotNaN(Latitude);

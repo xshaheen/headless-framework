@@ -7,16 +7,24 @@ using System.Xml.Serialization;
 
 namespace Headless.Xml;
 
+/// <summary>Helpers for XML-encoding and decoding text, serializing values, and validating XML safely.</summary>
 [PublicAPI]
 public static class XmlHelper
 {
-    /// <summary>Remove hidden characters then XML Encode</summary>
+    /// <summary>Strips hidden/control characters from <paramref name="str"/> and then XML-encodes the result.</summary>
+    /// <param name="str">The text to sanitize and encode; may be <see langword="null"/>.</param>
+    /// <param name="settings">Optional writer settings; a sensible async default is used when <see langword="null"/>.</param>
+    /// <returns>The XML-encoded text, or <see langword="null"/> when <paramref name="str"/> is <see langword="null"/>.</returns>
     public static async Task<string?> XmlEncodeAsync(string? str, XmlWriterSettings? settings = null)
     {
         return str is not null ? await XmlEncodeAsIsAsync(str.RemoveHiddenChars(), settings) : null;
     }
 
-    /// <summary>XML Encode as is</summary>
+    /// <summary>XML-encodes <paramref name="str"/> without first stripping hidden/control characters.</summary>
+    /// <param name="str">The text to encode; may be <see langword="null"/>.</param>
+    /// <param name="settings">Optional writer settings; a sensible async default is used when <see langword="null"/>.</param>
+    /// <returns>The XML-encoded text, or <see langword="null"/> when <paramref name="str"/> is <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="str"/> contains characters that are not valid in XML.</exception>
     public static async Task<string?> XmlEncodeAsIsAsync(string? str, XmlWriterSettings? settings = null)
     {
         if (str is null)
@@ -34,13 +42,18 @@ public static class XmlHelper
         return sw.ToString();
     }
 
-    /// <summary>Decodes an attribute</summary>
+    /// <summary>Decodes XML/HTML entity references in <paramref name="input"/> back to their literal characters.</summary>
+    /// <param name="input">The encoded text to decode.</param>
+    /// <returns>The decoded text.</returns>
     public static string XmlDecode(string input)
     {
         return WebUtility.HtmlDecode(input);
     }
 
-    /// <summary>Serializes a datetime</summary>
+    /// <summary>Serializes a <see cref="DateTime"/> value to its XML representation.</summary>
+    /// <param name="dateTime">The value to serialize.</param>
+    /// <returns>The XML document representing <paramref name="dateTime"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when serialization fails (for example when the underlying writer faults).</exception>
     [RequiresUnreferencedCode("XmlSerializer uses reflection which is not compatible with trimming.")]
     [RequiresDynamicCode("XmlSerializer requires dynamic code generation.")]
     public static async Task<string> SerializeDateTimeAsync(DateTime dateTime)
@@ -53,6 +66,10 @@ public static class XmlHelper
         return sb.ToString();
     }
 
+    /// <summary>Determines whether <paramref name="maybeXml"/> is well-formed XML, parsing with a hardened (XXE-safe) reader.</summary>
+    /// <param name="maybeXml">The candidate XML text.</param>
+    /// <returns><see langword="true"/> when the text parses as well-formed XML; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="maybeXml"/> is <see langword="null"/>.</exception>
     public static bool IsValidXml(string maybeXml)
     {
         using var xmlReader = XmlReader.Create(new StringReader(maybeXml), _SafeReaderSettings);
@@ -60,6 +77,10 @@ public static class XmlHelper
         return _TryReadToEnd(xmlReader);
     }
 
+    /// <summary>Determines whether <paramref name="maybeXml"/> contains well-formed XML, parsing with a hardened (XXE-safe) reader.</summary>
+    /// <param name="maybeXml">The stream containing the candidate XML.</param>
+    /// <returns><see langword="true"/> when the stream parses as well-formed XML; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="maybeXml"/> is <see langword="null"/>.</exception>
     public static bool IsValidXml(Stream maybeXml)
     {
         using var xmlReader = XmlReader.Create(maybeXml, _SafeReaderSettings);

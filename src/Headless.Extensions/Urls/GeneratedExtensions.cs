@@ -3,7 +3,11 @@
 namespace Headless.Urls;
 
 /// <summary>
-/// Fluent URL-building extension methods on String and Uri.
+/// Fluent URL-building extension methods on String and Uri. Each method creates a new <see cref="Url"/> from the
+/// receiver and applies one mutation. The <see cref="Uri"/>-receiver overloads throw
+/// <see cref="System.ArgumentNullException"/> when the receiver is <see langword="null"/>; the string-receiver
+/// overloads throw <see cref="System.UriFormatException"/> when the receiver is not a valid URI (surfaced when the
+/// URL is parsed).
 /// </summary>
 public static class GeneratedExtensions
 {
@@ -14,6 +18,7 @@ public static class GeneratedExtensions
     /// <param name="segment">The segment to append</param>
     /// <param name="fullyEncode">If true, URL-encodes reserved characters such as '/', '+', and '%'. Otherwise, only encodes strictly illegal characters (including '%' but only when not followed by 2 hex characters).</param>
     /// <returns>A new Flurl.Url object.</returns>
+    /// <exception cref="System.ArgumentNullException">Thrown when <paramref name="segment"/> is <see langword="null"/>.</exception>
     public static Url AppendPathSegment(this string url, object segment, bool fullyEncode = false)
     {
         return new Url(url).AppendPathSegment(segment, fullyEncode);
@@ -316,6 +321,7 @@ public static class GeneratedExtensions
     /// <param name="segment">The segment to append</param>
     /// <param name="fullyEncode">If true, URL-encodes reserved characters such as '/', '+', and '%'. Otherwise, only encodes strictly illegal characters (including '%' but only when not followed by 2 hex characters).</param>
     /// <returns>A new Flurl.Url object.</returns>
+    /// <exception cref="System.ArgumentNullException">Thrown when <paramref name="uri"/> or <paramref name="segment"/> is <see langword="null"/>.</exception>
     public static Url AppendPathSegment(this Uri uri, object segment, bool fullyEncode = false)
     {
         return new Url(uri).AppendPathSegment(segment, fullyEncode);

@@ -6,9 +6,20 @@ using MoreLinq;
 
 namespace Headless.Reflection;
 
+/// <summary>
+/// Helpers for discovering, loading, scanning, and invoking members on assemblies.
+/// </summary>
 [PublicAPI]
 public static class AssemblyHelper
 {
+    /// <summary>
+    /// Determines whether an assembly full name belongs to the <c>System.*</c> or <c>Microsoft.*</c> namespaces.
+    /// </summary>
+    /// <param name="assemblyFullName">The assembly full name to inspect. May be <see langword="null"/>.</param>
+    /// <returns>
+    /// <see langword="true"/> if <paramref name="assemblyFullName"/> is non-<see langword="null"/> and starts with
+    /// <c>System.</c> or <c>Microsoft.</c>; otherwise <see langword="false"/>.
+    /// </returns>
     public static bool IsSystemAssemblyName(string? assemblyFullName)
     {
         return assemblyFullName is not null
@@ -20,6 +31,17 @@ public static class AssemblyHelper
 
     #region Get Assemblies From Folder
 
+    /// <summary>
+    /// Loads every <c>.dll</c> and <c>.exe</c> file found under the given folder into the default load context.
+    /// </summary>
+    /// <param name="folderPath">The folder to search for assembly files.</param>
+    /// <param name="searchOption">Whether to search only the top directory or recurse into subdirectories.</param>
+    /// <returns>The list of loaded assemblies.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="folderPath"/> is an invalid path (for example contains invalid characters).</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="folderPath"/> is <see langword="null"/>.</exception>
+    /// <exception cref="DirectoryNotFoundException">Thrown when <paramref name="folderPath"/> does not exist.</exception>
+    /// <exception cref="BadImageFormatException">Thrown when a discovered file is not a valid managed assembly.</exception>
+    /// <exception cref="FileLoadException">Thrown when a discovered assembly file is found but cannot be loaded.</exception>
     [RequiresUnreferencedCode("Loading assemblies from path might load types that cannot be statically analyzed.")]
     public static List<Assembly> LoadAssemblies(string folderPath, SearchOption searchOption)
     {
@@ -28,6 +50,15 @@ public static class AssemblyHelper
             .ToList();
     }
 
+    /// <summary>
+    /// Enumerates the <c>.dll</c> and <c>.exe</c> file paths found under the given folder.
+    /// </summary>
+    /// <param name="folderPath">The folder to search.</param>
+    /// <param name="searchOption">Whether to search only the top directory or recurse into subdirectories.</param>
+    /// <returns>The matching assembly file paths.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="folderPath"/> is an invalid path (for example contains invalid characters).</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="folderPath"/> is <see langword="null"/>.</exception>
+    /// <exception cref="DirectoryNotFoundException">Thrown when <paramref name="folderPath"/> does not exist.</exception>
     public static IEnumerable<string> GetAssemblyFiles(string folderPath, SearchOption searchOption)
     {
         return Directory
@@ -42,6 +73,15 @@ public static class AssemblyHelper
 
     #region Get Domain Assemblies
 
+    /// <summary>
+    /// Scans the assemblies currently loaded into <see cref="AppDomain.CurrentDomain"/> and breadth-first walks their
+    /// referenced assemblies (loading references on demand), returning the assemblies accepted by
+    /// <paramref name="acceptPredicate"/>. References rejected by <paramref name="excludePredicate"/> are not traversed,
+    /// and references that fail to load are skipped.
+    /// </summary>
+    /// <param name="acceptPredicate">Predicate selecting which assemblies to include in the result.</param>
+    /// <param name="excludePredicate">Predicate, evaluated against an assembly full name, selecting which assemblies (and their references) to skip.</param>
+    /// <returns>The set of accepted assemblies.</returns>
     [RequiresUnreferencedCode("Assembly scanning is not compatible with trimming.")]
     public static HashSet<Assembly> GetCurrentAssemblies(
         Func<Assembly, bool> acceptPredicate,
@@ -111,6 +151,15 @@ public static class AssemblyHelper
 
     #region Invoke Static Methods
 
+    /// <summary>
+    /// For each assembly, finds public types whose name equals <paramref name="typeName"/> and invokes their public
+    /// static method named <paramref name="methodName"/> with the supplied <paramref name="parameters"/>.
+    /// </summary>
+    /// <param name="assemblies">The assemblies to scan.</param>
+    /// <param name="typeName">The exact (case-sensitive) name of the type whose static method is invoked.</param>
+    /// <param name="methodName">The name of the public static method to invoke. Missing methods are skipped.</param>
+    /// <param name="parameters">The arguments passed to each invoked method.</param>
+    /// <exception cref="System.Reflection.TargetInvocationException">Thrown when an invoked method throws; the original exception is available via the inner exception.</exception>
     [RequiresUnreferencedCode("Invokes methods by name using reflection, which is not compatible with trimming.")]
     public static void InvokeAllStaticMethods(
         this IEnumerable<Assembly> assemblies,
@@ -125,6 +174,15 @@ public static class AssemblyHelper
         }
     }
 
+    /// <summary>
+    /// Finds public types in the assembly whose name equals <paramref name="typeName"/> and invokes their public
+    /// static method named <paramref name="methodName"/> with the supplied <paramref name="parameters"/>.
+    /// </summary>
+    /// <param name="assembly">The assembly to scan.</param>
+    /// <param name="typeName">The exact (case-sensitive) name of the type whose static method is invoked.</param>
+    /// <param name="methodName">The name of the public static method to invoke. Missing methods are skipped.</param>
+    /// <param name="parameters">The arguments passed to each invoked method.</param>
+    /// <exception cref="System.Reflection.TargetInvocationException">Thrown when an invoked method throws; the original exception is available via the inner exception.</exception>
     [RequiresUnreferencedCode("Invokes methods by name using reflection, which is not compatible with trimming.")]
     public static void InvokeAllStaticMethods(
         this Assembly assembly,

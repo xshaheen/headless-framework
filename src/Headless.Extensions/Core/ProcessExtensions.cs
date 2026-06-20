@@ -6,6 +6,7 @@ using System.Reactive.Linq;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Diagnostics;
 
+/// <summary>Extension methods for running a <see cref="Process"/> from a <see cref="ProcessStartInfo"/> as a task or observable, plus safe termination.</summary>
 public static class ProcessExtensions
 {
     /// <summary>
@@ -112,13 +113,14 @@ public static class ProcessExtensions
     }
 
     /// <summary>
-    /// Converts an asynchronous operation or task into an observable sequence,
-    /// allowing for reactive-style usage and composition of the resulting data or notifications.
+    /// Runs the process described by <paramref name="psi"/> and exposes its standard output/error and exit code as an
+    /// observable sequence, allowing reactive-style consumption of the streamed lines.
     /// </summary>
+    /// <param name="psi">The <see cref="ProcessStartInfo"/> describing the process to start and which streams to redirect.</param>
     /// <returns>
-    /// An IObservable sequence that represents the completion or result of the asynchronous operation.
-    /// OnNext: It returns the process standard output/error as it printed.
-    /// OnError: It returns <see cref="InvalidOperationException"/> when cannot start the process.
+    /// An <see cref="IObservable{T}"/> that streams the process output.
+    /// OnNext: each standard output/error line as it is printed, then a final exit-code item.
+    /// OnError: an <see cref="InvalidOperationException"/> when the process cannot be started.
     /// </returns>
     public static IObservable<ProcessObservedOutput> RunAsObservable(this ProcessStartInfo psi)
     {
@@ -234,8 +236,13 @@ public static class ProcessExtensions
 
 #region Run As Observable Return Types
 
+/// <summary>A single item streamed by <see cref="ProcessExtensions.RunAsObservable(ProcessStartInfo)"/>: an output line or the final exit code.</summary>
+/// <param name="Type">Whether this item is standard output, standard error, or the exit code.</param>
+/// <param name="Text">The output line text, or the exit code rendered as a string.</param>
 public sealed record ProcessObservedOutput(ProcessObservedOutputType Type, string Text)
 {
+    /// <summary>Returns the text, prefixed with <c>"error: "</c> for standard-error items.</summary>
+    /// <returns>The formatted representation of this item.</returns>
     public override string ToString()
     {
         return Type switch
@@ -246,10 +253,16 @@ public sealed record ProcessObservedOutput(ProcessObservedOutputType Type, strin
     }
 }
 
+/// <summary>Identifies the kind of item produced by <see cref="ProcessExtensions.RunAsObservable(ProcessStartInfo)"/>.</summary>
 public enum ProcessObservedOutputType
 {
+    /// <summary>A line written to standard output.</summary>
     StandardOutput,
+
+    /// <summary>A line written to standard error.</summary>
     StandardError,
+
+    /// <summary>The process exit code, reported once the process terminates.</summary>
     ExitCode,
 }
 
@@ -257,15 +270,25 @@ public enum ProcessObservedOutputType
 
 #region Run As Task Return Types
 
+/// <summary>The result of running a process to completion via <see cref="ProcessExtensions.RunAsTaskAsync(ProcessStartInfo,CancellationToken)"/>.</summary>
+/// <param name="exitCode">The process exit code.</param>
+/// <param name="output">The captured standard output and error lines, in the order they were received.</param>
 public sealed class ProcessResult(int exitCode, IReadOnlyList<ProcessOutput> output)
 {
+    /// <summary>Gets the process exit code.</summary>
     public int ExitCode { get; } = exitCode;
 
+    /// <summary>Gets the captured standard output and error lines.</summary>
     public ProcessOutputCollection Output { get; } = new(output);
 }
 
+/// <summary>A single captured output line from a completed process run.</summary>
+/// <param name="Type">Whether this line came from standard output or standard error.</param>
+/// <param name="Text">The output line text.</param>
 public sealed record ProcessOutput(ProcessOutputType Type, string Text)
 {
+    /// <summary>Returns the text, prefixed with <c>"error: "</c> for standard-error lines.</summary>
+    /// <returns>The formatted representation of this line.</returns>
     public override string ToString()
     {
         return Type switch
@@ -276,6 +299,7 @@ public sealed record ProcessOutput(ProcessOutputType Type, string Text)
     }
 }
 
+/// <summary>A read-only, ordered collection of <see cref="ProcessOutput"/> lines captured from a process run.</summary>
 public sealed class ProcessOutputCollection : IReadOnlyList<ProcessOutput>
 {
     private readonly IReadOnlyList<ProcessOutput> _output;
@@ -285,16 +309,25 @@ public sealed class ProcessOutputCollection : IReadOnlyList<ProcessOutput>
         _output = output;
     }
 
+    /// <summary>Gets the number of captured output lines.</summary>
     public int Count => _output.Count;
 
+    /// <summary>Gets the captured output line at the specified <paramref name="index"/>.</summary>
+    /// <param name="index">The zero-based index of the line to retrieve.</param>
+    /// <returns>The <see cref="ProcessOutput"/> at <paramref name="index"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="index"/> is outside the bounds of the collection.</exception>
     public ProcessOutput this[int index] => _output[index];
 
+    /// <summary>Returns an enumerator over the captured output lines.</summary>
+    /// <returns>An enumerator for the collection.</returns>
     [MustDisposeResource]
     public IEnumerator<ProcessOutput> GetEnumerator() => _output.GetEnumerator();
 
     [MustDisposeResource]
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
+    /// <summary>Concatenates every captured line, separated by blank lines, into a single string.</summary>
+    /// <returns>All captured output lines joined together.</returns>
     public override string ToString()
     {
         var sb = new StringBuilder();
@@ -308,9 +341,13 @@ public sealed class ProcessOutputCollection : IReadOnlyList<ProcessOutput>
     }
 }
 
+/// <summary>Identifies which standard stream a captured <see cref="ProcessOutput"/> line came from.</summary>
 public enum ProcessOutputType
 {
+    /// <summary>A line written to standard output.</summary>
     StandardOutput,
+
+    /// <summary>A line written to standard error.</summary>
     StandardError,
 }
 

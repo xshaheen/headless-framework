@@ -6,6 +6,19 @@ namespace System.Collections.Generic;
 [PublicAPI]
 public static class CollectionChangeDetectorExtensions
 {
+    /// <summary>
+    /// Compares two collections and classifies their elements into added, removed, and existing items using
+    /// <paramref name="areSameEntity"/> to match an old item to a new item.
+    /// </summary>
+    /// <typeparam name="T1">The type of the elements in <paramref name="oldItems"/>.</typeparam>
+    /// <typeparam name="T2">The type of the elements in <paramref name="newItems"/>.</typeparam>
+    /// <param name="oldItems">The original collection.</param>
+    /// <param name="newItems">The new collection to compare against <paramref name="oldItems"/>.</param>
+    /// <param name="areSameEntity">A predicate that determines whether an old item and a new item represent the same entity.</param>
+    /// <returns>
+    /// A tuple containing the items present only in <paramref name="newItems"/> (<c>AddedItems</c>), the items present
+    /// only in <paramref name="oldItems"/> (<c>RemovedItems</c>), and the matched old/new pairs present in both (<c>ExistItems</c>).
+    /// </returns>
     [MustUseReturnValue]
     public static (List<T2> AddedItems, List<T1> RemovedItems, List<(T1, T2)> ExistItems) DetectChanges<T1, T2>(
         this IReadOnlyCollection<T1> oldItems,
@@ -42,6 +55,22 @@ public static class CollectionChangeDetectorExtensions
         return (addedItems, removedItems, existItems);
     }
 
+    /// <summary>
+    /// Compares two collections and classifies their elements into added, removed, updated, and unchanged items.
+    /// <paramref name="areSameEntity"/> matches an old item to a new item, and <paramref name="hasChange"/> decides
+    /// whether a matched pair has changed.
+    /// </summary>
+    /// <typeparam name="T1">The type of the elements in <paramref name="oldItems"/>.</typeparam>
+    /// <typeparam name="T2">The type of the elements in <paramref name="newItems"/>.</typeparam>
+    /// <param name="oldItems">The original collection.</param>
+    /// <param name="newItems">The new collection to compare against <paramref name="oldItems"/>.</param>
+    /// <param name="areSameEntity">A predicate that determines whether an old item and a new item represent the same entity.</param>
+    /// <param name="hasChange">A predicate that determines whether a matched old/new pair differs.</param>
+    /// <returns>
+    /// A tuple containing the items present only in <paramref name="newItems"/> (<c>AddedItems</c>), the items present
+    /// only in <paramref name="oldItems"/> (<c>RemovedItems</c>), the matched pairs reported as changed by
+    /// <paramref name="hasChange"/> (<c>UpdatedItems</c>), and the matched pairs reported as unchanged (<c>SameItems</c>).
+    /// </returns>
     [MustUseReturnValue]
     public static (
         List<T2> AddedItems,
@@ -92,7 +121,15 @@ public static class CollectionChangeDetectorExtensions
         return (addedItems, removedItems, updatedItems, sameItems);
     }
 
-    /// <summary>Compare each tuple items with the given function to detect the updated items.</summary>
+    /// <summary>Compares each tuple's items with the given function to split them into updated and unchanged pairs.</summary>
+    /// <typeparam name="T1">The type of the first element of each pair.</typeparam>
+    /// <typeparam name="T2">The type of the second element of each pair.</typeparam>
+    /// <param name="existItems">The matched old/new pairs to inspect.</param>
+    /// <param name="hasChange">A predicate that determines whether a pair differs.</param>
+    /// <returns>
+    /// A tuple containing the pairs reported as changed by <paramref name="hasChange"/> (<c>UpdatedItems</c>)
+    /// and the pairs reported as unchanged (<c>SameItems</c>).
+    /// </returns>
     [MustUseReturnValue]
     public static (List<(T1, T2)> UpdatedItems, List<(T1, T2)> SameItems) DetectUpdates<T1, T2>(
         this List<(T1, T2)> existItems,

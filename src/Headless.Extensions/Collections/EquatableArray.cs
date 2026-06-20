@@ -7,6 +7,8 @@ namespace Headless.Collections;
 /// <summary>An immutable, equatable array. This is equivalent to <see cref="Array"/> but with value equality support.</summary>
 /// <typeparam name="T">The type of values in the array.</typeparam>
 /// <remarks>Initializes a new instance of the <see cref="EquatableArray{T}"/> struct.</remarks>
+/// <param name="array">The underlying array to wrap. The instance keeps a reference to it rather than copying it.</param>
+/// <param name="equalityComparer">The comparer used for element equality and hashing, or <see langword="null"/> to use the default comparer for <typeparamref name="T"/>.</param>
 [PublicAPI]
 public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equalityComparer = null)
     : IEquatable<EquatableArray<T>>,
@@ -87,7 +89,7 @@ public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equali
     }
 
     /// <summary>Returns the underlying wrapped array.</summary>
-    /// <returns>Returns the underlying array.</returns>
+    /// <returns>The underlying array. This is <see langword="null"/> for a <c>default</c> instance that was never constructed with an array.</returns>
     public T[] AsArray()
     {
         return _array;

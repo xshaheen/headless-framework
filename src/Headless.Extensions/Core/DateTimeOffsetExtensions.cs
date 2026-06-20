@@ -15,6 +15,7 @@ public static class DateTimeOffsetExtensions
     /// <param name="dateTimeOffset">The date and time to convert.</param>
     /// <param name="timezone">The target time zone.</param>
     /// <returns>A <see cref="DateTimeOffset"/> representing the same moment in the specified time zone.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="timezone"/> is <see langword="null"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -23,6 +24,9 @@ public static class DateTimeOffsetExtensions
         return TimeZoneInfo.ConvertTime(dateTimeOffset, timezone);
     }
 
+    /// <summary>Returns a copy of <paramref name="dateTime"/> with the time-of-day reset to midnight, preserving its offset.</summary>
+    /// <param name="dateTime">The <see cref="DateTimeOffset"/> whose date and offset are preserved.</param>
+    /// <returns>A new <see cref="DateTimeOffset"/> at the start of the same day with the same offset.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset ClearTime(this DateTimeOffset dateTime)
@@ -30,6 +34,10 @@ public static class DateTimeOffsetExtensions
         return new(dateTime.Year, dateTime.Month, dateTime.Day, 0, 0, 0, dateTime.Offset);
     }
 
+    /// <summary>Returns the start of the day (midnight) that contains <paramref name="dateTimeOffset"/> as seen at the given UTC <paramref name="offset"/>.</summary>
+    /// <param name="dateTimeOffset">The instant to evaluate.</param>
+    /// <param name="offset">The UTC offset whose local calendar day defines the day boundary.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> at midnight of the day, using <paramref name="offset"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset GetStartOfDay(this DateTimeOffset dateTimeOffset, TimeSpan offset)
@@ -37,6 +45,10 @@ public static class DateTimeOffsetExtensions
         return dateTimeOffset.ToOffset(offset).ClearTime();
     }
 
+    /// <summary>Returns the last representable instant of the day (one millisecond before the next midnight) that contains <paramref name="dateTimeOffset"/> at the given UTC <paramref name="offset"/>.</summary>
+    /// <param name="dateTimeOffset">The instant to evaluate.</param>
+    /// <param name="offset">The UTC offset whose local calendar day defines the day boundary.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> at <c>23:59:59.999</c> of the day, using <paramref name="offset"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset GetEndOfDay(this DateTimeOffset dateTimeOffset, TimeSpan offset)
@@ -44,6 +56,10 @@ public static class DateTimeOffsetExtensions
         return dateTimeOffset.GetStartOfDay(offset).AddDays(1).AddMilliseconds(-1);
     }
 
+    /// <summary>Returns the first instant (midnight on day 1) of the month that contains <paramref name="dateTime"/> at the given UTC <paramref name="offset"/>.</summary>
+    /// <param name="dateTime">The instant to evaluate.</param>
+    /// <param name="offset">The UTC offset whose local calendar defines the month boundary.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> at midnight on the first day of the month, using <paramref name="offset"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset GetStartOfMonth(this DateTimeOffset dateTime, TimeSpan offset)
@@ -53,6 +69,10 @@ public static class DateTimeOffsetExtensions
         return new DateTimeOffset(d.Year, d.Month, 1, 0, 0, 0, d.Offset);
     }
 
+    /// <summary>Returns the last representable instant of the month that contains <paramref name="dateTime"/> at the given UTC <paramref name="offset"/>.</summary>
+    /// <param name="dateTime">The instant to evaluate.</param>
+    /// <param name="offset">The UTC offset whose local calendar defines the month boundary.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> at <c>23:59:59.999</c> on the last day of the month, using <paramref name="offset"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset GetEndOfMonth(this DateTimeOffset dateTime, TimeSpan offset)
@@ -64,6 +84,10 @@ public static class DateTimeOffsetExtensions
         return endOfMonthDay.GetEndOfDay(offset);
     }
 
+    /// <summary>Returns the first instant (midnight on January 1) of the year that contains <paramref name="dateTime"/> at the given UTC <paramref name="offset"/>.</summary>
+    /// <param name="dateTime">The instant to evaluate.</param>
+    /// <param name="offset">The UTC offset whose local calendar defines the year boundary.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> at midnight on January 1 of the year, using <paramref name="offset"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset GetStartOfYear(this DateTimeOffset dateTime, TimeSpan offset)
@@ -73,6 +97,10 @@ public static class DateTimeOffsetExtensions
         return new DateTimeOffset(d.Year, 1, 1, 0, 0, 0, d.Offset);
     }
 
+    /// <summary>Returns the last representable instant of the year that contains <paramref name="dateTime"/> at the given UTC <paramref name="offset"/>.</summary>
+    /// <param name="dateTime">The instant to evaluate.</param>
+    /// <param name="offset">The UTC offset whose local calendar defines the year boundary.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> at <c>23:59:59.999</c> on December 31 of the year, using <paramref name="offset"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset GetEndOfYear(this DateTimeOffset dateTime, TimeSpan offset)
@@ -177,6 +205,7 @@ public static class DateTimeOffsetExtensions
     /// <param name="date">The <see cref="DateTimeOffset"/> to floor.</param>
     /// <param name="interval">The <see cref="TimeSpan"/> interval to floor to.</param>
     /// <returns>A new <see cref="DateTimeOffset"/> floored to the nearest interval of the specified <paramref name="interval"/>.</returns>
+    /// <exception cref="DivideByZeroException">Thrown when <paramref name="interval"/> is <see cref="TimeSpan.Zero"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset Floor(this DateTimeOffset date, TimeSpan interval)
@@ -190,6 +219,7 @@ public static class DateTimeOffsetExtensions
     /// <param name="date">The <see cref="DateTimeOffset"/> to ceil.</param>
     /// <param name="interval">The <see cref="TimeSpan"/> interval to ceil to.</param>
     /// <returns>A new <see cref="DateTimeOffset"/> ceiled to the nearest interval of the specified <paramref name="interval"/>.</returns>
+    /// <exception cref="DivideByZeroException">Thrown when <paramref name="interval"/> is <see cref="TimeSpan.Zero"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset Ceiling(this DateTimeOffset date, TimeSpan interval)
@@ -197,6 +227,9 @@ public static class DateTimeOffsetExtensions
         return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
     }
 
+    /// <summary>Extracts the local (offset-relative) date portion of <paramref name="date"/> as a <see cref="DateOnly"/>.</summary>
+    /// <param name="date">The <see cref="DateTimeOffset"/> to convert.</param>
+    /// <returns>A <see cref="DateOnly"/> for the calendar date as observed at <paramref name="date"/>'s own offset.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateOnly ToDateOnly(this DateTimeOffset date)
@@ -204,6 +237,9 @@ public static class DateTimeOffsetExtensions
         return DateOnly.FromDateTime(date.DateTime);
     }
 
+    /// <summary>Extracts the UTC date portion of <paramref name="date"/> as a <see cref="DateOnly"/>.</summary>
+    /// <param name="date">The <see cref="DateTimeOffset"/> to convert.</param>
+    /// <returns>A <see cref="DateOnly"/> for the UTC calendar date of <paramref name="date"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateOnly ToUtcDateOnly(this DateTimeOffset date)
@@ -211,6 +247,9 @@ public static class DateTimeOffsetExtensions
         return DateOnly.FromDateTime(date.UtcDateTime);
     }
 
+    /// <summary>Extracts the local (offset-relative) time-of-day of <paramref name="date"/> as a <see cref="TimeOnly"/>.</summary>
+    /// <param name="date">The <see cref="DateTimeOffset"/> to convert.</param>
+    /// <returns>A <see cref="TimeOnly"/> for the time-of-day as observed at <paramref name="date"/>'s own offset.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static TimeOnly ToTimeOnly(this DateTimeOffset date)
@@ -218,6 +257,9 @@ public static class DateTimeOffsetExtensions
         return TimeOnly.FromDateTime(date.DateTime);
     }
 
+    /// <summary>Extracts the UTC time-of-day of <paramref name="date"/> as a <see cref="TimeOnly"/>.</summary>
+    /// <param name="date">The <see cref="DateTimeOffset"/> to convert.</param>
+    /// <returns>A <see cref="TimeOnly"/> for the UTC time-of-day of <paramref name="date"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static TimeOnly ToUtcTimeOnly(this DateTimeOffset date)
@@ -225,6 +267,9 @@ public static class DateTimeOffsetExtensions
         return TimeOnly.FromDateTime(date.UtcDateTime);
     }
 
+    /// <summary>Converts <paramref name="dateTimeOffset"/> to the Egypt time zone (see <see cref="TimezoneConstants.EgyptTimeZone"/>).</summary>
+    /// <param name="dateTimeOffset">The instant to convert.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> representing the same moment expressed in the Egypt time zone.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset ToEgyptTimeZone(this DateTimeOffset dateTimeOffset)
@@ -232,6 +277,9 @@ public static class DateTimeOffsetExtensions
         return dateTimeOffset.ToTimezone(TimezoneConstants.EgyptTimeZone);
     }
 
+    /// <summary>Converts <paramref name="dateTimeOffset"/> to the Saudi Arabia time zone (see <see cref="TimezoneConstants.SaudiArabiaTimeZone"/>).</summary>
+    /// <param name="dateTimeOffset">The instant to convert.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> representing the same moment expressed in the Saudi Arabia time zone.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset ToSaudiArabiaTimeZone(this DateTimeOffset dateTimeOffset)

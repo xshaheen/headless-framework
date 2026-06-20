@@ -9,8 +9,19 @@ namespace Headless.Text;
 [PublicAPI]
 public sealed class IgnoreCaseStringComparer : StringComparer
 {
+    /// <summary>A shared, thread-safe instance of <see cref="IgnoreCaseStringComparer"/>.</summary>
     public static readonly StringComparer Instance = new IgnoreCaseStringComparer();
 
+    /// <summary>
+    /// Compares two strings by their letter and digit symbols only (case-insensitive), ignoring any separators such as
+    /// spaces, underscores, or dashes. A <see langword="null"/> string sorts before any non-<see langword="null"/> string.
+    /// </summary>
+    /// <param name="x">The first string to compare.</param>
+    /// <param name="y">The second string to compare.</param>
+    /// <returns>
+    /// A negative value if <paramref name="x"/> precedes <paramref name="y"/>, zero if they are equivalent, or a
+    /// positive value if <paramref name="x"/> follows <paramref name="y"/>.
+    /// </returns>
     public override int Compare(string? x, string? y)
     {
         if (x is null && y is null)
@@ -44,6 +55,13 @@ public sealed class IgnoreCaseStringComparer : StringComparer
         return compare;
     }
 
+    /// <summary>
+    /// Determines whether two strings are equal by their letter and digit symbols only (case-insensitive), ignoring any
+    /// separators such as spaces, underscores, or dashes. Two <see langword="null"/> strings are considered equal.
+    /// </summary>
+    /// <param name="x">The first string to compare.</param>
+    /// <param name="y">The second string to compare.</param>
+    /// <returns><see langword="true"/> if the strings are equivalent under this comparison; otherwise <see langword="false"/>.</returns>
     public override bool Equals(string? x, string? y)
     {
         if (x is null)
@@ -76,6 +94,12 @@ public sealed class IgnoreCaseStringComparer : StringComparer
         return equals;
     }
 
+    /// <summary>
+    /// Returns a hash code for <paramref name="obj"/> computed from its uppercased letter and digit symbols only, so
+    /// that strings considered equal by <see cref="Equals(string?,string?)"/> share the same hash code.
+    /// </summary>
+    /// <param name="obj">The string to hash. A <see langword="null"/> value yields a hash code of <c>0</c>.</param>
+    /// <returns>A hash code based on the symbol content of <paramref name="obj"/>.</returns>
     public override int GetHashCode(string obj)
     {
         if (obj is null)

@@ -9,6 +9,14 @@ using Headless.Checks;
 
 namespace Headless.Primitives;
 
+/// <summary>
+/// A monetary amount paired with a currency code (for example <c>10.50USD</c>). Arithmetic and comparison
+/// operations require both operands to share the same <see cref="CurrencyCode"/>.
+/// </summary>
+/// <param name="amount">The monetary amount.</param>
+/// <param name="currencyCode">The currency code (for example <c>"USD"</c>). Must be a non-blank string.</param>
+/// <exception cref="ArgumentNullException">Thrown when <paramref name="currencyCode"/> is <see langword="null"/>.</exception>
+/// <exception cref="ArgumentException">Thrown when <paramref name="currencyCode"/> is empty or white space.</exception>
 [PublicAPI]
 [ComplexType]
 [DebuggerDisplay("{" + nameof(Amount) + "}{" + nameof(CurrencyCode) + "}")]
@@ -29,15 +37,20 @@ public sealed class Currency(decimal amount, string currencyCode)
 {
     #region Static
 
+    /// <summary>A zero-amount <see cref="Currency"/> in Egyptian pounds (<c>EGP</c>).</summary>
     public static readonly Currency ZeroEgp = new(0, "EGP");
+
+    /// <summary>A zero-amount <see cref="Currency"/> in US dollars (<c>USD</c>).</summary>
     public static readonly Currency ZeroUsd = new(0, "USD");
 
     #endregion
 
     #region Props
 
+    /// <summary>The monetary amount.</summary>
     public decimal Amount { get; private init; } = amount;
 
+    /// <summary>The currency code (for example <c>"USD"</c>).</summary>
     public string CurrencyCode { get; private init; } = Argument.IsNotNullOrWhiteSpace(currencyCode);
 
     private FormattableString Format => $"{Amount}{CurrencyCode}";
@@ -46,9 +59,15 @@ public sealed class Currency(decimal amount, string currencyCode)
 
     #region IEquatable Implementation
 
+    /// <summary>Determines whether <paramref name="obj"/> is a <see cref="Currency"/> equal to this instance.</summary>
+    /// <param name="obj">The object to compare with this instance.</param>
+    /// <returns><see langword="true"/> if <paramref name="obj"/> is a <see cref="Currency"/> with the same amount and currency code; otherwise <see langword="false"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override bool Equals(object? obj) => obj is Currency other && Equals(other);
 
+    /// <summary>Determines whether <paramref name="other"/> has the same amount and currency code as this instance.</summary>
+    /// <param name="other">The currency to compare with this instance.</param>
+    /// <returns><see langword="true"/> if both have the same amount and currency code; otherwise <see langword="false"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool Equals(Currency? other)
     {
@@ -60,9 +79,17 @@ public sealed class Currency(decimal amount, string currencyCode)
         return string.Equals(CurrencyCode, other.CurrencyCode, StringComparison.Ordinal) && other.Amount == Amount;
     }
 
+    /// <summary>Determines whether two <see cref="Currency"/> instances are equal.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns><see langword="true"/> if both are <see langword="null"/> or have the same amount and currency code; otherwise <see langword="false"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(Currency? left, Currency? right) => left?.Equals(right) ?? right is null;
 
+    /// <summary>Determines whether two <see cref="Currency"/> instances are not equal.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns><see langword="true"/> if the instances differ in amount or currency code; otherwise <see langword="false"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator !=(Currency? left, Currency? right) => !(left == right);
 
@@ -70,6 +97,11 @@ public sealed class Currency(decimal amount, string currencyCode)
 
     #region IComparable Implementation
 
+    /// <summary>Compares this instance with <paramref name="obj"/> and returns their relative order.</summary>
+    /// <param name="obj">The object to compare with. Supported types are <see cref="decimal"/> and <see cref="Currency"/>; <see langword="null"/> sorts first.</param>
+    /// <returns>A negative value if this instance precedes <paramref name="obj"/>, zero if they are equal, or a positive value if it follows.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="obj"/> is neither <see langword="null"/>, a <see cref="decimal"/>, nor a <see cref="Currency"/>.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="obj"/> is a <see cref="Currency"/> with a different <see cref="CurrencyCode"/>.</exception>
     public int CompareTo(object? obj)
     {
         return obj switch
@@ -81,6 +113,10 @@ public sealed class Currency(decimal amount, string currencyCode)
         };
     }
 
+    /// <summary>Compares this instance with <paramref name="other"/> by amount and returns their relative order.</summary>
+    /// <param name="other">The currency to compare with. <see langword="null"/> sorts first.</param>
+    /// <returns>A negative value if this instance precedes <paramref name="other"/>, zero if equal, or a positive value if it follows.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="other"/> has a different <see cref="CurrencyCode"/>.</exception>
     public int CompareTo(Currency? other)
     {
         if (other is null)
@@ -96,27 +132,50 @@ public sealed class Currency(decimal amount, string currencyCode)
         return Amount.CompareTo(other.Amount);
     }
 
+    /// <summary>Compares this instance's <see cref="Amount"/> with <paramref name="other"/> and returns their relative order.</summary>
+    /// <param name="other">The amount to compare with.</param>
+    /// <returns>A negative value if <see cref="Amount"/> is less than <paramref name="other"/>, zero if equal, or a positive value if greater.</returns>
     public int CompareTo(decimal other) => Amount.CompareTo(other);
 
     #endregion
 
     #region IParsable Implementation
 
+    /// <summary>Parses a string in the form <c>{amount}{code}</c> (for example <c>10.50USD</c>) into a <see cref="Currency"/>.</summary>
+    /// <param name="s">The string to parse.</param>
+    /// <param name="provider">An optional format provider used to parse the numeric amount.</param>
+    /// <returns>The parsed <see cref="Currency"/>.</returns>
+    /// <exception cref="FormatException">Thrown when <paramref name="s"/> is not a valid currency string.</exception>
     public static Currency Parse(string s, IFormatProvider? provider)
     {
         return Parse(s.AsSpan(), provider);
     }
 
+    /// <summary>Attempts to parse a string in the form <c>{amount}{code}</c> into a <see cref="Currency"/>.</summary>
+    /// <param name="s">The string to parse.</param>
+    /// <param name="provider">An optional format provider used to parse the numeric amount.</param>
+    /// <param name="result">When this method returns <see langword="true"/>, the parsed <see cref="Currency"/>; otherwise <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> if <paramref name="s"/> was parsed successfully; otherwise <see langword="false"/>.</returns>
     public static bool TryParse(string? s, IFormatProvider? provider, [NotNullWhen(true)] out Currency? result)
     {
         return TryParse(s.AsSpan(), provider, out result);
     }
 
+    /// <summary>Parses a span in the form <c>{amount}{code}</c> (for example <c>10.50USD</c>) into a <see cref="Currency"/>.</summary>
+    /// <param name="s">The span to parse.</param>
+    /// <param name="provider">An optional format provider used to parse the numeric amount.</param>
+    /// <returns>The parsed <see cref="Currency"/>.</returns>
+    /// <exception cref="FormatException">Thrown when <paramref name="s"/> is not a valid currency string.</exception>
     public static Currency Parse(ReadOnlySpan<char> s, IFormatProvider? provider)
     {
         return TryParse(s, provider, out var result) ? result : throw new FormatException("Invalid currency format");
     }
 
+    /// <summary>Attempts to parse a span in the form <c>{amount}{code}</c> into a <see cref="Currency"/>.</summary>
+    /// <param name="s">The span to parse.</param>
+    /// <param name="provider">An optional format provider used to parse the numeric amount.</param>
+    /// <param name="result">When this method returns <see langword="true"/>, the parsed <see cref="Currency"/>; otherwise <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> if <paramref name="s"/> was parsed successfully; otherwise <see langword="false"/>.</returns>
     public static bool TryParse(
         ReadOnlySpan<char> s,
         IFormatProvider? provider,
@@ -162,6 +221,12 @@ public sealed class Currency(decimal amount, string currencyCode)
 
     #region ISpanFormattable & IUtf8SpanFormattable Implementation
 
+    /// <summary>Writes the <c>{amount}{code}</c> representation into a UTF-16 character span.</summary>
+    /// <param name="destination">The span to write into.</param>
+    /// <param name="charsWritten">When this method returns, the number of characters written to <paramref name="destination"/>.</param>
+    /// <param name="format">A format span (ignored; the fixed <c>{amount}{code}</c> layout is always used).</param>
+    /// <param name="provider">An optional format provider used to format the amount.</param>
+    /// <returns><see langword="true"/> if <paramref name="destination"/> was large enough; otherwise <see langword="false"/>.</returns>
     public bool TryFormat(
         Span<char> destination,
         out int charsWritten,
@@ -172,6 +237,12 @@ public sealed class Currency(decimal amount, string currencyCode)
         return destination.TryWrite(provider, $"{Amount}{CurrencyCode}", out charsWritten);
     }
 
+    /// <summary>Writes the <c>{amount}{code}</c> representation into a UTF-8 byte span.</summary>
+    /// <param name="utf8Destination">The span to write into.</param>
+    /// <param name="bytesWritten">When this method returns, the number of bytes written to <paramref name="utf8Destination"/>.</param>
+    /// <param name="format">A format span (ignored; the fixed <c>{amount}{code}</c> layout is always used).</param>
+    /// <param name="provider">An optional format provider used to format the amount.</param>
+    /// <returns><see langword="true"/> if <paramref name="utf8Destination"/> was large enough; otherwise <see langword="false"/>.</returns>
     public bool TryFormat(
         Span<byte> utf8Destination,
         out int bytesWritten,
@@ -186,6 +257,11 @@ public sealed class Currency(decimal amount, string currencyCode)
 
     #region Math Operators
 
+    /// <summary>Adds two currencies of the same currency code.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is the sum of the operands' amounts.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency operator +(Currency left, Currency right)
     {
         if (!string.Equals(left.CurrencyCode, right.CurrencyCode, StringComparison.Ordinal))
@@ -196,8 +272,18 @@ public sealed class Currency(decimal amount, string currencyCode)
         return new Currency(left.Amount + right.Amount, left.CurrencyCode);
     }
 
+    /// <summary>Adds two currencies of the same currency code. Named alternate for the <c>+</c> operator.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is the sum of the operands' amounts.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency Add(Currency left, Currency right) => left + right;
 
+    /// <summary>Subtracts one currency from another of the same currency code.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> minus <paramref name="right"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency operator -(Currency left, Currency right)
     {
         if (!string.Equals(left.CurrencyCode, right.CurrencyCode, StringComparison.Ordinal))
@@ -208,8 +294,18 @@ public sealed class Currency(decimal amount, string currencyCode)
         return new Currency(left.Amount - right.Amount, left.CurrencyCode);
     }
 
+    /// <summary>Subtracts one currency from another of the same currency code. Named alternate for the <c>-</c> operator.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> minus <paramref name="right"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency Subtract(Currency left, Currency right) => left - right;
 
+    /// <summary>Multiplies two currencies of the same currency code.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is the product of the operands' amounts.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency operator *(Currency left, Currency right)
     {
         if (!string.Equals(left.CurrencyCode, right.CurrencyCode, StringComparison.Ordinal))
@@ -220,8 +316,18 @@ public sealed class Currency(decimal amount, string currencyCode)
         return new Currency(left.Amount * right.Amount, left.CurrencyCode);
     }
 
+    /// <summary>Multiplies two currencies of the same currency code. Named alternate for the <c>*</c> operator.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is the product of the operands' amounts.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency Multiply(Currency left, Currency right) => left * right;
 
+    /// <summary>Computes the remainder of dividing two currencies of the same currency code.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> modulo <paramref name="right"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency operator %(Currency left, Currency right)
     {
         if (!string.Equals(left.CurrencyCode, right.CurrencyCode, StringComparison.Ordinal))
@@ -232,8 +338,19 @@ public sealed class Currency(decimal amount, string currencyCode)
         return new Currency(left.Amount % right.Amount, left.CurrencyCode);
     }
 
+    /// <summary>Computes the remainder of dividing two currencies of the same currency code. Named alternate for the <c>%</c> operator.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> modulo <paramref name="right"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency Mod(Currency left, Currency right) => left % right;
 
+    /// <summary>Divides one currency by another of the same currency code.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> divided by <paramref name="right"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
+    /// <exception cref="DivideByZeroException">Thrown when <paramref name="right"/> has a zero amount.</exception>
     public static Currency operator /(Currency left, Currency right)
     {
         if (!string.Equals(left.CurrencyCode, right.CurrencyCode, StringComparison.Ordinal))
@@ -244,44 +361,110 @@ public sealed class Currency(decimal amount, string currencyCode)
         return new Currency(left.Amount / right.Amount, left.CurrencyCode);
     }
 
+    /// <summary>Divides one currency by another of the same currency code. Named alternate for the <c>/</c> operator.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> divided by <paramref name="right"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
+    /// <exception cref="DivideByZeroException">Thrown when <paramref name="right"/> has a zero amount.</exception>
     public static Currency Divide(Currency left, Currency right) => left / right;
 
     #endregion
 
     #region Comparison Operators
 
+    /// <summary>Determines whether <paramref name="left"/> is greater than <paramref name="right"/>.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is greater than <paramref name="right"/>'s; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static bool operator >(Currency left, Currency right) => left.CompareTo(right) > 0;
 
+    /// <summary>Determines whether <paramref name="left"/> is greater than or equal to <paramref name="right"/>.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is greater than or equal to <paramref name="right"/>'s; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static bool operator >=(Currency left, Currency right) => left.CompareTo(right) >= 0;
 
+    /// <summary>Determines whether <paramref name="left"/> is less than <paramref name="right"/>.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is less than <paramref name="right"/>'s; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static bool operator <(Currency left, Currency right) => left.CompareTo(right) < 0;
 
+    /// <summary>Determines whether <paramref name="left"/> is less than or equal to <paramref name="right"/>.</summary>
+    /// <param name="left">The left operand.</param>
+    /// <param name="right">The right operand.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is less than or equal to <paramref name="right"/>'s; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static bool operator <=(Currency left, Currency right) => left.CompareTo(right) <= 0;
 
+    /// <summary>Determines whether the amount <paramref name="left"/> is greater than <paramref name="right"/>'s amount.</summary>
+    /// <param name="left">The amount on the left.</param>
+    /// <param name="right">The currency on the right.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than <paramref name="right"/>'s amount; otherwise <see langword="false"/>.</returns>
     public static bool operator >(decimal left, Currency right) => left > right.Amount;
 
+    /// <summary>Determines whether the amount <paramref name="left"/> is less than <paramref name="right"/>'s amount.</summary>
+    /// <param name="left">The amount on the left.</param>
+    /// <param name="right">The currency on the right.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is less than <paramref name="right"/>'s amount; otherwise <see langword="false"/>.</returns>
     public static bool operator <(decimal left, Currency right) => left < right.Amount;
 
+    /// <summary>Determines whether the amount <paramref name="left"/> is greater than or equal to <paramref name="right"/>'s amount.</summary>
+    /// <param name="left">The amount on the left.</param>
+    /// <param name="right">The currency on the right.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is greater than or equal to <paramref name="right"/>'s amount; otherwise <see langword="false"/>.</returns>
     public static bool operator >=(decimal left, Currency right) => left >= right.Amount;
 
+    /// <summary>Determines whether the amount <paramref name="left"/> is less than or equal to <paramref name="right"/>'s amount.</summary>
+    /// <param name="left">The amount on the left.</param>
+    /// <param name="right">The currency on the right.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is less than or equal to <paramref name="right"/>'s amount; otherwise <see langword="false"/>.</returns>
     public static bool operator <=(decimal left, Currency right) => left <= right.Amount;
 
+    /// <summary>Determines whether <paramref name="left"/>'s amount is greater than the amount <paramref name="right"/>.</summary>
+    /// <param name="left">The currency on the left.</param>
+    /// <param name="right">The amount on the right.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is greater than <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
     public static bool operator >(Currency left, decimal right) => left.Amount > right;
 
+    /// <summary>Determines whether <paramref name="left"/>'s amount is less than the amount <paramref name="right"/>.</summary>
+    /// <param name="left">The currency on the left.</param>
+    /// <param name="right">The amount on the right.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is less than <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
     public static bool operator <(Currency left, decimal right) => left.Amount < right;
 
+    /// <summary>Determines whether <paramref name="left"/>'s amount is greater than or equal to the amount <paramref name="right"/>.</summary>
+    /// <param name="left">The currency on the left.</param>
+    /// <param name="right">The amount on the right.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is greater than or equal to <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
     public static bool operator >=(Currency left, decimal right) => left.Amount >= right;
 
+    /// <summary>Determines whether <paramref name="left"/>'s amount is less than or equal to the amount <paramref name="right"/>.</summary>
+    /// <param name="left">The currency on the left.</param>
+    /// <param name="right">The amount on the right.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is less than or equal to <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
     public static bool operator <=(Currency left, decimal right) => left.Amount <= right;
 
     #endregion
 
     #region Basic Methods
 
+    /// <summary>Returns a hash code derived from the <see cref="Amount"/> and <see cref="CurrencyCode"/>.</summary>
+    /// <returns>A hash code for this instance.</returns>
     public override int GetHashCode() => HashCode.Combine(Amount, CurrencyCode);
 
+    /// <summary>Returns the <c>{amount}{code}</c> representation formatted with the invariant culture.</summary>
+    /// <returns>The string representation of this currency.</returns>
     public override string ToString() => Format.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>Returns the <c>{amount}{code}</c> representation formatted with the supplied provider.</summary>
+    /// <param name="format">A format string (ignored; the fixed <c>{amount}{code}</c> layout is always used).</param>
+    /// <param name="formatProvider">An optional format provider used to format the amount.</param>
+    /// <returns>The string representation of this currency.</returns>
     public string ToString(string? format, IFormatProvider? formatProvider) => Format.ToString(formatProvider);
 
     #endregion

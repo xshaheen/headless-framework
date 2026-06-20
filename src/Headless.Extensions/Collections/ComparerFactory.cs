@@ -8,24 +8,26 @@ namespace Headless.Collections;
 public static class ComparerFactory
 {
     /// <summary>
-    /// Create a key based equability comparer implementation.
+    /// Create a key based equality comparer implementation. Two instances are considered equal when the keys
+    /// projected by <paramref name="keyGetter"/> are equal.
     /// </summary>
-    /// <param name="keyGetter"></param>
-    /// <typeparam name="T">Type</typeparam>
+    /// <param name="keyGetter">A function that projects an instance to the key used for comparison.</param>
+    /// <typeparam name="T">Type of the compared instances.</typeparam>
     /// <typeparam name="TKey">Type of the key.</typeparam>
-    /// <returns>IEqualityComparer implementation.</returns>
+    /// <returns>An <see cref="IEqualityComparer{T}"/> implementation that compares by the projected key.</returns>
     public static IEqualityComparer<T> Create<T, TKey>(Func<T, TKey> keyGetter)
     {
         return new KeyBasedEqualityComparer<T, TKey>(keyGetter);
     }
 
     /// <summary>
-    /// Create an equability comparer implementation using comparision function
+    /// Create an equality comparer implementation using a comparison function
     /// and hash code generator function.
     /// </summary>
-    /// <param name="comparisonFunc">Equality comparision function.</param>
-    /// <param name="getHashCode"></param>
-    /// <returns></returns>
+    /// <param name="comparisonFunc">Equality comparison function used when both instances are non-null and of the same runtime type.</param>
+    /// <param name="getHashCode">A function that produces the hash code for an instance.</param>
+    /// <typeparam name="T">Type of the compared instances.</typeparam>
+    /// <returns>An <see cref="IEqualityComparer{T}"/> implementation that compares using the supplied functions.</returns>
     public static IEqualityComparer<T> Create<T>(Func<T, T, bool> comparisonFunc, Func<T, int> getHashCode)
     {
         return new ComparisonFuncComparer<T>(comparisonFunc, getHashCode);

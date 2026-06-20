@@ -30,11 +30,19 @@ public static class FormattedStringValueExtractor
     /// <param name="str">String including dynamic values</param>
     /// <param name="format">Format of the string</param>
     /// <param name="ignoreCase">True, to search case-insensitive.</param>
+    /// <returns>
+    /// A <see cref="FormattedStringExtractionResult"/> whose <see cref="FormattedStringExtractionResult.IsMatch"/>
+    /// indicates whether <paramref name="str"/> matched <paramref name="format"/>, and whose
+    /// <see cref="FormattedStringExtractionResult.Matches"/> holds the captured name/value pairs.
+    /// </returns>
     /// <remarks>
     /// The whole input must be consumed for a successful match: if the format ends with constant
     /// text, any input remaining after that final constant causes <see cref="FormattedStringExtractionResult.IsMatch"/>
     /// to be <see langword="false"/>. See the type-level remarks for the greedy-first-match limitation.
     /// </remarks>
+    /// <exception cref="FormatException">
+    /// Thrown when <paramref name="format"/> has invalid syntax, such as mismatched or nested curly braces.
+    /// </exception>
     public static FormattedStringExtractionResult Extract(string str, string format, bool ignoreCase = false)
     {
         var stringComparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -113,9 +121,12 @@ public static class FormattedStringValueExtractor
     /// </summary>
     /// <param name="str">String including dynamic values</param>
     /// <param name="format">Format of the string</param>
-    /// <param name="values">Array of extracted values if matched</param>
+    /// <param name="values">Array of extracted values if matched; an empty array when not matched.</param>
     /// <param name="ignoreCase">True, to search case-insensitive</param>
     /// <returns>True, if matched.</returns>
+    /// <exception cref="FormatException">
+    /// Thrown when <paramref name="format"/> has invalid syntax, such as mismatched or nested curly braces.
+    /// </exception>
     public static bool IsMatch(string str, string format, out string[] values, bool ignoreCase = false)
     {
         var result = Extract(str, format, ignoreCase);
