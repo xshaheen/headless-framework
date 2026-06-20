@@ -16,7 +16,6 @@
     <ProjectReference Include="..\Headless.Dashboard.Authentication\Headless.Dashboard.Authentication.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="wwwroot/dist/**/*" Exclude="**/*/*.map" />
-  </ItemGroup>
+  <!-- Builds wwwroot SPA and embeds wwwroot/dist/** at build time (dist is gitignored, not committed). -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />
 </Project>

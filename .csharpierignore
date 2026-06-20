@@ -4,6 +4,8 @@
 .worktrees/
 artifacts/
 
-# CSharpier's XML check disagrees on this hand-maintained file between local (macOS) and CI (Linux)
-# runs of the same tool version; it is not authored code, so it is excluded from the gate.
+# CSharpier 1.3.0's XML check produces a different result for this hand-maintained file on
+# Linux (CI) than on macOS (local) — macOS treats it as already-formatted while Linux flags it
+# "Was not formatted". Confirmed by CI run 27877390395. It is not authored code, so it is
+# excluded from the gate rather than letting a platform-dependent formatter break the build.
 nuget.config
