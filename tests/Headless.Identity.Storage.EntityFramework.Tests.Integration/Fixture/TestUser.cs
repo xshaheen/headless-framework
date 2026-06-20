@@ -49,6 +49,10 @@ public sealed class TestUser
 
     public UserId? SuspendedById { get; private init; }
 
+    public DateTimeOffset? DateUnsuspended { get; private init; }
+
+    public UserId? UnsuspendedById { get; private init; }
+
     // Domain helpers to toggle flags so EF tracks modifications
     public void MarkDeleted() => IsDeleted = true;
 

@@ -14,9 +14,9 @@ public interface ISuspendAudit
     /// <remarks>(auto)</remarks>
     DateTimeOffset? DateSuspended { get; }
 
-    /// <summary>Date and time the entity was restored.</summary>
+    /// <summary>Date and time the entity was unsuspended.</summary>
     /// <remarks>(auto)</remarks>
-    DateTimeOffset? DateRestored { get; }
+    DateTimeOffset? DateUnsuspended { get; }
 }
 
 [PublicAPI]
@@ -26,9 +26,9 @@ public interface ISuspendAudit<out TAccountId> : ISuspendAudit
     /// <remarks>(auto)</remarks>
     TAccountId? SuspendedById { get; }
 
-    /// <summary>ID of the account that restore this entity.</summary>
+    /// <summary>ID of the account that unsuspended this entity.</summary>
     /// <remarks>(auto)</remarks>
-    TAccountId? RestoredById { get; }
+    TAccountId? UnsuspendedById { get; }
 }
 
 [PublicAPI]
@@ -38,11 +38,11 @@ public interface ISuspendAudit<TAccountId, TAccount> : ISuspendAudit<TAccountId>
     /// <remarks>(auto)</remarks>
     TAccount? SuspendedBy { get; }
 
-    /// <summary>Expandable link to the account who restore this entity.</summary>
+    /// <summary>Expandable link to the account who unsuspended this entity.</summary>
     /// <remarks>(auto)</remarks>
-    TAccount? RestoredBy { get; }
+    TAccount? UnsuspendedBy { get; }
 
     void Suspend(DateTimeOffset now, TAccountId? byId = default, TAccount? by = default);
 
-    void Restore(DateTimeOffset now, TAccountId? byId = default, TAccount? by = default);
+    void Unsuspend(DateTimeOffset now, TAccountId? byId = default, TAccount? by = default);
 }

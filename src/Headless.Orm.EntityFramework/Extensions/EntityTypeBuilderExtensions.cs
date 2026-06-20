@@ -356,15 +356,15 @@ public static class EntityTypeBuilderExtensions
 
         const string isSuspended = nameof(ISuspendAudit.IsSuspended);
         const string dateSuspendedName = nameof(ISuspendAudit.DateSuspended);
-        const string dateRestoredName = nameof(ISuspendAudit.DateRestored);
+        const string dateUnsuspendedName = nameof(ISuspendAudit.DateUnsuspended);
         const string suspendedByIdName = nameof(ISuspendAudit<>.SuspendedById);
-        const string restoredByIdName = nameof(ISuspendAudit<>.RestoredById);
+        const string unsuspendedByIdName = nameof(ISuspendAudit<>.UnsuspendedById);
         const string suspendedByName = nameof(ISuspendAudit<,>.SuspendedBy);
-        const string restoredByName = nameof(ISuspendAudit<,>.RestoredBy);
+        const string unsuspendedByName = nameof(ISuspendAudit<,>.UnsuspendedBy);
 
         builder.Property(isSuspended).IsRequired().HasDefaultValue(value: false).HasColumnName(isSuspended);
         builder.Property(dateSuspendedName).IsRequired(false).HasColumnName(dateSuspendedName);
-        builder.Property(dateRestoredName).IsRequired(false).HasColumnName(dateRestoredName);
+        builder.Property(dateUnsuspendedName).IsRequired(false).HasColumnName(dateUnsuspendedName);
 
         if (
             builder
@@ -379,9 +379,9 @@ public static class EntityTypeBuilderExtensions
                 .HasMaxLength(DomainConstants.IdMaxLength);
 
             builder
-                .Property(restoredByIdName)
+                .Property(unsuspendedByIdName)
                 .IsRequired(false)
-                .HasColumnName(restoredByIdName)
+                .HasColumnName(unsuspendedByIdName)
                 .HasMaxLength(DomainConstants.IdMaxLength);
 
             builder
@@ -392,9 +392,9 @@ public static class EntityTypeBuilderExtensions
                 .OnDelete(DeleteBehavior.Restrict);
 
             builder
-                .HasOne(restoredByName)
+                .HasOne(unsuspendedByName)
                 .WithMany()
-                .HasForeignKey(restoredByIdName)
+                .HasForeignKey(unsuspendedByIdName)
                 .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
         }
@@ -411,9 +411,9 @@ public static class EntityTypeBuilderExtensions
                 .HasMaxLength(DomainConstants.IdMaxLength);
 
             builder
-                .Property(restoredByIdName)
+                .Property(unsuspendedByIdName)
                 .IsRequired(false)
-                .HasColumnName(restoredByIdName)
+                .HasColumnName(unsuspendedByIdName)
                 .HasMaxLength(DomainConstants.IdMaxLength);
         }
     }
