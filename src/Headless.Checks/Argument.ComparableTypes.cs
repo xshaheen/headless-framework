@@ -14,7 +14,7 @@ public static partial class Argument
     /// <param name="expected">The value to compare with.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the argument is less than or equal to <paramref name="expected"/>.</returns>
+    /// <returns><paramref name="argument" /> if the argument is less than or equal to <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not less than or equal to <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -42,7 +42,7 @@ public static partial class Argument
     /// <param name="expected">The value to compare with.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the argument is greater than or equal to <paramref name="expected"/>.</returns>
+    /// <returns><paramref name="argument" /> if the argument is greater than or equal to <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not greater than or equal to <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -70,7 +70,7 @@ public static partial class Argument
     /// <param name="expected">The value to compare with.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the argument is less than <paramref name="expected"/>.</returns>
+    /// <returns><paramref name="argument" /> if the argument is less than <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not less than <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -97,7 +97,7 @@ public static partial class Argument
     /// <param name="expected">The value to compare with.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the argument is greater than <paramref name="expected"/>.</returns>
+    /// <returns><paramref name="argument" /> if the argument is greater than <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not greater than <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -137,7 +137,7 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(minimumValue))] string? minimumValueParamName = null,
         [CallerArgumentExpression(nameof(maximumValue))] string? maximumValueParamName = null
     )
-        where T : IComparable
+        where T : IComparable, IComparable<T>
     {
         if (minimumValue.CompareTo(maximumValue) <= 0)
         {
@@ -184,7 +184,7 @@ public static partial class Argument
         }
 
         message ??=
-            $"The argument {argumentParamName} = {argument} must be between {minimumValue} and {maximumValue} inclusively ({minimumValue}, {maximumValue}).";
+            $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} inclusively ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}).";
 
         throw new ArgumentOutOfRangeException(argumentParamName, message);
     }
@@ -223,7 +223,7 @@ public static partial class Argument
         }
 
         message ??=
-            $"The argument {argumentParamName} = {argument} must be between {minimumValue} and {maximumValue} exclusively ({minimumValue}, {maximumValue}).";
+            $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} exclusively ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}).";
 
         throw new ArgumentOutOfRangeException(argumentParamName, message);
     }
@@ -262,7 +262,7 @@ public static partial class Argument
         }
 
         message ??=
-            $"The argument {argumentParamName} = {argument} must be between {minimumValue} and {maximumValue} ({minimumValue}, {maximumValue}].";
+            $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}].";
 
         throw new ArgumentOutOfRangeException(argumentParamName, message);
     }
@@ -301,7 +301,7 @@ public static partial class Argument
         }
 
         message ??=
-            $"The argument {argumentParamName} = {argument} must be between {minimumValue} and {maximumValue} [{minimumValue}, {maximumValue}).";
+            $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} [{minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}).";
 
         throw new ArgumentOutOfRangeException(argumentParamName, message);
     }
@@ -343,7 +343,7 @@ public static partial class Argument
         throw new ArgumentOutOfRangeException(
             argumentParamName,
             message
-                ?? $"The argument {argumentParamName.ToAssertString()} = {argument} had out of range item(s). (Range [{minimumValue}, {maximumValue}])"
+                ?? $"The argument {argumentParamName.ToAssertString()} had out of range item(s). (Range [{minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}])"
         );
     }
 }

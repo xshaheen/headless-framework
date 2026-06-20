@@ -162,6 +162,59 @@ public sealed class IsOneOfTests
     }
 
     [Fact]
+    public void is_one_of_readonly_collection_message_has_no_trailing_comma_for_fewer_than_five_items()
+    {
+        // given - IReadOnlyCollection overload routes through the IEnumerable message builder
+        const string argument = "invalid";
+        IReadOnlyCollection<string> values = new List<string> { "a", "b", "c", "d" };
+
+        // when
+        var action = () => Argument.IsOneOf(argument, values);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"argument\"=\"invalid\" must be one of [a,b,c,d]. (Parameter 'argument')");
+    }
+
+    [Fact]
+    public void is_one_of_readonly_collection_message_has_no_ellipsis_for_exactly_five_items()
+    {
+        // given - exactly _PrintableItems (5) must NOT be truncated
+        const string argument = "invalid";
+        IReadOnlyCollection<string> values = new List<string> { "a", "b", "c", "d", "e" };
+
+        // when
+        var action = () => Argument.IsOneOf(argument, values);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"argument\"=\"invalid\" must be one of [a,b,c,d,e]. (Parameter 'argument')");
+    }
+
+    [Fact]
+    public void is_one_of_readonly_collection_message_truncates_beyond_five_items()
+    {
+        // given - more than 5 items must be truncated with ",..."
+        const string argument = "invalid";
+        IReadOnlyCollection<string> values = new List<string> { "a", "b", "c", "d", "e", "f" };
+
+        // when
+        var action = () => Argument.IsOneOf(argument, values);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                "The argument \"argument\"=\"invalid\" must be one of [a,b,c,d,e,...]. (Parameter 'argument')"
+            );
+    }
+
+    [Fact]
     public void is_one_of_string_should_respect_string_comparer()
     {
         // given

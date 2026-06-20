@@ -146,26 +146,27 @@ public static partial class Argument
 
         sb.Append(" must be one of [");
 
-        var i = 0;
+        var emitted = 0;
+        var hasMore = false;
 
         foreach (var value in values)
         {
-            if (i >= _PrintableItems)
+            if (emitted >= _PrintableItems)
             {
+                hasMore = true;
                 break;
             }
 
-            sb.Append(value);
-
-            if (i < _PrintableItems - 1)
+            if (emitted > 0)
             {
                 sb.Append(',');
             }
 
-            i++;
+            sb.Append(value);
+            emitted++;
         }
 
-        if (i >= _PrintableItems)
+        if (hasMore)
         {
             sb.Append(",...");
         }

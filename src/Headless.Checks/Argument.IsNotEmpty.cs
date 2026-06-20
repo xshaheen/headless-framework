@@ -13,7 +13,7 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the value is not empty.</returns>
+    /// <returns><paramref name="argument" /> if the value is not empty.</returns>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -36,7 +36,7 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the value is not empty.</returns>
+    /// <returns><paramref name="argument" /> if the value is not empty.</returns>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -58,7 +58,7 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the value is not empty.</returns>
+    /// <returns><paramref name="argument" /> if the value is not empty.</returns>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -13,7 +13,7 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the argument is negative or zero.</returns>
+    /// <returns><paramref name="argument" /> if the argument is negative or zero.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is positive.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

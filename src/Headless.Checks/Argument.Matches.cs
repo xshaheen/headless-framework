@@ -28,6 +28,9 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
+        IsNotNull(argument, message, paramName);
+        IsNotNull(pattern);
+
         if (pattern.IsMatch(argument))
         {
             return argument;

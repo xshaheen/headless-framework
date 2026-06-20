@@ -13,7 +13,7 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the argument is not null.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is null.</exception>
+    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: SystemNotNull]
@@ -36,7 +36,7 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the argument is not null.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is null.</exception>
+    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotNull<T>(

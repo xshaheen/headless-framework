@@ -7,6 +7,7 @@ using Headless.Checks.Internals;
 namespace Headless.Checks;
 
 /// <summary>Common runtime checks that throw exceptions upon failure.</summary>
+[PublicAPI]
 public static class Ensure
 {
     /// <summary>Throws an <see cref="InvalidOperationException"/> if a condition is false.</summary>

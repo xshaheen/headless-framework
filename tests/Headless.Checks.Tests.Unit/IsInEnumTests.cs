@@ -38,7 +38,7 @@ public sealed class IsInEnumTests
             .Should()
             .ThrowExactly<InvalidEnumArgumentException>()
             .WithMessage(
-                "The argument \"argument\" = 99 is NOT invalid for Enum type <SampleEnum>. (Parameter: 'argument')"
+                "The argument \"argument\" = 99 is not a valid value for Enum type <SampleEnum>. (Parameter: 'argument')"
             );
 
         actionWithCustomMessage.Should().ThrowExactly<InvalidEnumArgumentException>().WithMessage($"{customMessage}");
@@ -70,7 +70,7 @@ public sealed class IsInEnumTests
             .Should()
             .ThrowExactly<InvalidEnumArgumentException>()
             .WithMessage(
-                "The argument \"argument\" = 99 is NOT invalid for Enum type <SampleEnum>. (Parameter: 'argument')"
+                "The argument \"argument\" = 99 is not a valid value for Enum type <SampleEnum>. (Parameter: 'argument')"
             );
 
         actionWithCustomMessage.Should().ThrowExactly<InvalidEnumArgumentException>().WithMessage($"{customMessage}");

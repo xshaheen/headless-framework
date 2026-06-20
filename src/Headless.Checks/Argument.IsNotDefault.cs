@@ -77,7 +77,8 @@ public static partial class Argument
         if (EqualityComparer<T>.Default.Equals(argument.Value, default))
         {
             throw new ArgumentException(
-                message ?? $"{paramName.ToAssertString()} cannot be the default value of {typeof(T).Name}.",
+                message
+                    ?? $"The argument {paramName.ToAssertString()} can NOT be the default value of {typeof(T).ToAssertString()}.",
                 paramName
             );
         }
