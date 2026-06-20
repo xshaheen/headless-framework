@@ -38,7 +38,7 @@ jobs:
           - src/Headless.Messaging.Dashboard/wwwroot
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
         with:
           lfs: false
 
