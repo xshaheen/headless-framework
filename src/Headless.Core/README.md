@@ -22,7 +22,6 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
   - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
   - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
   - `IEnumLocaleAccessor` - Localized enum display values
-  - `IHaveLogger` / `IHaveTimeProvider` - Mixin interfaces for logger and time provider access
 
 - **Utilities**:
   - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)

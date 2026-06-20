@@ -20,7 +20,7 @@ public sealed class DistributedLock(
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedLock> logger
-) : IDistributedLock, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
+) : IDistributedLock, ICanReceiveLockReleased
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
     private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
@@ -44,10 +44,6 @@ public sealed class DistributedLock(
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
 
     private readonly Lock _resetEventLock = new();
-
-    ILogger IHaveLogger.Logger => logger;
-
-    TimeProvider IHaveTimeProvider.TimeProvider => timeProvider;
 
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
 
