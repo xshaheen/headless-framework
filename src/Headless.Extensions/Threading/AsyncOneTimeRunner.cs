@@ -14,14 +14,21 @@ public sealed class AsyncOneTimeRunner : IDisposable
     private volatile bool _runBefore;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
 
-    public async Task RunAsync(Func<Task> action)
+    /// <summary>Runs <paramref name="action"/> once; subsequent successful calls are no-ops.</summary>
+    /// <remarks>
+    /// If <paramref name="action"/> throws, the runner is <b>not</b> marked as completed: the exception
+    /// propagates to the caller and the next call retries. This makes the runner safe for one-time
+    /// initialization that may fail transiently. The <paramref name="cancellationToken"/> bounds how long a
+    /// caller waits to acquire the run lock; it does not cancel an in-flight <paramref name="action"/>.
+    /// </remarks>
+    public async Task RunAsync(Func<Task> action, CancellationToken cancellationToken = default)
     {
         if (_runBefore)
         {
             return;
         }
 
-        using (await _semaphore.LockAsync().ConfigureAwait(false))
+        using (await _semaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             if (_runBefore)
             {

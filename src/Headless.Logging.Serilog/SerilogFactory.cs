@@ -138,8 +138,8 @@ public static class SerilogFactory
             .Enrich.WithProcessName()
             .Enrich.WithMachineName()
             .Enrich.WithProperty("Application", environment.ApplicationName)
-            .Enrich.WithProperty("Version", AssemblyInformation.Entry.Version)
-            .Enrich.WithProperty("CommitHash", AssemblyInformation.Entry.CommitNumber);
+            .Enrich.WithProperty("Version", AssemblyInformation.Entry?.Version)
+            .Enrich.WithProperty("CommitHash", AssemblyInformation.Entry?.CommitNumber);
 
         if (services is not null)
         {

@@ -43,7 +43,7 @@ public static class FileHelper
         {
             try
             {
-                await _BaseSaveFileAsync(blob.BlobStream, blob.BlobName, directoryPath, token);
+                await _BaseSaveFileAsync(blob.BlobStream, blob.BlobName, directoryPath, token).ConfigureAwait(false);
                 return Result<Exception>.Ok();
             }
             catch (Exception e)
@@ -52,7 +52,7 @@ public static class FileHelper
             }
         });
 
-        return await Task.WhenAll(results).WithAggregatedExceptions();
+        return await Task.WhenAll(results).WithAggregatedExceptions().ConfigureAwait(false);
     }
 
     public static async ValueTask SaveToLocalFileAsync(
@@ -67,7 +67,7 @@ public static class FileHelper
         Argument.IsNotNullOrWhiteSpace(blobName);
         Directory.CreateDirectory(directoryPath);
 
-        await _BaseSaveFileAsync(blobStream, blobName, directoryPath, token);
+        await _BaseSaveFileAsync(blobStream, blobName, directoryPath, token).ConfigureAwait(false);
     }
 
     private static async Task _BaseSaveFileAsync(
@@ -77,19 +77,22 @@ public static class FileHelper
         CancellationToken token
     )
     {
-        // Reset stream position for seekable streams
-        if (blobStream.CanSeek && blobStream.Position != 0)
-        {
-            blobStream.Seek(0, SeekOrigin.Begin);
-        }
+        _EnsureSafePathSegment(uniqueSaveName);
 
         var filePath = Path.Combine(directoryPath, uniqueSaveName);
-        await _IoRetryPipeline.ExecuteAsync(writeFileAsync, (filePath, blobStream), token);
+        await _IoRetryPipeline.ExecuteAsync(writeFileAsync, (filePath, blobStream), token).ConfigureAwait(false);
 
         return;
 
         static async ValueTask writeFileAsync((string FilePath, Stream BlobStream) state, CancellationToken token)
         {
+            // Reset position so every retry attempt writes the full stream from the start; the retry pipeline
+            // can re-invoke this delegate after a partial write that advanced the source position.
+            if (state.BlobStream.CanSeek && state.BlobStream.Position != 0)
+            {
+                state.BlobStream.Seek(0, SeekOrigin.Begin);
+            }
+
             // Use FileShare.Read to allow concurrent read access during write
             await using var fileStream = new FileStream(
                 state.FilePath,
@@ -99,7 +102,32 @@ public static class FileHelper
                 bufferSize: 4096,
                 useAsync: true
             );
-            await state.BlobStream.CopyToAsync(fileStream, token);
+            await state.BlobStream.CopyToAsync(fileStream, token).ConfigureAwait(false);
+        }
+    }
+
+    private static void _EnsureSafePathSegment(string name)
+    {
+        // Defense in depth: the name is combined with the target directory via Path.Combine, so a name
+        // containing traversal sequences or a rooted/absolute path could escape the directory and write
+        // anywhere on disk. Path.IsPathRooted rejects every rooted form for the current platform, including
+        // Windows drive-qualified (C:\x, D:/x, C:x) and UNC (\\server\share) names that a bare '/' or '\'
+        // prefix check would miss. Mirrors Headless.Blobs PathValidation semantics, kept local to avoid a
+        // dependency on the Blobs packages.
+        if (
+            name.Contains("../", StringComparison.Ordinal)
+            || name.Contains("..\\", StringComparison.Ordinal)
+            || name.Contains("/..", StringComparison.Ordinal)
+            || name.Contains("\\..", StringComparison.Ordinal)
+            || name.StartsWith("..", StringComparison.Ordinal)
+            || name.EndsWith("..", StringComparison.Ordinal)
+            || Path.IsPathRooted(name)
+        )
+        {
+            throw new ArgumentException(
+                "The file name must be a relative path segment without traversal sequences.",
+                nameof(name)
+            );
         }
     }
 
@@ -128,9 +156,12 @@ public static class FileHelper
     /// <summary>Opens a text file, reads content without BOM.</summary>
     /// <param name="path">The file to open for reading.</param>
     /// <returns>A string containing all lines of the file.</returns>
-    public static async Task<string?> ReadFileWithoutBomAsync(string path)
+    public static async Task<string?> ReadFileWithoutBomAsync(
+        string path,
+        CancellationToken cancellationToken = default
+    )
     {
-        var bytes = await ReadAllBytesAsync(path);
+        var bytes = await ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
 
         return StringHelper.ConvertFromBytesWithoutBom(bytes);
     }
@@ -140,24 +171,19 @@ public static class FileHelper
     /// </summary>
     /// <param name="path">The file to open for reading.</param>
     /// <returns>A string containing all lines of the file.</returns>
-    public static async Task<string> ReadAllTextAsync(string path)
+    public static async Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
     {
         using var reader = File.OpenText(path);
 
-        return await reader.ReadToEndAsync();
+        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Opens a text file, reads all lines of the file, and then closes the file.</summary>
     /// <param name="path">The file to open for reading.</param>
     /// <returns>A string containing all lines of the file.</returns>
-    public static async Task<byte[]> ReadAllBytesAsync(string path)
+    public static Task<byte[]> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default)
     {
-        await using var stream = File.Open(path, FileMode.Open);
-
-        var result = new byte[stream.Length];
-        _ = await stream.ReadAsync(result.AsMemory(0, (int)stream.Length));
-
-        return result;
+        return File.ReadAllBytesAsync(path, cancellationToken);
     }
 
     /// <summary>Opens a text file, reads all lines of the file, and then closes the file.</summary>
@@ -186,7 +212,8 @@ public static class FileHelper
         FileAccess fileAccess = FileAccess.Read,
         FileShare fileShare = FileShare.Read,
         int bufferSize = 4096,
-        FileOptions fileOptions = FileOptions.Asynchronous | FileOptions.SequentialScan
+        FileOptions fileOptions = FileOptions.Asynchronous | FileOptions.SequentialScan,
+        CancellationToken cancellationToken = default
     )
     {
         encoding ??= Encoding.UTF8;
@@ -196,7 +223,7 @@ public static class FileHelper
         await using (var stream = new FileStream(path, fileMode, fileAccess, fileShare, bufferSize, fileOptions))
         using (var reader = new StreamReader(stream, encoding))
         {
-            while (await reader.ReadLineAsync() is { } line)
+            while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
             {
                 lines.Add(line);
             }

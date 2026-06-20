@@ -266,7 +266,7 @@ public static class SetupNswag
     )
     {
         // General Settings
-        var productName = AssemblyInformation.Entry.Product?.Replace('.', ' ');
+        var productName = AssemblyInformation.Entry?.Product?.Replace('.', ' ');
         settings.Title = productName is null ? "API" : productName.EnsureEndsWith(" API");
         settings.Description = SwaggerInformation.ResponsesDescription;
         settings.DefaultResponseReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;

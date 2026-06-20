@@ -148,55 +148,73 @@ public static class FileNames
         }
 
         var estimatedLength = fileName.GetNormalizedLength(NormalizationForm.FormD);
-        Span<char> normalizedName = stackalloc char[estimatedLength];
 
-        if (!fileName.TryNormalize(normalizedName, out var charsWritten, NormalizationForm.FormD))
+        // The normalized length is derived from untrusted input, so cap the stack buffer and rent from
+        // the shared pool for larger names to avoid a stack-overflow DoS on adversarially long inputs.
+        const int maxStackalloc = 256;
+        var rentedBuffer = estimatedLength > maxStackalloc ? ArrayPool<char>.Shared.Rent(estimatedLength) : null;
+
+        try
         {
-            throw new InvalidOperationException("Failed to normalize the file name.");
+            Span<char> normalizedName = rentedBuffer is not null
+                ? rentedBuffer.AsSpan(0, estimatedLength)
+                : stackalloc char[estimatedLength];
+
+            if (!fileName.TryNormalize(normalizedName, out var charsWritten, NormalizationForm.FormD))
+            {
+                throw new InvalidOperationException("Failed to normalize the file name.");
+            }
+
+            normalizedName = normalizedName[..charsWritten];
+
+            var builder = new StringBuilder();
+            var lastChar = '\0';
+
+            foreach (var c in normalizedName) // Normalize accent characters
+            {
+                char charToAppend;
+
+                // Replace all spaces with underscore (it should not contain duplicate spaces because SanitizeFileName does that)
+                // Replace all symbol characters with dash
+                if (char.IsWhiteSpace(c) || c == '_' || char.IsPunctuation(c) || char.IsSymbol(c))
+                {
+                    charToAppend = '_';
+                }
+                else if (_IsLetterOrDigit(c)) // Keep letters and digits
+                {
+                    charToAppend = c;
+                }
+                else
+                {
+                    continue; // Skip this character
+                }
+
+                // Skip duplicated [._-] characters
+                if ((charToAppend is '.' or '_' or '-') && (lastChar is '.' or '_' or '-'))
+                {
+                    continue;
+                }
+
+                builder.Append(charToAppend);
+                lastChar = charToAppend;
+            }
+
+            var result = builder.ToString().AsSpan();
+
+            // Remove leading ._- characters
+            result = result.TrimStart(['.', '_', '-']);
+            // Remove trailing ._- characters
+            result = result.TrimEnd(['.', '_', '-']);
+
+            return result;
         }
-
-        normalizedName = normalizedName[..charsWritten];
-
-        var builder = new StringBuilder();
-        var lastChar = '\0';
-
-        foreach (var c in normalizedName) // Normalize accent characters
+        finally
         {
-            char charToAppend;
-
-            // Replace all spaces with underscore (it should not contain duplicate spaces because SanitizeFileName does that)
-            // Replace all symbol characters with dash
-            if (char.IsWhiteSpace(c) || c == '_' || char.IsPunctuation(c) || char.IsSymbol(c))
+            if (rentedBuffer is not null)
             {
-                charToAppend = '_';
+                ArrayPool<char>.Shared.Return(rentedBuffer);
             }
-            else if (_IsLetterOrDigit(c)) // Keep letters and digits
-            {
-                charToAppend = c;
-            }
-            else
-            {
-                continue; // Skip this character
-            }
-
-            // Skip duplicated [._-] characters
-            if ((charToAppend is '.' or '_' or '-') && (lastChar is '.' or '_' or '-'))
-            {
-                continue;
-            }
-
-            builder.Append(charToAppend);
-            lastChar = charToAppend;
         }
-
-        var result = builder.ToString().AsSpan();
-
-        // Remove leading ._- characters
-        result = result.TrimStart(['.', '_', '-']);
-        // Remove trailing ._- characters
-        result = result.TrimEnd(['.', '_', '-']);
-
-        return result;
     }
 
     private static ReadOnlySpan<char> _GetRandomSuffix()

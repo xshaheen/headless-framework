@@ -152,7 +152,7 @@ public static class StreamExtensions
 
         cancellationToken.ThrowIfCancellationRequested();
         await using var writer = new StreamWriter(stream, encoding, leaveOpen: true);
-        await writer.WriteAsync(text).ConfigureAwait(false);
+        await writer.WriteAsync(text.AsMemory(), cancellationToken).ConfigureAwait(false);
     }
 
     public static ValueTask WriteTextAsync(
@@ -239,16 +239,9 @@ public static class StreamExtensions
     )
     {
         using var md5 = MD5.Create();
-        var data = await md5.ComputeHashAsync(stream, cancellationToken);
+        var data = await md5.ComputeHashAsync(stream, cancellationToken).ConfigureAwait(false);
 
-        var sb = new StringBuilder();
-
-        foreach (var d in data)
-        {
-            sb.Append(d.ToString("X2", CultureInfo.InvariantCulture));
-        }
-
-        return sb.ToString();
+        return Convert.ToHexString(data);
     }
 
     #endregion

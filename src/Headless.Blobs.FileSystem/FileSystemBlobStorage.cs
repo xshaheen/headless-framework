@@ -74,8 +74,12 @@ public sealed class FileSystemBlobStorage(
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
+        PathValidation.ValidateContainer(container);
+
         var directoryPath = _GetDirectoryPath(container);
 
+        // Per-blob name safety is enforced inside FileHelper.SaveToLocalFileAsync, so a malicious file
+        // name surfaces as a per-blob Result.Fail rather than failing the whole batch.
         var result = await blobs
             .Select(blob => (blob.Stream, blob.FileName))
             .SaveToLocalFileAsync(directoryPath, cancellationToken)

@@ -85,7 +85,9 @@ internal sealed class NestedStream : Stream, IHasIsDisposed
             return 0;
         }
 
-        var bytesRead = await _underlyingStream.ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
+        var bytesRead = await _underlyingStream
+            .ReadAsync(buffer.AsMemory(offset, count), cancellationToken)
+            .ConfigureAwait(false);
 
         _remainingBytes -= bytesRead;
 

@@ -34,7 +34,15 @@ public static class Async
             exception = ex;
         }
 
-        await resource.DisposeAsync();
+        try
+        {
+            await resource.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception disposeEx)
+        {
+            // Never let a DisposeAsync failure swallow the original body exception.
+            exception = exception is null ? disposeEx : new AggregateException(exception, disposeEx);
+        }
 
         if (exception is not null)
         {

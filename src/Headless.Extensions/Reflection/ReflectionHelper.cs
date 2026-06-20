@@ -109,7 +109,7 @@ public static class ReflectionHelper
 
     public static bool IsFlagsEnum(this Type type)
     {
-        Argument.IsNull(type);
+        Argument.IsNotNull(type);
 
         return type.IsEnum && type.IsDefined(typeof(FlagsAttribute), inherit: true);
     }
