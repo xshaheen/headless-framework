@@ -6,14 +6,20 @@ using Microsoft.Extensions.Configuration;
 
 namespace Headless.Settings.ValueProviders;
 
-/// <summary>Provides setting values from the <see cref="IConfiguration"/> with prefix <see cref="ConfigurationNamePrefix"/>.</summary>
+/// <summary>Provides setting values from <see cref="IConfiguration"/> under the <c>Settings:</c> key prefix. This provider is read-only; <see cref="ISettingValueProvider.SetAsync"/> and <see cref="ISettingValueProvider.ClearAsync"/> are not supported.</summary>
 public sealed class ConfigurationSettingValueProvider(IConfiguration configuration) : ISettingValueReadProvider
 {
+    /// <summary>The configuration key prefix used when looking up setting values.</summary>
     public const string ConfigurationNamePrefix = "Settings:";
+
+    /// <summary>The canonical provider name registered in <see cref="SettingValueProviderNames"/>.</summary>
     public const string ProviderName = SettingValueProviderNames.Configuration;
 
+    /// <inheritdoc/>
     public string Name => ProviderName;
 
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<string?> GetOrDefaultAsync(
         SettingDefinition setting,
         string? providerKey = null,
@@ -26,6 +32,8 @@ public sealed class ConfigurationSettingValueProvider(IConfiguration configurati
         return Task.FromResult(value);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<List<SettingValue>> GetAllAsync(
         SettingDefinition[] settings,
         string? providerKey = null,

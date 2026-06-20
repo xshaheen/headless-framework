@@ -10,6 +10,7 @@ using Headless.Settings.ValueProviders;
 
 namespace Headless.Settings.Values;
 
+/// <summary>Core implementation of <see cref="ISettingManager"/> that resolves, encrypts, and persists setting values across the registered provider stack.</summary>
 public sealed class SettingManager(
     ISettingDefinitionManager definitionManager,
     ISettingValueStore valueStore,
@@ -18,6 +19,9 @@ public sealed class SettingManager(
     ISettingsErrorsDescriptor errorsDescriptor
 ) : ISettingManager
 {
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
     public Task<string?> FindAsync(
         string settingName,
         string? providerName = null,
@@ -29,6 +33,9 @@ public sealed class SettingManager(
         return _CoreGetOrDefaultAsync(settingName, providerName, providerKey, fallback, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="settingNames"/> is empty.</exception>
     public async Task<Dictionary<string, SettingValue>> GetAllAsync(
         HashSet<string> settingNames,
         CancellationToken cancellationToken = default
@@ -89,6 +96,8 @@ public sealed class SettingManager(
         return result;
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
     public async Task<List<SettingValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
@@ -162,6 +171,9 @@ public sealed class SettingManager(
         return [.. settingValues.Values];
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="settingName"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
     public async Task SetAsync(
         string settingName,
         string? value,
@@ -232,6 +244,7 @@ public sealed class SettingManager(
         }
     }
 
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         string providerName,
         string providerKey,
@@ -250,6 +263,7 @@ public sealed class SettingManager(
         }
     }
 
+    /// <summary>Resolves a setting value by walking the provider chain, applying decryption when required.</summary>
     private async Task<string?> _CoreGetOrDefaultAsync(
         string settingName,
         string? providerName,

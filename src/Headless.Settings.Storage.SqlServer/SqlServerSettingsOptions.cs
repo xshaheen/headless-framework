@@ -5,9 +5,11 @@ using Microsoft.Data.SqlClient;
 
 namespace Headless.Settings.SqlServer;
 
+/// <summary>Options for the SQL Server settings storage provider.</summary>
 [PublicAPI]
 public sealed class SqlServerSettingsOptions
 {
+    /// <summary>SQL Server connection string used to open connections for DDL and DML operations.</summary>
     public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>Timeout applied to DDL/DML commands issued by this provider. Defaults to 30 seconds.</summary>
@@ -16,6 +18,7 @@ public sealed class SqlServerSettingsOptions
     internal SqlConnection CreateConnection() => new(ConnectionString);
 }
 
+/// <summary>Validates <see cref="SqlServerSettingsOptions"/> on startup.</summary>
 internal sealed class SqlServerSettingsOptionsValidator : AbstractValidator<SqlServerSettingsOptions>
 {
     public SqlServerSettingsOptionsValidator()

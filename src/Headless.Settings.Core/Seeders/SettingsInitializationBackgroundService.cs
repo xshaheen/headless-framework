@@ -12,6 +12,11 @@ using Polly.Retry;
 
 namespace Headless.Settings.Seeders;
 
+/// <summary>
+/// Hosted service that seeds static setting definitions to the database and pre-caches dynamic settings
+/// on application startup. Implements <see cref="IInitializer"/> so dependents can await
+/// <see cref="WaitForInitializationAsync"/> before serving requests.
+/// </summary>
 public sealed class SettingsInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
@@ -25,11 +30,17 @@ public sealed class SettingsInitializationBackgroundService(
     private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicSettingsTask;
 
+    /// <summary>Gets a value indicating whether initialization has completed successfully.</summary>
     public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
 
+    /// <summary>Returns a task that completes when initialization finishes or the token is cancelled.</summary>
+    /// <param name="cancellationToken">Token to cancel the wait.</param>
+    /// <returns>A <see cref="Task"/> that completes when the service is initialized.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before initialization completed.</exception>
     public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
         _tcs.Task.WaitAsync(cancellationToken);
 
+    /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (_options is { SaveStaticSettingsToDatabase: false, IsDynamicSettingStoreEnabled: false })
@@ -46,6 +57,7 @@ public sealed class SettingsInitializationBackgroundService(
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
@@ -62,6 +74,7 @@ public sealed class SettingsInitializationBackgroundService(
         }
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         _linkedCts?.Dispose();
@@ -165,6 +178,7 @@ public sealed class SettingsInitializationBackgroundService(
     }
 }
 
+/// <summary>Structured log helpers for <see cref="SettingsInitializationBackgroundService"/>.</summary>
 internal static partial class SettingsInitializationBackgroundServiceLog
 {
     [LoggerMessage(

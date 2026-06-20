@@ -7,13 +7,22 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Settings.SqlServer;
 
+/// <summary>
+/// Hosted initializer that creates or migrates the SQL Server schema, tables, indexes, and TVP types
+/// required by the settings storage provider. Runs on startup when
+/// <see cref="SettingsStorageOptions.InitializeOnStartup"/> is <see langword="true"/>. Concurrent startup
+/// races are serialized via <c>sp_getapplock</c> and guarded by <c>IF NOT EXISTS</c> / <c>OBJECT_ID</c> checks.
+/// </summary>
 internal sealed class SqlServerSettingsStorageInitializer(
     IOptions<SqlServerSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions
 ) : HostedInitializer
 {
+    /// <summary>Gets a value indicating whether this initializer should run when the host starts.</summary>
     protected override bool RunOnStartup => storageOptions.Value.InitializeOnStartup;
 
+    /// <summary>Creates the settings schema, tables, indexes, and TVP types if they do not already exist.</summary>
+    /// <param name="cancellationToken">Token to observe for cancellation.</param>
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = providerOptions.Value.CreateConnection();
@@ -23,9 +32,18 @@ internal sealed class SqlServerSettingsStorageInitializer(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns the bracket-quoted <c>[schema].[table]</c> identifier for <paramref name="tableName"/>.</summary>
+    /// <param name="options">Storage options that supply the schema name.</param>
+    /// <param name="tableName">Unqualified table name.</param>
+    /// <returns>A bracket-quoted, schema-qualified table reference safe for interpolation into SQL.</returns>
     internal static string Qualified(SettingsStorageOptions options, string tableName) =>
         $"[{options.Schema}].[{tableName}]";
 
+    /// <summary>
+    /// Builds the idempotent SQL Server DDL script that creates the schema, tables, indexes, and TVP types.
+    /// The script acquires an exclusive <c>sp_getapplock</c> session lock, wraps all DDL in a single
+    /// transaction, and releases the lock after commit.
+    /// </summary>
     private static string _CreateScript(SettingsStorageOptions options)
     {
         var valuesTable = Qualified(options, options.SettingValuesTableName);

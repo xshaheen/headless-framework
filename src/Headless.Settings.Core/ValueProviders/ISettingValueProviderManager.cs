@@ -7,9 +7,10 @@ using MoreLinq;
 
 namespace Headless.Settings.ValueProviders;
 
-/// <summary>Manage a list of setting value providers.</summary>
+/// <summary>Manages the ordered list of registered <see cref="ISettingValueReadProvider"/> instances.</summary>
 public interface ISettingValueProviderManager
 {
+    /// <summary>Gets the ordered list of registered setting value providers, highest priority last.</summary>
     IReadOnlyList<ISettingValueReadProvider> Providers { get; }
 }
 
@@ -20,6 +21,9 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
     private readonly SettingManagementProvidersOptions _options;
     private readonly Lazy<List<ISettingValueReadProvider>> _lazyProviders;
 
+    /// <summary>Initialises a new <see cref="SettingValueProviderManager"/>.</summary>
+    /// <param name="serviceProvider">Used to resolve each registered provider type.</param>
+    /// <param name="optionsAccessor">Options that list the provider types in registration order.</param>
     public SettingValueProviderManager(
         IServiceProvider serviceProvider,
         IOptions<SettingManagementProvidersOptions> optionsAccessor
@@ -30,10 +34,11 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
         _lazyProviders = new(_GetProviders, isThreadSafe: true);
     }
 
+    /// <inheritdoc/>
     public IReadOnlyList<ISettingValueReadProvider> Providers => _lazyProviders.Value;
 
-    /// <summary>Retrieves a list of setting value providers from the service provider.</summary>
-    /// <exception cref="InvalidOperationException">Thrown when there are duplicate setting value provider names.</exception>
+    /// <summary>Resolves and validates all configured provider instances.</summary>
+    /// <exception cref="InvalidOperationException">Two or more registered providers share the same <see cref="ISettingValueReadProvider.Name"/>.</exception>
     private List<ISettingValueReadProvider> _GetProviders()
     {
         var providers = _options

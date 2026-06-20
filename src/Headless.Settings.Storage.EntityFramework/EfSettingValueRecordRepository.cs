@@ -7,12 +7,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Settings;
 
+/// <summary>
+/// EF Core implementation of <see cref="ISettingValueRecordRepository"/> that stores
+/// <see cref="SettingValueRecord"/> entities via a pooled <typeparamref name="TContext"/> and
+/// publishes <see cref="Headless.Domain.EntityChangedEventData{T}"/> events after mutations.
+/// </summary>
+/// <typeparam name="TContext">The <see cref="DbContext"/> type registered with the DI container.</typeparam>
+/// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
+/// <param name="localPublisher">Local event bus used to publish change events after inserts, updates, and deletes.</param>
 public sealed class EfSettingValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     ILocalEventBus localPublisher
 ) : ISettingValueRecordRepository
     where TContext : DbContext
 {
+    /// <inheritdoc/>
     public async Task<SettingValueRecord?> FindAsync(
         string name,
         string providerName,
@@ -31,6 +40,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
             );
     }
 
+    /// <inheritdoc/>
     public async Task<List<SettingValueRecord>> FindAllAsync(
         string name,
         string? providerName,
@@ -55,6 +65,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         return await query.ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task<List<SettingValueRecord>> GetListAsync(
         HashSet<string> names,
         string providerName,
@@ -69,6 +80,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
             .ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task<List<SettingValueRecord>> GetListAsync(
         string providerName,
         string? providerKey,
@@ -83,6 +95,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
             .ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -91,6 +104,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -101,6 +115,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         await localPublisher.PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         IReadOnlyCollection<SettingValueRecord> settings,
         CancellationToken cancellationToken = default
