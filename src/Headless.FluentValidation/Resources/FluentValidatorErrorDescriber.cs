@@ -4,8 +4,10 @@ using Headless.Primitives;
 
 namespace FluentValidation.Resources;
 
+[PublicAPI]
 public static class FluentValidatorErrorDescriber
 {
+    [PublicAPI]
     public static class Geo
     {
         public static ErrorDescriptor InvalidLongitude()
@@ -19,19 +21,21 @@ public static class FluentValidatorErrorDescriber
         }
     }
 
+    [PublicAPI]
     public static class Strings
     {
         public static ErrorDescriptor OnlyNumberValidator()
         {
-            return new(code: "strings:only_number", description: FluentValidatorErrors.strings_only_numbers);
+            return new(code: "strings:only_numbers", description: FluentValidatorErrors.strings_only_numbers);
         }
     }
 
+    [PublicAPI]
     public static class Collections
     {
         public static ErrorDescriptor MaximumElementsValidator()
         {
-            return new("collection:minimum_elements", FluentValidatorErrors.collection_maximum_elements);
+            return new("collection:maximum_elements", FluentValidatorErrors.collection_maximum_elements);
         }
 
         public static ErrorDescriptor MinimumElementsValidator()
@@ -45,6 +49,7 @@ public static class FluentValidatorErrorDescriber
         }
     }
 
+    [PublicAPI]
     public static class PhoneNumbers
     {
         public static ErrorDescriptor InvalidNumber()
@@ -69,6 +74,7 @@ public static class FluentValidatorErrorDescriber
         }
     }
 
+    [PublicAPI]
     public static class NationalIds
     {
         public static ErrorDescriptor InvalidEgyptianNationalId()
@@ -80,6 +86,7 @@ public static class FluentValidatorErrorDescriber
         }
     }
 
+    [PublicAPI]
     public static class Urls
     {
         public static ErrorDescriptor InvalidUrl()

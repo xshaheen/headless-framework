@@ -5,8 +5,7 @@ using System.Xml;
 
 // ReSharper disable StringLiteralTypo
 // ReSharper disable CommentTypo
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Generator.Primitives;
 
 /// <summary>Provides extension methods for converting various data types to their XML string representations.</summary>

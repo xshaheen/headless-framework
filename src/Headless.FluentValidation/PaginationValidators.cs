@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace FluentValidation;
 
 [PublicAPI]
@@ -15,6 +17,8 @@ public static class PaginationValidators
         int maximumLength = 100
     )
     {
+        Argument.IsPositiveOrZero(maximumLength);
+
         return rule.MaximumLength(maximumLength);
     }
 
@@ -27,6 +31,8 @@ public static class PaginationValidators
 
         public IRuleBuilderOptions<T, int> PageSize(int maximumSize = 100)
         {
+            Argument.IsPositive(maximumSize);
+
             return rule.GreaterThan(0).LessThanOrEqualTo(maximumSize);
         }
     }

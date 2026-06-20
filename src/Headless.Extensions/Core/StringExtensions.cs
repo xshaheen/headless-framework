@@ -799,6 +799,12 @@ public static class StringExtensions
                 newSpan[index++] = '.';
             }
 
+            // Empty segment (consecutive, leading, or trailing dots) has no first char to camelize.
+            if (part.Length == 0)
+            {
+                continue;
+            }
+
             newSpan[index++] = char.ToLowerInvariant(part[0]);
             part.AsSpan(1).CopyTo(newSpan.AsSpan(index));
             index += part.Length - 1;

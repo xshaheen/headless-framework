@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Resources;
-using MoreLinq.Extensions;
+using Headless.Checks;
 
 namespace FluentValidation;
 
@@ -12,6 +12,8 @@ public static class CollectionValidators
     {
         public IRuleBuilderOptions<T, IEnumerable<TElement>?> MaximumElements(int maxElements)
         {
+            Argument.IsPositive(maxElements);
+
             return builder
                 .Must(
                     (_, list, context) =>
@@ -43,6 +45,8 @@ public static class CollectionValidators
 
         public IRuleBuilderOptions<T, IEnumerable<TElement>?> MinimumElements(int minElements)
         {
+            Argument.IsPositiveOrZero(minElements);
+
             return builder
                 .Must(
                     (_, list, context) =>
@@ -119,8 +123,9 @@ public static class CollectionValidators
                             return true;
                         }
 
-                        var duplicatesCount = list.GroupBy(keySelector, comparer)
-                            .Count(elements => elements.AtLeast(2));
+                        // Count excess items (matching the non-keyed overload's `count - distinct`),
+                        // not the number of keys that have duplicates.
+                        var duplicatesCount = list.GroupBy(keySelector, comparer).Sum(elements => elements.Count() - 1);
 
                         if (duplicatesCount == 0)
                         {

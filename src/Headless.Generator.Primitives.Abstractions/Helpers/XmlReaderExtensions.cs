@@ -4,8 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Xml;
 
 // ReSharper disable UnusedMember.Global
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Generator.Primitives;
 
 /// <summary>

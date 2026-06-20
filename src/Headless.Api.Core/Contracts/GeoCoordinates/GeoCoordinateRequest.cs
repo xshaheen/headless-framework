@@ -4,8 +4,7 @@ using FluentValidation;
 using Headless.Primitives;
 using Headless.Validators;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api.Contracts;
 
 public sealed record GeoCoordinateRequest(double Latitude, double Longitude)

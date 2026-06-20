@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 using Nito.Disposables;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Options;
 
 /// <summary>An <see cref="IOptionsMonitor{TOptions}"/> that always returns a single fixed value.</summary>

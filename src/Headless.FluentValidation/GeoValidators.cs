@@ -32,11 +32,11 @@ public static class GeoValidators
     public static IRuleBuilderOptions<T, double?> Longitude<T>(this IRuleBuilder<T, double?> builder)
     {
         return builder
-            .Must(latitude => latitude is null || GeoCoordinateValidator.IsValidLongitude(latitude.Value))
+            .Must(longitude => longitude is null || GeoCoordinateValidator.IsValidLongitude(longitude.Value))
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
     }
 
-    public static IRuleBuilderOptions<T, string> Latitude<T>(this IRuleBuilder<T, string> builder)
+    public static IRuleBuilderOptions<T, string?> Latitude<T>(this IRuleBuilder<T, string?> builder)
     {
         return builder
             .Must(latitude =>
@@ -49,7 +49,7 @@ public static class GeoValidators
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
     }
 
-    public static IRuleBuilderOptions<T, string> Longitude<T>(this IRuleBuilder<T, string> builder)
+    public static IRuleBuilderOptions<T, string?> Longitude<T>(this IRuleBuilder<T, string?> builder)
     {
         return builder
             .Must(longitude =>
