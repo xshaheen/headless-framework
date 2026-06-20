@@ -23,6 +23,7 @@ public sealed class AwsBlobStorage(
     IMimeTypeProvider mimeTypeProvider,
     IClock clock,
     IOptions<AwsBlobStorageOptions> optionsAccessor,
+    IBlobNamingNormalizer normalizer,
     ILogger<AwsBlobStorage>? logger = null
 ) : IBlobStorage, IPresignedUrlBlobStorage
 {
@@ -786,7 +787,7 @@ public sealed class AwsBlobStorage(
 
     #region Build Urls
 
-    private static (string Bucket, string ObjectKey) _BuildObjectKey(string blobName, string[] container)
+    private (string Bucket, string ObjectKey) _BuildObjectKey(string blobName, string[] container)
     {
         Argument.IsNotNullOrWhiteSpace(blobName);
         Argument.IsNotNullOrEmpty(container);
@@ -794,16 +795,21 @@ public sealed class AwsBlobStorage(
         PathValidation.ValidateContainer(container);
         PathValidation.ValidatePathSegment(blobName);
 
-        var bucket = container[0];
-        var objectKey = Url.Combine([.. container.Skip(1).Append(blobName)]);
+        // Two-tier naming: the first segment is the bucket (strict S3/R2 bucket rules); the remaining segments and
+        // the blob name form the object key (lenient path-segment rules).
+        var bucket = normalizer.NormalizeContainerName(container[0]);
+        var objectKey = Url.Combine([
+            .. container.Skip(1).Select(normalizer.NormalizeBlobName),
+            normalizer.NormalizeBlobName(blobName),
+        ]);
 
         return (bucket, objectKey);
     }
 
-    private static string _BuildBucketName(string[] container)
+    private string _BuildBucketName(string[] container)
     {
         PathValidation.ValidateContainer(container);
-        return container[0];
+        return normalizer.NormalizeContainerName(container[0]);
     }
 
     #endregion

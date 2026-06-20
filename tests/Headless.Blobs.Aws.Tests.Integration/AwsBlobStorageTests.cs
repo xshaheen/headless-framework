@@ -33,7 +33,13 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         var options = new AwsBlobStorageOptions();
         var optionsWrapper = new OptionsWrapper<AwsBlobStorageOptions>(options);
 
-        return new AwsBlobStorage(amazonS3Client, mimeTypeProvider, clock, optionsWrapper);
+        return new AwsBlobStorage(
+            amazonS3Client,
+            mimeTypeProvider,
+            clock,
+            optionsWrapper,
+            new AwsBlobNamingNormalizer()
+        );
     }
 
     [Fact]
@@ -59,7 +65,8 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
             amazonS3Client,
             new MimeTypeProvider(),
             new Clock(TimeProvider.System),
-            options
+            options,
+            new AwsBlobNamingNormalizer()
         );
 
         var missingBucket = $"missing-{Guid.NewGuid():N}";

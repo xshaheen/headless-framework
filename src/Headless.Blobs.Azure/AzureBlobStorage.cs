@@ -430,7 +430,7 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(container);
 
         var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var normalizedDirs = container.Skip(1).Select(_NormalizeContainerName);
+        var normalizedDirs = container.Skip(1).Select(_NormalizeSegment);
         var normalizedPattern = _NormalizeSearchPattern(blobSearchPattern);
         var criteria = BlobStorageHelpers.GetRequestCriteria(normalizedDirs, normalizedPattern);
 
@@ -475,7 +475,7 @@ public sealed class AzureBlobStorage(
         Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var normalizedDirs = container.Skip(1).Select(_NormalizeContainerName);
+        var normalizedDirs = container.Skip(1).Select(_NormalizeSegment);
         var normalizedPattern = _NormalizeSearchPattern(blobSearchPattern);
         var criteria = BlobStorageHelpers.GetRequestCriteria(normalizedDirs, normalizedPattern);
 
@@ -709,7 +709,8 @@ public sealed class AzureBlobStorage(
                 sb.Append('/');
             }
 
-            sb.Append(_NormalizeContainerName(container[i]));
+            // Two-tier: the first segment is the Azure container (strict rules); the rest are blob-path segments.
+            sb.Append(i == 0 ? _NormalizeContainerName(container[i]) : _NormalizeSegment(container[i]));
         }
 
         var prefix = sb.ToString();
@@ -738,7 +739,8 @@ public sealed class AzureBlobStorage(
                 sb.Append('/');
             }
 
-            sb.Append(_NormalizeContainerName(container[i]));
+            // Sub-path segments use lenient path-segment normalization (two-tier model).
+            sb.Append(_NormalizeSegment(container[i]));
         }
         if (sb.Length > 0)
         {
@@ -761,6 +763,13 @@ public sealed class AzureBlobStorage(
         return _NormalizeSlashes(normalizer.NormalizeContainerName(containerName));
     }
 
+    // Lenient path-segment normalization for sub-container path parts and blob names (two-tier model): the first
+    // container segment is the Azure container (strict rules); everything after is part of the blob path.
+    private string _NormalizeSegment(string segment)
+    {
+        return _NormalizeSlashes(normalizer.NormalizeBlobName(segment));
+    }
+
     private static string _NormalizeSlashes(string x)
     {
         return BlobStorageHelpers.NormalizePath(x).RemovePostfix('/').RemovePrefix('/');
@@ -768,7 +777,7 @@ public sealed class AzureBlobStorage(
 
     /// <summary>
     /// Normalizes the search pattern's directory segments to match how they're stored.
-    /// E.g., "x\*.txt" becomes "x00/*.txt" because "x" is normalized to "x00".
+    /// Directory segments use the same lenient path-segment normalization as stored blob paths (two-tier model).
     /// Only normalizes directory segments, not the final filename/pattern segment.
     /// </summary>
     private string? _NormalizeSearchPattern(string? pattern)
@@ -796,7 +805,7 @@ public sealed class AzureBlobStorage(
             // Don't normalize segments containing wildcards
             if (!segment.Contains('*', StringComparison.Ordinal))
             {
-                segments[i] = normalizer.NormalizeContainerName(segment);
+                segments[i] = normalizer.NormalizeBlobName(segment);
             }
         }
 

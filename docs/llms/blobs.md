@@ -102,7 +102,7 @@ All providers register `IBlobStorage` as singleton. Container paths are arrays o
 - Redis blob storage (`Blobs.Redis`) is for small blobs only (metadata, thumbnails, temporary uploads). The default `MaxBlobSizeBytes` is 10 MB. For large files, use S3 or Azure.
 - Always dispose the result of `OpenReadStreamAsync()` promptly — holding it may exhaust connection pools. Use `await using`.
 - Container paths are string arrays, not slash-delimited strings: `["uploads", "images"]` not `"uploads/images"`.
-- Each provider registers its own `IBlobNamingNormalizer` for provider-specific path normalization — do not manually normalize paths.
+- Naming is normalized two-tier through each provider's `IBlobNamingNormalizer`: the **first** container segment is the backend bucket/container (strict backend rules — e.g. lowercase, length, allowed characters) and the **remaining** segments plus the blob name are the object path (lenient — validated, not rewritten). This is applied uniformly by every provider (AWS, R2, Azure, FileSystem, SshNet, Redis); do not manually normalize paths.
 - Metadata is a `Dictionary<string, string?>`. For `FileSystem` provider, metadata is stored as companion JSON files. For `Redis`, metadata is stored alongside blobs in Redis.
 - `SshNet` supports both password and SSH key authentication. Use `PrivateKeyPath` for key-based auth.
 - Only one provider can be the default `IBlobStorage` registration. If you need multiple providers, use keyed services or named registrations.
@@ -188,7 +188,7 @@ Provides seamless integration with AWS S3 for blob storage using the unified `IB
 
 - Full `IBlobStorage` implementation for AWS S3
 - Bulk upload/delete with optimized batching
-- Automatic path normalization for S3 object keys
+- Two-tier name normalization: the bucket name is normalized to S3 rules; object-key path segments are validated and preserved
 - Metadata support
 - Presigned download/upload URLs via `IPresignedUrlBlobStorage`
 - Opt-in, cached bucket auto-create (`AutoCreateContainer`)

@@ -54,7 +54,13 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             }
         );
 
-        return new AwsBlobStorage(client, new MimeTypeProvider(), new Clock(TimeProvider.System), options);
+        return new AwsBlobStorage(
+            client,
+            new MimeTypeProvider(),
+            new Clock(TimeProvider.System),
+            options,
+            new R2BlobNamingNormalizer()
+        );
     }
 
     [Fact]
@@ -80,7 +86,8 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             client,
             new MimeTypeProvider(),
             new Clock(TimeProvider.System),
-            options
+            options,
+            new R2BlobNamingNormalizer()
         );
 
         var url = await ((IPresignedUrlBlobStorage)storage).GetPresignedDownloadUrlAsync(

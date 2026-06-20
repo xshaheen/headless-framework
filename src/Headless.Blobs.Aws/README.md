@@ -10,7 +10,7 @@ Provides seamless integration with AWS S3 for blob storage using the unified `IB
 
 - Full `IBlobStorage` implementation for AWS S3
 - Bulk upload/delete with optimized batching
-- Automatic path normalization for S3 object keys
+- Two-tier name normalization: the bucket name is normalized to S3 rules; object-key path segments are validated and preserved
 - Metadata support
 - Presigned download/upload URLs via `IPresignedUrlBlobStorage`
 - Opt-in, cached bucket auto-create (`AutoCreateContainer`)

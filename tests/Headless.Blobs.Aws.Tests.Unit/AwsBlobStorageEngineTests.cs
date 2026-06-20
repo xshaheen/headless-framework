@@ -21,7 +21,13 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     {
         var wrapper = new OptionsWrapper<AwsBlobStorageOptions>(options ?? new AwsBlobStorageOptions());
 
-        return new AwsBlobStorage(_s3, new MimeTypeProvider(), new Clock(TimeProvider.System), wrapper);
+        return new AwsBlobStorage(
+            _s3,
+            new MimeTypeProvider(),
+            new Clock(TimeProvider.System),
+            wrapper,
+            new AwsBlobNamingNormalizer()
+        );
     }
 
     [Fact]
@@ -37,6 +43,25 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         await _s3.DidNotReceiveWithAnyArgs().PutBucketAsync(default(PutBucketRequest)!, default);
         await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task upload_normalizes_bucket_and_preserves_object_key_path()
+    {
+        PutObjectRequest? captured = null;
+        _s3.PutObjectAsync(Arg.Do<PutObjectRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+
+        var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
+
+        using var stream = new MemoryStream("hi"u8.ToArray());
+        await sut.UploadAsync(["My-Bucket", "Reports"], "Q1.pdf", stream);
+
+        // Two-tier naming: the first segment (bucket) is lowercased by NormalizeContainerName; the sub-path and
+        // blob name are preserved because AwsBlobNamingNormalizer.NormalizeBlobName is validate-only.
+        captured.Should().NotBeNull();
+        captured!.BucketName.Should().Be("my-bucket");
+        captured.Key.Should().Be("Reports/Q1.pdf");
     }
 
     [Fact]
@@ -107,7 +132,8 @@ public sealed class AwsBlobStorageEngineTests : TestBase
             fresh,
             new MimeTypeProvider(),
             new Clock(TimeProvider.System),
-            new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions())
+            new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions()),
+            new AwsBlobNamingNormalizer()
         );
         await freshSut.CreateContainerAsync(["bucket"]);
 
