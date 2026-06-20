@@ -95,6 +95,30 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
+    public async Task delete_all_async_removes_every_page_when_results_span_multiple_pages()
+    {
+        // Regression: the previous do/while loop advanced before deleting, so the final page (loaded by the last
+        // NextPageAsync) was never deleted. Exercise the multi-page path with a tiny page size instead of 500+ blobs.
+        await using var storage = (AzureBlobStorage)GetStorage();
+        var name = $"c{Guid.NewGuid():N}";
+        string[] container = [name, "bulk"];
+
+        const int total = 5;
+
+        for (var i = 0; i < total; i++)
+        {
+            using var content = new MemoryStream("x"u8.ToArray());
+            await storage.UploadAsync(container, $"f{i}.txt", content, cancellationToken: AbortToken);
+        }
+
+        // pageSize=2 over 5 blobs => 3 pages; the bug left the last page undeleted and undercounted.
+        var deleted = await storage._DeleteAllAsync(container, blobSearchPattern: null, pageSize: 2, AbortToken);
+
+        deleted.Should().Be(total);
+        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
+    }
+
+    [Fact]
     public override Task can_get_empty_file_list_on_missing_directory()
     {
         return base.can_get_empty_file_list_on_missing_directory();

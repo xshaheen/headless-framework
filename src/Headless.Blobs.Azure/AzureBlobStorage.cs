@@ -12,7 +12,6 @@ using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Primitives;
 using Headless.Threading;
-using Headless.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -217,22 +216,42 @@ public sealed class AzureBlobStorage(
         }
     }
 
-    public async ValueTask<int> DeleteAllAsync(
+    public ValueTask<int> DeleteAllAsync(
         string[] container,
         string? blobSearchPattern = null,
         CancellationToken cancellationToken = default
     )
     {
-        var files = await GetPagedListAsync(container, blobSearchPattern, 500, cancellationToken).ConfigureAwait(false);
+        return _DeleteAllAsync(container, blobSearchPattern, pageSize: 500, cancellationToken);
+    }
+
+    // pageSize is a test seam so the multi-page deletion path can be exercised without seeding 500+ blobs.
+    internal async ValueTask<int> _DeleteAllAsync(
+        string[] container,
+        string? blobSearchPattern,
+        int pageSize,
+        CancellationToken cancellationToken
+    )
+    {
+        var files = await GetPagedListAsync(container, blobSearchPattern, pageSize, cancellationToken)
+            .ConfigureAwait(false);
         var count = 0;
 
-        do
+        // Delete the currently-loaded page first, then advance. Advancing before deleting would drop the final
+        // page (the last NextPageAsync sets HasMore=false, exiting the loop with that page still undeleted).
+        while (true)
         {
             var names = files.Blobs.Select(file => file.BlobKey).ToArray();
             var results = await BulkDeleteAsync(container, names, cancellationToken).ConfigureAwait(false);
             count += results.Count(x => x.IsSuccess);
+
+            if (!files.HasMore)
+            {
+                break;
+            }
+
             await files.NextPageAsync(cancellationToken).ConfigureAwait(false);
-        } while (files.HasMore);
+        }
 
         logger.LogFinishedDeletingFiles(count, container, blobSearchPattern);
 
@@ -388,7 +407,10 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        var blobClient = _GetBlobClient(container, blobName);
+        // Resolve the stored, normalized blob path so BlobKey matches what GetBlobsAsync/GetPagedListAsync return
+        // (the container-relative path, excluding the container name) rather than the raw caller-supplied input.
+        var (blobContainer, blobPath) = _NormalizeBlob(container, blobName);
+        var blobClient = blobServiceClient.GetBlobContainerClient(blobContainer).GetBlobClient(blobPath);
 
         Response<BlobProperties>? blobProperties;
 
@@ -410,7 +432,7 @@ public sealed class AzureBlobStorage(
 
         return new BlobInfo
         {
-            BlobKey = Url.Combine([.. container.Skip(1).Append(blobName)]),
+            BlobKey = blobPath,
             Size = blobProperties.Value.ContentLength,
             Created = blobProperties.Value.CreatedOn,
             Modified = blobProperties.Value.LastModified,
@@ -638,7 +660,7 @@ public sealed class AzureBlobStorage(
         );
     }
 
-    private ValueTask<Uri> _GetPresignedUrlAsync(
+    private async ValueTask<Uri> _GetPresignedUrlAsync(
         string[] container,
         string blobName,
         TimeSpan expiry,
@@ -653,15 +675,6 @@ public sealed class AzureBlobStorage(
 
         var blobClient = _GetBlobClient(container, blobName);
 
-        if (!blobClient.CanGenerateSasUri)
-        {
-            throw new InvalidOperationException(
-                "The configured BlobServiceClient cannot generate a SAS URI. Presigned URLs require a client built "
-                    + "with an account key (StorageSharedKeyCredential) or a user delegation key; a bare SAS-token or "
-                    + "anonymous connection cannot sign."
-            );
-        }
-
         var builder = new BlobSasBuilder
         {
             BlobContainerName = blobClient.BlobContainerName,
@@ -674,7 +687,41 @@ public sealed class AzureBlobStorage(
 
         builder.SetPermissions(permissions);
 
-        return ValueTask.FromResult(blobClient.GenerateSasUri(builder));
+        // Account-key (StorageSharedKeyCredential) clients can sign the SAS locally.
+        if (blobClient.CanGenerateSasUri)
+        {
+            return blobClient.GenerateSasUri(builder);
+        }
+
+        // AAD / DefaultAzureCredential / Managed Identity clients have no account key, so fall back to a
+        // user-delegation SAS. This requires the identity to hold an RBAC role granting
+        // "Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey" (e.g. "Storage Blob Delegator")
+        // plus a data role for the GET/PUT itself. The delegation key — and therefore the SAS — is capped at 7 days.
+        UserDelegationKey userDelegationKey;
+
+        try
+        {
+            var response = await blobServiceClient
+                .GetUserDelegationKeyAsync(startsOn: null, expiresOn: builder.ExpiresOn, cancellationToken)
+                .ConfigureAwait(false);
+
+            userDelegationKey = response.Value;
+        }
+        catch (RequestFailedException e)
+        {
+            throw new InvalidOperationException(
+                "Unable to generate a presigned URL. The BlobServiceClient cannot sign with an account key and "
+                    + "requesting a user-delegation key failed. Use a client built with an account key "
+                    + "(StorageSharedKeyCredential), or a TokenCredential whose identity has the 'Storage Blob "
+                    + "Delegator' role (plus a data role), and keep the requested expiry within 7 days.",
+                e
+            );
+        }
+
+        var sas = builder.ToSasQueryParameters(userDelegationKey, blobServiceClient.AccountName);
+        var uriBuilder = new BlobUriBuilder(blobClient.Uri) { Sas = sas };
+
+        return uriBuilder.ToUri();
     }
 
     #endregion

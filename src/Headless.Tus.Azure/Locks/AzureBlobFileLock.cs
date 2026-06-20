@@ -10,10 +10,13 @@ using tusdotnet.Interfaces;
 namespace Headless.Tus.Locks;
 
 public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDuration, ILogger<AzureBlobFileLock> logger)
-    : ITusFileLock
+    : ITusFileLock,
+        IAsyncDisposable
 {
     private BlobLeaseClient? _leaseClient;
     private bool _isLocked;
+    private CancellationTokenSource? _renewalCts;
+    private Task? _renewalTask;
 
     public async Task<bool> Lock()
     {
@@ -40,6 +43,15 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
             _isLocked = true;
             logger.BlobLeaseAcquired(blobClient.Name);
 
+            // A finite Azure lease (15-60s) expires unless renewed, so start a background renewer: a long upload
+            // keeps the lease, while a crashed holder's lease still expires and frees the file. An infinite lease
+            // (-1) needs no renewal — it is held until released and cannot be renewed to a different duration.
+            if (leaseDuration != Timeout.InfiniteTimeSpan)
+            {
+                _renewalCts = new CancellationTokenSource();
+                _renewalTask = _RenewPeriodicallyAsync(_leaseClient, leaseDuration, _renewalCts.Token);
+            }
+
             return true;
         }
         catch (RequestFailedException e) when (e.ErrorCode == BlobErrorCode.LeaseAlreadyPresent)
@@ -56,11 +68,51 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
         }
     }
 
+    private async Task _RenewPeriodicallyAsync(BlobLeaseClient leaseClient, TimeSpan duration, CancellationToken ct)
+    {
+        // Renew at half the lease duration so a single missed/slow beat still leaves time before expiry.
+        var interval = TimeSpan.FromTicks(duration.Ticks / 2);
+
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(interval, ct).ConfigureAwait(false);
+                await leaseClient.RenewAsync(cancellationToken: ct).ConfigureAwait(false);
+                logger.BlobLeaseRenewed(blobClient.Name);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when the lock is released.
+        }
+        catch (Exception e)
+        {
+            // Renewal failed; the lease will lapse and another worker may take over. Surface for diagnostics.
+            logger.BlobLeaseRenewalFailed(e, blobClient.Name);
+        }
+    }
+
     public async Task ReleaseIfHeld()
     {
         if (!_isLocked || _leaseClient == null)
         {
             return;
+        }
+
+        // Stop the renewer before releasing so it can't race the release with an in-flight renew.
+        if (_renewalCts is not null)
+        {
+            await _renewalCts.CancelAsync();
+
+            if (_renewalTask is not null)
+            {
+                await _renewalTask.ConfigureAwait(false); // never throws: the loop swallows its own exceptions
+            }
+
+            _renewalCts.Dispose();
+            _renewalCts = null;
+            _renewalTask = null;
         }
 
         try
@@ -84,6 +136,12 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
             _isLocked = false;
             _leaseClient = null;
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await ReleaseIfHeld();
+        _renewalCts?.Dispose();
     }
 }
 
@@ -121,4 +179,10 @@ internal static partial class AzureBlobFileLockLog
 
     [LoggerMessage(EventId = 3223, Level = LogLevel.Error, Message = "Failed to release lease for blob: {BlobName}")]
     public static partial void BlobLeaseReleaseFailed(this ILogger logger, Exception e, string blobName);
+
+    [LoggerMessage(EventId = 3239, Level = LogLevel.Debug, Message = "Renewed lease for blob: {BlobName}")]
+    public static partial void BlobLeaseRenewed(this ILogger logger, string blobName);
+
+    [LoggerMessage(EventId = 3240, Level = LogLevel.Warning, Message = "Failed to renew lease for blob: {BlobName}")]
+    public static partial void BlobLeaseRenewalFailed(this ILogger logger, Exception e, string blobName);
 }

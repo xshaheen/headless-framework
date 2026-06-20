@@ -11,6 +11,7 @@ Provides a TUS file lock provider implementation using the framework's distribut
 - `DistributedLockTusLockProvider` - ITusFileLockProvider implementation
 - `DistributedLockTusLock` - Distributed file lock wrapper
 - Works with any IDistributedLock (Redis, Cache)
+- Crash-safe leases: a finite, auto-extending lease is held for the duration of an upload and released automatically if the holder crashes, so a dead instance never leaves a file permanently locked
 
 ## Installation
 

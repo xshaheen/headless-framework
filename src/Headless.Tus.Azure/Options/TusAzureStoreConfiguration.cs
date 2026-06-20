@@ -36,7 +36,7 @@ public sealed class TusAzureStoreOptions
     public PublicAccessType ContainerPublicAccessType { get; set; } = PublicAccessType.None;
 }
 
-public class TusAzureStoreOptionsValidator : AbstractValidator<TusAzureStoreOptions>
+internal sealed class TusAzureStoreOptionsValidator : AbstractValidator<TusAzureStoreOptions>
 {
     public TusAzureStoreOptionsValidator()
     {
