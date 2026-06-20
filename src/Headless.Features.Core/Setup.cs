@@ -20,11 +20,19 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features;
 
+/// <summary>DI entry point for the Headless Features Core module.</summary>
 [PublicAPI]
 public static class SetupCore
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers the Headless Features infrastructure (definitions, values, providers, cache invalidation, and hosted
+        /// initializer) and applies the storage provider selected via <paramref name="configure"/>.
+        /// </summary>
+        /// <param name="configure">A delegate that configures the setup builder, including the storage provider.</param>
+        /// <returns>A <see cref="HeadlessFeaturesBuilder"/> for further post-registration configuration.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessFeaturesBuilder AddHeadlessFeatures(Action<HeadlessFeaturesSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -35,6 +43,9 @@ public static class SetupCore
             return _AddFeaturesStorageCore(services, setup);
         }
 
+        /// <summary>Registers a custom <see cref="IFeatureDefinitionProvider"/> that contributes in-code feature definitions.</summary>
+        /// <typeparam name="T">The provider type to register.</typeparam>
+        /// <returns>The <see cref="IServiceCollection"/> to allow chaining.</returns>
         public IServiceCollection AddFeatureDefinitionProvider<T>()
             where T : class, IFeatureDefinitionProvider
         {
@@ -48,6 +59,9 @@ public static class SetupCore
             return services;
         }
 
+        /// <summary>Registers a custom <see cref="IFeatureValueReadProvider"/> into the provider chain (idempotent by provider type).</summary>
+        /// <typeparam name="T">The provider type to register.</typeparam>
+        /// <returns>The <see cref="IServiceCollection"/> to allow chaining.</returns>
         public IServiceCollection AddFeatureValueProvider<T>()
             where T : class, IFeatureValueReadProvider
         {

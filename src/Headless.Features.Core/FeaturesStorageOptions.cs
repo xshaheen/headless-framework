@@ -2,15 +2,20 @@
 
 namespace Headless.Features;
 
+/// <summary>Storage-layer configuration shared across all feature-management database providers.</summary>
 [PublicAPI]
 public sealed class FeaturesStorageOptions
 {
+    /// <summary>Gets or sets the database schema that contains the features tables. Default: <c>"features"</c>.</summary>
     public string Schema { get; set; } = "features";
 
+    /// <summary>Gets or sets the name of the table that stores per-provider feature values. Default: <c>"FeatureValues"</c>.</summary>
     public string FeatureValuesTableName { get; set; } = "FeatureValues";
 
+    /// <summary>Gets or sets the name of the table that stores feature definitions. Default: <c>"FeatureDefinitions"</c>.</summary>
     public string FeatureDefinitionsTableName { get; set; } = "FeatureDefinitions";
 
+    /// <summary>Gets or sets the name of the table that stores feature group definitions. Default: <c>"FeatureGroupDefinitions"</c>.</summary>
     public string FeatureGroupDefinitionsTableName { get; set; } = "FeatureGroupDefinitions";
 
     /// <summary>

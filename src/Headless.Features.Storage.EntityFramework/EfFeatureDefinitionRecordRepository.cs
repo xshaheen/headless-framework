@@ -6,10 +6,14 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Features;
 
+/// <summary>EF Core implementation of <see cref="IFeatureDefinitionRecordRepository"/>.</summary>
+/// <typeparam name="TContext">The <see cref="DbContext"/> type that owns the feature definition entities.</typeparam>
+/// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
 public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : IFeatureDefinitionRecordRepository
     where TContext : DbContext
 {
+    /// <inheritdoc/>
     public async Task<List<FeatureGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
     )
@@ -19,6 +23,7 @@ public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFact
         return await db.Set<FeatureGroupDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -26,6 +31,7 @@ public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFact
         return await db.Set<FeatureDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task SaveAsync(
         List<FeatureGroupDefinitionRecord> newGroups,
         List<FeatureGroupDefinitionRecord> updatedGroups,

@@ -7,12 +7,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Features;
 
+/// <summary>EF Core implementation of <see cref="IFeatureValueRecordRepository"/>.</summary>
+/// <typeparam name="TContext">The <see cref="DbContext"/> type that owns the feature value entities.</typeparam>
+/// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
+/// <param name="localPublisher">Local event bus used to publish <see cref="EntityChangedEventData{T}"/> after mutations.</param>
 public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     ILocalEventBus localPublisher
 ) : IFeatureValueRecordRepository
     where TContext : DbContext
 {
+    /// <inheritdoc/>
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
         string? providerName,
@@ -31,6 +36,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
             );
     }
 
+    /// <inheritdoc/>
     public async Task<List<FeatureValueRecord>> FindAllAsync(
         string name,
         string? providerName,
@@ -55,6 +61,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         return await query.ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task<List<FeatureValueRecord>> GetListAsync(
         string providerName,
         string? providerKey,
@@ -69,6 +76,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
             .ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc/>
     public async Task InsertAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -81,6 +89,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         );
     }
 
+    /// <inheritdoc/>
     public async Task UpdateAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -93,6 +102,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         );
     }
 
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         IReadOnlyCollection<FeatureValueRecord> featureValues,
         CancellationToken cancellationToken = default

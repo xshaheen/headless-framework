@@ -12,6 +12,10 @@ using Polly.Retry;
 
 namespace Headless.Features.Seeders;
 
+/// <summary>
+/// Hosted service that seeds static feature definitions into the database and pre-caches dynamic
+/// feature values on application startup.
+/// </summary>
 public sealed class FeaturesInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
@@ -25,11 +29,15 @@ public sealed class FeaturesInitializationBackgroundService(
     private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicFeaturesTask;
 
+    /// <inheritdoc/>
     public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
 
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled before initialization completes.</exception>
     public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
         _tcs.Task.WaitAsync(cancellationToken);
 
+    /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (_options is { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
@@ -46,6 +54,7 @@ public sealed class FeaturesInitializationBackgroundService(
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
@@ -62,6 +71,7 @@ public sealed class FeaturesInitializationBackgroundService(
         }
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         _linkedCts?.Dispose();
@@ -166,6 +176,7 @@ public sealed class FeaturesInitializationBackgroundService(
     }
 }
 
+/// <summary>High-performance log helpers for <see cref="FeaturesInitializationBackgroundService"/>.</summary>
 internal static partial class FeaturesInitializationBackgroundServiceLog
 {
     [LoggerMessage(

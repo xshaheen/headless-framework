@@ -10,15 +10,24 @@ using Npgsql;
 
 namespace Headless.Features.PostgreSql;
 
+/// <summary>
+/// PostgreSQL implementation of <see cref="IFeatureDefinitionRecordRepository"/> that reads and
+/// writes feature-group and feature-definition records using raw ADO.NET and batched
+/// multi-row <c>INSERT</c> statements for efficiency.
+/// </summary>
 internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     IOptions<PostgreSqlFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions,
     IJsonSerializer serializer
 ) : IFeatureDefinitionRecordRepository
 {
+    /// <summary>Maximum number of rows sent in a single batched INSERT statement.</summary>
     private const int _MaxRowsPerInsert = 500;
 
+    /// <summary>Cache of parameterized INSERT SQL strings keyed by row count (groups).</summary>
     private readonly ConcurrentDictionary<int, string> _insertGroupBatchSql = new();
+
+    /// <summary>Cache of parameterized INSERT SQL strings keyed by row count (features).</summary>
     private readonly ConcurrentDictionary<int, string> _insertFeatureBatchSql = new();
 
     private string? _updateGroupSql;
@@ -28,6 +37,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     private string? _selectFeaturesSql;
     private string? _selectGroupsSql;
 
+    /// <inheritdoc/>
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
         var sql = _selectFeaturesSql ??=
@@ -66,6 +76,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
         return result;
     }
 
+    /// <inheritdoc/>
     public async Task<List<FeatureGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
     )
@@ -95,6 +106,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
         return result;
     }
 
+    /// <inheritdoc/>
     public async Task SaveAsync(
         List<FeatureGroupDefinitionRecord> newGroups,
         List<FeatureGroupDefinitionRecord> updatedGroups,

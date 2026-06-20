@@ -11,11 +11,17 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>Extension methods that register the PostgreSQL features storage provider.</summary>
 [PublicAPI]
 public static class SetupFeaturesPostgreSql
 {
     extension(HeadlessFeaturesSetupBuilder setup)
     {
+        /// <summary>Registers the PostgreSQL features storage provider using <paramref name="connectionString"/>.</summary>
+        /// <param name="connectionString">PostgreSQL connection string.</param>
+        /// <returns>The same <see cref="HeadlessFeaturesSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="connectionString"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is empty or white space.</exception>
         public HeadlessFeaturesSetupBuilder UsePostgreSql(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -26,6 +32,10 @@ public static class SetupFeaturesPostgreSql
             });
         }
 
+        /// <summary>Registers the PostgreSQL features storage provider using a configuration delegate.</summary>
+        /// <param name="configure">Delegate that configures <see cref="PostgreSqlFeaturesOptions"/>.</param>
+        /// <returns>The same <see cref="HeadlessFeaturesSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessFeaturesSetupBuilder UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)
         {
             Argument.IsNotNull(configure);

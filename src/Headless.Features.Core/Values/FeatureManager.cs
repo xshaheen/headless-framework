@@ -9,12 +9,16 @@ using Headless.Features.ValueProviders;
 
 namespace Headless.Features.Values;
 
+/// <summary>Default implementation of <see cref="IFeatureManager"/> that walks the registered provider chain to resolve and mutate feature values.</summary>
 public sealed class FeatureManager(
     IFeatureDefinitionManager definitionManager,
     IFeatureValueProviderManager valueProviderManager,
     IFeatureErrorsDescriptor errorsDescriptor
 ) : IFeatureManager
 {
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>. Also thrown for <paramref name="providerName"/> when <paramref name="fallback"/> is <see langword="false"/>.</exception>
+    /// <exception cref="ConflictException">The feature named <paramref name="name"/> is not defined.</exception>
     public async Task<FeatureValue> GetAsync(
         string name,
         string? providerName = null,
@@ -31,6 +35,8 @@ public sealed class FeatureManager(
         return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
     public async Task<List<FeatureValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
@@ -79,6 +85,9 @@ public sealed class FeatureManager(
         return [.. featureValues.Values];
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ConflictException">The feature named <paramref name="name"/> is not defined (<c>FeatureIsNotDefined</c>), the provider named <paramref name="providerName"/> is not registered (<c>FeatureProviderNotDefined</c>), or the provider is read-only (<c>ProviderIsReadonly</c>).</exception>
     public async Task SetAsync(
         string name,
         string? value,
@@ -144,6 +153,8 @@ public sealed class FeatureManager(
         }
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ConflictException">A feature record exists whose definition is not found (<c>FeatureIsNotDefined</c>).</exception>
     public async Task DeleteAsync(
         string providerName,
         string providerKey,

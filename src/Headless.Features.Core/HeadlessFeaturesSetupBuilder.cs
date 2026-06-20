@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Features;
 
+/// <summary>Builder passed to the <c>AddHeadlessFeatures</c> configure delegate; used to select a storage provider and tune management options.</summary>
 [PublicAPI]
 public sealed class HeadlessFeaturesSetupBuilder
 {
@@ -20,6 +21,10 @@ public sealed class HeadlessFeaturesSetupBuilder
 
     internal IList<IFeaturesStorageOptionsExtension> Extensions { get; } = new List<IFeaturesStorageOptionsExtension>();
 
+    /// <summary>Applies <paramref name="configure"/> to the shared <see cref="FeaturesStorageOptions"/> (schema names, table names, etc.).</summary>
+    /// <param name="configure">A delegate that mutates the storage options.</param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     public HeadlessFeaturesSetupBuilder ConfigureStorage(Action<FeaturesStorageOptions> configure)
     {
         Argument.IsNotNull(configure);
@@ -29,6 +34,10 @@ public sealed class HeadlessFeaturesSetupBuilder
         return this;
     }
 
+    /// <summary>Registers a management options configuration delegate that is resolved at startup.</summary>
+    /// <param name="configure">A delegate that mutates <see cref="FeatureManagementOptions"/>.</param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     public HeadlessFeaturesSetupBuilder ConfigureManagement(Action<FeatureManagementOptions> configure)
     {
         Argument.IsNotNull(configure);
@@ -38,6 +47,10 @@ public sealed class HeadlessFeaturesSetupBuilder
         return this;
     }
 
+    /// <summary>Registers a management options configuration delegate that receives the <see cref="IServiceProvider"/> for late-bound configuration.</summary>
+    /// <param name="configure">A delegate that mutates <see cref="FeatureManagementOptions"/> using resolved services.</param>
+    /// <returns>This builder, to allow chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     public HeadlessFeaturesSetupBuilder ConfigureManagement(
         Action<FeatureManagementOptions, IServiceProvider> configure
     )
@@ -49,6 +62,9 @@ public sealed class HeadlessFeaturesSetupBuilder
         return this;
     }
 
+    /// <summary>Adds a storage provider extension that contributes its services during the <c>AddHeadlessFeatures</c> pipeline.</summary>
+    /// <param name="extension">The extension to register.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="extension"/> is <see langword="null"/>.</exception>
     public void RegisterExtension(IFeaturesStorageOptionsExtension extension)
     {
         Argument.IsNotNull(extension);

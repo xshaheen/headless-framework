@@ -10,12 +10,20 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features.SqlServer;
 
+/// <summary>
+/// SQL Server implementation of <see cref="IFeatureValueRecordRepository"/> that reads and
+/// writes feature value records using raw ADO.NET. Bulk deletes use a table-valued parameter
+/// (<c>HeadlessFeaturesIdList</c>) to avoid the 2100-parameter ceiling. After each mutation
+/// the record is published via <see cref="ILocalEventBus"/> in a transient scope to notify
+/// in-process subscribers.
+/// </summary>
 internal sealed class SqlServerFeatureValueRecordRepository(
     IOptions<SqlServerFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions,
     IServiceProvider services
 ) : IFeatureValueRecordRepository
 {
+    /// <inheritdoc/>
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
         string? providerName,
@@ -40,6 +48,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
             : null;
     }
 
+    /// <inheritdoc/>
     public Task<List<FeatureValueRecord>> FindAllAsync(
         string name,
         string? providerName,
@@ -68,6 +77,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
     }
 
+    /// <inheritdoc/>
     public Task<List<FeatureValueRecord>> GetListAsync(
         string providerName,
         string? providerKey,
@@ -85,6 +95,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         );
     }
 
+    /// <inheritdoc/>
     public Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
@@ -107,6 +118,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         }
     }
 
+    /// <inheritdoc/>
     public async Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
@@ -117,6 +129,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         IReadOnlyCollection<FeatureValueRecord> features,
         CancellationToken cancellationToken = default

@@ -10,15 +10,27 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features.SqlServer;
 
+/// <summary>
+/// SQL Server implementation of <see cref="IFeatureDefinitionRecordRepository"/> that reads and
+/// writes feature-group and feature-definition records using raw ADO.NET and batched
+/// multi-row <c>INSERT</c> statements for efficiency.
+/// </summary>
 internal sealed class SqlServerFeatureDefinitionRecordRepository(
     IOptions<SqlServerFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions,
     IJsonSerializer serializer
 ) : IFeatureDefinitionRecordRepository
 {
+    /// <summary>
+    /// Maximum number of rows sent in a single batched INSERT statement.
+    /// SQL Server limits parameters to 2100 per statement; 100 rows × 11 columns = 1100 parameters.
+    /// </summary>
     private const int _MaxRowsPerInsert = 100;
 
+    /// <summary>Cache of parameterized INSERT SQL strings keyed by row count (groups).</summary>
     private readonly ConcurrentDictionary<int, string> _insertGroupBatchSql = new();
+
+    /// <summary>Cache of parameterized INSERT SQL strings keyed by row count (features).</summary>
     private readonly ConcurrentDictionary<int, string> _insertFeatureBatchSql = new();
 
     private string? _updateGroupSql;
@@ -28,6 +40,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
     private string? _selectFeaturesSql;
     private string? _selectGroupsSql;
 
+    /// <inheritdoc/>
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
         var sql = _selectFeaturesSql ??=
@@ -67,6 +80,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         return result;
     }
 
+    /// <inheritdoc/>
     public async Task<List<FeatureGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
     )
@@ -96,6 +110,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         return result;
     }
 
+    /// <inheritdoc/>
     public async Task SaveAsync(
         List<FeatureGroupDefinitionRecord> newGroups,
         List<FeatureGroupDefinitionRecord> updatedGroups,

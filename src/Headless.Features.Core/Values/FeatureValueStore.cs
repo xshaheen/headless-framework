@@ -9,8 +9,15 @@ using Humanizer;
 
 namespace Headless.Features.Values;
 
+/// <summary>Persistent store for per-provider feature values.</summary>
 public interface IFeatureValueStore
 {
+    /// <summary>Returns the stored value for feature <paramref name="name"/> under <paramref name="providerName"/>/<paramref name="providerKey"/>, or <see langword="null"/> if not set.</summary>
+    /// <param name="name">The feature name.</param>
+    /// <param name="providerName">The provider name (e.g. <c>"Tenant"</c>).</param>
+    /// <param name="providerKey">An optional key that qualifies the provider scope.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The stored string value, or <see langword="null"/> when no value has been persisted.</returns>
     Task<string?> GetOrDefaultAsync(
         string name,
         string providerName,
@@ -18,6 +25,12 @@ public interface IFeatureValueStore
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Upserts the value of feature <paramref name="name"/> for <paramref name="providerName"/>/<paramref name="providerKey"/>.</summary>
+    /// <param name="name">The feature name.</param>
+    /// <param name="value">The value to store.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">An optional key that qualifies the provider scope.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task SetAsync(
         string name,
         string value,
@@ -26,6 +39,11 @@ public interface IFeatureValueStore
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Deletes all stored values for feature <paramref name="name"/> matching <paramref name="providerName"/>/<paramref name="providerKey"/>.</summary>
+    /// <param name="name">The feature name.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">An optional key that qualifies the provider scope.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
     Task DeleteAsync(
         string name,
         string providerName,
@@ -34,6 +52,11 @@ public interface IFeatureValueStore
     );
 }
 
+/// <summary>
+/// Cache-backed implementation of <see cref="IFeatureValueStore"/> that reads from cache on first access
+/// (populating all values for the provider in one shot) and delegates persistence to
+/// <see cref="IFeatureValueRecordRepository"/>.
+/// </summary>
 public sealed class FeatureValueStore(
     IFeatureDefinitionManager featureDefinitionManager,
     IFeatureValueRecordRepository repository,
@@ -43,6 +66,7 @@ public sealed class FeatureValueStore(
 {
     private readonly TimeSpan _cacheExpiration = 5.Hours();
 
+    /// <inheritdoc/>
     public async Task<string?> GetOrDefaultAsync(
         string name,
         string providerName,
@@ -68,6 +92,7 @@ public sealed class FeatureValueStore(
         return valueCacheItem;
     }
 
+    /// <inheritdoc/>
     public async Task SetAsync(
         string name,
         string value,
@@ -97,6 +122,7 @@ public sealed class FeatureValueStore(
         );
     }
 
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         string name,
         string providerName,

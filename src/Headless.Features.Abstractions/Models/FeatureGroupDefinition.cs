@@ -4,10 +4,14 @@ using Headless.Checks;
 
 namespace Headless.Features.Models;
 
+/// <summary>Describes a logical group that organizes one or more related <see cref="FeatureDefinition"/> instances.</summary>
 public sealed class FeatureGroupDefinition : ICanCreateChildFeature
 {
     private readonly List<FeatureDefinition> _features;
 
+    /// <summary>Creates a new <see cref="FeatureGroupDefinition"/> with the specified name.</summary>
+    /// <param name="name">Unique name of the group.</param>
+    /// <param name="displayName">Human-readable display name. Defaults to <paramref name="name"/> when <see langword="null"/>.</param>
     internal FeatureGroupDefinition(string name, string? displayName = null)
     {
         Name = name;
@@ -45,6 +49,14 @@ public sealed class FeatureGroupDefinition : ICanCreateChildFeature
         set => Properties[name] = value;
     }
 
+    /// <summary>Adds a top-level feature to this group.</summary>
+    /// <param name="name">Unique name of the feature. Must not be null or white space.</param>
+    /// <param name="defaultValue">Default string value for the feature. <see langword="null"/> means no default.</param>
+    /// <param name="displayName">Human-readable display name. Defaults to <paramref name="name"/> when <see langword="null"/>.</param>
+    /// <param name="description">Optional description of the feature's purpose.</param>
+    /// <param name="isVisibleToClients">Whether clients can see this feature and its value. Default: <see langword="true"/>.</param>
+    /// <param name="isAvailableToHost">Whether the host can use this feature. Default: <see langword="true"/>.</param>
+    /// <returns>The newly created <see cref="FeatureDefinition"/> added to this group.</returns>
     public FeatureDefinition AddChild(
         string name,
         string? defaultValue = null,
@@ -68,6 +80,11 @@ public sealed class FeatureGroupDefinition : ICanCreateChildFeature
         return feature;
     }
 
+    /// <summary>
+    /// Returns a flat list of every <see cref="FeatureDefinition"/> in this group, including all nested children,
+    /// in depth-first order.
+    /// </summary>
+    /// <returns>A flat list containing every feature and its descendants.</returns>
     public List<FeatureDefinition> GetFlatFeatures()
     {
         var list = new List<FeatureDefinition>();
@@ -90,5 +107,6 @@ public sealed class FeatureGroupDefinition : ICanCreateChildFeature
         }
     }
 
+    /// <inheritdoc/>
     public override string ToString() => $"[{nameof(FeatureGroupDefinition)} {Name}]";
 }
