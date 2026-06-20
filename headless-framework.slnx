@@ -57,6 +57,7 @@
         <Project Path="tests\Headless.Blobs.Azure.Tests.Unit\Headless.Blobs.Azure.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.CloudflareR2.Tests.Integration\Headless.Blobs.CloudflareR2.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.CloudflareR2.Tests.Unit\Headless.Blobs.CloudflareR2.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Blobs.Core.Tests.Integration\Headless.Blobs.Core.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.Core.Tests.Unit\Headless.Blobs.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Integration\Headless.Blobs.FileSystem.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Unit\Headless.Blobs.FileSystem.Tests.Unit.csproj" />
