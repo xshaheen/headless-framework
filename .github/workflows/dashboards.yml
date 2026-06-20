@@ -1,0 +1,58 @@
+# Fast per-dashboard SPA build + type-check feedback on PRs touching wwwroot.
+# The embedded bundle itself is built and embedded by the .NET build
+# (eng/DashboardSpa.targets); dist is generated, never committed. This job just
+# fails fast if a dashboard stops compiling, without a full solution build.
+name: Dashboards
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - '.github/workflows/dashboards.yml'
+      - 'src/Headless.Jobs.Dashboard/wwwroot/**'
+      - 'src/Headless.Messaging.Dashboard/wwwroot/**'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - '.github/workflows/dashboards.yml'
+      - 'src/Headless.Jobs.Dashboard/wwwroot/**'
+      - 'src/Headless.Messaging.Dashboard/wwwroot/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: "Build SPA"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dashboard:
+          - src/Headless.Jobs.Dashboard/wwwroot
+          - src/Headless.Messaging.Dashboard/wwwroot
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v6.0.3
+        with:
+          lfs: false
+
+      - name: "Setup Node"
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.dashboard }}/package-lock.json
+
+      - name: "Install dependencies"
+        working-directory: ${{ matrix.dashboard }}
+        run: npm ci
+
+      - name: "Build dashboard (type-check + vite build)"
+        working-directory: ${{ matrix.dashboard }}
+        run: npm run build
