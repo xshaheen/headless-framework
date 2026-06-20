@@ -109,7 +109,7 @@ public sealed partial class HybridCache
             return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
 
-        var l2Entry = l2Read.Value!;
+        var l2Entry = l2Read.Value;
 
         // Only promote a logically-fresh L2 entry into L1. Promoting a stale (logically-expired) reserve on
         // every fail-safe read amplifies L1 writes under stampede and can overwrite a newer L1 stale reserve.

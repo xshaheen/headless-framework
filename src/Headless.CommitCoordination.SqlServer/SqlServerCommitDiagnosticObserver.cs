@@ -32,7 +32,7 @@ internal sealed partial class SqlServerCommitDiagnosticObserver(
 ) : IObserver<KeyValuePair<string, object?>>
 {
     private readonly ILogger _logger = logger;
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<Task, byte> _drains = [];
+    private readonly ConcurrentDictionary<Task, byte> _drains = [];
 
     /// <summary>The SqlClient diagnostic event raised after a transaction commit completes.</summary>
     public const string SqlAfterCommitTransaction = "Microsoft.Data.SqlClient.WriteTransactionCommitAfter";

@@ -502,7 +502,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     /// </summary>
     public string GetDiagnostics()
     {
-        var text = $"=== Jobs Work-Stealing Scheduler ===\n";
+        var text = "=== Jobs Work-Stealing Scheduler ===\n";
         text += $"Status: {(_isFrozen ? "FROZEN" : (_disposed ? "DISPOSED" : "ACTIVE"))}\n";
         text += $"Workers: {_activeWorkers}/{_maxConcurrency}\n";
         text += $"Total Queued (counter): {_totalQueuedTasks}\n\n";

@@ -233,7 +233,7 @@ internal static class DashboardEndpoints
             .WithSummary("Get live cluster nodes from the coordination membership substrate");
 
         // SignalR Hub - authentication handled in hub OnConnectedAsync
-        endpoints.MapHub<JobsNotificationHub>($"/job-notification-hub").AllowAnonymous();
+        endpoints.MapHub<JobsNotificationHub>("/job-notification-hub").AllowAnonymous();
     }
 
     #region Endpoint Handlers

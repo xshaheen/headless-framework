@@ -26,7 +26,7 @@ internal static class UrlParser
         // segments only (via _EncodePathSegment): it never produces or consumes a '/', so applying it per segment is
         // byte-for-byte identical to the previous whole-string Replace("?"...).Replace("#"...) while dropping those two
         // intermediate full-string allocations. The split/skip math is preserved verbatim.
-        var segments = UrlEncoder.EncodeIllegalCharacters(path)!.Split('/');
+        var segments = UrlEncoder.EncodeIllegalCharacters(path).Split('/');
 
         if (segments.Length == 0)
         {
