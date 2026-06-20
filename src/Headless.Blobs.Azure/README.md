@@ -34,19 +34,16 @@ dotnet add package Headless.Blobs.Azure
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.ConnectionString = builder.Configuration["Azure:Storage:ConnectionString"];
-    options.ContainerName = "my-container";
-});
+// Register a BlobServiceClient (from a connection string, or via Microsoft.Extensions.Azure with
+// DefaultAzureCredential). The Azure store consumes it from DI.
+builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
+builder.Services.AddHeadlessBlobs(blobs => blobs.UseAzure(options => { }));
 
-// Or with Azure.Identity
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.AccountName = "mystorageaccount";
-    options.ContainerName = "my-container";
-    // Uses DefaultAzureCredential
-});
+// For a named store on a different account, supply a per-store client:
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.AddNamed("archive", instance => instance.UseAzure(
+        setupAction: options => { },
+        clientFactory: _ => new BlobServiceClient("<archive-account-connection-string>"))));
 ```
 
 ## Configuration

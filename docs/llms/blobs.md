@@ -1,6 +1,6 @@
 ---
 domain: Blob Storage
-packages: Blobs.Abstractions, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet
+packages: Blobs.Abstractions, Blobs.Core, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet
 ---
 
 # Blob Storage
@@ -81,7 +81,7 @@ packages: Blobs.Abstractions, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.
 
 ## Quick Orientation
 
-Install `Headless.Blobs.Abstractions` plus one provider package. Code against `IBlobStorage` — never reference concrete provider types in application code.
+Install `Headless.Blobs.Abstractions`, `Headless.Blobs.Core`, and one or more provider packages. Register every store through a single `AddHeadlessBlobs(...)` call: pick a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Code against `IBlobStorage` — never reference concrete provider types in application code.
 
 Provider selection guide:
 - **Development/testing**: `Headless.Blobs.FileSystem` — no external dependencies, stores files on disk.
@@ -91,12 +91,12 @@ Provider selection guide:
 - **SFTP/legacy**: `Headless.Blobs.SshNet` — SFTP protocol for remote servers and legacy system integration.
 - **Small cached blobs**: `Headless.Blobs.Redis` — Redis-backed storage for small, ephemeral blobs only (default 10 MB limit).
 
-All providers register `IBlobStorage` as singleton. Container paths are arrays of strings (e.g., `["uploads", "images"]`).
+The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named stores register as keyed `IBlobStorage` singletons and resolve through `IBlobStorageProvider`. Container paths are arrays of strings (e.g., `["uploads", "images"]`).
 
 ## Agent Instructions
 
 - Always depend on `IBlobStorage` from `Headless.Blobs.Abstractions` — never reference `AwsS3BlobStorage`, `AzureBlobStorage`, or other concrete types in service code.
-- Use `Blobs.FileSystem` (`AddFileSystemBlobStorage()`) for local development and testing. Use `Blobs.Aws`, `Blobs.Azure`, or `Blobs.CloudflareR2` for production.
+- Register all stores through `AddHeadlessBlobs(...)` from `Headless.Blobs.Core`. Choose a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Use `UseFileSystem` for local development and testing; `UseAws`, `UseAzure`, or `UseCloudflareR2` for production.
 - Presigned URLs are an opt-in capability: `IPresignedUrlBlobStorage` (presigned GET + PUT) is implemented only by AWS, Cloudflare R2, and Azure (SAS). Feature-detect with `storage is IPresignedUrlBlobStorage` — FileSystem, Redis, and SshNet do not implement it. Azure can throw at call time if its `BlobServiceClient` was wired without account-key/user-delegation-key credentials.
 - Container auto-create on upload/copy is opt-in and cached once per container per instance. The S3 engine (AWS and R2) uses `AwsBlobStorageOptions.AutoCreateContainer` (AWS default `true`, R2 default `false`); Azure uses `AzureStorageOptions.AutoCreateContainer` (default `true`). With it off, pre-create containers or call `CreateContainerAsync`. The S3 engine also no longer pre-checks the bucket on read/exists/delete.
 - Redis blob storage (`Blobs.Redis`) is for small blobs only (metadata, thumbnails, temporary uploads). The default `MaxBlobSizeBytes` is 10 MB. For large files, use S3 or Azure.
@@ -105,7 +105,7 @@ All providers register `IBlobStorage` as singleton. Container paths are arrays o
 - Naming is normalized two-tier through each provider's `IBlobNamingNormalizer`: the **first** container segment is the backend bucket/container (strict backend rules — e.g. lowercase, length, allowed characters) and the **remaining** segments plus the blob name are the object path (lenient — validated, not rewritten). This is applied uniformly by every provider (AWS, R2, Azure, FileSystem, SshNet, Redis); do not manually normalize paths.
 - Metadata is a `Dictionary<string, string?>`. For `FileSystem` provider, metadata is stored as companion JSON files. For `Redis`, metadata is stored alongside blobs in Redis.
 - `SshNet` supports both password and SSH key authentication. Use `PrivateKeyPath` for key-based auth.
-- Only one provider can be the default `IBlobStorage` registration. If you need multiple providers, use keyed services or named registrations.
+- A default store is optional and there is at most one (injected as plain `IBlobStorage`); a named-only configuration is valid and leaves plain `IBlobStorage` unregistered. The same provider may back multiple named stores with isolated config. Resolve named stores with `IBlobStorageProvider.GetStorage("name")` or `[FromKeyedServices("name")] IBlobStorage`. Calling `AddHeadlessBlobs` more than once on the same service collection throws.
 
 ---
 # Headless.Blobs.Abstractions
@@ -205,16 +205,18 @@ dotnet add package Headless.Blobs.Aws
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Option 1: Use configuration-based AWS options
+// AWS SDK options (region, credentials) resolve through the standard chain unless supplied explicitly.
 var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddAwsS3BlobStorage(awsOptions);
+builder.Services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }, awsOptions));
 
-// Option 2: Manual configuration
-builder.Services.AddAwsS3BlobStorage(new AWSOptions
-{
-    Region = RegionEndpoint.USEast1,
-    Credentials = new BasicAWSCredentials("access-key", "secret-key")
-});
+// Or supply credentials explicitly:
+builder.Services.AddHeadlessBlobs(blobs => blobs.UseAws(
+    options => { },
+    new AWSOptions
+    {
+        Region = RegionEndpoint.USEast1,
+        Credentials = new BasicAWSCredentials("access-key", "secret-key"),
+    }));
 ```
 
 Buckets and keys are passed per operation, not configured at registration:
@@ -289,19 +291,16 @@ dotnet add package Headless.Blobs.Azure
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.ConnectionString = builder.Configuration["Azure:Storage:ConnectionString"];
-    options.ContainerName = "my-container";
-});
+// Register a BlobServiceClient (connection string, or Microsoft.Extensions.Azure with DefaultAzureCredential).
+// The Azure store consumes it from DI.
+builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
+builder.Services.AddHeadlessBlobs(blobs => blobs.UseAzure(options => { }));
 
-// Or with Azure.Identity
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.AccountName = "mystorageaccount";
-    options.ContainerName = "my-container";
-    // Uses DefaultAzureCredential
-});
+// For a named store on a different account, supply a per-store client:
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.AddNamed("archive", instance => instance.UseAzure(
+        setupAction: options => { },
+        clientFactory: _ => new BlobServiceClient("<archive-account-connection-string>"))));
 ```
 
 ## Configuration
@@ -361,10 +360,9 @@ dotnet add package Headless.Blobs.FileSystem
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddFileSystemBlobStorage(options =>
-{
-    options.BasePath = Path.Combine(builder.Environment.ContentRootPath, "storage");
-});
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseFileSystem(options =>
+        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")));
 ```
 
 ## Configuration
@@ -422,11 +420,9 @@ dotnet add package Headless.Blobs.Redis
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddRedisBlobStorage(options =>
-{
-    options.ConnectionString = "localhost:6379";
-    options.KeyPrefix = "blobs:";
-});
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseRedis(options =>
+        options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379")));
 ```
 
 ## Configuration
@@ -492,14 +488,9 @@ dotnet add package Headless.Blobs.SshNet
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSshNetBlobStorage(options =>
-{
-    options.Host = "sftp.example.com";
-    options.Port = 22;
-    options.Username = "user";
-    options.Password = "password"; // Or use PrivateKeyPath
-    options.BasePath = "/home/user/uploads";
-});
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseSsh(options =>
+        options.ConnectionString = "sftp://user:password@sftp.example.com:22/home/user/uploads"));
 ```
 
 ## Configuration
@@ -569,13 +560,14 @@ dotnet add package Headless.Blobs.CloudflareR2
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddCloudflareR2BlobStorage(options =>
-{
-    options.AccountId = builder.Configuration["R2:AccountId"]!;
-    options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
-    options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
-    // options.Jurisdiction = R2Jurisdiction.EuropeanUnion; // optional
-});
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseCloudflareR2(options =>
+    {
+        options.AccountId = builder.Configuration["R2:AccountId"]!;
+        options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
+        options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
+        // options.Jurisdiction = R2Jurisdiction.EuropeanUnion; // optional
+    }));
 
 // Buckets and keys are passed per operation:
 await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);

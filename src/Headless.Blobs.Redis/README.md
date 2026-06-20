@@ -25,11 +25,9 @@ dotnet add package Headless.Blobs.Redis
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddRedisBlobStorage(options =>
-{
-    options.ConnectionString = "localhost:6379";
-    options.KeyPrefix = "blobs:";
-});
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseRedis(options =>
+        options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379")));
 ```
 
 ## Configuration

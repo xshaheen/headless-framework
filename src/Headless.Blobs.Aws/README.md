@@ -27,16 +27,18 @@ dotnet add package Headless.Blobs.Aws
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Option 1: Use configuration-based AWS options
+// AWS SDK options (region, credentials) resolve through the standard chain unless supplied explicitly.
 var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddAwsS3BlobStorage(awsOptions);
+builder.Services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }, awsOptions));
 
-// Option 2: Manual configuration
-builder.Services.AddAwsS3BlobStorage(new AWSOptions
-{
-    Region = RegionEndpoint.USEast1,
-    Credentials = new BasicAWSCredentials("access-key", "secret-key")
-});
+// Or supply credentials explicitly:
+builder.Services.AddHeadlessBlobs(blobs => blobs.UseAws(
+    options => { },
+    new AWSOptions
+    {
+        Region = RegionEndpoint.USEast1,
+        Credentials = new BasicAWSCredentials("access-key", "secret-key"),
+    }));
 ```
 
 Buckets and keys are passed per operation, not configured at registration:

@@ -25,13 +25,14 @@ dotnet add package Headless.Blobs.CloudflareR2
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddCloudflareR2BlobStorage(options =>
-{
-    options.AccountId = builder.Configuration["R2:AccountId"]!;
-    options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
-    options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
-    // options.Jurisdiction = R2Jurisdiction.EuropeanUnion; // optional
-});
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseCloudflareR2(options =>
+    {
+        options.AccountId = builder.Configuration["R2:AccountId"]!;
+        options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
+        options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
+        // options.Jurisdiction = R2Jurisdiction.EuropeanUnion; // optional
+    }));
 ```
 
 Container and blob names are passed per operation, not configured here:
@@ -61,7 +62,7 @@ if (storage is IPresignedUrlBlobStorage presigned)
 }
 ```
 
-Bind with `builder.Services.AddCloudflareR2BlobStorage(builder.Configuration.GetSection("R2"))`.
+Bind with `builder.Services.AddHeadlessBlobs(blobs => blobs.UseCloudflareR2(builder.Configuration.GetSection("R2")))`.
 
 ## Behavior Notes
 

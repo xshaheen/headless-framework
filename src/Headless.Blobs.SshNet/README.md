@@ -25,14 +25,9 @@ dotnet add package Headless.Blobs.SshNet
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSshNetBlobStorage(options =>
-{
-    options.Host = "sftp.example.com";
-    options.Port = 22;
-    options.Username = "user";
-    options.Password = "password"; // Or use PrivateKeyPath
-    options.BasePath = "/home/user/uploads";
-});
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseSsh(options =>
+        options.ConnectionString = "sftp://user:password@sftp.example.com:22/home/user/uploads"));
 ```
 
 ## Configuration

@@ -25,10 +25,9 @@ dotnet add package Headless.Blobs.FileSystem
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddFileSystemBlobStorage(options =>
-{
-    options.BasePath = Path.Combine(builder.Environment.ContentRootPath, "storage");
-});
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseFileSystem(options =>
+        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")));
 ```
 
 ## Configuration
