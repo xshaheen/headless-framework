@@ -79,4 +79,30 @@ public sealed class LogStateTests
         act.Should().NotThrow();
         state["k"].Should().Be("2");
     }
+
+    [Fact]
+    public void property_should_throw_on_a_null_key()
+    {
+        // given
+        var state = new LogState();
+
+        // when
+        Action act = () => state.Property(null!, "v");
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void property_if_should_throw_on_a_null_key()
+    {
+        // given
+        var state = new LogState();
+
+        // when
+        Action act = () => state.PropertyIf(null!, "v", condition: true);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
 }

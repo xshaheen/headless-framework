@@ -53,4 +53,32 @@ public sealed class ClockTests
         normalized.Kind.Should().Be(DateTimeKind.Utc);
         normalized.Should().Be(localDateTime.ToUniversalTime());
     }
+
+    [Fact]
+    public void normalize_should_return_utc_input_unchanged()
+    {
+        // given
+        var utc = new DateTime(2024, 11, 27, 12, 0, 0, DateTimeKind.Utc);
+
+        // when
+        var normalized = _clock.Normalize(utc);
+
+        // then
+        normalized.Kind.Should().Be(DateTimeKind.Utc);
+        normalized.Should().Be(utc);
+    }
+
+    [Fact]
+    public void normalize_should_stamp_unspecified_kind_as_utc_without_converting()
+    {
+        // given
+        var unspecified = new DateTime(2024, 11, 27, 12, 0, 0, DateTimeKind.Unspecified);
+
+        // when
+        var normalized = _clock.Normalize(unspecified);
+
+        // then — same wall-clock value, only the kind is stamped (no offset conversion)
+        normalized.Kind.Should().Be(DateTimeKind.Utc);
+        normalized.Should().Be(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc));
+    }
 }

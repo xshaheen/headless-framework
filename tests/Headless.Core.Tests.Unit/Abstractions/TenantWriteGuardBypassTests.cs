@@ -108,4 +108,22 @@ public sealed class TenantWriteGuardBypassTests
 
         sut.IsActive.Should().BeFalse();
     }
+
+    [Fact]
+    public void begin_after_a_full_release_should_return_a_fresh_active_bypass()
+    {
+        // given — a scope that has been fully released (state latched terminal)
+        var sut = new TenantWriteGuardBypass();
+        sut.BeginBypass().Dispose();
+        sut.IsActive.Should().BeFalse();
+
+        // when — a new bypass must install a fresh active state, never revive the terminal one
+        using (sut.BeginBypass())
+        {
+            // then
+            sut.IsActive.Should().BeTrue();
+        }
+
+        sut.IsActive.Should().BeFalse();
+    }
 }

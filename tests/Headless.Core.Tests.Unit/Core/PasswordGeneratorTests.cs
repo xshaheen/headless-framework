@@ -119,4 +119,18 @@ public sealed class PasswordGeneratorTests
         // then
         action.Should().NotThrow();
     }
+
+    [Fact]
+    public void generate_password_with_defaults_should_contain_each_required_character_set()
+    {
+        // given — defaults require a digit, lowercase, uppercase, and non-alphanumeric character
+        var password = _passwordGenerator.GeneratePassword(new GeneratePasswordOptions(16));
+
+        // then
+        password.Should().HaveLength(16);
+        password.Any(char.IsDigit).Should().BeTrue("a digit is required by default");
+        password.Any(char.IsLower).Should().BeTrue("a lowercase letter is required by default");
+        password.Any(char.IsUpper).Should().BeTrue("an uppercase letter is required by default");
+        password.Any(c => !char.IsLetterOrDigit(c)).Should().BeTrue("a non-alphanumeric is required by default");
+    }
 }
