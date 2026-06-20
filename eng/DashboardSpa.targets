@@ -33,6 +33,8 @@
     <DashboardSpaInput Include="$(DashboardSpaRoot)/package.json" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/package-lock.json" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/vite.config.*" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/postcss.config.*" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/tailwind.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/tsconfig*.json" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/env.d.ts" />
   </ItemGroup>

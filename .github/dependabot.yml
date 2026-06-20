@@ -75,9 +75,10 @@ updates:
       time: "09:45"
       timezone: "Africa/Cairo"
 
-  # SPA dashboard front-ends. Their built wwwroot/dist is embedded into the
-  # .NET assemblies, so a lockfile bump must be followed by a dist rebuild;
-  # the Dashboards workflow enforces that any open npm PR includes a fresh dist.
+  # SPA dashboard front-ends. wwwroot/dist is generated and embedded at .NET
+  # build time (eng/DashboardSpa.targets), never committed, so a lockfile bump
+  # is reflected in the embedded bundle automatically on the next build. The
+  # Dashboards workflow only fast-fails if a dashboard stops compiling.
   - package-ecosystem: "npm"
     directories:
       - "/src/Headless.Jobs.Dashboard/wwwroot"

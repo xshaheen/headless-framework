@@ -4,6 +4,8 @@
 .worktrees/
 artifacts/
 
-# CSharpier's XML check disagrees on this hand-maintained file between local (macOS) and CI (Linux)
-# runs of the same tool version; it is not authored code, so it is excluded from the gate.
+# CSharpier's XML check disagrees on these hand-maintained files between local (macOS) and CI (Linux)
+# runs of the same tool version; they are build infrastructure, not authored code, so they are
+# excluded from the gate (the readable hand-formatted attribute layout is kept intentionally).
 nuget.config
+eng/DashboardSpa.targets

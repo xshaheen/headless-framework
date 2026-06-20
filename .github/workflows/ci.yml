@@ -74,8 +74,10 @@ jobs:
         with:
           global-json-file: "./global.json"
 
-      # Required: the dashboard projects build their Vue/Vite SPA during the
-      # .NET build (eng/DashboardSpa.targets) and embed the output.
+      # Required: the dashboard SPAs are pre-built in the "Build dashboard SPAs"
+      # step below (before the NuGet token is written), so the token-bearing
+      # solution build runs with BuildDashboardSpa=false and never executes npm
+      # lifecycle scripts while a credential is on disk.
       - name: "Setup Node"
         uses: actions/setup-node@v6.4.0
         with:
@@ -93,11 +95,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # Build the dashboard SPAs BEFORE the NuGet token is written to disk, so a
+      # malicious dependency lifecycle script run by `npm ci` cannot read it. The
+      # solution build below then runs with BuildDashboardSpa=false and only
+      # embeds the already-built wwwroot/dist.
+      - name: "Build dashboard SPAs"
+        run: make dashboards
+        shell: bash
+
       - name: "Authenticate GitHub Packages"
         run: dotnet nuget update source github.com --username xshaheen --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --configfile nuget.config
         shell: bash
 
       - name: "Format, build, and pack"
+        # Dashboards are already built above (before the token landed on disk);
+        # skip the in-build npm step so no lifecycle scripts run with the token present.
+        env:
+          BuildDashboardSpa: "false"
         run: make ci-build
 
       - name: "Publish Artifacts"
