@@ -56,16 +56,30 @@ public static class HttpRequestExtensions
 
         var acceptHeader = request.Headers[HeaderNames.Accept];
 
-        if (acceptHeader.Count == 0 || acceptHeader.Equals("*/*"))
+        if (acceptHeader.Count == 0)
         {
             return true;
         }
 
-        foreach (var value in acceptHeader)
+        // ParseList handles comma-separated values across all header entries.
+        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader!);
+
+        if (parsed is null or { Count: 0 })
         {
+            return true;
+        }
+
+        foreach (var mediaType in parsed)
+        {
+            // Wildcard */* matches anything.
+            if (mediaType.MatchesAllTypes)
+            {
+                return true;
+            }
+
             foreach (var contentType in contentTypes)
             {
-                if (value.AsSpan().Contains(contentType.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                if (MediaTypeHeaderValue.TryParse(contentType, out var candidate) && mediaType.IsSubsetOf(candidate))
                 {
                     return true;
                 }
@@ -82,14 +96,21 @@ public static class HttpRequestExtensions
 
         var acceptHeader = request.Headers[HeaderNames.Accept];
 
-        if (acceptHeader.Count == 0 || acceptHeader.Equals("*/*"))
+        if (acceptHeader.Count == 0)
         {
             return true;
         }
 
-        foreach (var value in acceptHeader)
+        if (!MediaTypeHeaderValue.TryParse(contentType, out var candidate))
         {
-            if (value.AsSpan().Contains(contentType.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            return false;
+        }
+
+        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader!);
+
+        foreach (var mediaType in parsed)
+        {
+            if (mediaType.MatchesAllTypes || mediaType.IsSubsetOf(candidate))
             {
                 return true;
             }

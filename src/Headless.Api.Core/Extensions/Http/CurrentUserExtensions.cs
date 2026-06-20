@@ -13,11 +13,11 @@ public static class CurrentUserExtensions
 {
     public static AccountId GetRequiredAccountId(this ICurrentUser user)
     {
-        return user.AccountId ?? throw new ConflictException(GeneralMessageDescriber.NotAuthorized());
+        return user.AccountId ?? throw new UnauthorizedException(GeneralMessageDescriber.NotAuthorized());
     }
 
     public static UserId GetRequiredUserId(this ICurrentUser user)
     {
-        return user.UserId ?? throw new ConflictException(GeneralMessageDescriber.NotAuthorized());
+        return user.UserId ?? throw new UnauthorizedException(GeneralMessageDescriber.NotAuthorized());
     }
 }

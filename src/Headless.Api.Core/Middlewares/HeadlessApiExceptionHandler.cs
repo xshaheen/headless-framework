@@ -122,6 +122,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status403Forbidden;
                     break;
 
+                case UnauthorizedException unauthorized:
+                    problemDetails = problemDetailsCreator.Unauthorized(unauthorized.Error);
+                    statusCode = StatusCodes.Status401Unauthorized;
+                    break;
+
                 case ConflictException conflict:
                     problemDetails = problemDetailsCreator.Conflict(conflict.Errors);
                     statusCode = StatusCodes.Status409Conflict;

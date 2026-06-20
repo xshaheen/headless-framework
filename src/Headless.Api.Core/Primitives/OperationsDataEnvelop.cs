@@ -3,4 +3,4 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Primitives;
 
-public sealed record OperationsDataEnvelop<T>(T Data, List<OperationDescriptor>? Operations = null);
+public sealed record OperationsDataEnvelop<T>(T Data, IReadOnlyList<OperationDescriptor>? Operations = null);

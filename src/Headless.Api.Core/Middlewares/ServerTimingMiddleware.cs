@@ -12,7 +12,7 @@ namespace Headless.Api.Middlewares;
 /// etc.) to the developer tools in the user's browser.
 /// </summary>
 /// <seealso cref="IMiddleware" />
-public sealed class ServerTimingMiddleware : IMiddleware
+internal sealed class ServerTimingMiddleware : IMiddleware
 {
     private const string _ServerTimingHttpHeader = "Server-Timing";
 

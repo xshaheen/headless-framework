@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Api.Middlewares;
 
 /// <summary>Resolves the current tenant from the authenticated principal for the lifetime of the HTTP request.</summary>
-public sealed partial class TenantResolutionMiddleware(
+internal sealed partial class TenantResolutionMiddleware(
     RequestDelegate next,
     IOptions<MultiTenancyOptions> options,
     ILogger<TenantResolutionMiddleware> logger
@@ -35,14 +35,14 @@ public sealed partial class TenantResolutionMiddleware(
 
         if (context.GetEndpoint()?.Metadata.GetMetadata<SkipTenantResolutionAttribute>() is not null)
         {
-            await next(context);
+            await next(context).ConfigureAwait(false);
             return;
         }
 
         if (context.User.Identity?.IsAuthenticated != true)
         {
             _WarnIfMiddlewareLikelyMisordered(context);
-            await next(context);
+            await next(context).ConfigureAwait(false);
             return;
         }
 
@@ -50,7 +50,7 @@ public sealed partial class TenantResolutionMiddleware(
 
         if (string.IsNullOrWhiteSpace(tenantId))
         {
-            await next(context);
+            await next(context).ConfigureAwait(false);
             return;
         }
 

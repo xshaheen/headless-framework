@@ -6,9 +6,9 @@ namespace Headless.Api.Abstractions;
 
 public interface IAbsoluteUrlFactory
 {
-    /// <summary>Gets or sets the origin for the server. For example, "https://server.acme.com:5001".</summary>
+    /// <summary>Gets the origin for the server. For example, "https://server.acme.com:5001".</summary>
     /// <exception cref="InvalidOperationException">The HttpContext is not available.</exception>
-    string Origin { get; set; }
+    string Origin { get; }
 
     /// <summary>Call this method when you're overriding a service that doesn't have an HttpContext instance available.</summary>
     /// <param name="path">Relative path.</param>
@@ -23,7 +23,7 @@ public interface IAbsoluteUrlFactory
     string? GetAbsoluteUrl(HttpContext context, string path);
 }
 
-public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor accessor) : IAbsoluteUrlFactory
+internal sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor accessor) : IAbsoluteUrlFactory
 {
     private static readonly string[] _Separator = ["://"];
 

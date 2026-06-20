@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api.Middlewares;
 
-public sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problemDetailsCreator) : IMiddleware
+internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problemDetailsCreator) : IMiddleware
 {
     /// <summary>Executes the middleware.</summary>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)

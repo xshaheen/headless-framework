@@ -7,7 +7,7 @@ using UserId = Headless.Primitives.UserId;
 
 namespace Headless.Api.Abstractions;
 
-public sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurrentUser
+internal sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurrentUser
 {
     public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated == true;
 

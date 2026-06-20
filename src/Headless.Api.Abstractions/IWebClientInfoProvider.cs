@@ -13,12 +13,3 @@ public interface IWebClientInfoProvider
     /// <summary>Get DeviceInfo.</summary>
     string? DeviceInfo { get; }
 }
-
-public sealed class NullWebClientInfoProvider : IWebClientInfoProvider
-{
-    public string? IpAddress => null;
-
-    public string? UserAgent => null;
-
-    public string? DeviceInfo => null;
-}

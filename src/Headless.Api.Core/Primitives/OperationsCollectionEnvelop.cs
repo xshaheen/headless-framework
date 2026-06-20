@@ -5,5 +5,5 @@ namespace Headless.Primitives;
 
 public sealed record OperationsCollectionEnvelop<T>(
     IReadOnlyCollection<T> Items,
-    List<OperationDescriptor>? Operations = null
+    IReadOnlyList<OperationDescriptor>? Operations = null
 );

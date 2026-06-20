@@ -7,8 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Api.Diagnostics;
 
 /// <summary>see: https://docs.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/diagnostics</summary>
-[PublicAPI]
-public sealed partial class BadRequestDiagnosticAdapter(ILogger logger)
+internal sealed partial class BadRequestDiagnosticAdapter(ILogger logger)
 {
     [DiagnosticName(DiagnosticSources.KestrelOnBadRequest)]
     public void OnBadRequest(KeyValuePair<string, object?> value)
