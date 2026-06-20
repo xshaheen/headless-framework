@@ -14,7 +14,7 @@ public static partial class QueryableExtensions
         CancellationToken cancellationToken = default
     )
         where TEntity : class, IEntity<TKey>
-        where TKey : IEquatable<TKey>
+        where TKey : notnull, IEquatable<TKey>
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id.Equals(id), cancellationToken).ConfigureAwait(false);
 

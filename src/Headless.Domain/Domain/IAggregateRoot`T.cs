@@ -10,12 +10,13 @@ namespace Headless.Domain;
 /// </summary>
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
 [PublicAPI]
-public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot;
+public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot
+    where TId : notnull;
 
 /// <summary>Base class for aggregate roots with a single primary key.</summary>
 [PublicAPI]
 public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
-    where TId : IEquatable<TId>
+    where TId : notnull, IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }

@@ -8,6 +8,7 @@ namespace Headless.Domain;
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
 [PublicAPI]
 public interface IEntity<out TId> : IEntity
+    where TId : notnull
 {
     /// <summary>Unique identifier for this entity.</summary>
     TId Id { get; }
@@ -16,10 +17,10 @@ public interface IEntity<out TId> : IEntity
 /// <summary>Base class for entities with a single primary key.</summary>
 [PublicAPI]
 public abstract class Entity<TId> : Entity, IEntity<TId>
-    where TId : IEquatable<TId>
+    where TId : notnull, IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
-    public virtual TId Id { get; protected init; } = default!;
+    public required TId Id { get; init; }
 
     public override IReadOnlyList<object> GetKeys() => [Id];
 

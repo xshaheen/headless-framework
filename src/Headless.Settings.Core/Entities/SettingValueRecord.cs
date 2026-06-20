@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Domain;
 
@@ -7,6 +8,7 @@ namespace Headless.Settings.Entities;
 
 public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>, ICreateAudit, IUpdateAudit
 {
+    [SetsRequiredMembers]
     [UsedImplicitly]
     private SettingValueRecord()
     {
@@ -15,6 +17,7 @@ public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>, ICr
         ProviderName = null!;
     }
 
+    [SetsRequiredMembers]
     public SettingValueRecord(Guid id, string name, string value, string providerName, string? providerKey = null)
     {
         Argument.IsNotNull(name);
