@@ -74,3 +74,30 @@ updates:
       day: "tuesday"
       time: "09:45"
       timezone: "Africa/Cairo"
+
+  # SPA dashboard front-ends. Their built wwwroot/dist is embedded into the
+  # .NET assemblies, so a lockfile bump must be followed by a dist rebuild;
+  # the Dashboards workflow enforces that any open npm PR includes a fresh dist.
+  - package-ecosystem: "npm"
+    directories:
+      - "/src/Headless.Jobs.Dashboard/wwwroot"
+      - "/src/Headless.Messaging.Dashboard/wwwroot"
+    target-branch: "main"
+    labels:
+      - "maintenance"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:00"
+      timezone: "Africa/Cairo"
