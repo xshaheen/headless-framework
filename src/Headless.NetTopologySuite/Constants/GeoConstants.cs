@@ -7,18 +7,41 @@ using NetTopologySuite.IO.Converters;
 
 namespace Headless.NetTopologySuite.Constants;
 
+[PublicAPI]
 public static class GeoConstants
 {
     public const int GoogleMapsSrid = 4326;
 
-    /// <summary>Accuracy: ~1.1 mm, Ultra precision</summary>
-    public static readonly PrecisionModel UltraPrecision = PrecisionModel.Floating.Value; // 1e12
+    /// <summary>Minimum valid longitude (X) for WGS84 / SRID 4326.</summary>
+    public const double MinLongitude = -180d;
 
-    /// <summary>Accuracy: ~11 cm, High precision (GPS, cadastral)</summary>
-    public static readonly PrecisionModel HighPrecision = PrecisionModel.FloatingSingle.Value; // 1e6
+    /// <summary>Maximum valid longitude (X) for WGS84 / SRID 4326.</summary>
+    public const double MaxLongitude = 180d;
 
-    /// <summary>Accuracy: ~1.1 m, Street-level (good)</summary>
-    public static readonly PrecisionModel StreetLevelPrecision = new(100_000); // 1e5
+    /// <summary>Minimum valid latitude (Y) for WGS84 / SRID 4326.</summary>
+    public const double MinLatitude = -90d;
+
+    /// <summary>Maximum valid latitude (Y) for WGS84 / SRID 4326.</summary>
+    public const double MaxLatitude = 90d;
+
+    /// <summary>
+    /// Full IEEE-754 double-precision floating model (Scale = 0, ~15-16 significant digits).
+    /// Coordinates are not snapped to a grid; absolute accuracy is value-magnitude dependent.
+    /// </summary>
+    public static readonly PrecisionModel UltraPrecision = PrecisionModel.Floating.Value;
+
+    /// <summary>
+    /// IEEE-754 single-precision floating model (Scale = 0, ~7 significant digits).
+    /// Not a fixed grid: absolute accuracy is magnitude dependent (sub-centimetre near the
+    /// origin, degrading to roughly metres near ±180° longitude for SRID 4326).
+    /// </summary>
+    public static readonly PrecisionModel HighPrecision = PrecisionModel.FloatingSingle.Value;
+
+    /// <summary>
+    /// Fixed precision with scale 1e5 — coordinates are snapped to a 1e-5 grid
+    /// (~1.1 m at the equator when the SRID 4326 units are degrees).
+    /// </summary>
+    public static readonly PrecisionModel StreetLevelPrecision = new(100_000); // scale 1e5
 
     /// <summary>~11 cm at Equator, ~9.6 cm at Cairo (~30°N)</summary>
     public const double Around11CmDegrees = 0.000001;

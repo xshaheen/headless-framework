@@ -25,6 +25,7 @@ dotnet add package Headless.NetTopologySuite
 ## Quick Start
 
 ```csharp
+using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 
 var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);
