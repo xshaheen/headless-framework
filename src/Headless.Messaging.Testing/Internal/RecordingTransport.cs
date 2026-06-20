@@ -2,10 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Testing.Internal;

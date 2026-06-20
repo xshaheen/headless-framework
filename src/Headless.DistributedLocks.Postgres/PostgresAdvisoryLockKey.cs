@@ -2,12 +2,9 @@
 
 using System.Collections.Concurrent;
 using System.Data;
-using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Text;
 using Headless.Checks;
-using Headless.DistributedLocks;
 using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;

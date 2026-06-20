@@ -3,7 +3,6 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Core;
-using Headless.DistributedLocks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

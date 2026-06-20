@@ -3,7 +3,6 @@
 using System.ComponentModel;
 using System.Net.Http.Headers;
 using System.Reflection;
-using System.Text.Json;
 using FileSignatures;
 using FluentValidation;
 using Headless.Abstractions;
@@ -22,7 +21,6 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

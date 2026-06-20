@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
-using Headless.DistributedLocks;
 using Microsoft.Extensions.Options;
 using Npgsql;
 

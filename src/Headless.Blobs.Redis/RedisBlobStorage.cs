@@ -4,7 +4,6 @@ using System.Text.RegularExpressions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Constants;
-using Headless.Core;
 using Headless.Primitives;
 using Headless.Serializer;
 using Headless.Urls;

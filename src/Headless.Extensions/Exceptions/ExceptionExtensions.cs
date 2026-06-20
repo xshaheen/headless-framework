@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.ExceptionServices;
-using System.Text.RegularExpressions;
 using Headless.Exceptions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace

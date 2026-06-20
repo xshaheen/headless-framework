@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
-using Headless.DistributedLocks;
 using Microsoft.Data.SqlClient;
 
 namespace Headless.DistributedLocks.SqlServer;

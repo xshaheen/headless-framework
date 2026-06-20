@@ -2,7 +2,6 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;

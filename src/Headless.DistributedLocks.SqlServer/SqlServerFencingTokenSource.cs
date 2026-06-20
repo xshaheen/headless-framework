@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Globalization;
-using Headless.DistributedLocks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 

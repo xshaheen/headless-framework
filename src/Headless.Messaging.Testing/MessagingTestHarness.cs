@@ -1,19 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Testing.Internal;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Testing;
 

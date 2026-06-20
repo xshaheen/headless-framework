@@ -2,8 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Data;
-using System.Globalization;
-using Headless.DistributedLocks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 

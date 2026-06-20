@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Checks;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 using Pulsar.Client.Api;

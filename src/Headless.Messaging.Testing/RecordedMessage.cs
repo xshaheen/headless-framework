@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging;
 using MsgHeaders = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.Testing;

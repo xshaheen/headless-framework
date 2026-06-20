@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;

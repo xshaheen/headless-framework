@@ -2,7 +2,6 @@
 
 using System.Buffers;
 using Headless.Checks;
-using Microsoft.Extensions.Logging;
 
 namespace Headless.Caching;
 

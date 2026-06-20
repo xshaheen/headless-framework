@@ -1,11 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.RegularExpressions;
-using Headless.DistributedLocks;
 using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;

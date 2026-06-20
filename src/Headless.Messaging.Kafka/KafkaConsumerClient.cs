@@ -4,7 +4,6 @@ using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Headless.Checks;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
 using System.Linq.Expressions;
 using Headless.Caching;
 using Headless.CommitCoordination;

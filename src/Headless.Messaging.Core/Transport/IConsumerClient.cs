@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
-
 namespace Headless.Messaging.Transport;
 
 /// <summary>Message queue consumer client interface that defines operations for consuming messages from various message brokers</summary>

@@ -1,5 +1,3 @@
-using Headless.Messaging.Transport;
-
 namespace Headless.Messaging.AzureServiceBus.Helpers;
 
 public static class ServiceBusHelpers

@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using System.Data.Common;
 using Headless.Checks;
-using Headless.DistributedLocks;
 using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;

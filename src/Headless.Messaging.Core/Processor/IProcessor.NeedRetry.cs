@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.DistributedLocks;
 using Headless.Messaging.CircuitBreaker;

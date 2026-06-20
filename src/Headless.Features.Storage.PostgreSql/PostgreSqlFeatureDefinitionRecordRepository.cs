@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Text;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Headless.Primitives;

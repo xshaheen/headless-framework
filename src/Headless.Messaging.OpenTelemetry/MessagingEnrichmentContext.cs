@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Frozen;
 using System.Diagnostics;
 
 namespace Headless.Messaging.OpenTelemetry;
