@@ -2,16 +2,11 @@
 
 namespace Headless.Abstractions;
 
+/// <summary>
+/// Optional mixin: a type that exposes its <see cref="TimeProvider"/>. Consumers can pattern-match
+/// (<c>if (x is IHaveTimeProvider h)</c>) to retrieve it.
+/// </summary>
 public interface IHaveTimeProvider
 {
     TimeProvider TimeProvider { get; }
-}
-
-[PublicAPI]
-public static class TimeProviderExtensions
-{
-    public static TimeProvider GetTimeProvider(this object target)
-    {
-        return target is IHaveTimeProvider accessor ? accessor.TimeProvider : TimeProvider.System;
-    }
 }
