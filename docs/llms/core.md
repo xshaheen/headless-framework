@@ -87,7 +87,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - `Headless.Extensions` has no configuration. Register GUID generation through `AddHeadlessGuidGenerator()` only from host/package setup; persisted backends should resolve `SequentialGuidType.Version7` or `SequentialGuidType.SqlServer` by key instead of depending on the unkeyed default.
 - `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddHeadlessSettings(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
-- Use `LogState` with `LoggerExtensions` for structured logging with tags and properties.
+- Use `LogState` with `HeadlessLoggerExtensions` for structured logging with tags and properties.
 
 ---
 
@@ -224,7 +224,7 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
 
 - **Utilities**:
     - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
-    - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
+    - `LogState` / `HeadlessLoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
     - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
 
 ## Installation

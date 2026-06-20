@@ -25,7 +25,7 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
 
 - **Utilities**:
   - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
-  - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
+  - `LogState` / `HeadlessLoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
   - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
 
 ## Installation
