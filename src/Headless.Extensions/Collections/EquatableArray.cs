@@ -20,7 +20,7 @@ public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equali
     /// </summary>
     private readonly T[] _array = array;
 
-    /// <summary>Gets the length of the array, or 0 if the array is null</summary>
+    /// <summary>Gets the number of elements in the array, or <c>0</c> if the underlying array is <see langword="null"/>.</summary>
     public int Count => _array?.Length ?? 0;
 
     /// <summary>Checks whether two <see cref="EquatableArray{T}"/> values are the same.</summary>

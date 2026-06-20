@@ -15,6 +15,7 @@ public sealed class UnauthorizedException : Exception
     public const string DefaultErrorCode = "error";
 
     /// <summary>Initializes an unauthorized exception from a single <see cref="ErrorDescriptor"/>.</summary>
+    /// <param name="error">The descriptor of the unauthorized condition.</param>
     public UnauthorizedException(ErrorDescriptor error)
         : base($"Unauthorized: {error}")
     {
@@ -22,6 +23,8 @@ public sealed class UnauthorizedException : Exception
     }
 
     /// <summary>Initializes an unauthorized exception from a message and an optional error code.</summary>
+    /// <param name="message">The human-readable unauthorized condition message.</param>
+    /// <param name="code">The error code associated with the condition; defaults to <see cref="DefaultErrorCode"/>.</param>
     public UnauthorizedException([LocalizationRequired] string message, string code = DefaultErrorCode)
         : base($"Unauthorized: {message}")
     {

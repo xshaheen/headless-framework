@@ -419,11 +419,9 @@ public static class RandomExtensions
             return sb.ToString();
         }
 
-        /// <summary>
-        /// Gets random of given objects.
-        /// </summary>
-        /// <typeparam name="T">Type of the objects</typeparam>
-        /// <param name="objects">List of object to select a random one</param>
+        /// <summary>Returns a uniformly random element of <paramref name="objects"/>.</summary>
+        /// <typeparam name="T">The element type.</typeparam>
+        /// <param name="objects">The non-empty span to pick from.</param>
         /// <returns>A randomly selected element of <paramref name="objects"/>.</returns>
         /// <exception cref="ArgumentException">Thrown when <paramref name="objects"/> is empty.</exception>
         public T GetRandomOf<T>(params ReadOnlySpan<T> objects)
@@ -433,11 +431,9 @@ public static class RandomExtensions
             return objects[random.Next(0, objects.Length)];
         }
 
-        /// <summary>
-        /// Gets random item from the given list.
-        /// </summary>
-        /// <typeparam name="T">Type of the objects</typeparam>
-        /// <param name="list">List of object to select a random one</param>
+        /// <summary>Returns a uniformly random element of <paramref name="list"/>.</summary>
+        /// <typeparam name="T">The element type.</typeparam>
+        /// <param name="list">The non-empty list to pick from.</param>
         /// <returns>A randomly selected element of <paramref name="list"/>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="list"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">Thrown when <paramref name="list"/> is empty.</exception>
@@ -448,11 +444,9 @@ public static class RandomExtensions
             return list[random.Next(0, list.Count)];
         }
 
-        /// <summary>
-        /// Generates a randomized list from given enumerable.
-        /// </summary>
-        /// <typeparam name="T">Type of items in the list</typeparam>
-        /// <param name="items">items</param>
+        /// <summary>Returns a new list containing every element of <paramref name="items"/> in a uniformly shuffled order.</summary>
+        /// <typeparam name="T">The element type.</typeparam>
+        /// <param name="items">The non-empty sequence to shuffle.</param>
         /// <returns>A new <see cref="List{T}"/> containing the elements of <paramref name="items"/> in random order.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="items"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">Thrown when <paramref name="items"/> is empty.</exception>

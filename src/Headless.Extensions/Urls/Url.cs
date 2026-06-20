@@ -827,7 +827,7 @@ public sealed class Url
     public static Url FromString(string? url) => url;
 
     /// <summary>
-    /// Implicit conversion from System.Uri to Flurl.Url.
+    /// Implicit conversion from System.Uri to <see cref="Url"/>.
     /// </summary>
     /// <param name="uri">The <see cref="System.Uri"/> to convert.</param>
     /// <returns>A new <see cref="Url"/> object built from <paramref name="uri"/>.</returns>

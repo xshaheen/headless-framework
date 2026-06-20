@@ -17,7 +17,7 @@ public static class GeneratedExtensions
     /// <param name="url">This URL.</param>
     /// <param name="segment">The segment to append</param>
     /// <param name="fullyEncode">If true, URL-encodes reserved characters such as '/', '+', and '%'. Otherwise, only encodes strictly illegal characters (including '%' but only when not followed by 2 hex characters).</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     /// <exception cref="System.ArgumentNullException">Thrown when <paramref name="segment"/> is <see langword="null"/>.</exception>
     public static Url AppendPathSegment(this string url, object segment, bool fullyEncode = false)
     {
@@ -29,7 +29,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="segments">The segments to append</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendPathSegments(this string url, params object[] segments)
     {
         return new Url(url).AppendPathSegments(segments);
@@ -40,7 +40,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="segments">The segments to append</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendPathSegments(this string url, IEnumerable<object> segments)
     {
         return new Url(url).AppendPathSegments(segments);
@@ -50,7 +50,7 @@ public static class GeneratedExtensions
     /// Removes the last path segment from the URL.
     /// </summary>
     /// <param name="url">This URL.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemovePathSegment(this string url)
     {
         return new Url(url).RemovePathSegment();
@@ -60,7 +60,7 @@ public static class GeneratedExtensions
     /// Removes the entire path component of the URL.
     /// </summary>
     /// <param name="url">This URL.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemovePath(this string url)
     {
         return new Url(url).RemovePath();
@@ -73,7 +73,7 @@ public static class GeneratedExtensions
     /// <param name="name">Name of query parameter</param>
     /// <param name="value">Value of query parameter</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParam(
         this string url,
         string name,
@@ -92,7 +92,7 @@ public static class GeneratedExtensions
     /// <param name="value">Value of query parameter</param>
     /// <param name="isEncoded">Set to true to indicate the value is already URL-encoded. Defaults to false.</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing).</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParam(
         this string url,
         string name,
@@ -109,7 +109,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="name">Name of query parameter</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParam(this string url, string name)
     {
         return new Url(url).SetQueryParam(name);
@@ -121,7 +121,7 @@ public static class GeneratedExtensions
     /// <param name="url">This URL.</param>
     /// <param name="values">Typically an anonymous object, ie: new { x = 1, y = 2 }</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParams(
         this string url,
         object values,
@@ -136,7 +136,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="names">Names of query parameters.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParams(this string url, IEnumerable<string> names)
     {
         return new Url(url).SetQueryParams(names);
@@ -147,7 +147,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="names">Names of query parameters</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParams(this string url, params string[] names)
     {
         return new Url(url).SetQueryParams(names);
@@ -160,7 +160,7 @@ public static class GeneratedExtensions
     /// <param name="name">Name of query parameter</param>
     /// <param name="value">Value of query parameter</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(
         this string url,
         string name,
@@ -179,7 +179,7 @@ public static class GeneratedExtensions
     /// <param name="value">Value of query parameter</param>
     /// <param name="isEncoded">Set to true to indicate the value is already URL-encoded. Defaults to false.</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing).</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(
         this string url,
         string name,
@@ -196,7 +196,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="name">Name of query parameter</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(this string url, string name)
     {
         return new Url(url).AppendQueryParam(name);
@@ -208,7 +208,7 @@ public static class GeneratedExtensions
     /// <param name="url">This URL.</param>
     /// <param name="values">Typically an anonymous object, ie: new { x = 1, y = 2 }</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(
         this string url,
         object values,
@@ -223,7 +223,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="names">Names of query parameters.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(this string url, IEnumerable<string> names)
     {
         return new Url(url).AppendQueryParam(names);
@@ -234,7 +234,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="names">Names of query parameters</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(this string url, params string[] names)
     {
         return new Url(url).AppendQueryParam(names);
@@ -245,7 +245,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="name">Query string parameter name to remove</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveQueryParam(this string url, string name)
     {
         return new Url(url).RemoveQueryParam(name);
@@ -256,7 +256,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="names">Query string parameter names to remove</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveQueryParams(this string url, params string[] names)
     {
         return new Url(url).RemoveQueryParams(names);
@@ -267,7 +267,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="names">Query string parameter names to remove</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveQueryParams(this string url, IEnumerable<string> names)
     {
         return new Url(url).RemoveQueryParams(names);
@@ -277,7 +277,7 @@ public static class GeneratedExtensions
     /// Removes the entire query component of the URL.
     /// </summary>
     /// <param name="url">This URL.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveQuery(this string url)
     {
         return new Url(url).RemoveQuery();
@@ -288,7 +288,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="url">This URL.</param>
     /// <param name="fragment">The part of the URL after #</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetFragment(this string url, string fragment)
     {
         return new Url(url).SetFragment(fragment);
@@ -298,7 +298,7 @@ public static class GeneratedExtensions
     /// Removes the URL fragment including the #.
     /// </summary>
     /// <param name="url">This URL.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveFragment(this string url)
     {
         return new Url(url).RemoveFragment();
@@ -308,7 +308,7 @@ public static class GeneratedExtensions
     /// Trims the URL to its root, including the scheme, any user info, host, and port (if specified).
     /// </summary>
     /// <param name="url">This URL.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url ResetToRoot(this string url)
     {
         return new Url(url).ResetToRoot();
@@ -320,7 +320,7 @@ public static class GeneratedExtensions
     /// <param name="uri">This System.Uri.</param>
     /// <param name="segment">The segment to append</param>
     /// <param name="fullyEncode">If true, URL-encodes reserved characters such as '/', '+', and '%'. Otherwise, only encodes strictly illegal characters (including '%' but only when not followed by 2 hex characters).</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     /// <exception cref="System.ArgumentNullException">Thrown when <paramref name="uri"/> or <paramref name="segment"/> is <see langword="null"/>.</exception>
     public static Url AppendPathSegment(this Uri uri, object segment, bool fullyEncode = false)
     {
@@ -332,7 +332,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="segments">The segments to append</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendPathSegments(this Uri uri, params object[] segments)
     {
         return new Url(uri).AppendPathSegments(segments);
@@ -343,7 +343,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="segments">The segments to append</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendPathSegments(this Uri uri, IEnumerable<object> segments)
     {
         return new Url(uri).AppendPathSegments(segments);
@@ -353,7 +353,7 @@ public static class GeneratedExtensions
     /// Removes the last path segment from the URL.
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemovePathSegment(this Uri uri)
     {
         return new Url(uri).RemovePathSegment();
@@ -363,7 +363,7 @@ public static class GeneratedExtensions
     /// Removes the entire path component of the URL.
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemovePath(this Uri uri)
     {
         return new Url(uri).RemovePath();
@@ -376,7 +376,7 @@ public static class GeneratedExtensions
     /// <param name="name">Name of query parameter</param>
     /// <param name="value">Value of query parameter</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParam(
         this Uri uri,
         string name,
@@ -395,7 +395,7 @@ public static class GeneratedExtensions
     /// <param name="value">Value of query parameter</param>
     /// <param name="isEncoded">Set to true to indicate the value is already URL-encoded. Defaults to false.</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing).</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParam(
         this Uri uri,
         string name,
@@ -412,7 +412,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="name">Name of query parameter</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParam(this Uri uri, string name)
     {
         return new Url(uri).SetQueryParam(name);
@@ -424,7 +424,7 @@ public static class GeneratedExtensions
     /// <param name="uri">This System.Uri.</param>
     /// <param name="values">Typically an anonymous object, ie: new { x = 1, y = 2 }</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParams(
         this Uri uri,
         object values,
@@ -439,7 +439,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="names">Names of query parameters.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParams(this Uri uri, IEnumerable<string> names)
     {
         return new Url(uri).SetQueryParams(names);
@@ -450,7 +450,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="names">Names of query parameters</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetQueryParams(this Uri uri, params string[] names)
     {
         return new Url(uri).SetQueryParams(names);
@@ -463,7 +463,7 @@ public static class GeneratedExtensions
     /// <param name="name">Name of query parameter</param>
     /// <param name="value">Value of query parameter</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(
         this Uri uri,
         string name,
@@ -482,7 +482,7 @@ public static class GeneratedExtensions
     /// <param name="value">Value of query parameter</param>
     /// <param name="isEncoded">Set to true to indicate the value is already URL-encoded. Defaults to false.</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing).</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(
         this Uri uri,
         string name,
@@ -499,7 +499,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="name">Name of query parameter</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(this Uri uri, string name)
     {
         return new Url(uri).AppendQueryParam(name);
@@ -511,7 +511,7 @@ public static class GeneratedExtensions
     /// <param name="uri">This System.Uri.</param>
     /// <param name="values">Typically an anonymous object, ie: new { x = 1, y = 2 }</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(
         this Uri uri,
         object values,
@@ -526,7 +526,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="names">Names of query parameters.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(this Uri uri, IEnumerable<string> names)
     {
         return new Url(uri).AppendQueryParam(names);
@@ -537,7 +537,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="names">Names of query parameters</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url AppendQueryParam(this Uri uri, params string[] names)
     {
         return new Url(uri).AppendQueryParam(names);
@@ -548,7 +548,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="name">Query string parameter name to remove</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveQueryParam(this Uri uri, string name)
     {
         return new Url(uri).RemoveQueryParam(name);
@@ -559,7 +559,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="names">Query string parameter names to remove</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveQueryParams(this Uri uri, params string[] names)
     {
         return new Url(uri).RemoveQueryParams(names);
@@ -570,7 +570,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="names">Query string parameter names to remove</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveQueryParams(this Uri uri, IEnumerable<string> names)
     {
         return new Url(uri).RemoveQueryParams(names);
@@ -580,7 +580,7 @@ public static class GeneratedExtensions
     /// Removes the entire query component of the URL.
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveQuery(this Uri uri)
     {
         return new Url(uri).RemoveQuery();
@@ -591,7 +591,7 @@ public static class GeneratedExtensions
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
     /// <param name="fragment">The part of the URL after #</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url SetFragment(this Uri uri, string fragment)
     {
         return new Url(uri).SetFragment(fragment);
@@ -601,7 +601,7 @@ public static class GeneratedExtensions
     /// Removes the URL fragment including the #.
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url RemoveFragment(this Uri uri)
     {
         return new Url(uri).RemoveFragment();
@@ -611,7 +611,7 @@ public static class GeneratedExtensions
     /// Trims the URL to its root, including the scheme, any user info, host, and port (if specified).
     /// </summary>
     /// <param name="uri">This System.Uri.</param>
-    /// <returns>A new Flurl.Url object.</returns>
+    /// <returns>A new <see cref="Url"/> object.</returns>
     public static Url ResetToRoot(this Uri uri)
     {
         return new Url(uri).ResetToRoot();

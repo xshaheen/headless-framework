@@ -24,9 +24,16 @@ public static class AuthenticationConstants
     /// </summary>
     public static class Schemas
     {
+        /// <summary>OpenID Connect authentication scheme (<c>OIDC</c>).</summary>
         public const string OpenId = "OIDC";
+
+        /// <summary>JWT bearer authentication scheme (<c>Bearer</c>).</summary>
         public const string Bearer = "Bearer";
+
+        /// <summary>HTTP Basic authentication scheme (<c>Basic</c>).</summary>
         public const string Basic = "Basic";
+
+        /// <summary>API-key authentication scheme (<c>ApiKey</c>).</summary>
         public const string ApiKey = "ApiKey";
 
         /// <summary>ASP.NET Core Identity's primary application cookie scheme (<c>IdentityConstants.ApplicationScheme</c>).</summary>

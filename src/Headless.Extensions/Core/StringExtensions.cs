@@ -8,6 +8,7 @@ using RegexPatterns = Headless.Constants.RegexPatterns;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
+/// <summary>General-purpose extension methods for <see cref="string"/> and character sequences.</summary>
 public static class StringExtensions
 {
     /// <summary>
@@ -154,7 +155,9 @@ public static class StringExtensions
         return !string.IsNullOrWhiteSpace(input) ? input : null;
     }
 
-    /// <summary>Converts line endings in the string to <see cref="Environment.NewLine"/>.</summary>
+    /// <summary>Converts all line endings in the string to <see cref="Environment.NewLine"/>.</summary>
+    /// <param name="value">The string whose line endings are normalized.</param>
+    /// <returns>A copy of <paramref name="value"/> with every <c>\r\n</c>, <c>\r</c>, and <c>\n</c> replaced by <see cref="Environment.NewLine"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string NormalizeLineEndings(this string value)
@@ -165,7 +168,10 @@ public static class StringExtensions
             .Replace("\n", Environment.NewLine, StringComparison.Ordinal);
     }
 
-    /// <summary>Uses string.Split method to split given string by <see cref="Environment.NewLine"/>.</summary>
+    /// <summary>Splits the string into lines using <see cref="Environment.NewLine"/> as the delimiter.</summary>
+    /// <param name="input">The string to split.</param>
+    /// <param name="options">Options to control whether empty entries are omitted from the result.</param>
+    /// <returns>An array of substrings produced by splitting on <see cref="Environment.NewLine"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string[] SplitToLines(this string input, StringSplitOptions options = StringSplitOptions.None)
@@ -173,7 +179,11 @@ public static class StringExtensions
         return input.Split(Environment.NewLine, options);
     }
 
-    /// <summary>Adds a char to the beginning of given string if it doesn't start with the char.</summary>
+    /// <summary>Ensures the string starts with <paramref name="c"/>, prepending it if not already present.</summary>
+    /// <param name="input">The string to check.</param>
+    /// <param name="c">The character that must appear at the start.</param>
+    /// <param name="comparisonType">The comparison rule used to test for the leading character.</param>
+    /// <returns><paramref name="input"/> unchanged if it already starts with <paramref name="c"/>; otherwise <paramref name="c"/> prepended to <paramref name="input"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string EnsureStartsWith(
@@ -190,7 +200,11 @@ public static class StringExtensions
         return startsWithChar ? input : c + input;
     }
 
-    /// <summary>Adds a string to the beginning of given string if it doesn't start with the char.</summary>
+    /// <summary>Ensures the string starts with <paramref name="suffix"/>, prepending it if not already present.</summary>
+    /// <param name="input">The string to check.</param>
+    /// <param name="suffix">The prefix string that must appear at the start.</param>
+    /// <param name="comparisonType">The comparison rule used to test for the leading prefix.</param>
+    /// <returns><paramref name="input"/> unchanged if it already starts with <paramref name="suffix"/>; otherwise <paramref name="suffix"/> prepended to <paramref name="input"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string EnsureStartsWith(
@@ -202,7 +216,11 @@ public static class StringExtensions
         return input.StartsWith(suffix, comparisonType) ? input : suffix + input;
     }
 
-    /// <summary>Adds a char to the end of given string if it doesn't end with the char.</summary>
+    /// <summary>Ensures the string ends with <paramref name="suffix"/>, appending it if not already present.</summary>
+    /// <param name="input">The string to check.</param>
+    /// <param name="suffix">The character that must appear at the end.</param>
+    /// <param name="comparisonType">The comparison rule used to test for the trailing character.</param>
+    /// <returns><paramref name="input"/> unchanged if it already ends with <paramref name="suffix"/>; otherwise <paramref name="input"/> with <paramref name="suffix"/> appended.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string EnsureEndsWith(
@@ -219,7 +237,11 @@ public static class StringExtensions
         return endsWithChar ? input : input + suffix;
     }
 
-    /// <summary>Adds a string to the end of given string if it doesn't end with the char.</summary>
+    /// <summary>Ensures the string ends with <paramref name="suffix"/>, appending it if not already present.</summary>
+    /// <param name="input">The string to check.</param>
+    /// <param name="suffix">The suffix string that must appear at the end.</param>
+    /// <param name="comparisonType">The comparison rule used to test for the trailing suffix.</param>
+    /// <returns><paramref name="input"/> unchanged if it already ends with <paramref name="suffix"/>; otherwise <paramref name="input"/> with <paramref name="suffix"/> appended.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string EnsureEndsWith(
@@ -231,10 +253,10 @@ public static class StringExtensions
         return input.EndsWith(suffix, comparisonType) ? input : input + suffix;
     }
 
-    /// <summary>Removes the first occurrence of the given postfixes from the end of the given string.</summary>
+    /// <summary>Removes the first matching postfix string from the end of the string using ordinal comparison.</summary>
     /// <param name="input">The string.</param>
-    /// <param name="postfixes">one or more postfix.</param>
-    /// <returns>Modified string or the same string if it has not any of given postfixes</returns>
+    /// <param name="postfixes">One or more candidate postfixes; the first match is removed.</param>
+    /// <returns>The string without its trailing matched postfix, or the same string if none of <paramref name="postfixes"/> match, or <see langword="null"/> if <paramref name="input"/> is <see langword="null"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -244,12 +266,12 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Removes the first occurrence of the given postfixes from the end of the given string.
+    /// Removes the first matching postfix string from the end of the string using the specified comparison.
     /// </summary>
     /// <param name="input">The string.</param>
-    /// <param name="comparisonType">String comparison type</param>
-    /// <param name="postfixes">one or more postfix.</param>
-    /// <returns>Modified string or the same string if it has not any of given postfixes</returns>
+    /// <param name="comparisonType">The comparison rule used to match each postfix.</param>
+    /// <param name="postfixes">One or more candidate postfixes; the first match is removed.</param>
+    /// <returns>The string without its trailing matched postfix, or the same string if none of <paramref name="postfixes"/> match, or <see langword="null"/> if <paramref name="input"/> is <see langword="null"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -332,11 +354,11 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Removes the first occurrence of the given prefixes from the beginning of the given string.
+    /// Removes the first matching prefix string from the beginning of the string using ordinal comparison.
     /// </summary>
     /// <param name="input">The string.</param>
-    /// <param name="prefixes">one or more prefix.</param>
-    /// <returns>Modified string or the same string if it has not any of the given prefixes</returns>
+    /// <param name="prefixes">One or more candidate prefixes; the first match is removed.</param>
+    /// <returns>The string without its leading matched prefix, or the same string if none of <paramref name="prefixes"/> match, or <see langword="null"/> if <paramref name="input"/> is <see langword="null"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -346,12 +368,12 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Removes the first occurrence of the given prefixes from the beginning of the given string.
+    /// Removes the first matching prefix string from the beginning of the string using the specified comparison.
     /// </summary>
     /// <param name="input">The string.</param>
-    /// <param name="comparisonType">String comparison type</param>
-    /// <param name="prefixes">one or more prefix.</param>
-    /// <returns>Modified string or the same string if it has not any of the given prefixes</returns>
+    /// <param name="comparisonType">The comparison rule used to match each prefix.</param>
+    /// <param name="prefixes">One or more candidate prefixes; the first match is removed.</param>
+    /// <returns>The string without its leading matched prefix, or the same string if none of <paramref name="prefixes"/> match, or <see langword="null"/> if <paramref name="input"/> is <see langword="null"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -385,11 +407,15 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Removes the first occurrence of the given prefixes from the beginning of the given string.
+    /// Removes the first matching prefix character from the beginning of the string.
     /// </summary>
     /// <param name="input">The string.</param>
-    /// <param name="prefixes">one or more prefix.</param>
-    /// <returns>Modified string or the same string if it has not any of the given prefixes</returns>
+    /// <param name="prefixes">One or more candidate prefix characters; the first match is removed.</param>
+    /// <returns>
+    /// The string without its leading matched prefix character, the same string if none of
+    /// <paramref name="prefixes"/> match, or <see langword="null"/> if <paramref name="input"/> is
+    /// <see langword="null"/> or empty.
+    /// </returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -418,8 +444,13 @@ public static class StringExtensions
         return input;
     }
 
-    /// <summary>Removes the first occurrence of the given prefix from the beginning of the given string.</summary>
-    /// <returns>Modified string or the same string if it has not any of given prefix</returns>
+    /// <summary>Removes the given prefix character from the beginning of the string if it is present.</summary>
+    /// <param name="input">The string.</param>
+    /// <param name="prefix">The prefix character to remove.</param>
+    /// <returns>
+    /// The string without its leading <paramref name="prefix"/>, the same string if it does not start with
+    /// <paramref name="prefix"/>, or <see langword="null"/> if <paramref name="input"/> is <see langword="null"/> or empty.
+    /// </returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -440,7 +471,9 @@ public static class StringExtensions
         return input;
     }
 
-    /// <summary>Converts given string to a byte array using <see cref="Encoding.UTF8"/> encoding.</summary>
+    /// <summary>Encodes the string to a byte array using <see cref="Encoding.UTF8"/>.</summary>
+    /// <param name="input">The string to encode.</param>
+    /// <returns>The UTF-8 byte representation of <paramref name="input"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static byte[] GetBytes(this string input)
@@ -448,7 +481,10 @@ public static class StringExtensions
         return input.GetBytes(Encoding.UTF8);
     }
 
-    /// <summary>Converts given string to a byte array using the given <paramref name="encoding"/>.</summary>
+    /// <summary>Encodes the string to a byte array using the given <paramref name="encoding"/>.</summary>
+    /// <param name="input">The string to encode.</param>
+    /// <param name="encoding">The encoding used to convert the string.</param>
+    /// <returns>The encoded byte representation of <paramref name="input"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static byte[] GetBytes(this string input, Encoding encoding)
@@ -456,10 +492,11 @@ public static class StringExtensions
         return encoding.GetBytes(input);
     }
 
-    /// <summary>
-    /// Replace a new string applying on it <see cref="string.Replace(string, string)"/>
-    /// using <paramref name="replaces"/>.
-    /// </summary>
+    /// <summary>Applies a sequence of string replacements to the input, using <see cref="string.Replace(string,string,StringComparison)"/> for each pair.</summary>
+    /// <param name="input">The string to transform.</param>
+    /// <param name="replaces">Ordered pairs of (oldValue, newValue) to apply in sequence.</param>
+    /// <param name="comparison">The comparison rule used for each replacement. Defaults to <see cref="StringComparison.Ordinal"/>.</param>
+    /// <returns>A new string with all specified replacements applied in order.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string Replace(
@@ -511,7 +548,9 @@ public static class StringExtensions
         return sb.ToString();
     }
 
-    /// <summary>Convert any digit in the string to the equivalent Arabic digit [0-9].</summary>
+    /// <summary>Converts any Unicode decimal digit in the character sequence to its ASCII equivalent [0-9].</summary>
+    /// <param name="input">The character sequence to transform.</param>
+    /// <returns>A new string with every Unicode decimal digit replaced by its ASCII equivalent; non-digit characters are unchanged.</returns>
     /// <example>"١٢٨" to "128"</example>
     /// <example>"١,٢٨" to "1,28"</example>
     /// <example>"١.٢٨" to "1.28"</example>
@@ -562,10 +601,10 @@ public static class StringExtensions
         return RegexPatterns.Quotes.Replace(s, "");
     }
 
-    /// <summary>
-    /// Replace a new string applying on it <see cref="string.Replace(char, char)"/>
-    /// using <paramref name="replaces"/>.
-    /// </summary>
+    /// <summary>Applies a sequence of character replacements to the input, using <see cref="string.Replace(char,char)"/> for each pair.</summary>
+    /// <param name="input">The string to transform.</param>
+    /// <param name="replaces">Ordered pairs of (oldValue, newValue) characters to apply in sequence.</param>
+    /// <returns>A new string with all specified character replacements applied in order.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string Replace(this string input, IEnumerable<(char oldValue, char newValue)> replaces)
@@ -580,10 +619,9 @@ public static class StringExtensions
         return output;
     }
 
-    /// <summary>
-    /// Returns null if the string is null or empty or white spaces
-    /// otherwise return a trim-ed string.
-    /// </summary>
+    /// <summary>Trims the string and returns <see langword="null"/> if the result is <see langword="null"/>, empty, or all white-space.</summary>
+    /// <param name="input">The string to trim.</param>
+    /// <returns>The trimmed string, or <see langword="null"/> if <paramref name="input"/> is <see langword="null"/>, empty, or exclusively white-space.</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -624,12 +662,11 @@ public static class StringExtensions
         return Enum.Parse<T>(Argument.IsNotNull(value), ignoreCase);
     }
 
-    /// <summary>
-    /// Gets index of nth occurrence of a char in a string.
-    /// </summary>
-    /// <param name="input">source string to be searched</param>
-    /// <param name="c">Char to search in <paramref name="input"/></param>
-    /// <param name="n">Count of the occurrence</param>
+    /// <summary>Returns the index of the <paramref name="n"/>th occurrence of <paramref name="c"/> in the string.</summary>
+    /// <param name="input">The string to search.</param>
+    /// <param name="c">The character to find.</param>
+    /// <param name="n">The ordinal number of the occurrence to find (1-based).</param>
+    /// <returns>The zero-based index of the <paramref name="n"/>th occurrence of <paramref name="c"/>, or <c>-1</c> if fewer than <paramref name="n"/> occurrences exist.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static int NthIndexOf(this string input, char c, int n)
@@ -653,17 +690,14 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Compares two strings, character by character, and returns the
-    /// first position where the two strings differ from one another.
+    /// Compares two strings character by character and returns the index of the first differing position.
     /// </summary>
-    /// <param name="s1">
-    /// The first string to compare
-    /// </param>
-    /// <param name="s2">
-    /// The second string to compare
-    /// </param>
+    /// <param name="s1">The first string to compare.</param>
+    /// <param name="s2">The second string to compare.</param>
     /// <returns>
-    /// The first position where the two strings differ.
+    /// The zero-based index of the first position where <paramref name="s1"/> and <paramref name="s2"/> differ;
+    /// if one is a prefix of the other, the length of the shorter string; if the strings are identical,
+    /// the length of the shorter string.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
@@ -684,7 +718,9 @@ public static class StringExtensions
         return len;
     }
 
-    /// <summary>True if the given string is a valid IPv4 address.</summary>
+    /// <summary>Determines whether the string is a valid dotted-decimal IPv4 address.</summary>
+    /// <param name="s">The string to test.</param>
+    /// <returns><see langword="true"/> if <paramref name="s"/> consists of exactly four dot-separated octets each parsable as a <see cref="byte"/>; otherwise, <see langword="false"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static bool IsIp4(this string s)
@@ -701,15 +737,17 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Remove accents (diacritics) from the string.
-    /// <para>"crème brûlée" to "creme-brulee"</para>
+    /// Removes accent (diacritic) characters from the string, leaving only base characters.
+    /// <para>"crème brûlée" to "creme brulee"</para>
     /// <para>"بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ" to "بسم الله الرحمن الرحيم"</para>
     /// </summary>
+    /// <param name="input">The string to strip of accent marks.</param>
+    /// <returns>
+    /// A copy of <paramref name="input"/> with all non-spacing Unicode marks removed, or
+    /// <paramref name="input"/> unchanged if it is <see langword="null"/> or white-space only.
+    /// </returns>
     /// <remarks>
-    /// Remarks:
-    /// <para>* Normalize to FormD splits accented letters in letters+accents.</para>
-    /// <para>* Remove those accents (and other non-spacing characters).</para>
-    /// <para>* Return a new string from the remaining chars.</para>
+    /// <para>Normalizes to FormD to split accented letters into base letters plus combining marks, removes non-spacing marks, then re-normalizes to FormC.</para>
     /// </remarks>
     [SystemPure]
     [JetBrainsPure]
@@ -743,8 +781,11 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Returns the specified default value if the string is null, empty, or consists only of white-space characters.
+    /// Returns <paramref name="defaultValue"/> when the string is <see langword="null"/>, empty, or consists only of white-space characters; otherwise returns the original string.
     /// </summary>
+    /// <param name="str">The string to test.</param>
+    /// <param name="defaultValue">The value to return when <paramref name="str"/> is blank.</param>
+    /// <returns><paramref name="str"/> if it has non-whitespace content; otherwise <paramref name="defaultValue"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string DefaultIfEmpty(this string? str, string defaultValue)

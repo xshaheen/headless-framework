@@ -36,12 +36,12 @@ public static partial class EnumerableExtensions
     }
 
     /// <summary>
-    /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="IList{T}" />.
+    /// Converts an <see cref="IEnumerable{T}" /> to a <see cref="List{T}" />.
     /// </summary>
     /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
-    /// Either <paramref name="source"/> if it can be cast to <see cref="IList{T}"/>; or a new IList&lt;T&gt; created from <c>source</c>.
+    /// Either <paramref name="source"/> if it can be cast to <see cref="List{T}"/>; or a new List&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
@@ -51,7 +51,7 @@ public static partial class EnumerableExtensions
     }
 
     /// <summary>
-    /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="List{T}" />.
+    /// Converts an <see cref="IEnumerable{T}" /> to a <see cref="List{T}" />.
     /// </summary>
     /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
@@ -327,6 +327,7 @@ public static partial class EnumerableExtensions
     /// <typeparam name="T">The type of the elements of <paramref name="enumerable"/>.</typeparam>
     /// <param name="enumerable">The sequence to guard against multiple enumeration.</param>
     /// <returns>A sequence that permits only a single enumeration of <paramref name="enumerable"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown during a second enumeration of the returned sequence.</exception>
     public static IEnumerable<T> AsEnumerableOnce<T>(this IEnumerable<T> enumerable)
     {
         return new EnumerableOnce<T>(enumerable);

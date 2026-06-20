@@ -349,6 +349,7 @@ public static class ListExtensions
     /// </summary>
     /// <param name="list">The list to get the data view over.</param>
     /// <typeparam name="T">The type of the elements in the list.</typeparam>
+    /// <returns>A <see cref="ReadOnlySpan{T}"/> over <paramref name="list"/>'s internal buffer.</returns>
     [MustUseReturnValue]
     public static ReadOnlySpan<T> AsReadOnlySpan<T>(this List<T> list)
     {

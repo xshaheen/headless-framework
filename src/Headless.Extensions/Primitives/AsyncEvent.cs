@@ -66,9 +66,11 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
     private readonly List<Func<object, TEvent, Task>> _eventHandlers = [];
     private readonly Lock _lockObject = new();
 
+    /// <inheritdoc />
     public bool ParallelInvoke { get; } = parallelInvoke;
 
     // ReSharper disable once InconsistentlySynchronizedField
+    /// <inheritdoc />
     public bool HasHandlers => _eventHandlers.Count > 0;
 
     /// <inheritdoc />

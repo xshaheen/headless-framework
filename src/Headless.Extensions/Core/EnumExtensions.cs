@@ -127,7 +127,7 @@ public static class EnumExtensions
         where T : struct, Enum
     {
         /// <summary>Gets the localized display name of the enum value for the requested locale.</summary>
-        /// <param name="locale">The locale key to look up.</param>
+        /// <param name="locale">The locale key (e.g. <c>"ar"</c>) to look up.</param>
         /// <param name="fallbackLocale">(Optional) A locale key to fall back to when <paramref name="locale"/> has no entry.</param>
         /// <returns>
         /// The display name for <paramref name="locale"/>, the display name for <paramref name="fallbackLocale"/>,
@@ -189,7 +189,7 @@ public static class EnumExtensions
         }
 
         /// <summary>Gets the localized value of the enum value for the requested locale.</summary>
-        /// <param name="locale">The locale key to look up.</param>
+        /// <param name="locale">The locale key (e.g. <c>"ar"</c>) to look up.</param>
         /// <param name="fallbackLocale">(Optional) A locale key to fall back to when <paramref name="locale"/> has no entry.</param>
         /// <returns>
         /// The <see cref="EnumLocale{T}"/> for <paramref name="locale"/>, for <paramref name="fallbackLocale"/>

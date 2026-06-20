@@ -340,7 +340,7 @@ public static class TypeExtensions
 
     #region Base Classes
 
-    /// <summary>Gets all base classes of this type, ordered from the most-derived ancestor down to the least-derived.</summary>
+    /// <summary>Gets all base classes of this type, ordered from the least-derived ancestor up to the immediate base class.</summary>
     /// <param name="type">The type to get its base classes.</param>
     /// <param name="includeObject">True, to include the standard <see cref="object"/> type in the returned array.</param>
     /// <returns>The base classes of <paramref name="type"/>.</returns>

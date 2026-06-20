@@ -5,7 +5,7 @@ using Headless.Generator.Primitives;
 
 namespace Headless.Primitives;
 
-/// <summary>User identifier.</summary>
+/// <summary>A strongly-typed user identifier backed by a non-empty <see cref="string"/> value.</summary>
 [PublicAPI]
 [ComplexType]
 #pragma warning disable CA1036  // Override methods on comparable types

@@ -138,6 +138,7 @@ public static class HasExtraPropertiesExtensions
         /// <param name="defaultValue">The value returned when the property is missing or <see langword="null"/>.</param>
         /// <returns>The converted property value, or <paramref name="defaultValue"/>.</returns>
         /// <exception cref="InvalidOperationException">Thrown when <typeparamref name="TProperty"/> is not a supported primitive type.</exception>
+        /// <exception cref="ArgumentException">Thrown when <typeparamref name="TProperty"/> is an enum and the stored value does not match a defined name or value.</exception>
         /// <exception cref="FormatException">Thrown when the stored value cannot be parsed into <typeparamref name="TProperty"/>.</exception>
         [RequiresUnreferencedCode("Uses TypeDescriptor which is not compatible with trimming.")]
         public TProperty? GetProperty<TProperty>(string name, TProperty? defaultValue = default)

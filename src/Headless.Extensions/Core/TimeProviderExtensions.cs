@@ -16,6 +16,10 @@ public static class TimeProviderExtensions
         /// <param name="delay">The amount of time to wait.</param>
         /// <param name="cancellationToken">A token that, when canceled, ends the wait early without throwing.</param>
         /// <returns>A <see cref="Task"/> that completes when the delay elapses or the wait is canceled.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// Thrown when <paramref name="delay"/> represents a negative time interval other than <see cref="Timeout.InfiniteTimeSpan"/>,
+        /// or its total milliseconds exceeds <see cref="int.MaxValue"/>. Cancellation, by contrast, is swallowed rather than thrown.
+        /// </exception>
         public async Task DelayUntilElapsedOrCancel(TimeSpan delay, CancellationToken cancellationToken = default)
         {
             try

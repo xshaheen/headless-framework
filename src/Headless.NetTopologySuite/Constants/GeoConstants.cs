@@ -4,9 +4,17 @@ using NetTopologySuite.Geometries;
 
 namespace Headless.NetTopologySuite.Constants;
 
+/// <summary>
+/// Well-known geospatial constants for WGS84 / SRID 4326: coordinate bounds, shared
+/// <see cref="PrecisionModel"/> presets, and approximate degree-to-distance conversions.
+/// </summary>
 [PublicAPI]
 public static class GeoConstants
 {
+    /// <summary>
+    /// WGS84 spatial reference identifier (SRID 4326) — the longitude/latitude system used by
+    /// Google Maps, GeoJSON, and SQL Server <c>geography</c>.
+    /// </summary>
     public const int GoogleMapsSrid = 4326;
 
     /// <summary>Minimum valid longitude (X) for WGS84 / SRID 4326.</summary>

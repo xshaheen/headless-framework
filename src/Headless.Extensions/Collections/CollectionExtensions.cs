@@ -73,7 +73,7 @@ public static class CollectionExtensions
     /// Adds items to the collection which are not already in the collection.
     /// </summary>
     /// <param name="source">The collection</param>
-    /// <param name="items">Item to check and add</param>
+    /// <param name="items">Items to check and add if not already present.</param>
     /// <typeparam name="T">Type of the items in the collection</typeparam>
     /// <returns>Returns the added items.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
@@ -126,7 +126,7 @@ public static class CollectionExtensions
     }
 
     /// <summary>
-    /// Removes all items from the collection those satisfy the given <paramref name="predicate"/>.
+    /// Removes all items from the collection that satisfy the given <paramref name="predicate"/>.
     /// </summary>
     /// <typeparam name="T">Type of the items in the collection</typeparam>
     /// <param name="source">The collection</param>

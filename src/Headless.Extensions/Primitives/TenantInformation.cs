@@ -10,9 +10,9 @@ namespace Headless.Primitives;
 /// <param name="name">The optional tenant name.</param>
 public sealed class TenantInformation(string? tenantId, string? name = null)
 {
-    /// <summary>Null indicates the host. Not null value for a tenant.</summary>
+    /// <summary>The tenant identifier; <see langword="null"/> indicates the host context.</summary>
     public string? TenantId { get; } = tenantId;
 
-    /// <summary>Name of the tenant if <see cref="TenantId"/> is not null.</summary>
+    /// <summary>The optional tenant name; meaningful only when <see cref="TenantId"/> is not <see langword="null"/>.</summary>
     public string? Name { get; } = name;
 }

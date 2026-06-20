@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Scalar.AspNetCore;
 

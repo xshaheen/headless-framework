@@ -2,7 +2,7 @@
 
 namespace Headless.Exceptions;
 
-/// <summary>An exception that is thrown when we can not find an entity in database.</summary>
+/// <summary>An exception thrown when a requested entity cannot be found in the data store.</summary>
 [PublicAPI]
 public sealed class EntityNotFoundException : Exception
 {
@@ -42,10 +42,10 @@ public sealed class EntityNotFoundException : Exception
         (Entity, Key) = (entity, key.ToString(CultureInfo.InvariantCulture));
     }
 
-    /// <summary>Entity name.</summary>
+    /// <summary>The name of the entity type that was not found.</summary>
     public string Entity { get; }
 
-    /// <summary>Search value.</summary>
+    /// <summary>The key value that was searched for.</summary>
     public string Key { get; }
 
     private static string _BuildMessage(string entity, string key)

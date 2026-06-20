@@ -14,6 +14,7 @@ public sealed class Locales : Dictionary<string, Dictionary<string, string>>
 
     /// <summary>Initializes a <see cref="Locales"/> dictionary seeded from an existing dictionary.</summary>
     /// <param name="d">The dictionary whose entries are copied into the new instance.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="d"/> is <see langword="null"/>.</exception>
     public Locales(IDictionary<string, Dictionary<string, string>> d)
         : base(d) { }
 }

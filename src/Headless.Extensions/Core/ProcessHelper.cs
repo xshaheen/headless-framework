@@ -4,6 +4,10 @@ using System.Diagnostics;
 
 namespace Headless.Core;
 
+/// <summary>
+/// Convenience helpers for launching an external process from a file name and arguments, consuming its output either
+/// as a task that completes when the process exits or as an observable stream of output lines.
+/// </summary>
 [PublicAPI]
 public static class ProcessHelper
 {

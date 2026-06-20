@@ -24,7 +24,7 @@ public static class XmlHelper
     /// <param name="str">The text to encode; may be <see langword="null"/>.</param>
     /// <param name="settings">Optional writer settings; a sensible async default is used when <see langword="null"/>.</param>
     /// <returns>The XML-encoded text, or <see langword="null"/> when <paramref name="str"/> is <see langword="null"/>.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="str"/> contains characters that are not valid in XML.</exception>
+    /// <exception cref="System.Xml.XmlException">Thrown when <paramref name="str"/> contains characters that are not valid in XML 1.0.</exception>
     public static async Task<string?> XmlEncodeAsIsAsync(string? str, XmlWriterSettings? settings = null)
     {
         if (str is null)

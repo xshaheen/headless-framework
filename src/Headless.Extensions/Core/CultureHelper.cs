@@ -88,7 +88,7 @@ public static class CultureHelper
     /// Extracts the neutral (language-only) portion of a culture name by stripping the region suffix,
     /// for example returning <c>"en"</c> from <c>"en-US"</c>.
     /// </summary>
-    /// <param name="cultureName">The culture name to reduce to its base language.</param>
+    /// <param name="cultureName">The full culture name (e.g. <c>"en-US"</c>) to reduce to its base language code.</param>
     /// <returns>
     /// The substring before the first <c>'-'</c>, or <paramref name="cultureName"/> unchanged when it contains no <c>'-'</c>.
     /// </returns>

@@ -127,11 +127,11 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
         return InclusiveHas(other.From) || InclusiveHas(other.To) || other.InclusiveHas(From) || other.InclusiveHas(To);
     }
 
-    /// <summary>Remove the conflict range parts from the current range.</summary>
-    /// <param name="other">The range to remove the conflict parts from the current range.</param>
-    /// <param name="addOne">A function returning the next value after a bound, used to start a remaining part just past <paramref name="other"/>'s upper bound.</param>
-    /// <param name="subtractOne">A function returning the previous value before a bound, used to end a remaining part just before <paramref name="other"/>'s lower bound.</param>
-    /// <returns>Returns the remaining parts of the current range after removing the conflict parts.</returns>
+    /// <summary>Returns the sub-ranges of this interval that remain after subtracting the overlapping portion with <paramref name="other"/>.</summary>
+    /// <param name="other">The range whose overlapping portion is removed from this range.</param>
+    /// <param name="addOne">A function returning the successor of a bound, used to start a remaining part just past <paramref name="other"/>'s upper bound.</param>
+    /// <param name="subtractOne">A function returning the predecessor of a bound, used to end a remaining part just before <paramref name="other"/>'s lower bound.</param>
+    /// <returns>The non-overlapping sub-ranges of this range; an empty sequence when this range is fully covered by <paramref name="other"/>.</returns>
     public IEnumerable<Range<T>> RemoveConflictRangeParts(Range<T> other, Func<T, T> addOne, Func<T, T> subtractOne)
     {
         // 1. Same range
