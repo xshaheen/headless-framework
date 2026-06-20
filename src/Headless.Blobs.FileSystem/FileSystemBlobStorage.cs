@@ -570,7 +570,9 @@ public sealed class FileSystemBlobStorage(
         segments[0] = _basePath;
         for (var i = 0; i < container.Length; i++)
         {
-            segments[i + 1] = _normalizer.NormalizeContainerName(container[i]);
+            // Two-tier: the first segment is the top-level container; the rest are path segments.
+            segments[i + 1] =
+                i == 0 ? _normalizer.NormalizeContainerName(container[i]) : _normalizer.NormalizeBlobName(container[i]);
         }
         segments[^1] = normalizedBlobName;
 
@@ -585,7 +587,13 @@ public sealed class FileSystemBlobStorage(
         Argument.IsNotNullOrEmpty(container);
         PathValidation.ValidateContainer(container);
 
-        var normalizedContainer = container.Select(_normalizer.NormalizeContainerName).ToArray();
+        var normalizedContainer = new string[container.Length];
+        for (var i = 0; i < container.Length; i++)
+        {
+            // Two-tier: the first segment is the top-level container; the rest are path segments.
+            normalizedContainer[i] =
+                i == 0 ? _normalizer.NormalizeContainerName(container[i]) : _normalizer.NormalizeBlobName(container[i]);
+        }
 
         var filePath = Path.Combine(_basePath, Path.Combine(normalizedContainer));
         _ThrowIfPathTraversal(filePath, nameof(container));

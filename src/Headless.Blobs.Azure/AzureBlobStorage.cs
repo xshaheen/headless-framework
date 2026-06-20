@@ -1,14 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
+using Azure.Storage.Sas;
 using Headless.Abstractions;
 using Headless.Blobs.Azure.Internals;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Primitives;
+using Headless.Threading;
 using Headless.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,9 +25,16 @@ public sealed class AzureBlobStorage(
     IOptions<AzureStorageOptions> optionAccessor,
     IBlobNamingNormalizer normalizer,
     ILogger<AzureBlobStorage> logger
-) : IBlobStorage
+) : IBlobStorage, IPresignedUrlBlobStorage
 {
     private readonly AzureStorageOptions _option = optionAccessor.Value;
+
+    // Containers this instance has already ensured exist, so CreateIfNotExists runs at most once per container
+    // rather than on every upload/copy. A container is recorded only after a successful create, so a failed
+    // ensure is naturally retried. The per-container lock serializes concurrent first-time ensures of the same
+    // container into a single create while letting distinct containers be ensured in parallel.
+    private readonly ConcurrentDictionary<string, byte> _ensuredContainers = new(StringComparer.Ordinal);
+    private readonly KeyedAsyncLock _ensureContainerLock = new();
 
     #region Create Container
 
@@ -32,12 +42,32 @@ public sealed class AzureBlobStorage(
     {
         Argument.IsNotNullOrEmpty(container);
 
-        var blobContainer = _GetContainer(container);
-        var containerClient = blobServiceClient.GetBlobContainerClient(blobContainer);
+        await _EnsureContainerOnceAsync(_GetContainer(container), cancellationToken);
+    }
 
-        await containerClient
-            .CreateIfNotExistsAsync(_option.ContainerPublicAccessType, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+    private async Task _EnsureContainerOnceAsync(string container, CancellationToken cancellationToken)
+    {
+        if (_ensuredContainers.ContainsKey(container))
+        {
+            return;
+        }
+
+        using (await _ensureContainerLock.LockAsync(container, cancellationToken).ConfigureAwait(false))
+        {
+            // Re-check under the lock: a concurrent caller may have ensured this container while we waited.
+            if (_ensuredContainers.ContainsKey(container))
+            {
+                return;
+            }
+
+            await blobServiceClient
+                .GetBlobContainerClient(container)
+                .CreateIfNotExistsAsync(_option.ContainerPublicAccessType, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            // Record only after a successful create so a failed ensure is retried next time.
+            _ensuredContainers.TryAdd(container, 0);
+        }
     }
 
     #endregion
@@ -55,7 +85,7 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        if (_option.CreateContainerIfNotExists)
+        if (_option.AutoCreateContainer)
         {
             await CreateContainerAsync(container, cancellationToken).ConfigureAwait(false);
         }
@@ -226,7 +256,7 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(newBlobName);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        if (_option.CreateContainerIfNotExists)
+        if (_option.AutoCreateContainer)
         {
             await CreateContainerAsync(newBlobContainer, cancellationToken).ConfigureAwait(false);
         }
@@ -400,7 +430,7 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(container);
 
         var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var normalizedDirs = container.Skip(1).Select(_NormalizeContainerName);
+        var normalizedDirs = container.Skip(1).Select(_NormalizeSegment);
         var normalizedPattern = _NormalizeSearchPattern(blobSearchPattern);
         var criteria = BlobStorageHelpers.GetRequestCriteria(normalizedDirs, normalizedPattern);
 
@@ -445,7 +475,7 @@ public sealed class AzureBlobStorage(
         Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var normalizedDirs = container.Skip(1).Select(_NormalizeContainerName);
+        var normalizedDirs = container.Skip(1).Select(_NormalizeSegment);
         var normalizedPattern = _NormalizeSearchPattern(blobSearchPattern);
         var criteria = BlobStorageHelpers.GetRequestCriteria(normalizedDirs, normalizedPattern);
 
@@ -580,6 +610,75 @@ public sealed class AzureBlobStorage(
     #region Build URLs
 
 
+    #region Presigned Urls
+
+    public ValueTask<Uri> GetPresignedDownloadUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetPresignedUrlAsync(container, blobName, expiry, BlobSasPermissions.Read, cancellationToken);
+    }
+
+    public ValueTask<Uri> GetPresignedUploadUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetPresignedUrlAsync(
+            container,
+            blobName,
+            expiry,
+            BlobSasPermissions.Create | BlobSasPermissions.Write,
+            cancellationToken
+        );
+    }
+
+    private ValueTask<Uri> _GetPresignedUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        BlobSasPermissions permissions,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
+        Argument.IsPositive(expiry);
+
+        var blobClient = _GetBlobClient(container, blobName);
+
+        if (!blobClient.CanGenerateSasUri)
+        {
+            throw new InvalidOperationException(
+                "The configured BlobServiceClient cannot generate a SAS URI. Presigned URLs require a client built "
+                    + "with an account key (StorageSharedKeyCredential) or a user delegation key; a bare SAS-token or "
+                    + "anonymous connection cannot sign."
+            );
+        }
+
+        var builder = new BlobSasBuilder
+        {
+            BlobContainerName = blobClient.BlobContainerName,
+            BlobName = blobClient.Name,
+            Resource = "b",
+            ExpiresOn = clock.UtcNow.Add(expiry),
+            // The SAS is a bearer credential; restrict it to HTTPS so it can't be replayed over plaintext HTTP.
+            Protocol = SasProtocol.Https,
+        };
+
+        builder.SetPermissions(permissions);
+
+        return ValueTask.FromResult(blobClient.GenerateSasUri(builder));
+    }
+
+    #endregion
+
     private BlobClient _GetBlobClient(string[] container, string blobName)
     {
         var (blobContainer, blobPath) = _NormalizeBlob(container, blobName);
@@ -610,7 +709,8 @@ public sealed class AzureBlobStorage(
                 sb.Append('/');
             }
 
-            sb.Append(_NormalizeContainerName(container[i]));
+            // Two-tier: the first segment is the Azure container (strict rules); the rest are blob-path segments.
+            sb.Append(i == 0 ? _NormalizeContainerName(container[i]) : _NormalizeSegment(container[i]));
         }
 
         var prefix = sb.ToString();
@@ -639,7 +739,8 @@ public sealed class AzureBlobStorage(
                 sb.Append('/');
             }
 
-            sb.Append(_NormalizeContainerName(container[i]));
+            // Sub-path segments use lenient path-segment normalization (two-tier model).
+            sb.Append(_NormalizeSegment(container[i]));
         }
         if (sb.Length > 0)
         {
@@ -662,6 +763,13 @@ public sealed class AzureBlobStorage(
         return _NormalizeSlashes(normalizer.NormalizeContainerName(containerName));
     }
 
+    // Lenient path-segment normalization for sub-container path parts and blob names (two-tier model): the first
+    // container segment is the Azure container (strict rules); everything after is part of the blob path.
+    private string _NormalizeSegment(string segment)
+    {
+        return _NormalizeSlashes(normalizer.NormalizeBlobName(segment));
+    }
+
     private static string _NormalizeSlashes(string x)
     {
         return BlobStorageHelpers.NormalizePath(x).RemovePostfix('/').RemovePrefix('/');
@@ -669,7 +777,7 @@ public sealed class AzureBlobStorage(
 
     /// <summary>
     /// Normalizes the search pattern's directory segments to match how they're stored.
-    /// E.g., "x\*.txt" becomes "x00/*.txt" because "x" is normalized to "x00".
+    /// Directory segments use the same lenient path-segment normalization as stored blob paths (two-tier model).
     /// Only normalizes directory segments, not the final filename/pattern segment.
     /// </summary>
     private string? _NormalizeSearchPattern(string? pattern)
@@ -697,7 +805,7 @@ public sealed class AzureBlobStorage(
             // Don't normalize segments containing wildcards
             if (!segment.Contains('*', StringComparison.Ordinal))
             {
-                segments[i] = normalizer.NormalizeContainerName(segment);
+                segments[i] = normalizer.NormalizeBlobName(segment);
             }
         }
 
@@ -708,7 +816,12 @@ public sealed class AzureBlobStorage(
 
     #region Dispose
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        _ensureContainerLock.Dispose();
+
+        return ValueTask.CompletedTask;
+    }
 
     #endregion
 }

@@ -1032,14 +1032,17 @@ public sealed class SshBlobStorage(
 
         var sb = new StringBuilder();
 
-        foreach (var segment in container)
+        for (var i = 0; i < container.Length; i++)
         {
             if (sb.Length > 0)
             {
                 sb.Append('/');
             }
 
-            sb.Append(normalizer.NormalizeContainerName(segment));
+            // Two-tier: the first segment is the top-level container; the rest are path segments.
+            sb.Append(
+                i == 0 ? normalizer.NormalizeContainerName(container[i]) : normalizer.NormalizeBlobName(container[i])
+            );
         }
 
         if (!string.IsNullOrEmpty(normalizedBlobName))
@@ -1064,7 +1067,9 @@ public sealed class SshBlobStorage(
         var normalizedSegments = new string[container.Length];
         for (var i = 0; i < container.Length; i++)
         {
-            normalizedSegments[i] = normalizer.NormalizeContainerName(container[i]);
+            // Two-tier: the first segment is the top-level container; the rest are path segments.
+            normalizedSegments[i] =
+                i == 0 ? normalizer.NormalizeContainerName(container[i]) : normalizer.NormalizeBlobName(container[i]);
         }
 
         return $"{string.Join('/', normalizedSegments)}/";

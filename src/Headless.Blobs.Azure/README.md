@@ -10,9 +10,18 @@ Provides seamless integration with Azure Blob Storage using the unified `IBlobSt
 
 - Full `IBlobStorage` implementation for Azure Blob Storage
 - Bulk operations with Azure Batch API
-- Container management
+- Opt-in, cached container auto-create (`AutoCreateContainer`)
 - Metadata support
+- Presigned download/upload URLs via `IPresignedUrlBlobStorage` (SAS-based)
 - Integration with Azure.Identity for authentication
+
+> Presigned URLs require the registered `BlobServiceClient` to carry signing credentials (an account key or a
+> user-delegation key). A client built from a bare SAS token or an anonymous connection cannot sign, and the
+> presigned call throws `InvalidOperationException` at call time.
+
+> `AutoCreateContainer` (default `true`) creates the target container on upload/copy, at most once per
+> container per instance. Set it to `false` when the client's credentials cannot create containers; a missing
+> container then surfaces as an error. (Renamed from `CreateContainerIfNotExists`.)
 
 ## Installation
 

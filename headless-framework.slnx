@@ -42,6 +42,7 @@
         <Project Path="src\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
         <Project Path="src\Headless.Blobs.Aws\Headless.Blobs.Aws.csproj" />
         <Project Path="src\Headless.Blobs.Azure\Headless.Blobs.Azure.csproj" />
+        <Project Path="src\Headless.Blobs.CloudflareR2\Headless.Blobs.CloudflareR2.csproj" />
         <Project Path="src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
         <Project Path="src\Headless.Blobs.Redis\Headless.Blobs.Redis.csproj" />
         <Project Path="src\Headless.Blobs.SshNet\Headless.Blobs.SshNet.csproj" />
@@ -53,6 +54,8 @@
         <Project Path="tests\Headless.Blobs.Aws.Tests.Unit\Headless.Blobs.Aws.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Azure.Tests.Integration\Headless.Blobs.Azure.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.Azure.Tests.Unit\Headless.Blobs.Azure.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Blobs.CloudflareR2.Tests.Integration\Headless.Blobs.CloudflareR2.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Blobs.CloudflareR2.Tests.Unit\Headless.Blobs.CloudflareR2.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Integration\Headless.Blobs.FileSystem.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Unit\Headless.Blobs.FileSystem.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Redis.Tests.Integration\Headless.Blobs.Redis.Tests.Integration.csproj" />
