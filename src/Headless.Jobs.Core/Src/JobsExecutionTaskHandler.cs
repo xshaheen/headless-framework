@@ -171,6 +171,9 @@ internal class JobsExecutionTaskHandler(
             Type = context.Type,
             IsDue = isDue,
             ScheduledFor = context.ExecutionTime,
+            // The running job invokes this action during execution (before any exit path disposes the CTS — see the
+            // CA2000 note above), so the captured cancellationTokenSource is alive whenever the closure runs.
+            // ReSharper disable once AccessToDisposedClosure
             RequestCancelOperationAction = () => cancellationTokenSource.Cancel(),
             CronOccurrenceOperations = new CronOccurrenceOperations
             {
@@ -206,6 +209,9 @@ internal class JobsExecutionTaskHandler(
 
         async Task StopRenewalAsync()
         {
+            // StopRenewalAsync is a local function invoked on each exit path before `using var renewalCts` disposes
+            // at method end, so renewalCts is never disposed when this runs.
+            // ReSharper disable once AccessToDisposedClosure
             await renewalCts.CancelAsync().ConfigureAwait(false);
             // ERP022: renewal-loop teardown errors are non-fatal to job completion.
             // VSTHRD003: renewalTask is started locally (above) and intentionally awaited to bound the loop's lifetime.
