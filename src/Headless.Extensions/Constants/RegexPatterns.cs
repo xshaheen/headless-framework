@@ -59,7 +59,7 @@ public static partial class RegexPatterns
     /// </para>
     /// </summary>
     [GeneratedRegex(
-        pattern: @"[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u08A0–\u08FF]",
+        pattern: @"[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u08A0-\u08FF]",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]

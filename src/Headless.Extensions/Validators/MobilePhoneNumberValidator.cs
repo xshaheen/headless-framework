@@ -69,10 +69,7 @@ public static class MobilePhoneNumberValidator
 
         if (!internationalNumber.StartsWith('+'))
         {
-            throw new ArgumentException(
-                "International phone number should not start with +",
-                nameof(internationalNumber)
-            );
+            throw new ArgumentException("International phone number must start with '+'", nameof(internationalNumber));
         }
 
         var util = PhoneNumberUtil.GetInstance();

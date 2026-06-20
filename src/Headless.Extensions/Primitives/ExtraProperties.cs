@@ -45,9 +45,12 @@ public static class ExtraPropertyExtensions
                 return default;
             }
 
-            extraProperties[key] = Enum.Parse(typeof(T), text, ignoreCase: true);
+            var parsed = (T)Enum.Parse(typeof(T), text, ignoreCase: true);
 
-            return (T)value;
+            // Cache the parsed enum so subsequent reads take the typed fast path above.
+            extraProperties[key] = parsed;
+
+            return parsed;
         }
 
         public bool HasSameItems(ExtraProperties otherDictionary)

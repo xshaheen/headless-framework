@@ -10,7 +10,7 @@ public sealed class ContinuationPage<T>(IReadOnlyList<T> items, int size, string
 
     public string? ContinuationToken { get; } = continuationToken;
 
-    public bool HasNext => ContinuationToken is null;
+    public bool HasNext => ContinuationToken is not null;
 
     public ContinuationPage<TOutput> Select<TOutput>(Func<T, TOutput> map)
     {

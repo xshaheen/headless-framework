@@ -129,11 +129,10 @@ public static class StringExtensions
     /// <c>var displayName = name.NullIfEmpty() ?? "Unknown";</c>
     /// </example>
     /// <returns>
-    /// <paramref name="input"/> if it is an empty string (""); otherwise, <see langword="null"/>.
+    /// <paramref name="input"/> if it is not <see langword="null"/> or empty; otherwise, <see langword="null"/>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    [return: NotNullIfNotNull(nameof(input))]
     public static string? NullIfEmpty(this string? input)
     {
         return !string.IsNullOrEmpty(input) ? input : null;
@@ -145,11 +144,10 @@ public static class StringExtensions
     /// <c>var displayName = name.NullIfWhiteSpace() ?? "Unknown";</c>
     /// </example>
     /// <returns>
-    /// <paramref name="input"/> if the value parameter is <see langword="null"/> or <see cref="string.Empty" />, or if <paramref name="input"/> consists exclusively of white-space characters; otherwise, <see langword="null"/>.
+    /// <paramref name="input"/> if it is not <see langword="null"/>, empty, or exclusively white-space characters; otherwise, <see langword="null"/>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    [return: NotNullIfNotNull(nameof(input))]
     public static string? NullIfWhiteSpace(this string? input)
     {
         return !string.IsNullOrWhiteSpace(input) ? input : null;
@@ -250,7 +248,7 @@ public static class StringExtensions
         params ReadOnlySpan<string> postfixes
     )
     {
-        if (string.IsNullOrEmpty(input))
+        if (input is null)
         {
             return null;
         }
@@ -276,7 +274,7 @@ public static class StringExtensions
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemovePostfix(this string? input, char postfix)
     {
-        if (string.IsNullOrEmpty(input))
+        if (input is null)
         {
             return null;
         }
@@ -289,7 +287,7 @@ public static class StringExtensions
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemoveCharacter(this string? input, char character)
     {
-        return string.IsNullOrEmpty(input) ? null : string.Concat(input.Split(character));
+        return input is null ? null : string.Concat(input.Split(character));
     }
 
     [SystemPure]
@@ -297,7 +295,7 @@ public static class StringExtensions
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemoveCharacters(this string? input, params ReadOnlySpan<char> unwantedCharacters)
     {
-        return string.IsNullOrEmpty(input) ? null : string.Concat(input.Split(unwantedCharacters));
+        return input is null ? null : string.Concat(input.Split(unwantedCharacters));
     }
 
     /// <summary>
@@ -330,7 +328,7 @@ public static class StringExtensions
         params ReadOnlySpan<string> prefixes
     )
     {
-        if (input.IsNullOrEmpty())
+        if (input is null)
         {
             return null;
         }

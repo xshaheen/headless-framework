@@ -123,42 +123,37 @@ public sealed class Currency(decimal amount, string currencyCode)
         [NotNullWhen(true)] out Currency? result
     )
     {
-        // 1. Find the index the end of amount
-        var lastDigitIndex = 0;
+        // 1. Split the numeric amount from the trailing alphabetic currency code (format: "{amount}{code}").
+        var codeStartIndex = -1;
 
         for (var i = 0; i < s.Length; i++)
         {
-            if (!char.IsDigit(s[i]))
+            if (char.IsLetter(s[i]))
             {
-                continue;
+                codeStartIndex = i;
+
+                break;
             }
-
-            lastDigitIndex = i;
-
-            break;
         }
 
-        // 2. Parse the amount
-        var amountSpan = s[..lastDigitIndex];
-        var currencyCodeSpan = s[lastDigitIndex..];
-
-        if (amountSpan.IsEmpty)
-        {
-            result = null!;
-            return false;
-        }
-
-        if (!decimal.TryParse(amountSpan, NumberStyles.Any, provider, out var amount))
+        // No amount (string starts with the code) or no code (no letters) -> not a valid currency string.
+        if (codeStartIndex <= 0)
         {
             result = null;
 
             return false;
         }
 
-        // 3. Parse the currency code
-        var currencyCode = currencyCodeSpan.ToString();
+        // 2. Parse the amount.
+        if (!decimal.TryParse(s[..codeStartIndex], NumberStyles.Any, provider, out var amount))
+        {
+            result = null;
 
-        result = new Currency(amount, currencyCode);
+            return false;
+        }
+
+        // 3. Build the currency (the ctor validates the code is non-blank).
+        result = new Currency(amount, s[codeStartIndex..].ToString());
 
         return true;
     }

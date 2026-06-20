@@ -18,9 +18,7 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
 
         if (from is not null && to is not null && from.CompareTo(to) > 0)
         {
-            throw new InvalidOperationException(
-                "Value for `From` must be equal to or greater than the value for `To`."
-            );
+            throw new InvalidOperationException("Value for `From` must be equal to or less than the value for `To`.");
         }
 
         From = from;
