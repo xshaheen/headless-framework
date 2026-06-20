@@ -1,9 +1,12 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -726,24 +729,34 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         foreach (var (function, expression) in cronJobs)
         {
-            // Check if already exists (take snapshot for thread safety)
-            var exists = _CronJobs.Values.ToArray().Any(x => x.Function == function && x.Expression == expression);
-            if (!exists)
-            {
-                var id = Guid.NewGuid();
-                var cronJob = new TCronJob
-                {
-                    Id = id,
-                    Function = function,
-                    Expression = expression,
-                    InitIdentifier = $"MemoryTicker_Seeded_{id}",
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                    Request = [],
-                };
+            // Deterministic id keyed by function (matches the durable provider's seed identity): a re-seed — including
+            // a changed expression — updates the same row in place rather than inserting a duplicate. Single-process
+            // provider, so there is no cross-node race here.
+            var id = JobsSeedId.ForCronSeed(function);
 
-                _CronJobs.TryAdd(id, cronJob);
+            if (_CronJobs.TryGetValue(id, out var existing))
+            {
+                if (!string.Equals(existing.Expression, expression, StringComparison.Ordinal))
+                {
+                    existing.Expression = expression;
+                    existing.UpdatedAt = now;
+                }
+
+                continue;
             }
+
+            var cronJob = new TCronJob
+            {
+                Id = id,
+                Function = function,
+                Expression = expression,
+                InitIdentifier = $"MemoryTicker_Seeded_{function}",
+                CreatedAt = now,
+                UpdatedAt = now,
+                Request = [],
+            };
+
+            _CronJobs.TryAdd(id, cronJob);
         }
 
         return Task.CompletedTask;
@@ -881,6 +894,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(occurrence!);
     }
 
+    // KTD7: cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
+    // distributed lock. Each occurrence is keyed by a deterministic id and inserted via TryAdd / updated via
+    // TryUpdate (the durable provider does the same with an id-keyed upsert), so concurrent creation converges on a
+    // single row — storage-level dedup is the correctness boundary. A coarse lock would add no correctness and only
+    // serialize independent ids. Revisit only if evidence shows storage dedup is insufficient (plan #267 follow-up).
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
         (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default

@@ -117,6 +117,32 @@ Safety interaction: the claim predicate's lease-expiry arm is gated on `OnNodeDe
 
 Jobs does not ship a Jobs-specific Redis cache package. The durable EF path uses the host application's optional default `Headless.Caching.ICache` for cron-expression caching. Register `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` when caching is desired; without an `ICache`, Jobs reads cron expressions from the database and cache invalidation is skipped.
 
+### Distributed Lock Hardening (optional, off by default)
+
+**Cron-seed migration** (`jobs.cron-seed-migration`) runs on every node at boot — each scans code-defined cron jobs and upserts them, so a rolling deploy of N nodes is N full scans + N write storms. Seeded rows carry a **deterministic primary key derived from the function name**, so even simultaneous first-boot across nodes converges on a single row (primary-key dedup) — no duplicate schedules, and a concurrent loser's insert is absorbed (the durable provider catches the unique-violation and discards its redundant insert). The optional Jobs-scoped distributed lock therefore only removes the redundant cross-node scan/write storm; it is never the correctness boundary for job-row ownership (per-row predicates, `node@incarnation` ownership, and per-job leases stay that boundary).
+
+Wire it by passing any `Headless.DistributedLocks.IDistributedLock` — the same provider you already use elsewhere works:
+
+```csharp
+builder.Services.AddHeadlessJobs(options =>
+{
+    options.UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>());
+    // or: options.UseDistributedLock(myLockInstance);
+});
+```
+
+Semantics:
+
+- **Off by default.** Without `UseDistributedLock`, the seed runs on every node, unchanged. A `NullDistributedLock` fallback is always registered so the guard site resolves cleanly.
+- **Skip-on-contention.** The guard tries to acquire once with no wait (`AcquireTimeout = TimeSpan.Zero`). If another node holds the lock — or acquisition faults — the node skips the seed (logged) and another node carries it. Cancellation during acquisition propagates rather than skipping.
+- **Recovery is next-boot, not periodic.** The lease has a generous finite TTL (`None` monitoring — nothing observes lease-loss, so the TTL is the only safety net), so a holder that dies mid-seed releases via expiry. But the seed only runs at startup: if the lock store is down for *all* nodes at first boot, every node skips and the schedule stays unseeded until the **next process restart** — it is not retried on a timer. Operators see a warning-level log on acquire-fault for exactly this reason.
+- **Jobs-isolated, keyed registration.** The provider is kept under a Jobs-private keyed-DI slot, so it never conflicts with an unrelated app-level `IDistributedLock`. The resource name is stable and Jobs-specific.
+
+Not lock-guarded — and intentionally so:
+
+- **Dead-node resource reclaim.** `NodeLeft` events and the periodic liveness reconcile can both fire on every survivor; each runs the full reclaim batch. This stays lock-free because the shared `DeadOwnerRecoveryBridge` marks each dead owner reclaimed *before* the sweep and only retries it (on the next reconcile tick) when the sweep *throws* — a skip-on-contention that returned normally would pin the owner and strand its dead-node `InProgress` rows, since `ReleaseDeadNodeResources` is their sole terminal-transition path. The exact-owner predicates already make a repeated sweep touch zero rows, so letting every survivor sweep is cheap and self-healing (periodic reconcile is the authoritative backstop), whereas a coarse lock here would be the correctness boundary it must never be.
+- **Cron-occurrence creation.** No `jobs.cron-occurrence-creation` lock — occurrences carry deterministic ids and are created via an id-keyed upsert, so storage-level dedup is already the correctness boundary and a coarse lock would add nothing. This mirrors the `Headless.Messaging` `UseDistributedLock` retry-pickup pattern.
+
 ### Retry Configuration
 
 ```csharp
@@ -189,6 +215,7 @@ throw new TerminateExecutionException(JobStatus.Failed, "Configuration is invali
 ## Dependencies
 
 - `Headless.Jobs.Abstractions`
+- `Headless.DistributedLocks.Abstractions` — optional distributed-lock hardening (off by default)
 - `Headless.Extensions`
 
 ## Side Effects
