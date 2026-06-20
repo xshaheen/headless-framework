@@ -22,26 +22,20 @@ public static class SetupSecurity
         {
             Argument.IsNotNull(config);
 
-            if (_HasStringEncryptionRegistration(services))
-            {
-                return services;
-            }
-
-            services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(config);
-            return _AddEncryptionCore(services);
+            return _AddEncryptionCore(
+                services,
+                s => s.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(config)
+            );
         }
 
         public IServiceCollection AddStringEncryptionService(Action<StringEncryptionOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            if (_HasStringEncryptionRegistration(services))
-            {
-                return services;
-            }
-
-            services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure);
-            return _AddEncryptionCore(services);
+            return _AddEncryptionCore(
+                services,
+                s => s.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure)
+            );
         }
 
         public IServiceCollection AddStringEncryptionService(
@@ -50,78 +44,64 @@ public static class SetupSecurity
         {
             Argument.IsNotNull(configure);
 
-            if (_HasStringEncryptionRegistration(services))
-            {
-                return services;
-            }
-
-            services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure);
-            return _AddEncryptionCore(services);
+            return _AddEncryptionCore(
+                services,
+                s => s.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure)
+            );
         }
 
         public IServiceCollection AddStringHashService(IConfiguration config)
         {
             Argument.IsNotNull(config);
 
-            if (_HasStringHashRegistration(services))
-            {
-                return services;
-            }
-
-            services.Configure<StringHashOptions, StringHashOptionsValidator>(config);
-            return _AddHashCore(services);
+            return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(config));
         }
 
         public IServiceCollection AddStringHashService(Action<StringHashOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            if (_HasStringHashRegistration(services))
-            {
-                return services;
-            }
-
-            services.Configure<StringHashOptions, StringHashOptionsValidator>(configure);
-            return _AddHashCore(services);
+            return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(configure));
         }
 
         public IServiceCollection AddStringHashService(Action<StringHashOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
 
-            if (_HasStringHashRegistration(services))
-            {
-                return services;
-            }
-
-            services.Configure<StringHashOptions, StringHashOptionsValidator>(configure);
-            return _AddHashCore(services);
+            return _AddHashCore(services, s => s.Configure<StringHashOptions, StringHashOptionsValidator>(configure));
         }
     }
 
-    private static IServiceCollection _AddEncryptionCore(IServiceCollection services)
+    private static IServiceCollection _AddEncryptionCore(IServiceCollection services, Action<IServiceCollection> bind)
     {
+        if (_IsRegistered<IStringEncryptionService>(services))
+        {
+            return services;
+        }
+
+        bind(services);
         services.AddSingletonOptionValue<StringEncryptionOptions>();
         services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
 
         return services;
     }
 
-    private static IServiceCollection _AddHashCore(IServiceCollection services)
+    private static IServiceCollection _AddHashCore(IServiceCollection services, Action<IServiceCollection> bind)
     {
+        if (_IsRegistered<IStringHashService>(services))
+        {
+            return services;
+        }
+
+        bind(services);
         services.AddSingletonOptionValue<StringHashOptions>();
         services.TryAddSingleton<IStringHashService, StringHashService>();
 
         return services;
     }
 
-    private static bool _HasStringEncryptionRegistration(IServiceCollection services)
+    private static bool _IsRegistered<TService>(IServiceCollection services)
     {
-        return services.Any(service => service.ServiceType == typeof(IStringEncryptionService));
-    }
-
-    private static bool _HasStringHashRegistration(IServiceCollection services)
-    {
-        return services.Any(service => service.ServiceType == typeof(IStringHashService));
+        return services.Any(service => service.ServiceType == typeof(TService));
     }
 }
