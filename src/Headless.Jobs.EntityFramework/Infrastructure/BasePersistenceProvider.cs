@@ -494,9 +494,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // completion-fence shape: still owned + non-terminal), so a row the dead-node/stalled sweep already
         // reclaimed, terminalized, or whose owner changed matches 0 rows — the signal the caller turns into
         // cancel-on-loss (U2/KTD3). No separate liveness query: this UPDATE is the loss detector.
+        // #461: a NEGATIVE return means coordination membership is not currently established (registration pending
+        // or a transient blip) — distinct from 0 (genuinely not owned). The caller skips this renewal tick instead of
+        // cancelling, so a momentary membership hiccup doesn't kill a healthy job; if it persists the lease lapses and
+        // the stalled-reclaim sweep recovers the row per OnNodeDeath (same bound as a dead node).
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return 0;
+            return -1;
         }
 
         await using var dbContext = await DbContextFactory
@@ -963,9 +967,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     {
         // #316 sliding lease — mirror of RenewTimeJobLease for cron occurrences. WhereOwnedBy fence makes a
         // lost/reclaimed/terminalized occurrence match 0 rows -> cancel-on-loss (U2/KTD3).
+        // #461: a NEGATIVE return means coordination membership is not established (see RenewTimeJobLease) — the
+        // caller skips the renewal tick rather than cancelling.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return 0;
+            return -1;
         }
 
         await using var dbContext = await DbContextFactory
