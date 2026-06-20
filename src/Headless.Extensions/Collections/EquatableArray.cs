@@ -81,7 +81,7 @@ public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equali
 
     /// <summary>Returns a <see cref="ReadOnlySpan{T}"/> wrapping the current items.</summary>
     /// <returns>A <see cref="ReadOnlySpan{T}"/> wrapping the current items.</returns>
-    public Span<T> AsSpan()
+    public ReadOnlySpan<T> AsSpan()
     {
         return _array.AsSpan();
     }
@@ -91,6 +91,12 @@ public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equali
     public T[] AsArray()
     {
         return _array;
+    }
+
+    /// <summary>Returns an allocation-free enumerator over the underlying items (preferred by <c>foreach</c>).</summary>
+    public ReadOnlySpan<T>.Enumerator GetEnumerator()
+    {
+        return AsSpan().GetEnumerator();
     }
 
     /// <inheritdoc/>

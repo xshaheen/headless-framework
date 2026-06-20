@@ -29,7 +29,7 @@ public sealed class ErrorDescriptor
         _params = paramsDictionary;
     }
 
-    private Dictionary<string, object?>? _params;
+    private readonly Dictionary<string, object?>? _params;
 
     /// <summary>A distinct code indicating the cause of the error.</summary>
     public string Code { get; private init; }
@@ -45,24 +45,33 @@ public sealed class ErrorDescriptor
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyDictionary<string, object?>? Params => _params;
 
+    // WithParam/WithParams are immutable builders: each returns a NEW descriptor with a cloned params bag.
+    // This keeps shared/cached descriptors (e.g. static MessageDescriber instances) from being mutated by callers.
     public ErrorDescriptor WithParam(string key, object? value)
     {
-        _params ??= new(StringComparer.OrdinalIgnoreCase);
-        _params[key] = value;
+        var copy = _CloneParams();
+        copy[key] = value;
 
-        return this;
+        return new ErrorDescriptor(Code, Description, copy, Severity);
     }
 
     public ErrorDescriptor WithParams(IReadOnlyDictionary<string, object?> values)
     {
-        _params ??= new(StringComparer.OrdinalIgnoreCase);
+        var copy = _CloneParams();
 
         foreach (var (key, value) in values)
         {
-            _params[key] = value;
+            copy[key] = value;
         }
 
-        return this;
+        return new ErrorDescriptor(Code, Description, copy, Severity);
+    }
+
+    private Dictionary<string, object?> _CloneParams()
+    {
+        return _params is null
+            ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, object?>(_params, StringComparer.OrdinalIgnoreCase);
     }
 
     public void Deconstruct(out string code, out string description, out ValidationSeverity severity)

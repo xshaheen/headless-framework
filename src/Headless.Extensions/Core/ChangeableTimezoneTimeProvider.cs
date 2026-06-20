@@ -6,7 +6,10 @@ namespace Headless.Core;
 
 public sealed class ChangeableTimezoneTimeProvider(TimeZoneInfo defaultTimeZone) : TimeProvider
 {
-    private TimeZoneInfo _currentLocalTimeZone = defaultTimeZone;
+    // volatile: LocalTimeZone is read on arbitrary threads while ChangeTimeZone writes from another.
+    // Single-writer expected (the returned IDisposable restores the prior zone; nested/concurrent
+    // ChangeTimeZone calls are not supported and would restore out of order).
+    private volatile TimeZoneInfo _currentLocalTimeZone = defaultTimeZone;
 
     public override TimeZoneInfo LocalTimeZone => _currentLocalTimeZone;
 

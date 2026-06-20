@@ -55,35 +55,35 @@ public static class XmlHelper
 
     public static bool IsValidXml(string maybeXml)
     {
-        try
-        {
-            var xmlDoc = new XmlDocument();
-            xmlDoc.LoadXml(maybeXml);
+        using var xmlReader = XmlReader.Create(new StringReader(maybeXml), _SafeReaderSettings);
 
-            return true;
-        }
-        catch (XmlException)
-        {
-            return false;
-        }
+        return _TryReadToEnd(xmlReader);
     }
 
     public static bool IsValidXml(Stream maybeXml)
     {
-        var settings = new XmlReaderSettings
-        {
-            CheckCharacters = true,
-            ConformanceLevel = ConformanceLevel.Document,
-            DtdProcessing = DtdProcessing.Ignore,
-            IgnoreComments = true,
-            IgnoreProcessingInstructions = true,
-            IgnoreWhitespace = true,
-            ValidationFlags = XmlSchemaValidationFlags.None,
-            ValidationType = ValidationType.None,
-        };
+        using var xmlReader = XmlReader.Create(maybeXml, _SafeReaderSettings);
 
-        using var xmlReader = XmlReader.Create(maybeXml, settings);
+        return _TryReadToEnd(xmlReader);
+    }
 
+    // Hardened reader shared by both overloads: DtdProcessing.Ignore + XmlResolver=null skip any inline DTD,
+    // so entity-expansion (billion-laughs) and external-entity (XXE) payloads can never be processed.
+    private static readonly XmlReaderSettings _SafeReaderSettings = new()
+    {
+        CheckCharacters = true,
+        ConformanceLevel = ConformanceLevel.Document,
+        DtdProcessing = DtdProcessing.Ignore,
+        IgnoreComments = true,
+        IgnoreProcessingInstructions = true,
+        IgnoreWhitespace = true,
+        ValidationFlags = XmlSchemaValidationFlags.None,
+        ValidationType = ValidationType.None,
+        XmlResolver = null,
+    };
+
+    private static bool _TryReadToEnd(XmlReader xmlReader)
+    {
         try
         {
             while (xmlReader.Read())
