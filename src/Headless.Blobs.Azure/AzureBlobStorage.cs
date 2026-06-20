@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -27,18 +28,50 @@ public sealed class AzureBlobStorage(
 {
     private readonly AzureStorageOptions _option = optionAccessor.Value;
 
+    // Containers this instance has already ensured exist, so CreateIfNotExists runs at most once per container
+    // rather than on every upload/copy. A container is recorded only after a successful create, so a failed
+    // ensure is naturally retried. The lock serializes concurrent first-time ensures into a single create.
+    private readonly ConcurrentDictionary<string, byte> _ensuredContainers = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _ensureContainerLock = new(1, 1);
+
     #region Create Container
 
     public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(container);
 
-        var blobContainer = _GetContainer(container);
-        var containerClient = blobServiceClient.GetBlobContainerClient(blobContainer);
+        await _EnsureContainerOnceAsync(_GetContainer(container), cancellationToken);
+    }
 
-        await containerClient
-            .CreateIfNotExistsAsync(_option.ContainerPublicAccessType, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+    private async Task _EnsureContainerOnceAsync(string container, CancellationToken cancellationToken)
+    {
+        if (_ensuredContainers.ContainsKey(container))
+        {
+            return;
+        }
+
+        await _ensureContainerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            // Re-check under the lock: a concurrent caller may have ensured this container while we waited.
+            if (_ensuredContainers.ContainsKey(container))
+            {
+                return;
+            }
+
+            await blobServiceClient
+                .GetBlobContainerClient(container)
+                .CreateIfNotExistsAsync(_option.ContainerPublicAccessType, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            // Record only after a successful create so a failed ensure is retried next time.
+            _ensuredContainers.TryAdd(container, 0);
+        }
+        finally
+        {
+            _ensureContainerLock.Release();
+        }
     }
 
     #endregion
@@ -56,7 +89,7 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        if (_option.CreateContainerIfNotExists)
+        if (_option.AutoCreateContainer)
         {
             await CreateContainerAsync(container, cancellationToken).ConfigureAwait(false);
         }
@@ -227,7 +260,7 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(newBlobName);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        if (_option.CreateContainerIfNotExists)
+        if (_option.AutoCreateContainer)
         {
             await CreateContainerAsync(newBlobContainer, cancellationToken).ConfigureAwait(false);
         }
@@ -778,7 +811,12 @@ public sealed class AzureBlobStorage(
 
     #region Dispose
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        _ensureContainerLock.Dispose();
+
+        return ValueTask.CompletedTask;
+    }
 
     #endregion
 }

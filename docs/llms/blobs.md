@@ -98,7 +98,7 @@ All providers register `IBlobStorage` as singleton. Container paths are arrays o
 - Always depend on `IBlobStorage` from `Headless.Blobs.Abstractions` — never reference `AwsS3BlobStorage`, `AzureBlobStorage`, or other concrete types in service code.
 - Use `Blobs.FileSystem` (`AddFileSystemBlobStorage()`) for local development and testing. Use `Blobs.Aws`, `Blobs.Azure`, or `Blobs.CloudflareR2` for production.
 - Presigned URLs are an opt-in capability: `IPresignedUrlBlobStorage` (presigned GET + PUT) is implemented only by AWS, Cloudflare R2, and Azure (SAS). Feature-detect with `storage is IPresignedUrlBlobStorage` — FileSystem, Redis, and SshNet do not implement it. Azure can throw at call time if its `BlobServiceClient` was wired without account-key/user-delegation-key credentials.
-- For the S3 engine (AWS and R2), bucket auto-create on upload/copy is controlled by `AwsBlobStorageOptions.AutoCreateContainer` (AWS default `true`, R2 default `false`); read/exists/delete no longer pre-check the bucket. With auto-create off, pre-create buckets or call `CreateContainerAsync`.
+- Container auto-create on upload/copy is opt-in and cached once per container per instance. The S3 engine (AWS and R2) uses `AwsBlobStorageOptions.AutoCreateContainer` (AWS default `true`, R2 default `false`); Azure uses `AzureStorageOptions.AutoCreateContainer` (default `true`). With it off, pre-create containers or call `CreateContainerAsync`. The S3 engine also no longer pre-checks the bucket on read/exists/delete.
 - Redis blob storage (`Blobs.Redis`) is for small blobs only (metadata, thumbnails, temporary uploads). The default `MaxBlobSizeBytes` is 10 MB. For large files, use S3 or Azure.
 - Always dispose the result of `OpenReadStreamAsync()` promptly — holding it may exhaust connection pools. Use `await using`.
 - Container paths are string arrays, not slash-delimited strings: `["uploads", "images"]` not `"uploads/images"`.
@@ -273,7 +273,7 @@ Provides seamless integration with Azure Blob Storage using the unified `IBlobSt
 
 - Full `IBlobStorage` implementation for Azure Blob Storage
 - Bulk operations with Azure Batch API
-- Container management
+- Opt-in, cached container auto-create (`AutoCreateContainer`)
 - Metadata support
 - Presigned download/upload URLs via `IPresignedUrlBlobStorage` (SAS-based)
 - Integration with Azure.Identity for authentication

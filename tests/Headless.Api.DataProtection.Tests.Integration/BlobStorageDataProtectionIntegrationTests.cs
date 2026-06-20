@@ -38,7 +38,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
 
-        var azureStorageOptions = new AzureStorageOptions { CreateContainerIfNotExists = true };
+        var azureStorageOptions = new AzureStorageOptions { AutoCreateContainer = true };
         var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
