@@ -6,11 +6,14 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api;
 
-public static class AddMinimalApiExtensions
+[PublicAPI]
+public static class SetupMinimalApi
 {
-    public static void ConfigureMinimalApi(this IServiceCollection services)
+    public static IServiceCollection ConfigureMinimalApi(this IServiceCollection services)
     {
         services.ConfigureOptions<ConfigureMinimalApiJsonOptions>();
+
+        return services;
     }
 
     public static void ConfigureMinimalApi(this WebApplicationBuilder builder)

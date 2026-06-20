@@ -2,6 +2,8 @@
 
 using FluentValidation;
 using FluentValidation.Results;
+using Headless.Api.Abstractions;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,7 +36,16 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 
         if (request is null)
         {
-            return Results.Problem("Invalid request type configured for this endpoint.");
+            var creator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+
+            return TypedResults.Problem(
+                creator.BadRequest(
+                    error: new ErrorDescriptor(
+                        "g:invalid_request_type",
+                        "Invalid request type configured for this endpoint."
+                    )
+                )
+            );
         }
 
         var validationContext = new ValidationContext<TRequest>(request);
@@ -68,9 +79,10 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             .Where(x => !x.IsValid)
             .SelectMany(result => result.Errors)
             .Where(failure => failure is not null)
-            .GroupBy(x => x.PropertyName, x => x.ErrorMessage, StringComparer.Ordinal)
-            .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.Ordinal);
+            .ToErrorDescriptors();
 
-        return Results.ValidationProblem(failures);
+        var problemDetailsCreator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+
+        return TypedResults.Problem(problemDetailsCreator.UnprocessableEntity(failures));
     }
 }

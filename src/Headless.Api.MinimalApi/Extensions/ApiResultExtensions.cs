@@ -36,7 +36,7 @@ public static class ApiResultExtensions
             ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())),
 
             ForbiddenError e => TypedResults.Problem(
-                creator.Forbidden(error: new ErrorDescriptor("forbidden", e.Reason))
+                creator.Forbidden(error: new ErrorDescriptor("g:forbidden", e.Reason))
             ),
 
             UnauthorizedError => TypedResults.Problem(creator.Unauthorized()),
