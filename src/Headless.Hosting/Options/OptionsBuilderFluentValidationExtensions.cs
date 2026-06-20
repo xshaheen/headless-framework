@@ -14,6 +14,7 @@ public static class OptionsBuilderFluentValidationExtensions
     /// <typeparam name="TOptions">The options type to be configured.</typeparam>
     /// <param name="optionsBuilder">The options builder to add the services to.</param>
     /// <returns>The <see cref="OptionsBuilder{TOptions}"/> so that additional calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="optionsBuilder"/> is <see langword="null"/>.</exception>
     public static OptionsBuilder<TOptions> ValidateFluentValidation<TOptions>(
         this OptionsBuilder<TOptions> optionsBuilder
     )

@@ -34,6 +34,10 @@ public static class StorageProviderRegistration
         /// <param name="domainName">Domain label used in the diagnostic message (e.g. <c>"Headless.Features"</c>).</param>
         /// <param name="validProviderNames">The domain's valid <c>Use…</c> entry points, listed in the zero-provider diagnostic.</param>
         /// <param name="sentinelFactory">Constructs the per-domain sentinel from the extension type name.</param>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when not exactly one storage provider was configured, or when a storage provider was
+        /// already registered for the same domain.
+        /// </exception>
         public void GuardSingleStorageProvider<TSentinel>(
             int extensionCount,
             string extensionTypeName,

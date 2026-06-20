@@ -20,6 +20,7 @@ public static class LoggingBuilderExtensions
         /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
         /// <param name="action">The action used to add to the logging builder.</param>
         /// <returns>The same logging builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public ILoggingBuilder AddIf(bool condition, Func<ILoggingBuilder, ILoggingBuilder> action)
         {
             Argument.IsNotNull(loggingBuilder);
@@ -43,6 +44,7 @@ public static class LoggingBuilderExtensions
         /// <param name="ifAction">The action used to add to the logging builder if the condition is <see langword="true"/>.</param>
         /// <param name="elseAction">The action used to add to the logging builder if the condition is <see langword="false"/>.</param>
         /// <returns>The same logging builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public ILoggingBuilder AddIfElse(
             bool condition,
             Func<ILoggingBuilder, ILoggingBuilder> ifAction,
@@ -63,6 +65,7 @@ public static class LoggingBuilderExtensions
         /// <param name="condition">If <see langword="true"/> is returned the action is executed.</param>
         /// <param name="action">The action used to add to the logging builder.</param>
         /// <returns>The same logging builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public ILoggingBuilder AddIf(
             Func<ILoggingBuilder, bool> condition,
             Func<ILoggingBuilder, ILoggingBuilder> action
@@ -90,6 +93,7 @@ public static class LoggingBuilderExtensions
         /// <param name="ifAction">The action used to add to the logging builder if the condition is <see langword="true"/>.</param>
         /// <param name="elseAction">The action used to add to the logging builder if the condition is <see langword="false"/>.</param>
         /// <returns>The same logging builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public ILoggingBuilder AddIfElse(
             Func<ILoggingBuilder, bool> condition,
             Func<ILoggingBuilder, ILoggingBuilder> ifAction,

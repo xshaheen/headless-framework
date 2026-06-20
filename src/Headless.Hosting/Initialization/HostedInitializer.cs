@@ -45,6 +45,9 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
     /// </summary>
     protected virtual bool RunOnStartup => true;
 
+    /// <summary>
+    /// Runs <see cref="InitializeAsync"/> on host start and propagates any exception it throws.
+    /// </summary>
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
         if (_completion.Task.IsCompleted)
@@ -90,6 +93,15 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <summary>
+    /// Asynchronously waits until initialization completes. Re-throws any exception thrown by
+    /// <see cref="InitializeAsync"/>.
+    /// </summary>
+    /// <param name="cancellationToken">A token to observe while waiting for completion.</param>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is canceled, or when a prior run's wait is
+    /// superseded by a host restart.
+    /// </exception>
     public async Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
     {
         await _completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);

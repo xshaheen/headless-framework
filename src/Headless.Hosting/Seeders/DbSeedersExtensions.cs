@@ -14,6 +14,10 @@ public static class DbSeedersExtensions
 {
     extension(IServiceCollection services)
     {
+        /// <summary>Registers <typeparamref name="T"/> as an <see cref="ISeeder"/>.</summary>
+        /// <typeparam name="T">The seeder type to register.</typeparam>
+        /// <returns>The same service collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when the service collection is <see langword="null"/>.</exception>
         public IServiceCollection AddSeeder<T>()
             where T : class, ISeeder
         {
@@ -38,6 +42,8 @@ public static class DbSeedersExtensions
     /// Cancels seeding. Linked with <see cref="IHostApplicationLifetime.ApplicationStopping"/> when an
     /// <see cref="IHostApplicationLifetime"/> is registered, so host shutdown also cancels seeding.
     /// </param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when seeding is canceled via <paramref name="cancellationToken"/> or host shutdown.</exception>
     public static async Task SeedAsync(
         this IServiceProvider services,
         bool runInParallel = false,

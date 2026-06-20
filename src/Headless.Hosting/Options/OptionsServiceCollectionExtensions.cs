@@ -58,6 +58,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="optionName">The name of the options instance.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The created options' builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public OptionsBuilder<TOption> AddOptions<TOption>(
             string? optionName = null,
             Func<TOption, bool>? validation = null
@@ -83,6 +84,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="optionName">The name of the options instance.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The created options' builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public OptionsBuilder<TOptions> AddOptions<TOptions, TOptionValidator>(
             string? optionName = null,
             Func<TOptions, bool>? validation = null
@@ -113,6 +115,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="name">The name of the options instance.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The same service collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection Configure<TOption>(
             Action<TOption, IServiceProvider> configureOption,
             string? name = null,
@@ -140,6 +143,10 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <param name="configureBinder">Used to configure the binder options.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="services"/> is null, or when <paramref name="config"/> is null while
+        /// <paramref name="configureBinder"/> is provided.
+        /// </exception>
         public IServiceCollection Configure<TOption, TOptionValidator>(
             IConfiguration? config,
             string? name = null,
@@ -174,6 +181,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="name">The name of the options instance.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection Configure<TOption, TOptionValidator>(
             Action<TOption>? setupAction,
             string? name = null,
@@ -198,6 +206,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="name">The name of the options instance.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection Configure<TOption, TOptionValidator>(
             Action<TOption, IServiceProvider>? setupAction,
             string? name = null,
@@ -225,6 +234,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <param name="configureBinder">Used to configure the binder options.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection ConfigureWithValidateDataAnnotation<TOption>(
             IConfiguration config,
             Func<TOption, bool>? validation,
@@ -253,6 +263,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="configureOption">The configuration.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection ConfigureWithValidateDataAnnotation<TOption>(
             Action<TOption> configureOption,
             Func<TOption, bool>? validation
@@ -280,6 +291,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="configureOption">The configuration.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection ConfigureWithValidateDataAnnotation<TOption>(
             Action<TOption, IServiceProvider> configureOption,
             Func<TOption, bool>? validation
@@ -312,6 +324,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="validation">The validation function.</param>
         /// <param name="configureBinder">Used to configure the binder options.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection ConfigureWithValidateFluentValidation<TOption>(
             IConfiguration config,
             Func<TOption, bool>? validation = null,
@@ -340,6 +353,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="configureOption">The configuration.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection ConfigureWithValidateFluentValidation<TOption>(
             Action<TOption> configureOption,
             Func<TOption, bool>? validation = null
@@ -367,6 +381,7 @@ public static class OptionsServiceCollectionExtensions
         /// <param name="configureOption">The configuration.</param>
         /// <param name="validation">The validation function.</param>
         /// <returns>The same services collection.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IServiceCollection ConfigureWithValidateFluentValidation<TOption>(
             Action<TOption, IServiceProvider> configureOption,
             Func<TOption, bool>? validation = null

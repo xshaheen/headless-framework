@@ -20,6 +20,7 @@ public static class HostBuilderExtensions
         /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
         /// <param name="action">The action used to add to the host builder.</param>
         /// <returns>The same host builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IHostBuilder UseIf(bool condition, Func<IHostBuilder, IHostBuilder> action)
         {
             Argument.IsNotNull(hostBuilder);
@@ -40,6 +41,7 @@ public static class HostBuilderExtensions
         /// <param name="condition">If <see langword="true"/> is returned the action is executed.</param>
         /// <param name="action">The action used to add to the host builder.</param>
         /// <returns>The same host builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IHostBuilder UseIf(Func<IHostBuilder, bool> condition, Func<IHostBuilder, IHostBuilder> action)
         {
             Argument.IsNotNull(hostBuilder);
@@ -64,6 +66,7 @@ public static class HostBuilderExtensions
         /// <param name="ifAction">The action used to add to the host builder if the condition is <see langword="true"/>.</param>
         /// <param name="elseAction">The action used to add to the host builder if the condition is <see langword="false"/>.</param>
         /// <returns>The same host builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IHostBuilder UseIfElse(
             bool condition,
             Func<IHostBuilder, IHostBuilder> ifAction,
@@ -87,6 +90,7 @@ public static class HostBuilderExtensions
         /// <param name="ifAction">The action used to add to the host builder if the condition is <see langword="true"/>.</param>
         /// <param name="elseAction">The action used to add to the host builder if the condition is <see langword="false"/>.</param>
         /// <returns>The same host builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IHostBuilder UseIfElse(
             Func<IHostBuilder, bool> condition,
             Func<IHostBuilder, IHostBuilder> ifAction,

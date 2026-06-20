@@ -11,6 +11,11 @@ public static class ConfigurationExtensions
 {
     extension(IConfiguration configuration)
     {
+        /// <summary>Binds the named configuration section to a new <typeparamref name="TModel"/> instance.</summary>
+        /// <typeparam name="TModel">The model type to bind.</typeparam>
+        /// <param name="section">The name of the configuration section to bind.</param>
+        /// <returns>The bound <typeparamref name="TModel"/> instance.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public TModel GetOptions<TModel>(string section)
             where TModel : new()
         {
@@ -26,6 +31,8 @@ public static class ConfigurationExtensions
         /// <summary>Shorthand for GetSection("ConnectionStrings")[name].</summary>
         /// <param name="name">The connection string key.</param>
         /// <returns>The connection string.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the connection string is missing or blank.</exception>
         public string GetRequiredConnectionString(string name)
         {
             Argument.IsNotNull(configuration);
@@ -40,6 +47,12 @@ public static class ConfigurationExtensions
                 : connectionString;
         }
 
+        /// <summary>Binds the whole configuration to <typeparamref name="T"/>, throwing when binding yields null.</summary>
+        /// <typeparam name="T">The type to bind to.</typeparam>
+        /// <param name="configureOptions">An optional delegate to configure the binder options.</param>
+        /// <returns>The bound <typeparamref name="T"/> instance.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the configuration cannot be bound to <typeparamref name="T"/>.</exception>
         public T GetRequired<T>(Action<BinderOptions>? configureOptions = null)
         {
             Argument.IsNotNull(configuration);
@@ -48,6 +61,13 @@ public static class ConfigurationExtensions
                 ?? throw new InvalidOperationException($"Missing configurations {typeof(T).Name}");
         }
 
+        /// <summary>Binds the named configuration section to <typeparamref name="T"/>, throwing when binding yields null.</summary>
+        /// <typeparam name="T">The type to bind to.</typeparam>
+        /// <param name="key">The name of the configuration section to bind.</param>
+        /// <param name="configureOptions">An optional delegate to configure the binder options.</param>
+        /// <returns>The bound <typeparamref name="T"/> instance.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the section cannot be bound to <typeparamref name="T"/>.</exception>
         public T GetRequired<T>(string key, Action<BinderOptions>? configureOptions = null)
         {
             Argument.IsNotNull(configuration);
@@ -58,6 +78,17 @@ public static class ConfigurationExtensions
             return section.GetRequired<T>(configureOptions);
         }
 
+        /// <summary>
+        /// Binds the named configuration section to <typeparamref name="TOption"/> then validates it with a
+        /// freshly constructed <typeparamref name="TValidator"/>.
+        /// </summary>
+        /// <typeparam name="TOption">The options type to bind.</typeparam>
+        /// <typeparam name="TValidator">The validator used to validate the bound option.</typeparam>
+        /// <param name="key">The name of the configuration section to bind.</param>
+        /// <param name="configureOptions">An optional delegate to configure the binder options.</param>
+        /// <returns>The bound and validated <typeparamref name="TOption"/> instance.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the section is missing or fails validation.</exception>
         public TOption GetRequired<TOption, TValidator>(string key, Action<BinderOptions>? configureOptions = null)
             where TValidator : class, IValidator<TOption>, new()
         {
@@ -80,6 +111,12 @@ public static class ConfigurationExtensions
         /// options through the DI pipeline instead (for example
         /// <c>services.Configure&lt;TOption, TValidator&gt;(config)</c>).
         /// </remarks>
+        /// <typeparam name="TOption">The options type to bind.</typeparam>
+        /// <typeparam name="TValidator">The validator used to validate the bound option.</typeparam>
+        /// <param name="configureOptions">An optional delegate to configure the binder options.</param>
+        /// <returns>The bound and validated <typeparamref name="TOption"/> instance.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the configuration cannot be bound or the bound value fails validation.</exception>
         public TOption GetRequired<TOption, TValidator>(Action<BinderOptions>? configureOptions = null)
             where TValidator : class, IValidator<TOption>, new()
         {
