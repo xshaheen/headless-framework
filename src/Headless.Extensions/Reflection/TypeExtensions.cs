@@ -135,7 +135,7 @@ public static class TypeExtensions
 
         var innerType = sourceType.GetInnerType()!;
 
-        return testType == innerType || innerType.IsSubclassOf(sourceType);
+        return testType == innerType || innerType.IsSubclassOf(testType);
     }
 
     /// <summary>

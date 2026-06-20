@@ -57,7 +57,7 @@ public static class CommonExtensions
     /// <param name="separator">The separator to split on.</param>
     /// <returns>Array of at most 2 strings. (1 if separator is not found.)</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="separator"/> is <see langword="null"/> and <paramref name="s"/> is neither <see langword="null"/> nor empty.</exception>
-    public static string[] SplitOnFirstOccurence(this string s, string separator)
+    internal static string[] SplitOnFirstOccurrence(this string s, string separator)
     {
         if (string.IsNullOrEmpty(s))
         {
@@ -76,7 +76,7 @@ public static class CommonExtensions
         }
 
         return from p in s.Split('&')
-            let pair = p.SplitOnFirstOccurence("=")
+            let pair = p.SplitOnFirstOccurrence("=")
             let name = pair[0]
             let value = pair.Length == 1 ? null : pair[1]
             select (name, (object?)value);

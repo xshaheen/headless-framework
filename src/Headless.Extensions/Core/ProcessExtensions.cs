@@ -196,6 +196,15 @@ public static class ProcessExtensions
                     await registration.DisposeAsync().ConfigureAwait(false);
                 }
 
+                // Drain any buffered stdout/stderr callbacks before signalling completion.
+                // WaitForExitAsync returns as soon as the process exits, but async stdio event
+                // callbacks may still be in-flight. The no-argument WaitForExit() blocks until
+                // all redirected streams have been fully read, ensuring OnNext is never called
+                // after OnCompleted (which would violate the Rx contract).
+#pragma warning disable CA1849 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
+                process.WaitForExit();
+#pragma warning restore CA1849
+
                 observer.OnNext(
                     new ProcessObservedOutput(
                         ProcessObservedOutputType.ExitCode,

@@ -271,12 +271,16 @@ public static class AsyncEnumerableExtensions
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
+        var yielding = false;
+
         await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            if (selector(item))
+            if (!yielding && selector(item))
             {
                 continue;
             }
+
+            yielding = true;
 
             yield return item;
         }

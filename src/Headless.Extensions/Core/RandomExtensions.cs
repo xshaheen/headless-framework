@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using CommunityToolkit.HighPerformance;
 using Headless.Checks;
 
@@ -83,6 +84,12 @@ public static class RandomExtensions
         /// <returns>A randomly selected element of <paramref name="list"/>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="random"/> or <paramref name="list"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">Thrown when <paramref name="list"/> is empty.</exception>
+        /// <remarks>
+        /// This overload performs an O(n) traversal via <see cref="System.Linq.Enumerable.ElementAt{TSource}(System.Collections.Generic.IEnumerable{TSource}, int)"/>
+        /// to reach the selected index because <see cref="ICollection{T}"/> does not expose index-based access.
+        /// For large collections, prefer the <c>IList&lt;T&gt;</c>, array, or <c>ReadOnlySpan&lt;T&gt;</c> overloads,
+        /// which index directly in O(1).
+        /// </remarks>
         public T GetItem<T>(ICollection<T> list)
         {
             Argument.IsNotNull(random);
@@ -165,6 +172,12 @@ public static class RandomExtensions
         /// <returns>A randomly selected element of <paramref name="list"/>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="random"/> or <paramref name="list"/> is <see langword="null"/>.</exception>
         /// <exception cref="ArgumentException">Thrown when <paramref name="list"/> is empty.</exception>
+        /// <remarks>
+        /// This overload performs an O(n) traversal via <see cref="System.Linq.Enumerable.ElementAt{TSource}(System.Collections.Generic.IEnumerable{TSource}, int)"/>
+        /// to reach the selected index because <see cref="IReadOnlyCollection{T}"/> does not expose index-based access.
+        /// For large collections, prefer the <c>IReadOnlyList&lt;T&gt;</c>, array, or <c>ReadOnlySpan&lt;T&gt;</c> overloads,
+        /// which index directly in O(1).
+        /// </remarks>
         public T GetItem<T>(IReadOnlyCollection<T> list)
         {
             Argument.IsNotNull(random);
@@ -348,10 +361,10 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            var buffer = new byte[sizeof(long)];
+            Span<byte> buffer = stackalloc byte[sizeof(ulong)];
             random.NextBytes(buffer);
 
-            return (BitConverter.ToUInt64(buffer, 0) * (max - min) / ulong.MaxValue) + min;
+            return (MemoryMarshal.Read<ulong>(buffer) * (max - min) / ulong.MaxValue) + min;
         }
 
         /// <summary>Returns a random <see cref="decimal"/> in the range <c>[<paramref name="min"/>, <paramref name="max"/>)</c>.</summary>

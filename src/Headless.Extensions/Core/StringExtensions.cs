@@ -182,7 +182,12 @@ public static class StringExtensions
         StringComparison comparisonType = StringComparison.Ordinal
     )
     {
-        return input.StartsWith(c.ToString(), comparisonType) ? input : c + input;
+        var startsWithChar =
+            comparisonType == StringComparison.Ordinal
+                ? input.StartsWith(c)
+                : input.StartsWith(c.ToString(), comparisonType);
+
+        return startsWithChar ? input : c + input;
     }
 
     /// <summary>Adds a string to the beginning of given string if it doesn't start with the char.</summary>
@@ -206,7 +211,12 @@ public static class StringExtensions
         StringComparison comparisonType = StringComparison.Ordinal
     )
     {
-        return input.EndsWith(suffix.ToString(), comparisonType) ? input : input + suffix;
+        var endsWithChar =
+            comparisonType == StringComparison.Ordinal
+                ? input.EndsWith(suffix)
+                : input.EndsWith(suffix.ToString(), comparisonType);
+
+        return endsWithChar ? input : input + suffix;
     }
 
     /// <summary>Adds a string to the end of given string if it doesn't end with the char.</summary>

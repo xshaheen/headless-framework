@@ -47,7 +47,12 @@ public static class CollectionChangeDetectorExtensions
         foreach (var oldItem in oldItems)
         {
             var key = oldKeySelector(oldItem);
-            oldKeys.Add(key);
+
+            // Skip duplicate old keys so a matched new item is not paired more than once (first occurrence wins).
+            if (!oldKeys.Add(key))
+            {
+                continue;
+            }
 
             if (newByKey.TryGetValue(key, out var newItem))
             {
@@ -61,9 +66,9 @@ public static class CollectionChangeDetectorExtensions
 
         var addedItems = new List<TNew>();
 
-        foreach (var newItem in newItems)
+        foreach (var (key, newItem) in newByKey)
         {
-            if (!oldKeys.Contains(newKeySelector(newItem)))
+            if (!oldKeys.Contains(key))
             {
                 addedItems.Add(newItem);
             }
@@ -116,7 +121,12 @@ public static class CollectionChangeDetectorExtensions
         foreach (var oldItem in oldItems)
         {
             var key = oldKeySelector(oldItem);
-            oldKeys.Add(key);
+
+            // Skip duplicate old keys so a matched new item is not paired more than once (first occurrence wins).
+            if (!oldKeys.Add(key))
+            {
+                continue;
+            }
 
             if (!newByKey.TryGetValue(key, out var newItem))
             {
@@ -134,9 +144,9 @@ public static class CollectionChangeDetectorExtensions
 
         var addedItems = new List<TNew>();
 
-        foreach (var newItem in newItems)
+        foreach (var (key, newItem) in newByKey)
         {
-            if (!oldKeys.Contains(newKeySelector(newItem)))
+            if (!oldKeys.Contains(key))
             {
                 addedItems.Add(newItem);
             }

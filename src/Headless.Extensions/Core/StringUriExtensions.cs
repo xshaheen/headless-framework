@@ -26,6 +26,11 @@ public static class StringUriExtensions
 
         var uri = new Uri(url, UriKind.RelativeOrAbsolute);
 
+        if (!uri.IsAbsoluteUri)
+        {
+            return url;
+        }
+
         return uri.GetComponents(UriComponents.SerializationInfoString, uriFormat);
     }
 

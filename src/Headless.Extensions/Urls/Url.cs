@@ -291,7 +291,7 @@ public sealed class Url
     /// </summary>
     /// <param name="path">The path to split.</param>
     /// <returns>The "/"-delimited segments of the encoded path.</returns>
-    /// <exception cref="NullReferenceException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
     public static IEnumerable<string> ParsePathSegments(string path) => UrlParser.ParsePathSegments(path);
     #endregion
 
@@ -831,16 +831,26 @@ public sealed class Url
     /// </summary>
     /// <param name="uri">The <see cref="System.Uri"/> to convert.</param>
     /// <returns>A new <see cref="Url"/> object built from <paramref name="uri"/>.</returns>
-    /// <exception cref="NullReferenceException">Thrown when <paramref name="uri"/> is <see langword="null"/>.</exception>
-    public static implicit operator Url(Uri uri) => new(uri.ToString());
+    /// <exception cref="ArgumentNullException"><paramref name="uri"/> is <see langword="null"/>.</exception>
+    public static implicit operator Url(Uri uri)
+    {
+        Argument.IsNotNull(uri);
+
+        return new(uri.ToString());
+    }
 
     /// <summary>
     /// Builds a <see cref="Url"/> from a <see cref="System.Uri"/>. Named alternate for the implicit Uri-to-Url conversion.
     /// </summary>
     /// <param name="uri">The <see cref="System.Uri"/> to convert.</param>
     /// <returns>A new <see cref="Url"/> object built from <paramref name="uri"/>.</returns>
-    /// <exception cref="NullReferenceException">Thrown when <paramref name="uri"/> is <see langword="null"/>.</exception>
-    public static Url FromUri(Uri uri) => uri;
+    /// <exception cref="ArgumentNullException"><paramref name="uri"/> is <see langword="null"/>.</exception>
+    public static Url FromUri(Uri uri)
+    {
+        Argument.IsNotNull(uri);
+
+        return uri;
+    }
 
     /// <summary>
     /// True if obj is an instance of Url and its string representation is equal to this instance's string representation.
@@ -862,7 +872,6 @@ public sealed class Url
     /// </summary>
     /// <param name="parts">URL parts to combine.</param>
     /// <returns>The combined, illegal-character-encoded URL string.</returns>
-    /// <exception cref="NullReferenceException">Thrown when <paramref name="parts"/> is <see langword="null"/>.</exception>
     public static string Combine(string?[] parts) => Combine(parts.AsSpan());
 
     /// <summary>

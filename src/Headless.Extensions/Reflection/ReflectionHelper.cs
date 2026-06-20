@@ -28,7 +28,7 @@ public static class ReflectionHelper
     )
         where TAttribute : Attribute
     {
-        return memberInfo.GetCustomAttribute<TAttribute>(inherit) ?? defaultValue;
+        return memberInfo.GetCustomAttributes<TAttribute>(inherit).FirstOrDefault() ?? defaultValue;
     }
 
     /// <summary>
