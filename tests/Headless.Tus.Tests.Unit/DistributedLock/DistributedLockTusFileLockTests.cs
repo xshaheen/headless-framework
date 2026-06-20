@@ -71,7 +71,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_infinite_expiration()
+    public async Task should_use_finite_lease_so_a_crashed_holder_is_recoverable()
     {
         // given
         const string fileId = "test-file";
@@ -80,20 +80,18 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         // when
         await sut.Lock();
 
-        // then
+        // then: null TTL uses the provider's finite default; an infinite lease would stay stuck after a crash
         await _distributedLockProvider
             .Received(1)
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Is<DistributedLockAcquireOptions?>(o =>
-                    o != null && o.TimeUntilExpires == Timeout.InfiniteTimeSpan
-                ),
+                Arg.Is<DistributedLockAcquireOptions?>(o => o != null && o.TimeUntilExpires == null),
                 Arg.Any<CancellationToken>()
             );
     }
 
     [Fact]
-    public async Task should_disable_monitoring_for_infinite_expiration()
+    public async Task should_auto_extend_lease_while_held()
     {
         // given
         const string fileId = "test-file";
@@ -102,12 +100,12 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         // when
         await sut.Lock();
 
-        // then
+        // then: AutoExtend keeps the lease alive across long uploads while still expiring on crash
         await _distributedLockProvider
             .Received(1)
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Is<DistributedLockAcquireOptions?>(o => o != null && o.Monitoring == LockMonitoringMode.None),
+                Arg.Is<DistributedLockAcquireOptions?>(o => o != null && o.Monitoring == LockMonitoringMode.AutoExtend),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -141,10 +139,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
     {
         // given
         const string fileId = "test-file";
-        const string leaseId = "lock-123";
         var distributedLock = Substitute.For<IDistributedLease>();
-        distributedLock.Resource.Returns("tus-file-lock-test-file");
-        distributedLock.LeaseId.Returns(leaseId);
 
         _distributedLockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -156,10 +151,8 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         // when
         await sut.ReleaseIfHeld();
 
-        // then
-        await _distributedLockProvider
-            .Received(1)
-            .ReleaseAsync("tus-file-lock-test-file", leaseId, Arg.Any<CancellationToken>());
+        // then: disposing the lease releases it (ReleaseOnDispose) and stops the auto-extend monitor
+        await distributedLock.Received(1).DisposeAsync();
     }
 
     [Fact]
