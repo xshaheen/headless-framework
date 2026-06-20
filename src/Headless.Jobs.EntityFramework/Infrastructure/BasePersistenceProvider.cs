@@ -679,11 +679,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
-            // Concurrent first-boot: another node inserted the same deterministic-id seed row(s) between our read and
-            // write. The primary key dedups, so there is no duplicate to clean up — discard our now-redundant tracked
-            // inserts and let the winner's rows stand. Changed expressions, if any, are reconciled on the next seed.
+            // Expected case: a concurrent first-boot lost the deterministic-id primary-key race — the winner's rows
+            // stand, so there is nothing to clean up; discard our now-redundant tracked inserts. Logged at Debug (the
+            // common trigger is the benign race) so a genuine, non-race failure that leaves this node's schedule
+            // unseeded until the next boot is still greppable rather than silently swallowed.
+            Logger.LogCronSeedConflictDiscarded(ex);
             dbContext.ChangeTracker.Clear();
         }
     }
@@ -1293,4 +1295,13 @@ internal static partial class BasePersistenceProviderLog
         Exception exception,
         string key
     );
+
+    [LoggerMessage(
+        EventId = 3001,
+        Level = LogLevel.Debug,
+        Message = "Cron-seed migration hit a DbUpdateException and discarded its redundant inserts. The expected cause "
+            + "is a concurrent first-boot losing the deterministic-id primary-key race (benign — the winner's rows "
+            + "stand); any other cause leaves this node's schedule unseeded until the next boot reconciles it."
+    )]
+    public static partial void LogCronSeedConflictDiscarded(this ILogger logger, Exception exception);
 }
