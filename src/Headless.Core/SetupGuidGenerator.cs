@@ -7,6 +7,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Core;
 
+/// <summary>
+/// DI registration extensions for the framework GUID generator.
+/// </summary>
 [PublicAPI]
 public static class SetupGuidGenerator
 {

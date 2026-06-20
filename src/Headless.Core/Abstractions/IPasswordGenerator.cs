@@ -6,12 +6,21 @@ using Headless.Checks;
 
 namespace Headless.Abstractions;
 
+/// <summary>
+/// Generates cryptographically secure passwords according to a caller-supplied policy.
+/// </summary>
 public interface IPasswordGenerator
 {
+    /// <summary>
+    /// Generates a password that satisfies the constraints defined by <paramref name="options"/>.
+    /// </summary>
+    /// <param name="options">The policy controlling length, required character sets, and uniqueness requirements.</param>
+    /// <returns>A newly generated password string of the requested length.</returns>
     string GeneratePassword(GeneratePasswordOptions options);
 }
 
 /// <summary>Options controlling how <see cref="IPasswordGenerator.GeneratePassword"/> builds a password.</summary>
+/// <param name="Length">Total character count of the generated password. Must be positive and at least as large as the number of enabled required-character sets.</param>
 [PublicAPI]
 public sealed record GeneratePasswordOptions(int Length)
 {
@@ -46,6 +55,11 @@ public sealed record GeneratePasswordOptions(int Length)
     public bool UseNonAlphanumericInRemaining { get; init; }
 }
 
+/// <summary>
+/// Default <see cref="IPasswordGenerator"/> implementation.
+/// Uses <see cref="System.Security.Cryptography.RandomNumberGenerator"/> for all character selection and shuffling,
+/// so the output is cryptographically secure.
+/// </summary>
 public sealed class PasswordGenerator : IPasswordGenerator
 {
     private const int _Zero = '0';
@@ -59,6 +73,24 @@ public sealed class PasswordGenerator : IPasswordGenerator
     private const string _UppercaseChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private const string _NonAlphanumericChars = "!@#$%^&*+=";
 
+    /// <summary>
+    /// Generates a cryptographically secure password that satisfies all constraints in <paramref name="options"/>.
+    /// Required character sets are placed first, then distinct characters are drawn from the enabled
+    /// "remaining" pools, and the result is Fisher-Yates shuffled before being returned.
+    /// </summary>
+    /// <param name="options">The policy that governs length, required character sets, and uniqueness requirements.</param>
+    /// <returns>A newly generated password of exactly <see cref="GeneratePasswordOptions.Length"/> characters.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="GeneratePasswordOptions.Length"/> is not positive, or
+    /// <see cref="GeneratePasswordOptions.RequiredUniqueChars"/> is negative.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The options are internally inconsistent: <see cref="GeneratePasswordOptions.Length"/> is less than the
+    /// number of enabled required-character sets; no character set is enabled for the remaining fill pool; or
+    /// <see cref="GeneratePasswordOptions.RequiredUniqueChars"/> exceeds the total number of distinct characters
+    /// across all available sets.
+    /// </exception>
     public string GeneratePassword(GeneratePasswordOptions options)
     {
         Argument.IsNotNull(options);

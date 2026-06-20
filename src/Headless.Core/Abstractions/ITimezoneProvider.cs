@@ -11,6 +11,11 @@ namespace Headless.Abstractions;
 [PublicAPI]
 public sealed record TimezoneOption(string Name, string Value);
 
+/// <summary>
+/// Provides cross-platform time zone enumeration and identifier conversion between Windows and IANA formats.
+/// Implementations should cache the enumeration lists because resolving a <see cref="TimeZoneInfo"/> per entry
+/// is expensive.
+/// </summary>
 public interface ITimezoneProvider
 {
     /// <summary>
@@ -58,6 +63,12 @@ public interface ITimezoneProvider
     TimeZoneInfo GetTimeZoneInfo(string windowsOrIanaTimeZoneId);
 }
 
+/// <summary>
+/// <see cref="ITimezoneProvider"/> implementation backed by the <c>TimeZoneConverter</c> (TZConvert) library,
+/// which maps between Windows and IANA time zone identifiers on any platform. The Windows and IANA option lists
+/// are built once per process via <see cref="Lazy{T}"/> and shared across all calls; <see cref="TimezoneOption"/>
+/// is immutable so the cached lists need no per-call copying.
+/// </summary>
 public sealed class TzConvertTimezoneProvider : ITimezoneProvider
 {
     // The Windows/IANA zone tables are static for the process lifetime, so the option lists are built
@@ -72,8 +83,10 @@ public sealed class TzConvertTimezoneProvider : ITimezoneProvider
         _BuildTimezones(TZConvert.KnownIanaTimeZoneNames)
     );
 
+    /// <inheritdoc/>
     public IReadOnlyList<TimezoneOption> GetWindowsTimezones() => _WindowsTimezones.Value;
 
+    /// <inheritdoc/>
     public IReadOnlyList<TimezoneOption> GetIanaTimezones() => _IanaTimezones.Value;
 
     private static IReadOnlyList<TimezoneOption> _BuildTimezones(IEnumerable<string> timeZoneIds)
@@ -88,16 +101,19 @@ public sealed class TzConvertTimezoneProvider : ITimezoneProvider
             .AsReadOnly();
     }
 
+    /// <inheritdoc/>
     public string WindowsToIana(string windowsTimeZoneId)
     {
         return TZConvert.WindowsToIana(windowsTimeZoneId);
     }
 
+    /// <inheritdoc/>
     public string IanaToWindows(string ianaTimeZoneName)
     {
         return TZConvert.IanaToWindows(ianaTimeZoneName);
     }
 
+    /// <inheritdoc/>
     public TimeZoneInfo GetTimeZoneInfo(string windowsOrIanaTimeZoneId)
     {
         return TZConvert.GetTimeZoneInfo(windowsOrIanaTimeZoneId);

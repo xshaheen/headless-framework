@@ -2,9 +2,14 @@
 
 namespace Headless.Abstractions;
 
+/// <summary>
+/// Exposes the locale context for the current scope — request, job, or user session. Implementations
+/// derive the locale from sources such as the HTTP request's <c>Accept-Language</c> header, the
+/// authenticated user's profile, or a fixed default. Used by services that format or localize output.
+/// </summary>
 public interface ICurrentLocale
 {
-    /// <summary>Gets the current locale as a neutral language tag (e.g., `en`, `ar`).</summary>
+    /// <summary>Gets the current locale as a neutral language tag (e.g., <c>en</c>, <c>ar</c>).</summary>
     string Language { get; }
 
     /// <summary>
@@ -28,10 +33,13 @@ public sealed class DefaultCurrentLocale : ICurrentLocale
 {
     private static readonly CultureInfo _Culture = _ResolveCulture();
 
+    /// <inheritdoc/>
     public string Language => "en";
 
+    /// <inheritdoc/>
     public string Locale => "en-US";
 
+    /// <inheritdoc/>
     public CultureInfo LocaleCulture => _Culture;
 
     private static CultureInfo _ResolveCulture()
@@ -55,9 +63,12 @@ public sealed class DefaultCurrentLocale : ICurrentLocale
 /// </summary>
 public sealed class CurrentCultureCurrentLocale : ICurrentLocale
 {
+    /// <inheritdoc/>
     public string Language => LocaleCulture.TwoLetterISOLanguageName;
 
+    /// <inheritdoc/>
     public string Locale => LocaleCulture.Name;
 
+    /// <inheritdoc/>
     public CultureInfo LocaleCulture => CultureInfo.CurrentCulture;
 }
