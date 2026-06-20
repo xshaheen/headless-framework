@@ -465,7 +465,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     {
         sb.AppendLine($"namespace {assemblyName}");
         sb.AppendLine("{");
-        sb.AppendLine($"    public static class JobsInstanceFactoryExtensions");
+        sb.AppendLine("    public static class JobsInstanceFactoryExtensions");
         sb.AppendLine("    {");
     }
 
@@ -473,7 +473,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     {
         sb.AppendLine($"namespace {assemblyName}");
         sb.AppendLine("{");
-        sb.AppendLine($"  public static class JobsInstanceFactoryExtensions");
+        sb.AppendLine("  public static class JobsInstanceFactoryExtensions");
         sb.AppendLine("  {");
     }
 

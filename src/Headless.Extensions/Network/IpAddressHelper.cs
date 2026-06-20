@@ -36,6 +36,6 @@ public static class IpAddressHelper
             )
             .ToList();
 
-        return ipAddresses!;
+        return ipAddresses;
     }
 }

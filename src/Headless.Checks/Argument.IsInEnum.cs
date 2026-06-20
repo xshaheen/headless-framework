@@ -49,9 +49,7 @@ public static partial class Argument
     )
         where T : struct, Enum
     {
-        if (
-            Enum.IsDefined(typeof(T), argument) || _IsValidFlagsCombination(typeof(T), unchecked((ulong)(long)argument))
-        )
+        if (Enum.IsDefined(typeof(T), argument) || _IsValidFlagsCombination(typeof(T), unchecked((ulong)argument)))
         {
             return argument;
         }

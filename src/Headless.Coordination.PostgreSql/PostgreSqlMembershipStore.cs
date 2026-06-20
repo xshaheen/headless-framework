@@ -111,7 +111,7 @@ internal sealed class PostgreSqlMembershipStore(
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, sql, (NpgsqlTransaction)transaction);
+        await using var command = _CreateCommand(connection, sql, transaction);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", descriptor.Identity.NodeId.Value);
         command.Parameters.AddWithValue("Incarnation", descriptor.Identity.Incarnation.Value);

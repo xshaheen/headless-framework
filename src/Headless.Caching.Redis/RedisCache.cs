@@ -265,9 +265,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await ((IFactoryCacheStore)this)
-            .UpsertEntryAsync(key, value, options, timeProvider, cancellationToken)
-            .ConfigureAwait(false);
+        await (this).UpsertEntryAsync(key, value, options, timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -509,7 +507,7 @@ public sealed class RedisCache(
             )
             .ConfigureAwait(false);
 
-        return double.Parse(result.ToString()!, CultureInfo.InvariantCulture);
+        return double.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> SetIfHigherAsync(
@@ -546,7 +544,7 @@ public sealed class RedisCache(
             )
             .ConfigureAwait(false);
 
-        return long.Parse(result.ToString()!, CultureInfo.InvariantCulture);
+        return long.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<double> SetIfLowerAsync(
@@ -1342,7 +1340,7 @@ public sealed class RedisCache(
         // stamp is cleared — a logically-expired entry must route the next caller through the factory, not eager
         // refresh. Last-writer-wins under a concurrent fresh write, consistent with the sliding re-arm RMW.
         var reStamped = RedisCacheEntryFrame.Encode(
-            (byte[])frame.ValueSegment.ToArray(),
+            frame.ValueSegment.ToArray(),
             frame.IsNull,
             logicalExpiresAt: now,
             physicalExpiresAt: frame.PhysicalExpiresAt,

@@ -236,12 +236,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         if (timeJob is null)
         {
-            return new JobResult<TTimeJob>(new JobValidatorException($"Job must not be null!"));
+            return new JobResult<TTimeJob>(new JobValidatorException("Job must not be null!"));
         }
 
         if (timeJob.ExecutionTime == null)
         {
-            return new JobResult<TTimeJob>(new JobValidatorException($"Job ExecutionTime must not be null!"));
+            return new JobResult<TTimeJob>(new JobValidatorException("Job ExecutionTime must not be null!"));
         }
 
         timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;

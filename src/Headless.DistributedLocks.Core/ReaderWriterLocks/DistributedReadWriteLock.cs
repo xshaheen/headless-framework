@@ -640,7 +640,7 @@ public sealed class DistributedReadWriteLock(
         {
             ReaderWriterLockMode.Read => "read",
             ReaderWriterLockMode.Write => "write",
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, @"Unknown reader-writer lock mode."),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown reader-writer lock mode."),
         };
     }
 }

@@ -92,7 +92,7 @@ public sealed class InMemoryCache
         if ((_maxMemorySize.HasValue || _maxEntrySize.HasValue) && _sizeCalculator is null)
         {
             throw new ArgumentException(
-                @"SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
+                "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
                 nameof(options)
             );
         }
@@ -217,9 +217,7 @@ public sealed class InMemoryCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await ((IFactoryCacheStore)this)
-            .UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken)
-            .ConfigureAwait(false);
+        await (this).UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
