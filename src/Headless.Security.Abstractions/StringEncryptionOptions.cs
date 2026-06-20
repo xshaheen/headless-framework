@@ -38,12 +38,16 @@ public sealed class StringEncryptionOptionsValidator : AbstractValidator<StringE
 {
     public StringEncryptionOptionsValidator()
     {
-        RuleFor(x => x.KeySize).GreaterThan(0);
+        RuleFor(x => x.KeySize)
+            .Must(keySize => keySize is 128 or 192 or 256)
+            .WithMessage("KeySize must be 128, 192, or 256 bits (the legal AES key sizes).");
         RuleFor(x => x.DefaultPassPhrase).NotEmpty();
+        // AES has a fixed 128-bit block, so the IV is always 16 bytes regardless of key size.
         RuleFor(x => x.InitVectorBytes)
             .Cascade(CascadeMode.Stop)
             .NotEmpty()
-            .Must((settings, iv) => iv.Length == settings.KeySize / 16);
+            .Must(iv => iv.Length == 16)
+            .WithMessage("InitVectorBytes must be exactly 16 bytes (the AES block size).");
         RuleFor(x => x.DefaultSalt).NotEmpty();
     }
 }

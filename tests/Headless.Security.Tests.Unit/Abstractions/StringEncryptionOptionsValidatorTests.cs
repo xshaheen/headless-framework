@@ -70,9 +70,9 @@ public sealed class StringEncryptionOptionsValidatorTests
     }
 
     [Fact]
-    public void should_return_true_when_size_initVectorBytes_length_equal_result_keySize_dividend_on_16()
+    public void should_fail_when_key_size_is_not_a_legal_aes_size()
     {
-        // given
+        // given (320 is not a legal AES key size; the IV is sized to the old, wrong KeySize/16 formula)
         var settings = new StringEncryptionOptions
         {
             KeySize = 320,
@@ -87,7 +87,32 @@ public sealed class StringEncryptionOptionsValidatorTests
         var result = validator.Validate(settings);
 
         // then
-        settings.InitVectorBytes.Should().HaveCount(20);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.KeySize));
+    }
+
+    [Theory]
+    [InlineData(128)]
+    [InlineData(192)]
+    [InlineData(256)]
+    public void should_require_a_16_byte_iv_for_every_legal_aes_key_size(int keySize)
+    {
+        // given (AES always uses a 16-byte IV regardless of key size)
+        var settings = new StringEncryptionOptions
+        {
+            KeySize = keySize,
+            DefaultPassPhrase = "TestPassPhrase123456",
+            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
+            DefaultSalt = "TestSalt"u8.ToArray(),
+        };
+
+        var validator = new StringEncryptionOptionsValidator();
+
+        // when
+        var result = validator.Validate(settings);
+
+        // then
+        settings.InitVectorBytes.Should().HaveCount(16);
         result.IsValid.Should().BeTrue();
     }
 

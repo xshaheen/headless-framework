@@ -3,7 +3,6 @@
 using System.Security.Cryptography;
 using Headless.Abstractions;
 
-#pragma warning disable CA5379
 namespace Headless;
 
 /// <summary>Creates salted string hashes using configured PBKDF2 options.</summary>

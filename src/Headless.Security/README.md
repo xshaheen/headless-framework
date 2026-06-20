@@ -27,7 +27,7 @@ dotnet add package Headless.Security
 
 ```csharp
 using System.Security.Cryptography;
-using Headless.Security;
+using Headless;
 
 builder.Services.AddStringEncryptionService(options =>
 {

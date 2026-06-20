@@ -3,7 +3,6 @@
 using System.Security.Cryptography;
 using Headless.Abstractions;
 
-#pragma warning disable CA5401, CA5379
 namespace Headless;
 
 /// <summary>Encrypts and decrypts strings using configured symmetric encryption options.</summary>
@@ -12,13 +11,16 @@ public sealed class StringEncryptionService(StringEncryptionOptions options) : I
     private const int _Iterations = 100_000;
     private static readonly HashAlgorithmName _HashAlgorithm = HashAlgorithmName.SHA256;
     private readonly string _defaultPassPhrase = options.DefaultPassPhrase;
-    private readonly byte[] _defaultSalt = options.DefaultSalt;
+
+    // Defensive copies: the service is a singleton; copying prevents external mutation of the
+    // options arrays from silently altering the cached IV/salt after construction.
+    private readonly byte[] _defaultSalt = [.. options.DefaultSalt];
     private readonly byte[] _defaultKeyBytes = _CreateKeyBytes(
         options.DefaultPassPhrase,
         options.DefaultSalt,
         options.KeySize / 8
     );
-    private readonly byte[] _initVectorBytes = options.InitVectorBytes;
+    private readonly byte[] _initVectorBytes = [.. options.InitVectorBytes];
     private readonly int _keySizeInBytes = options.KeySize / 8;
 
     /// <inheritdoc />
