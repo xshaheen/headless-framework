@@ -13,7 +13,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
-    "@microsoft/signalr": "^8.0.7",
+    "@microsoft/signalr": "^10.0.0",
     "axios": "^1.15.2",
     "cronstrue": "^3.9.0",
     "echarts": "^5.6.0",
