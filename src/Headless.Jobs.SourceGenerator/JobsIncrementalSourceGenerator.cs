@@ -69,9 +69,6 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                     )
                     .ToList();
 
-                // Collect namespaces from the source types
-                var sourceNamespaces = NamespaceCollector.CollectNamespacesFromSourceTypes(methodPairs, compilation);
-
                 // Extract data once to avoid multiple enumeration
                 var delegateCodes = delegatesWithMetadata.Select(x => x.DelegateCode).ToList();
                 var requestTypes = delegatesWithMetadata.Select(x => x.Item2).ToList();

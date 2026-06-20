@@ -18,7 +18,7 @@ public sealed class SendSmsRequest
 
     /// <summary>Set it to <see langword="true"/>, if the messageText contains URL and you want to shorten it.</summary>
     [JsonPropertyName("shortURL")]
-    public bool ShortUrl { get; init; } = false;
+    public bool ShortUrl { get; init; }
 
     /// <summary>An integer used as an identifier for your request to track it.</summary>
     [JsonPropertyName("clientMessageId")]

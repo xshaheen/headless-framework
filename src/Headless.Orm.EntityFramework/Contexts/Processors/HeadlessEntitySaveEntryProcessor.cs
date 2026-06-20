@@ -36,7 +36,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
     private void _EnsureTenantWriteAllowed(EntityEntry entry, string? tenantId)
     {
         if (
-            entry.Entity is not IMultiTenant entity
+            entry.Entity is not IMultiTenant
             || entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)
             || !tenantWriteGuardOptions.Value.IsEnabled
             || tenantWriteGuardBypass.IsActive

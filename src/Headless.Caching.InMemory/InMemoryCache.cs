@@ -1688,7 +1688,7 @@ public sealed class InMemoryCache
         prefix = _GetKey(prefix);
         var removed = 0;
 
-        foreach (var (key, entry) in _memory)
+        foreach (var (key, _) in _memory)
         {
             if (key.StartsWith(prefix, StringComparison.Ordinal))
             {
