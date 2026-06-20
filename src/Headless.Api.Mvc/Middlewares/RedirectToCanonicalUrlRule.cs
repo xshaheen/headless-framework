@@ -24,6 +24,12 @@ public sealed class RedirectToCanonicalUrlRule : IRule
 {
     private const char _SlashCharacter = '/';
 
+    /// <summary>
+    /// Initializes the rule, reading <see cref="AppendTrailingSlash"/> and <see cref="LowercaseUrls"/>
+    /// from <c>RouteOptions</c>.
+    /// </summary>
+    /// <param name="optionsAccessor">The route options accessor.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="optionsAccessor"/> is <see langword="null"/>.</exception>
     public RedirectToCanonicalUrlRule(IOptions<RouteOptions> optionsAccessor)
     {
         Argument.IsNotNull(optionsAccessor);
@@ -31,6 +37,11 @@ public sealed class RedirectToCanonicalUrlRule : IRule
         LowercaseUrls = optionsAccessor.Value.LowercaseUrls;
     }
 
+    /// <summary>
+    /// Initializes the rule with explicit trailing-slash and lowercase settings.
+    /// </summary>
+    /// <param name="appendTrailingSlash">When <see langword="true"/>, a trailing slash is appended; when <see langword="false"/>, it is stripped.</param>
+    /// <param name="lowercaseUrls">When <see langword="true"/>, the path and query string are lower-cased (query only when no <see cref="Headless.Api.Filters.NoLowercaseQueryStringAttribute"/> is present).</param>
     public RedirectToCanonicalUrlRule(bool appendTrailingSlash, bool lowercaseUrls)
     {
         AppendTrailingSlash = appendTrailingSlash;
@@ -53,6 +64,13 @@ public sealed class RedirectToCanonicalUrlRule : IRule
     /// </value>
     public bool LowercaseUrls { get; }
 
+    /// <summary>
+    /// Evaluates the current GET request and issues a 301 Permanent Redirect when the URL is not
+    /// canonical (wrong trailing-slash presence or mixed-case path/query). Non-GET requests are
+    /// passed through unchanged.
+    /// </summary>
+    /// <param name="context">The rewrite context for the current request.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
     public void ApplyRule(RewriteContext context)
     {
         Argument.IsNotNull(context);

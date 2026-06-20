@@ -38,6 +38,24 @@ internal sealed partial class IdempotencyMiddleware(
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly ILogger<IdempotencyMiddleware> _logger = logger;
 
+    /// <summary>
+    /// Processes the incoming request through the idempotency pipeline: key validation,
+    /// fingerprinting, cache lookup, in-flight coordination, handler execution, and response
+    /// capture/finalization.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <param name="next">The next middleware delegate.</param>
+    /// <exception cref="Exception">
+    /// Re-throws any exception from the downstream handler after removing the in-flight cache
+    /// marker. Cache cleanup failures are logged and swallowed so the original exception
+    /// propagates cleanly.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <see cref="IdempotencyOptions.RequestFingerprint"/> returns
+    /// <see langword="null"/> or an empty array. Also propagated from <c>_ReplayAsync</c>
+    /// when the response has already started before the replay path is reached (indicates
+    /// incorrect middleware ordering).
+    /// </exception>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
         var ct = cancellationTokenProvider.Token;
@@ -285,6 +303,15 @@ internal sealed partial class IdempotencyMiddleware(
         }
     }
 
+    /// <summary>
+    /// Writes the cached <paramref name="record"/> to the current response, replaying status
+    /// code, allowlisted headers, and body exactly as originally captured.
+    /// Sets the <c>Idempotent-Replayed: true</c> response header.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The response has already started. Indicates <c>UseIdempotency()</c> is ordered after
+    /// middleware that already wrote to the response body.
+    /// </exception>
     private async Task _ReplayAsync(
         HttpContext context,
         IdempotencyRecord record,

@@ -9,9 +9,22 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api.Middlewares;
 
+/// <summary>
+/// Middleware that intercepts bare 401, 403, and 404 responses without a body and rewrites them
+/// as structured <c>application/problem+json</c> ProblemDetails responses.
+/// </summary>
+/// <remarks>
+/// For 403 responses that carry a <c>TenantContextRequiredFeature</c> on the request, the middleware
+/// clears any partial response and writes a <c>g:tenant_required</c> discriminator body, overriding
+/// any <c>Content-Type</c> or <c>Content-Length</c> set by upstream authorization middleware.
+/// All writes are routed through <see cref="Microsoft.AspNetCore.Http.IProblemDetailsService"/> when
+/// registered, falling back to <c>Results.Problem</c> for minimal-host scenarios.
+/// </remarks>
 internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problemDetailsCreator) : IMiddleware
 {
-    /// <summary>Executes the middleware.</summary>
+    /// <summary>Executes the middleware, rewriting qualifying error responses as ProblemDetails.</summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <param name="next">The next middleware delegate.</param>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
         await next(context).ConfigureAwait(false);

@@ -9,9 +9,27 @@ using Microsoft.Extensions.Options;
 namespace Headless.Api.Identity.Schemes;
 
 /// <summary>
-/// This custom provider allows able to use just [Authorize] instead of having to define [Authorize(AuthenticationSchemes = "Bearer")]
-/// above every API controller without this Bearer authorization will not work
+/// An <see cref="AuthenticationSchemeProvider"/> that automatically selects the correct scheme
+/// based on the incoming request, so plain <c>[Authorize]</c> works without needing
+/// <c>[Authorize(AuthenticationSchemes = "Bearer")]</c> on every controller.
 /// </summary>
+/// <remarks>
+/// Scheme selection logic (evaluated on every request):
+/// <list type="bullet">
+///   <item><description>
+///     API key header / query-string parameter present → <c>ApiKey</c> scheme.
+///   </description></item>
+///   <item><description>
+///     <c>Authorization: Basic …</c> header present → <c>Basic</c> scheme.
+///   </description></item>
+///   <item><description>
+///     Other <c>Authorization</c> header (e.g. <c>Bearer</c>) present → <c>Bearer</c> scheme.
+///   </description></item>
+///   <item><description>
+///     No auth credentials present → falls through to the registered default scheme.
+///   </description></item>
+/// </list>
+/// </remarks>
 public sealed class DynamicAuthenticationSchemeProvider(
     IHttpContextAccessor httpContextAccessor,
     IOptions<AuthenticationOptions> options,

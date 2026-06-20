@@ -17,6 +17,7 @@ public static class ApplicationBuilderHelperExtensions
     /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
     /// <param name="action">The action used to add to the request execution pipeline.</param>
     /// <returns>The same application builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="application"/> or <paramref name="action"/> is <see langword="null"/>.</exception>
     public static WebApplication UseIf(
         this WebApplication application,
         bool condition,
@@ -47,6 +48,7 @@ public static class ApplicationBuilderHelperExtensions
     /// <param name="elseAction">The action used to add to the request execution pipeline if the condition is
     /// <see langword="false"/>.</param>
     /// <returns>The same application builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="application"/>, <paramref name="ifAction"/>, or <paramref name="elseAction"/> is <see langword="null"/>.</exception>
     public static WebApplication UseIfElse(
         this WebApplication application,
         bool condition,
@@ -74,6 +76,7 @@ public static class ApplicationBuilderHelperExtensions
     /// <param name="elseAction">The action used to add to the request execution pipeline if the condition is
     /// <see langword="false"/>.</param>
     /// <returns>The same application builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="application"/>, <paramref name="ifAction"/>, or <paramref name="elseAction"/> is <see langword="null"/>.</exception>
     public static T UseIfElse<T>(
         this WebApplication application,
         bool condition,
@@ -96,6 +99,7 @@ public static class ApplicationBuilderHelperExtensions
     /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
     /// <param name="action">The action used to add to the request execution pipeline.</param>
     /// <returns>The same application builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="application"/> or <paramref name="action"/> is <see langword="null"/>.</exception>
     public static IApplicationBuilder UseIf(
         this IApplicationBuilder application,
         bool condition,
@@ -126,6 +130,7 @@ public static class ApplicationBuilderHelperExtensions
     /// <param name="elseAction">The action used to add to the request execution pipeline if the condition is
     /// <see langword="false"/>.</param>
     /// <returns>The same application builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="application"/>, <paramref name="ifAction"/>, or <paramref name="elseAction"/> is <see langword="null"/>.</exception>
     public static IApplicationBuilder UseIfElse(
         this IApplicationBuilder application,
         bool condition,
@@ -153,6 +158,7 @@ public static class ApplicationBuilderHelperExtensions
     /// <param name="elseAction">The action used to add to the request execution pipeline if the condition is
     /// <see langword="false"/>.</param>
     /// <returns>The same application builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="application"/>, <paramref name="ifAction"/>, or <paramref name="elseAction"/> is <see langword="null"/>.</exception>
     public static T UseIfElse<T>(
         this IApplicationBuilder application,
         bool condition,

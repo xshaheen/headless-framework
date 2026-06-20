@@ -136,6 +136,10 @@ public interface IProblemDetailsCreator
     /// for 408, anything that just sets a 501 status) match the shape produced by the factories on
     /// this interface.
     /// </summary>
+    /// <param name="problemDetails">
+    /// The <see cref="ProblemDetails"/> instance to normalize in place; must not be
+    /// <see langword="null"/>.
+    /// </param>
     /// <remarks>
     /// Resolves <c>Title</c>/<c>Type</c> from <see cref="Microsoft.AspNetCore.Mvc.ApiBehaviorOptions.ClientErrorMapping"/>,
     /// then fills missing <c>Title</c>/<c>Type</c>/<c>Detail</c> for status codes the framework
@@ -144,5 +148,8 @@ public interface IProblemDetailsCreator
     /// extensions, plus <c>Instance</c> from the current request path. Idempotent: existing values
     /// are preserved.
     /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="problemDetails"/> is <see langword="null"/>.
+    /// </exception>
     void Normalize(ProblemDetails problemDetails);
 }

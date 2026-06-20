@@ -89,6 +89,11 @@ public static class HttpContextExtensions
         return context;
     }
 
+    /// <summary>
+    /// Adds <c>Cache-Control: no-cache, no-store, must-revalidate</c>, <c>Pragma: no-cache</c>,
+    /// and <c>Expires: -1</c> response headers, and removes any <c>ETag</c> header.
+    /// </summary>
+    /// <param name="context">The HTTP context whose response headers are modified.</param>
     public static void AddNoCacheHeaders(this HttpContext context)
     {
         var headers = context.Response.Headers;
@@ -114,6 +119,8 @@ public static class HttpContextExtensions
             : ip.ToString();
     }
 
+    /// <summary>Returns the <c>User-Agent</c> request header value, or <see langword="null"/> when absent.</summary>
+    /// <param name="httpContext">The current HTTP context.</param>
     public static string? GetUserAgent(this HttpContext httpContext)
     {
         return httpContext.Request.Headers.TryGetValue(HeaderNames.UserAgent, out var value)
@@ -121,6 +128,10 @@ public static class HttpContextExtensions
             : null;
     }
 
+    /// <summary>
+    /// Returns the <c>X-Correlation-ID</c> request header value, or <see langword="null"/> when absent.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
     public static string? GetCorrelationId(this HttpContext httpContext)
     {
         return httpContext.Request.Headers.TryGetValue(HttpHeaderNames.CorrelationId, out var value)
@@ -128,6 +139,13 @@ public static class HttpContextExtensions
             : null;
     }
 
+    /// <summary>
+    /// Executes an <see cref="IActionResult"/> against the current HTTP context without an MVC
+    /// controller, using an empty <see cref="Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor"/>.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="result">The action result to execute.</param>
+    /// <returns>A task that completes when the result has been written to the response.</returns>
     public static Task ExecuteResultAsync(this HttpContext httpContext, IActionResult result)
     {
         var actionContext = new ActionContext(httpContext, httpContext.GetRouteData(), _EmptyActionDescriptor);

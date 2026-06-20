@@ -5,6 +5,9 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Headless.Api.Extensions.Web;
 
+/// <summary>
+/// Utility methods for parsing and caching HTTP client information from User-Agent strings.
+/// </summary>
 [PublicAPI]
 public static class WebHelper
 {
@@ -23,6 +26,18 @@ public static class WebHelper
         .SetSize(1)
         .SetSlidingExpiration(TimeSpan.FromHours(6));
 
+    /// <summary>
+    /// Parses the operating system and browser/client name from a User-Agent string.
+    /// Results are cached in a bounded sliding-expiry in-process cache (1 000 entries, 6-hour
+    /// expiry) to amortise the regex work performed by DeviceDetector.NET.
+    /// User-Agent strings longer than 512 characters are truncated before parsing.
+    /// </summary>
+    /// <param name="userAgent">The raw User-Agent header value.</param>
+    /// <returns>
+    /// A human-readable string combining OS name and client name (e.g. <c>"Windows Chrome"</c>),
+    /// or <see langword="null"/> when <paramref name="userAgent"/> is blank or the parser cannot
+    /// identify the device.
+    /// </returns>
     public static string? GetDeviceInfo(string? userAgent)
     {
         if (userAgent.IsNullOrWhiteSpace())

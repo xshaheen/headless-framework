@@ -5,13 +5,20 @@ using Microsoft.AspNetCore.Authentication;
 
 namespace Headless.Api.Identity.Authentication.ApiKey;
 
+/// <summary>Options for the API key authentication scheme.</summary>
 [PublicAPI]
 public sealed class ApiKeyAuthenticationSchemeOptions : AuthenticationSchemeOptions
 {
+    /// <summary>Default scheme name used when none is specified during registration.</summary>
     public const string DefaultScheme = "API Key Authentication";
+
+    /// <summary>Default query-string parameter name (<c>"api_key"</c>).</summary>
     public const string ParamName = "api_key";
+
+    /// <summary>Default HTTP header name for the API key.</summary>
     public const string HeaderName = HttpHeaderNames.ApiKey;
 
+    /// <summary>HTTP header name from which the API key is read. Defaults to <see cref="HeaderName"/>.</summary>
     public string ApiKeyHeaderName { get; set; } = HeaderName;
 
     /// <summary>

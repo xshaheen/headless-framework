@@ -49,6 +49,20 @@ public static class HttpRequestExtensions
         return connection.RemoteIpAddress is null && connection.LocalIpAddress is null;
     }
 
+    /// <summary>
+    /// Determines whether the request's <c>Accept</c> header indicates acceptance of at least one of
+    /// the supplied content types. A missing or empty <c>Accept</c> header is treated as accepting
+    /// everything (per RFC 7231 §5.3.2).
+    /// </summary>
+    /// <param name="request">The HTTP request to inspect.</param>
+    /// <param name="contentTypes">One or more MIME types to check acceptance of.</param>
+    /// <returns>
+    /// <see langword="true"/> if the <c>Accept</c> header is absent, a wildcard (<c>*/*</c>), or
+    /// explicitly includes at least one of <paramref name="contentTypes"/>; otherwise
+    /// <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="contentTypes"/> is empty.</exception>
     public static bool CanAccept(this HttpRequest request, params ReadOnlySpan<string> contentTypes)
     {
         Argument.IsNotNull(request);
@@ -89,6 +103,21 @@ public static class HttpRequestExtensions
         return false;
     }
 
+    /// <summary>
+    /// Determines whether the request's <c>Accept</c> header indicates acceptance of the supplied
+    /// content type. A missing or empty <c>Accept</c> header is treated as accepting everything
+    /// (per RFC 7231 §5.3.2). Prefer the <c>ReadOnlySpan&lt;string&gt;</c> overload when checking
+    /// multiple types at once.
+    /// </summary>
+    /// <param name="request">The HTTP request to inspect.</param>
+    /// <param name="contentType">The MIME type to check acceptance of.</param>
+    /// <returns>
+    /// <see langword="true"/> if the <c>Accept</c> header is absent, a wildcard (<c>*/*</c>), or
+    /// explicitly includes <paramref name="contentType"/>; otherwise <see langword="false"/>.
+    /// Returns <see langword="false"/> when <paramref name="contentType"/> cannot be parsed as a
+    /// valid media type.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> or <paramref name="contentType"/> is <see langword="null"/>.</exception>
     public static bool CanAccept(this HttpRequest request, string contentType)
     {
         Argument.IsNotNull(request);

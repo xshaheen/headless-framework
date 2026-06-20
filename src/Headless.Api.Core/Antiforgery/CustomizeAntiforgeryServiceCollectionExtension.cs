@@ -14,6 +14,15 @@ namespace Microsoft.Extensions.DependencyInjection;
 [PublicAPI]
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers ASP.NET Core antiforgery with Headless-standard defaults: the <c>X-XSRF-TOKEN</c>
+    /// header name, an <c>HttpOnly</c> cookie with <c>Lax</c> same-site and request-matched secure
+    /// policy, and an application-discriminator-derived cookie name so multi-app deployments on the
+    /// same host do not collide.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
     public static IServiceCollection AddHeadlessAntiforgery(this IServiceCollection services)
     {
         services.AddTransient<IConfigureOptions<AntiforgeryOptions>, AntiforgeryOptionsConfiguration>();

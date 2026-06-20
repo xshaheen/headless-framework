@@ -6,11 +6,19 @@ using Humanizer;
 #pragma warning disable CA1863 // Use 'CompositeFormat'
 namespace Headless.Api.Resources;
 
+/// <summary>
+/// Factory methods that create <see cref="ErrorDescriptor"/> instances for identity-related error responses.
+/// Each method returns a descriptor whose <see cref="ErrorDescriptor.Code"/> matches the corresponding
+/// constant in <see cref="IdentityErrorCodes"/> and whose description is taken from the localized
+/// <c>Messages</c> resource.
+/// </summary>
 [PublicAPI]
 public static class IdentityMessageDescriber
 {
+    /// <summary>Authentication, token, role, and sign-in error descriptors.</summary>
     public static class Auth
     {
+        /// <summary>Returns a descriptor for an invalid login identifier (username or email).</summary>
         public static ErrorDescriptor InvalidLoginIdentifier()
         {
             return new ErrorDescriptor(

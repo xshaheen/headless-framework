@@ -16,6 +16,10 @@ internal static class DefaultCachePredicate
 {
     private static readonly HashSet<int> _Cacheable4Xx = [400, 405, 409, 410, 411, 412, 413, 414, 415, 416, 422, 451];
 
+    /// <summary>
+    /// Singleton predicate instance used when <see cref="IdempotencyOptions.ShouldCacheResponse"/>
+    /// is <see langword="null"/>. Replace via options for custom caching rules.
+    /// </summary>
     public static readonly Func<HttpContext, bool> Instance = ctx =>
     {
         var status = ctx.Response.StatusCode;

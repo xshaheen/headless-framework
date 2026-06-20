@@ -9,9 +9,26 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Headless.Api.Security.Jwt;
 
+/// <summary>Factory for creating and validating signed (and optionally encrypted) JWT tokens.</summary>
 [PublicAPI]
 public interface IJwtTokenFactory
 {
+    /// <summary>Creates a signed JWT token from a flat collection of claims.</summary>
+    /// <param name="claims">Claims to embed in the token.</param>
+    /// <param name="ttl">Token lifetime measured from the current UTC time.</param>
+    /// <param name="signingKey">HMAC-SHA256 signing key (UTF-8 encoded); must be at least 32 bytes.</param>
+    /// <param name="encryptingKey">
+    /// Optional AES-256-CBC/HMAC-SHA512 encryption key (UTF-8 encoded).
+    /// When <see langword="null"/> the token is signed but not encrypted.
+    /// </param>
+    /// <param name="issuer">Optional <c>iss</c> claim value.</param>
+    /// <param name="audience">Optional <c>aud</c> claim value.</param>
+    /// <param name="notBefore">
+    /// Optional offset from <c>iat</c> at which the token becomes valid.
+    /// When <see langword="null"/> no <c>nbf</c> claim is added.
+    /// </param>
+    /// <returns>A compact-serialized JWT string.</returns>
+    /// <exception cref="ArgumentException"><paramref name="signingKey"/> encodes to fewer than 32 bytes.</exception>
     string CreateJwtToken(
         IEnumerable<Claim> claims,
         TimeSpan ttl,
@@ -22,6 +39,22 @@ public interface IJwtTokenFactory
         TimeSpan? notBefore = null
     );
 
+    /// <summary>Creates a signed JWT token from a pre-built <see cref="ClaimsIdentity"/>.</summary>
+    /// <param name="identity">Identity whose claims are embedded in the token.</param>
+    /// <param name="ttl">Token lifetime measured from the current UTC time.</param>
+    /// <param name="signingKey">HMAC-SHA256 signing key (UTF-8 encoded); must be at least 32 bytes.</param>
+    /// <param name="encryptingKey">
+    /// Optional AES-256-CBC/HMAC-SHA512 encryption key (UTF-8 encoded).
+    /// When <see langword="null"/> the token is signed but not encrypted.
+    /// </param>
+    /// <param name="issuer">Optional <c>iss</c> claim value.</param>
+    /// <param name="audience">Optional <c>aud</c> claim value.</param>
+    /// <param name="notBefore">
+    /// Optional offset from <c>iat</c> at which the token becomes valid.
+    /// When <see langword="null"/> no <c>nbf</c> claim is added.
+    /// </param>
+    /// <returns>A compact-serialized JWT string.</returns>
+    /// <exception cref="ArgumentException"><paramref name="signingKey"/> encodes to fewer than 32 bytes.</exception>
     string CreateJwtToken(
         ClaimsIdentity identity,
         TimeSpan ttl,
@@ -32,6 +65,22 @@ public interface IJwtTokenFactory
         TimeSpan? notBefore = null
     );
 
+    /// <summary>Validates a JWT token and returns the resulting <see cref="ClaimsPrincipal"/>.</summary>
+    /// <param name="token">The compact-serialized JWT string to validate.</param>
+    /// <param name="signingKey">HMAC-SHA256 signing key used to verify the signature.</param>
+    /// <param name="encryptingKey">
+    /// Decryption key when the token is a JWE; <see langword="null"/> for plain JWS tokens.
+    /// </param>
+    /// <param name="issuer">Expected <c>iss</c> value (used when <paramref name="validateIssuer"/> is <see langword="true"/>).</param>
+    /// <param name="audience">Expected <c>aud</c> value (used when <paramref name="validateAudience"/> is <see langword="true"/>).</param>
+    /// <param name="validateIssuer">When <see langword="true"/> (default), the <c>iss</c> claim is validated.</param>
+    /// <param name="validateAudience">When <see langword="true"/> (default), the <c>aud</c> claim is validated.</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
+    /// <returns>
+    /// The validated <see cref="ClaimsPrincipal"/> on success, or <see langword="null"/> when validation fails
+    /// (expired token, bad signature, wrong issuer/audience, etc.).
+    /// </returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before validation began.</exception>
     Task<ClaimsPrincipal?> ParseJwtTokenAsync(
         string token,
         string signingKey,
@@ -44,9 +93,15 @@ public interface IJwtTokenFactory
     );
 }
 
+/// <summary>
+/// Default <see cref="IJwtTokenFactory"/> implementation that uses HMAC-SHA256 signing and
+/// optional AES-256-CBC/HMAC-SHA512 encryption via <see cref="JsonWebTokenHandler"/>.
+/// </summary>
 [PublicAPI]
 public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFactory, IClock clock) : IJwtTokenFactory
 {
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentException"><paramref name="signingKey"/> encodes to fewer than 32 bytes.</exception>
     public string CreateJwtToken(
         IEnumerable<Claim> claims,
         TimeSpan ttl,
@@ -62,6 +117,8 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
         return CreateJwtToken(identity, ttl, signingKey, encryptingKey, issuer, audience, notBefore);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentException"><paramref name="signingKey"/> encodes to fewer than 32 bytes.</exception>
     public string CreateJwtToken(
         ClaimsIdentity identity,
         TimeSpan ttl,
@@ -91,6 +148,8 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
         return token;
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before validation began.</exception>
     public async Task<ClaimsPrincipal?> ParseJwtTokenAsync(
         string token,
         string signingKey,

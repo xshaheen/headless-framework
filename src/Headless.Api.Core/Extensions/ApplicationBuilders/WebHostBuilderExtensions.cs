@@ -20,6 +20,7 @@ public static class WebHostBuilderExtensions
     /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
     /// <param name="action">The action used to add to the web host builder.</param>
     /// <returns>The same web host builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="webHostBuilder"/> or <paramref name="action"/> is <see langword="null"/>.</exception>
     public static IWebHostBuilder UseIf(
         this IWebHostBuilder webHostBuilder,
         bool condition,
@@ -45,6 +46,7 @@ public static class WebHostBuilderExtensions
     /// <param name="condition">If <see langword="true"/> is returned the action is executed.</param>
     /// <param name="action">The action used to add to the web host builder.</param>
     /// <returns>The same web host builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="webHostBuilder"/>, <paramref name="condition"/>, or <paramref name="action"/> is <see langword="null"/>.</exception>
     public static IWebHostBuilder UseIf(
         this IWebHostBuilder webHostBuilder,
         Func<IWebHostBuilder, bool> condition,
@@ -74,6 +76,7 @@ public static class WebHostBuilderExtensions
     /// <param name="ifAction">The action used to add to the web host builder if the condition is <see langword="true"/>.</param>
     /// <param name="elseAction">The action used to add to the web host builder if the condition is <see langword="false"/>.</param>
     /// <returns>The same web host builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="webHostBuilder"/>, <paramref name="ifAction"/>, or <paramref name="elseAction"/> is <see langword="null"/>.</exception>
     public static IWebHostBuilder UseIfElse(
         this IWebHostBuilder webHostBuilder,
         bool condition,
@@ -99,6 +102,7 @@ public static class WebHostBuilderExtensions
     /// <param name="ifAction">The action used to add to the web host builder if the condition is <see langword="true"/>.</param>
     /// <param name="elseAction">The action used to add to the web host builder if the condition is <see langword="false"/>.</param>
     /// <returns>The same web host builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="webHostBuilder"/>, <paramref name="condition"/>, <paramref name="ifAction"/>, or <paramref name="elseAction"/> is <see langword="null"/>.</exception>
     public static IWebHostBuilder UseIfElse(
         this IWebHostBuilder webHostBuilder,
         Func<IWebHostBuilder, bool> condition,

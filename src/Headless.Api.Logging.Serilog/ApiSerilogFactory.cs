@@ -13,6 +13,7 @@ namespace Headless.Logging;
 [PublicAPI]
 public static class ApiSerilogFactory
 {
+    /// <summary>The default Serilog console output template shared with <see cref="SerilogFactory"/>.</summary>
     public const string OutputTemplate = SerilogFactory.OutputTemplate;
 
     #region Bootstrap
@@ -65,6 +66,21 @@ public static class ApiSerilogFactory
         return loggerConfiguration.ConfigureApiLoggerConfiguration(services, configuration, environment, options);
     }
 
+    /// <summary>
+    /// Applies Headless API-specific enrichers on top of the base reloadable logger configuration:
+    /// client IP address, and sanitized values for the <c>User-Agent</c>, <c>X-Client-Version</c>, and
+    /// <c>X-Api-Version</c> request headers (each truncated to <see cref="SerilogOptions.MaxHeaderLength"/>
+    /// characters and stripped of control characters and ANSI escape sequences).
+    /// </summary>
+    /// <param name="loggerConfiguration">The Serilog logger configuration to extend.</param>
+    /// <param name="services">
+    /// Optional service provider used to resolve <c>IHttpContextAccessor</c>. When <see langword="null"/>,
+    /// a new <c>HttpContextAccessor</c> instance is created.
+    /// </param>
+    /// <param name="configuration">The application configuration (used by the base reloadable setup).</param>
+    /// <param name="environment">The host environment (used to set the environment enricher).</param>
+    /// <param name="options">Optional tuning options; defaults are applied when <see langword="null"/>.</param>
+    /// <returns><paramref name="loggerConfiguration"/> for chaining.</returns>
     public static LoggerConfiguration ConfigureApiLoggerConfiguration(
         this LoggerConfiguration loggerConfiguration,
         IServiceProvider? services,

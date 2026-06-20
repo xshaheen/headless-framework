@@ -83,6 +83,8 @@ public static class SetupApi
         /// <c>Headless:StringEncryption</c> and <c>Headless:StringHash</c> configuration sections.
         /// </summary>
         /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/> before registration.</param>
+        /// <returns><paramref name="builder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
         public WebApplicationBuilder AddHeadless(Action<HeadlessServiceDefaultsOptions>? configureServices = null)
         {
             Argument.IsNotNull(builder);
@@ -93,6 +95,16 @@ public static class SetupApi
             return builder._AddApiCore(configureServices);
         }
 
+        /// <summary>
+        /// Registers all Headless service defaults, binding encryption and hash options from the
+        /// supplied <see cref="IConfiguration"/> sections instead of the default
+        /// <c>Headless:StringEncryption</c> / <c>Headless:StringHash</c> paths.
+        /// </summary>
+        /// <param name="stringEncryptionConfig">Configuration section for string-encryption options.</param>
+        /// <param name="stringHashConfig">Configuration section for string-hash options.</param>
+        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
+        /// <returns><paramref name="builder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/>, <paramref name="stringEncryptionConfig"/>, or <paramref name="stringHashConfig"/> is <see langword="null"/>.</exception>
         public WebApplicationBuilder AddHeadless(
             IConfiguration stringEncryptionConfig,
             IConfiguration stringHashConfig,
@@ -109,6 +121,16 @@ public static class SetupApi
             return builder._AddApiCore(configureServices);
         }
 
+        /// <summary>
+        /// Registers all Headless service defaults, configuring encryption options via a delegate.
+        /// Hash options default to the <c>Headless:StringHash</c> configuration section when
+        /// <paramref name="configureHash"/> is <see langword="null"/>.
+        /// </summary>
+        /// <param name="configureEncryption">Required callback to configure string-encryption options.</param>
+        /// <param name="configureHash">Optional callback to configure string-hash options.</param>
+        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
+        /// <returns><paramref name="builder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configureEncryption"/> is <see langword="null"/>.</exception>
         public WebApplicationBuilder AddHeadless(
             Action<StringEncryptionOptions> configureEncryption,
             Action<StringHashOptions>? configureHash = null,
@@ -132,6 +154,16 @@ public static class SetupApi
             return builder._AddApiCore(configureServices);
         }
 
+        /// <summary>
+        /// Registers all Headless service defaults, configuring encryption options via a service-provider
+        /// delegate. Hash options default to the <c>Headless:StringHash</c> configuration section when
+        /// <paramref name="configureHash"/> is <see langword="null"/>.
+        /// </summary>
+        /// <param name="configureEncryption">Required callback (with <see cref="IServiceProvider"/>) to configure encryption options.</param>
+        /// <param name="configureHash">Optional callback (with <see cref="IServiceProvider"/>) to configure hash options.</param>
+        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
+        /// <returns><paramref name="builder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configureEncryption"/> is <see langword="null"/>.</exception>
         public WebApplicationBuilder AddHeadless(
             Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
             Action<StringHashOptions, IServiceProvider>? configureHash = null,
@@ -379,7 +411,22 @@ public static class SetupApi
         }
     }
 
-    /// <summary>Applies the default Headless API middleware order. Idempotent.</summary>
+    /// <summary>
+    /// Applies the default Headless API middleware pipeline in the correct order. Idempotent — subsequent
+    /// calls on the same <paramref name="app"/> instance are no-ops.
+    /// </summary>
+    /// <param name="app">The <see cref="WebApplication"/> to configure.</param>
+    /// <param name="configure">
+    /// Optional callback to tune <see cref="HeadlessApiDefaultsOptions"/> — forwarded headers,
+    /// response compression, status-code pages, exception handling, HTTPS redirection, HSTS,
+    /// and no-cache injection.
+    /// </param>
+    /// <returns><paramref name="app"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="app"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Must be called before the application starts for startup validation to pass when
+    /// <see cref="HeadlessServiceDefaultsValidationOptions.RequireUseHeadless"/> is <see langword="true"/> (the default).
+    /// </remarks>
     public static WebApplication UseHeadless(
         this WebApplication app,
         Action<HeadlessApiDefaultsOptions>? configure = null
@@ -459,7 +506,23 @@ public static class SetupApi
         return app;
     }
 
-    /// <summary>Maps the default Headless API operational and convention endpoints. Idempotent.</summary>
+    /// <summary>
+    /// Maps the default Headless API operational and convention endpoints (health, alive, OpenAPI, static assets).
+    /// Idempotent — subsequent calls on the same <paramref name="app"/> instance are no-ops.
+    /// </summary>
+    /// <param name="app">The <see cref="WebApplication"/> to configure.</param>
+    /// <param name="configure">
+    /// Optional callback to tune <see cref="HeadlessApiDefaultEndpointOptions"/> — endpoint paths,
+    /// route names, anonymous access, OpenAPI inclusion, and liveness tag.
+    /// </param>
+    /// <returns><paramref name="app"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="app"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Must be called before the application starts for startup validation to pass when
+    /// <see cref="HeadlessServiceDefaultsValidationOptions.RequireMapHeadlessEndpoints"/> is <see langword="true"/> (the default).
+    /// This call also updates the OpenTelemetry tracing filter with the actual configured health and alive paths,
+    /// so it should run after all <c>AddHeadless</c> configuration is complete.
+    /// </remarks>
     public static WebApplication MapHeadlessEndpoints(
         this WebApplication app,
         Action<HeadlessApiDefaultEndpointOptions>? configure = null

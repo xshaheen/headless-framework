@@ -5,6 +5,12 @@ using Microsoft.AspNetCore.Identity;
 
 namespace Headless.Api.Identity.IdentityErrors;
 
+/// <summary>
+/// <see cref="IdentityErrorDescriber"/> that returns <see cref="ParamsIdentityError"/> instances
+/// whose <see cref="IdentityError.Code"/> values match the <see cref="IdentityErrorCodes"/> constants
+/// and whose descriptions come from localized <see cref="IdentityMessageDescriber"/> factory methods.
+/// Register this type via <c>builder.AddErrorDescriber&lt;HeadlessIdentityErrorDescriber&gt;()</c>.
+/// </summary>
 [PublicAPI]
 public sealed class HeadlessIdentityErrorDescriber : IdentityErrorDescriber
 {

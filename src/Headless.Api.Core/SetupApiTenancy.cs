@@ -93,7 +93,15 @@ public static class SetupApiTenancy
     /// <remarks>
     /// Register this after <c>UseAuthentication()</c> and before <c>UseAuthorization()</c>.
     /// This method does not call either authentication or authorization middleware.
+    /// Repeated invocations are idempotent — <c>TenantResolutionMiddleware</c> is added at most once.
+    /// When HTTP tenancy has not been configured (i.e., <c>ResolveFromClaims()</c> was not called),
+    /// this method is a no-op and returns the application builder unchanged.
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="application"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// <c>AddHeadlessTenancy()</c> was not called before <c>UseHeadlessTenancy()</c>. The
+    /// <c>TenantPostureManifest</c> service is not registered.
+    /// </exception>
     public static IApplicationBuilder UseHeadlessTenancy(this IApplicationBuilder application)
     {
         Argument.IsNotNull(application);
@@ -158,8 +166,14 @@ public sealed class HeadlessHttpTenancyBuilder
     }
 
     /// <summary>Configures HTTP tenant resolution from authenticated principal claims.</summary>
-    /// <param name="configure">Optional tenant resolution options.</param>
+    /// <param name="configure">Optional callback to configure <see cref="MultiTenancyOptions"/>.</param>
     /// <returns>The same HTTP tenancy builder.</returns>
+    /// <remarks>
+    /// Registers <see cref="Headless.Abstractions.ICurrentTenant"/>, <c>TenantResolutionMiddleware</c>,
+    /// and <c>HeadlessHttpTenancyValidator</c>. Records the <c>Http</c> seam in the tenant posture
+    /// manifest so startup validation can detect whether <see cref="SetupApiTenancy.UseHeadlessTenancy"/>
+    /// was subsequently called.
+    /// </remarks>
     public HeadlessHttpTenancyBuilder ResolveFromClaims(Action<MultiTenancyOptions>? configure = null)
     {
         _builder.ApplicationBuilder.AddHeadlessMultiTenancy(configure);

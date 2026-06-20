@@ -16,6 +16,10 @@ internal sealed class ServerTimingMiddleware : IMiddleware
 {
     private const string _ServerTimingHttpHeader = "Server-Timing";
 
+    /// <summary>Processes the current request, measuring elapsed time and appending a <c>Server-Timing</c> trailer.</summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <param name="next">The next middleware delegate.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> or <paramref name="next"/> is <see langword="null"/>.</exception>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
         Argument.IsNotNull(context);

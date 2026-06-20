@@ -13,8 +13,22 @@ using Polly;
 
 namespace Headless.Api;
 
-/// <summary>An <see cref="IXmlRepository"/> which is backed by BlobStorage.</summary>
-/// <remarks>Instances of this type are thread-safe.</remarks>
+/// <summary>An <see cref="IXmlRepository"/> implementation that persists ASP.NET Core Data Protection keys as XML blobs in an <see cref="IBlobStorage"/> backend.</summary>
+/// <remarks>
+/// <para>
+/// Keys are stored under a <c>DataProtection</c> container as individual <c>*.xml</c> files.
+/// On <see cref="GetAllElements"/>, every blob in that container is enumerated; blobs that cannot be
+/// downloaded (e.g. deleted between the listing and the read) are silently skipped.
+/// Blobs whose content is not well-formed XML (<see cref="System.Xml.XmlException"/>) or cannot be
+/// read due to I/O failures are also skipped and logged at <c>Warning</c> level — they do not abort
+/// the load of the remaining keys.
+/// </para>
+/// <para>
+/// <see cref="StoreElement"/> retries transient I/O and HTTP failures up to 4 times with exponential
+/// back-off and jitter before propagating the exception.
+/// </para>
+/// <para>Instances of this type are thread-safe.</para>
+/// </remarks>
 internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 {
     private static readonly string[] _Containers = ["DataProtection"];
@@ -35,6 +49,10 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         )
         .Build();
 
+    /// <summary>Initializes a new instance that reads and writes data-protection key XML to the given blob storage.</summary>
+    /// <param name="storage">The blob storage backend to read and write key XML files.</param>
+    /// <param name="loggerFactory">Optional logger factory; when <see langword="null"/>, a no-op logger is used.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="storage"/> is <see langword="null"/>.</exception>
     public BlobStorageDataProtectionXmlRepository(IBlobStorage storage, ILoggerFactory? loggerFactory = null)
     {
         Argument.IsNotNull(storage);
@@ -94,7 +112,13 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     }
 
     /// <inheritdoc />
-    /// <remarks>Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.</remarks>
+    /// <remarks>
+    /// Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.
+    /// The upload is retried up to 4 times on transient <see cref="IOException"/> or <see cref="HttpRequestException"/> failures.
+    /// If all retries are exhausted, the underlying exception propagates.
+    /// When <paramref name="friendlyName"/> is <see langword="null"/> or empty, a random GUID-based file name is used.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="element"/> is <see langword="null"/>.</exception>
     public void StoreElement(XElement element, string? friendlyName)
     {
         Argument.IsNotNull(element);

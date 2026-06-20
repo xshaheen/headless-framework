@@ -8,7 +8,23 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Identity.Authentication.ApiKey;
 
-/// <summary>Handle the Api Key scheme authentication.</summary>
+/// <summary>
+/// ASP.NET Core authentication handler for the API key scheme.
+/// Reads the key from the <c>X-API-Key</c> header (or an optional query-string parameter),
+/// resolves the associated user via <see cref="IApiKeyStore{TUser,TUserId}"/>, and
+/// issues an <see cref="Microsoft.AspNetCore.Authentication.AuthenticationTicket"/> on success.
+/// </summary>
+/// <remarks>
+/// Authentication flow:
+/// <list type="number">
+///   <item><description>If the request already carries an authenticated identity, the existing ticket is reused.</description></item>
+///   <item><description>If no API key is present in the header (or query string when <see cref="ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString"/> is <see langword="true"/>), <c>NoResult</c> is returned so other handlers can run.</description></item>
+///   <item><description>If the key is blank or not found in the store, <c>NoResult</c> is returned.</description></item>
+///   <item><description>If the user cannot sign in (email not confirmed, locked out, etc.) <c>Fail</c> is returned.</description></item>
+/// </list>
+/// </remarks>
+/// <typeparam name="TUser">The user type, derived from <see cref="IdentityUser{TKey}"/>.</typeparam>
+/// <typeparam name="TUserId">The type of the user's primary key.</typeparam>
 public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
     IOptionsMonitor<ApiKeyAuthenticationSchemeOptions> options,
     ILoggerFactory logger,

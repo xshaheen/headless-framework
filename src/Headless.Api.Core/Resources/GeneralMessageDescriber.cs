@@ -4,9 +4,14 @@ using Headless.Primitives;
 
 namespace Headless.Api.Resources;
 
+/// <summary>
+/// Factory methods that create <see cref="ErrorDescriptor"/> instances for general cross-cutting
+/// error responses. Codes follow the <c>g:snake_case</c> shape.
+/// </summary>
 [PublicAPI]
 public static class GeneralMessageDescriber
 {
+    /// <summary>Returns a descriptor for an optimistic-concurrency conflict (<c>g:concurrency_failure</c>).</summary>
     public static ErrorDescriptor ConcurrencyFailure()
     {
         return new(code: "g:concurrency_failure", description: Messages.g_concurrency_failure);

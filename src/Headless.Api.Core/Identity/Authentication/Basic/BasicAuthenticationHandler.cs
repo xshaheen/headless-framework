@@ -9,6 +9,23 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Identity.Authentication.Basic;
 
+/// <summary>
+/// ASP.NET Core authentication handler for HTTP Basic authentication (RFC 7617).
+/// Decodes Base64 credentials from the <c>Authorization: Basic ...</c> header,
+/// looks up the user via <see cref="UserManager{TUser}"/>, and issues an
+/// <see cref="Microsoft.AspNetCore.Authentication.AuthenticationTicket"/> on success.
+/// </summary>
+/// <remarks>
+/// Authentication flow:
+/// <list type="number">
+///   <item><description>If the request already carries an authenticated identity, the existing ticket is reused.</description></item>
+///   <item><description>If no <c>Authorization: Basic</c> header is present, <c>NoResult</c> is returned so other handlers can run.</description></item>
+///   <item><description>If the header value cannot be Base64-decoded or parsed as <c>username:password</c>, <c>Fail</c> is returned.</description></item>
+///   <item><description>If the user is not found, cannot sign in, is locked out, or the password is wrong, <c>Fail</c> is returned.</description></item>
+/// </list>
+/// </remarks>
+/// <typeparam name="TUser">The user type, derived from <see cref="IdentityUser{TKey}"/>.</typeparam>
+/// <typeparam name="TUserId">The type of the user's primary key.</typeparam>
 public sealed class BasicAuthenticationHandler<TUser, TUserId>(
     IOptionsMonitor<BasicAuthenticationOptions> options,
     ILoggerFactory loggerFactory,

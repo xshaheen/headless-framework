@@ -6,6 +6,20 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Api;
 
+/// <summary>
+/// Startup filter and hosted-lifecycle service that verifies Headless pipeline call-order invariants
+/// before the first request is handled. Runs during both the legacy <see cref="IStartupFilter"/> path
+/// (ASP.NET Core) and the hosted-lifecycle <see cref="IHostedLifecycleService.StartingAsync"/> path (.NET Generic Host).
+/// </summary>
+/// <remarks>
+/// Throws <see cref="InvalidOperationException"/> at startup when any of the following checks fail
+/// (each can be disabled via the corresponding option):
+/// <list type="bullet">
+///   <item><see cref="HeadlessServiceDefaultsValidationOptions.RequireUseHeadless"/> — <c>UseHeadless()</c> was not called.</item>
+///   <item><see cref="HeadlessServiceDefaultsValidationOptions.RequireMapHeadlessEndpoints"/> — <c>MapHeadlessEndpoints()</c> was not called.</item>
+///   <item><see cref="HeadlessServiceDefaultsValidationOptions.RequireStatusCodesRewriter"/> — <c>UseStatusCodesRewriter()</c> (or <c>UseHeadless()</c>) was not called.</item>
+/// </list>
+/// </remarks>
 internal sealed class HeadlessServiceDefaultsValidationStartupFilter(
     HeadlessServiceDefaultsOptions options,
     HeadlessStartupState state

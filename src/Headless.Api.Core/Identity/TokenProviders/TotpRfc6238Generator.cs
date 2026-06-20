@@ -7,6 +7,9 @@ using Headless.Checks;
 
 namespace Headless.Api.Identity.TokenProviders;
 
+/// <summary>
+/// Generates and validates RFC 6238 TOTP codes using HMAC-SHA1, HMAC-SHA256, or HMAC-SHA512.
+/// </summary>
 public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 {
     private static readonly UTF8Encoding _Encoding = new(
@@ -14,6 +17,14 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         throwOnInvalidBytes: true
     );
 
+    /// <summary>Generates a 6-digit TOTP code for the current time step.</summary>
+    /// <param name="securityToken">The HMAC key (user's security token bytes).</param>
+    /// <param name="timestep">Duration of each time step (e.g. 3 minutes). Must be positive.</param>
+    /// <param name="modifier">Optional UTF-8 modifier string appended to the time-step bytes before hashing.</param>
+    /// <param name="hashMode">HMAC algorithm to use. Defaults to <see cref="TotpHashMode.Sha1"/>.</param>
+    /// <returns>A 6-digit integer TOTP code (0–999999).</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="securityToken"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="timestep"/> is not positive.</exception>
     public int GenerateCode(
         byte[] securityToken,
         TimeSpan timestep,
@@ -29,6 +40,24 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         return _ComputeTotp(securityToken, _GetCurrentTimeStepNumber(timestep), modifierBytes, hashMode);
     }
 
+    /// <summary>
+    /// Validates a TOTP <paramref name="code"/> against the current time step, accepting codes
+    /// within ±<paramref name="variance"/> steps of the current step.
+    /// </summary>
+    /// <param name="securityToken">The HMAC key (user's security token bytes).</param>
+    /// <param name="code">The 6-digit TOTP code to validate.</param>
+    /// <param name="timestep">Duration of each time step. Must be positive.</param>
+    /// <param name="variance">
+    /// Number of adjacent steps (before and after) to accept. Defaults to 2.
+    /// Must be zero or greater.
+    /// </param>
+    /// <param name="modifier">Optional UTF-8 modifier string used during code generation.</param>
+    /// <param name="hashMode">HMAC algorithm used during code generation.</param>
+    /// <returns><see langword="true"/> if <paramref name="code"/> matches any step in the acceptance window.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="securityToken"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="timestep"/> is not positive, or <paramref name="variance"/> is negative.
+    /// </exception>
     public bool ValidateCode(
         byte[] securityToken,
         int code,

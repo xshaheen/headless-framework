@@ -26,6 +26,7 @@ internal sealed partial class TenantResolutionMiddleware(
     /// <summary>Resolves the tenant from the current user claims and restores the previous tenant when the request ends.</summary>
     /// <param name="context">The current HTTP context.</param>
     /// <param name="currentTenant">The current tenant accessor.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> or <paramref name="currentTenant"/> is <see langword="null"/>.</exception>
     public async Task InvokeAsync(HttpContext context, ICurrentTenant currentTenant)
     {
         Argument.IsNotNull(context);
