@@ -17,28 +17,28 @@
       "rollForward": true
     },
     "dotnet-ef": {
-      "version": "10.0.5",
+      "version": "10.0.9",
       "commands": [
         "dotnet-ef"
       ],
       "rollForward": false
     },
     "dotnet-coverage": {
-      "version": "18.5.2",
+      "version": "18.8.0",
       "commands": [
         "dotnet-coverage"
       ],
       "rollForward": false
     },
     "dotnet-reportgenerator-globaltool": {
-      "version": "5.5.4",
+      "version": "5.5.10",
       "commands": [
         "reportgenerator"
       ],
       "rollForward": false
     },
     "dotnet-outdated-tool": {
-      "version": "4.7.1",
+      "version": "4.8.1",
       "commands": [
         "dotnet-outdated"
       ],

@@ -36,6 +36,89 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
+    public async Task can_round_trip_via_presigned_download_url()
+    {
+        var storage = (IPresignedUrlBlobStorage)GetStorage();
+        var container = new[] { $"presign{Guid.NewGuid():N}" };
+        var content = "presigned-content"u8.ToArray();
+
+        using (var stream = new MemoryStream(content))
+        {
+            await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
+        }
+
+        var url = await storage.GetPresignedDownloadUrlAsync(
+            container,
+            "file.txt",
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        using var http = new HttpClient();
+        var downloaded = await http.GetByteArrayAsync(url, AbortToken);
+
+        downloaded.Should().Equal(content);
+    }
+
+    [Fact]
+    public async Task can_round_trip_via_presigned_upload_url()
+    {
+        var storage = (IPresignedUrlBlobStorage)GetStorage();
+        var container = new[] { $"presign{Guid.NewGuid():N}" };
+        var content = "presigned-upload"u8.ToArray();
+
+        // The presigned PUT goes straight to Azure and does not create the container; create it first.
+        await ((IBlobStorage)storage).CreateContainerAsync(container, AbortToken);
+
+        var uploadUrl = await storage.GetPresignedUploadUrlAsync(
+            container,
+            "file.txt",
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        using (var http = new HttpClient())
+        using (var body = new ByteArrayContent(content))
+        {
+            // Azure block-blob PUT requires the blob-type header.
+            body.Headers.Add("x-ms-blob-type", "BlockBlob");
+            var response = await http.PutAsync(uploadUrl, body, AbortToken);
+            response.EnsureSuccessStatusCode();
+        }
+
+        var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
+        readBack.Should().NotBeNull();
+
+        using var buffer = new MemoryStream();
+        await readBack!.Stream.CopyToAsync(buffer, AbortToken);
+        buffer.ToArray().Should().Equal(content);
+    }
+
+    [Fact]
+    public async Task delete_all_async_removes_every_page_when_results_span_multiple_pages()
+    {
+        // Regression: the previous do/while loop advanced before deleting, so the final page (loaded by the last
+        // NextPageAsync) was never deleted. Exercise the multi-page path with a tiny page size instead of 500+ blobs.
+        await using var storage = (AzureBlobStorage)GetStorage();
+        var name = $"c{Guid.NewGuid():N}";
+        string[] container = [name, "bulk"];
+
+        const int total = 5;
+
+        for (var i = 0; i < total; i++)
+        {
+            using var content = new MemoryStream("x"u8.ToArray());
+            await storage.UploadAsync(container, $"f{i}.txt", content, cancellationToken: AbortToken);
+        }
+
+        // pageSize=2 over 5 blobs => 3 pages; the bug left the last page undeleted and undercounted.
+        var deleted = await storage._DeleteAllAsync(container, blobSearchPattern: null, pageSize: 2, AbortToken);
+
+        deleted.Should().Be(total);
+        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
+    }
+
+    [Fact]
     public override Task can_get_empty_file_list_on_missing_directory()
     {
         return base.can_get_empty_file_list_on_missing_directory();

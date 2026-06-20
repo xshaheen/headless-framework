@@ -24,6 +24,7 @@ public sealed class RedisBlobStorage : IBlobStorage
     private readonly TimeProvider _timeProvider;
     private readonly RedisBlobStorageOptions _options;
     private readonly ResiliencePipeline _retryPipeline;
+    private readonly IBlobNamingNormalizer _normalizer;
 
     // Lua script for atomic rename: copies blob+info then deletes source
     // KEYS[1] = source blob hash, KEYS[2] = source info hash
@@ -78,6 +79,7 @@ public sealed class RedisBlobStorage : IBlobStorage
     public RedisBlobStorage(
         IOptions<RedisBlobStorageOptions> optionsAccessor,
         IJsonSerializer defaultSerializer,
+        IBlobNamingNormalizer normalizer,
         TimeProvider? timeProvider = null
     )
     {
@@ -85,6 +87,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         _logger = _options.LoggerFactory?.CreateLogger(typeof(RedisBlobStorage)) ?? NullLogger.Instance;
         _serializer = _options.Serializer ?? defaultSerializer;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _normalizer = normalizer;
 
         var pipelineLogger = _logger;
 
@@ -812,9 +815,12 @@ public sealed class RedisBlobStorage : IBlobStorage
         return list;
     }
 
-    private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
+    private SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
     {
-        searchPattern = Url.Combine(string.Join('/', directories), _NormalizePath(searchPattern));
+        // Two-tier: directory segments use lenient path-segment normalization (matching stored keys); the search
+        // pattern itself is only slash-normalized so wildcards survive.
+        var normalizedDirectories = string.Join('/', directories.Select(_normalizer.NormalizeBlobName));
+        searchPattern = Url.Combine(normalizedDirectories, _NormalizePath(searchPattern));
 
         if (string.IsNullOrEmpty(searchPattern))
         {
@@ -843,26 +849,32 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Build Paths
 
-    private static (string BlobsContainer, string InfoContainer) _BuildContainerPath(string[] container)
+    private (string BlobsContainer, string InfoContainer) _BuildContainerPath(string[] container)
     {
         Argument.IsNotNullOrEmpty(container);
 
-        var path = _NormalizePath(container[0]);
+        // Two-tier: the first segment is the top-level container (strict rules).
+        var path = _normalizer.NormalizeContainerName(container[0]);
 
         return (path.EnsureEndsWith('/'), ("blob-info/" + path).EnsureEndsWith('/'));
     }
 
-    private static string _BuildBlobPath(string[] container, string blobName)
+    private string _BuildBlobPath(string[] container, string blobName)
     {
         PathValidation.ValidatePathSegment(blobName);
         PathValidation.ValidateContainer(container);
 
+        var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
+
         if (container.Length == 1)
         {
-            return blobName;
+            return normalizedBlobName;
         }
 
-        return _NormalizePath(string.Join('/', container.Skip(1)).EnsureEndsWith('/') + blobName);
+        // Sub-path segments use lenient path-segment normalization (two-tier model); join with '/'.
+        var prefix = string.Join('/', container.Skip(1).Select(_normalizer.NormalizeBlobName));
+
+        return prefix.EnsureEndsWith('/') + normalizedBlobName;
     }
 
     [return: NotNullIfNotNull(nameof(path))]

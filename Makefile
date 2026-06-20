@@ -4,7 +4,10 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 DOTNET ?= dotnet
+NPM ?= npm
 SOLUTION ?= headless-framework.slnx
+JOBS_DASHBOARD_DIR ?= src/Headless.Jobs.Dashboard/wwwroot
+MESSAGING_DASHBOARD_DIR ?= src/Headless.Messaging.Dashboard/wwwroot
 CONFIGURATION ?= Release
 ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
@@ -87,6 +90,22 @@ rebuild-no-restore: ## Build without restore or incremental compilation; use aft
 build-project: restore-project ## Build one project; preferred when working on a specified project.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
 	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
+
+.PHONY: dashboards
+dashboards: dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
+
+# Internal: fail early with a clear message when Node/npm is missing.
+.PHONY: _node-check
+_node-check:
+	@command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: '$(NPM)' not found on PATH. Node 22+ is required to build the dashboards. Install from https://nodejs.org (LTS)."; exit 1; }
+
+.PHONY: dashboard-jobs
+dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite build into wwwroot/dist).
+	cd "$(JOBS_DASHBOARD_DIR)" && $(NPM) ci && $(NPM) run build
+
+.PHONY: dashboard-messaging
+dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
+	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci && $(NPM) run build
 
 .PHONY: format
 format: tools ## Format C# code with CSharpier.

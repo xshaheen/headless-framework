@@ -11,6 +11,10 @@ updates:
       include: "scope"
     open-pull-requests-limit: 5
     groups:
+      # Keep AWS SDK bumps in their own PR so the R2 conformance workflow can gate them distinctly.
+      aws-sdk:
+        patterns:
+          - "AWSSDK.*"
       nuget-minor-patch:
         patterns:
           - "*"
@@ -73,4 +77,36 @@ updates:
       interval: "weekly"
       day: "tuesday"
       time: "09:45"
+      timezone: "Africa/Cairo"
+
+  # SPA dashboard front-ends. wwwroot/dist is generated and embedded at .NET
+  # build time (eng/DashboardSpa.targets), never committed, so a lockfile bump
+  # is reflected in the embedded bundle automatically on the next build. The
+  # Dashboards workflow only fast-fails if a dashboard stops compiling.
+  - package-ecosystem: "npm"
+    directories:
+      - "/src/Headless.Jobs.Dashboard/wwwroot"
+      - "/src/Headless.Messaging.Dashboard/wwwroot"
+    labels:
+      - "maintenance"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      npm-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:00"
       timezone: "Africa/Cairo"

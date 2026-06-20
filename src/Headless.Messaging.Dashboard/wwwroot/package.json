@@ -41,13 +41,16 @@
     "postcss": "^8.5.1",
     "prettier": "^3.3.3",
     "typescript": "~5.9.3",
-    "vite": "^6.0.5",
+    "vite": "^6.4.3",
     "vite-plugin-dts": "^4.5.0",
     "vite-plugin-vue-devtools": "^7.6.8",
     "vue-tsc": "^2.2.0"
   },
   "overrides": {
     "fast-uri": "3.1.2",
-    "shell-quote": "1.8.4"
+    "shell-quote": "1.8.4",
+    "form-data": "^4.0.6",
+    "js-yaml": "^4.2.0",
+    "@babel/core": "^7.29.6"
   }
 }

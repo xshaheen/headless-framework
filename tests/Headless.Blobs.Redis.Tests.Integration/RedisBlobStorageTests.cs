@@ -16,7 +16,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         var options = new RedisBlobStorageOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
 
-        return new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+        return new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer(), new CrossOsNamingNormalizer());
     }
 
     [Fact]
@@ -191,7 +191,11 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             MaxBlobSizeBytes = 100, // 100 bytes limit
         };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
-        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+        await using var storage = new RedisBlobStorage(
+            optionsWrapper,
+            new SystemJsonSerializer(),
+            new CrossOsNamingNormalizer()
+        );
 
         var largeData = new byte[200]; // Exceeds 100 byte limit
         Array.Fill(largeData, (byte)'x');
@@ -212,7 +216,11 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             MaxBlobSizeBytes = 1000,
         };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
-        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+        await using var storage = new RedisBlobStorage(
+            optionsWrapper,
+            new SystemJsonSerializer(),
+            new CrossOsNamingNormalizer()
+        );
 
         var data = new byte[500]; // Within limit
         Array.Fill(data, (byte)'x');
@@ -233,7 +241,11 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             MaxBlobSizeBytes = 0, // Disabled
         };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
-        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+        await using var storage = new RedisBlobStorage(
+            optionsWrapper,
+            new SystemJsonSerializer(),
+            new CrossOsNamingNormalizer()
+        );
 
         var data = new byte[1000];
         Array.Fill(data, (byte)'x');

@@ -1,0 +1,97 @@
+<Project>
+  <!--
+    Builds the Vue/Vite SPA under wwwroot at .NET build time and embeds the
+    produced wwwroot/dist/** into the assembly as EmbeddedResource. The dist
+    output is generated (gitignored) rather than committed, so the embedded
+    bundle can never drift from source.
+
+    Timing matters: the EmbeddedResource items are added BEFORE AssignTargetPaths
+    so they flow through the SDK's CreateManifestResourceNames step and receive
+    the exact same logical names the previous static glob produced
+    (<RootNamespace>.wwwroot.dist.*). EmbeddedFileProvider resolves the SPA by
+    those names at runtime, so the names must not change. Adding the items later
+    (e.g. BeforeTargets="CoreCompile") would skip name computation and break the
+    runtime lookup.
+
+    Set BuildDashboardSpa=false to skip the npm build (e.g. when dist is supplied
+    externally); the embed step still requires dist to exist.
+  -->
+
+  <PropertyGroup>
+    <DashboardSpaRoot>$(MSBuildProjectDirectory)/wwwroot</DashboardSpaRoot>
+    <DashboardSpaDist>$(DashboardSpaRoot)/dist</DashboardSpaDist>
+    <DashboardSpaInputManifest>$(BaseIntermediateOutputPath)dashboard-spa-inputs.txt</DashboardSpaInputManifest>
+    <BuildDashboardSpa Condition="'$(BuildDashboardSpa)' == ''">true</BuildDashboardSpa>
+    <NpmTool Condition="'$(NpmTool)' == ''">npm</NpmTool>
+  </PropertyGroup>
+
+  <!-- Source inputs that, when changed, require a SPA rebuild. -->
+  <ItemGroup>
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/src/**/*" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/public/**/*" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/index.html" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/package.json" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/package-lock.json" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/vite.config.*" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/postcss.config.*" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/tailwind.config.*" />
+    <DashboardSpaInput
+      Include="$(DashboardSpaRoot)/.browserslistrc"
+      Condition="Exists('$(DashboardSpaRoot)/.browserslistrc')"
+    />
+    <DashboardSpaInput
+      Include="$(DashboardSpaRoot)/browserslist"
+      Condition="Exists('$(DashboardSpaRoot)/browserslist')"
+    />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/tsconfig*.json" />
+    <DashboardSpaInput Include="$(DashboardSpaRoot)/env.d.ts" />
+  </ItemGroup>
+
+  <!-- Keep additions/deletions in the wildcard input set visible to MSBuild's timestamp check. -->
+  <Target Name="_ComputeDashboardSpaInputs" Condition="'$(BuildDashboardSpa)' == 'true'">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile
+      File="$(DashboardSpaInputManifest)"
+      Lines="@(DashboardSpaInput->'%(FullPath)')"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true"
+    />
+  </Target>
+
+  <!-- Install node_modules from the lockfile; re-runs only when package-lock.json changes. -->
+  <Target
+    Name="_RestoreDashboardSpa"
+    Condition="'$(BuildDashboardSpa)' == 'true'"
+    Inputs="$(DashboardSpaRoot)/package-lock.json"
+    Outputs="$(DashboardSpaRoot)/node_modules/.package-lock.json"
+  >
+    <Message Importance="high" Text="[$(MSBuildProjectName)] Installing SPA dependencies ($(NpmTool) ci)..." />
+    <Exec Command="$(NpmTool) ci" WorkingDirectory="$(DashboardSpaRoot)" />
+  </Target>
+
+  <!-- Build the SPA; re-runs only when inputs change or dist/index.html is missing. -->
+  <Target
+    Name="_BuildDashboardSpa"
+    DependsOnTargets="_ComputeDashboardSpaInputs;_RestoreDashboardSpa"
+    Condition="'$(BuildDashboardSpa)' == 'true'"
+    Inputs="$(MSBuildThisFileFullPath);$(DashboardSpaInputManifest);@(DashboardSpaInput)"
+    Outputs="$(DashboardSpaDist)/index.html"
+  >
+    <Message Importance="high" Text="[$(MSBuildProjectName)] Building SPA ($(NpmTool) run build)..." />
+    <Exec Command="$(NpmTool) run build" WorkingDirectory="$(DashboardSpaRoot)" />
+  </Target>
+
+  <!--
+    Always runs (no Inputs/Outputs) so the EmbeddedResource items are added on
+    every build, even when _BuildDashboardSpa is skipped as up-to-date.
+  -->
+  <Target Name="_EmbedDashboardSpa" BeforeTargets="AssignTargetPaths" DependsOnTargets="_BuildDashboardSpa">
+    <Error
+      Condition="!Exists('$(DashboardSpaDist)/index.html')"
+      Text="SPA build output not found at '$(DashboardSpaDist)'. Run '$(NpmTool) run build' in '$(DashboardSpaRoot)', or build with BuildDashboardSpa=true."
+    />
+    <ItemGroup>
+      <EmbeddedResource Include="wwwroot/dist/**/*" Exclude="**/*/*.map" />
+    </ItemGroup>
+  </Target>
+</Project>

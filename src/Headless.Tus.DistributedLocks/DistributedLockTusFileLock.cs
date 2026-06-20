@@ -16,18 +16,24 @@ public sealed class DistributedLockTusFileLock(string fileId, IDistributedLock d
             _resource,
             new DistributedLockAcquireOptions
             {
-                TimeUntilExpires = Timeout.InfiniteTimeSpan, // Lock never expires
-                AcquireTimeout = TimeSpan.Zero, // Do not wait to acquire the lock
+                // Finite lease (provider default TTL) that auto-extends while held: a long upload keeps the lock,
+                // but a crashed holder's lease expires and frees the file. An infinite lease would stay stuck
+                // forever after a crash. AutoExtend requires a finite TTL, so TimeUntilExpires is left at default.
+                AcquireTimeout = TimeSpan.Zero, // try once, no wait — a concurrent PATCH on the same file fails fast
+                Monitoring = LockMonitoringMode.AutoExtend,
             }
         );
 
         return _distributedLock is not null;
     }
 
-    public Task ReleaseIfHeld()
+    public async Task ReleaseIfHeld()
     {
-        return _distributedLock is not null
-            ? distributedLockProvider.ReleaseAsync(_distributedLock.Resource, _distributedLock.LeaseId)
-            : Task.CompletedTask;
+        if (_distributedLock is not null)
+        {
+            // Disposing releases the lease (ReleaseOnDispose defaults true) and stops the auto-extend monitor.
+            await _distributedLock.DisposeAsync();
+            _distributedLock = null;
+        }
     }
 }
