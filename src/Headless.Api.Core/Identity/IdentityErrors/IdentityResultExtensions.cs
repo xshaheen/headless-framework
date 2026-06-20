@@ -29,7 +29,12 @@ public static class IdentityResultExtensions
             return descriptor;
         }
 
-        return descriptor.WithParams(paramsError.Params);
+        foreach (var (key, value) in paramsError.Params)
+        {
+            descriptor.WithParam(key, value);
+        }
+
+        return descriptor;
     }
 
     public static Result<IReadOnlyList<ErrorDescriptor>> ToResult(this IdentityResult result)

@@ -42,7 +42,7 @@ public sealed class ErrorDescriptor
         _params = paramsDictionary;
     }
 
-    private readonly Dictionary<string, object?>? _params;
+    private Dictionary<string, object?>? _params;
 
     /// <summary>A distinct code indicating the cause of the error.</summary>
     public string Code { get; private init; }
@@ -58,47 +58,31 @@ public sealed class ErrorDescriptor
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyDictionary<string, object?>? Params => _params;
 
-    // WithParam/WithParams are immutable builders: each returns a NEW descriptor with a cloned params bag.
-    // This keeps shared/cached descriptors (e.g. static MessageDescriber instances) from being mutated by callers.
-
-    /// <summary>
-    /// Returns a new <see cref="ErrorDescriptor"/> with the same code, description, and severity, plus the given
-    /// parameter added to a cloned parameter bag; the current instance is left unchanged.
-    /// </summary>
+    /// <summary>Adds (or overwrites) a parameter on this descriptor and returns the same instance for chaining.</summary>
     /// <param name="key">The parameter key. Keys are compared case-insensitively.</param>
     /// <param name="value">The parameter value.</param>
-    /// <returns>A new <see cref="ErrorDescriptor"/> carrying the added parameter.</returns>
+    /// <returns>This same <see cref="ErrorDescriptor"/> instance.</returns>
     public ErrorDescriptor WithParam(string key, object? value)
     {
-        var copy = _CloneParams();
-        copy[key] = value;
+        _params ??= new(StringComparer.OrdinalIgnoreCase);
+        _params[key] = value;
 
-        return new ErrorDescriptor(Code, Description, copy, Severity);
+        return this;
     }
 
-    /// <summary>
-    /// Returns a new <see cref="ErrorDescriptor"/> with the same code, description, and severity, plus the given
-    /// parameters merged into a cloned parameter bag; the current instance is left unchanged.
-    /// </summary>
+    /// <summary>Adds (or overwrites) the given parameters on this descriptor and returns the same instance for chaining.</summary>
     /// <param name="values">The parameters to merge. Existing keys (compared case-insensitively) are overwritten.</param>
-    /// <returns>A new <see cref="ErrorDescriptor"/> carrying the merged parameters.</returns>
+    /// <returns>This same <see cref="ErrorDescriptor"/> instance.</returns>
     public ErrorDescriptor WithParams(IReadOnlyDictionary<string, object?> values)
     {
-        var copy = _CloneParams();
+        _params ??= new(StringComparer.OrdinalIgnoreCase);
 
         foreach (var (key, value) in values)
         {
-            copy[key] = value;
+            _params[key] = value;
         }
 
-        return new ErrorDescriptor(Code, Description, copy, Severity);
-    }
-
-    private Dictionary<string, object?> _CloneParams()
-    {
-        return _params is null
-            ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, object?>(_params, StringComparer.OrdinalIgnoreCase);
+        return this;
     }
 
     /// <summary>Deconstructs the descriptor into its code, description, and severity.</summary>
