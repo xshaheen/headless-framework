@@ -5,10 +5,10 @@
 namespace Headless.Domain;
 
 [PublicAPI]
-public abstract class EqualityBase<T> : IEquatable<EqualityBase<T>>
+public abstract class EqualityBase<T> : IEquatable<T>
     where T : EqualityBase<T>
 {
-    public bool Equals(EqualityBase<T>? other)
+    public bool Equals(T? other)
     {
         if (other is null)
         {
@@ -25,7 +25,7 @@ public abstract class EqualityBase<T> : IEquatable<EqualityBase<T>>
 
     public static bool operator ==(EqualityBase<T>? left, EqualityBase<T>? right)
     {
-        return left is null ? right is null : left.Equals(right);
+        return left is null ? right is null : left.Equals(right as T);
     }
 
     public static bool operator !=(EqualityBase<T>? left, EqualityBase<T>? right)
@@ -35,7 +35,7 @@ public abstract class EqualityBase<T> : IEquatable<EqualityBase<T>>
 
     public sealed override bool Equals(object? obj)
     {
-        return Equals(obj as EqualityBase<T>);
+        return Equals(obj as T);
     }
 
     public sealed override int GetHashCode()

@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Nito.AsyncEx.Synchronous;
 
@@ -26,7 +27,7 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         var handlers = services.GetServices<IDomainEventHandler<T>>();
         List<Exception>? exceptions = null;
 
-        foreach (var handler in handlers.OrderBy(handler => _GetHandlerOrder(handler.GetType())))
+        foreach (var handler in _OrderHandlers(handlers))
         {
             try
             {
@@ -56,7 +57,7 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         var handlers = services.GetServices<IDomainEventHandler<T>>();
         List<Exception>? exceptions = null;
 
-        foreach (var handler in handlers.OrderBy(handler => _GetHandlerOrder(handler.GetType())))
+        foreach (var handler in _OrderHandlers(handlers))
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -94,12 +95,16 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
     // matching the generic path. A compiled per-type invoker avoids per-call reflection cost.
     public void Publish(IDomainEvent domainEvent)
     {
+        Argument.IsNotNull(domainEvent);
+
         var invoker = _SyncInvokers.GetOrAdd(domainEvent.GetType(), _CreateSyncInvoker);
         invoker(this, domainEvent);
     }
 
     public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
     {
+        Argument.IsNotNull(domainEvent);
+
         var invoker = _AsyncInvokers.GetOrAdd(domainEvent.GetType(), _CreateAsyncInvoker);
         return invoker(this, domainEvent, cancellationToken);
     }
@@ -109,6 +114,42 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
     private static int _GetHandlerOrder(Type handlerType)
     {
         return _HandlerOrderCache.GetValue(handlerType, _ComputeHandlerOrder).Value;
+    }
+
+    private static IEnumerable<IDomainEventHandler<T>> _OrderHandlers<T>(IEnumerable<IDomainEventHandler<T>> handlers)
+        where T : class, IDomainEvent
+    {
+        // OrderBy is a stable sort but allocates a buffer on every publish. Skip it for the common 0/1-handler
+        // case, and for multi-handler sets where every handler keeps the default order (registration order wins).
+        var array = handlers as IDomainEventHandler<T>[] ?? handlers.ToArray();
+
+        if (array.Length <= 1)
+        {
+            return array;
+        }
+
+        foreach (var handler in array)
+        {
+            if (_GetHandlerOrder(handler.GetType()) != 0)
+            {
+                return array.OrderBy(handler => _GetHandlerOrder(handler.GetType()));
+            }
+        }
+
+        return array;
+    }
+
+    private static void _EnsureReferenceType(Type eventType)
+    {
+        // The generic Publish<T>/PublishAsync<T> constrain `T : class`; a value-type event would make
+        // MakeGenericMethod throw a cryptic ArgumentException. Fail fast with an actionable message instead.
+        if (eventType.IsValueType)
+        {
+            throw new ArgumentException(
+                $"Domain event type '{eventType}' must be a reference type; the generic publish path constrains 'T : class'.",
+                nameof(eventType)
+            );
+        }
     }
 
     private static void _ThrowOriginalExceptions(Type eventType, List<Exception> exceptions)
@@ -150,6 +191,8 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         Type eventType
     )
     {
+        _EnsureReferenceType(eventType);
+
         var self = Expression.Parameter(typeof(ServiceProviderLocalEventBus), "self");
         var domainEvent = Expression.Parameter(typeof(IDomainEvent), "domainEvent");
         var cancellationToken = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
@@ -172,6 +215,8 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
 
     private static Action<ServiceProviderLocalEventBus, IDomainEvent> _CreateSyncInvoker(Type eventType)
     {
+        _EnsureReferenceType(eventType);
+
         var self = Expression.Parameter(typeof(ServiceProviderLocalEventBus), "self");
         var domainEvent = Expression.Parameter(typeof(IDomainEvent), "domainEvent");
         var call = Expression.Call(
