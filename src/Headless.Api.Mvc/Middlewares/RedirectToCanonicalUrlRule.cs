@@ -113,16 +113,22 @@ public sealed class RedirectToCanonicalUrlRule : IRule
 
         if (hasPath || request.QueryString.HasValue)
         {
-            if (LowercaseUrls && !hasNoTrailingSlash)
+            // Lowercasing must NOT be gated on the NoTrailingSlash opt-out — that attribute only
+            // suppresses trailing-slash normalization. The query has its own NoLowercaseQueryString
+            // opt-out below; path lowercasing has no opt-out attribute.
+            if (LowercaseUrls)
             {
-                foreach (var character in request.Path.Value!)
+                if (hasPath)
                 {
-                    if (char.IsUpper(character))
+                    foreach (var character in request.Path.Value!)
                     {
-                        request.Path = new PathString(request.Path.Value.ToLowerInvariant());
-                        isCanonical = false;
+                        if (char.IsUpper(character))
+                        {
+                            request.Path = new PathString(request.Path.Value.ToLowerInvariant());
+                            isCanonical = false;
 
-                        break;
+                            break;
+                        }
                     }
                 }
 
