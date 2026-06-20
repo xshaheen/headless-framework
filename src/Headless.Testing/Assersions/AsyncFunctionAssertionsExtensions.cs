@@ -62,7 +62,7 @@ public static class AsyncFunctionAssertionsExtensions
 
         if (message is not null)
         {
-            assertions.Which.Key.Should().Be(message);
+            assertions.Which.Message.Should().Be(message);
         }
 
         return assertions;

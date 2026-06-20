@@ -11,6 +11,7 @@ namespace Headless.Testing.AspNetCore;
 /// <summary>
 /// Extensions for setting up a test <see cref="HttpContext"/> on <see cref="IHttpContextAccessor"/>.
 /// </summary>
+[PublicAPI]
 public static class TestHttpContextExtensions
 {
     /// <summary>

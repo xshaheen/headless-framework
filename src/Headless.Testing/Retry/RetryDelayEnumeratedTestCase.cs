@@ -6,6 +6,7 @@ using Xunit.v3;
 namespace Headless.Testing.Retry;
 
 // This class is used when pre-enumeration is disabled, or when the theory data was not serializable.
+[PublicAPI]
 public sealed class RetryDelayEnumeratedTestCase(
     int maxRetries,
     IXunitTestMethod testMethod,

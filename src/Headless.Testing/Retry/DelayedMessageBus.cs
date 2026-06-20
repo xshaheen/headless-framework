@@ -9,6 +9,7 @@ namespace Headless.Testing.Retry;
 /// Used to capture messages to potentially be forwarded later. Messages are forwarded by
 /// disposing of the message bus.
 /// </summary>
+[PublicAPI]
 public sealed class DelayedMessageBus(IMessageBus innerBus) : IMessageBus
 {
     private readonly List<IMessageSinkMessage> _messages = [];
@@ -17,8 +18,8 @@ public sealed class DelayedMessageBus(IMessageBus innerBus) : IMessageBus
     {
         // Technically speaking, this lock isn't necessary in our case, because we know we're using this
         // message bus for a single test (so there's no possibility of parallelism). However, it's good
-        // practice when something might be used where parallel messages might arrive, so it's here in
-        // this sample.
+        // practice when something might be used where parallel messages might arrive, so it is kept
+        // defensively.
         lock (_messages)
         {
             _messages.Add(message);

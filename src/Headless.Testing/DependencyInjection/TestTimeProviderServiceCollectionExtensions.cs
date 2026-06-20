@@ -11,6 +11,7 @@ namespace Headless.Testing.DependencyInjection;
 /// <summary>
 /// Extension methods for registering test time provider services.
 /// </summary>
+[PublicAPI]
 public static class TestTimeProviderServiceCollectionExtensions
 {
     /// <summary>

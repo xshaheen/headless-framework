@@ -7,6 +7,7 @@ using UserId = Headless.Primitives.UserId;
 
 namespace Headless.Testing.Helpers;
 
+[PublicAPI]
 public sealed class TestCurrentUser : ICurrentUser
 {
     public ClaimsPrincipal Principal { get; set; } = new();

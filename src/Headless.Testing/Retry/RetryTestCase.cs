@@ -6,6 +6,7 @@ using Xunit.v3;
 namespace Headless.Testing.Retry;
 
 // This class is used for facts, and for serializable pre-enumerated individual data rows in theories.
+[PublicAPI]
 public sealed class RetryTestCase(
     int maxRetries,
     IXunitTestMethod testMethod,

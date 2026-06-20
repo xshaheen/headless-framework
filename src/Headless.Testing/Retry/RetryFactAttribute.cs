@@ -6,11 +6,13 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
-// Take from: https://github.com/xunit/samples.xunit/tree/main/v3/RetryFactExample/Extensions
+// Adapted from the xUnit v3 sample: https://github.com/xunit/samples.xunit/tree/main/v3/RetryFactExample/Extensions
 
 /// <summary>
-/// Works just like [Fact] except that failures are retried (by default, 3 times).
+/// Works just like <c>[Fact]</c> except that failures are retried — the test runs up to
+/// <see cref="MaxRetries"/> total attempts (default 3) before its last failure is reported.
 /// </summary>
+[PublicAPI]
 [XunitTestCaseDiscoverer(typeof(RetryFactDiscoverer))]
 public sealed class RetryFactAttribute(
     [CallerFilePath] string? sourceFilePath = null,

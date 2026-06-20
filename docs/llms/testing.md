@@ -71,7 +71,7 @@ Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, an
 
 - Use `Headless.Testing` for all unit tests. Inherit from `TestBase` to get `Logger` (ILogger), `Faker` (Bogus), and `AbortToken` (CancellationToken) for free.
 - Use `RetryFactAttribute` / `RetryTheoryAttribute` for flaky tests (e.g., network-dependent). Set `MaxRetries` explicitly.
-- Use `TestClock` to control time in tests -- call `clock.Advance(TimeSpan)` to simulate time passing. Inject it wherever `TimeProvider` is needed.
+- Use `TestClock` to control time in tests -- it wraps a `FakeTimeProvider`; advance the underlying provider (`timeProvider.Advance(TimeSpan)` / `timeProvider.SetUtcNow(...)`) to simulate time passing. Inject the `TestClock` wherever `IClock`/`TimeProvider` is needed.
 - Use `TestCurrentUser` and `TestCurrentTenant` for faking auth/tenant context in unit tests.
 - For ASP.NET Core integration tests, use `HeadlessTestServer<TProgram>` from `Headless.Testing.AspNetCore` rather than wiring `WebApplicationFactory<TProgram>` by hand. Wrap it for project-shaped helpers; do not reimplement its time control, DB reset, or scope-execution surface.
 - Tag every integration test with `[Trait("Category", "Integration")]` so CI can filter it from the unit-test lane and run it on a Docker-capable runner.
@@ -168,10 +168,11 @@ public sealed class MyTests : TestBase
 ### Controllable Time
 
 ```csharp
-var clock = new TestClock(new DateTime(2024, 1, 1));
+var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+var clock = new TestClock(timeProvider);
 var service = new ExpirationService(clock);
 
-clock.Advance(TimeSpan.FromDays(30));
+timeProvider.Advance(TimeSpan.FromDays(30)); // advance via the FakeTimeProvider
 var isExpired = service.IsExpired(); // true
 ```
 
@@ -295,7 +296,7 @@ var fake = serviceProvider.GetRequiredService<FakeTimeProvider>();
 var clock = serviceProvider.GetRequiredService<TestClock>();
 ```
 
-`TestClock.UtcNow` delegates to the underlying `FakeTimeProvider`, so a single `SetUtcNow()` or `Advance()` call moves both forward together. Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into either provider directly.
+`TestClock.UtcNow` delegates to the underlying `FakeTimeProvider`, so a single `FakeTimeProvider.SetUtcNow()` or `FakeTimeProvider.Advance()` call moves both forward together. Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into either provider directly.
 
 ### Auto-Applied EF Query Filters in Tests
 

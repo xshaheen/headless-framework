@@ -24,6 +24,7 @@ namespace Headless.Testing.AspNetCore;
 /// be open.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public sealed class DatabaseReset
 {
     private readonly Respawner _respawner;

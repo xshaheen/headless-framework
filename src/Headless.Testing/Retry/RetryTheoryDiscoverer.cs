@@ -7,6 +7,7 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
+[PublicAPI]
 public sealed class RetryTheoryDiscoverer : TheoryDiscoverer
 {
     // This override is used when the theory data is serializable and the user has requested pre-enumeration.

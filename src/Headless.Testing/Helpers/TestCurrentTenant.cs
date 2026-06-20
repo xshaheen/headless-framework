@@ -5,6 +5,7 @@ using Nito.Disposables;
 
 namespace Headless.Testing.Helpers;
 
+[PublicAPI]
 public sealed class TestCurrentTenant : ICurrentTenant
 {
     public bool IsAvailable => Id != null;

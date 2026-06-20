@@ -5,6 +5,7 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Headless.Testing.Helpers;
 
+[PublicAPI]
 public sealed class TestClock(TimeProvider? timeProvider = null) : IClock
 {
     public TimeProvider TimeProvider { get; set; } = timeProvider ?? new FakeTimeProvider();

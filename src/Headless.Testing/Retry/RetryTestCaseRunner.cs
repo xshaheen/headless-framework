@@ -6,6 +6,7 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
+[PublicAPI]
 public sealed class RetryTestCaseRunner
     : XunitTestCaseRunnerBase<RetryTestCaseRunnerContext, IXunitTestCase, IXunitTest>
 {

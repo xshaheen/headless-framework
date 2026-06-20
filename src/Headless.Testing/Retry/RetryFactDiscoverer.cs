@@ -6,6 +6,7 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
+[PublicAPI]
 public sealed class RetryFactDiscoverer : IXunitTestCaseDiscoverer
 {
     public ValueTask<IReadOnlyCollection<IXunitTestCase>> Discover(

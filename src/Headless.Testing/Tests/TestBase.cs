@@ -16,6 +16,7 @@ namespace Headless.Testing.Tests;
 // BeforeAfterTestAttribute -> to perform per-test initialization/cleanup work (with access to the test method info)
 // ITestPipelineStartup & TestPipelineStartupAttribute -> to perform some global initialization/cleanup work
 
+[PublicAPI]
 public abstract class TestBase : IAsyncLifetime
 {
     private bool _disposed;

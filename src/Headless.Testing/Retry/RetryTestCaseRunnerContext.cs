@@ -5,6 +5,7 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
+[PublicAPI]
 public sealed class RetryTestCaseRunnerContext(
     int maxRetries,
     IXunitTestCase testCase,
