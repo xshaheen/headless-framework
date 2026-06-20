@@ -17,6 +17,9 @@ public static class SetupHeadlessTenancy
     /// <param name="builder">The host application builder.</param>
     /// <param name="configure">The tenancy configuration callback.</param>
     /// <returns>The same host application builder.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.
+    /// </exception>
     public static IHostApplicationBuilder AddHeadlessTenancy(
         this IHostApplicationBuilder builder,
         Action<HeadlessTenancyBuilder> configure
@@ -34,6 +37,7 @@ public static class SetupHeadlessTenancy
     /// <summary>Adds the shared tenant posture manifest and startup diagnostics.</summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The singleton manifest instance registered in the service collection.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
     internal static TenantPostureManifest _AddHeadlessTenancyCore(this IServiceCollection services)
     {
         Argument.IsNotNull(services);
@@ -59,6 +63,7 @@ public static class SetupHeadlessTenancy
     /// before <c>AddHeadlessTenancy(...)</c>, or do not replace it at all.
     /// </para>
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
     internal static TenantPostureManifest GetOrAddTenantPostureManifest(this IServiceCollection services)
     {
         Argument.IsNotNull(services);

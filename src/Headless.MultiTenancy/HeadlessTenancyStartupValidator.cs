@@ -24,6 +24,16 @@ internal sealed partial class HeadlessTenancyStartupValidator(
     ILogger<HeadlessTenancyStartupValidator> logger
 ) : IHostedLifecycleService
 {
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Runs all registered validators synchronously before any other hosted service starts. The work is
+    /// synchronous, so a failure throws directly (the returned task is never observed in the failure case).
+    /// </remarks>
+    /// <exception cref="HeadlessTenancyValidationException">
+    /// One or more validators produced an <see cref="HeadlessTenancyDiagnosticSeverity.Error"/> diagnostic;
+    /// the host is prevented from starting.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public Task StartingAsync(CancellationToken cancellationToken)
     {
         // Validation is synchronous and must complete (or fail the host) before any other hosted
@@ -33,14 +43,19 @@ internal sealed partial class HeadlessTenancyStartupValidator(
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc/>
     public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     private void _Validate(CancellationToken cancellationToken)
