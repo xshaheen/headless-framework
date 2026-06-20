@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public interface IMultiTenant
 {
     /// <summary>ID of the related tenant.</summary>

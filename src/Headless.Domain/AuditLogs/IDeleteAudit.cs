@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public interface IDeleteAudit
 {
     /// <summary>Indicates whether this entity is soft-deleted.</summary>
@@ -18,6 +19,7 @@ public interface IDeleteAudit
     DateTimeOffset? DateRestored { get; }
 }
 
+[PublicAPI]
 public interface IDeleteAudit<out TAccountId> : IDeleteAudit
 {
     /// <summary>ID of the account that delete this entity.</summary>
@@ -29,6 +31,7 @@ public interface IDeleteAudit<out TAccountId> : IDeleteAudit
     TAccountId? RestoredById { get; }
 }
 
+[PublicAPI]
 public interface IDeleteAudit<TAccountId, TAccount> : IDeleteAudit<TAccountId>
 {
     /// <summary>Expandable link to the account who deleted this entity.</summary>

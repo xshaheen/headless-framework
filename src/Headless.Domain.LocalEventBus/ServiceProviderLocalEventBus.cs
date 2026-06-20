@@ -24,7 +24,7 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         where T : class, IDomainEvent
     {
         var handlers = services.GetServices<IDomainEventHandler<T>>();
-        var exceptions = new List<Exception>();
+        List<Exception>? exceptions = null;
 
         foreach (var handler in handlers.OrderBy(handler => _GetHandlerOrder(handler.GetType())))
         {
@@ -34,15 +34,17 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
             }
             catch (TargetInvocationException e)
             {
-                exceptions.Add(e.InnerException!);
+                // A handler that itself threw a TargetInvocationException is unwrapped to its inner
+                // exception; fall back to the wrapper when the inner is null (defensive — InnerException is nullable).
+                (exceptions ??= []).Add(e.InnerException ?? e);
             }
             catch (Exception e)
             {
-                exceptions.Add(e);
+                (exceptions ??= []).Add(e);
             }
         }
 
-        if (exceptions.Count > 0)
+        if (exceptions is { Count: > 0 })
         {
             _ThrowOriginalExceptions(typeof(T), exceptions);
         }
@@ -52,13 +54,13 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         where T : class, IDomainEvent
     {
         var handlers = services.GetServices<IDomainEventHandler<T>>();
-        var exceptions = new List<Exception>();
+        List<Exception>? exceptions = null;
 
         foreach (var handler in handlers.OrderBy(handler => _GetHandlerOrder(handler.GetType())))
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                if (exceptions.Count > 0)
+                if (exceptions is { Count: > 0 })
                 {
                     _ThrowOriginalExceptions(typeof(T), exceptions);
                 }
@@ -72,15 +74,17 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
             }
             catch (TargetInvocationException e)
             {
-                exceptions.Add(e.InnerException!);
+                // A handler that itself threw a TargetInvocationException is unwrapped to its inner
+                // exception; fall back to the wrapper when the inner is null (defensive — InnerException is nullable).
+                (exceptions ??= []).Add(e.InnerException ?? e);
             }
             catch (Exception e)
             {
-                exceptions.Add(e);
+                (exceptions ??= []).Add(e);
             }
         }
 
-        if (exceptions.Count > 0)
+        if (exceptions is { Count: > 0 })
         {
             _ThrowOriginalExceptions(typeof(T), exceptions);
         }

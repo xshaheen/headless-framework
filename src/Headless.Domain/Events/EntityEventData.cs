@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public abstract class EntityEventData<TEntity>(TEntity entity) : IDomainEvent
 {
     public string UniqueId { get; } = Guid.CreateVersion7().ToString();

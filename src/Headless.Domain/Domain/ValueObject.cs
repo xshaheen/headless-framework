@@ -4,6 +4,8 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public interface IValueObject;
 
+[PublicAPI]
 public abstract class ValueObject : EqualityBase<ValueObject>, IValueObject;

@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public interface IDomainEventHandler<in TEvent>
     where TEvent : class, IDomainEvent
 {

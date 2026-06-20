@@ -6,6 +6,7 @@ namespace Headless.Domain;
 
 /// <summary>Defines an entity with a single primary key with "ID" property.</summary>
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
+[PublicAPI]
 public interface IEntity<out TId> : IEntity
 {
     /// <summary>Unique identifier for this entity.</summary>
@@ -13,6 +14,7 @@ public interface IEntity<out TId> : IEntity
 }
 
 /// <summary>Base class for entities with a single primary key.</summary>
+[PublicAPI]
 public abstract class Entity<TId> : Entity, IEntity<TId>
     where TId : IEquatable<TId>
 {

@@ -410,8 +410,7 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
 {
     public required string CustomerName { get; init; }
     public decimal Total { get; private set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public string? CreatedBy { get; set; }
+    public DateTimeOffset DateCreated { get; set; }
 
     public void Complete()
     {
@@ -434,10 +433,8 @@ Implement audit interfaces for automatic tracking:
 public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
 {
     public required string Name { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public string? CreatedBy { get; set; }
-    public DateTimeOffset? UpdatedAt { get; set; }
-    public string? UpdatedBy { get; set; }
+    public DateTimeOffset DateCreated { get; set; }
+    public DateTimeOffset? DateUpdated { get; set; }
 }
 ```
 
@@ -449,7 +446,7 @@ public sealed class Address : ValueObject
     public required string Street { get; init; }
     public required string City { get; init; }
 
-    protected override IEnumerable<object?> GetEqualityComponents()
+    protected override IEnumerable<object?> EqualityComponents()
     {
         yield return Street;
         yield return City;

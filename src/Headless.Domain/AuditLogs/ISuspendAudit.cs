@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public interface ISuspendAudit
 {
     /// <summary>Indicates whether this entity is suspended.</summary>
@@ -18,6 +19,7 @@ public interface ISuspendAudit
     DateTimeOffset? DateRestored { get; }
 }
 
+[PublicAPI]
 public interface ISuspendAudit<out TAccountId> : ISuspendAudit
 {
     /// <summary>ID of the account that suspend this entity.</summary>
@@ -29,6 +31,7 @@ public interface ISuspendAudit<out TAccountId> : ISuspendAudit
     TAccountId? RestoredById { get; }
 }
 
+[PublicAPI]
 public interface ISuspendAudit<TAccountId, TAccount> : ISuspendAudit<TAccountId>
 {
     /// <summary>Expandable link to the account who suspend this entity.</summary>

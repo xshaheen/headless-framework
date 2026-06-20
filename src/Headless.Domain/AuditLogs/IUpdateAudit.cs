@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public interface IUpdateAudit
 {
     /// <summary>Timestamp when this entity was last updated.</summary>
@@ -11,6 +12,7 @@ public interface IUpdateAudit
     DateTimeOffset? DateUpdated { get; }
 }
 
+[PublicAPI]
 public interface IUpdateAudit<out TAccountId> : IUpdateAudit
 {
     /// <summary>ID of the account who last updated this entity.</summary>
@@ -18,9 +20,10 @@ public interface IUpdateAudit<out TAccountId> : IUpdateAudit
     TAccountId? UpdatedById { get; }
 }
 
+[PublicAPI]
 public interface IUpdateAudit<out TAccountId, out TAccount> : IUpdateAudit<TAccountId>
 {
-    /// <summary>ID of the account who last updated this entity.</summary>
+    /// <summary>Navigation link to the account who last updated this entity.</summary>
     /// <remarks>(auto)</remarks>
     TAccount? UpdatedBy { get; }
 }

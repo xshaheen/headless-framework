@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public abstract class EqualityBase<T> : IEquatable<EqualityBase<T>>
     where T : EqualityBase<T>
 {
@@ -24,7 +25,7 @@ public abstract class EqualityBase<T> : IEquatable<EqualityBase<T>>
 
     public static bool operator ==(EqualityBase<T>? left, EqualityBase<T>? right)
     {
-        return !(left is null ^ right is null) && left?.Equals(right) != false;
+        return left is null ? right is null : left.Equals(right);
     }
 
     public static bool operator !=(EqualityBase<T>? left, EqualityBase<T>? right)
@@ -39,7 +40,14 @@ public abstract class EqualityBase<T> : IEquatable<EqualityBase<T>>
 
     public sealed override int GetHashCode()
     {
-        return EqualityComponents().Select(x => x?.GetHashCode() ?? 0).Aggregate((x, y) => x ^ y);
+        var hash = new HashCode();
+
+        foreach (var component in EqualityComponents())
+        {
+            hash.Add(component);
+        }
+
+        return hash.ToHashCode();
     }
 
     protected abstract IEnumerable<object?> EqualityComponents();

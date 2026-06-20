@@ -9,4 +9,5 @@ namespace Headless.Domain;
 /// See <see cref="EntityCreatedEventData{TEntity}"/>, <see cref="EntityDeletedEventData{TEntity}"/> and <see cref="EntityUpdatedEventData{TEntity}"/> classes.
 /// </summary>
 /// <typeparam name="TEntity">Entity type</typeparam>
+[PublicAPI]
 public sealed class EntityChangedEventData<TEntity>(TEntity entity) : EntityEventData<TEntity>(entity);

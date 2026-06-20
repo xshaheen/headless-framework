@@ -5,6 +5,7 @@
 namespace Headless.Domain;
 
 /// <summary>Defines an entity. It's primary key may not be "ID" or it may have a composite primary key.</summary>
+[PublicAPI]
 public interface IEntity
 {
     /// <summary>Returns an array of ordered keys for this entity.</summary>
@@ -14,6 +15,7 @@ public interface IEntity
 }
 
 /// <summary>Base class for entities that compare equality by their ordered keys.</summary>
+[PublicAPI]
 public abstract class Entity : EqualityBase<Entity>, IEntity
 {
     public abstract IReadOnlyList<object> GetKeys();

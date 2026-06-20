@@ -2,6 +2,7 @@
 
 namespace Headless.Domain;
 
+[PublicAPI]
 public static class DomainConstants
 {
     public const int IdMaxLength = 41;

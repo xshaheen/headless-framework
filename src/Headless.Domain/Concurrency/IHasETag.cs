@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+[PublicAPI]
 public interface IHasETag
 {
     /// <summary>Raw version of the entity used for concurrency control</summary>
