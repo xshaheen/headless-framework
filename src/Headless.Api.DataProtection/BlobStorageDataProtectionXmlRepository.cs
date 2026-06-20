@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Xml;
 using System.Xml.Linq;
 using Headless.Blobs;
 using Headless.Checks;
@@ -14,7 +15,7 @@ namespace Headless.Api;
 
 /// <summary>An <see cref="IXmlRepository"/> which is backed by BlobStorage.</summary>
 /// <remarks>Instances of this type are thread-safe.</remarks>
-public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
+internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 {
     private static readonly string[] _Containers = ["DataProtection"];
     private readonly IBlobStorage _storage;
@@ -27,9 +28,9 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 Name = "BlobStorageDataProtectionXmlRepositoryRetryPolicy",
                 MaxRetryAttempts = 4,
                 BackoffType = DelayBackoffType.Exponential,
-                UseJitter = false,
+                UseJitter = true,
                 Delay = 200.Milliseconds(),
-                ShouldHandle = new PredicateBuilder().Handle<IOException>(),
+                ShouldHandle = new PredicateBuilder().Handle<IOException>().Handle<HttpRequestException>(),
             }
         )
         .Build();
@@ -41,6 +42,8 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         _logger = loggerFactory?.CreateLogger(typeof(BlobStorageDataProtectionXmlRepository)) ?? NullLogger.Instance;
     }
 
+    /// <inheritdoc />
+    /// <remarks>Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.</remarks>
     public IReadOnlyCollection<XElement> GetAllElements()
     {
         return Async.RunSync(_GetAllElementsAsync);
@@ -75,15 +78,23 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 continue;
             }
 
-            elements.Add(XElement.Load(downloadResult.Stream));
-
-            _logger.LogLoadedElement(file.BlobKey);
+            try
+            {
+                var element = await XElement.LoadAsync(downloadResult.Stream, LoadOptions.None, CancellationToken.None);
+                elements.Add(element);
+                _logger.LogLoadedElement(file.BlobKey);
+            }
+            catch (Exception ex) when (ex is XmlException or IOException)
+            {
+                _logger.LogMalformedElement(file.BlobKey, ex);
+            }
         }
 
         return elements.AsReadOnly();
     }
 
     /// <inheritdoc />
+    /// <remarks>Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.</remarks>
     public void StoreElement(XElement element, string? friendlyName)
     {
         Argument.IsNotNull(element);
