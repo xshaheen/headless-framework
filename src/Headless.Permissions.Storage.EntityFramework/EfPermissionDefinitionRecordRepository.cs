@@ -6,10 +6,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Permissions;
 
+/// <summary>
+/// EF Core implementation of <see cref="Repositories.IPermissionDefinitionRecordRepository"/> that reads and writes
+/// permission definition and group records through <typeparamref name="TContext"/>.
+/// </summary>
+/// <remarks>
+/// Each operation acquires a short-lived, non-tracking context from <c>IDbContextFactory&lt;<typeparamref name="TContext"/>&gt;</c>
+/// and disposes it immediately after the call — the repository itself is a singleton and holds no
+/// open connection between calls.
+/// </remarks>
+/// <typeparam name="TContext">The consumer's <see cref="DbContext"/> that maps the permissions entities.</typeparam>
 public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : IPermissionDefinitionRecordRepository
     where TContext : DbContext
 {
+    /// <summary>Returns all permission group definition records, untracked.</summary>
     public async Task<List<PermissionGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
     )
@@ -19,6 +30,7 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
         return await db.Set<PermissionGroupDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
     }
 
+    /// <summary>Returns all permission definition records, untracked.</summary>
     public async Task<List<PermissionDefinitionRecord>> GetPermissionsListAsync(
         CancellationToken cancellationToken = default
     )
@@ -28,6 +40,11 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
         return await db.Set<PermissionDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Applies inserts, updates, and deletes for both permission groups and permissions in a single
+    /// <c>SaveChangesAsync</c> call. All six lists are flushed atomically within the same EF change-tracking
+    /// unit of work.
+    /// </summary>
     public async Task SaveAsync(
         List<PermissionGroupDefinitionRecord> newGroups,
         List<PermissionGroupDefinitionRecord> updatedGroups,

@@ -10,6 +10,11 @@ using Headless.Permissions.Resources;
 
 namespace Headless.Permissions.Grants;
 
+/// <summary>
+/// Default <see cref="IPermissionManager"/> implementation. Delegates resolution to the registered
+/// <see cref="GrantProviders.IPermissionGrantProvider"/> chain using AWS IAM-style rules: an explicit <c>Prohibited</c>
+/// from any provider overrides all grants; the default is deny.
+/// </summary>
 public sealed class PermissionManager(
     IPermissionDefinitionManager definitionManager,
     IPermissionGrantProviderManager grantProviderManager,

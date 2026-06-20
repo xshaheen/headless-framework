@@ -4,6 +4,11 @@ using Headless.Checks;
 
 namespace Headless.Permissions.Models;
 
+/// <summary>
+/// A single permission within a <see cref="PermissionGroupDefinition"/>. Permissions form a tree: a child is
+/// only effectively grantable when its <see cref="Parent"/> chain is also granted. Instances are created through
+/// <see cref="AddChild"/> or <see cref="IPermissionDefinitionContext"/> rather than constructed directly.
+/// </summary>
 public sealed class PermissionDefinition : ICanAddChildPermission
 {
     private readonly List<PermissionDefinition> _children;
@@ -71,7 +76,7 @@ public sealed class PermissionDefinition : ICanAddChildPermission
         set => Properties[name] = value;
     }
 
-    /// <summary>Adds a child permission to this permission.</summary>
+    /// <summary>Adds a child permission whose <see cref="Parent"/> is set to this permission, and returns it for further chaining.</summary>
     public PermissionDefinition AddChild(string name, string? displayName = null, bool isEnabled = true)
     {
         var child = new PermissionDefinition(name, displayName, isEnabled) { Parent = this };

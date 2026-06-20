@@ -5,6 +5,12 @@ using Headless.Permissions.Models;
 
 namespace Headless.Permissions.Definitions;
 
+/// <summary>
+/// Default implementation of <see cref="IPermissionDefinitionManager"/> that merges the
+/// <see cref="IStaticPermissionDefinitionStore"/> (code-defined providers) with the
+/// <see cref="IDynamicPermissionDefinitionStore"/> (DB-backed). Static definitions always win over dynamic
+/// definitions of the same name so that code-level definitions cannot be silently overridden by DB state.
+/// </summary>
 public sealed class PermissionDefinitionManager(
     IStaticPermissionDefinitionStore staticStore,
     IDynamicPermissionDefinitionStore dynamicStore

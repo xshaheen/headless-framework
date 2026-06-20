@@ -2,49 +2,41 @@
 
 namespace Headless.Permissions.Models;
 
+/// <summary>
+/// The mutable builder passed to <see cref="Definitions.IPermissionDefinitionProvider.Define"/> for declaring
+/// permission groups and permissions. Group names must be unique within the context.
+/// </summary>
 public interface IPermissionDefinitionContext
 {
-    /// <summary>
-    /// Gets a pre-defined permission group.
-    /// Throws <see cref="InvalidOperationException"/> if can not find the given group.
-    /// </summary>
-    /// <param name="name">Name of the group</param>
-    /// <returns></returns>
+    /// <summary>Gets a previously added permission group by name.</summary>
+    /// <param name="name">Name of the group.</param>
+    /// <exception cref="InvalidOperationException">Thrown when no group with the given name exists. Use <see cref="GetGroupOrNull"/> to avoid throwing.</exception>
     PermissionGroupDefinition GetGroup(string name);
 
-    /// <summary>
-    /// Tries to get a pre-defined permission group.
-    /// Returns null if can not find the given group.
-    /// </summary>
-    /// <param name="name">Name of the group</param>
-    /// <returns></returns>
+    /// <summary>Gets a previously added permission group by name, or <see langword="null"/> if it does not exist.</summary>
+    /// <param name="name">Name of the group.</param>
     PermissionGroupDefinition? GetGroupOrNull(string name);
 
-    /// <summary>
-    /// Tries to add a new permission group.
-    /// Throws <see cref="InvalidOperationException"/> if there is a group with the name.
-    /// <param name="name">Name of the group</param>
-    /// <param name="displayName">Localized display name of the group</param>
-    /// </summary>
+    /// <summary>Adds a new permission group and returns it so permissions can be chained onto it.</summary>
+    /// <param name="name">Unique name of the group.</param>
+    /// <param name="displayName">Localized display name of the group; defaults to <paramref name="name"/> when omitted.</param>
+    /// <exception cref="InvalidOperationException">Thrown when a group with the same name already exists.</exception>
     PermissionGroupDefinition AddGroup(string name, string? displayName = null);
 
-    /// <summary>
-    /// Tries to add a new permission group.
-    /// Throws <see cref="InvalidOperationException"/> if there is a group with the name.
-    /// </summary>
+    /// <summary>Adds an already-constructed permission group.</summary>
+    /// <exception cref="InvalidOperationException">Thrown when a group with the same name already exists.</exception>
     PermissionGroupDefinition AddGroup(PermissionGroupDefinition group);
 
-    /// <summary>
-    /// Tries to remove a permission group.
-    /// Throws <see cref="InvalidOperationException"/> if there is not any group with the name.
-    /// </summary>
-    /// <param name="name">Name of the group</param>
+    /// <summary>Removes a permission group by name.</summary>
+    /// <param name="name">Name of the group.</param>
+    /// <exception cref="InvalidOperationException">Thrown when no group with the given name exists.</exception>
     void RemoveGroup(string name);
 
     /// <summary>
-    /// Tries to get a pre-defined permission group.
-    /// Returns null if you can not find the given group.
-    /// <param name="name">Name of the group</param>
+    /// Finds a permission by name anywhere in the context, searching every group and its nested child
+    /// permissions recursively.
     /// </summary>
+    /// <param name="name">Name of the permission.</param>
+    /// <returns>The matching permission, or <see langword="null"/> if none is defined.</returns>
     PermissionDefinition? GetPermissionOrDefault(string name);
 }

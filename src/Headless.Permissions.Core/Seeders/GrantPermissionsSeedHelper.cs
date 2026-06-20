@@ -8,8 +8,19 @@ using Headless.Permissions.Repositories;
 
 namespace Headless.Permissions.Seeders;
 
+/// <summary>
+/// Seed-time helper for granting permissions during data initialization. Intended for use inside
+/// data seeders or hosted startup services, not in the application request path.
+/// </summary>
 public interface IGrantPermissionsSeedHelper
 {
+    /// <summary>
+    /// Grants every currently-defined permission that allows the <c>Role</c> provider to the given role,
+    /// skipping any permission that already has a grant record (idempotent). Runs under
+    /// <paramref name="tenantId"/> when provided; otherwise runs under the ambient tenant.
+    /// </summary>
+    /// <param name="roleName">Name of the role to receive the grants.</param>
+    /// <param name="tenantId">Optional tenant to scope the grants; uses the ambient tenant when <see langword="null"/>.</param>
     ValueTask GrantAllPermissionsToRoleAsync(
         string roleName,
         string? tenantId = null,

@@ -6,11 +6,22 @@ using Headless.Permissions.Models;
 
 namespace Headless.Permissions.GrantProviders;
 
+/// <summary>
+/// Base class for grant providers that delegate storage to <see cref="IPermissionGrantStore"/>.
+/// Subclasses implement <see cref="CheckAsync(IReadOnlyCollection{PermissionDefinition}, ICurrentUser, CancellationToken)"/>
+/// to translate the current principal into a provider key (user id, role name, etc.) and query the store.
+/// <see cref="SetAsync(PermissionDefinition, string, bool, CancellationToken)"/> routes to
+/// <see cref="IPermissionGrantStore.GrantAsync(string, string, string, string?, CancellationToken)"/> or
+/// <see cref="IPermissionGrantStore.RevokeAsync(string, string, string, CancellationToken)"/> based on
+/// <c>isGranted</c>.
+/// </summary>
 public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
     : IPermissionGrantProvider
 {
+    /// <inheritdoc/>
     public abstract string Name { get; }
 
+    /// <inheritdoc/>
     public async Task<PermissionGrantResult> CheckAsync(
         PermissionDefinition permission,
         ICurrentUser currentUser,
