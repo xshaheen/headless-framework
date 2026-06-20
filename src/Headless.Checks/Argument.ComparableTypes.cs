@@ -162,7 +162,8 @@ public static partial class Argument
     /// <param name="minimumValueParamName"></param>
     /// <param name="maximumValueParamName"></param>
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> if the value is out of range.</exception>
+    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsInclusiveBetween<T>(
@@ -201,7 +202,8 @@ public static partial class Argument
     /// <param name="minimumValueParamName"></param>
     /// <param name="maximumValueParamName"></param>
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> if the value is out of range.</exception>
+    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsExclusiveBetween<T>(
@@ -240,7 +242,8 @@ public static partial class Argument
     /// <param name="minimumValueParamName"></param>
     /// <param name="maximumValueParamName"></param>
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> if the value is out of range.</exception>
+    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsLeftOpenedBetween<T>(
@@ -279,7 +282,8 @@ public static partial class Argument
     /// <param name="minimumValueParamName"></param>
     /// <param name="maximumValueParamName"></param>
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> if the value is out of range.</exception>
+    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsRightOpenedBetween<T>(
@@ -317,9 +321,9 @@ public static partial class Argument
     /// <param name="argumentParamName"></param>
     /// <param name="minimumValueParamName"></param>
     /// <param name="maximumValueParamName"></param>
-    /// <returns><paramref name="argument" /> if any item is not out of range.</returns>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="ArgumentOutOfRangeException"></exception>
+    /// <returns><paramref name="argument" /> if every item is within range.</returns>
+    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">if any item in <paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IEnumerable<T> HaveAllItemsInRange<T>(

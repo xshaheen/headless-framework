@@ -10,7 +10,7 @@ namespace Headless.Checks;
 public static partial class Argument
 {
     /// <summary>Throws an <see cref="InvalidEnumArgumentException" /> if <paramref name="argument"/> is not a valid enum value.</summary>
-    /// <typeparam name="T"></typeparam>
+    /// <typeparam name="T">The enum type to validate against.</typeparam>
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
