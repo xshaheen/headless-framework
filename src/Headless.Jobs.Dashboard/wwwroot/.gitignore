@@ -9,6 +9,8 @@ lerna-debug.log*
 
 node_modules
 .DS_Store
+# Vite build output is generated and embedded at .NET build time (see eng/DashboardSpa.targets).
+/dist
 dist-ssr
 coverage
 *.local
