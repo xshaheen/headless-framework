@@ -9,7 +9,7 @@ namespace Headless.Api.Abstractions;
 
 public sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurrentUser
 {
-    public bool IsAuthenticated => UserId is not null;
+    public bool IsAuthenticated => Principal?.Identity?.IsAuthenticated == true;
 
     public ClaimsPrincipal? Principal => accessor.Principal;
 
