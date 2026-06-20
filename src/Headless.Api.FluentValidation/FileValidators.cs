@@ -36,11 +36,11 @@ public static class FileValidators
                         context
                             .MessageFormatter.AppendArgument(
                                 "MinSize",
-                                (minBytes / 1048576).ToString("N1", CultureInfo.CurrentCulture)
+                                (minBytes / 1048576d).ToString("N1", CultureInfo.CurrentCulture)
                             )
                             .AppendArgument(
                                 "TotalLength",
-                                (file.Length / 1048576).ToString("N1", CultureInfo.CurrentCulture)
+                                (file.Length / 1048576d).ToString("N1", CultureInfo.CurrentCulture)
                             );
 
                         return false;
@@ -63,11 +63,11 @@ public static class FileValidators
                         context
                             .MessageFormatter.AppendArgument(
                                 "MaxSize",
-                                (maxBytes / 1048576).ToString("N1", CultureInfo.CurrentCulture)
+                                (maxBytes / 1048576d).ToString("N1", CultureInfo.CurrentCulture)
                             )
                             .AppendArgument(
                                 "TotalLength",
-                                (file.Length / 1048576).ToString("N1", CultureInfo.CurrentCulture)
+                                (file.Length / 1048576d).ToString("N1", CultureInfo.CurrentCulture)
                             );
 
                         return false;
@@ -98,7 +98,7 @@ public static class FileValidators
 
                         context.MessageFormatter.AppendArgument(
                             "ContentTypes",
-                            contentTypes.Aggregate((p, c) => $"'{p}', '{c}'")
+                            string.Join(", ", contentTypes.Select(c => $"'{c}'"))
                         );
 
                         return false;
