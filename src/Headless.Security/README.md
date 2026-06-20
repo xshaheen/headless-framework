@@ -1,6 +1,8 @@
 # Headless.Security
 
-Default string encryption and hashing implementations plus DI registration helpers.
+Default string encryption (AES-GCM authenticated encryption with PBKDF2 key derivation) and hashing implementations plus DI registration helpers.
+
+`StringEncryptionService` uses a fresh random nonce per call, so encrypting the same value twice yields different cipher text, and decryption fails loudly when cipher text is tampered with or the key does not match. `IStringHashService` is a deterministic keyed/lookup hash, not a password hasher.
 
 ## Problem Solved
 
@@ -32,14 +34,13 @@ using Headless;
 builder.Services.AddStringEncryptionService(options =>
 {
     options.DefaultPassPhrase = "YourPassPhrase123";
-    options.InitVectorBytes = "YourInitVector16"u8.ToArray();
     options.DefaultSalt = "YourSalt"u8.ToArray();
 });
 
 builder.Services.AddStringHashService(options =>
 {
     options.Iterations = 600_000;
-    options.Size = 128;
+    options.SizeInBytes = 32;
     options.Algorithm = HashAlgorithmName.SHA256;
     options.DefaultSalt = "DefaultSalt";
 });

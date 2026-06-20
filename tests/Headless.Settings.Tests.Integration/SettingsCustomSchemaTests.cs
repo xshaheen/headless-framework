@@ -106,7 +106,6 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         services.AddStringEncryptionService(options =>
         {
             options.DefaultPassPhrase = "TestPassPhrase123456";
-            options.InitVectorBytes = "TestInitVector16"u8.ToArray();
             options.DefaultSalt = "TestSalt"u8.ToArray();
         });
         services.AddDbContextFactory<SharedSettingsContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));

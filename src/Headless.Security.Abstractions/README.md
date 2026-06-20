@@ -10,8 +10,8 @@ Provides provider-agnostic contracts and validated option types for string encry
 
 - `IStringEncryptionService`
 - `IStringHashService`
-- `StringEncryptionOptions` / `StringEncryptionOptionsValidator`
-- `StringHashOptions` / `StringHashOptionsValidator`
+- `StringEncryptionOptions`
+- `StringHashOptions`
 
 `IStringHashService.Create(...)` accepts an optional salt. Configure `StringHashOptions.DefaultSalt` when you want a default salt applied automatically; leave it unset when no default salt is needed.
 
@@ -39,7 +39,7 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-- `FluentValidation`
+None. This is an abstractions-only package.
 
 ## Side Effects
 

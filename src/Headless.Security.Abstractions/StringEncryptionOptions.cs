@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
-
 namespace Headless.Abstractions;
 
 /// <summary>
@@ -11,9 +9,14 @@ namespace Headless.Abstractions;
 public sealed class StringEncryptionOptions
 {
     /// <summary>
-    /// Gets or sets the symmetric key size in bits.
+    /// Gets or sets the symmetric key size in bits. Must be one of the legal AES key sizes: 128, 192, or 256.
     /// </summary>
     public int KeySize { get; set; } = 256;
+
+    /// <summary>
+    /// Gets or sets the number of PBKDF2 iterations used to derive the encryption key from the pass phrase.
+    /// </summary>
+    public int Iterations { get; set; } = 600_000;
 
     /// <summary>
     /// Gets or sets the default pass phrase used to derive the encryption key.
@@ -21,33 +24,7 @@ public sealed class StringEncryptionOptions
     public required string DefaultPassPhrase { get; set; }
 
     /// <summary>
-    /// Gets or sets the initialization vector bytes used for encryption and decryption.
-    /// </summary>
-    public required byte[] InitVectorBytes { get; set; }
-
-    /// <summary>
     /// Gets or sets the default salt used to derive the encryption key.
     /// </summary>
     public required byte[] DefaultSalt { get; set; }
-}
-
-/// <summary>
-/// Validates <see cref="StringEncryptionOptions" />.
-/// </summary>
-public sealed class StringEncryptionOptionsValidator : AbstractValidator<StringEncryptionOptions>
-{
-    public StringEncryptionOptionsValidator()
-    {
-        RuleFor(x => x.KeySize)
-            .Must(keySize => keySize is 128 or 192 or 256)
-            .WithMessage("KeySize must be 128, 192, or 256 bits (the legal AES key sizes).");
-        RuleFor(x => x.DefaultPassPhrase).NotEmpty();
-        // AES has a fixed 128-bit block, so the IV is always 16 bytes regardless of key size.
-        RuleFor(x => x.InitVectorBytes)
-            .Cascade(CascadeMode.Stop)
-            .NotEmpty()
-            .Must(iv => iv.Length == 16)
-            .WithMessage("InitVectorBytes must be exactly 16 bytes (the AES block size).");
-        RuleFor(x => x.DefaultSalt).NotEmpty();
-    }
 }

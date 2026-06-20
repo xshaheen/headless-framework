@@ -8,6 +8,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless;
 
+/// <summary>Registration helpers for the string encryption and hashing services.</summary>
+/// <remarks>
+/// All <c>Add*</c> members are idempotent: the first registration for a given service wins, and a later call with
+/// different options is silently ignored. Configure each service once.
+/// </remarks>
 [PublicAPI]
 public static class SetupSecurity
 {

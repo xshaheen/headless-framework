@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
-using FluentValidation;
 
 namespace Headless.Abstractions;
 
@@ -19,10 +18,10 @@ public sealed class StringHashOptions
     /// <summary>
     /// Gets or sets the output hash size in bytes.
     /// </summary>
-    public int Size { get; set; } = 128;
+    public int SizeInBytes { get; set; } = 32;
 
     /// <summary>
-    /// Gets or sets the PBKDF2 hash algorithm.
+    /// Gets or sets the PBKDF2 hash algorithm. Must be a SHA-2 family algorithm (SHA256, SHA384, or SHA512).
     /// </summary>
     public HashAlgorithmName Algorithm { get; set; } = HashAlgorithmName.SHA256;
 
@@ -31,17 +30,4 @@ public sealed class StringHashOptions
     /// called without a salt.
     /// </summary>
     public string? DefaultSalt { get; set; }
-}
-
-/// <summary>
-/// Validates <see cref="StringHashOptions" />.
-/// </summary>
-public sealed class StringHashOptionsValidator : AbstractValidator<StringHashOptions>
-{
-    public StringHashOptionsValidator()
-    {
-        RuleFor(x => x.Iterations).GreaterThan(0);
-        RuleFor(x => x.Size).GreaterThan(0);
-        RuleFor(x => x.Algorithm).NotEqual((HashAlgorithmName)default);
-    }
 }
