@@ -15,13 +15,19 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
     {
         var validators = context.HttpContext.RequestServices.GetService<IEnumerable<IValidator<TRequest>>>();
 
-        if (validators is null || !validators.Any())
+        if (validators is null)
         {
             return await next(context).ConfigureAwait(false);
         }
 
-        // Lazy materialization - only allocate list when needed
+        // Materialize once: the DI-resolved enumerable is consumed by the emptiness check and the validation
+        // loop, so enumerating it twice (Any() + ToList()) would re-run a lazy source.
         var validatorList = validators as IList<IValidator<TRequest>> ?? validators.ToList();
+
+        if (validatorList.Count == 0)
+        {
+            return await next(context).ConfigureAwait(false);
+        }
 
         var requestType = typeof(TRequest);
         var request = context.Arguments.OfType<TRequest>().FirstOrDefault(request => request?.GetType() == requestType);

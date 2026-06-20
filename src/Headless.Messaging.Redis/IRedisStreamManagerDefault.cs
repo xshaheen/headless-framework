@@ -72,7 +72,11 @@ internal class RedisStreamManager(
         {
             token.ThrowIfCancellationRequested();
 
-            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions, token).ConfigureAwait(false);
+            // Materialize the lazy SelectMany result once: it is both yielded to the consumer and
+            // re-inspected by the All() check below, so leaving it deferred would flatten it twice.
+            var result = (
+                await _TryReadConsumerGroupAsync(consumerGroup, positions, token).ConfigureAwait(false)
+            ).ToArray();
 
             yield return result;
 

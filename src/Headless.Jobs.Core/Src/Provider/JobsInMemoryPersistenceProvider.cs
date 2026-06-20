@@ -451,9 +451,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         // Match EF Core - only count and paginate root items
         query = query.Where(x => x.ParentId == null);
 
-        var totalCount = query.Count();
+        // Materialize once: totalCount and the page must derive from a single snapshot (Values is
+        // re-snapshotted on each enumeration) and the compiled predicate should run only once.
+        var materialized = query.ToArray();
+        var totalCount = materialized.Length;
 
-        var items = query
+        var items = materialized
             .OrderByDescending(x => x.ExecutionTime) // Match EF Core's OrderByDescending(x => x.ExecutionTime)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
@@ -796,9 +799,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             query = query.Where(compiledPredicate);
         }
 
-        var totalCount = query.Count();
+        // Materialize once so totalCount and the page share one snapshot and the predicate runs only once.
+        var materialized = query.ToArray();
+        var totalCount = materialized.Length;
 
-        var items = query
+        var items = materialized
             .OrderByDescending(x => x.CreatedAt)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
@@ -1309,9 +1314,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             query = query.Where(compiledPredicate);
         }
 
-        var totalCount = query.Count();
+        // Materialize once so totalCount and the page share one snapshot and the predicate runs only once.
+        var materialized = query.ToArray();
+        var totalCount = materialized.Length;
 
-        var items = query
+        var items = materialized
             .OrderByDescending(x => x.CreatedAt)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)

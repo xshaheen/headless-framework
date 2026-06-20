@@ -57,14 +57,18 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
+        // Materialize once: the source is consumed by GroupBy and the return value, so a lazy
+        // input would otherwise be enumerated twice.
+        var names = messageNames as IReadOnlyList<string> ?? messageNames.ToList();
+
         if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {
-            return messageNames.ToList();
+            return [.. names];
         }
 
         // Preserve wildcard coverage for hierarchical subjects, but add exact
         // subjects for bare/non-prefix messageNames that the wildcard cannot match.
-        var streamGroups = messageNames.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
+        var streamGroups = names.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
 
         foreach (var streamGroup in streamGroups)
         {
@@ -84,7 +88,7 @@ internal sealed class NatsConsumerClient(
             await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
 
-        return messageNames.ToList();
+        return [.. names];
     }
 
     internal static IReadOnlyList<string> BuildStreamSubjects(
