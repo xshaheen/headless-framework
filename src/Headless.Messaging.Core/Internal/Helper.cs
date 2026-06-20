@@ -54,7 +54,7 @@ public static partial class Helper
         if (wildcard.Length > maxWildcardLength)
         {
             throw new ArgumentException(
-                $@"MessageName pattern exceeds maximum length of {maxWildcardLength} characters",
+                $"MessageName pattern exceeds maximum length of {maxWildcardLength} characters",
                 nameof(wildcard)
             );
         }
@@ -63,7 +63,7 @@ public static partial class Helper
         if (wildcardCount > maxWildcardCount)
         {
             throw new ArgumentException(
-                $@"MessageName pattern contains too many wildcards (max: {maxWildcardCount})",
+                $"MessageName pattern contains too many wildcards (max: {maxWildcardCount})",
                 nameof(wildcard)
             );
         }

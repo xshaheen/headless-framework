@@ -53,7 +53,7 @@ public sealed class SettingEncryptionService(
         {
             logger.LogFailedToDecryptSettingValue(e, settingDefinition.Name);
 
-            throw new ConflictException($@"Failed to decrypt setting '{settingDefinition.Name}'.", e);
+            throw new ConflictException($"Failed to decrypt setting '{settingDefinition.Name}'.", e);
         }
     }
 }

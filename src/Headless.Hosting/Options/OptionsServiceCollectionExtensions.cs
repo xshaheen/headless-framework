@@ -162,7 +162,7 @@ public static class OptionsServiceCollectionExtensions
             {
                 throw new ArgumentNullException(
                     nameof(config),
-                    @"The configuration must be provided when the binder is configured."
+                    "The configuration must be provided when the binder is configured."
                 );
             }
 

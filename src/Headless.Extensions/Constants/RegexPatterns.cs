@@ -87,7 +87,7 @@ public static partial class RegexPatterns
 
     /// <summary>Matches a 14-digit national ID.</summary>
     [GeneratedRegex(
-        pattern: @"^[0-9]{14}$",
+        pattern: "^[0-9]{14}$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]

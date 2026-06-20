@@ -226,7 +226,7 @@ internal sealed class RuntimeConsumerRegistry(
     {
         if (!string.IsNullOrWhiteSpace(explicitMessageName))
         {
-            return _options.ApplyMessageNamePrefix(explicitMessageName!);
+            return _options.ApplyMessageNamePrefix(explicitMessageName);
         }
 
         if (consumerRegistry.TryGetRawMessageName(messageType, out var mappedMessageName))
@@ -251,7 +251,7 @@ internal sealed class RuntimeConsumerRegistry(
     {
         if (!string.IsNullOrWhiteSpace(explicitHandlerId))
         {
-            return explicitHandlerId!;
+            return explicitHandlerId;
         }
 
         if (declaringType == null || _RequiresExplicitHandlerId(declaringType.AsType(), methodName))

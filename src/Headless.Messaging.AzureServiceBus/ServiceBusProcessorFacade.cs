@@ -28,7 +28,7 @@ public sealed class ServiceBusProcessorFacade : IAsyncDisposable
         {
             throw new ArgumentNullException(
                 nameof(serviceBusProcessor),
-                @"Either serviceBusProcessor or serviceBusSessionProcessor must be provided"
+                "Either serviceBusProcessor or serviceBusSessionProcessor must be provided"
             );
         }
 

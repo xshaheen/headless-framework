@@ -194,7 +194,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         BuildNumber = "<version>",
         CommitNumber = "<commit>",
         Timestamp = _ExampleTimestamp,
-        Errors = [new("business_error", @"Some business rule failed.")],
+        Errors = [new("business_error", "Some business rule failed.")],
     };
 
     private static readonly UnprocessableEntityProblemDetails _Status422ProblemDetails = new()
@@ -212,12 +212,12 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         {
             ["email"] =
             [
-                new ErrorDescriptor("auth:invalid_email_format", @"The email address format is invalid."),
-                new ErrorDescriptor("auth:email_already_exists", @"The specified email address is already in use."),
+                new ErrorDescriptor("auth:invalid_email_format", "The email address format is invalid."),
+                new ErrorDescriptor("auth:email_already_exists", "The specified email address is already in use."),
             ],
             ["username"] =
             [
-                new ErrorDescriptor("auth:username_too_short", @"The username must be at least 6 characters long."),
+                new ErrorDescriptor("auth:username_too_short", "The username must be at least 6 characters long."),
             ],
         },
     };

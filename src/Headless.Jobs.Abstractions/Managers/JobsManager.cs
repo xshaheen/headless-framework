@@ -277,7 +277,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
     {
         if (cronJob is null)
         {
-            return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), @"Cron job must not be null!"));
+            return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), "Cron job must not be null!"));
         }
 
         if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
@@ -670,7 +670,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             if (cronJob is null)
             {
-                errors.Add(new ArgumentNullException(nameof(cronJobs), @"Cron job must not be null!"));
+                errors.Add(new ArgumentNullException(nameof(cronJobs), "Cron job must not be null!"));
                 continue;
             }
 
