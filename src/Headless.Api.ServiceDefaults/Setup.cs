@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.ComponentModel;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -182,9 +183,11 @@ public static class SetupApi
                 });
             }
 
+            var startupState = new HeadlessStartupState();
             builder.Services.TryAddSingleton(options);
+            builder.Services.TryAddSingleton(startupState);
             builder.Services.TryAddSingleton<IStatusCodesRewriterCalledNotifier>(
-                _ => new StatusCodesRewriterCalledNotifier(options)
+                _ => new StatusCodesRewriterCalledNotifier(startupState)
             );
             builder.Services.TryAddSingleton<HeadlessServiceDefaultsValidationStartupFilter>();
             builder.Services.TryAddEnumerable(
@@ -448,9 +451,9 @@ public static class SetupApi
             app.UseNoCacheWhenMissingCacheHeaders();
         }
 
-        if (app.Services.GetService<HeadlessServiceDefaultsOptions>() is { } serviceOptions)
+        if (app.Services.GetService<HeadlessStartupState>() is { } startupState)
         {
-            serviceOptions.UseHeadlessCalled = true;
+            startupState.UseHeadlessCalled = true;
         }
 
         return app;
@@ -528,9 +531,9 @@ public static class SetupApi
             }
         }
 
-        if (serviceOptions is not null)
+        if (app.Services.GetService<HeadlessStartupState>() is { } mapStartupState)
         {
-            serviceOptions.MapHeadlessEndpointsCalled = true;
+            mapStartupState.MapHeadlessEndpointsCalled = true;
         }
 
         return app;
@@ -573,28 +576,50 @@ public static class SetupApi
 
     internal static async Task WriteHealthReportAsync(HttpContext context, HealthReport report)
     {
-        context.Response.ContentType = ContentTypes.Applications.Json;
+        // Serialize into a buffer first so that a serialization fault cannot emit a partial body
+        // to load-balancer pollers. Headers are set only after the buffer is ready.
+        var buffer = new ArrayBufferWriter<byte>();
 
-        await using var writer = new Utf8JsonWriter(context.Response.Body);
-        writer.WriteStartObject();
-        writer.WriteString("status", report.Status.ToString());
-        writer.WriteStartObject("results");
-
-        foreach (var (name, entry) in report.Entries)
+        try
         {
-            writer.WriteStartObject(name);
-            writer.WriteString("status", entry.Status.ToString());
+            await using var writer = new Utf8JsonWriter(buffer);
+            writer.WriteStartObject();
+            writer.WriteString("status", report.Status.ToString());
+            writer.WriteStartObject("results");
 
-            if (entry.Description is not null)
+            foreach (var (name, entry) in report.Entries)
             {
-                writer.WriteString("description", entry.Description);
+                writer.WriteStartObject(name);
+                writer.WriteString("status", entry.Status.ToString());
+
+                if (entry.Description is not null)
+                {
+                    writer.WriteString("description", entry.Description);
+                }
+
+                writer.WriteEndObject();
             }
 
             writer.WriteEndObject();
+            writer.WriteEndObject();
+            // Flush to the in-memory buffer (no I/O cancellation needed here).
+            await writer.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Serialization failed before any bytes reached the client — set 500 and bail.
+            // Abort the connection so the client sees a clean error rather than a partial body.
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            _ = ex; // observed; see comment above
+
+            return;
         }
 
-        writer.WriteEndObject();
-        writer.WriteEndObject();
-        await writer.FlushAsync(context.RequestAborted).ConfigureAwait(false);
+        context.Response.ContentType = ContentTypes.Applications.Json;
+        context.Response.ContentLength = buffer.WrittenCount;
+
+        // Copy to the response body. Client disconnect here is expected and non-fatal, so we use
+        // CancellationToken.None to avoid propagating RequestAborted as a 500.
+        await context.Response.Body.WriteAsync(buffer.WrittenMemory, CancellationToken.None).ConfigureAwait(false);
     }
 }

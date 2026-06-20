@@ -6,17 +6,19 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Api;
 
-internal sealed class HeadlessServiceDefaultsValidationStartupFilter(HeadlessServiceDefaultsOptions options)
-    : IStartupFilter,
-        IHostedLifecycleService
+internal sealed class HeadlessServiceDefaultsValidationStartupFilter(
+    HeadlessServiceDefaultsOptions options,
+    HeadlessStartupState state
+) : IStartupFilter, IHostedLifecycleService
 {
     private readonly HeadlessServiceDefaultsOptions _options = options;
+    private readonly HeadlessStartupState _state = state;
 
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
     {
         return app =>
         {
-            _Validate(_options);
+            _Validate(_options, _state);
 
             next(app);
         };
@@ -24,7 +26,7 @@ internal sealed class HeadlessServiceDefaultsValidationStartupFilter(HeadlessSer
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
-        _Validate(_options);
+        _Validate(_options, _state);
 
         return Task.CompletedTask;
     }
@@ -39,19 +41,19 @@ internal sealed class HeadlessServiceDefaultsValidationStartupFilter(HeadlessSer
 
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private static void _Validate(HeadlessServiceDefaultsOptions options)
+    private static void _Validate(HeadlessServiceDefaultsOptions options, HeadlessStartupState state)
     {
-        if (options.Validation.RequireUseHeadless && !options.UseHeadlessCalled)
+        if (options.Validation.RequireUseHeadless && !state.UseHeadlessCalled)
         {
             throw new InvalidOperationException("Call UseHeadless before the application starts.");
         }
 
-        if (options.Validation.RequireMapHeadlessEndpoints && !options.MapHeadlessEndpointsCalled)
+        if (options.Validation.RequireMapHeadlessEndpoints && !state.MapHeadlessEndpointsCalled)
         {
             throw new InvalidOperationException("Call MapHeadlessEndpoints before the application starts.");
         }
 
-        if (options.Validation.RequireStatusCodesRewriter && !options.UseStatusCodesRewriterCalled)
+        if (options.Validation.RequireStatusCodesRewriter && !state.UseStatusCodesRewriterCalled)
         {
             throw new InvalidOperationException(
                 "Call UseStatusCodesRewriter (or UseHeadless) before the application starts."
