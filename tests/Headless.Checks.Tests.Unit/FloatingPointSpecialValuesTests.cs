@@ -294,4 +294,68 @@ public sealed class FloatingPointSpecialValuesTests
         Argument.IsNegativeOrZero(doubleValue).Should().Be(doubleValue);
         Argument.IsNegativeOrZero(floatValue).Should().Be(floatValue);
     }
+
+    // *-OrZero must reject non-finite values, consistent with IsPositive/IsNegative
+
+    [Theory]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(double.NaN)]
+    public void is_positive_or_zero_with_non_finite_throws(double argument)
+    {
+        // when
+        Action action = () => Argument.IsPositiveOrZero(argument);
+
+        // then
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(float.NegativeInfinity)]
+    [InlineData(float.NaN)]
+    public void is_positive_or_zero_float_with_non_finite_throws(float argument)
+    {
+        // when
+        Action action = () => Argument.IsPositiveOrZero(argument);
+
+        // then
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(double.NaN)]
+    public void is_negative_or_zero_with_non_finite_throws(double argument)
+    {
+        // when
+        Action action = () => Argument.IsNegativeOrZero(argument);
+
+        // then
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(float.PositiveInfinity)]
+    [InlineData(float.NegativeInfinity)]
+    [InlineData(float.NaN)]
+    public void is_negative_or_zero_float_with_non_finite_throws(float argument)
+    {
+        // when
+        Action action = () => Argument.IsNegativeOrZero(argument);
+
+        // then
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void is_positive_or_zero_half_with_infinity_throws()
+    {
+        // when
+        Action action = () => Argument.IsPositiveOrZero(Half.PositiveInfinity);
+
+        // then
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
 }

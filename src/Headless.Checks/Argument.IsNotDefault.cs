@@ -59,7 +59,13 @@ public static partial class Argument
         throw new ArgumentException(message, paramName);
     }
 
-    /// <inheritdoc cref="IsNotDefault{T}(T,string?,string?)"/>
+    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> has a value that is default(T).</summary>
+    /// <param name="argument">The argument to check.</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <returns><paramref name="argument" /> if the value is null or not default for that type.</returns>
+    /// <remarks>A <see langword="null"/> value is accepted and returned as-is; only a present <c>default(T)</c> value throws. Use <see cref="IsNotNullOrDefault{T}"/> to also reject null.</remarks>
+    /// <exception cref="ArgumentException">if <paramref name="argument" /> has a value that is default for that type.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T? IsNotDefault<T>(
@@ -82,22 +88,6 @@ public static partial class Argument
                 paramName
             );
         }
-
-        return argument;
-    }
-
-    /// <inheritdoc cref="IsNotDefault{T}(T,string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static T? IsNotDefaultOrNull<T>(
-        T? argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-        where T : struct
-    {
-        IsNotNull(argument, message, paramName);
-        IsNotDefault(argument, message, paramName);
 
         return argument;
     }

@@ -78,6 +78,7 @@ public static partial class Argument
     }
 
     /// <inheritdoc cref="IsNotEmpty{T}(IReadOnlyCollection{T}?,string?,string?)"/>
+    /// <remarks>The sequence is enumerated once (via <see cref="System.Linq.Enumerable.Any{T}(IEnumerable{T})"/>) to test for emptiness. Pass a materialized or replayable sequence; a once-only or side-effecting iterator will be partially consumed.</remarks>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(argument))]

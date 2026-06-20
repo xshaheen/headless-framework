@@ -9,12 +9,13 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is non negative.</summary>
+    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not negative.</summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the argument is negative.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is non negative.</exception>
+    /// <remarks>For floating-point types, non-finite values (<see cref="double.NaN"/>, infinities) are rejected.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not negative.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNegative<T>(
@@ -24,12 +25,15 @@ public static partial class Argument
     )
         where T : INumber<T>
     {
-        return argument < T.Zero
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
+        if (T.IsFinite(argument) && argument < T.Zero)
+        {
+            return argument;
+        }
+
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
+        );
     }
 
     /// <inheritdoc cref="IsNegative{T}(T,string?,string?)"/>
@@ -42,12 +46,20 @@ public static partial class Argument
     )
         where T : struct, INumber<T>
     {
-        return argument is null ? null
-            : argument < T.Zero ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
+        if (argument is null)
+        {
+            return null;
+        }
+
+        if (T.IsFinite(argument.Value) && argument.Value < T.Zero)
+        {
+            return argument;
+        }
+
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
+        );
     }
 
     /// <inheritdoc cref="IsNegative{T}(T,string?,string?)"/>
@@ -78,124 +90,6 @@ public static partial class Argument
     {
         return argument is null ? null
             : argument < TimeSpan.Zero ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsNegative{T}(T,string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static short IsNegative(
-        short argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument < 0
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsNegative{T}(T,string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int IsNegative(
-        int argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument < 0
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsNegative{T}(T,string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static long IsNegative(
-        long argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument < 0
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsNegative{T}(T,string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float IsNegative(
-        float argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        if (float.IsInfinity(argument) || float.IsNaN(argument))
-        {
-            throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
-        }
-
-        return argument < 0
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsNegative{T}(T,string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static double IsNegative(
-        double argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        if (double.IsInfinity(argument) || double.IsNaN(argument))
-        {
-            throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
-        }
-
-        return argument < 0
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsNegative{T}(T,string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static decimal IsNegative(
-        decimal argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument < 0
-            ? argument
             : throw new ArgumentOutOfRangeException(
                 paramName,
                 message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."

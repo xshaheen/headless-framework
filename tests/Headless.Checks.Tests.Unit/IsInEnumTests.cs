@@ -13,6 +13,15 @@ public sealed class IsInEnumTests
         Value2 = 2,
     }
 
+    [Flags]
+    private enum Permissions
+    {
+        None = 0,
+        Read = 1,
+        Write = 2,
+        Execute = 4,
+    }
+
     [Fact]
     public void is_in_enum_generic_should_return_argument_when_valid()
     {
@@ -74,5 +83,29 @@ public sealed class IsInEnumTests
             );
 
         actionWithCustomMessage.Should().ThrowExactly<InvalidEnumArgumentException>().WithMessage($"{customMessage}");
+    }
+
+    [Fact]
+    public void is_in_enum_flags_should_accept_composite_of_defined_flags()
+    {
+        // given - Read | Write (3) is a valid combination but not itself a named member
+        const Permissions composite = Permissions.Read | Permissions.Write;
+
+        // when & then
+        Argument.IsInEnum(composite).Should().Be(composite);
+        Argument.IsInEnum(Permissions.Read | Permissions.Write | Permissions.Execute).Should().Be((Permissions)7);
+    }
+
+    [Fact]
+    public void is_in_enum_flags_should_throw_when_value_has_undefined_bits()
+    {
+        // given - bit 8 is not a defined flag
+        const Permissions argument = (Permissions)8;
+
+        // when
+        Action action = () => Argument.IsInEnum(argument);
+
+        // then
+        action.Should().ThrowExactly<InvalidEnumArgumentException>();
     }
 }

@@ -17,7 +17,13 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the value matches <paramref name="pattern"/>.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is not match <paramref name="pattern"/>.</exception>
+    /// <remarks>
+    /// The caller owns the <paramref name="pattern"/>. Matching runs with the pattern's own <see cref="Regex.MatchTimeout"/>;
+    /// supply a <see cref="Regex"/> constructed with a finite timeout when the pattern or input is untrusted to avoid
+    /// catastrophic-backtracking (ReDoS) hangs.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> or <paramref name="pattern"/> is null.</exception>
+    /// <exception cref="ArgumentException">if <paramref name="argument" /> does not match <paramref name="pattern"/>.</exception>
     // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Global
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -15,6 +15,7 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the value is not out of range.</returns>
+    /// <remarks>For <see cref="FlagsAttribute"/> enums, any combination of defined flag bits is accepted even when the combined value is not itself a named member.</remarks>
     /// <exception cref="InvalidEnumArgumentException"><paramref name="argument" /> if the value is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -25,7 +26,7 @@ public static partial class Argument
     )
         where T : struct, Enum
     {
-        if (Enum.IsDefined(argument))
+        if (Enum.IsDefined(argument) || _IsValidFlagsCombination(typeof(T), _EnumToUInt64(argument)))
         {
             return argument;
         }
@@ -48,7 +49,9 @@ public static partial class Argument
     )
         where T : struct, Enum
     {
-        if (Enum.IsDefined(typeof(T), argument))
+        if (
+            Enum.IsDefined(typeof(T), argument) || _IsValidFlagsCombination(typeof(T), unchecked((ulong)(long)argument))
+        )
         {
             return argument;
         }
@@ -59,5 +62,38 @@ public static partial class Argument
 #pragma warning disable MA0015
         throw new InvalidEnumArgumentException(message);
 #pragma warning restore MA0015
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="bits"/> is a non-zero combination of bits that are all
+    /// covered by the defined members of a <see cref="FlagsAttribute"/> enum. Non-flags enums always return false
+    /// (their values must be exact members, validated separately by <see cref="Enum.IsDefined{T}(T)"/>).
+    /// </summary>
+    private static bool _IsValidFlagsCombination(Type enumType, ulong bits)
+    {
+        if (bits == 0 || !enumType.IsDefined(typeof(FlagsAttribute), inherit: false))
+        {
+            return false;
+        }
+
+        ulong definedMask = 0;
+
+        foreach (var value in Enum.GetValuesAsUnderlyingType(enumType))
+        {
+            definedMask |= _EnumToUInt64(value);
+        }
+
+        return (bits & ~definedMask) == 0;
+    }
+
+    private static ulong _EnumToUInt64(object value)
+    {
+        return Convert.GetTypeCode(value) switch
+        {
+            TypeCode.SByte or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64 => unchecked(
+                (ulong)Convert.ToInt64(value, CultureInfo.InvariantCulture)
+            ),
+            _ => Convert.ToUInt64(value, CultureInfo.InvariantCulture),
+        };
     }
 }
