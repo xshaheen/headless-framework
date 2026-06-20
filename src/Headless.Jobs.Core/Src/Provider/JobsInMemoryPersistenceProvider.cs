@@ -194,6 +194,17 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         if (_TimeJobs.TryGetValue(functionContext.JobId, out var job))
         {
+            // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a
+            // non-terminal row, so a swept/reclaimed row is not clobbered by a late completion.
+            var ownedNonTerminal =
+                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
+                && job.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+
+            if (!ownedNonTerminal)
+            {
+                return Task.FromResult(0);
+            }
+
             var updatedTicker = _CloneTicker(job);
             _ApplyFunctionContextToTicker(updatedTicker, functionContext);
 
@@ -226,6 +237,17 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_TimeJobs.TryGetValue(id, out var job))
             {
+                // #316/U5 claim→start ownership recheck (mirror EF WhereOwnedBy): only stamp rows still owned by
+                // this node and non-terminal, so a row re-claimed by another owner is not clobbered.
+                var ownedNonTerminal =
+                    string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
+                    && job.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+
+                if (!ownedNonTerminal)
+                {
+                    continue;
+                }
+
                 var updatedTicker = _CloneTicker(job);
                 _ApplyFunctionContextToTicker(updatedTicker, functionContext);
                 _TimeJobs.TryUpdate(id, updatedTicker, job);
@@ -275,6 +297,109 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
 
         return Task.FromResult(acquired.ToArray());
+    }
+
+    public Task<int> RenewTimeJobLease(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        // #316 sliding lease (mirror EF RenewTimeJobLease): slide LockedUntil forward, fenced on the #5
+        // completion-fence shape (still owned + non-terminal). A lost/reclaimed/terminalized row returns 0 ->
+        // cancel-on-loss (U2/KTD3).
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (_TimeJobs.TryGetValue(jobId, out var job))
+        {
+            // Renewal slides a RUNNING lease only: extending an Idle/Queued row would return 1 ("lease held") and
+            // suppress cancel-on-loss. Mirror the EF RenewTimeJobLease InProgress fence.
+            var ownedRunning =
+                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal) && job.Status is JobStatus.InProgress;
+
+            if (!ownedRunning)
+            {
+                return Task.FromResult(0);
+            }
+
+            var updatedTicker = _CloneTicker(job);
+            updatedTicker.LockedUntil = now.Add(_leaseDuration);
+            updatedTicker.UpdatedAt = now;
+
+            if (_TimeJobs.TryUpdate(jobId, updatedTicker, job))
+            {
+                return Task.FromResult(1);
+            }
+        }
+
+        return Task.FromResult(0);
+    }
+
+    public Task<int> ReclaimStalledTimeJobs(CancellationToken cancellationToken = default)
+    {
+        // #316/U3 (mirror EF ReclaimStalledTimeJobs): reclaim InProgress rows whose lease lapsed on ANY node, per
+        // OnNodeDeath. Not owner-scoped — the trigger is a stalled lease, not a declared node death. A healthy
+        // renewing job keeps a future LockedUntil and never matches.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var affected = 0;
+
+        bool TryApply(Guid id, Action<TTimeJob> mutate)
+        {
+            if (!_TimeJobs.TryGetValue(id, out var current))
+            {
+                return false;
+            }
+
+            var updated = _CloneTicker(current);
+            mutate(updated);
+            updated.UpdatedAt = now;
+            return _TimeJobs.TryUpdate(id, updated, current);
+        }
+
+        var stalled = _TimeJobs.Values.Where(x => x.Status == JobStatus.InProgress && x.LockedUntil <= now).ToArray();
+
+        foreach (var job in stalled)
+        {
+            switch (job.OnNodeDeath)
+            {
+                case NodeDeathPolicy.Retry
+                    when TryApply(
+                        job.Id,
+                        t =>
+                        {
+                            t.OwnerId = null;
+                            t.LockedUntil = null;
+                            t.Status = JobStatus.Idle;
+                        }
+                    ):
+                    affected++;
+                    break;
+                case NodeDeathPolicy.MarkFailed
+                    when TryApply(
+                        job.Id,
+                        t =>
+                        {
+                            t.Status = JobStatus.Failed;
+                            t.LockedUntil = null;
+                            t.ExceptionMessage = "Lease lapsed while running!";
+                            t.ExecutedAt = now;
+                        }
+                    ):
+                    affected++;
+                    break;
+                case NodeDeathPolicy.Skip
+                    when TryApply(
+                        job.Id,
+                        t =>
+                        {
+                            t.Status = JobStatus.Skipped;
+                            t.LockedUntil = null;
+                            t.SkippedReason = "Lease lapsed while running!";
+                            t.ExecutedAt = now;
+                        }
+                    ):
+                    affected++;
+                    break;
+            }
+        }
+
+        return Task.FromResult(affected);
     }
 
     public Task<TTimeJob?> GetTimeJobById(Guid id, CancellationToken cancellationToken = default)
@@ -520,16 +645,18 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return _TimeJobs.TryUpdate(id, updated, current);
         }
 
-        // Per-policy dead-node transition (#315) — mirrors EF ReleaseDeadNodeTimeJobResources. Disjoint over the
-        // dead node's non-terminal rows (terminal rows untouched, R4): Idle/Queued or InProgress-Retry → released
-        // to Idle; InProgress-MarkFailed → Failed; InProgress-Skip → Skipped.
+        // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeTimeJobResources. Idle/Queued
+        // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
+        // job survives a membership blip and is recovered by U3 once its lease lapses.
         var owned = _TimeJobs.Values.Where(x => x.OwnerId == instanceIdentifier).ToArray();
 
         foreach (var job in owned)
         {
+            var inProgressLapsed = job.Status == JobStatus.InProgress && job.LockedUntil <= now;
+
             var release =
                 job.Status is JobStatus.Idle or JobStatus.Queued
-                || (job.Status == JobStatus.InProgress && job.OnNodeDeath == NodeDeathPolicy.Retry);
+                || (inProgressLapsed && job.OnNodeDeath == NodeDeathPolicy.Retry);
 
             if (release)
             {
@@ -548,7 +675,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     affected++;
                 }
             }
-            else if (job.Status == JobStatus.InProgress && job.OnNodeDeath == NodeDeathPolicy.MarkFailed)
+            else if (inProgressLapsed && job.OnNodeDeath == NodeDeathPolicy.MarkFailed)
             {
                 if (
                     TryApply(
@@ -556,6 +683,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         t =>
                         {
                             t.Status = JobStatus.Failed;
+                            t.LockedUntil = null;
+                            t.ExceptionMessage = "Node is not alive!";
                             t.ExecutedAt = now;
                         }
                     )
@@ -564,7 +693,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     affected++;
                 }
             }
-            else if (job.Status == JobStatus.InProgress && job.OnNodeDeath == NodeDeathPolicy.Skip)
+            else if (inProgressLapsed && job.OnNodeDeath == NodeDeathPolicy.Skip)
             {
                 if (
                     TryApply(
@@ -572,6 +701,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         t =>
                         {
                             t.Status = JobStatus.Skipped;
+                            t.LockedUntil = null;
                             t.SkippedReason = "Node is not alive!";
                             t.ExecutedAt = now;
                         }
@@ -792,6 +922,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
                 updatedOccurrence.UpdatedAt = now;
                 updatedOccurrence.Status = JobStatus.Queued;
+                // #464: re-stamp the policy from the cron def (context) so EF and in-memory agree on re-queue.
+                updatedOccurrence.OnNodeDeath = context.OnNodeDeath;
 
                 if (_CronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, existingOccurrence))
                 {
@@ -809,12 +941,17 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     Status = JobStatus.Queued,
                     OwnerId = _ownerId,
                     LockedUntil = now.Add(_leaseDuration),
+                    // Death policy comes from the InternalManagerContext (canonical, sourced from the cron def via
+                    // _EarliestCronJobGroup) — set unconditionally so a MarkFailed/Skip cron never degrades to the
+                    // Retry enum default when the cron row is absent from _CronJobs. Mirrors the EF QueueCronJobOccurrences
+                    // projection, which always stamps item.OnNodeDeath.
+                    OnNodeDeath = context.OnNodeDeath,
                     CreatedAt = context.NextCronOccurrence?.CreatedAt ?? now,
                     UpdatedAt = now,
                     RetryCount = 0,
                 };
 
-                // Try to get the cron job
+                // Attach the cron navigation when the definition is in the in-memory map (execution needs Function).
                 if (_CronJobs.TryGetValue(context.Id, out var cronJob))
                 {
                     newOccurrence.CronJob = cronJob;
@@ -863,20 +1000,133 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         }
     }
 
-    public Task UpdateCronJobOccurrence(
+    public Task<int> UpdateCronJobOccurrence(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     )
     {
         if (_CronOccurrences.TryGetValue(functionContext.JobId, out var occurrence))
         {
-            var updatedOccurrence = _CloneCronOccurrence(occurrence);
-            _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
+            // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a non-terminal occurrence.
+            var ownedNonTerminal =
+                string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
+                && occurrence.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
 
-            _CronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence);
+            if (ownedNonTerminal)
+            {
+                var updatedOccurrence = _CloneCronOccurrence(occurrence);
+                _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
+
+                // Return 1 only when the completion was actually applied (mirror EF affected-row count).
+                if (_CronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence))
+                {
+                    return Task.FromResult(1);
+                }
+            }
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(0);
+    }
+
+    public Task<int> RenewCronJobOccurrenceLease(Guid occurrenceId, CancellationToken cancellationToken = default)
+    {
+        // #316 sliding lease (mirror EF RenewCronJobOccurrenceLease). Lost/reclaimed/terminalized -> 0.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (_CronOccurrences.TryGetValue(occurrenceId, out var occurrence))
+        {
+            // Renewal slides a RUNNING lease only (see RenewTimeJobLease InProgress fence).
+            var ownedRunning =
+                string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
+                && occurrence.Status is JobStatus.InProgress;
+
+            if (!ownedRunning)
+            {
+                return Task.FromResult(0);
+            }
+
+            var updatedOccurrence = _CloneCronOccurrence(occurrence);
+            updatedOccurrence.LockedUntil = now.Add(_leaseDuration);
+            updatedOccurrence.UpdatedAt = now;
+
+            if (_CronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, occurrence))
+            {
+                return Task.FromResult(1);
+            }
+        }
+
+        return Task.FromResult(0);
+    }
+
+    public Task<int> ReclaimStalledCronJobOccurrences(CancellationToken cancellationToken = default)
+    {
+        // #316/U3 — cron mirror of ReclaimStalledTimeJobs.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var affected = 0;
+
+        bool TryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        {
+            if (!_CronOccurrences.TryGetValue(id, out var current))
+            {
+                return false;
+            }
+
+            var updated = _CloneCronOccurrence(current);
+            mutate(updated);
+            updated.UpdatedAt = now;
+            return _CronOccurrences.TryUpdate(id, updated, current);
+        }
+
+        var stalled = _CronOccurrences
+            .Values.Where(x => x.Status == JobStatus.InProgress && x.LockedUntil <= now)
+            .ToArray();
+
+        foreach (var occurrence in stalled)
+        {
+            switch (occurrence.OnNodeDeath)
+            {
+                case NodeDeathPolicy.Retry
+                    when TryApply(
+                        occurrence.Id,
+                        t =>
+                        {
+                            t.OwnerId = null;
+                            t.LockedUntil = null;
+                            t.Status = JobStatus.Idle;
+                        }
+                    ):
+                    affected++;
+                    break;
+                case NodeDeathPolicy.MarkFailed
+                    when TryApply(
+                        occurrence.Id,
+                        t =>
+                        {
+                            t.Status = JobStatus.Failed;
+                            t.LockedUntil = null;
+                            t.ExceptionMessage = "Lease lapsed while running!";
+                            t.ExecutedAt = now;
+                        }
+                    ):
+                    affected++;
+                    break;
+                case NodeDeathPolicy.Skip
+                    when TryApply(
+                        occurrence.Id,
+                        t =>
+                        {
+                            t.Status = JobStatus.Skipped;
+                            t.LockedUntil = null;
+                            t.SkippedReason = "Lease lapsed while running!";
+                            t.ExecutedAt = now;
+                        }
+                    ):
+                    affected++;
+                    break;
+            }
+        }
+
+        return Task.FromResult(affected);
     }
 
     public Task ReleaseAcquiredCronJobOccurrences(Guid[] occurrenceIds, CancellationToken cancellationToken = default)
@@ -933,6 +1183,16 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (_CronOccurrences.TryGetValue(id, out var occurrence))
             {
+                // #316/U5 — cron mirror of the claim→start ownership recheck.
+                var ownedNonTerminal =
+                    string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
+                    && occurrence.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+
+                if (!ownedNonTerminal)
+                {
+                    continue;
+                }
+
                 var updatedOccurrence = _CloneCronOccurrence(occurrence);
                 _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
                 _CronOccurrences.TryUpdate(id, updatedOccurrence, occurrence);
@@ -963,16 +1223,18 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             return _CronOccurrences.TryUpdate(id, updated, current);
         }
 
-        // Per-policy dead-node transition (#315) — mirrors EF ReleaseDeadNodeOccurrenceResources. Disjoint over the
-        // dead node's non-terminal rows (terminal rows untouched, R4): Idle/Queued or InProgress-Retry → released
-        // to Idle; InProgress-MarkFailed → Failed; InProgress-Skip → Skipped.
+        // Per-policy dead-node transition (#315, #316/U4) — mirrors EF ReleaseDeadNodeOccurrenceResources.
+        // Idle/Queued reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a
+        // still-leased running occurrence survives a membership blip and is recovered by U3 once its lease lapses.
         var owned = _CronOccurrences.Values.Where(x => x.OwnerId == instanceIdentifier).ToArray();
 
         foreach (var occurrence in owned)
         {
+            var inProgressLapsed = occurrence.Status == JobStatus.InProgress && occurrence.LockedUntil <= now;
+
             var release =
                 occurrence.Status is JobStatus.Idle or JobStatus.Queued
-                || (occurrence.Status == JobStatus.InProgress && occurrence.OnNodeDeath == NodeDeathPolicy.Retry);
+                || (inProgressLapsed && occurrence.OnNodeDeath == NodeDeathPolicy.Retry);
 
             if (release)
             {
@@ -991,7 +1253,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     affected++;
                 }
             }
-            else if (occurrence.Status == JobStatus.InProgress && occurrence.OnNodeDeath == NodeDeathPolicy.MarkFailed)
+            else if (inProgressLapsed && occurrence.OnNodeDeath == NodeDeathPolicy.MarkFailed)
             {
                 if (
                     TryApply(
@@ -999,6 +1261,8 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         o =>
                         {
                             o.Status = JobStatus.Failed;
+                            o.LockedUntil = null;
+                            o.ExceptionMessage = "Node is not alive!";
                             o.ExecutedAt = now;
                         }
                     )
@@ -1007,7 +1271,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     affected++;
                 }
             }
-            else if (occurrence.Status == JobStatus.InProgress && occurrence.OnNodeDeath == NodeDeathPolicy.Skip)
+            else if (inProgressLapsed && occurrence.OnNodeDeath == NodeDeathPolicy.Skip)
             {
                 if (
                     TryApply(
@@ -1015,6 +1279,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                         o =>
                         {
                             o.Status = JobStatus.Skipped;
+                            o.LockedUntil = null;
                             o.SkippedReason = "Node is not alive!";
                             o.ExecutedAt = now;
                         }
@@ -1207,6 +1472,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             UpdatedAt = job.UpdatedAt,
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime,
+            OnNodeDeath = job.OnNodeDeath,
             Children = [],
         };
 
@@ -1235,6 +1501,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     Retries = ch.Retries,
                     RetryIntervals = ch.RetryIntervals,
                     RunCondition = ch.RunCondition,
+                    OnNodeDeath = ch.OnNodeDeath,
                     Children = [],
                 };
 
@@ -1258,6 +1525,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                                 Retries = gch.Retries,
                                 RetryIntervals = gch.RetryIntervals,
                                 RunCondition = gch.RunCondition,
+                                OnNodeDeath = gch.OnNodeDeath,
                             }
                         );
                     }

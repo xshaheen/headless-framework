@@ -24,6 +24,22 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     );
     Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(Guid[] ids, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Slides the running time job's lease forward (<c>LockedUntil = now + LeaseDuration</c>), fenced on
+    /// current ownership + non-terminal status (#316/KTD3). Returns the affected row count: <c>1</c> when the
+    /// lease was renewed, <c>0</c> when the lease was lost (reclaimed, owner changed, or terminalized) — the
+    /// caller treats <c>0</c> as cancel-on-loss.
+    /// </summary>
+    Task<int> RenewTimeJobLease(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reclaims time jobs stuck <c>InProgress</c> whose lease lapsed (<c>LockedUntil &lt;= now</c>), independent of
+    /// node death (#316/U3 — the gap-closer). Applies the same per-<c>OnNodeDeath</c> transitions as the dead-node
+    /// sweep: <c>Retry</c> → released to <c>Idle</c> (re-claimable), <c>MarkFailed</c> → <c>Failed</c>, <c>Skip</c> →
+    /// <c>Skipped</c>. A healthy renewing job keeps a future lease and is never matched. Returns the affected count.
+    /// </summary>
+    Task<int> ReclaimStalledTimeJobs(CancellationToken cancellationToken = default);
     #endregion
 
     #region Cron_Ticker_Core_Methods
@@ -47,7 +63,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrences(
         CancellationToken cancellationToken = default
     );
-    Task UpdateCronJobOccurrence(
+
+    // Returns the affected-row count: 0 when the #5 completion fence excluded the row (foreign owner or terminal
+    // status), 1 when the completion was applied — mirroring UpdateTimeJob so the cron fence is observable/testable.
+    Task<int> UpdateCronJobOccurrence(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     );
@@ -62,6 +81,20 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Slides the running cron occurrence's lease forward (<c>LockedUntil = now + LeaseDuration</c>), fenced on
+    /// current ownership + non-terminal status (#316/KTD3). Returns <c>1</c> when renewed, <c>0</c> when the
+    /// lease was lost — the caller treats <c>0</c> as cancel-on-loss.
+    /// </summary>
+    Task<int> RenewCronJobOccurrenceLease(Guid occurrenceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reclaims cron occurrences stuck <c>InProgress</c> whose lease lapsed (#316/U3) — the cron mirror of
+    /// <see cref="ReclaimStalledTimeJobs"/>, applying the same per-<c>OnNodeDeath</c> transitions. Returns the
+    /// affected count.
+    /// </summary>
+    Task<int> ReclaimStalledCronJobOccurrences(CancellationToken cancellationToken = default);
     #endregion
 
     #region Time_Ticker_Shared_Methods

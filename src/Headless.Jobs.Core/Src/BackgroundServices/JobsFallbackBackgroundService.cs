@@ -36,6 +36,12 @@ internal class JobsFallbackBackgroundService(
                     continue;
                 }
 
+                // #316/U3: reclaim jobs stalled InProgress with a lapsed lease before re-queuing timed-out work, so
+                // a Retry row released to Idle here is picked up by RunTimedOutTickers in the same tick. Closes the
+                // gap where a job wedged on a still-live node is reclaimed by neither the claim predicate nor the
+                // dead-node sweep.
+                await internalJobsManager.ReclaimStalledResources(stoppingToken);
+
                 var functions = await internalJobsManager.RunTimedOutTickers(stoppingToken);
 
                 if (functions.Length != 0)

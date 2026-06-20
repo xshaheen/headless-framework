@@ -1,9 +1,12 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -70,6 +73,114 @@ public sealed class RetryBehaviorTests
         attempts.Last().RetryCount.Should().Be(2);
     }
 
+    [Fact]
+    public async Task ExecuteTaskAsync_cancels_the_running_job_when_renewal_fails_with_a_db_outage()
+    {
+        // #463: a renewal that errors (DB unreachable) — or that cannot complete within the renewal cadence — must
+        // trip cancel-on-loss for the in-flight job, not fault the renewal loop silently and leave the job running
+        // while another node could reclaim the still-leased row.
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Renewal fires fast (100 ms cadence) and throws on the first attempt, simulating a DB outage mid-job.
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<int>(new TimeoutException("simulated DB outage")));
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder
+            {
+                LeaseDuration = TimeSpan.FromMinutes(5),
+                LeaseRenewalInterval = TimeSpan.FromMilliseconds(100),
+            },
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+
+        var context = new InternalFunctionContext
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LongJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            // Runs until cancel-on-loss fires; the infinite delay observes the job token and throws on cancellation.
+            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true);
+
+        // #1: a lease-loss cancellation must NOT write a terminal status — the row is left InProgress for the
+        // stalled-reclaim/OnNodeDeath sweep. So the job stops, LeaseLost is flagged, and no UpdateTicker write fires.
+        context.LeaseLost.Should().BeTrue();
+        context.Status.Should().NotBe(JobStatus.Cancelled);
+        await internalManager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteTaskAsync_renewal_deadline_elapsing_trips_cancel_on_loss_without_terminalizing()
+    {
+        // #6/#463: exercises the DEADLINE branch of _TryRenewLeaseAsync (the per-cadence timeout CTS firing while the
+        // renewal call hangs), distinct from the throw branch above. The blocking renewal is cancelled by the linked
+        // timeout token, the job is cancelled on loss, and no terminal status is written (#1).
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Renewal hangs until its (linked timeout) token cancels — i.e. it never completes within the cadence.
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(async call => await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()));
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder
+            {
+                LeaseDuration = TimeSpan.FromMinutes(5),
+                LeaseRenewalInterval = TimeSpan.FromMilliseconds(100),
+            },
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+
+        var context = new InternalFunctionContext
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LongJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true);
+
+        context.LeaseLost.Should().BeTrue();
+        await internalManager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+    }
+
     private sealed record Attempt(DateTime Timestamp, int RetryCount);
 
     // Helpers
@@ -84,6 +195,13 @@ public sealed class RetryBehaviorTests
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
 
+        // The renewal loop cancels the job when RenewLeaseAsync returns 0 (lease lost). NSubstitute defaults a
+        // Task<int> to 0, so without this stub every retry test is one renewal interval away from a spurious
+        // cancel-on-loss. Return 1 ("lease held") so these tests exercise retry timing, not lease loss.
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
@@ -92,7 +210,9 @@ public sealed class RetryBehaviorTests
             serviceProvider,
             TimeProvider.System,
             instrumentation,
-            internalManager
+            internalManager,
+            new SchedulerOptionsBuilder(),
+            NullLogger<JobsExecutionTaskHandler>.Instance
         );
 
         var attempts = new List<Attempt>();

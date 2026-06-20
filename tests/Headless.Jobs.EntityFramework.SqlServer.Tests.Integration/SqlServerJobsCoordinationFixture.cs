@@ -1,11 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.CommitCoordination;
+using Headless.CommitCoordination.SqlServer;
 using Headless.Coordination;
 using Headless.Coordination.SqlServer;
 using Headless.Testing.Testcontainers;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -23,6 +26,10 @@ public sealed class SqlServerJobsCoordinationFixture
 {
     public string QualifiedTimeJobsTable => "[jobs].[TimeJobs]";
 
+    public string QualifiedCronJobsTable => "[jobs].[CronJobs]";
+
+    public string QualifiedCronJobOccurrencesTable => "[jobs].[CronJobOccurrences]";
+
     public string UtcNowSqlExpression => "SYSUTCDATETIME()";
 
     // SQL Server has no DROP SCHEMA CASCADE. Drop child tables before parents (CronJobOccurrences -> CronJobs),
@@ -36,9 +43,47 @@ public sealed class SqlServerJobsCoordinationFixture
         + "DROP TABLE IF EXISTS [coordination_descriptor];"
         + "DROP TABLE IF EXISTS [coordination_node_generation];";
 
+    public string CreateProbeTableSql =>
+        "IF OBJECT_ID(N'jobs_probe', N'U') IS NULL CREATE TABLE jobs_probe (id int); DELETE FROM jobs_probe;";
+
     public void ConfigureCoordination(HeadlessCoordinationSetupBuilder setup) => setup.UseSqlServer(ConnectionString);
 
     public void ConfigureStore(DbContextOptionsBuilder db) => db.UseSqlServer(ConnectionString);
 
     public DbConnection CreateConnection() => new SqlConnection(ConnectionString);
+
+    public void ConfigureCommitCoordination(IServiceCollection services) => services.AddSqlServerCommitCoordination();
+
+    public async Task RunCoordinatedTransactionAsync(
+        IServiceProvider services,
+        Func<DbConnection, DbTransaction, CancellationToken, Task> operation,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new SqlConnection(ConnectionString);
+
+        await connection.ExecuteCoordinatedTransactionAsync(
+            async (conn, ct) =>
+            {
+                // Reach the live transaction through the same relational capability production participants use.
+                var coordinator =
+                    services.GetRequiredService<ICurrentCommitCoordinator>().Current
+                    ?? throw new InvalidOperationException("No ambient coordinator — the helper did not enlist.");
+
+                if (
+                    !coordinator.TryGetCapability<IRelationalCommitContext>(out var relational)
+                    || relational.Transaction is null
+                )
+                {
+                    throw new InvalidOperationException(
+                        "The coordinated scope exposed no live relational transaction."
+                    );
+                }
+
+                await operation(conn, relational.Transaction, ct);
+            },
+            services,
+            cancellationToken: cancellationToken
+        );
+    }
 }

@@ -26,7 +26,7 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     /// (only <see cref="NodeDeathPolicy.Retry"/> is speculatively re-claimable) and drives the dead-node
     /// sweep's terminal transitions. Defaults to <see cref="NodeDeathPolicy.Retry"/>.
     /// </summary>
-    public virtual NodeDeathPolicy OnNodeDeath { get; internal set; } = NodeDeathPolicy.Retry;
+    public virtual NodeDeathPolicy OnNodeDeath { get; set; } = NodeDeathPolicy.Retry;
     public virtual string? ExceptionMessage { get; internal set; }
     public virtual string? SkippedReason { get; internal set; }
     public virtual long ElapsedTime { get; internal set; }

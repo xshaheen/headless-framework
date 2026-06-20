@@ -43,6 +43,11 @@ internal sealed class JobsInitializationHostedService(
             );
         }
 
+        // #316 ValidateOnStart-equivalent: reject a misconfigured explicit lease-renewal cadence at startup
+        // (must be positive and strictly less than LeaseDuration) so a bad value fails fast rather than silently
+        // letting a running job's lease lapse. Throws InvalidOperationException; no-op for the derived default.
+        schedulerOptions.ResolveLeaseRenewalInterval();
+
         // Configure scheduler start mode
         var backgroundScheduler = serviceProvider.GetService<JobsSchedulerBackgroundService>();
         if (backgroundScheduler is not null)

@@ -57,40 +57,40 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
         using var scope = scopeFactory.CreateScope();
         var cronManager = scope.ServiceProvider.GetRequiredService<ICronJobManager<CronJobEntity>>();
 
-        var r1 = await cronManager.AddAsync(
-            new CronJobEntity
-            {
-                Function = "Demo_CleanupExpiredSessions",
-                Description = "Purge expired user sessions every 2 minutes",
-                Expression = "0 */2 * * * *",
-            },
-            ct
-        );
-        if (!r1.IsSucceeded)
+        try
         {
-            logger.LogError("Failed to seed CleanupExpiredSessions: {Error}", r1.Exception?.Message);
-        }
-        else
-        {
+            await cronManager.AddAsync(
+                new CronJobEntity
+                {
+                    Function = "Demo_CleanupExpiredSessions",
+                    Description = "Purge expired user sessions every 2 minutes",
+                    Expression = "0 */2 * * * *",
+                },
+                ct
+            );
             logger.LogInformation("Seeded cron job: Demo_CleanupExpiredSessions");
         }
-
-        var r2 = await cronManager.AddAsync(
-            new CronJobEntity
-            {
-                Function = "Demo_HealthCheck",
-                Description = "Run infrastructure health check every minute",
-                Expression = "0 * * * * *",
-            },
-            ct
-        );
-        if (!r2.IsSucceeded)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
-            logger.LogError("Failed to seed HealthCheck: {Error}", r2.Exception?.Message);
+            logger.LogError("Failed to seed CleanupExpiredSessions: {Error}", e.Message);
         }
-        else
+
+        try
         {
+            await cronManager.AddAsync(
+                new CronJobEntity
+                {
+                    Function = "Demo_HealthCheck",
+                    Description = "Run infrastructure health check every minute",
+                    Expression = "0 * * * * *",
+                },
+                ct
+            );
             logger.LogInformation("Seeded cron job: Demo_HealthCheck");
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            logger.LogError("Failed to seed HealthCheck: {Error}", e.Message);
         }
     }
 

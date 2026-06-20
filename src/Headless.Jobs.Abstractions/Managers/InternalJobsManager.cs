@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -283,6 +285,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                     Expression = cronJob.Expression,
                     Retries = cronJob.Retries,
                     RetryIntervals = cronJob.RetryIntervals,
+                    OnNodeDeath = cronJob.OnNodeDeath,
                 };
 
                 ties = null;
@@ -297,6 +300,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                         Expression = cronJob.Expression,
                         Retries = cronJob.Retries,
                         RetryIntervals = cronJob.RetryIntervals,
+                        OnNodeDeath = cronJob.OnNodeDeath,
                     }
                 );
             }
@@ -312,6 +316,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                 Expression = earliestStored.CronJob.Expression,
                 Retries = earliestStored.CronJob.Retries,
                 RetryIntervals = earliestStored.CronJob.RetryIntervals,
+                OnNodeDeath = earliestStored.CronJob.OnNodeDeath,
                 NextCronOccurrence = new NextCronOccurrence(earliestStored.Id, earliestStored.CreatedAt),
             };
 
@@ -465,6 +470,20 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                 .UpdateTimeJobFromInternalFunctionContext<TTimeJob>(functionContext)
                 .ConfigureAwait(false);
         }
+    }
+
+    public async Task<int> RenewLeaseAsync(
+        InternalFunctionContext functionContext,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return functionContext.Type == JobType.CronJobOccurrence
+            ? await persistenceProvider
+                .RenewCronJobOccurrenceLease(functionContext.JobId, cancellationToken)
+                .ConfigureAwait(false)
+            : await persistenceProvider
+                .RenewTimeJobLease(functionContext.JobId, cancellationToken)
+                .ConfigureAwait(false);
     }
 
     public async Task UpdateSkipTimeJobsWithUnifiedContextAsync(
@@ -623,5 +642,17 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
         var timeJobs = persistenceProvider.ReleaseDeadNodeTimeJobResources(instanceIdentifier, cancellationToken);
 
         await Task.WhenAll(cronOccurrence, timeJobs).ConfigureAwait(false);
+    }
+
+    public async Task<int> ReclaimStalledResources(CancellationToken cancellationToken = default)
+    {
+        var timeJobsTask = persistenceProvider.ReclaimStalledTimeJobs(cancellationToken);
+        var cronOccurrencesTask = persistenceProvider.ReclaimStalledCronJobOccurrences(cancellationToken);
+
+        // WhenAll of two Task<int> yields the results array in one await — concurrent, no double-await, and a double
+        // fault surfaces as AggregateException rather than collapsing to the first task's exception.
+        var results = await Task.WhenAll(timeJobsTask, cronOccurrencesTask).ConfigureAwait(false);
+
+        return results[0] + results[1];
     }
 }

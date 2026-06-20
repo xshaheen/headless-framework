@@ -14,6 +14,8 @@ public class CronJobConfigurations<TCronJob>(string schema = Constants.DefaultSc
 
         builder.Property(e => e.Id).ValueGeneratedNever();
 
+        builder.Property(e => e.OnNodeDeath).HasConversion<string>().HasMaxLength(32);
+
         builder.HasIndex("Expression").HasDatabaseName("IX_CronJobs_Expression");
 
         // Index for common lookups by function + expression

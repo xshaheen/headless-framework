@@ -59,7 +59,10 @@ public static class ServiceBuilder
                 services.Add(newDescriptor);
             }
 
-            services.TryAddSingleton<IDbContextFactory<TContext>>(provider =>
+            // Resolves the registered DbContextOptions<TContext> template (customizer-applied when UseModelCustomizer
+            // replaced the descriptor above). Shared by the pooled factory and the coordinated-write path, which
+            // clones this template and swaps only the connection.
+            DbContextOptions<TContext> ResolveOptionsTemplate(IServiceProvider provider)
             {
                 var serviceDescriptor = services.FirstOrDefault(d =>
                     d.ServiceType == typeof(DbContextOptions<TContext>)
@@ -70,12 +73,15 @@ public static class ServiceBuilder
                     throw new InvalidOperationException($"Cannot resolve DbContextOptions<{typeof(TContext).Name}>");
                 }
 
-                var options = (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(provider);
+                return (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(provider);
+            }
 
-                return new PooledDbContextFactory<TContext>(options, builder.PoolSize);
-            });
+            services.TryAddSingleton<IDbContextFactory<TContext>>(provider => new PooledDbContextFactory<TContext>(
+                ResolveOptionsTemplate(provider),
+                builder.PoolSize
+            ));
 
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services);
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, ResolveOptionsTemplate);
         };
     }
 
@@ -90,27 +96,45 @@ public static class ServiceBuilder
         builder.ConfigureServices = services =>
         {
             services.AddDbContext<TContext>(optionsAction);
-            services.TryAddSingleton<IDbContextFactory<TContext>>(sp =>
+
+            // Builds the options template the way the pooled factory does (apply the consumer's options action, then
+            // bind the app service provider). Shared by the pooled factory and the coordinated-write path, which
+            // clones this template and swaps only the connection.
+            DbContextOptions<TContext> ResolveOptionsTemplate(IServiceProvider sp)
             {
                 var optionsBuilder = new DbContextOptionsBuilder<TContext>();
                 optionsAction.Invoke(optionsBuilder);
                 optionsBuilder.UseApplicationServiceProvider(sp);
-                return new PooledDbContextFactory<TContext>(optionsBuilder.Options, builder.PoolSize);
-            });
-            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services);
+                return optionsBuilder.Options;
+            }
+
+            services.TryAddSingleton<IDbContextFactory<TContext>>(sp => new PooledDbContextFactory<TContext>(
+                ResolveOptionsTemplate(sp),
+                builder.PoolSize
+            ));
+
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services, ResolveOptionsTemplate);
         };
     }
 
-    private static void _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(IServiceCollection services)
+    private static void _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(
+        IServiceCollection services,
+        Func<IServiceProvider, DbContextOptions<TContext>> coordinatedWriteOptionsFactory
+    )
         where TContext : DbContext
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
+        // Fail loud at DI-build time when the context cannot back coordinated writes, rather than at first
+        // coordinated write where the provider's static factory would surface it as a TypeInitializationException.
+        CoordinatedWriteContextFactory.RequireOptionsConstructor<TContext>();
+
         // ICache is resolved with GetService (optional): cron-expression caching is enabled only when the host
         // application registers a default Headless.Caching provider; otherwise Jobs reads cron expressions from the DB.
         services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(
             provider => new JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>(
                 provider.GetRequiredService<IDbContextFactory<TContext>>(),
+                coordinatedWriteOptionsFactory(provider),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<IJobsOwnerIdentity>(),
                 provider.GetRequiredService<SchedulerOptionsBuilder>(),

@@ -187,6 +187,14 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
+    public void Default_LeaseDuration_Is_5_Minutes()
+    {
+        var schedulerOptions = new SchedulerOptionsBuilder();
+
+        schedulerOptions.LeaseDuration.Should().Be(TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
     public void Explicit_NodeId_Is_Preserved_Verbatim()
     {
         var schedulerOptions = new SchedulerOptionsBuilder { NodeId = "explicit-node" };

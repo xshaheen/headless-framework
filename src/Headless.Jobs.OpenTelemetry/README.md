@@ -110,6 +110,8 @@ headless.jobs.job.execute.timeticker (main job execution span)
 | `headless.jobs.job.cancellation_reason` | Reason for cancellation | `Task was cancelled` |
 | `headless.jobs.job.skip_reason` | Reason for skipping | `Another instance is already running` |
 
+> **Upgrade note (#268):** the `headless.jobs.job.final_status` tag now emits `Succeeded` instead of `Done` (the `JobStatus.Done -> Succeeded` rename). Update any dashboards, alerts, or saved queries that match the literal `Done` value.
+
 ## Logging Output
 
 The instrumentation provides structured logging for all job events:
