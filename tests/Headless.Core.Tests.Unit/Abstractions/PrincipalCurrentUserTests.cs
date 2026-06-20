@@ -38,4 +38,34 @@ public sealed class PrincipalCurrentUserTests
         // then
         sut.IsAuthenticated.Should().BeFalse();
     }
+
+    [Fact]
+    public void find_claims_should_return_all_matching_claims()
+    {
+        // given
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(
+                [new Claim("role", "admin"), new Claim("role", "editor"), new Claim("other", "x")],
+                "TestAuth"
+            )
+        );
+        ICurrentUser sut = new PrincipalCurrentUser(principal);
+
+        // when
+        var claims = sut.FindClaims("role");
+
+        // then
+        claims.Should().HaveCount(2);
+        claims.Select(c => c.Value).Should().BeEquivalentTo(["admin", "editor"]);
+    }
+
+    [Fact]
+    public void find_claims_should_return_empty_for_a_null_principal()
+    {
+        // given
+        ICurrentUser sut = new PrincipalCurrentUser(null);
+
+        // then
+        sut.FindClaims("role").Should().BeEmpty();
+    }
 }
