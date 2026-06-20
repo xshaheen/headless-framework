@@ -21,12 +21,16 @@ public static class GeoExtensions
     [Pure]
     public static Point CreatePoint(this GeometryFactory factory, double x, double y)
     {
+        Argument.IsNotNull(factory);
+
         return factory.CreatePoint(new Coordinate(x, y));
     }
 
     [Pure]
     public static Coordinate[] ToCoordinates(this IEnumerable<Point> points)
     {
+        Argument.IsNotNull(points);
+
         return [.. points.Select(p => p.Coordinate)];
     }
 
@@ -34,6 +38,9 @@ public static class GeoExtensions
     public static T ChangePrecision<T>(this GeometryFactory geometryFactory, T geometry)
         where T : Geometry
     {
+        Argument.IsNotNull(geometryFactory);
+        Argument.IsNotNull(geometry);
+
         if (geometry.PrecisionModel == geometryFactory.PrecisionModel)
         {
             return geometry;
@@ -62,6 +69,9 @@ public static class GeoExtensions
     [Pure]
     public static Geometry ChangePrecision(this Geometry geometry, PrecisionModel precision)
     {
+        Argument.IsNotNull(geometry);
+        Argument.IsNotNull(precision);
+
         if (geometry.PrecisionModel == precision)
         {
             return geometry;
@@ -73,6 +83,9 @@ public static class GeoExtensions
     [Pure]
     public static Geometry? ComputeOverlap(this Geometry polygon1, Geometry polygon2)
     {
+        Argument.IsNotNull(polygon1);
+        Argument.IsNotNull(polygon2);
+
         if (!polygon1.PermissiveOverlaps(polygon2))
         {
             return null;
@@ -84,6 +97,9 @@ public static class GeoExtensions
     [Pure]
     public static bool PermissiveOverlaps(this Geometry geometry1, Geometry geometry2)
     {
+        Argument.IsNotNull(geometry1);
+        Argument.IsNotNull(geometry2);
+
         var geom1 = geometry1 is GeometryCollection { Count: 1 } c1 ? c1.Geometries[0] : geometry1;
         var geom2 = geometry2 is GeometryCollection { Count: 1 } c2 ? c2.Geometries[0] : geometry2;
 
@@ -105,6 +121,9 @@ public static class GeoExtensions
     [Pure]
     public static Geometry PermissiveIntersection(this Geometry geometry1, Geometry geometry2)
     {
+        Argument.IsNotNull(geometry1);
+        Argument.IsNotNull(geometry2);
+
         var geom1 = geometry1 is GeometryCollection { Count: 1 } c1 ? c1.Geometries[0] : geometry1;
         var geom2 = geometry2 is GeometryCollection { Count: 1 } c2 ? c2.Geometries[0] : geometry2;
 
@@ -126,6 +145,9 @@ public static class GeoExtensions
     [Pure]
     public static Geometry PermissiveUnion(this Geometry geometry1, Geometry geometry2)
     {
+        Argument.IsNotNull(geometry1);
+        Argument.IsNotNull(geometry2);
+
         var geom1 = geometry1 is GeometryCollection { Count: 1 } c1 ? c1.Geometries[0] : geometry1;
         var geom2 = geometry2 is GeometryCollection { Count: 1 } c2 ? c2.Geometries[0] : geometry2;
 
@@ -147,6 +169,9 @@ public static class GeoExtensions
     [Pure]
     public static Geometry PermissiveDifference(this Geometry geometry1, Geometry geometry2)
     {
+        Argument.IsNotNull(geometry1);
+        Argument.IsNotNull(geometry2);
+
         var geom1 = geometry1 is GeometryCollection { Count: 1 } c1 ? c1.Geometries[0] : geometry1;
         var geom2 = geometry2 is GeometryCollection { Count: 1 } c2 ? c2.Geometries[0] : geometry2;
 
@@ -199,8 +224,12 @@ public static class GeoExtensions
             }
         }
 
-        // 3 Reduce precision (SQL Server dislikes excessive decimals)
-        geometry = geometry.ChangePrecision(GeoConstants.HighPrecision);
+        // 3 Reduce coordinate precision to a fixed grid (SQL Server dislikes excessive decimals).
+        // Must use a fixed-scale model: reducing to the (floating) HighPrecision model is a no-op
+        // because the geometry already carries it and GeometryFactory never snapped the coordinates.
+        // Use pointwise reduction (not topology-preserving) so it never runs OverlayNG and cannot
+        // throw on an invalid input; any invalidity introduced by snapping is repaired in step 5.
+        geometry = GeometryPrecisionReducer.ReducePointwise(geometry, GeoConstants.SqlServerGeographyPrecision);
 
         // 4 Fix polygon orientation for SQL Server (outer ring CCW, holes CW)
         geometry = geometry.EnsureIsOrientedCounterClockwise();
@@ -210,8 +239,8 @@ public static class GeoExtensions
 
         if (!validator.IsValid)
         {
-            // If geometry is invalid, try to fix it
-            geometry = geometry.Fix();
+            // Already known invalid here, so skip Fix()'s redundant IsValid re-check.
+            geometry = _FixKnownInvalid(geometry);
 
             // Re-validate after fixing
             validator = new IsValidOp(geometry);
@@ -230,6 +259,8 @@ public static class GeoExtensions
     [Pure]
     public static Geometry EnsureIsOrientedCounterClockwise(this Geometry geometry)
     {
+        Argument.IsNotNull(geometry);
+
         switch (geometry)
         {
             case Polygon polygon:
@@ -257,6 +288,8 @@ public static class GeoExtensions
     [Pure]
     public static MultiPolygon EnsureIsOrientedCounterClockwise(this MultiPolygon polygons)
     {
+        Argument.IsNotNull(polygons);
+
         if (polygons.IsEmpty)
         {
             return polygons;
@@ -271,6 +304,8 @@ public static class GeoExtensions
     [Pure]
     public static Polygon EnsureIsOrientedCounterClockwise(this Polygon polygon)
     {
+        Argument.IsNotNull(polygon);
+
         // SQL Server's geography type requires:
         // - The exterior ring (shell) must be counter-clockwise
         // - Any interior rings (holes) must be clockwise
@@ -288,33 +323,45 @@ public static class GeoExtensions
     [Pure]
     public static Geometry Fix(this Geometry geom)
     {
+        return geom.Fix(out _);
+    }
+
+    /// <summary>
+    /// Returns a valid version of <paramref name="geom"/>, repairing it when necessary.
+    /// <paramref name="wasRepaired"/> is <see langword="true"/> when the input was invalid and a
+    /// repair (Buffer(0) / <see cref="GeometryFixer"/>) was applied — a repair may silently alter
+    /// or drop parts of the geometry, so callers that care about fidelity should inspect the result.
+    /// </summary>
+    [Pure]
+    public static Geometry Fix(this Geometry geom, out bool wasRepaired)
+    {
+        Argument.IsNotNull(geom);
+
         if (geom.IsValid || geom.IsEmpty)
         {
+            wasRepaired = false;
+
             return geom;
         }
 
-        if (geom is Polygon or MultiPolygon)
-        {
-            geom = geom.Buffer(0);
-        }
+        wasRepaired = true;
 
-        if (geom.IsValid)
-        {
-            return geom;
-        }
-
-        return GeometryFixer.Fix(geom, isKeepMulti: false);
+        return _FixKnownInvalid(geom);
     }
 
     [Pure]
     public static bool IsOrientedCounterClockwise(this Polygon polygon)
     {
+        Argument.IsNotNull(polygon);
+
         return Orientation.IsCCW(polygon.Shell.CoordinateSequence) && polygon.Holes.All(h => !h.IsCCW);
     }
 
     [Pure]
     public static Geometry Simplify(this Geometry polygon, double distanceTolerance = GeoConstants.Around1MDegrees)
     {
+        Argument.IsNotNull(polygon);
+
         var simple = TopologyPreservingSimplifier.Simplify(polygon, distanceTolerance);
 
         return simple.IsValid ? simple : simple.Fix();
@@ -323,6 +370,8 @@ public static class GeoExtensions
     [Pure]
     public static Polygon Simplify(this Polygon polygon, double distanceTolerance = GeoConstants.Around1MDegrees)
     {
+        Argument.IsNotNull(polygon);
+
         if (polygon.IsEmpty)
         {
             return polygon;
@@ -361,6 +410,8 @@ public static class GeoExtensions
         double distanceTolerance = GeoConstants.Around1MDegrees
     )
     {
+        Argument.IsNotNull(polygons);
+
         if (polygons.IsEmpty)
         {
             return polygons;
@@ -375,12 +426,18 @@ public static class GeoExtensions
     [Pure]
     public static Polygon CreatePolygon(this GeometryFactory factory, IEnumerable<Point> points)
     {
+        Argument.IsNotNull(factory);
+        Argument.IsNotNull(points);
+
         return CreatePolygon(factory, points.ToCoordinates());
     }
 
     [Pure]
     public static Polygon CreatePolygon(this GeometryFactory factory, IEnumerable<Coordinate> coordinates)
     {
+        Argument.IsNotNull(factory);
+        Argument.IsNotNull(coordinates);
+
         var linearRing = factory.CreateLinearRing(coordinates.AsArray());
         var polygon = factory.CreatePolygon(linearRing);
 
@@ -390,6 +447,9 @@ public static class GeoExtensions
     [Pure]
     public static MultiPolygon CreateMultiPolygon(this GeometryFactory factory, Coordinate[][] coordinates)
     {
+        Argument.IsNotNull(factory);
+        Argument.IsNotNull(coordinates);
+
         var polygons = coordinates.ConvertAll(p => CreatePolygon(factory, p));
 
         return factory.CreateMultiPolygon(polygons);
@@ -398,6 +458,8 @@ public static class GeoExtensions
     [Pure]
     public static FeatureCollection ToFeatureCollection(this IEnumerable<Geometry> geometries)
     {
+        Argument.IsNotNull(geometries);
+
         var collection = new FeatureCollection();
 
         foreach (var geometry in geometries)
@@ -411,6 +473,9 @@ public static class GeoExtensions
     [Pure]
     public static MultiPolygon AsMultiPolygon(this GeometryFactory factory, Geometry geom)
     {
+        Argument.IsNotNull(factory);
+        Argument.IsNotNull(geom);
+
         return geom switch
         {
             MultiPolygon multiPolygon => multiPolygon,
@@ -424,20 +489,25 @@ public static class GeoExtensions
     [Pure]
     public static MultiPolygon AsMultiPolygon(this Geometry geom)
     {
+        Argument.IsNotNull(geom);
+
         return AsMultiPolygon(geom.Factory, geom);
     }
 
     [Pure]
     public static Geometry EnsurePolygonOrMulti(this Geometry geom)
     {
+        Argument.IsNotNull(geom);
+
         if (geom is Polygon or MultiPolygon)
         {
             return geom;
         }
 
-        if (geom is GeometryCollection collection)
+        if (geom is GeometryCollection)
         {
-            var polygons = collection.Geometries.OfType<Polygon>().ToArray();
+            // Recurse into nested sub-collections so polygons are not silently dropped.
+            var polygons = geom.GetPolygonsOrEmpty().Cast<Polygon>().ToArray();
 
             switch (polygons.Length)
             {
@@ -456,6 +526,8 @@ public static class GeoExtensions
     [Pure]
     public static bool ContainsEmpties(this Geometry overlap)
     {
+        Argument.IsNotNull(overlap);
+
         return overlap.IsEmpty
             || overlap is LineString or Point
             || (overlap is GeometryCollection c && c.Geometries.Any(g => g.IsEmpty || g is Point or LineString));
@@ -464,6 +536,8 @@ public static class GeoExtensions
     [Pure]
     public static Envelope CreateExpandBy(this Envelope envelope, double distance)
     {
+        Argument.IsNotNull(envelope);
+
         return new Envelope(
             envelope.MinX - distance,
             envelope.MaxX + distance,
@@ -475,6 +549,8 @@ public static class GeoExtensions
     [Pure]
     public static Geometry[] Flatten(this Geometry g)
     {
+        Argument.IsNotNull(g);
+
         return g switch
         {
             GeometryCollection c => c.Geometries.SelectMany(x => x.Flatten()).ToArray(),
@@ -485,6 +561,8 @@ public static class GeoExtensions
     [Pure]
     public static Geometry[] GetPolygonsOrEmpty(this Geometry g)
     {
+        Argument.IsNotNull(g);
+
         return g switch
         {
             Polygon => [g],
@@ -496,6 +574,8 @@ public static class GeoExtensions
     [Pure]
     public static Geometry[] GetSimpleGeometryOrEmpty(this Geometry g)
     {
+        Argument.IsNotNull(g);
+
         return g switch
         {
             Point or LineString => [g],
@@ -507,12 +587,36 @@ public static class GeoExtensions
     [Pure]
     public static bool IsPolygonLikeGeometry(this Geometry g)
     {
+        Argument.IsNotNull(g);
+
         return g is Polygon or MultiPolygon;
     }
 
     [Pure]
     public static bool IsSimpleGeometry(this Geometry g)
     {
+        Argument.IsNotNull(g);
+
         return g is Point or MultiPoint or LineString or MultiLineString;
     }
+
+    #region Helpers
+
+    // Precondition: geom is already known to be invalid and non-empty.
+    private static Geometry _FixKnownInvalid(Geometry geom)
+    {
+        if (geom is Polygon or MultiPolygon)
+        {
+            geom = geom.Buffer(0);
+        }
+
+        if (geom.IsValid)
+        {
+            return geom;
+        }
+
+        return GeometryFixer.Fix(geom, isKeepMulti: false);
+    }
+
+    #endregion
 }

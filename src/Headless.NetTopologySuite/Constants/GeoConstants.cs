@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using NetTopologySuite;
 using NetTopologySuite.Geometries;
-using NetTopologySuite.Geometries.Implementation;
-using NetTopologySuite.IO.Converters;
 
 namespace Headless.NetTopologySuite.Constants;
 
@@ -38,6 +35,13 @@ public static class GeoConstants
     public static readonly PrecisionModel HighPrecision = PrecisionModel.FloatingSingle.Value;
 
     /// <summary>
+    /// Fixed precision with scale 1e6 — coordinates are snapped to a 1e-6 grid (~11 cm at the
+    /// equator for SRID 4326 degrees). Used by <c>SanitizeForSqlGeography</c> to bound coordinate
+    /// decimals; a fixed model is required because reducing to a floating model is a no-op.
+    /// </summary>
+    public static readonly PrecisionModel SqlServerGeographyPrecision = new(1_000_000); // scale 1e6
+
+    /// <summary>
     /// Fixed precision with scale 1e5 — coordinates are snapped to a 1e-5 grid
     /// (~1.1 m at the equator when the SRID 4326 units are degrees).
     /// </summary>
@@ -51,31 +55,4 @@ public static class GeoConstants
 
     /// <summary>~111 m at Equator, ~96 m at Cairo (~30°N)</summary>
     public const double Around111MDegrees = 0.0001;
-
-    public static readonly NtsGeometryServices NtsGeometryServices = CreateNtsGeometryServices();
-
-    public static readonly GeometryFactory GeometryFactory = NtsGeometryServices.CreateGeometryFactory();
-
-    public static NtsGeometryServices CreateNtsGeometryServices()
-    {
-        return new(
-            CoordinateArraySequenceFactory.Instance,
-            HighPrecision,
-            GoogleMapsSrid,
-            GeometryOverlay.NG,
-            GeometryRelate.NG,
-            new CoordinateEqualityComparer()
-        );
-    }
-
-    public static GeoJsonConverterFactory CreateGeoJsonConverter()
-    {
-        return new GeoJsonConverterFactory(
-            factory: GeometryFactory,
-            writeGeometryBBox: false,
-            idPropertyName: "id",
-            ringOrientationOption: RingOrientationOption.EnforceRfc9746, // To match expected in SQL Server
-            allowModifyingAttributesTables: false
-        );
-    }
 }

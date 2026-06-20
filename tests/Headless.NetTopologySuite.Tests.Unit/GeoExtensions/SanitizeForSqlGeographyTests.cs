@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -8,7 +9,7 @@ namespace Tests.GeoExtensions;
 
 public sealed class SanitizeForSqlGeographyTests
 {
-    private static GeometryFactory Factory => GeoConstants.GeometryFactory;
+    private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     [Fact]
     public void should_throw_for_null_geometry()
@@ -150,8 +151,10 @@ public sealed class SanitizeForSqlGeographyTests
         // when
         var result = polygon.SanitizeForSqlGeography();
 
-        // then - precision should be reduced to HighPrecision (1e6)
-        result.PrecisionModel.Should().Be(GeoConstants.HighPrecision);
+        // then - coordinates are snapped to the 1e6 grid (~6 decimals); full precision is gone.
+        result.Coordinates.Should().NotContain(c => c.X == 0.123456789012, "full-precision X must be reduced");
+        result.Coordinates.Should().Contain(c => Math.Abs(c.X - 0.123457) < 1e-9, "X must snap to the 1e6 grid");
+        result.Coordinates.Should().Contain(c => Math.Abs(c.X - 1.123457) < 1e-9);
     }
 
     [Fact]
