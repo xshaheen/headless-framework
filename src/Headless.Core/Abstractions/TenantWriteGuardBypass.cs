@@ -20,7 +20,7 @@ internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
         if (state is null || !state.TryAddRef())
         {
             state = new BypassState();
-            state.TryAddRef();
+            state.TryAddRef(); // 0 -> 1; the object is thread-private until published on the next line.
             _state.Value = state;
         }
 
@@ -31,13 +31,18 @@ internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
     {
         state.Release();
 
+        // Non-atomic check-then-clear is safe: _state.Value is AsyncLocal (per-context), and the
+        // ReferenceEquals guard skips clearing when a concurrent BeginBypass already installed a fresh
+        // state. Do not replace this with Interlocked on the reference — it would break AsyncLocal flow.
         if (!state.IsActive && ReferenceEquals(_state.Value, state))
         {
             _state.Value = null;
         }
     }
 
-    private sealed class BypassState
+    // internal (not private) so the CAS ref-count state machine can be unit-tested directly via
+    // InternalsVisibleTo — its in-window TOCTOU is not reachable through the public BeginBypass API.
+    internal sealed class BypassState
     {
         // 0 = freshly created (no refs yet); > 0 = active ref count; -1 = terminal (cannot be revived).
         private int _refCount;
