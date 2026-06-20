@@ -1,5 +1,4 @@
 <Project>
-
   <!--
     Builds the Vue/Vite SPA under wwwroot at .NET build time and embeds the
     produced wwwroot/dist/** into the assembly as EmbeddedResource. The dist
@@ -40,20 +39,24 @@
   </ItemGroup>
 
   <!-- Install node_modules from the lockfile; re-runs only when package-lock.json changes. -->
-  <Target Name="_RestoreDashboardSpa"
-          Condition="'$(BuildDashboardSpa)' == 'true'"
-          Inputs="$(DashboardSpaRoot)/package-lock.json"
-          Outputs="$(DashboardSpaRoot)/node_modules/.package-lock.json">
+  <Target
+    Name="_RestoreDashboardSpa"
+    Condition="'$(BuildDashboardSpa)' == 'true'"
+    Inputs="$(DashboardSpaRoot)/package-lock.json"
+    Outputs="$(DashboardSpaRoot)/node_modules/.package-lock.json"
+  >
     <Message Importance="high" Text="[$(MSBuildProjectName)] Installing SPA dependencies ($(NpmTool) ci)..." />
     <Exec Command="$(NpmTool) ci" WorkingDirectory="$(DashboardSpaRoot)" />
   </Target>
 
   <!-- Build the SPA; re-runs only when inputs change or dist/index.html is missing. -->
-  <Target Name="_BuildDashboardSpa"
-          DependsOnTargets="_RestoreDashboardSpa"
-          Condition="'$(BuildDashboardSpa)' == 'true'"
-          Inputs="@(DashboardSpaInput)"
-          Outputs="$(DashboardSpaDist)/index.html">
+  <Target
+    Name="_BuildDashboardSpa"
+    DependsOnTargets="_RestoreDashboardSpa"
+    Condition="'$(BuildDashboardSpa)' == 'true'"
+    Inputs="@(DashboardSpaInput)"
+    Outputs="$(DashboardSpaDist)/index.html"
+  >
     <Message Importance="high" Text="[$(MSBuildProjectName)] Building SPA ($(NpmTool) run build)..." />
     <Exec Command="$(NpmTool) run build" WorkingDirectory="$(DashboardSpaRoot)" />
   </Target>
@@ -62,14 +65,13 @@
     Always runs (no Inputs/Outputs) so the EmbeddedResource items are added on
     every build, even when _BuildDashboardSpa is skipped as up-to-date.
   -->
-  <Target Name="_EmbedDashboardSpa"
-          BeforeTargets="AssignTargetPaths"
-          DependsOnTargets="_BuildDashboardSpa">
-    <Error Condition="!Exists('$(DashboardSpaDist)/index.html')"
-           Text="SPA build output not found at '$(DashboardSpaDist)'. Run '$(NpmTool) run build' in '$(DashboardSpaRoot)', or build with BuildDashboardSpa=true." />
+  <Target Name="_EmbedDashboardSpa" BeforeTargets="AssignTargetPaths" DependsOnTargets="_BuildDashboardSpa">
+    <Error
+      Condition="!Exists('$(DashboardSpaDist)/index.html')"
+      Text="SPA build output not found at '$(DashboardSpaDist)'. Run '$(NpmTool) run build' in '$(DashboardSpaRoot)', or build with BuildDashboardSpa=true."
+    />
     <ItemGroup>
       <EmbeddedResource Include="wwwroot/dist/**/*" Exclude="**/*/*.map" />
     </ItemGroup>
   </Target>
-
 </Project>
