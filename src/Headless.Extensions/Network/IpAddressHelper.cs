@@ -15,7 +15,6 @@ public static class IpAddressHelper
     /// non-loopback network interfaces that have at least one gateway configured.
     /// </summary>
     /// <returns>The list of discovered IPv4 addresses; empty when no qualifying interface is found.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when a qualifying interface exposes more than one IPv4 unicast address.</exception>
     public static List<IPAddress> GetInterNetworkIpAddresses()
     {
         var ipAddresses = NetworkInterface
@@ -30,12 +29,10 @@ public static class IpAddressHelper
             )
             .Select(i => (i.Name, i.NetworkInterfaceType, IpProperties: i.GetIPProperties()))
             .Where(i => i.IpProperties.GatewayAddresses.Count > 0)
-            .Select(i =>
-                i.IpProperties.UnicastAddresses.SingleOrDefault(ip =>
-                    ip.Address.AddressFamily == AddressFamily.InterNetwork
-                )?.Address
+            .SelectMany(i =>
+                i.IpProperties.UnicastAddresses.Where(ip => ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                    .Select(ip => ip.Address)
             )
-            .Where(i => i is not null)
             .ToList();
 
         return ipAddresses!;

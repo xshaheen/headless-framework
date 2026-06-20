@@ -78,7 +78,7 @@ public static class DateTimeOffsetExtensions
     public static DateTimeOffset GetEndOfMonth(this DateTimeOffset dateTime, TimeSpan offset)
     {
         var d = dateTime.ToOffset(offset);
-        var days = DateTime.DaysInMonth(dateTime.Year, dateTime.Month);
+        var days = DateTime.DaysInMonth(d.Year, d.Month);
         var endOfMonthDay = new DateTimeOffset(d.Year, d.Month, days, 0, 0, 0, d.Offset);
 
         return endOfMonthDay.GetEndOfDay(offset);

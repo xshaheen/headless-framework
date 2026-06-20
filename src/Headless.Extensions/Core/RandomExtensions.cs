@@ -363,7 +363,12 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return ((decimal)random.NextDouble() * (max - min)) + min;
+            // Linear interpolation (min*(1-t) + max*t) instead of min + t*(max-min): the latter overflows
+            // when the range spans most of the decimal domain (e.g. the default MinValue..MaxValue). Each term
+            // here is bounded by |min| or |max|, so the convex combination never leaves the decimal range.
+            var t = (decimal)random.NextDouble();
+
+            return (min * (1m - t)) + (max * t);
         }
 
         /// <summary>Builds a random string of exactly <paramref name="length"/> characters drawn from <paramref name="chars"/>.</summary>

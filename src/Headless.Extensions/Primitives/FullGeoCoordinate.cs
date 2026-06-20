@@ -225,7 +225,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <returns>
     ///     The altitude, in meters.
     /// </returns>
-    public double Altitude { get; set; }
+    public double Altitude { get; init; }
 
     /// <summary>
     ///     Returns the distance between the latitude and longitude coordinates that are specified by this GeoCoordinate and

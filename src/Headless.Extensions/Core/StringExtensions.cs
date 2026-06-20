@@ -489,7 +489,8 @@ public static class StringExtensions
         {
             if (char.IsDigit(c))
             {
-                sb.Append(char.GetNumericValue(c));
+                // Map the Unicode decimal digit to its ASCII equivalent without allocating or touching culture.
+                sb.Append((char)('0' + (int)char.GetNumericValue(c)));
             }
             else
             {
@@ -515,7 +516,8 @@ public static class StringExtensions
         {
             if (char.IsDigit(c))
             {
-                sb.Append(char.GetNumericValue(c).ToString(CultureInfo.InvariantCulture));
+                // Map the Unicode decimal digit to its ASCII equivalent without allocating or touching culture.
+                sb.Append((char)('0' + (int)char.GetNumericValue(c)));
             }
             else
             {
