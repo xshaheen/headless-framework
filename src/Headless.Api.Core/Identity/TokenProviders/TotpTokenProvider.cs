@@ -11,6 +11,7 @@ namespace Headless.Api.Identity.TokenProviders;
 /// Derive from this class and override <see cref="GetUserModifierAsync"/> to customize
 /// the modifier used for code generation and validation.
 /// </summary>
+[PublicAPI]
 public class TotpTokenProvider<TUser> : IUserTwoFactorTokenProvider<TUser>
     where TUser : class
 {

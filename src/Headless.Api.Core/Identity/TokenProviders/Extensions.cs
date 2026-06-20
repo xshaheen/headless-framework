@@ -49,7 +49,6 @@ public static class IdentityBuilderExtensions
             builder.Services.Configure(configureOptions);
         }
 
-        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<TotpRfc6238Generator>();
 
         builder.Services.Configure<IdentityOptions>(identityOptions =>
@@ -104,7 +103,6 @@ public static class IdentityBuilderExtensions
             builder.Services.Configure(configureOptions);
         }
 
-        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<TotpRfc6238Generator>();
 
         builder.Services.Configure<IdentityOptions>(identityOptions =>

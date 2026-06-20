@@ -47,7 +47,14 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 
         for (var i = -variance; i <= variance; i++)
         {
-            var computedTotp = _ComputeTotp(securityToken, (ulong)((long)currentTimeStep + i), modifierBytes, hashMode);
+            var step = (long)currentTimeStep + i;
+
+            if (step < 0)
+            {
+                continue;
+            }
+
+            var computedTotp = _ComputeTotp(securityToken, (ulong)step, modifierBytes, hashMode);
 
             if (computedTotp == code)
             {

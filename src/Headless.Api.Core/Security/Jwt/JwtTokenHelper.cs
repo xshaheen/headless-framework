@@ -6,7 +6,7 @@ namespace Headless.Api.Security.Jwt;
 
 public static class JwtTokenHelper
 {
-    public static readonly JsonWebTokenHandler TokenHandler = _CreateHandler();
+    internal static readonly JsonWebTokenHandler TokenHandler = _CreateHandler();
 
     private static JsonWebTokenHandler _CreateHandler()
     {

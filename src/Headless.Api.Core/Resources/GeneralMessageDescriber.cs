@@ -4,6 +4,7 @@ using Headless.Primitives;
 
 namespace Headless.Api.Resources;
 
+[PublicAPI]
 public static class GeneralMessageDescriber
 {
     public static ErrorDescriptor ConcurrencyFailure()
@@ -36,9 +37,9 @@ public static class GeneralMessageDescriber
         return new(code: "g:feature_currently_not_available", description: Messages.g_feature_currently_unavailable);
     }
 
-    public static ErrorDescriptor YourUserNotFounded()
+    public static ErrorDescriptor UserNotFound()
     {
-        return new ErrorDescriptor(code: "g:user_not_founded", description: Messages.g_user_not_founded);
+        return new ErrorDescriptor(code: "g:user_not_found", description: Messages.g_user_not_found);
     }
 
     public static ErrorDescriptor InvalidRecaptcha()

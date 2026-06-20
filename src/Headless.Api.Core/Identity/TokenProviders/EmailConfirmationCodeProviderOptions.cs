@@ -2,6 +2,7 @@
 
 namespace Headless.Api.Identity.TokenProviders;
 
+[PublicAPI]
 public sealed class EmailConfirmationCodeProviderOptions : TotpTokenProviderOptions
 {
     public new const string DefaultName = "EmailConfirmation";

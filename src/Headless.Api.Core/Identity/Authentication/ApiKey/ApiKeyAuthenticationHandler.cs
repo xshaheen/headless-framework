@@ -50,24 +50,26 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
             return AuthenticateResult.NoResult();
         }
 
-        var apiKeyUser = await store.GetActiveApiKeyUserAsync(providedApiKey);
+        var apiKeyUser = await store
+            .GetActiveApiKeyUserAsync(providedApiKey, Context.RequestAborted)
+            .ConfigureAwait(false);
 
         if (apiKeyUser is null)
         {
             return AuthenticateResult.NoResult();
         }
 
-        if (!await signInManager.CanSignInAsync(apiKeyUser))
+        if (!await signInManager.CanSignInAsync(apiKeyUser).ConfigureAwait(false))
         {
             return AuthenticateResult.Fail("Authentication failed.");
         }
 
-        if (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(apiKeyUser))
+        if (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(apiKeyUser).ConfigureAwait(false))
         {
             return AuthenticateResult.Fail("Authentication failed.");
         }
 
-        var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(apiKeyUser);
+        var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(apiKeyUser).ConfigureAwait(false);
         var ticket = new AuthenticationTicket(claimsPrincipal, Scheme.Name);
 
         return AuthenticateResult.Success(ticket);

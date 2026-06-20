@@ -2,6 +2,7 @@
 
 namespace Headless.Api.Identity.TokenProviders;
 
+[PublicAPI]
 public class TotpTokenProviderOptions
 {
     public const string DefaultName = "Totp";

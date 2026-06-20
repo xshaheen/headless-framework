@@ -265,8 +265,8 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        await _apiKeyStore.Received(1).GetActiveApiKeyUserAsync("header-api-key");
-        await _apiKeyStore.DidNotReceive().GetActiveApiKeyUserAsync("query-api-key");
+        await _apiKeyStore.Received(1).GetActiveApiKeyUserAsync("header-api-key", Arg.Any<CancellationToken>());
+        await _apiKeyStore.DidNotReceive().GetActiveApiKeyUserAsync("query-api-key", Arg.Any<CancellationToken>());
     }
 
     #region Helpers

@@ -6,74 +6,71 @@ using Humanizer;
 #pragma warning disable CA1863 // Use 'CompositeFormat'
 namespace Headless.Api.Resources;
 
+[PublicAPI]
 public static class IdentityMessageDescriber
 {
     public static class Auth
     {
-        public const string AlreadyInRoleCode = "auth:already_in_role";
-        public const string DuplicateRoleNameCode = "auth:duplicate_role_name";
-        public const string InvalidLoginIdentifierCode = "auth:invalid_login_identifier";
-        public const string InvalidTokenCode = "auth:invalid_token";
-        public const string InvalidUserNameCode = "auth:invalid_username";
-        public const string InvalidEmailCode = "auth:invalid_email";
-        public const string InvalidRoleCode = "auth:invalid_role";
-        public const string NotInRoleCode = "auth:not_in_role";
-        public const string RecoveryCodeRedemptionFailedCode = "auth:recovery_code_redemption_failed";
-        public const string UserAlreadyHasPasswordCode = "auth:user_already_has_password";
-        public const string PasswordMismatchCode = "auth:password_mismatch";
-        public const string UserLockedOutCode = "auth:user_locked_out";
-        public const string LoginRequiresConfirmationCode = "auth:login_requires_confirmation";
-        public const string LoginRequiresTwoFactorCode = "auth:login_requires_two_factor";
-        public const string LoginFailedCode = "auth:login_failed";
-
         public static ErrorDescriptor InvalidLoginIdentifier()
         {
             return new ErrorDescriptor(
-                code: InvalidLoginIdentifierCode,
+                code: IdentityErrorCodes.Auth.InvalidLoginIdentifier,
                 description: Messages.auth_invalid_login_identifier
             );
         }
 
         public static ErrorDescriptor InvalidToken()
         {
-            return new ErrorDescriptor(code: InvalidTokenCode, description: Messages.auth_invalid_token);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Auth.InvalidToken,
+                description: Messages.auth_invalid_token
+            );
         }
 
         public static ErrorDescriptor InvalidUserName(string userName)
         {
             var description = string.Format(CultureInfo.CurrentCulture, Messages.auth_invalid_username, userName);
 
-            return new ErrorDescriptor(code: InvalidUserNameCode, description: description).WithParam(
-                "UserName",
-                userName
-            );
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Auth.InvalidUserName,
+                description: description
+            ).WithParam("UserName", userName);
         }
 
         public static ErrorDescriptor InvalidEmail(string email)
         {
             var desc = string.Format(CultureInfo.CurrentCulture, Messages.auth_invalid_email, email);
 
-            return new ErrorDescriptor(code: InvalidEmailCode, description: desc).WithParam("Email", email);
+            return new ErrorDescriptor(code: IdentityErrorCodes.Auth.InvalidEmail, description: desc).WithParam(
+                "Email",
+                email
+            );
         }
 
         public static ErrorDescriptor InvalidRole(string role)
         {
             var desc = string.Format(CultureInfo.CurrentCulture, Messages.auth_invalid_role, role);
 
-            return new ErrorDescriptor(code: InvalidRoleCode, description: desc).WithParam("Name", role);
+            return new ErrorDescriptor(code: IdentityErrorCodes.Auth.InvalidRole, description: desc).WithParam(
+                "Name",
+                role
+            );
         }
 
         public static ErrorDescriptor DuplicateRoleName(string role)
         {
             var desc = string.Format(CultureInfo.CurrentCulture, Messages.auth_duplicate_role_name, role);
 
-            return new ErrorDescriptor(code: DuplicateRoleNameCode, description: desc).WithParam("Name", role);
+            return new ErrorDescriptor(code: IdentityErrorCodes.Auth.DuplicateRoleName, description: desc).WithParam(
+                "Name",
+                role
+            );
         }
 
         public static ErrorDescriptor UserAlreadyHasPassword()
         {
             return new ErrorDescriptor(
-                code: UserAlreadyHasPasswordCode,
+                code: IdentityErrorCodes.Auth.UserAlreadyHasPassword,
                 description: Messages.auth_user_already_has_password
             );
         }
@@ -82,13 +79,16 @@ public static class IdentityMessageDescriber
         {
             var desc = string.Format(CultureInfo.CurrentCulture, Messages.auth_already_in_role, role);
 
-            return new ErrorDescriptor(code: AlreadyInRoleCode, description: desc).WithParam("Name", role);
+            return new ErrorDescriptor(code: IdentityErrorCodes.Auth.AlreadyInRole, description: desc).WithParam(
+                "Name",
+                role
+            );
         }
 
         public static ErrorDescriptor RecoveryCodeRedemptionFailed()
         {
             return new ErrorDescriptor(
-                code: RecoveryCodeRedemptionFailedCode,
+                code: IdentityErrorCodes.Auth.RecoveryCodeRedemptionFailed,
                 description: Messages.auth_recovery_code_redemption_failed
             );
         }
@@ -97,23 +97,32 @@ public static class IdentityMessageDescriber
         {
             var desc = string.Format(CultureInfo.CurrentCulture, Messages.auth_not_in_role, role);
 
-            return new ErrorDescriptor(code: NotInRoleCode, description: desc).WithParam("Name", role);
+            return new ErrorDescriptor(code: IdentityErrorCodes.Auth.NotInRole, description: desc).WithParam(
+                "Name",
+                role
+            );
         }
 
         public static ErrorDescriptor PasswordMismatch()
         {
-            return new ErrorDescriptor(code: PasswordMismatchCode, description: Messages.auth_password_mismatch);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Auth.PasswordMismatch,
+                description: Messages.auth_password_mismatch
+            );
         }
 
         public static ErrorDescriptor UserLockedOut()
         {
-            return new ErrorDescriptor(code: UserLockedOutCode, description: Messages.auth_user_locked_out);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Auth.UserLockedOut,
+                description: Messages.auth_user_locked_out
+            );
         }
 
         public static ErrorDescriptor LoginRequiresConfirmation()
         {
             return new ErrorDescriptor(
-                code: LoginRequiresConfirmationCode,
+                code: IdentityErrorCodes.Auth.LoginRequiresConfirmation,
                 description: Messages.auth_login_requires_confirmation
             );
         }
@@ -121,30 +130,26 @@ public static class IdentityMessageDescriber
         public static ErrorDescriptor LoginRequiresTwoFactor()
         {
             return new ErrorDescriptor(
-                code: LoginRequiresTwoFactorCode,
+                code: IdentityErrorCodes.Auth.LoginRequiresTwoFactor,
                 description: Messages.auth_login_requires_two_factor
             );
         }
 
         public static ErrorDescriptor LoginFailed()
         {
-            return new ErrorDescriptor(code: LoginFailedCode, description: Messages.auth_login_failed);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Auth.LoginFailed,
+                description: Messages.auth_login_failed
+            );
         }
     }
 
     public static class Users
     {
-        public const string DuplicateUserNameCode = "auth:duplicate_username";
-        public const string DuplicateEmailCode = "auth:duplicate_email";
-        public const string AlreadyBlockedCode = "user:already_blocked";
-        public const string AlreadyUnblockedCode = "user:already_unblocked";
-        public const string DuplicatedNationalIdCode = "user:duplicated_national_id";
-        public const string DuplicatedPhoneNumberCode = "user:duplicated_phone_number";
-
         public static ErrorDescriptor DuplicatedPhoneNumber()
         {
             return new ErrorDescriptor(
-                code: DuplicatedPhoneNumberCode,
+                code: IdentityErrorCodes.Users.DuplicatedPhoneNumber,
                 description: Messages.user_duplicated_phone_number
             );
         }
@@ -152,7 +157,7 @@ public static class IdentityMessageDescriber
         public static ErrorDescriptor DuplicatedNationalId()
         {
             return new ErrorDescriptor(
-                code: DuplicatedNationalIdCode,
+                code: IdentityErrorCodes.Users.DuplicatedNationalId,
                 description: Messages.user_duplicated_national_id
             );
         }
@@ -161,41 +166,35 @@ public static class IdentityMessageDescriber
         {
             var desc = string.Format(CultureInfo.CurrentCulture, Messages.auth_duplicate_username, userName);
 
-            return new ErrorDescriptor(code: DuplicateUserNameCode, description: desc).WithParam("UserName", userName);
+            return new ErrorDescriptor(code: IdentityErrorCodes.Users.DuplicateUserName, description: desc).WithParam(
+                "UserName",
+                userName
+            );
         }
 
         public static ErrorDescriptor DuplicateEmail(string email)
         {
             var desc = string.Format(CultureInfo.CurrentCulture, Messages.auth_duplicate_email, email);
 
-            return new ErrorDescriptor(code: DuplicateEmailCode, description: desc).WithParam("Email", email);
+            return new ErrorDescriptor(code: IdentityErrorCodes.Users.DuplicateEmail, description: desc).WithParam(
+                "Email",
+                email
+            );
         }
 
         public static ErrorDescriptor AlreadyBlocked()
         {
-            return new ErrorDescriptor(AlreadyBlockedCode, Messages.user_already_blocked);
+            return new ErrorDescriptor(IdentityErrorCodes.Users.AlreadyBlocked, Messages.user_already_blocked);
         }
 
         public static ErrorDescriptor AlreadyUnblocked()
         {
-            return new ErrorDescriptor(AlreadyUnblockedCode, Messages.user_already_unblocked);
+            return new ErrorDescriptor(IdentityErrorCodes.Users.AlreadyUnblocked, Messages.user_already_unblocked);
         }
     }
 
     public static class Passwords
     {
-        public const string PasswordTooShortCode = "auth:password_too_short";
-        public const string PasswordRequiresUniqueCharsCode = "auth:password_requires_unique_chars";
-        public const string PasswordRequiresNonAlphanumericCode = "auth:password_requires_non_alphanumeric";
-        public const string PasswordRequiresDigitCode = "auth:password_requires_digit";
-        public const string PasswordRequiresLowerCode = "auth:password_requires_lower";
-        public const string PasswordRequiresUpperCode = "auth:password_requires_upper";
-        public const string RemovePasswordRequiresAlternateLoginCode = "auth:remove_password_requires_alternate_login";
-        public const string UsedBeforePasswordCode = "auth:used_before_password";
-        public const string RequestForgetPasswordAttemptsExceededCode =
-            "user:request_forget_password_attempts_exceeded";
-        public const string RequestForgetPasswordCooldownCode = "user:request_forget_password_cooldown";
-
         public static ErrorDescriptor PasswordTooShort(int length)
         {
             var desc = string.Format(
@@ -204,7 +203,10 @@ public static class IdentityMessageDescriber
                 length.ToString(provider: CultureInfo.CurrentCulture)
             );
 
-            return new ErrorDescriptor(code: PasswordTooShortCode, description: desc).WithParam("MinLength", length);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Passwords.PasswordTooShort,
+                description: desc
+            ).WithParam("MinLength", length);
         }
 
         public static ErrorDescriptor PasswordRequiresUniqueChars(int uniqueChars)
@@ -215,16 +217,16 @@ public static class IdentityMessageDescriber
                 uniqueChars.ToString(provider: CultureInfo.CurrentCulture)
             );
 
-            return new ErrorDescriptor(code: PasswordRequiresUniqueCharsCode, description: desc).WithParam(
-                "UniqueChars",
-                uniqueChars
-            );
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Passwords.PasswordRequiresUniqueChars,
+                description: desc
+            ).WithParam("UniqueChars", uniqueChars);
         }
 
         public static ErrorDescriptor PasswordRequiresNonAlphanumeric()
         {
             return new ErrorDescriptor(
-                code: PasswordRequiresNonAlphanumericCode,
+                code: IdentityErrorCodes.Passwords.PasswordRequiresNonAlphanumeric,
                 description: Messages.auth_password_requires_non_alphanumeric
             );
         }
@@ -232,7 +234,7 @@ public static class IdentityMessageDescriber
         public static ErrorDescriptor PasswordRequiresDigit()
         {
             return new ErrorDescriptor(
-                code: PasswordRequiresDigitCode,
+                code: IdentityErrorCodes.Passwords.PasswordRequiresDigit,
                 description: Messages.auth_password_requires_digit
             );
         }
@@ -240,7 +242,7 @@ public static class IdentityMessageDescriber
         public static ErrorDescriptor PasswordRequiresLower()
         {
             return new ErrorDescriptor(
-                code: PasswordRequiresLowerCode,
+                code: IdentityErrorCodes.Passwords.PasswordRequiresLower,
                 description: Messages.auth_password_requires_lower
             );
         }
@@ -248,7 +250,7 @@ public static class IdentityMessageDescriber
         public static ErrorDescriptor PasswordRequiresUpper()
         {
             return new ErrorDescriptor(
-                code: PasswordRequiresUpperCode,
+                code: IdentityErrorCodes.Passwords.PasswordRequiresUpper,
                 description: Messages.auth_password_requires_upper
             );
         }
@@ -256,7 +258,7 @@ public static class IdentityMessageDescriber
         public static ErrorDescriptor RemovePasswordRequiresAlternateLogin()
         {
             return new ErrorDescriptor(
-                code: RemovePasswordRequiresAlternateLoginCode,
+                code: IdentityErrorCodes.Passwords.RemovePasswordRequiresAlternateLogin,
                 description: Messages.auth_remove_password_requires_alternate_login
             );
         }
@@ -264,8 +266,8 @@ public static class IdentityMessageDescriber
         public static ErrorDescriptor UsedBeforePassword()
         {
             return new ErrorDescriptor(
-                code: UsedBeforePasswordCode,
-                description: "You can't use a password that you have used before."
+                code: IdentityErrorCodes.Passwords.UsedBeforePassword,
+                description: Messages.auth_used_before_password
             );
         }
 
@@ -277,7 +279,7 @@ public static class IdentityMessageDescriber
                 period.Humanize()
             );
 
-            return new ErrorDescriptor(RequestForgetPasswordAttemptsExceededCode, description)
+            return new ErrorDescriptor(IdentityErrorCodes.Passwords.RequestForgetPasswordAttemptsExceeded, description)
                 .WithParam("Period", period.ToString("c", CultureInfo.InvariantCulture))
                 .WithParam("MaxAttempts", maxAttempts.ToString(CultureInfo.InvariantCulture));
         }
@@ -291,7 +293,7 @@ public static class IdentityMessageDescriber
                 timeUntilNextRequest.Humanize()
             );
 
-            return new ErrorDescriptor(RequestForgetPasswordCooldownCode, description)
+            return new ErrorDescriptor(IdentityErrorCodes.Passwords.RequestForgetPasswordCooldown, description)
                 .WithParam("TimeUntilNextRequest", timeUntilNextRequest.ToString("c", CultureInfo.InvariantCulture))
                 .WithParam("TimeToCooldown", timeToCooldown.ToString("c", CultureInfo.InvariantCulture));
         }
@@ -299,47 +301,54 @@ public static class IdentityMessageDescriber
 
     public static class Emails
     {
-        public const string EmailAlreadyConfirmedCode = "auth:email_already_confirmed";
-        public const string EmailAlreadyLinkedCode = "auth:email_already_linked";
-        public const string ExpiredTokenCode = "auth:expired_token";
-        public const string RequestVerifyEmailCooldownCode = "user:request_verify_email_cooldown";
-        public const string RequestVerifyEmailAttemptsExceededCode = "user:request_verify_email_attempts_exceeded";
-        public const string EmailAlreadyLinkedToOtherUserCode = "user:email_already_linked_to_other_user";
-
         public static ErrorDescriptor AlreadyConfirmed()
         {
             return new ErrorDescriptor(
-                code: EmailAlreadyConfirmedCode,
+                code: IdentityErrorCodes.Emails.EmailAlreadyConfirmed,
                 description: Messages.auth_email_already_confirmed
             );
         }
 
         public static ErrorDescriptor AlreadyLinked()
         {
-            return new ErrorDescriptor(code: EmailAlreadyLinkedCode, description: Messages.auth_email_already_linked);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Emails.EmailAlreadyLinked,
+                description: Messages.auth_email_already_linked
+            );
         }
 
         public static ErrorDescriptor ExpiredToken()
         {
-            return new ErrorDescriptor(code: ExpiredTokenCode, description: Messages.auth_expired_token);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Emails.ExpiredToken,
+                description: Messages.auth_expired_token
+            );
         }
 
         public static ErrorDescriptor RequestVerifyCooldown(TimeSpan timeUntilNextRequest, TimeSpan timeToCooldown)
         {
-            var description =
-                $"You can only request to verify your email address once every {timeToCooldown.Humanize()}. Please wait {timeUntilNextRequest.Humanize()} before trying again.";
+            var description = string.Format(
+                CultureInfo.InvariantCulture,
+                Messages.user_request_verify_email_cooldown,
+                timeToCooldown.Humanize(),
+                timeUntilNextRequest.Humanize()
+            );
 
-            return new ErrorDescriptor(RequestVerifyEmailCooldownCode, description)
+            return new ErrorDescriptor(IdentityErrorCodes.Emails.RequestVerifyEmailCooldown, description)
                 .WithParam("TimeUntilNextRequest", timeUntilNextRequest.ToString("c", CultureInfo.InvariantCulture))
                 .WithParam("TimeToCooldown", timeToCooldown.ToString("c", CultureInfo.InvariantCulture));
         }
 
         public static ErrorDescriptor RequestVerifyAttemptsExceeded(TimeSpan period, int maxAttempts)
         {
-            var description =
-                $"You have exceeded the maximum number of attempts `{maxAttempts.ToString(CultureInfo.InvariantCulture)}` to verify your email address. Please try again after {period.Humanize()}.";
+            var description = string.Format(
+                CultureInfo.InvariantCulture,
+                Messages.user_request_verify_email_attempts_exceeded,
+                maxAttempts.ToString(CultureInfo.InvariantCulture),
+                period.Humanize()
+            );
 
-            return new ErrorDescriptor(RequestVerifyEmailAttemptsExceededCode, description)
+            return new ErrorDescriptor(IdentityErrorCodes.Emails.RequestVerifyEmailAttemptsExceeded, description)
                 .WithParam("Period", period.ToString("c", CultureInfo.InvariantCulture))
                 .WithParam("MaxAttempts", maxAttempts);
         }
@@ -352,18 +361,18 @@ public static class IdentityMessageDescriber
                 newEmail
             );
 
-            return new ErrorDescriptor(EmailAlreadyLinkedToOtherUserCode, description);
+            return new ErrorDescriptor(IdentityErrorCodes.Emails.EmailAlreadyLinkedToOtherUser, description);
         }
     }
 
     public static class PhoneNumbers
     {
-        public const string PhoneNumberAlreadyLinkedCode = "user:phone_number_already_linked";
-        public const string PhoneNumberAlreadyLinkedToOtherUserCode = "user:phone_number_already_linked_to_other_user";
-
         public static ErrorDescriptor AlreadyLinked()
         {
-            return new ErrorDescriptor(PhoneNumberAlreadyLinkedCode, "Phone number is already linked to the user.");
+            return new ErrorDescriptor(
+                IdentityErrorCodes.PhoneNumbers.PhoneNumberAlreadyLinked,
+                Messages.user_phone_number_already_linked
+            );
         }
 
         public static ErrorDescriptor AlreadyLinkedToOtherUser(string phoneNumber)
@@ -374,45 +383,51 @@ public static class IdentityMessageDescriber
                 phoneNumber
             );
 
-            return new ErrorDescriptor(PhoneNumberAlreadyLinkedToOtherUserCode, description);
+            return new ErrorDescriptor(
+                IdentityErrorCodes.PhoneNumbers.PhoneNumberAlreadyLinkedToOtherUser,
+                description
+            );
         }
     }
 
     public static class ExternalLogins
     {
-        public const string LoginNotFoundCode = "auth:login_not_found";
-        public const string InvalidLoginTokenCode = "auth:invalid_login_token";
-        public const string LoginTokenValidationFailedCode = "auth:login_token_validation_failed";
-        public const string LoginAlreadyLinkedCode = "auth:login_already_linked";
-        public const string UserRequiresAlternateLoginOrPasswordCode = "auth:user_requires_alternate_login_or_password";
-
         public static ErrorDescriptor LoginNotFound()
         {
-            return new ErrorDescriptor(code: LoginNotFoundCode, description: Messages.auth_login_not_found);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.ExternalLogins.LoginNotFound,
+                description: Messages.auth_login_not_found
+            );
         }
 
         public static ErrorDescriptor InvalidLoginToken()
         {
-            return new ErrorDescriptor(code: InvalidLoginTokenCode, description: Messages.auth_invalid_login_token);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.ExternalLogins.InvalidLoginToken,
+                description: Messages.auth_invalid_login_token
+            );
         }
 
         public static ErrorDescriptor LoginTokenValidationFailed()
         {
             return new ErrorDescriptor(
-                code: LoginTokenValidationFailedCode,
+                code: IdentityErrorCodes.ExternalLogins.LoginTokenValidationFailed,
                 description: Messages.auth_login_token_validation_failed
             );
         }
 
         public static ErrorDescriptor LoginAlreadyLinked()
         {
-            return new ErrorDescriptor(code: LoginAlreadyLinkedCode, description: Messages.auth_login_already_linked);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.ExternalLogins.LoginAlreadyLinked,
+                description: Messages.auth_login_already_linked
+            );
         }
 
         public static ErrorDescriptor UserRequiresAlternateLoginOrPassword()
         {
             return new ErrorDescriptor(
-                code: UserRequiresAlternateLoginOrPasswordCode,
+                code: IdentityErrorCodes.ExternalLogins.UserRequiresAlternateLoginOrPassword,
                 description: Messages.auth_user_requires_alternate_login_or_password
             );
         }
@@ -420,17 +435,17 @@ public static class IdentityMessageDescriber
 
     public static class Lockouts
     {
-        public const string LockoutNotEnabledCode = "auth:lockout_not_enabled";
-        public const string AlreadyUnlockedCode = "user:already_unlocked";
-
         public static ErrorDescriptor LockoutNotEnabled()
         {
-            return new ErrorDescriptor(code: LockoutNotEnabledCode, description: Messages.auth_lockout_not_enabled);
+            return new ErrorDescriptor(
+                code: IdentityErrorCodes.Lockouts.LockoutNotEnabled,
+                description: Messages.auth_lockout_not_enabled
+            );
         }
 
         public static ErrorDescriptor AlreadyUnlocked()
         {
-            return new ErrorDescriptor(AlreadyUnlockedCode, Messages.user_already_unlocked);
+            return new ErrorDescriptor(IdentityErrorCodes.Lockouts.AlreadyUnlocked, Messages.user_already_unlocked);
         }
     }
 }

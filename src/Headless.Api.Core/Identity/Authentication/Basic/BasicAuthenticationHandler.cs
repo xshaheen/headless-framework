@@ -39,19 +39,19 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
             return AuthenticateResult.Fail("Invalid Authorization header value.");
         }
 
-        var user = await userManager.FindByNameAsync(userName);
+        var user = await userManager.FindByNameAsync(userName).ConfigureAwait(false);
 
         if (
             user is null
-            || !await signInManager.CanSignInAsync(user)
-            || (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(user))
-            || !await userManager.CheckPasswordAsync(user, password)
+            || !await signInManager.CanSignInAsync(user).ConfigureAwait(false)
+            || (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(user).ConfigureAwait(false))
+            || !await userManager.CheckPasswordAsync(user, password).ConfigureAwait(false)
         )
         {
             return AuthenticateResult.Fail("Invalid user name or password.");
         }
 
-        var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user);
+        var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user).ConfigureAwait(false);
         var ticket = new AuthenticationTicket(claimsPrincipal, Options.Scheme);
 
         return AuthenticateResult.Success(ticket);

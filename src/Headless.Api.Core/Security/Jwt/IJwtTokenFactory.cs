@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Headless.Api.Security.Jwt;
 
+[PublicAPI]
 public interface IJwtTokenFactory
 {
     string CreateJwtToken(
@@ -43,6 +44,7 @@ public interface IJwtTokenFactory
     );
 }
 
+[PublicAPI]
 public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFactory, IClock clock) : IJwtTokenFactory
 {
     public string CreateJwtToken(

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Security.Claims;
 
+[PublicAPI]
 public interface IClaimsPrincipalFactory
 {
     ClaimsPrincipal CreateClaimsPrincipal(params IEnumerable<Claim> claims);
@@ -14,6 +15,7 @@ public interface IClaimsPrincipalFactory
     ClaimsIdentity CreateClaimsIdentity(params IEnumerable<Claim> claims);
 }
 
+[PublicAPI]
 public sealed class ClaimsPrincipalFactory(IOptions<IdentityOptions> optionsAccessor) : IClaimsPrincipalFactory
 {
     private readonly IdentityOptions _options = optionsAccessor.Value;

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 
 namespace Headless.Api.Identity.TokenProviders;
 
+[PublicAPI]
 public sealed class EmailConfirmationTokenProviderOptions : DataProtectionTokenProviderOptions
 {
     public const string DefaultName = "EmailConfirmation";

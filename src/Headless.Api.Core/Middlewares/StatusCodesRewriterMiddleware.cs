@@ -3,7 +3,6 @@
 using Headless.Api.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Constants;
-using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
