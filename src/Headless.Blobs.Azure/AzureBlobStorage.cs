@@ -620,6 +620,7 @@ public sealed class AzureBlobStorage(
         cancellationToken.ThrowIfCancellationRequested();
         Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
+        Argument.IsPositive(expiry);
 
         var blobClient = _GetBlobClient(container, blobName);
 

@@ -5,7 +5,6 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Amazon.S3;
 using Amazon.S3.Model;
-using Amazon.S3.Util;
 using Headless.Abstractions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
@@ -78,13 +77,19 @@ public sealed class AwsBlobStorage(
 
     private async Task _CreateBucketAsync(string bucketName, CancellationToken cancellationToken)
     {
-        if (await AmazonS3Util.DoesS3BucketExistV2Async(s3, bucketName).ConfigureAwait(false))
+        // Idempotent, cancellation-aware create: PutBucket directly (it carries a CancellationToken, unlike the
+        // DoesS3BucketExistV2Async HEAD probe) and treat "already owned by you" as success. The per-instance
+        // cache means this runs at most once per bucket, so a separate existence pre-check is redundant.
+        try
         {
-            return;
+            var request = new PutBucketRequest { BucketName = bucketName };
+            await s3.PutBucketAsync(request, cancellationToken).ConfigureAwait(false);
         }
-
-        var request = new PutBucketRequest { BucketName = bucketName };
-        await s3.PutBucketAsync(request, cancellationToken).ConfigureAwait(false);
+        catch (AmazonS3Exception e)
+            when (string.Equals(e.ErrorCode, "BucketAlreadyOwnedByYou", StringComparison.Ordinal))
+        {
+            // The bucket already exists and we own it.
+        }
     }
 
     #endregion
@@ -888,6 +893,7 @@ public sealed class AwsBlobStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsPositive(expiry);
 
         var (bucket, key) = _BuildObjectKey(blobName, container);
 

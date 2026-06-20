@@ -4,6 +4,7 @@ using FluentValidation;
 
 namespace Headless.Blobs.CloudflareR2;
 
+[PublicAPI]
 public sealed class R2BlobStorageOptions
 {
     /// <summary>Cloudflare account id used to build the R2 S3 endpoint. Required.</summary>
@@ -49,6 +50,7 @@ public sealed class R2BlobStorageOptions
 }
 
 /// <summary>Cloudflare R2 jurisdiction, selecting the geographic S3 endpoint.</summary>
+[PublicAPI]
 public enum R2Jurisdiction
 {
     /// <summary>Global endpoint: <c>https://{account}.r2.cloudflarestorage.com</c>.</summary>

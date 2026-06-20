@@ -115,6 +115,57 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task create_container_is_idempotent_when_bucket_already_owned()
+    {
+        _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonS3Exception("already owned") { ErrorCode = "BucketAlreadyOwnedByYou" });
+
+        var sut = _CreateSut();
+
+        var act = async () => await sut.CreateContainerAsync(["bucket"]);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task bucket_create_failure_is_not_cached()
+    {
+        var calls = 0;
+        _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls++;
+
+                return calls == 1
+                    ? Task.FromException<PutBucketResponse>(
+                        new AmazonS3Exception("transient") { StatusCode = HttpStatusCode.ServiceUnavailable }
+                    )
+                    : Task.FromResult(new PutBucketResponse());
+            });
+
+        var sut = _CreateSut();
+
+        // First ensure fails; the failure must not be cached.
+        var firstAttempt = async () => await sut.CreateContainerAsync(["bucket"]);
+        await firstAttempt.Should().ThrowAsync<AmazonS3Exception>();
+
+        // Retry re-attempts the create rather than serving a poisoned cache entry.
+        await sut.CreateContainerAsync(["bucket"]);
+
+        calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task presigned_download_throws_on_non_positive_expiry()
+    {
+        var sut = _CreateSut();
+
+        var act = async () => await sut.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.Zero);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public void implements_presigned_url_capability()
     {
         _CreateSut().Should().BeAssignableTo<IPresignedUrlBlobStorage>();

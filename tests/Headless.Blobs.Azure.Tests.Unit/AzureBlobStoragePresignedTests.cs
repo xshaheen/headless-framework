@@ -54,4 +54,14 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot generate a SAS*");
     }
+
+    [Fact]
+    public async Task presigned_throws_on_non_positive_expiry()
+    {
+        var sut = _CreateStorageWithoutSigningCredentials();
+
+        var act = async () => await sut.GetPresignedDownloadUrlAsync(["mycontainer"], "file.txt", TimeSpan.Zero);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
 }

@@ -19,29 +19,20 @@ public sealed partial class R2BlobNamingNormalizer : IBlobNamingNormalizer
         {
             containerName = containerName.ToLowerInvariant();
 
+            // R2 bucket names allow only lowercase letters, digits, and hyphens (no dots).
+            containerName = _NotAllowedCharactersRegex().Replace(containerName, string.Empty);
+            containerName = _LeadingHyphensRegex().Replace(containerName, string.Empty);
+
+            // Enforce the 63-char ceiling after normalization, then strip any hyphen the truncation may expose.
             if (containerName.Length > 63)
             {
                 containerName = containerName[..63];
             }
 
-            // R2 bucket names allow only lowercase letters, digits, and hyphens (no dots).
-            containerName = _NotAllowedCharactersRegex().Replace(containerName, string.Empty);
-            containerName = _LeadingHyphensRegex().Replace(containerName, string.Empty);
             containerName = _TrailingHyphensRegex().Replace(containerName, string.Empty);
 
-            if (containerName.Length >= 3)
-            {
-                return containerName;
-            }
-
-            var length = containerName.Length;
-
-            for (var i = 0; i < 3 - length; i++)
-            {
-                containerName += "0";
-            }
-
-            return containerName;
+            // R2 bucket names must be at least 3 characters.
+            return containerName.Length >= 3 ? containerName : containerName.PadRight(3, '0');
         }
     }
 
