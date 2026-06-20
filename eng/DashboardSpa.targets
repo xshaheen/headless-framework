@@ -20,6 +20,7 @@
   <PropertyGroup>
     <DashboardSpaRoot>$(MSBuildProjectDirectory)/wwwroot</DashboardSpaRoot>
     <DashboardSpaDist>$(DashboardSpaRoot)/dist</DashboardSpaDist>
+    <DashboardSpaInputManifest>$(BaseIntermediateOutputPath)dashboard-spa-inputs.txt</DashboardSpaInputManifest>
     <BuildDashboardSpa Condition="'$(BuildDashboardSpa)' == ''">true</BuildDashboardSpa>
     <NpmTool Condition="'$(NpmTool)' == ''">npm</NpmTool>
   </PropertyGroup>
@@ -34,9 +35,28 @@
     <DashboardSpaInput Include="$(DashboardSpaRoot)/vite.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/postcss.config.*" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/tailwind.config.*" />
+    <DashboardSpaInput
+      Include="$(DashboardSpaRoot)/.browserslistrc"
+      Condition="Exists('$(DashboardSpaRoot)/.browserslistrc')"
+    />
+    <DashboardSpaInput
+      Include="$(DashboardSpaRoot)/browserslist"
+      Condition="Exists('$(DashboardSpaRoot)/browserslist')"
+    />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/tsconfig*.json" />
     <DashboardSpaInput Include="$(DashboardSpaRoot)/env.d.ts" />
   </ItemGroup>
+
+  <!-- Keep additions/deletions in the wildcard input set visible to MSBuild's timestamp check. -->
+  <Target Name="_ComputeDashboardSpaInputs" Condition="'$(BuildDashboardSpa)' == 'true'">
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile
+      File="$(DashboardSpaInputManifest)"
+      Lines="@(DashboardSpaInput->'%(FullPath)')"
+      Overwrite="true"
+      WriteOnlyWhenDifferent="true"
+    />
+  </Target>
 
   <!-- Install node_modules from the lockfile; re-runs only when package-lock.json changes. -->
   <Target
@@ -52,9 +72,9 @@
   <!-- Build the SPA; re-runs only when inputs change or dist/index.html is missing. -->
   <Target
     Name="_BuildDashboardSpa"
-    DependsOnTargets="_RestoreDashboardSpa"
+    DependsOnTargets="_ComputeDashboardSpaInputs;_RestoreDashboardSpa"
     Condition="'$(BuildDashboardSpa)' == 'true'"
-    Inputs="@(DashboardSpaInput)"
+    Inputs="$(MSBuildThisFileFullPath);$(DashboardSpaInputManifest);@(DashboardSpaInput)"
     Outputs="$(DashboardSpaDist)/index.html"
   >
     <Message Importance="high" Text="[$(MSBuildProjectName)] Building SPA ($(NpmTool) run build)..." />

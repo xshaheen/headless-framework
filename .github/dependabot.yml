@@ -87,7 +87,6 @@ updates:
     directories:
       - "/src/Headless.Jobs.Dashboard/wwwroot"
       - "/src/Headless.Messaging.Dashboard/wwwroot"
-    target-branch: "main"
     labels:
       - "maintenance"
     commit-message:
@@ -96,11 +95,16 @@ updates:
     open-pull-requests-limit: 5
     groups:
       npm-minor-patch:
+        applies-to: "version-updates"
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
+      npm-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
     schedule:
       interval: "weekly"
       day: "tuesday"
