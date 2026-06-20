@@ -16,5 +16,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Orm.EntityFramework" />
     <InternalsVisibleTo Include="Headless.Orm.EntityFramework.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Core.Tests.Unit" />
   </ItemGroup>
 </Project>
