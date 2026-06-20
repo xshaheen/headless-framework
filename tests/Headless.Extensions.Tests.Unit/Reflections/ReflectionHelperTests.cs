@@ -34,7 +34,10 @@ public sealed class ReflectionHelperTests
     [Fact]
     public void get_first_or_default_attribute_returns_attribute_when_present()
     {
-        var member = typeof(AnnotatedClass).GetProperty(nameof(AnnotatedClass.Tagged))!;
+        var member = typeof(AnnotatedClass).GetProperty(
+            nameof(AnnotatedClass.Tagged),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         var result = member.GetFirstOrDefaultAttribute<SampleAttribute>();
 
@@ -45,7 +48,10 @@ public sealed class ReflectionHelperTests
     [Fact]
     public void get_first_or_default_attribute_returns_default_when_absent()
     {
-        var member = typeof(AnnotatedClass).GetProperty(nameof(AnnotatedClass.Bare))!;
+        var member = typeof(AnnotatedClass).GetProperty(
+            nameof(AnnotatedClass.Bare),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         var result = member.GetFirstOrDefaultAttribute<SampleAttribute>(defaultValue: null);
 
@@ -55,7 +61,10 @@ public sealed class ReflectionHelperTests
     [Fact]
     public void get_first_or_default_attribute_returns_supplied_default_when_absent()
     {
-        var member = typeof(AnnotatedClass).GetProperty(nameof(AnnotatedClass.Bare))!;
+        var member = typeof(AnnotatedClass).GetProperty(
+            nameof(AnnotatedClass.Bare),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
         var fallback = new SampleAttribute("fallback");
 
         var result = member.GetFirstOrDefaultAttribute(defaultValue: fallback);
@@ -67,14 +76,20 @@ public sealed class ReflectionHelperTests
     public void get_first_or_default_attribute_respects_inherit_false()
     {
         // The attribute is only on the parent class member; with inherit:false the child override should not see it.
-        var member = typeof(DerivedClass).GetProperty(nameof(DerivedClass.Tagged))!;
+        var member = typeof(DerivedClass).GetProperty(
+            nameof(DerivedClass.Tagged),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         // inherit: true => finds the attribute declared on the base
         member.GetFirstOrDefaultAttribute<SampleAttribute>(inherit: true).Should().NotBeNull();
 
         // inherit: false on the child's own PropertyInfo — the child has no attribute directly
         typeof(DerivedClass)
-            .GetProperty(nameof(DerivedClass.OwnProp))!
+            .GetProperty(
+                nameof(DerivedClass.OwnProp),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
             .GetFirstOrDefaultAttribute<SampleAttribute>(inherit: false)
             .Should()
             .BeNull();
@@ -85,7 +100,10 @@ public sealed class ReflectionHelperTests
     [Fact]
     public void get_single_attribute_of_member_returns_member_attribute_when_present()
     {
-        var member = typeof(AnnotatedClass).GetProperty(nameof(AnnotatedClass.Tagged))!;
+        var member = typeof(AnnotatedClass).GetProperty(
+            nameof(AnnotatedClass.Tagged),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         var result = member.GetSingleAttributeOfMemberOrDeclaringTypeOrDefault<SampleAttribute>();
 
@@ -97,7 +115,10 @@ public sealed class ReflectionHelperTests
     public void get_single_attribute_of_member_falls_back_to_declaring_type_attribute()
     {
         // AnnotatedClass itself carries a SampleAttribute("class"); the Bare property does not.
-        var member = typeof(AnnotatedClassWithTypeAttr).GetProperty(nameof(AnnotatedClassWithTypeAttr.Bare))!;
+        var member = typeof(AnnotatedClassWithTypeAttr).GetProperty(
+            nameof(AnnotatedClassWithTypeAttr.Bare),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         var result = member.GetSingleAttributeOfMemberOrDeclaringTypeOrDefault<SampleAttribute>();
 
@@ -108,7 +129,10 @@ public sealed class ReflectionHelperTests
     [Fact]
     public void get_single_attribute_of_member_returns_default_when_neither_member_nor_type_has_attribute()
     {
-        var member = typeof(PlainClass).GetProperty(nameof(PlainClass.Value))!;
+        var member = typeof(PlainClass).GetProperty(
+            nameof(PlainClass.Value),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         var result = member.GetSingleAttributeOfMemberOrDeclaringTypeOrDefault<SampleAttribute>();
 
@@ -121,7 +145,10 @@ public sealed class ReflectionHelperTests
     public void get_attributes_of_member_or_declaring_type_returns_combined_unique_attributes()
     {
         // The property has SampleAttribute("prop") and the class has SampleAttribute("class").
-        var member = typeof(ClassWithBothAttrs).GetProperty(nameof(ClassWithBothAttrs.Prop))!;
+        var member = typeof(ClassWithBothAttrs).GetProperty(
+            nameof(ClassWithBothAttrs.Prop),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         var results = member.GetAttributesOfMemberOrDeclaringType<SampleAttribute>().ToList();
 
@@ -133,7 +160,10 @@ public sealed class ReflectionHelperTests
     public void get_attributes_of_member_or_declaring_type_deduplicates_same_attribute_instance()
     {
         // If the same attribute instance appears on both member and declaring type, Distinct() removes it.
-        var member = typeof(AnnotatedClass).GetProperty(nameof(AnnotatedClass.Tagged))!;
+        var member = typeof(AnnotatedClass).GetProperty(
+            nameof(AnnotatedClass.Tagged),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         // AnnotatedClass itself has no SampleAttribute; Tagged has one. No duplication possible here.
         var results = member.GetAttributesOfMemberOrDeclaringType<SampleAttribute>().ToList();
