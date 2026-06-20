@@ -8,15 +8,21 @@ namespace FluentValidation;
 [PublicAPI]
 public static class UrlValidators
 {
-    extension<T>(IRuleBuilder<T, string?> rule)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    extension<T>(IRuleBuilder<T, string> rule)
     {
-        public IRuleBuilderOptions<T, string?> Url()
+        /// <summary>
+        /// Validates that the value is any absolute URI. Accepts every scheme, including
+        /// <c>javascript:</c> and <c>data:</c>; use <see cref="HttpUrl"/> or <see cref="HttpsOnlyUrl"/>
+        /// for any URL that will be rendered in markup or dereferenced.
+        /// </summary>
+        public IRuleBuilderOptions<T, string> Url()
         {
             return rule.Must(maybeUrl => maybeUrl is null || Uri.TryCreate(maybeUrl, UriKind.Absolute, out _))
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
         }
 
-        public IRuleBuilderOptions<T, string?> HttpUrl()
+        public IRuleBuilderOptions<T, string> HttpUrl()
         {
             return rule.Must(maybeUrl =>
                 {
@@ -34,7 +40,7 @@ public static class UrlValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
         }
 
-        public IRuleBuilderOptions<T, string?> HttpsOnlyUrl()
+        public IRuleBuilderOptions<T, string> HttpsOnlyUrl()
         {
             return rule.Must(maybeUrl =>
                 {
@@ -49,7 +55,7 @@ public static class UrlValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
         }
 
-        public IRuleBuilderOptions<T, string?> FileUrl()
+        public IRuleBuilderOptions<T, string> FileUrl()
         {
             return rule.Must(maybeUrl =>
                 {
@@ -64,7 +70,7 @@ public static class UrlValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
         }
 
-        public IRuleBuilderOptions<T, string?> FtpUrl()
+        public IRuleBuilderOptions<T, string> FtpUrl()
         {
             return rule.Must(maybeUrl =>
                 {
@@ -79,7 +85,7 @@ public static class UrlValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
         }
 
-        public IRuleBuilderOptions<T, string?> MailtoUrl()
+        public IRuleBuilderOptions<T, string> MailtoUrl()
         {
             return rule.Must(maybeUrl =>
                 {
@@ -94,7 +100,7 @@ public static class UrlValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
         }
 
-        public IRuleBuilderOptionsConditions<T, string?> CorsOrigin()
+        public IRuleBuilderOptionsConditions<T, string> CorsOrigin()
         {
             return rule.Custom(
                 (maybeOrigin, context) =>
@@ -126,6 +132,14 @@ public static class UrlValidators
                         return;
                     }
 
+                    // A serialized origin (RFC 6454) is scheme://host[:port] only; userinfo is never part of it.
+                    if (!string.IsNullOrEmpty(uri.UserInfo))
+                    {
+                        _AddInvalidOriginFormatFailure(context, maybeOrigin);
+
+                        return;
+                    }
+
                     if (
                         uri.AbsolutePath is not "/" and not ""
                         || !string.IsNullOrEmpty(uri.Query)
@@ -145,6 +159,8 @@ public static class UrlValidators
             );
         }
     }
+
+#nullable restore
 
     private static void _AddInvalidOriginFormatFailure<TObj>(ValidationContext<TObj> context, string origin)
     {
@@ -175,7 +191,9 @@ public static class UrlValidators
             Severity = severity.ToSeverity(),
         };
 
-        failure.FormattedMessagePlaceholderValues["Scheme"] = scheme;
+        (failure.FormattedMessagePlaceholderValues ??= new Dictionary<string, object>(StringComparer.Ordinal))[
+            "Scheme"
+        ] = scheme;
 
         context.AddFailure(failure);
     }

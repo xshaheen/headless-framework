@@ -36,7 +36,9 @@ public static class GeoValidators
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
     }
 
-    public static IRuleBuilderOptions<T, string?> Latitude<T>(this IRuleBuilder<T, string?> builder)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> Latitude<T>(this IRuleBuilder<T, string> builder)
+#nullable restore
     {
         return builder
             .Must(latitude =>
@@ -49,7 +51,9 @@ public static class GeoValidators
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
     }
 
-    public static IRuleBuilderOptions<T, string?> Longitude<T>(this IRuleBuilder<T, string?> builder)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> Longitude<T>(this IRuleBuilder<T, string> builder)
+#nullable restore
     {
         return builder
             .Must(longitude =>

@@ -15,7 +15,9 @@ public static class IdValidators
         return rule.NotEqual(Guid.Empty);
     }
 
-    public static IRuleBuilderOptions<T, string?> Id<T>(this IRuleBuilder<T, string?> rule)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> Id<T>(this IRuleBuilder<T, string> rule)
+#nullable restore
     {
         return rule.NotEqual(string.Empty);
     }

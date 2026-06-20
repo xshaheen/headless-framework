@@ -8,7 +8,9 @@ namespace FluentValidation;
 [PublicAPI]
 public static class EgyptianNationalIdValidators
 {
-    public static IRuleBuilderOptions<T, string?> EgyptianNationalId<T>(this IRuleBuilder<T, string?> builder)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> EgyptianNationalId<T>(this IRuleBuilder<T, string> builder)
+#nullable restore
     {
         // EgyptianNationalIdValidator.IsValid already enforces the 14-char length (plus digit,
         // date, and governorate checks), so a separate .Length(14) would double-report on bad input.

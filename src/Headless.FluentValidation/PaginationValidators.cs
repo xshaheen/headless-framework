@@ -12,10 +12,12 @@ public static class PaginationValidators
         return rule.GreaterThanOrEqualTo(0);
     }
 
-    public static IRuleBuilderOptions<T, string?> SearchQuery<T>(
-        this IRuleBuilder<T, string?> rule,
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> SearchQuery<T>(
+        this IRuleBuilder<T, string> rule,
         int maximumLength = 100
     )
+#nullable restore
     {
         Argument.IsPositiveOrZero(maximumLength);
 

@@ -11,6 +11,7 @@ namespace FluentValidation;
 public static class PhoneNumberValidators
 {
     private static readonly DataAnnotationsPhoneAttribute _PhoneAttribute = new();
+    private static readonly PhoneNumberUtil _PhoneNumberUtil = PhoneNumberUtil.GetInstance();
 
     public static IRuleBuilderOptions<T, int?> PhoneCountryCode<T>(this IRuleBuilder<T, int?> builder)
     {
@@ -65,16 +66,17 @@ public static class PhoneNumberValidators
         context.AddFailure(failure);
     }
 
-    extension<T>(IRuleBuilder<T, string?> builder)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    extension<T>(IRuleBuilder<T, string> builder)
     {
-        public IRuleBuilderOptions<T, string?> BasicPhoneNumber()
+        public IRuleBuilderOptions<T, string> BasicPhoneNumber()
         {
             return builder
                 .Must(_PhoneAttribute.IsValid)
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber());
         }
 
-        public IRuleBuilderOptionsConditions<T, string?> PhoneNumber(Func<T, int> countryCodeFunc)
+        public IRuleBuilderOptionsConditions<T, string> PhoneNumber(Func<T, int> countryCodeFunc)
         {
             return builder.Custom(
                 (number, context) =>
@@ -84,14 +86,13 @@ public static class PhoneNumberValidators
                         return;
                     }
 
-                    var util = PhoneNumberUtil.GetInstance();
                     var countryCode = countryCodeFunc(context.InstanceToValidate);
 
                     PhoneNumber maybePhoneNumber;
 
                     try
                     {
-                        maybePhoneNumber = util.Parse(
+                        maybePhoneNumber = _PhoneNumberUtil.Parse(
                             "+" + countryCode.ToString(CultureInfo.InvariantCulture) + number,
                             defaultRegion: null
                         );
@@ -118,7 +119,7 @@ public static class PhoneNumberValidators
                         }
                     }
 
-                    var validationResult = util.IsPossibleNumberWithReason(maybePhoneNumber);
+                    var validationResult = _PhoneNumberUtil.IsPossibleNumberWithReason(maybePhoneNumber);
 
                     switch (validationResult)
                     {
@@ -145,7 +146,7 @@ public static class PhoneNumberValidators
             );
         }
 
-        public IRuleBuilderOptionsConditions<T, string?> InternationalPhoneNumber()
+        public IRuleBuilderOptionsConditions<T, string> InternationalPhoneNumber()
         {
             return builder.Custom(
                 (phoneNumber, context) =>
@@ -155,13 +156,11 @@ public static class PhoneNumberValidators
                         return;
                     }
 
-                    var util = PhoneNumberUtil.GetInstance();
-
                     PhoneNumber maybePhoneNumber;
 
                     try
                     {
-                        maybePhoneNumber = util.Parse(phoneNumber, defaultRegion: null);
+                        maybePhoneNumber = _PhoneNumberUtil.Parse(phoneNumber, defaultRegion: null);
                     }
                     catch (NumberParseException e)
                     {
@@ -185,7 +184,7 @@ public static class PhoneNumberValidators
                         }
                     }
 
-                    var validationResult = util.IsPossibleNumberWithReason(maybePhoneNumber);
+                    var validationResult = _PhoneNumberUtil.IsPossibleNumberWithReason(maybePhoneNumber);
 
                     switch (validationResult)
                     {
@@ -212,4 +211,5 @@ public static class PhoneNumberValidators
             );
         }
     }
+#nullable restore
 }

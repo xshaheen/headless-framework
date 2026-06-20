@@ -8,9 +8,10 @@ namespace FluentValidation;
 [PublicAPI]
 public static class CollectionValidators
 {
-    extension<T, TElement>(IRuleBuilder<T, IEnumerable<TElement>?> builder)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    extension<T, TElement>(IRuleBuilder<T, IEnumerable<TElement>> builder)
     {
-        public IRuleBuilderOptions<T, IEnumerable<TElement>?> MaximumElements(int maxElements)
+        public IRuleBuilderOptions<T, IEnumerable<TElement>> MaximumElements(int maxElements)
         {
             Argument.IsPositive(maxElements);
 
@@ -43,7 +44,7 @@ public static class CollectionValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MaximumElementsValidator());
         }
 
-        public IRuleBuilderOptions<T, IEnumerable<TElement>?> MinimumElements(int minElements)
+        public IRuleBuilderOptions<T, IEnumerable<TElement>> MinimumElements(int minElements)
         {
             Argument.IsPositiveOrZero(minElements);
 
@@ -76,9 +77,7 @@ public static class CollectionValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MinimumElementsValidator());
         }
 
-        public IRuleBuilderOptions<T, IEnumerable<TElement>?> UniqueElements(
-            IEqualityComparer<TElement>? comparer = null
-        )
+        public IRuleBuilderOptions<T, IEnumerable<TElement>> UniqueElements(IEqualityComparer<TElement> comparer = null)
         {
             return builder
                 .Must(
@@ -89,19 +88,26 @@ public static class CollectionValidators
                             return true;
                         }
 
-                        // ReSharper disable once PossibleMultipleEnumeration
-                        var count = list.TryGetNonEnumeratedCount(out var length) ? length : list.Count();
+                        // Single pass: HashSet.Add returns false for each duplicate, so the failed-add
+                        // count is the exact number of excess items. (Any() would short-circuit on the
+                        // first duplicate, leaving the set partially filled and the count wrong.)
+                        var hashSet = new HashSet<TElement>(comparer);
+                        var duplicates = 0;
 
-                        var hashSet = new HashSet<TElement>(count, comparer);
-                        // ReSharper disable once PossibleMultipleEnumeration
-                        var hasDuplicates = list.Any(element => !hashSet.Add(element));
+                        foreach (var element in list)
+                        {
+                            if (!hashSet.Add(element))
+                            {
+                                duplicates++;
+                            }
+                        }
 
-                        if (!hasDuplicates)
+                        if (duplicates == 0)
                         {
                             return true;
                         }
 
-                        context.MessageFormatter.AppendArgument("TotalDuplicates", count - hashSet.Count);
+                        context.MessageFormatter.AppendArgument("TotalDuplicates", duplicates);
 
                         return false;
                     }
@@ -109,9 +115,9 @@ public static class CollectionValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator());
         }
 
-        public IRuleBuilderOptions<T, IEnumerable<TElement>?> UniqueElements<TKey>(
+        public IRuleBuilderOptions<T, IEnumerable<TElement>> UniqueElements<TKey>(
             Func<TElement, TKey> keySelector,
-            IEqualityComparer<TKey>? comparer = null
+            IEqualityComparer<TKey> comparer = null
         )
         {
             return builder
@@ -140,4 +146,5 @@ public static class CollectionValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator());
         }
     }
+#nullable restore
 }
