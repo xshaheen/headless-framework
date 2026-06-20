@@ -51,7 +51,7 @@ public static class ApiResultMvcExtensions
                 creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())
             ),
 
-            ForbiddenError e => new ObjectResult(creator.Forbidden(error: new ErrorDescriptor("forbidden", e.Reason)))
+            ForbiddenError e => new ObjectResult(creator.Forbidden(error: new ErrorDescriptor("g:forbidden", e.Reason)))
             {
                 StatusCode = 403,
             },

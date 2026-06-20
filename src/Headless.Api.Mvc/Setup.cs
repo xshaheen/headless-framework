@@ -6,7 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api;
 
-public static class AddMvcExtensions
+[PublicAPI]
+public static class SetupMvc
 {
     public static IServiceCollection ConfigureMvc(this IServiceCollection services)
     {
