@@ -67,6 +67,9 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         var container = new[] { $"presign{Guid.NewGuid():N}" };
         var content = "presigned-upload"u8.ToArray();
 
+        // The presigned PUT goes straight to Azure and does not create the container; create it first.
+        await ((IBlobStorage)storage).CreateContainerAsync(container, AbortToken);
+
         var uploadUrl = await storage.GetPresignedUploadUrlAsync(
             container,
             "file.txt",

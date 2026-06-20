@@ -102,6 +102,9 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         var container = new[] { $"presign-{Guid.NewGuid():N}" };
         var content = "presigned-upload"u8.ToArray();
 
+        // The presigned PUT goes straight to S3 and does not create the bucket; create it first.
+        await ((IBlobStorage)storage).CreateContainerAsync(container, AbortToken);
+
         var uploadUrl = await storage.GetPresignedUploadUrlAsync(
             container,
             "file.txt",

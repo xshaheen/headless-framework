@@ -125,6 +125,10 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var container = new[] { $"presign-{Guid.NewGuid():N}" };
         var content = "presigned-upload"u8.ToArray();
 
+        // The presigned PUT goes straight to R2 and does not create the bucket; create it first (the
+        // conformance token allows bucket creation).
+        await ((IBlobStorage)storage).CreateContainerAsync(container, AbortToken);
+
         var uploadUrl = await storage.GetPresignedUploadUrlAsync(
             container,
             "file.txt",
