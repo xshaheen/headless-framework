@@ -235,6 +235,57 @@ public sealed class ActionableStreamTests
     }
 
     [Fact]
+    public void should_invoke_disposeAction_exactly_once_on_public_Dispose()
+    {
+        // given
+        var invocationCount = 0;
+        var inner = new MemoryStream();
+        var sut = new ActionableStream(inner, () => invocationCount++);
+
+        // when - dispose multiple times via the public surface
+        sut.Dispose();
+        sut.Dispose();
+        sut.Dispose();
+
+        // then - the action fired exactly once (idempotent dispose)
+        invocationCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void should_invoke_disposeAction_when_closed()
+    {
+        // given - Close routes through Dispose so the action must still fire
+        var invocationCount = 0;
+        var inner = new MemoryStream();
+        var sut = new ActionableStream(inner, () => invocationCount++);
+
+        // when
+        sut.Close();
+
+        // then
+        invocationCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void should_not_invoke_disposeAction_on_finalizer_path()
+    {
+        // given
+        var invocationCount = 0;
+        var inner = new MemoryStream();
+        using var sut = new ActionableStream(inner, () => invocationCount++);
+
+        // when - simulate the finalizer path (disposing: false)
+        _InvokeDispose(sut, disposing: false);
+
+        // then - the action must not run while the GC is reclaiming managed resources
+        invocationCount.Should().Be(0);
+
+        // inner stream remains usable because finalizer path did not dispose it
+        var act = () => inner.ReadByte();
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void should_delegate_CanTimeout_to_inner_stream()
     {
         // given

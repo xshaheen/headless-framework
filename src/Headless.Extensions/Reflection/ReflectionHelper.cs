@@ -24,25 +24,7 @@ public static class ReflectionHelper
     )
         where TAttribute : Attribute
     {
-        return memberInfo.IsDefined(typeof(TAttribute), inherit)
-            ? memberInfo.GetCustomAttributes(typeof(TAttribute), inherit).Cast<TAttribute>().First()
-            : defaultValue;
-    }
-
-    /// <summary>
-    /// Tries to get an of attribute defined for a class member, and it's declaring type including
-    /// inherited attributes.
-    /// Returns default value if it's not declared at all.
-    /// </summary>
-    /// <typeparam name="TAttribute">Type of the attribute</typeparam>
-    /// <param name="memberInfo">MemberInfo</param>
-    /// <param name="inherit">Inherit attribute from base classes</param>
-    public static TAttribute? GetFirstAttribute<TAttribute>(this MemberInfo memberInfo, bool inherit = true)
-        where TAttribute : Attribute
-    {
-        var attributes = memberInfo.GetCustomAttributes(typeof(TAttribute), inherit);
-
-        return attributes.Length == 0 ? null : (TAttribute)attributes[0];
+        return memberInfo.GetCustomAttribute<TAttribute>(inherit) ?? defaultValue;
     }
 
     /// <summary>
@@ -61,6 +43,8 @@ public static class ReflectionHelper
     )
         where TAttribute : class
     {
+        // TAttribute is constrained to `class` (not `Attribute`), so the typed GetCustomAttributes<T>
+        // overload is unavailable here; use the object[] overload + OfType to preserve that flexibility.
         return memberInfo.GetCustomAttributes(inherit).OfType<TAttribute>().FirstOrDefault()
             ?? memberInfo
                 .DeclaringType?.GetTypeInfo()
@@ -83,6 +67,7 @@ public static class ReflectionHelper
     )
         where TAttribute : class
     {
+        // TAttribute is constrained to `class` (not `Attribute`); use the object[] overload + OfType.
         var customAttributes = memberInfo.GetCustomAttributes(inherit).OfType<TAttribute>();
 
         var declaringTypeCustomAttributes = memberInfo

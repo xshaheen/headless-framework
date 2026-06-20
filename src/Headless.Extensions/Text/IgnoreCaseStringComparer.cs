@@ -46,7 +46,12 @@ public sealed class IgnoreCaseStringComparer : StringComparer
 
     public override bool Equals(string? x, string? y)
     {
-        if (x is null || y is null)
+        if (x is null)
+        {
+            return y is null;
+        }
+
+        if (y is null)
         {
             return false;
         }
@@ -73,6 +78,10 @@ public sealed class IgnoreCaseStringComparer : StringComparer
 
     public override int GetHashCode(string obj)
     {
+        if (obj is null)
+        {
+            return 0;
+        }
         unchecked
         {
             int index = 0,

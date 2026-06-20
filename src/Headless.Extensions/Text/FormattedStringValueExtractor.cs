@@ -13,12 +13,28 @@ namespace Headless.Text;
 /// Say that str is "My name is Neo." and format is "My name is {name}.".
 /// Then Extract method gets "Neo" as "name".
 /// </example>
+/// <remarks>
+/// <para>
+/// Matching is greedy on the first occurrence: each constant separator is matched against the
+/// earliest position it appears in the remaining input. As a consequence, a dynamic value that
+/// itself contains the literal text of the following separator is truncated at that first
+/// occurrence. For example, extracting "{a}-{b}" from "x-y-z" yields a="x" and b="y-z" (the second
+/// "-" is treated as part of the trailing value), while "x-y-z" against "{a}-{b}-{c}" yields
+/// a="x", b="y", c="z". This greedy-first-match behavior is intentional and not configurable.
+/// </para>
+/// </remarks>
+[PublicAPI]
 public static class FormattedStringValueExtractor
 {
     /// <summary>Extracts dynamic values from a formatted string.</summary>
     /// <param name="str">String including dynamic values</param>
     /// <param name="format">Format of the string</param>
     /// <param name="ignoreCase">True, to search case-insensitive.</param>
+    /// <remarks>
+    /// The whole input must be consumed for a successful match: if the format ends with constant
+    /// text, any input remaining after that final constant causes <see cref="FormattedStringExtractionResult.IsMatch"/>
+    /// to be <see langword="false"/>. See the type-level remarks for the greedy-first-match limitation.
+    /// </remarks>
     public static FormattedStringExtractionResult Extract(string str, string format, bool ignoreCase = false)
     {
         var stringComparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -78,7 +94,14 @@ public static class FormattedStringValueExtractor
 
         if (lastToken.Type is FormatStringTokenType.DynamicValue)
         {
+            // The trailing dynamic value greedily captures whatever input remains.
             result.Matches.Add(new NameValue { Name = lastToken.Text, Value = str });
+        }
+        else if (str.Length > 0)
+        {
+            // The format ends with constant text but the input has unmatched trailing characters,
+            // so the input is not fully consumed and therefore does not match.
+            result.IsMatch = false;
         }
 
         return result;
@@ -112,6 +135,7 @@ public static class FormattedStringValueExtractor
 
 #region Types
 
+[PublicAPI]
 public sealed class FormattedStringExtractionResult
 {
     internal FormattedStringExtractionResult(bool isMatch)

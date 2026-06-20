@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
 using Headless.Checks;
 
 namespace Headless.Urls;
@@ -9,7 +8,8 @@ namespace Headless.Urls;
 /// <summary>
 /// A mutable object for fluently building and parsing URLs.
 /// </summary>
-public sealed partial class Url
+[PublicAPI]
+public sealed class Url
 {
     private readonly string? _originalString;
     private bool _parsed;
@@ -278,33 +278,13 @@ public sealed partial class Url
     /// Parses a URL query to a QueryParamCollection.
     /// </summary>
     /// <param name="query">The URL query to parse.</param>
-    public static QueryParamCollection ParseQueryParams(string? query) => new(query);
+    public static QueryParamCollection ParseQueryParams(string? query) => UrlParser.ParseQueryParams(query);
 
     /// <summary>
     /// Splits the given path into segments, encoding illegal characters, "?", and "#".
     /// </summary>
     /// <param name="path">The path to split.</param>
-    public static IEnumerable<string> ParsePathSegments(string path)
-    {
-        var segments = EncodeIllegalCharacters(path)
-            .Replace("?", "%3F", StringComparison.Ordinal)
-            .Replace("#", "%23", StringComparison.Ordinal)
-            .Split('/');
-
-        if (segments.Length == 0)
-        {
-            yield break;
-        }
-
-        // skip first and/or last segment if either empty, but not any in between. "///" should return 2 empty segments for example.
-        var start = segments[0].Length > 0 ? 0 : 1;
-        var count = segments.Length - (segments[^1].Length > 0 ? 0 : 1);
-
-        for (var i = start; i < count; i++)
-        {
-            yield return segments[i];
-        }
-    }
+    public static IEnumerable<string> ParsePathSegments(string path) => UrlParser.ParsePathSegments(path);
     #endregion
 
     #region fluent builder methods
@@ -799,7 +779,7 @@ public sealed partial class Url
             sb.Append(_fragment);
         }
 
-        return sb.ToString().Trim();
+        return sb.ToString();
     }
 
     /// <summary>
@@ -970,17 +950,7 @@ public sealed partial class Url
     /// <param name="s">The URL-encoded string.</param>
     /// <param name="interpretPlusAsSpace">If true, any '+' character will be decoded to a space.</param>
     [return: NotNullIfNotNull(nameof(s))]
-    public static string? Decode(string? s, bool interpretPlusAsSpace)
-    {
-        if (string.IsNullOrEmpty(s))
-        {
-            return s;
-        }
-
-        return Uri.UnescapeDataString(interpretPlusAsSpace ? s.Replace('+', ' ') : s);
-    }
-
-    private const int _MaxUrlLength = 65519;
+    public static string? Decode(string? s, bool interpretPlusAsSpace) => UrlEncoder.Decode(s, interpretPlusAsSpace);
 
     /// <summary>
     /// URL-encodes a string, including reserved characters such as '/' and '?'.
@@ -989,32 +959,7 @@ public sealed partial class Url
     /// <param name="encodeSpaceAsPlus">If true, spaces will be encoded as + signs. Otherwise, they'll be encoded as %20.</param>
     /// <returns>The encoded URL.</returns>
     [return: NotNullIfNotNull(nameof(s))]
-    public static string? Encode(string? s, bool encodeSpaceAsPlus = false)
-    {
-        if (string.IsNullOrEmpty(s))
-        {
-            return s;
-        }
-
-        if (s.Length > _MaxUrlLength)
-        {
-            // Uri.EscapeDataString is going to throw because the string is "too long", so break it into pieces and concat them
-            var parts = new string[(int)Math.Ceiling((double)s.Length / _MaxUrlLength)];
-            for (var i = 0; i < parts.Length; i++)
-            {
-                var start = i * _MaxUrlLength;
-                var len = Math.Min(_MaxUrlLength, s.Length - start);
-                parts[i] = Uri.EscapeDataString(s.AsSpan(start, len));
-            }
-            s = string.Concat(parts);
-        }
-        else
-        {
-            s = Uri.EscapeDataString(s);
-        }
-
-        return encodeSpaceAsPlus ? s.Replace("%20", "+", StringComparison.Ordinal) : s;
-    }
+    public static string? Encode(string? s, bool encodeSpaceAsPlus = false) => UrlEncoder.Encode(s, encodeSpaceAsPlus);
 
     /// <summary>
     /// URL-encodes characters in a string that are neither reserved nor unreserved. Avoids encoding reserved characters such as '/' and '?'. Avoids encoding '%' if it begins a %-hex-hex sequence (i.e. avoids double-encoding).
@@ -1023,43 +968,8 @@ public sealed partial class Url
     /// <param name="encodeSpaceAsPlus">If true, spaces will be encoded as + signs. Otherwise, they'll be encoded as %20.</param>
     /// <returns>The encoded URL.</returns>
     [return: NotNullIfNotNull(nameof(s))]
-    public static string? EncodeIllegalCharacters(string? s, bool encodeSpaceAsPlus = false)
-    {
-        if (string.IsNullOrEmpty(s))
-        {
-            return s;
-        }
-
-        if (encodeSpaceAsPlus)
-        {
-            s = s.Replace(' ', '+');
-        }
-
-        // Uri.EscapeUriString mostly does what we want - encodes illegal characters only - but it has a quirk
-        // in that % isn't illegal if it's the start of a %-encoded sequence https://stackoverflow.com/a/47636037/62600
-
-        // no % characters, so avoid the regex overhead
-        if (!s.OrdinalContains("%"))
-        {
-#pragma warning disable SYSLIB0013 // Type or member is obsolete
-            return Uri.EscapeUriString(s);
-        }
-#pragma warning restore SYSLIB0013
-
-        // pick out all %-hex-hex matches and avoid double-encoding
-        return _EscapeRegex()
-            .Replace(
-                s,
-                c =>
-                {
-                    var a = c.Groups[1].Value; // group 1 is a sequence with no %-encoding - encode illegal characters
-                    var b = c.Groups[2].Value; // group 2 is a valid 3-character %-encoded sequence - leave it alone!
-#pragma warning disable SYSLIB0013 // Type or member is obsolete
-                    return Uri.EscapeUriString(a) + b;
-#pragma warning restore SYSLIB0013
-                }
-            );
-    }
+    public static string? EncodeIllegalCharacters(string? s, bool encodeSpaceAsPlus = false) =>
+        UrlEncoder.EncodeIllegalCharacters(s, encodeSpaceAsPlus);
 
     /// <summary>
     /// Checks if a string is a well-formed absolute URL.
@@ -1075,9 +985,6 @@ public sealed partial class Url
         // Don't be tempted to use IsWellFormedUriString - it's known to return false positives on some platforms:
         // https://github.com/dotnet/runtime/issues/72632
         Uri.TryCreate(url, UriKind.Absolute, out _);
-
-    [GeneratedRegex("(.*?)((%[0-9A-Fa-f]{2})|$)", RegexOptions.Compiled | RegexOptions.ExplicitCapture, 100)]
-    private static partial Regex _EscapeRegex();
 
     #endregion
 }

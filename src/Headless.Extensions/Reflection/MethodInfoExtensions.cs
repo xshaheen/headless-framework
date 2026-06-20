@@ -7,6 +7,7 @@ using Headless.Checks;
 namespace System.Reflection;
 
 #pragma warning disable RCS1047 // Remove Async suffix.
+[PublicAPI]
 public static class MethodInfoExtensions
 {
     /// <summary>Checks if given method is an async method.</summary>
@@ -20,7 +21,7 @@ public static class MethodInfoExtensions
         {
             return method.ReturnType == typeof(Task)
                 || method.ReturnType == typeof(ValueTask)
-                || method.GetCustomAttribute<AsyncStateMachineAttribute>() != null;
+                || Attribute.IsDefined(method, typeof(AsyncStateMachineAttribute));
         }
 
         var genericTypeDefinition = method.ReturnType.GetGenericTypeDefinition();
@@ -36,6 +37,6 @@ public static class MethodInfoExtensions
         }
 
         // Fallback to check for AsyncStateMachineAttribute if it has async/await keywords
-        return method.GetCustomAttribute<AsyncStateMachineAttribute>() != null;
+        return Attribute.IsDefined(method, typeof(AsyncStateMachineAttribute));
     }
 }

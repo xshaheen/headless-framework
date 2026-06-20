@@ -8,6 +8,7 @@ namespace Headless.Urls;
 /// <summary>
 /// CommonExtensions for objects.
 /// </summary>
+[PublicAPI]
 public static class CommonExtensions
 {
     /// <summary>
@@ -26,6 +27,10 @@ public static class CommonExtensions
         return obj switch
         {
             string s => _StringToKV(s),
+            // Typed fast paths: dictionaries and KeyValuePair sequences expose Key/Value statically,
+            // so read them directly instead of reflecting over each element in _CollectionToKV.
+            IEnumerable<KeyValuePair<string, object?>> kv => kv.Select(p => (p.Key, p.Value)),
+            IEnumerable<KeyValuePair<string, string>> kv => kv.Select(p => (p.Key, (object?)p.Value)),
             IEnumerable e => _CollectionToKV(e),
             _ => _ObjectToKV(obj),
         };
@@ -145,11 +150,13 @@ public static class CommonExtensions
             value = prop.GetValue(obj, null);
             return true;
         }
+
         if (field is not null)
         {
             value = field.GetValue(obj);
             return true;
         }
+
         value = null;
         return false;
     }

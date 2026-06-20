@@ -5,6 +5,7 @@ namespace Headless.Urls;
 /// <summary>
 /// Describes how to handle null values in query parameters.
 /// </summary>
+[PublicAPI]
 public enum NullValueHandling
 {
     /// <summary>

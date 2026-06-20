@@ -2,6 +2,7 @@
 
 namespace Headless.Text;
 
+[PublicAPI]
 public static class LookupNormalizer
 {
     [return: NotNullIfNotNull(nameof(name))]

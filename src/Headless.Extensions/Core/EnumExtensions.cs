@@ -61,7 +61,7 @@ public static class EnumExtensions
         public T? GetFirstAttribute<T>()
             where T : Attribute
         {
-            return enumValue?.GetEnumMemberInfo().GetFirstAttribute<T>(inherit: false);
+            return enumValue?.GetEnumMemberInfo().GetFirstOrDefaultAttribute<T>(inherit: false);
         }
 
         [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]

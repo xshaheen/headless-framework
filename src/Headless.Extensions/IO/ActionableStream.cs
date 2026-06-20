@@ -4,12 +4,33 @@ using Headless.Checks;
 
 namespace Headless.IO;
 
+[PublicAPI]
 public sealed class ActionableStream(Stream stream, Action disposeAction) : Stream
 {
     private readonly Stream _stream = Argument.IsNotNull(stream);
+    private bool _disposed;
 
     protected override void Dispose(bool disposing)
     {
+        // Skip the finalizer path: the user disposeAction and inner stream are managed resources and must not be
+        // touched once the GC is reclaiming us. Routing all disposal through Dispose(true) keeps the action firing
+        // exactly once for both Dispose() and Close() (Stream.Close calls Dispose).
+        if (!disposing)
+        {
+            base.Dispose(disposing);
+
+            return;
+        }
+
+        if (_disposed)
+        {
+            base.Dispose(disposing);
+
+            return;
+        }
+
+        _disposed = true;
+
         try
         {
             disposeAction.Invoke();
@@ -134,10 +155,8 @@ public sealed class ActionableStream(Stream stream, Action disposeAction) : Stre
         return _stream.ReadByte();
     }
 
-    public override void Close()
-    {
-        _stream.Close();
-    }
+    // No Close() override: the base Stream.Close() already routes to Dispose(true), which runs disposeAction
+    // exactly once. Overriding Close() to call Dispose() would recurse infinitely (Stream.Dispose() calls Close()).
 
     public override IAsyncResult BeginRead(byte[] buffer, int offset, int count, AsyncCallback? callback, object? state)
     {

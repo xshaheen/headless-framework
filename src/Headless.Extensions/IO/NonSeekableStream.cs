@@ -6,6 +6,7 @@ using Headless.Core;
 namespace Headless.IO;
 
 #pragma warning disable CA1065 // Do not raise exceptions in property getters
+[PublicAPI]
 public sealed class NonSeekableStream(Stream stream) : Stream, IHasIsDisposed
 {
     public bool IsDisposed { get; private set; }

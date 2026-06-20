@@ -51,11 +51,14 @@ public static class AssemblyHelper
         var currentlyLoadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
 
         var (excluded, included) = currentlyLoadedAssemblies.Partition(assembly =>
-            excludePredicate(assembly.FullName!)
+            assembly.FullName is null || excludePredicate(assembly.FullName)
         );
 
-        // Put all the exclude assemblies as checked
-        HashSet<string> referencesCheckedNames = new(excluded.Select(a => a.FullName!), StringComparer.Ordinal);
+        // Put all the exclude assemblies as checked (dynamic assemblies with null FullName are already excluded above)
+        HashSet<string> referencesCheckedNames = new(
+            excluded.Select(a => a.FullName).Where(n => n is not null)!,
+            StringComparer.Ordinal
+        );
         Queue<Assembly> assembliesToCheck = new(included);
         HashSet<Assembly> acceptedAssemblies = [];
 
@@ -81,9 +84,23 @@ public static class AssemblyHelper
                     continue;
                 }
 
-                var loadedAssembly = Assembly.Load(reference);
-                assembliesToCheck.Enqueue(loadedAssembly);
+                // Mark as visited before attempting to load so a load failure doesn't cause
+                // repeated retry attempts in subsequent BFS iterations.
                 referencesCheckedNames.Add(reference.FullName);
+
+                Assembly loadedAssembly;
+
+                try
+                {
+                    loadedAssembly = Assembly.Load(reference);
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or BadImageFormatException or FileLoadException)
+                {
+                    // Reference is unavailable or invalid — skip and continue the BFS.
+                    continue;
+                }
+
+                assembliesToCheck.Enqueue(loadedAssembly);
             }
         }
 

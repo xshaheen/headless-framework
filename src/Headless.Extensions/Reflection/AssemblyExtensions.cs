@@ -5,6 +5,7 @@ using Headless.Reflection;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Reflection;
 
+[PublicAPI]
 public static class AssemblyExtensions
 {
     #region Assembly Information

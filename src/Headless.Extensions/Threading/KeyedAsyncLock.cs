@@ -66,7 +66,7 @@ public sealed class KeyedAsyncLock : IDisposable
     }
 
     private readonly Shard[] _shards;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <summary>Initializes a new <see cref="KeyedAsyncLock"/> instance.</summary>
     public KeyedAsyncLock()
@@ -89,6 +89,7 @@ public sealed class KeyedAsyncLock : IDisposable
     public async Task<IDisposable> LockAsync(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
+        Ensure.NotDisposed(_disposed, this);
 
         var semaphore = _GetOrCreate(key);
 
@@ -115,6 +116,7 @@ public sealed class KeyedAsyncLock : IDisposable
     public IDisposable? TryLock(string key)
     {
         Argument.IsNotNullOrEmpty(key);
+        Ensure.NotDisposed(_disposed, this);
 
         var semaphore = _GetOrCreate(key);
 
@@ -146,6 +148,7 @@ public sealed class KeyedAsyncLock : IDisposable
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(timeProvider);
+        Ensure.NotDisposed(_disposed, this);
 
         if (timeout == Timeout.InfiniteTimeSpan)
         {
