@@ -5,12 +5,20 @@ using Headless.Checks;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// Convenience extensions over <see cref="IDistributedLock"/> for releasing/renewing a held
+/// <see cref="IDistributedLease"/> and for the acquire-run-release ("try-using") pattern that owns the
+/// handle lifetime so callers do not have to manage <c>await using</c> themselves.
+/// </summary>
 [PublicAPI]
 public static class DistributedLockExtensions
 {
     extension(IDistributedLock provider)
     {
-        /// <summary>Releases a resource lock for <paramref name="distributedLock"/>.</summary>
+        /// <summary>Releases the resource lock held by <paramref name="distributedLock"/>.</summary>
+        /// <param name="distributedLock">The held lease to release; supplies the resource and lease id.</param>
+        /// <param name="cancellationToken">Cancels the release; surfaces as <see cref="OperationCanceledException"/>.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="provider"/> is <see langword="null"/>.</exception>
         public Task ReleaseAsync(IDistributedLease distributedLock, CancellationToken cancellationToken = default)
         {
             Argument.IsNotNull(provider);

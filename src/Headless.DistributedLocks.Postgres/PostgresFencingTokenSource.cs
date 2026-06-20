@@ -6,6 +6,25 @@ using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;
 
+/// <summary>
+/// Implements <see cref="IFencingTokenSource"/> over a PostgreSQL database sequence named
+/// <c>headless_distributed_locks_fence</c>. Each call to <see cref="NextAsync"/> returns the next value
+/// from the sequence, guaranteeing a strictly-increasing token across all processes connected to the same
+/// database.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The sequence is created lazily on first use (<see cref="_EnsureSequenceAsync"/>). Creation is
+/// serialized across in-process callers via a <see cref="SemaphoreSlim"/> and across replicas via a
+/// transaction-scoped advisory lock keyed on <c>headless_fencing_init:headless_distributed_locks_fence</c>,
+/// so the <c>CREATE SEQUENCE IF NOT EXISTS</c> is safe against concurrent process start-up.
+/// </para>
+/// <para>
+/// This source always opens a fresh pooled connection from its owned <see cref="NpgsqlDataSource"/>
+/// regardless of the handle connection supplied to <see cref="NextAsync"/>; the handle connection is
+/// intentionally ignored because the multiplexing engine may share it with other lock operations.
+/// </para>
+/// </remarks>
 internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDisposable
 {
     private const string _SequenceName = "headless_distributed_locks_fence";
@@ -14,6 +33,15 @@ internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDi
     private readonly SemaphoreSlim _ensureGate = new(1, 1);
     private bool _sequenceEnsured;
 
+    /// <summary>
+    /// Initializes the fencing-token source over the shared Npgsql data source, taking the command timeout
+    /// from the resolved provider options. The backing database sequence is created lazily on first use.
+    /// </summary>
+    /// <param name="options">Provider options supplying the command timeout.</param>
+    /// <param name="dataSource">
+    /// The shared <see cref="NpgsqlDataSource"/> injected by the DI registration. Not disposed here;
+    /// disposal is owned by <see cref="PostgresLockDataSource"/>.
+    /// </param>
     public PostgresFencingTokenSource(IOptions<PostgresDistributedLockOptions> options, NpgsqlDataSource dataSource)
     {
         // The data source is shared and owned by the DI registration; it is never disposed here.
@@ -21,6 +49,23 @@ internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDi
         _commandTimeout = options.Value.CommandTimeout;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Always opens a fresh connection from the owned <see cref="NpgsqlDataSource"/>; the optional
+    /// <paramref name="connection"/> argument is intentionally ignored. Ensures the database sequence
+    /// exists on first call (see <see cref="_EnsureSequenceAsync"/>). Underlying Npgsql errors propagate
+    /// to the caller.
+    /// </remarks>
+    /// <param name="resource">Ignored; the Postgres sequence is shared across all resources.</param>
+    /// <param name="connection">
+    /// Ignored; the token is always issued on a fresh pooled connection so the handle connection is not
+    /// disturbed.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the sequence or sequence-init command.</param>
+    /// <returns>The next strictly-increasing sequence value.</returns>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled before the sequence value is returned.
+    /// </exception>
     public async ValueTask<long?> NextAsync(
         string resource,
         DbConnection? connection = null,
@@ -109,6 +154,10 @@ internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDi
         }
     }
 
+    /// <summary>
+    /// Disposes the in-process <see cref="SemaphoreSlim"/> gate. The shared
+    /// <see cref="NpgsqlDataSource"/> is not disposed here; disposal is owned by the DI registration.
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         // The data source is shared and owned by the DI registration; only the local gate is disposed here.

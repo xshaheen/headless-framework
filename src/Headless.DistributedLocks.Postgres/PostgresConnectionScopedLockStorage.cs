@@ -39,6 +39,16 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     // teardown loop already missed (it iterates a snapshot of _heldByLockId).
     private volatile bool _disposed;
 
+    /// <summary>
+    /// Initializes the connection-scoped lock storage over the shared Npgsql data source, wiring the
+    /// advisory-lock engines, multiplexed connection pool, and keepalive cadence from the resolved options.
+    /// </summary>
+    /// <param name="options">Resolved provider options (polling fallback, command timeout, keepalive, key prefix).</param>
+    /// <param name="dataSource">
+    /// The shared <see cref="NpgsqlDataSource"/> injected by <see cref="PostgresLockDataSource"/>. Not
+    /// disposed by this instance; disposal is owned by the DI registration.
+    /// </param>
+    /// <param name="timeProvider">Time source used for monitoring sleeps and keepalive cadence.</param>
     public PostgresConnectionScopedLockStorage(
         IOptions<PostgresDistributedLockOptions> options,
         NpgsqlDataSource dataSource,
@@ -65,6 +75,18 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         _multiplexedConnectionLockPool = new MultiplexedConnectionLockPool(_CreateConnection);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Internally uses <c>pg_try_advisory_lock</c> (non-blocking) via the multiplexing engine, which
+    /// returns <see langword="null"/> immediately when the resource is held in a conflicting mode.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">
+    /// Thrown when <see cref="DisposeAsync"/> has already been called and the just-acquired engine
+    /// handle is dropped to avoid leaking it.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled before the engine returns.
+    /// </exception>
     public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
         string resource,
         string leaseId,
@@ -125,6 +147,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         }
     }
 
+    /// <inheritdoc/>
     public async ValueTask ReleaseAsync(
         ConnectionScopedLockHandle handle,
         CancellationToken cancellationToken = default
@@ -133,6 +156,12 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         await ReleaseAsync(handle.Resource, handle.LeaseId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// If no lock with the given <paramref name="leaseId"/> is registered, the call is a no-op. The
+    /// engine handle is disposed with a non-cancellable release path so the advisory lock and
+    /// connection are always returned to the pool regardless of caller cancellation.
+    /// </remarks>
     public async ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         if (!_heldByLockId.TryRemove(leaseId, out var held))
@@ -146,6 +175,15 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         await held.DisposeAsync().ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Queries <c>pg_catalog.pg_locks</c> on a freshly-opened connection from the owned data source.
+    /// Returns <see langword="true"/> when the granted-lock count for the resource key exceeds zero.
+    /// Underlying Npgsql errors propagate to the caller.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled before the query completes.
+    /// </exception>
     public async ValueTask<bool> IsLockedAsync(
         string resource,
         bool? isShared = null,
@@ -157,6 +195,15 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         return count > 0;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Queries <c>pg_catalog.pg_locks</c> for the resource key across the current database, optionally
+    /// filtered by lock mode (<c>ShareLock</c> or <c>ExclusiveLock</c>). Underlying Npgsql errors
+    /// propagate to the caller.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled before the query completes.
+    /// </exception>
     public async ValueTask<long> GetLocksCountAsync(
         string resource,
         bool? isShared = null,
@@ -187,6 +234,15 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The lookup is local-only: it scans the in-process <c>_heldByLockId</c> dictionary and does not
+    /// query the database. Returns <see langword="null"/> when this process does not hold the resource.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is already cancelled on entry (checked
+    /// synchronously via <see cref="CancellationToken.ThrowIfCancellationRequested"/>).
+    /// </exception>
     public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -197,6 +253,17 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         return ValueTask.FromResult(leaseId);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Returns only the locks held by this process. Because long resource names are hashed into advisory
+    /// integer keys, <c>pg_locks</c> cannot reverse-map them to the original resource name; a
+    /// database-wide listing is therefore not possible and the result is limited to the local
+    /// in-process tracking dictionary. <see cref="DistributedLockInfo.TimeToLive"/> and
+    /// <see cref="DistributedLockInfo.FencingToken"/> are always <see langword="null"/> for advisory locks.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is already cancelled on entry.
+    /// </exception>
     public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
         CancellationToken cancellationToken = default
     )
@@ -219,13 +286,20 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         return ValueTask.FromResult(locks);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Returns the in-process count of currently tracked lock handles. Does not query the database.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is already cancelled on entry.
+    /// </exception>
     public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult((long)_heldByLockId.Count);
     }
 
-    /// <summary>Tears down every held lock and the owned data source.</summary>
+    /// <summary>Tears down every held advisory lock. The shared data source is not disposed here.</summary>
     /// <remarks>
     /// A single teardown failure does not strand the remaining locks; all errors are collected and
     /// surfaced after teardown completes. When exactly one error was collected it is rethrown

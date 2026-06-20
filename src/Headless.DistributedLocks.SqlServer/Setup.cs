@@ -11,11 +11,26 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.DistributedLocks.SqlServer;
 
+/// <summary>
+/// Extension members on <see cref="HeadlessDistributedLocksSetupBuilder"/> that wire the SQL Server
+/// <c>sp_getapplock</c>-backed provider. Use one of the <c>UseSqlServer</c> overloads from within
+/// <c>AddHeadlessDistributedLocks</c> to register <see cref="IDistributedLock"/> and
+/// <see cref="IDistributedReadWriteLock"/> backed by SQL Server session-scoped application locks.
+/// </summary>
 [PublicAPI]
 public static class SetupSqlServerDistributedLocks
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {
+        /// <summary>
+        /// Registers the SQL Server distributed-lock provider using the supplied connection string.
+        /// </summary>
+        /// <param name="connectionString">
+        /// A SQL Server connection string. Must not be <see langword="null"/>, empty, or whitespace.
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="connectionString"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="connectionString"/> is empty or whitespace.</exception>
         public HeadlessDistributedLocksSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -26,6 +41,15 @@ public static class SetupSqlServerDistributedLocks
             });
         }
 
+        /// <summary>
+        /// Registers the SQL Server distributed-lock provider and binds <see cref="SqlServerDistributedLockOptions"/>
+        /// from the supplied <see cref="IConfiguration"/> section.
+        /// </summary>
+        /// <param name="configuration">
+        /// Configuration section to bind into <see cref="SqlServerDistributedLockOptions"/>. Must not be <see langword="null"/>.
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
         public HeadlessDistributedLocksSetupBuilder UseSqlServer(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -35,6 +59,15 @@ public static class SetupSqlServerDistributedLocks
             return setup;
         }
 
+        /// <summary>
+        /// Registers the SQL Server distributed-lock provider and configures <see cref="SqlServerDistributedLockOptions"/>
+        /// using the supplied delegate.
+        /// </summary>
+        /// <param name="configure">
+        /// Delegate that configures <see cref="SqlServerDistributedLockOptions"/>. Must not be <see langword="null"/>.
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessDistributedLocksSetupBuilder UseSqlServer(Action<SqlServerDistributedLockOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -44,6 +77,16 @@ public static class SetupSqlServerDistributedLocks
             return setup;
         }
 
+        /// <summary>
+        /// Registers the SQL Server distributed-lock provider and configures <see cref="SqlServerDistributedLockOptions"/>
+        /// using the supplied delegate that also receives the <see cref="IServiceProvider"/>.
+        /// </summary>
+        /// <param name="configure">
+        /// Delegate that configures <see cref="SqlServerDistributedLockOptions"/> with access to the DI container.
+        /// Must not be <see langword="null"/>.
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessDistributedLocksSetupBuilder UseSqlServer(
             Action<SqlServerDistributedLockOptions, IServiceProvider> configure
         )

@@ -9,7 +9,43 @@ using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;
 
-/// <summary>PostgreSQL advisory-lock key in either the bigint or the two-int key space.</summary>
+/// <summary>
+/// Represents a PostgreSQL advisory-lock key in either the bigint (<c>int8</c>) or the two-int
+/// (<c>int4, int4</c>) key space, and handles the mapping from arbitrary resource name strings into
+/// those key spaces.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Key encoding is chosen in priority order:
+/// <list type="number">
+///   <item><description>
+///     <b>ASCII</b> — names whose characters are all 7-bit ASCII and fit within 9 characters are
+///     packed losslessly into a single <see cref="long"/> using 7 bits per character.
+///   </description></item>
+///   <item><description>
+///     <b>Hash-string</b> — names that look like the hex-encoded output of <see cref="ToString"/>
+///     (16 hex characters, or 8+<c>,</c>+8) are decoded directly without hashing.
+///   </description></item>
+///   <item><description>
+///     <b>SHA-256 hash</b> — names that do not fit either scheme are SHA-256-hashed and the first
+///     8 bytes of the digest form a <see cref="long"/> key.  Results are memoized in a
+///     process-scoped <see cref="ConcurrentDictionary{TKey,TValue}"/> so the retry loop does not
+///     re-hash the same resource name on every poll.
+///   </description></item>
+/// </list>
+/// </para>
+/// <para>
+/// The <c>pg_locks</c> view splits a single bigint key into <c>(classid, objid, objsubid=1)</c>
+/// and a two-int pair into <c>(classid=key1, objid=key2, objsubid=2)</c>.
+/// <see cref="AddLockFilter(NpgsqlCommand)"/> encodes the correct predicate for both forms so
+/// queries that inspect <c>pg_locks</c> do not conflate the two key shapes.
+/// </para>
+/// <para>
+/// This is a <see langword="readonly"/> value type. Equality is defined over (<c>_key</c>,
+/// <see cref="HasSingleKey"/>): two keys are equal if and only if both their packed value and their
+/// key-space variant are the same.
+/// </para>
+/// </remarks>
 [PublicAPI]
 [StructLayout(LayoutKind.Auto)]
 public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLockKey>
@@ -31,18 +67,39 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     private readonly long _key;
     private readonly KeyEncoding _keyEncoding;
 
+    /// <summary>Initializes a key in the bigint (<c>int8</c>) advisory-lock key space.</summary>
+    /// <param name="key">The 64-bit advisory-lock key value.</param>
     public PostgresAdvisoryLockKey(long key)
     {
         _key = key;
         _keyEncoding = KeyEncoding.Int64;
     }
 
+    /// <summary>Initializes a key in the two-int (<c>int4, int4</c>) advisory-lock key space.</summary>
+    /// <param name="key1">The first 32-bit component of the advisory-lock key pair.</param>
+    /// <param name="key2">The second 32-bit component of the advisory-lock key pair.</param>
     public PostgresAdvisoryLockKey(int key1, int key2)
     {
         _key = _CombineKeys(key1, key2);
         _keyEncoding = KeyEncoding.Int32Pair;
     }
 
+    /// <summary>
+    /// Derives a <see cref="PostgresAdvisoryLockKey"/> from an arbitrary resource name string using the
+    /// encoding priority described on the type: ASCII packing → hash-string passthrough → SHA-256 hash.
+    /// </summary>
+    /// <param name="name">The resource name to encode. Must not be <see langword="null"/>.</param>
+    /// <param name="allowHashing">
+    /// When <see langword="true"/> (the default), names that cannot be encoded losslessly are SHA-256-hashed.
+    /// When <see langword="false"/>, a name that does not fit ASCII or hash-string encoding throws
+    /// <see cref="FormatException"/>.
+    /// </param>
+    /// <returns>The derived <see cref="PostgresAdvisoryLockKey"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="FormatException">
+    /// Thrown when <paramref name="allowHashing"/> is <see langword="false"/> and <paramref name="name"/>
+    /// cannot be encoded as ASCII or a hash-string key.
+    /// </exception>
     public static PostgresAdvisoryLockKey FromString(string name, bool allowHashing = true)
     {
         Argument.IsNotNull(name);
@@ -71,19 +128,47 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
         _keyEncoding = encoding;
     }
 
+    /// <summary>
+    /// Gets a value indicating whether this key occupies the bigint key space (i.e. uses a single
+    /// <see cref="long"/> key). Returns <see langword="false"/> when the key uses the two-int pair space.
+    /// </summary>
     public bool HasSingleKey => _keyEncoding is KeyEncoding.Int64 or KeyEncoding.Ascii;
 
+    /// <summary>
+    /// Gets the 64-bit key value for use with the single-key advisory-lock functions
+    /// (<c>pg_advisory_lock(bigint)</c>).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <see cref="HasSingleKey"/> is <see langword="false"/>; use <see cref="Keys"/> instead.
+    /// </exception>
     public long Key =>
         HasSingleKey ? _key : throw new InvalidOperationException("This advisory key uses two int keys.");
 
+    /// <summary>
+    /// Gets the two-int key pair for use with the two-argument advisory-lock functions
+    /// (<c>pg_advisory_lock(int, int)</c>). Valid for all key encodings: single-key values are split
+    /// into their high and low 32-bit halves.
+    /// </summary>
     public (int Key1, int Key2) Keys => _SplitKeys(_key);
 
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="other"/> has the same packed key value and
+    /// occupies the same key space (<see cref="HasSingleKey"/>).
+    /// </summary>
+    /// <param name="other">The key to compare against.</param>
     public bool Equals(PostgresAdvisoryLockKey other) => (_key, HasSingleKey).Equals((other._key, other.HasSingleKey));
 
+    /// <inheritdoc/>
     public override bool Equals(object? obj) => obj is PostgresAdvisoryLockKey other && Equals(other);
 
+    /// <inheritdoc/>
     public override int GetHashCode() => (_key, HasSingleKey).GetHashCode();
 
+    /// <summary>
+    /// Returns the canonical hex-string representation of this key: 16 hex characters for a bigint key,
+    /// or <c>xxxxxxxx,yyyyyyyy</c> (8 + comma + 8) for a two-int pair. The output is accepted by
+    /// <see cref="FromString"/> as a hash-string passthrough.
+    /// </summary>
     public override string ToString()
     {
         return _keyEncoding switch
@@ -95,8 +180,10 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
         };
     }
 
+    /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are equal.</summary>
     public static bool operator ==(PostgresAdvisoryLockKey left, PostgresAdvisoryLockKey right) => left.Equals(right);
 
+    /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are not equal.</summary>
     public static bool operator !=(PostgresAdvisoryLockKey left, PostgresAdvisoryLockKey right) => !left.Equals(right);
 
     // Advisory-key SQL helpers shared by every command-emitting call site (the transaction API on

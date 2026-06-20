@@ -10,6 +10,21 @@ using Polly;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// Distributed reader-writer lock provider that allows concurrent readers and exclusive writers,
+/// with writer preference (queued writers block new readers until promoted).
+/// Implements <see cref="IDistributedReadWriteLock"/>; registered as a singleton by
+/// <see cref="SetupDistributedLocks"/> and should not be instantiated directly.
+/// </summary>
+/// <remarks>
+/// All acquire paths emit OpenTelemetry metrics and activities via
+/// <see cref="DistributedLockMetrics"/> and <see cref="DistributedLocksDiagnostics"/>.
+/// The release path uses a long-running Polly retry pipeline (15 attempts) shared with
+/// <see cref="DistributedLock"/> to ensure that sustained storage unavailability does not
+/// strand waiters indefinitely. Release is bounded by <see cref="DistributedLockOptions.DisposeTimeout"/>;
+/// on timeout a warning is logged and the TTL-based expiry acts as the eventual consistency
+/// mechanism.
+/// </remarks>
 public sealed class DistributedReadWriteLock(
     IDistributedReadWriteLockStorage storage,
     IOutboxBus? outboxBus,
@@ -38,10 +53,36 @@ public sealed class DistributedReadWriteLock(
         logger
     );
 
+    /// <inheritdoc/>
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
+    /// <inheritdoc/>
     public TimeSpan DefaultAcquireTimeout { get; } = TimeSpan.FromSeconds(30);
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> requires a finite
+    /// lease but <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is
+    /// <see cref="Timeout.InfiniteTimeSpan"/>, or when the resource name exceeds
+    /// <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative or
+    /// exceeds <see cref="int.MaxValue"/> milliseconds, or when
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is negative or exceeds
+    /// <see cref="int.MaxValue"/> milliseconds.
+    /// </exception>
+    /// <exception cref="LockAcquisitionTimeoutException">
+    /// Thrown when the lock cannot be acquired before
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> elapses (or
+    /// <see cref="DefaultAcquireTimeout"/> when not specified).
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled.
+    /// </exception>
     public async Task<IDistributedLease> AcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -58,6 +99,25 @@ public sealed class DistributedReadWriteLock(
             );
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> requires a finite
+    /// lease but <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is
+    /// <see cref="Timeout.InfiniteTimeSpan"/>, or when the resource name exceeds
+    /// <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative or
+    /// exceeds <see cref="int.MaxValue"/> milliseconds, or when
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is negative or exceeds
+    /// <see cref="int.MaxValue"/> milliseconds.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled.
+    /// </exception>
     public Task<IDistributedLease?> TryAcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -67,6 +127,30 @@ public sealed class DistributedReadWriteLock(
         return _TryAcquireAsync(ReaderWriterLockMode.Read, resource, options, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> requires a finite
+    /// lease but <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is
+    /// <see cref="Timeout.InfiniteTimeSpan"/>, or when the resource name exceeds
+    /// <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative or
+    /// exceeds <see cref="int.MaxValue"/> milliseconds, or when
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is negative or exceeds
+    /// <see cref="int.MaxValue"/> milliseconds.
+    /// </exception>
+    /// <exception cref="LockAcquisitionTimeoutException">
+    /// Thrown when the lock cannot be acquired before
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> elapses (or
+    /// <see cref="DefaultAcquireTimeout"/> when not specified).
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled.
+    /// </exception>
     public async Task<IDistributedLease> AcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -83,6 +167,25 @@ public sealed class DistributedReadWriteLock(
             );
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> requires a finite
+    /// lease but <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is
+    /// <see cref="Timeout.InfiniteTimeSpan"/>, or when the resource name exceeds
+    /// <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative or
+    /// exceeds <see cref="int.MaxValue"/> milliseconds, or when
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is negative or exceeds
+    /// <see cref="int.MaxValue"/> milliseconds.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled.
+    /// </exception>
     public Task<IDistributedLease?> TryAcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -92,6 +195,13 @@ public sealed class DistributedReadWriteLock(
         return _TryAcquireAsync(ReaderWriterLockMode.Write, resource, options, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the resource name exceeds <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
     public async Task<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         _ValidateResource(resource);
@@ -99,6 +209,13 @@ public sealed class DistributedReadWriteLock(
         return await _storage.IsReadLockedAsync(resource, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the resource name exceeds <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
     public async Task<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         _ValidateResource(resource);
@@ -106,6 +223,13 @@ public sealed class DistributedReadWriteLock(
         return await _storage.IsWriteLockedAsync(resource, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the resource name exceeds <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
     public async Task<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
     {
         _ValidateResource(resource);
@@ -113,6 +237,34 @@ public sealed class DistributedReadWriteLock(
         return await _storage.GetReaderCountAsync(resource, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Renews the lease for <paramref name="resource"/> in the given <paramref name="mode"/>.
+    /// Delegates to the appropriate storage extend method based on mode.
+    /// Returns <see langword="true"/> when the lease was extended;
+    /// <see langword="false"/> when the lease has been lost (expired, evicted, or writer-preference
+    /// refusal for read leases).
+    /// Called by <see cref="DisposableReaderWriterLock"/> during auto-extend or manual
+    /// <see cref="DisposableReaderWriterLock.RenewAsync"/> calls.
+    /// </summary>
+    /// <param name="mode">Whether this is a read or write lease renewal.</param>
+    /// <param name="resource">The locked resource name.</param>
+    /// <param name="leaseId">The lease identifier to renew.</param>
+    /// <param name="timeUntilExpires">
+    /// New TTL. <see langword="null"/> falls back to <see cref="DefaultTimeUntilExpires"/>;
+    /// <see cref="Timeout.InfiniteTimeSpan"/> is mapped to <see langword="null"/> (no expiry,
+    /// write-mode only; read leases always receive a finite TTL).
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the storage round-trip.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace,
+    /// or when <paramref name="leaseId"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the resource name exceeds <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="mode"/> is an unrecognized <see cref="ReaderWriterLockMode"/> value.
+    /// </exception>
     internal Task<bool> RenewAsync(
         ReaderWriterLockMode mode,
         string resource,
@@ -143,6 +295,28 @@ public sealed class DistributedReadWriteLock(
         };
     }
 
+    /// <summary>
+    /// Checks whether the caller's <paramref name="leaseId"/> is still present in storage for
+    /// <paramref name="resource"/> in the given <paramref name="mode"/>. Used by the monitoring
+    /// loop as an ownership probe when <see cref="DisposableReaderWriterLock.ClassifyRenewFailure"/>
+    /// returns <see langword="null"/>. Result is advisory only.
+    /// Returns <see langword="true"/> when the lease is still held;
+    /// <see langword="false"/> when it has been lost.
+    /// </summary>
+    /// <param name="mode">Whether to validate a read or write lease.</param>
+    /// <param name="resource">The locked resource name.</param>
+    /// <param name="leaseId">The lease identifier to validate.</param>
+    /// <param name="cancellationToken">Token to cancel the storage round-trip.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace,
+    /// or when <paramref name="leaseId"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the resource name exceeds <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="mode"/> is an unrecognized <see cref="ReaderWriterLockMode"/> value.
+    /// </exception>
     internal Task<bool> ValidateAsync(
         ReaderWriterLockMode mode,
         string resource,
@@ -161,6 +335,31 @@ public sealed class DistributedReadWriteLock(
         };
     }
 
+    /// <summary>
+    /// Releases the lease identified by <paramref name="leaseId"/> for <paramref name="resource"/>
+    /// in the given <paramref name="mode"/>. The release path retries up to 15 times via a shared
+    /// Polly pipeline and is bounded by <see cref="DistributedLockOptions.DisposeTimeout"/>; on
+    /// timeout a warning is logged and the TTL acts as eventual cleanup. After storage release,
+    /// any active lease monitor is disposed, and if an outbox bus is configured a
+    /// <see cref="DistributedLockReleased"/> message is published to wake waiters.
+    /// </summary>
+    /// <param name="mode">Whether to release a read or write lease.</param>
+    /// <param name="resource">The locked resource name.</param>
+    /// <param name="leaseId">The lease identifier to release.</param>
+    /// <param name="cancellationToken">
+    /// Used only for the outbox publish; the underlying storage release always uses
+    /// <see cref="CancellationToken.None"/> so disposal is not interrupted by caller cancellation.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="resource"/> is <see langword="null"/> or whitespace,
+    /// or when <paramref name="leaseId"/> is <see langword="null"/> or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the resource name exceeds <see cref="DistributedLockOptions.MaxResourceNameLength"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="mode"/> is an unrecognized <see cref="ReaderWriterLockMode"/> value.
+    /// </exception>
     internal async Task ReleaseAsync(
         ReaderWriterLockMode mode,
         string resource,
@@ -607,6 +806,10 @@ public sealed class DistributedReadWriteLock(
         _ = _monitorRegistry.TryDeregister(resource, leaseId);
     }
 
+    /// <summary>
+    /// Returns the number of active lease monitors registered for <paramref name="resource"/>.
+    /// Intended for testing and diagnostics only; not part of the public API contract.
+    /// </summary>
     internal int GetActiveMonitorCount(string resource)
     {
         return _monitorRegistry.GetMonitorCount(resource);
@@ -640,7 +843,7 @@ public sealed class DistributedReadWriteLock(
         {
             ReaderWriterLockMode.Read => "read",
             ReaderWriterLockMode.Write => "write",
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, @"Unknown reader-writer lock mode."),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown reader-writer lock mode."),
         };
     }
 }

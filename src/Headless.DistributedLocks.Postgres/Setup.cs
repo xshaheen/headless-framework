@@ -11,11 +11,31 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.DistributedLocks.Postgres;
 
+/// <summary>
+/// Provides extension members on <see cref="HeadlessDistributedLocksSetupBuilder"/> to configure the
+/// PostgreSQL advisory-lock distributed-lock provider.
+/// </summary>
 [PublicAPI]
 public static class SetupPostgresDistributedLocks
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures the distributed-lock provider to use PostgreSQL advisory locks with the supplied
+        /// raw connection string.
+        /// </summary>
+        /// <param name="connectionString">
+        /// A valid Npgsql connection string used to build the provider-owned
+        /// <see cref="Npgsql.NpgsqlDataSource"/>. Must not be <see langword="null"/>, empty, or
+        /// whitespace.
+        /// </param>
+        /// <returns>The same <see cref="HeadlessDistributedLocksSetupBuilder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="connectionString"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// Thrown when <paramref name="connectionString"/> is empty or whitespace.
+        /// </exception>
         public HeadlessDistributedLocksSetupBuilder UsePostgreSql(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -26,6 +46,17 @@ public static class SetupPostgresDistributedLocks
             });
         }
 
+        /// <summary>
+        /// Configures the distributed-lock provider to use PostgreSQL advisory locks, binding
+        /// <see cref="PostgresDistributedLockOptions"/> from the supplied <see cref="IConfiguration"/>.
+        /// </summary>
+        /// <param name="configuration">
+        /// The configuration section to bind. Must not be <see langword="null"/>.
+        /// </param>
+        /// <returns>The same <see cref="HeadlessDistributedLocksSetupBuilder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="configuration"/> is <see langword="null"/>.
+        /// </exception>
         public HeadlessDistributedLocksSetupBuilder UsePostgreSql(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -35,6 +66,17 @@ public static class SetupPostgresDistributedLocks
             return setup;
         }
 
+        /// <summary>
+        /// Configures the distributed-lock provider to use PostgreSQL advisory locks, applying the
+        /// supplied delegate to <see cref="PostgresDistributedLockOptions"/>.
+        /// </summary>
+        /// <param name="configure">
+        /// A delegate that configures the options. Must not be <see langword="null"/>.
+        /// </param>
+        /// <returns>The same <see cref="HeadlessDistributedLocksSetupBuilder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="configure"/> is <see langword="null"/>.
+        /// </exception>
         public HeadlessDistributedLocksSetupBuilder UsePostgreSql(Action<PostgresDistributedLockOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -44,6 +86,19 @@ public static class SetupPostgresDistributedLocks
             return setup;
         }
 
+        /// <summary>
+        /// Configures the distributed-lock provider to use PostgreSQL advisory locks, applying the
+        /// supplied delegate (which also receives the <see cref="IServiceProvider"/>) to
+        /// <see cref="PostgresDistributedLockOptions"/>.
+        /// </summary>
+        /// <param name="configure">
+        /// A delegate that configures the options with access to the DI container. Must not be
+        /// <see langword="null"/>.
+        /// </param>
+        /// <returns>The same <see cref="HeadlessDistributedLocksSetupBuilder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="configure"/> is <see langword="null"/>.
+        /// </exception>
         public HeadlessDistributedLocksSetupBuilder UsePostgreSql(
             Action<PostgresDistributedLockOptions, IServiceProvider> configure
         )

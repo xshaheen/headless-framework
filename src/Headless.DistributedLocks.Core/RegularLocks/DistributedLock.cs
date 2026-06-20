@@ -13,6 +13,34 @@ using Polly.Retry;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// The default mutex (exclusive) distributed-lock provider. Implements <see cref="IDistributedLock"/>
+/// using a compare-and-set storage backend (<see cref="IDistributedLockStorage"/>) with exponential
+/// backoff and optional push-based wake-up via the outbox bus.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Acquire semantics: a successful storage insert (SET NX) atomically transfers ownership; the caller
+/// receives an <see cref="IDistributedLease"/> handle that can be released explicitly or on dispose.
+/// </para>
+/// <para>
+/// Wake-up model: when <see cref="IOutboxBus"/> is available, a <see cref="DistributedLockReleased"/>
+/// message is published after each confirmed release; blocked acquirers are signalled immediately
+/// instead of waiting for the next backoff interval. Without the bus, callers fall back to polling.
+/// </para>
+/// <para>
+/// Monitoring: if <see cref="DistributedLockAcquireOptions.Monitoring"/> is
+/// <see cref="LockMonitoringMode.Monitor"/> or <see cref="LockMonitoringMode.AutoExtend"/>, a
+/// <see cref="LeaseMonitor"/> is attached to the returned handle. The monitor polls storage at the
+/// configured cadence (and auto-extends the TTL when auto-extend is enabled); it cancels
+/// <see cref="IDistributedLease.LostToken"/> when lease loss is detected.
+/// </para>
+/// <para>
+/// This class also implements <see cref="ICanReceiveLockReleased"/> so the shared
+/// <c>LockReleasedConsumer</c> can fan release signals out to multiple providers without coupling
+/// to concrete types.
+/// </para>
+/// </remarks>
 public sealed class DistributedLock(
     IDistributedLockStorage storage,
     IOutboxBus? outboxBus,
@@ -71,12 +99,29 @@ public sealed class DistributedLock(
     private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
     private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
 
+    /// <summary>
+    /// The lease TTL applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is
+    /// <see langword="null"/> or <see cref="Timeout.InfiniteTimeSpan"/>. Default: 20 minutes.
+    /// </summary>
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
+    /// <summary>
+    /// The acquire-wait budget applied when <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is
+    /// <see langword="null"/>. Default: 30 seconds.
+    /// </summary>
     public TimeSpan DefaultAcquireTimeout { get; } = TimeSpan.FromSeconds(30);
 
     #region Acquire
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace, or when
+    /// monitoring is requested with an infinite lease TTL.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="resource"/> exceeds
+    /// <see cref="DistributedLockOptions.MaxResourceNameLength"/>.</exception>
+    /// <exception cref="LockAcquisitionTimeoutException">Thrown when the lock is not acquired before
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> elapses.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public async Task<IDistributedLease> AcquireAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -95,6 +140,13 @@ public sealed class DistributedLock(
             : new LockAcquisitionTimeoutException(resource);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace, or when
+    /// monitoring is requested with an infinite lease TTL.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="resource"/> exceeds
+    /// <see cref="DistributedLockOptions.MaxResourceNameLength"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public async Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -492,6 +544,11 @@ public sealed class DistributedLock(
 
     #region Release
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled during the outbox publish step
+    /// (the storage release is executed under <see cref="CancellationToken.None"/> and is not affected).</exception>
     public async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
@@ -595,6 +652,10 @@ public sealed class DistributedLock(
 
     #region Renew
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<bool> RenewAsync(
         string resource,
         string leaseId,
@@ -630,6 +691,10 @@ public sealed class DistributedLock(
 
     #region Lease validation
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
@@ -647,6 +712,10 @@ public sealed class DistributedLock(
 
     #region IsLocked
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public async Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
@@ -664,6 +733,10 @@ public sealed class DistributedLock(
 
     #region Observability
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
@@ -678,6 +751,10 @@ public sealed class DistributedLock(
             .AsTask();
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public async Task<DistributedLockInfo?> GetLockInfoAsync(
         string resource,
         CancellationToken cancellationToken = default
@@ -709,6 +786,8 @@ public sealed class DistributedLock(
         };
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public async Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
         CancellationToken cancellationToken = default
     )
@@ -740,6 +819,8 @@ public sealed class DistributedLock(
         return result;
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
         return _queryPipeline
@@ -842,11 +923,26 @@ public sealed class DistributedLock(
         return _monitorRegistry.GetResourceCount();
     }
 
+    /// <summary>
+    /// Messaging consumer that fans a <see cref="DistributedLockReleased"/> event out to every
+    /// registered <see cref="ICanReceiveLockReleased"/> provider (mutex and semaphore), allowing
+    /// blocked acquirers to be woken immediately after a release rather than waiting for the next
+    /// backoff poll interval.
+    /// </summary>
     internal sealed class LockReleasedConsumer(
         IEnumerable<ICanReceiveLockReleased> receivers,
         ILogger<LockReleasedConsumer> logger
     ) : IConsume<DistributedLockReleased>
     {
+        /// <summary>
+        /// Fans the release signal to all registered receivers and returns synchronously.
+        /// Cancellation is honoured before dispatch; if <paramref name="cancellationToken"/>
+        /// is already cancelled, returns a cancelled <see cref="ValueTask"/> without calling
+        /// any receiver.
+        /// </summary>
+        /// <param name="context">The consume context carrying the <see cref="DistributedLockReleased"/> message.</param>
+        /// <param name="cancellationToken">Token cancelled on application shutdown.</param>
+        /// <returns>A completed (or cancelled) <see cref="ValueTask"/>.</returns>
         public ValueTask ConsumeAsync(
             ConsumeContext<DistributedLockReleased> context,
             CancellationToken cancellationToken

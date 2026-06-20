@@ -8,6 +8,33 @@ using Nito.AsyncEx;
 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// Background task that periodically validates — and optionally auto-extends — an acquired lease,
+/// signalling lease loss by cancelling <see cref="LostToken"/>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The monitoring loop runs at the cadence configured in <see cref="DistributedLockOptions"/> (fraction
+/// of the lease TTL). Each iteration calls <see cref="ILeaseHandle.RenewOrValidateLeaseAsync"/> on the
+/// owning handle, which delegates to the provider's storage backend.
+/// </para>
+/// <para>
+/// <b>Safety-net self-promotion:</b> if successive iterations all return <see cref="LeaseState.Unknown"/>
+/// (transient storage errors) for a cumulative window equal to the full lease TTL, the monitor
+/// treats the lease as lost and cancels <see cref="LostToken"/> even without a definitive storage
+/// confirmation. This prevents a stuck storage backend from leaving the caller believing it still
+/// holds a lease whose TTL has expired.
+/// </para>
+/// <para>
+/// <b>GC-abandonment:</b> the monitoring loop holds only a <see cref="WeakReference{T}"/> to this
+/// instance. Callers that drop the handle without disposing it allow the monitor to exit the loop
+/// naturally when the GC collects the handle, preventing a memory leak.
+/// </para>
+/// <para>
+/// Dispose is idempotent and thread-safe. A <see cref="LostToken"/> callback that calls
+/// <see cref="DisposeAsync"/> is safe — the implementation detects the re-entrant case.
+/// </para>
+/// </remarks>
 internal sealed class LeaseMonitor : IAsyncDisposable
 {
     private readonly CancellationTokenSource _disposalSource = new();
@@ -30,6 +57,15 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Creates and immediately starts the background monitoring loop for the given lease handle.
+    /// </summary>
+    /// <param name="leaseHandle">The handle whose ownership will be monitored.</param>
+    /// <param name="timeProvider">Time provider used for cadence scheduling and elapsed-time measurements.</param>
+    /// <param name="logger">Logger for state-change and fault events.</param>
+    /// <exception cref="ArgumentNullException">Thrown when any parameter is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="ILeaseHandle.LeaseDuration"/> is less than
+    /// <see cref="ILeaseHandle.MonitoringCadence"/> (the cadence must fit inside the lease window).</exception>
     public LeaseMonitor(ILeaseHandle leaseHandle, TimeProvider timeProvider, ILogger logger)
     {
         _leaseHandle = Argument.IsNotNull(leaseHandle);
@@ -133,15 +169,31 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
     private readonly AsyncAutoResetEvent _nudgeSignal;
 
+    /// <summary>The background task running the monitoring loop. Completes when the loop exits (disposal or lease lost).</summary>
     internal Task MonitoringTask { get; }
 
+    /// <summary>
+    /// Cancelled when lease loss is detected (storage confirms ownership is gone, the safety-net
+    /// threshold is reached, or the monitoring loop faults). Consumers should register callbacks on
+    /// this token to initiate graceful shutdown of work protected by the lease.
+    /// </summary>
     public CancellationToken LostToken => _handleLostSource.Token;
 
+    /// <summary>
+    /// Signals the monitoring loop to run a validation iteration immediately instead of waiting for
+    /// the next scheduled cadence. Used by the release-signal path to surface lease loss with
+    /// minimal latency when a <see cref="DistributedLockReleased"/> event is received.
+    /// </summary>
     public void TriggerImmediateValidation()
     {
         _nudgeSignal.Set();
     }
 
+    /// <summary>
+    /// Stops the monitoring loop and disposes internal resources. Idempotent — safe to call from
+    /// a <see cref="LostToken"/> callback or concurrently with the loop. Does not cancel
+    /// <see cref="LostToken"/>; that token reflects the lease state, not the monitor's lifetime.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -351,24 +403,53 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         }
     }
 
+    /// <summary>The outcome of a single monitoring iteration, used to drive state transitions.</summary>
     internal enum LeaseState
     {
+        /// <summary>Polling mode: storage confirmed the caller still owns the lease/slot.</summary>
         Held,
+
+        /// <summary>Auto-extend mode: the TTL extension call succeeded — ownership is confirmed and the window is reset.</summary>
         Renewed,
+
+        /// <summary>Storage confirmed ownership is gone (another holder or the record is absent).</summary>
         Lost,
+
+        /// <summary>
+        /// Transient outcome: storage was unreachable or returned an ambiguous result.
+        /// The monitoring loop accumulates these; when the total unknown window reaches the full
+        /// lease TTL, the safety net self-promotes to <see cref="Lost"/>.
+        /// </summary>
         Unknown,
     }
 
+    /// <summary>
+    /// Contract that a lock/slot handle exposes to its attached <see cref="LeaseMonitor"/>. Keeps
+    /// the monitor decoupled from concrete handle types (mutex vs. semaphore) while giving it access
+    /// to the resource identity, cadence parameters, and the actual storage operation.
+    /// </summary>
     internal interface ILeaseHandle
     {
+        /// <summary>The resource name for which the lease was acquired.</summary>
         string Resource { get; }
 
+        /// <summary>The unique lease identifier held by this handle.</summary>
         string LeaseId { get; }
 
+        /// <summary>The TTL of the lease as negotiated with the backend at acquire time.</summary>
         TimeSpan LeaseDuration { get; }
 
+        /// <summary>The interval between monitoring iterations (pre-computed from options at handle construction).</summary>
         TimeSpan MonitoringCadence { get; }
 
+        /// <summary>
+        /// Performs one monitoring iteration: attempts a renewal (auto-extend mode) or an ownership
+        /// validation (polling mode) against the storage backend, and returns the resulting
+        /// <see cref="LeaseState"/>.
+        /// </summary>
+        /// <param name="cancellationToken">Token cancelled when the monitor is being disposed.</param>
+        /// <returns>The classification of the iteration outcome.</returns>
+        /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
         Task<LeaseState> RenewOrValidateLeaseAsync(CancellationToken cancellationToken);
     }
 
@@ -386,6 +467,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
 internal static partial class LeaseMonitorLog
 {
+    /// <summary>Logs a lease monitor state transition (e.g. Held → Lost).</summary>
     [LoggerMessage(
         EventId = 30,
         EventName = "LeaseMonitorStateChanged",
@@ -400,6 +482,7 @@ internal static partial class LeaseMonitorLog
         LeaseMonitor.LeaseState nextState
     );
 
+    /// <summary>Logs a transient validation failure (Unknown state) during a monitoring iteration.</summary>
     [LoggerMessage(
         EventId = 31,
         EventName = "LeaseMonitorValidationUnknown",
@@ -413,6 +496,7 @@ internal static partial class LeaseMonitorLog
         string leaseId
     );
 
+    /// <summary>Logs an unhandled exception in the monitoring loop (LostToken is also cancelled).</summary>
     [LoggerMessage(
         EventId = 32,
         EventName = "LeaseMonitorFaulted",

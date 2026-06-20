@@ -7,6 +7,27 @@ using Microsoft.Extensions.Options;
 namespace Headless.DistributedLocks.SqlServer;
 
 #pragma warning disable CA2100 // Sequence identifiers are validated, sanitized, and quoted before interpolation.
+/// <summary>
+/// <see cref="IFencingTokenSource"/> implementation that reads the next value from the SQL Server
+/// <c>bigint</c> sequence created by <see cref="SqlServerDistributedLocksStorageInitializer"/>. Tokens
+/// are strictly increasing across all processes connected to the same database.
+/// </summary>
+/// <remarks>
+/// <para>
+/// When <see cref="SqlServerDistributedLockOptions.EnableFencing"/> is <see langword="false"/>,
+/// <see cref="NextAsync"/> returns <see langword="null"/> immediately without touching the database.
+/// </para>
+/// <para>
+/// The sequence is created lazily on the first <see cref="NextAsync"/> call when the
+/// <see cref="SqlServerDistributedLocksStorageInitializer"/> has not already run (for example when the
+/// provider is used without an <c>IHost</c>). Lazy creation is double-checked with
+/// <c>_ensureGate</c> so multiple concurrent first-callers do not issue duplicate DDL.
+/// </para>
+/// <para>
+/// When a <see cref="Microsoft.Data.SqlClient.SqlConnection"/> from the just-acquired lock handle is
+/// supplied, <see cref="NextAsync"/> reuses it to avoid opening a second connection per exclusive acquire.
+/// </para>
+/// </remarks>
 internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedLockOptions> options)
     : IFencingTokenSource,
         IDisposable
@@ -14,6 +35,14 @@ internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedL
     private readonly SemaphoreSlim _ensureGate = new(1, 1);
     private bool _sequenceEnsured;
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Returns <see langword="null"/> immediately when fencing is disabled via
+    /// <see cref="SqlServerDistributedLockOptions.EnableFencing"/>. Otherwise ensures the sequence exists
+    /// (at most once per source instance), then issues <c>SELECT NEXT VALUE FOR &lt;schema&gt;.&lt;sequence&gt;</c>
+    /// on the supplied connection or a new short-lived connection.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public async ValueTask<long?> NextAsync(
         string resource,
         DbConnection? connection = null,
@@ -89,6 +118,7 @@ internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedL
         }
     }
 
+    /// <summary>Disposes the internal gate semaphore.</summary>
     public void Dispose()
     {
         _ensureGate.Dispose();

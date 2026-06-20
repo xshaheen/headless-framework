@@ -5,17 +5,48 @@ using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;
 
+/// <summary>
+/// Configuration options for the PostgreSQL advisory-lock distributed-lock provider. Exactly one of
+/// <see cref="ConnectionString"/> or <see cref="DataSource"/> must be set; an injected
+/// <see cref="DataSource"/> is used as-is and is never disposed by the provider.
+/// </summary>
 [PublicAPI]
 public sealed class PostgresDistributedLockOptions
 {
+    /// <summary>
+    /// Gets or sets the Npgsql connection string used to build the provider-owned
+    /// <see cref="NpgsqlDataSource"/>. Ignored when <see cref="DataSource"/> is set.
+    /// </summary>
     public string? ConnectionString { get; set; }
 
+    /// <summary>
+    /// Gets or sets a caller-owned <see cref="NpgsqlDataSource"/> to use instead of building one from
+    /// <see cref="ConnectionString"/>. When set, the provider uses this data source as-is and never
+    /// disposes it; configure keepalive and pooling on this instance directly.
+    /// </summary>
     public NpgsqlDataSource? DataSource { get; set; }
 
+    /// <summary>
+    /// Gets or sets the prefix prepended to every resource name before it is encoded into an
+    /// advisory-lock key. Defaults to <see cref="DistributedLockOptions.DefaultKeyPrefix"/>. Must not
+    /// be empty.
+    /// </summary>
     public string KeyPrefix { get; set; } = DistributedLockOptions.DefaultKeyPrefix;
 
+    /// <summary>
+    /// Gets or sets the maximum duration a waiter sleeps between consecutive acquisition attempts when
+    /// no push-based release signal arrives. Must be greater than <see cref="TimeSpan.Zero"/> and at
+    /// most 30 seconds. Defaults to 100 ms.
+    /// </summary>
     public TimeSpan PollingFallback { get; set; } = TimeSpan.FromMilliseconds(100);
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the provider publishes and listens for release signals
+    /// over a PostgreSQL <c>LISTEN/NOTIFY</c> channel. When <see langword="true"/> (the default), a
+    /// background <c>LISTEN</c> loop wakes blocked acquirers immediately on release rather than waiting
+    /// for the next polling interval. When <see langword="false"/>, only the local in-process signal
+    /// and the polling fallback are used.
+    /// </summary>
     public bool EnablePushWakeup { get; set; } = true;
 
     /// <summary>

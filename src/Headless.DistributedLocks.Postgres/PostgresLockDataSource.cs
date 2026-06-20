@@ -20,19 +20,40 @@ internal sealed class PostgresLockDataSource : IAsyncDisposable, IDisposable
 {
     private readonly bool _owned;
 
+    /// <summary>
+    /// Initializes the lock data source, adopting an injected <see cref="NpgsqlDataSource"/> (not owned) or
+    /// building one from the configured connection string (owned and disposed on teardown).
+    /// </summary>
+    /// <param name="options">
+    /// Resolved options. When <see cref="PostgresDistributedLockOptions.DataSource"/> is set, it is
+    /// used directly and is not owned; otherwise a new <see cref="NpgsqlDataSource"/> is built from
+    /// <see cref="PostgresDistributedLockOptions.ConnectionString"/> and is owned.
+    /// </param>
     public PostgresLockDataSource(IOptions<PostgresDistributedLockOptions> options)
     {
         DataSource = PostgresDataSourceFactory.CreateDataSource(options.Value);
         _owned = options.Value.DataSource is null;
     }
 
+    /// <summary>
+    /// Gets the shared <see cref="NpgsqlDataSource"/> consumed by the storage, release-signal, and
+    /// fencing-token services. Consumers must not dispose this instance.
+    /// </summary>
     public NpgsqlDataSource DataSource { get; }
 
+    /// <summary>
+    /// Disposes the owned <see cref="NpgsqlDataSource"/> asynchronously. A no-op when the data source
+    /// was injected by the caller and is not owned.
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         return _owned ? DataSource.DisposeAsync() : default;
     }
 
+    /// <summary>
+    /// Disposes the owned <see cref="NpgsqlDataSource"/> synchronously. A no-op when the data source
+    /// was injected by the caller and is not owned.
+    /// </summary>
     public void Dispose()
     {
         if (_owned)

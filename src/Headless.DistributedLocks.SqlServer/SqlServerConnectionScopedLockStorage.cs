@@ -7,6 +7,26 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.DistributedLocks.SqlServer;
 
+/// <summary>
+/// <see cref="IConnectionScopedLockStorage"/> implementation backed by SQL Server session-scoped
+/// application locks (<c>sys.sp_getapplock @LockOwner = 'Session'</c>). Each held lock owns a dedicated
+/// <see cref="SqlConnection"/>; the lock is released explicitly or when the connection closes.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This storage does <em>not</em> block server-side (<see cref="BlocksServerSide"/> is
+/// <see langword="false"/>). The provider's retry/wait loop calls <see cref="TryAcquireAsync"/> with
+/// <see cref="TimeSpan.Zero"/> and relies on the <see cref="IReleaseSignal"/> (a
+/// <see cref="NullReleaseSignal"/> for SQL Server, since SQL Server blocks natively, making the loop
+/// unreachable in practice).
+/// </para>
+/// <para>
+/// Connection-loss monitoring is implemented via two complementary signals: the connection's
+/// <c>StateChange</c> event (clean disconnects) and a periodic liveness probe (silent half-open
+/// connections where <c>StateChange</c> never fires). When monitoring is active, loss of the connection
+/// cancels the handle's <c>ConnectionLostToken</c>.
+/// </para>
+/// </remarks>
 internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLockStorage, IAsyncDisposable
 {
     private readonly SqlServerDistributedLockOptions _options;
@@ -17,6 +37,12 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
     // _heldByLeaseId already iterated past (which would leak its connection and applock).
     private volatile bool _disposed;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="SqlServerConnectionScopedLockStorage"/> using the
+    /// resolved <see cref="SqlServerDistributedLockOptions"/> and the supplied <see cref="TimeProvider"/>.
+    /// </summary>
+    /// <param name="options">Resolved options; validated on startup.</param>
+    /// <param name="timeProvider">Time provider used for liveness-probe timer scheduling.</param>
     public SqlServerConnectionScopedLockStorage(
         IOptions<SqlServerDistributedLockOptions> options,
         TimeProvider timeProvider
@@ -26,9 +52,25 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         _timeProvider = timeProvider;
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Always <see langword="false"/> for SQL Server. Lock contention is resolved by the caller's retry
+    /// loop (via <see cref="NullReleaseSignal"/>), not by server-side blocking inside
+    /// <see cref="TryAcquireAsync"/>.
+    /// </remarks>
     public bool BlocksServerSide => false;
 
 #pragma warning disable CA2000 // The acquired connection is transferred to HeldLock, which owns disposal.
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Opens a dedicated <see cref="SqlConnection"/> per lock. Invokes
+    /// <c>sys.sp_getapplock @LockOwner = 'Session'</c> with a zero timeout (single, non-blocking attempt).
+    /// When <paramref name="observeLoss"/> is <see langword="true"/>, starts the 30-second liveness probe
+    /// timer. Returns <see langword="null"/> without opening a connection when the storage has been
+    /// disposed.
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">Thrown when this storage instance has been disposed and a lock was transiently acquired before the disposal race was detected.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled during connection open or lock acquisition.</exception>
     public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
         string resource,
         string leaseId,
@@ -114,6 +156,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
     }
 #pragma warning restore CA2000
 
+    /// <inheritdoc/>
     public async ValueTask ReleaseAsync(
         ConnectionScopedLockHandle handle,
         CancellationToken cancellationToken = default
@@ -122,6 +165,12 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         await ReleaseAsync(handle.Resource, handle.LeaseId, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Acquires the per-connection serialization gate before issuing <c>sys.sp_releaseapplock</c> so the
+    /// release command never races the active liveness probe on the same <see cref="SqlConnection"/>.
+    /// A no-op when no lock is registered for <paramref name="leaseId"/>.
+    /// </remarks>
     public async ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         if (!_heldByLeaseId.TryRemove(leaseId, out var held))
@@ -154,6 +203,12 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// First checks the in-process registry. If not held locally, opens a short-lived connection and
+    /// queries <c>APPLOCK_TEST</c> to detect remote holders. <paramref name="isShared"/>
+    /// <see langword="null"/> tests whether any mode blocks an exclusive acquire.
+    /// </remarks>
     public async ValueTask<bool> IsLockedAsync(
         string resource,
         bool? isShared = null,
@@ -196,6 +251,8 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         return await _IsLockedInDatabaseAsync(resource, isShared, cancellationToken).ConfigureAwait(false) ? 1 : 0;
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -207,6 +264,14 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         );
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Returns only locks held by this process. Remote holders are not enumerable because the SQL Server
+    /// backend does not expose a reversible mapping from <c>sp_getapplock</c> resources to logical names.
+    /// <see cref="DistributedLockInfo.TimeToLive"/> and <see cref="DistributedLockInfo.FencingToken"/> are
+    /// always <see langword="null"/> for session-scoped SQL Server locks.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
         CancellationToken cancellationToken = default
     )
@@ -226,6 +291,9 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         return ValueTask.FromResult(locks);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Returns the count of locks held by this process only; remote holders are not counted.</remarks>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -233,6 +301,12 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         return ValueTask.FromResult((long)_heldByLeaseId.Count);
     }
 
+    /// <summary>
+    /// Releases all held locks by disposing each <see cref="HeldLock"/> and its associated
+    /// <see cref="SqlConnection"/>. Sets <c>_disposed</c> before iterating so concurrent acquires detect
+    /// teardown and drop any lock they just obtained.
+    /// </summary>
+    /// <exception cref="AggregateException">Thrown when one or more <see cref="HeldLock"/> disposals fail; all locks are attempted regardless.</exception>
     public async ValueTask DisposeAsync()
     {
         // Set before the snapshot iteration so a concurrent acquire observes disposal and drops its just-acquired

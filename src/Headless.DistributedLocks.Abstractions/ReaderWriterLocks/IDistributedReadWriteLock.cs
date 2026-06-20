@@ -30,9 +30,27 @@ public interface IDistributedReadWriteLock
     TimeSpan DefaultAcquireTimeout { get; }
 
     /// <summary>
-    /// Acquires a read lock for <paramref name="resource"/> and throws <see cref="LockAcquisitionTimeoutException"/>
-    /// when it cannot be acquired before <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
+    /// Acquires a read (shared) lock for <paramref name="resource"/> and throws
+    /// <see cref="LockAcquisitionTimeoutException"/> when it cannot be acquired before
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
     /// </summary>
+    /// <param name="resource">The resource to read-lock. Must be non-null and non-whitespace.</param>
+    /// <param name="options">Per-call configuration. <see langword="null"/> applies the defaults. See <see cref="DistributedLockAcquireOptions"/>.</param>
+    /// <param name="cancellationToken">Cancels the acquire attempt; surfaces as <see cref="OperationCanceledException"/>.</param>
+    /// <returns>The acquired read lease. Never <see langword="null"/> — throws on timeout instead.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="resource"/> is empty or whitespace; or monitoring is requested while
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="resource"/> exceeds the provider's maximum resource-name length, or
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> /
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative (other than
+    /// <see cref="Timeout.InfiniteTimeSpan"/>) or too large.
+    /// </exception>
+    /// <exception cref="LockAcquisitionTimeoutException">The read lock could not be acquired before the acquire timeout elapsed.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<IDistributedLease> AcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -40,9 +58,25 @@ public interface IDistributedReadWriteLock
     );
 
     /// <summary>
-    /// Tries to acquire a read lock for <paramref name="resource"/> and returns <see langword="null"/> on contention
-    /// or timeout.
+    /// Tries to acquire a read (shared) lock for <paramref name="resource"/> and returns <see langword="null"/>
+    /// on contention or timeout.
     /// </summary>
+    /// <param name="resource">The resource to read-lock. Must be non-null and non-whitespace.</param>
+    /// <param name="options">Per-call configuration. <see langword="null"/> applies the defaults. See <see cref="DistributedLockAcquireOptions"/>.</param>
+    /// <param name="cancellationToken">Cancels the acquire attempt; surfaces as <see cref="OperationCanceledException"/>.</param>
+    /// <returns>The acquired read lease, or <see langword="null"/> if it could not be acquired before the acquire timeout.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="resource"/> is empty or whitespace; or monitoring is requested while
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="resource"/> exceeds the provider's maximum resource-name length, or
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> /
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative (other than
+    /// <see cref="Timeout.InfiniteTimeSpan"/>) or too large.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<IDistributedLease?> TryAcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -50,9 +84,27 @@ public interface IDistributedReadWriteLock
     );
 
     /// <summary>
-    /// Acquires a write lock for <paramref name="resource"/> and throws <see cref="LockAcquisitionTimeoutException"/>
-    /// when it cannot be acquired before <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
+    /// Acquires a write (exclusive) lock for <paramref name="resource"/> and throws
+    /// <see cref="LockAcquisitionTimeoutException"/> when it cannot be acquired before
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
     /// </summary>
+    /// <param name="resource">The resource to write-lock. Must be non-null and non-whitespace.</param>
+    /// <param name="options">Per-call configuration. <see langword="null"/> applies the defaults. See <see cref="DistributedLockAcquireOptions"/>.</param>
+    /// <param name="cancellationToken">Cancels the acquire attempt; surfaces as <see cref="OperationCanceledException"/>.</param>
+    /// <returns>The acquired write lease. Never <see langword="null"/> — throws on timeout instead.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="resource"/> is empty or whitespace; or monitoring is requested while
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="resource"/> exceeds the provider's maximum resource-name length, or
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> /
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative (other than
+    /// <see cref="Timeout.InfiniteTimeSpan"/>) or too large.
+    /// </exception>
+    /// <exception cref="LockAcquisitionTimeoutException">The write lock could not be acquired before the acquire timeout elapsed.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<IDistributedLease> AcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -60,9 +112,25 @@ public interface IDistributedReadWriteLock
     );
 
     /// <summary>
-    /// Tries to acquire a write lock for <paramref name="resource"/> and returns <see langword="null"/> on contention
-    /// or timeout.
+    /// Tries to acquire a write (exclusive) lock for <paramref name="resource"/> and returns <see langword="null"/>
+    /// on contention or timeout.
     /// </summary>
+    /// <param name="resource">The resource to write-lock. Must be non-null and non-whitespace.</param>
+    /// <param name="options">Per-call configuration. <see langword="null"/> applies the defaults. See <see cref="DistributedLockAcquireOptions"/>.</param>
+    /// <param name="cancellationToken">Cancels the acquire attempt; surfaces as <see cref="OperationCanceledException"/>.</param>
+    /// <returns>The acquired write lease, or <see langword="null"/> if it could not be acquired before the acquire timeout.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="resource"/> is empty or whitespace; or monitoring is requested while
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="resource"/> exceeds the provider's maximum resource-name length, or
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> /
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is negative (other than
+    /// <see cref="Timeout.InfiniteTimeSpan"/>) or too large.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<IDistributedLease?> TryAcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -73,17 +141,35 @@ public interface IDistributedReadWriteLock
     /// Checks whether any reader currently holds <paramref name="resource"/>.
     /// This is an inspection primitive only; do not use it for correctness decisions.
     /// </summary>
+    /// <param name="resource">The resource to inspect. Must be non-null and non-whitespace.</param>
+    /// <param name="cancellationToken">Cancels the read; surfaces as <see cref="OperationCanceledException"/>.</param>
+    /// <returns><see langword="true"/> when at least one reader currently holds <paramref name="resource"/>; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Checks whether a writer currently holds <paramref name="resource"/>.
     /// This is an inspection primitive only; do not use it for correctness decisions.
     /// </summary>
+    /// <param name="resource">The resource to inspect. Must be non-null and non-whitespace.</param>
+    /// <param name="cancellationToken">Cancels the read; surfaces as <see cref="OperationCanceledException"/>.</param>
+    /// <returns><see langword="true"/> when a writer currently holds <paramref name="resource"/>; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the current reader count for <paramref name="resource"/>.
     /// This is an inspection primitive only; do not use it for correctness decisions.
     /// </summary>
+    /// <param name="resource">The resource to inspect. Must be non-null and non-whitespace.</param>
+    /// <param name="cancellationToken">Cancels the read; surfaces as <see cref="OperationCanceledException"/>.</param>
+    /// <returns>The number of readers currently holding <paramref name="resource"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default);
 }

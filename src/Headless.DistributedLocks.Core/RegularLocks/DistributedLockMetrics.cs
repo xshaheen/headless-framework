@@ -6,6 +6,12 @@ using Microsoft.Extensions.Diagnostics.Metrics;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// Typed metric instruments for the distributed-lock and distributed-semaphore providers.
+/// All instruments are registered against <see cref="DistributedLocksDiagnostics.Meter"/>
+/// and use the <c>reason</c> dimension to distinguish contended vs. stalled failure outcomes
+/// (see <see cref="DistributedLockFailureReasons"/>).
+/// </summary>
 internal static partial class DistributedLockMetrics
 {
     // `reason` dimension values for the `*.failed` counters. Internal aliases of the public
