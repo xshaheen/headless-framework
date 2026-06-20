@@ -1,15 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.RegularExpressions;
 using Amazon.S3;
 using Amazon.S3.Model;
-using Amazon.S3.Util;
 using Headless.Abstractions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.IO;
 using Headless.Primitives;
+using Headless.Threading;
 using Headless.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -22,8 +23,9 @@ public sealed class AwsBlobStorage(
     IMimeTypeProvider mimeTypeProvider,
     IClock clock,
     IOptions<AwsBlobStorageOptions> optionsAccessor,
+    IBlobNamingNormalizer normalizer,
     ILogger<AwsBlobStorage>? logger = null
-) : IBlobStorage
+) : IBlobStorage, IPresignedUrlBlobStorage
 {
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
@@ -31,24 +33,60 @@ public sealed class AwsBlobStorage(
     private readonly AwsBlobStorageOptions _options = optionsAccessor.Value;
     private readonly ILogger _logger = logger ?? NullLogger<AwsBlobStorage>.Instance;
 
+    // Buckets this instance has already ensured exist, so the HeadBucket/PutBucket round trip runs at most once
+    // per bucket rather than on every upload/copy. A bucket is recorded only after a successful ensure, so a
+    // failed ensure is naturally retried. The per-bucket lock serializes concurrent first-time ensures of the
+    // same bucket into a single create while letting distinct buckets be ensured in parallel.
+    private readonly ConcurrentDictionary<string, byte> _ensuredBuckets = new(StringComparer.Ordinal);
+    private readonly KeyedAsyncLock _ensureBucketLock = new();
+
     #region Create Container
 
     public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(container);
 
-        await _CreateBucketAsync(_BuildBucketName(container), cancellationToken);
+        // Explicit creation always runs regardless of AutoCreateContainer; it also primes the per-instance cache.
+        await _EnsureBucketOnceAsync(_BuildBucketName(container), cancellationToken);
     }
 
-    private async Task _CreateBucketAsync(string bucketName, CancellationToken cancellationToken)
+    private async Task _EnsureBucketOnceAsync(string bucketName, CancellationToken cancellationToken)
     {
-        if (await AmazonS3Util.DoesS3BucketExistV2Async(s3, bucketName).ConfigureAwait(false))
+        if (_ensuredBuckets.ContainsKey(bucketName))
         {
             return;
         }
 
-        var request = new PutBucketRequest { BucketName = bucketName };
-        await s3.PutBucketAsync(request, cancellationToken).ConfigureAwait(false);
+        using (await _ensureBucketLock.LockAsync(bucketName, cancellationToken).ConfigureAwait(false))
+        {
+            // Re-check under the lock: a concurrent caller may have ensured this bucket while we waited.
+            if (_ensuredBuckets.ContainsKey(bucketName))
+            {
+                return;
+            }
+
+            await _CreateBucketAsync(bucketName, cancellationToken).ConfigureAwait(false);
+
+            // Record only after a successful create so a failed ensure is retried next time.
+            _ensuredBuckets.TryAdd(bucketName, 0);
+        }
+    }
+
+    private async Task _CreateBucketAsync(string bucketName, CancellationToken cancellationToken)
+    {
+        // Idempotent, cancellation-aware create: PutBucket directly (it carries a CancellationToken, unlike the
+        // DoesS3BucketExistV2Async HEAD probe) and treat "already owned by you" as success. The per-instance
+        // cache means this runs at most once per bucket, so a separate existence pre-check is redundant.
+        try
+        {
+            var request = new PutBucketRequest { BucketName = bucketName };
+            await s3.PutBucketAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AmazonS3Exception e)
+            when (string.Equals(e.ErrorCode, "BucketAlreadyOwnedByYou", StringComparison.Ordinal))
+        {
+            // The bucket already exists and we own it.
+        }
     }
 
     #endregion
@@ -66,8 +104,12 @@ public sealed class AwsBlobStorage(
         Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        await CreateContainerAsync(container, cancellationToken);
         var (bucket, objectKey) = _BuildObjectKey(blobName, container);
+
+        if (_options.AutoCreateContainer)
+        {
+            await _EnsureBucketOnceAsync(bucket, cancellationToken);
+        }
 
         Stream inputStream;
         var ownsStream = false;
@@ -383,8 +425,11 @@ public sealed class AwsBlobStorage(
         var (oldBucket, oldKey) = _BuildObjectKey(blobName, blobContainer);
         var (newBucket, newKey) = _BuildObjectKey(newBlobName, newBlobContainer);
 
-        // Ensure new bucket exists
-        await _CreateBucketAsync(newBucket, cancellationToken);
+        // Ensure new bucket exists (once per bucket per instance) when auto-create is enabled.
+        if (_options.AutoCreateContainer)
+        {
+            await _EnsureBucketOnceAsync(newBucket, cancellationToken);
+        }
 
         var request = new CopyObjectRequest
         {
@@ -464,18 +509,13 @@ public sealed class AwsBlobStorage(
 
     private async ValueTask<bool> _ExistsAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
-        // Make sure Blob Container exists.
-        if (!await AmazonS3Util.DoesS3BucketExistV2Async(s3, bucket).ConfigureAwait(false))
-        {
-            return false;
-        }
-
         GetObjectMetadataResponse? response;
 
         try
         {
             response = await s3.GetObjectMetadataAsync(bucket, key, cancellationToken).ConfigureAwait(false);
         }
+        // A missing object or a missing bucket both surface as 404 here.
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
             return false;
@@ -503,14 +543,19 @@ public sealed class AwsBlobStorage(
     {
         var (bucket, key) = _BuildObjectKey(blobName, container);
 
-        if (!await _ExistsAsync(bucket, key, cancellationToken).ConfigureAwait(false))
+        var request = new GetObjectRequest { BucketName = bucket, Key = key };
+
+        GetObjectResponse response;
+
+        try
+        {
+            response = await s3.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        // A missing object or a missing bucket both surface as 404 here.
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
             return null;
         }
-
-        var request = new GetObjectRequest { BucketName = bucket, Key = key };
-
-        var response = await s3.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (response.HttpStatusCode is HttpStatusCode.NotFound)
         {
@@ -742,7 +787,7 @@ public sealed class AwsBlobStorage(
 
     #region Build Urls
 
-    private static (string Bucket, string ObjectKey) _BuildObjectKey(string blobName, string[] container)
+    private (string Bucket, string ObjectKey) _BuildObjectKey(string blobName, string[] container)
     {
         Argument.IsNotNullOrWhiteSpace(blobName);
         Argument.IsNotNullOrEmpty(container);
@@ -750,16 +795,21 @@ public sealed class AwsBlobStorage(
         PathValidation.ValidateContainer(container);
         PathValidation.ValidatePathSegment(blobName);
 
-        var bucket = container[0];
-        var objectKey = Url.Combine([.. container.Skip(1).Append(blobName)]);
+        // Two-tier naming: the first segment is the bucket (strict S3/R2 bucket rules); the remaining segments and
+        // the blob name form the object key (lenient path-segment rules).
+        var bucket = normalizer.NormalizeContainerName(container[0]);
+        var objectKey = Url.Combine([
+            .. container.Skip(1).Select(normalizer.NormalizeBlobName),
+            normalizer.NormalizeBlobName(blobName),
+        ]);
 
         return (bucket, objectKey);
     }
 
-    private static string _BuildBucketName(string[] container)
+    private string _BuildBucketName(string[] container)
     {
         PathValidation.ValidateContainer(container);
-        return container[0];
+        return normalizer.NormalizeContainerName(container[0]);
     }
 
     #endregion
@@ -814,9 +864,65 @@ public sealed class AwsBlobStorage(
 
     #endregion
 
+    #region Presigned Urls
+
+    public ValueTask<Uri> GetPresignedDownloadUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetPresignedUrlAsync(container, blobName, expiry, HttpVerb.GET, cancellationToken);
+    }
+
+    public ValueTask<Uri> GetPresignedUploadUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _GetPresignedUrlAsync(container, blobName, expiry, HttpVerb.PUT, cancellationToken);
+    }
+
+    private async ValueTask<Uri> _GetPresignedUrlAsync(
+        string[] container,
+        string blobName,
+        TimeSpan expiry,
+        HttpVerb verb,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsPositive(expiry);
+
+        var (bucket, key) = _BuildObjectKey(blobName, container);
+
+        var request = new GetPreSignedUrlRequest
+        {
+            BucketName = bucket,
+            Key = key,
+            Verb = verb,
+            // SigV4 presigning is performed locally; Expires is the absolute deadline.
+            Expires = clock.UtcNow.Add(expiry).UtcDateTime,
+        };
+
+        var url = await s3.GetPreSignedURLAsync(request).ConfigureAwait(false);
+
+        return new Uri(url);
+    }
+
+    #endregion
+
     #region Dispose
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        _ensureBucketLock.Dispose();
+
+        return ValueTask.CompletedTask;
+    }
 
     #endregion
 }
