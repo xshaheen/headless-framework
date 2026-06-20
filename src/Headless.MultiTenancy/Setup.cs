@@ -25,7 +25,7 @@ public static class SetupHeadlessTenancy
         Argument.IsNotNull(builder);
         Argument.IsNotNull(configure);
 
-        var manifest = builder.Services.AddHeadlessTenancyCore();
+        var manifest = builder.Services._AddHeadlessTenancyCore();
         configure(new HeadlessTenancyBuilder(builder, manifest));
 
         return builder;
@@ -34,7 +34,7 @@ public static class SetupHeadlessTenancy
     /// <summary>Adds the shared tenant posture manifest and startup diagnostics.</summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The singleton manifest instance registered in the service collection.</returns>
-    internal static TenantPostureManifest AddHeadlessTenancyCore(this IServiceCollection services)
+    internal static TenantPostureManifest _AddHeadlessTenancyCore(this IServiceCollection services)
     {
         Argument.IsNotNull(services);
 
@@ -49,10 +49,15 @@ public static class SetupHeadlessTenancy
     /// <returns>The singleton manifest instance registered in the service collection.</returns>
     /// <remarks>
     /// Returns an existing singleton instance when one is already registered. When a non-instance
-    /// registration is found (factory or open-type), replaces it with a fresh singleton instance —
-    /// this closes the factory blind-spot in the previous design where a consumer-supplied factory
-    /// or open-type registration was hidden behind the <c>ImplementationInstance</c> check, leading
-    /// to a second instance being added and splitting posture across two manifests.
+    /// registration (factory or open-type) is found <em>at call time</em>, replaces it with a fresh
+    /// singleton instance so posture is not split across two manifests.
+    /// <para>
+    /// This reconciles only registrations present when this method runs. A consumer that registers
+    /// another <see cref="TenantPostureManifest"/> <em>after</em> <c>AddHeadlessTenancy(...)</c> wins
+    /// DI resolution (last registration wins), while the seam-recorded posture stays on this
+    /// instance — startup validators would then read an empty manifest. Register any custom manifest
+    /// before <c>AddHeadlessTenancy(...)</c>, or do not replace it at all.
+    /// </para>
     /// </remarks>
     internal static TenantPostureManifest GetOrAddTenantPostureManifest(this IServiceCollection services)
     {

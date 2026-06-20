@@ -5,6 +5,12 @@ using Headless.Checks;
 namespace Headless.MultiTenancy;
 
 /// <summary>Shared, non-PII manifest describing tenant posture configured by Headless package seams.</summary>
+/// <remarks>
+/// This manifest is a diagnostic breadcrumb, not a security or enforcement boundary. The actual
+/// tenant enforcement lives in the seam middleware/handlers (HTTP resolution, authorization,
+/// messaging propagation, EF write guard). Recording a seam or runtime marker here only affects
+/// startup diagnostics — it neither creates nor removes real enforcement.
+/// </remarks>
 [PublicAPI]
 public sealed class TenantPostureManifest
 {
@@ -61,24 +67,35 @@ public sealed class TenantPostureManifest
 
     private static TenantPostureStatus _MaxStatus(TenantPostureStatus left, TenantPostureStatus right)
     {
-        return _Rank(left) >= _Rank(right) ? left : right;
+        // The enum ordinal IS the posture precedence (see TenantPostureStatus). Reject undefined
+        // values — an out-of-range cast or a future member that bypassed this path — loudly instead
+        // of silently down-ranking them to the weakest posture.
+        _EnsureDefined(left);
+        _EnsureDefined(right);
+
+        return left >= right ? left : right;
     }
 
-    private static int _Rank(TenantPostureStatus status)
+    private static void _EnsureDefined(TenantPostureStatus status)
     {
-        return status switch
+        if (!Enum.IsDefined(status))
         {
-            TenantPostureStatus.Enforcing => 3,
-            TenantPostureStatus.Guarded => 2,
-            TenantPostureStatus.Propagating => 1,
-            TenantPostureStatus.Configured => 0,
-            _ => 0,
-        };
+            throw new ArgumentOutOfRangeException(
+                nameof(status),
+                status,
+                $"Unknown {nameof(TenantPostureStatus)} value."
+            );
+        }
     }
 
     /// <summary>Marks a runtime step, such as a middleware call, as applied for the seam.</summary>
     /// <param name="seam">The seam name.</param>
     /// <param name="marker">The runtime marker name.</param>
+    /// <remarks>
+    /// This records a non-PII diagnostic breadcrumb only; it is not an enforcement gate. Marking a
+    /// runtime step that was not actually wired only fools the startup diagnostic — it does not
+    /// enable the corresponding tenant behavior. Framework seam middleware is the intended caller.
+    /// </remarks>
     public void MarkRuntimeApplied(string seam, string marker)
     {
         seam = Argument.IsNotNullOrWhiteSpace(seam);
@@ -143,23 +160,29 @@ public sealed class TenantPostureManifest
 public sealed record TenantSeamPosture(
     string Seam,
     TenantPostureStatus Status,
-    IReadOnlyCollection<string> Capabilities,
-    IReadOnlyCollection<string> RuntimeMarkers
+    IReadOnlyList<string> Capabilities,
+    IReadOnlyList<string> RuntimeMarkers
 );
 
-/// <summary>Common tenant posture status labels.</summary>
+/// <summary>Common tenant posture status labels, ordered weakest to strongest.</summary>
+/// <remarks>
+/// Declaration order is load-bearing: the ordinal IS the posture precedence
+/// (<c>Configured &lt; Propagating &lt; Guarded &lt; Enforcing</c>), which
+/// <see cref="TenantPostureManifest.RecordSeam"/> relies on so a later contribution can only
+/// strengthen a seam's posture. Keep new members in precedence order.
+/// </remarks>
 [PublicAPI]
 public enum TenantPostureStatus
 {
     /// <summary>The seam has been configured.</summary>
-    Configured,
-
-    /// <summary>The seam enforces tenant context.</summary>
-    Enforcing,
+    Configured = 0,
 
     /// <summary>The seam propagates tenant context.</summary>
-    Propagating,
+    Propagating = 1,
 
     /// <summary>The seam guards tenant-owned writes.</summary>
-    Guarded,
+    Guarded = 2,
+
+    /// <summary>The seam enforces tenant context.</summary>
+    Enforcing = 3,
 }

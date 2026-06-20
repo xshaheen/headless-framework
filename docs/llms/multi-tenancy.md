@@ -472,3 +472,24 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
 - Forgetting `using` around `currentTenant.Change()` in non-HTTP code can leak tenant context within the current async flow.
 - Assuming host-level cache scope `t:` is tenant-isolated is incorrect; it is intentionally shared.
 - Assuming `IgnoreMultiTenancyFilter()` bypasses write protection is incorrect; it only affects reads.
+
+---
+
+## Headless.MultiTenancy
+
+**Problem Solved.** One composition surface for tenant posture across Headless packages while keeping each package in charge of its own behavior. It owns the root builder, shared manifest, and validator contracts only — it does not resolve tenants, enforce HTTP authorization, propagate messages, or guard EF writes.
+
+**Key Features.**
+- `AddHeadlessTenancy(...)` root configuration entry point.
+- `TenantPostureManifest` — shared, non-PII record of seam posture (status, capability labels, runtime markers). It is a diagnostic breadcrumb, **not** a security/enforcement boundary: recording a seam or runtime marker affects startup diagnostics only, not real enforcement (which lives in the seam middleware/handlers).
+- `IHeadlessTenancyValidator` startup validation hook; `HeadlessTenancyStartupValidator` runs all validators in `IHostedLifecycleService.StartingAsync` and throws `HeadlessTenancyValidationException` (an `InvalidOperationException` carrying the failing `Diagnostics`) on any error diagnostic, before any other hosted service starts.
+- `TenantPostureStatus` precedence is `Configured < Propagating < Guarded < Enforcing` (enum ordinal is the precedence); `RecordSeam` keeps the strongest status across contributions.
+- Seam-owned fluent extensions from installed packages: `Headless.Api` (`.Http(...)`, `.Authorization(...)`), `Headless.Messaging.Core` (`.Messaging(...)`), `Headless.Orm.EntityFramework` (`.EntityFramework(...)`).
+
+**Installation.** `dotnet add package Headless.MultiTenancy`. Most applications receive it transitively through the seam packages that contribute tenancy extensions.
+
+**Quick Start / Configuration.** See the [Headless.MultiTenancy README](../../src/Headless.MultiTenancy/README.md) and the HTTP/EF/Messaging sections above for the composed setup.
+
+**Dependencies.** `Headless.Checks`, `Microsoft.Extensions.DependencyInjection.Abstractions`, `Microsoft.Extensions.Hosting.Abstractions`.
+
+**Side Effects.** Registers a singleton `TenantPostureManifest` and `HeadlessTenancyStartupValidator` as an `IHostedService`.
