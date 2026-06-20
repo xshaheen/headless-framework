@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs;
+using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Tests;
 
@@ -12,30 +14,31 @@ namespace Tests;
 /// Storage provider. Registration-shape only — no network I/O, no Azurite container required.
 ///
 /// <para>
-/// The Azurite well-known dev connection string is used to construct a <see cref="BlobServiceClient"/>; the
-/// client object is created but no Azure calls are made. This lets client construction succeed without a live
-/// endpoint while still exercising the full DI wiring.
+/// An anonymous endpoint <see cref="System.Uri"/> constructs each <see cref="BlobServiceClient"/>; the client
+/// object is created but no Azure calls are made. This lets client construction succeed without a live endpoint
+/// or credentials while still exercising the full DI wiring.
 /// </para>
 /// </summary>
 public sealed class AzureBlobsRegistrationTests
 {
-    // Azurite well-known dev connection string — client construction succeeds; no network calls are made.
-    private const string _AzuriteConnectionString =
-        "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-        + "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IhflEA3Aa==;"
-        + "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;";
+    // Anonymous endpoint URI — client construction succeeds without a connection string or credentials;
+    // registration-shape tests make no network calls.
+    private const string _BlobServiceUri = "https://devstoreaccount1.blob.core.windows.net/";
 
     [Fact]
     public async Task default_store_is_injectable_and_named_stores_resolve_via_provider()
     {
         // given — default store uses ambient BlobServiceClient from DI;
         //         named stores supply per-store clients via clientFactory (simulating different accounts)
-        var defaultClient = new BlobServiceClient(_AzuriteConnectionString);
-        var archiveClient = new BlobServiceClient(_AzuriteConnectionString);
-        var docsClient = new BlobServiceClient(_AzuriteConnectionString);
+        var defaultClient = new BlobServiceClient(new Uri(_BlobServiceUri));
+        var archiveClient = new BlobServiceClient(new Uri(_BlobServiceUri));
+        var docsClient = new BlobServiceClient(new Uri(_BlobServiceUri));
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        services.TryAddSingleton<IClock, Clock>();
         services.AddSingleton(defaultClient); // ambient client for the default store
 
         services.AddHeadlessBlobs(blobs =>
@@ -89,10 +92,13 @@ public sealed class AzureBlobsRegistrationTests
     public async Task default_and_named_stores_cast_to_presigned_url_storage()
     {
         // given
-        var client = new BlobServiceClient(_AzuriteConnectionString);
+        var client = new BlobServiceClient(new Uri(_BlobServiceUri));
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        services.TryAddSingleton<IClock, Clock>();
         services.AddSingleton(client);
 
         services.AddHeadlessBlobs(blobs =>
@@ -124,10 +130,13 @@ public sealed class AzureBlobsRegistrationTests
     public async Task named_only_setup_leaves_no_default_blob_storage()
     {
         // given — no default provider configured; named stores only
-        var client = new BlobServiceClient(_AzuriteConnectionString);
+        var client = new BlobServiceClient(new Uri(_BlobServiceUri));
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        services.TryAddSingleton<IClock, Clock>();
 
         services.AddHeadlessBlobs(blobs =>
         {
