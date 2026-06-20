@@ -4,6 +4,7 @@ using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
@@ -22,7 +23,7 @@ public static class SetupFileSystemBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
-                services._AddFileSystemDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -38,7 +39,7 @@ public static class SetupFileSystemBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
-                services._AddFileSystemDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -52,7 +53,7 @@ public static class SetupFileSystemBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(configuration);
-                services._AddFileSystemDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -74,7 +75,7 @@ public static class SetupFileSystemBlob
                     setupAction,
                     name
                 );
-                services._AddFileSystemNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -95,7 +96,7 @@ public static class SetupFileSystemBlob
                     setupAction,
                     name
                 );
-                services._AddFileSystemNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -114,7 +115,7 @@ public static class SetupFileSystemBlob
                     configuration,
                     name
                 );
-                services._AddFileSystemNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -123,20 +124,21 @@ public static class SetupFileSystemBlob
 
     extension(IServiceCollection services)
     {
-        private IServiceCollection _AddFileSystemDefaultCore()
+        private IServiceCollection _AddBlobsDefaultCore()
         {
             services.AddBlobStorageProvider();
 
             services.AddSingleton<IBlobStorage>(serviceProvider => new FileSystemBlobStorage(
                 serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
                 new CrossOsNamingNormalizer(),
-                serviceProvider.GetRequiredService<ILogger<FileSystemBlobStorage>>()
+                serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
+                    ?? NullLogger<FileSystemBlobStorage>.Instance
             ));
 
             return services;
         }
 
-        private IServiceCollection _AddFileSystemNamedCore(string name)
+        private IServiceCollection _AddBlobsNamedCore(string name)
         {
             services.AddBlobStorageProvider();
 
@@ -150,7 +152,8 @@ public static class SetupFileSystemBlob
                                 .Get(name)
                         ),
                         new CrossOsNamingNormalizer(),
-                        serviceProvider.GetRequiredService<ILogger<FileSystemBlobStorage>>()
+                        serviceProvider.GetService<ILogger<FileSystemBlobStorage>>()
+                            ?? NullLogger<FileSystemBlobStorage>.Instance
                     )
             );
 

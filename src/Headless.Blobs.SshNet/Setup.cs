@@ -4,6 +4,7 @@ using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
@@ -22,7 +23,7 @@ public static class SetupSsh
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
-                services._AddSshDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -36,7 +37,7 @@ public static class SetupSsh
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
-                services._AddSshDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -50,7 +51,7 @@ public static class SetupSsh
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(configuration);
-                services._AddSshDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -69,7 +70,7 @@ public static class SetupSsh
             instance.RegisterProvider(services =>
             {
                 services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction, name);
-                services._AddSshNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -85,7 +86,7 @@ public static class SetupSsh
             instance.RegisterProvider(services =>
             {
                 services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction, name);
-                services._AddSshNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -101,7 +102,7 @@ public static class SetupSsh
             instance.RegisterProvider(services =>
             {
                 services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(configuration, name);
-                services._AddSshNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -110,24 +111,28 @@ public static class SetupSsh
 
     extension(IServiceCollection services)
     {
-        private IServiceCollection _AddSshDefaultCore()
+        private IServiceCollection _AddBlobsDefaultCore()
         {
             services.AddBlobStorageProvider();
 
-            // Pool is registered as a DI singleton so the container owns its disposal.
-            services.AddSingleton<SftpClientPool>();
+            // Pool is registered as a DI singleton so the container owns its disposal. Built via a factory so a
+            // missing ILogger (host without AddLogging) falls back to NullLogger instead of failing activation.
+            services.AddSingleton(serviceProvider => new SftpClientPool(
+                serviceProvider.GetRequiredService<IOptions<SshBlobStorageOptions>>(),
+                serviceProvider.GetService<ILogger<SftpClientPool>>() ?? NullLogger<SftpClientPool>.Instance
+            ));
 
             services.AddSingleton<IBlobStorage>(serviceProvider => new SshBlobStorage(
                 serviceProvider.GetRequiredService<SftpClientPool>(),
                 new CrossOsNamingNormalizer(),
                 serviceProvider.GetRequiredService<IOptionsMonitor<SshBlobStorageOptions>>(),
-                serviceProvider.GetRequiredService<ILogger<SshBlobStorage>>()
+                serviceProvider.GetService<ILogger<SshBlobStorage>>() ?? NullLogger<SshBlobStorage>.Instance
             ));
 
             return services;
         }
 
-        private IServiceCollection _AddSshNamedCore(string name)
+        private IServiceCollection _AddBlobsNamedCore(string name)
         {
             services.AddBlobStorageProvider();
 
@@ -138,7 +143,8 @@ public static class SetupSsh
                 (serviceProvider, _) =>
                 {
                     var monitor = serviceProvider.GetRequiredService<IOptionsMonitor<SshBlobStorageOptions>>();
-                    var poolLogger = serviceProvider.GetRequiredService<ILogger<SftpClientPool>>();
+                    var poolLogger =
+                        serviceProvider.GetService<ILogger<SftpClientPool>>() ?? NullLogger<SftpClientPool>.Instance;
 
                     return new SftpClientPool(Options.Create(monitor.Get(name)), poolLogger);
                 }
@@ -157,7 +163,7 @@ public static class SetupSsh
                         pool,
                         new CrossOsNamingNormalizer(),
                         namedMonitor,
-                        serviceProvider.GetRequiredService<ILogger<SshBlobStorage>>()
+                        serviceProvider.GetService<ILogger<SshBlobStorage>>() ?? NullLogger<SshBlobStorage>.Instance
                     );
                 }
             );

@@ -76,13 +76,7 @@ public sealed class HeadlessBlobsSetupBuilder
             );
         }
 
-        if (instance.RegistrationCount > 1)
-        {
-            throw new InvalidOperationException(
-                $"Multiple providers were configured for named blob storage instance '{name}'."
-            );
-        }
-
+        // A second provider is rejected eagerly by RegisterProvider, so RegistrationCount is always 1 here.
         NamedExtensions.Add((name, instance.Action!));
 
         return this;

@@ -26,9 +26,20 @@ public sealed class HeadlessBlobInstanceBuilder
 
     /// <summary>Captures the provider contribution for this instance. Must be called exactly once.</summary>
     /// <param name="action">The provider's deferred service registration action.</param>
+    /// <exception cref="InvalidOperationException">A provider was already registered for this instance.</exception>
     public void RegisterProvider(Action<IServiceCollection> action)
     {
         Argument.IsNotNull(action);
+
+        // Reject the second provider at the call site so the single-provider invariant is local and the first
+        // contribution is never silently overwritten.
+        if (RegistrationCount > 0)
+        {
+            throw new InvalidOperationException(
+                $"Multiple providers were configured for named blob storage instance '{Name}'. "
+                    + "Configure exactly one provider per named instance."
+            );
+        }
 
         Action = action;
         RegistrationCount++;

@@ -23,7 +23,7 @@ public static class SetupRedisBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
-                services._AddRedisDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -37,7 +37,7 @@ public static class SetupRedisBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
-                services._AddRedisDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -51,7 +51,7 @@ public static class SetupRedisBlob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(configuration);
-                services._AddRedisDefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -70,7 +70,7 @@ public static class SetupRedisBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction, name);
-                services._AddRedisNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -86,7 +86,7 @@ public static class SetupRedisBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction, name);
-                services._AddRedisNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -102,7 +102,7 @@ public static class SetupRedisBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(configuration, name);
-                services._AddRedisNamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -111,10 +111,10 @@ public static class SetupRedisBlob
 
     extension(IServiceCollection services)
     {
-        private IServiceCollection _AddRedisDefaultCore()
+        private IServiceCollection _AddBlobsDefaultCore()
         {
             services.AddBlobStorageProvider();
-            services._AddRedisCoreShared();
+            services._AddBlobsCoreShared();
 
             services.AddSingleton<IBlobStorage>(serviceProvider => new RedisBlobStorage(
                 serviceProvider.GetRequiredService<IOptions<RedisBlobStorageOptions>>(),
@@ -126,10 +126,10 @@ public static class SetupRedisBlob
             return services;
         }
 
-        private IServiceCollection _AddRedisNamedCore(string name)
+        private IServiceCollection _AddBlobsNamedCore(string name)
         {
             services.AddBlobStorageProvider();
-            services._AddRedisCoreShared();
+            services._AddBlobsCoreShared();
 
             services.AddKeyedSingleton<IBlobStorage>(
                 name,
@@ -147,7 +147,7 @@ public static class SetupRedisBlob
             return services;
         }
 
-        private IServiceCollection _AddRedisCoreShared()
+        private IServiceCollection _AddBlobsCoreShared()
         {
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());

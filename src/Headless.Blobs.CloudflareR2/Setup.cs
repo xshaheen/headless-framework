@@ -6,6 +6,7 @@ using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
@@ -24,7 +25,7 @@ public static class SetupCloudflareR2Blob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction);
-                services._AddR2DefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -38,7 +39,7 @@ public static class SetupCloudflareR2Blob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction);
-                services._AddR2DefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -52,7 +53,7 @@ public static class SetupCloudflareR2Blob
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(configuration);
-                services._AddR2DefaultCore();
+                services._AddBlobsDefaultCore();
             });
 
             return setup;
@@ -71,7 +72,7 @@ public static class SetupCloudflareR2Blob
             instance.RegisterProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction, name);
-                services._AddR2NamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -87,7 +88,7 @@ public static class SetupCloudflareR2Blob
             instance.RegisterProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(setupAction, name);
-                services._AddR2NamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -103,7 +104,7 @@ public static class SetupCloudflareR2Blob
             instance.RegisterProvider(services =>
             {
                 services.Configure<R2BlobStorageOptions, R2BlobStorageOptionsValidator>(configuration, name);
-                services._AddR2NamedCore(name);
+                services._AddBlobsNamedCore(name);
             });
 
             return instance;
@@ -112,20 +113,26 @@ public static class SetupCloudflareR2Blob
 
     extension(IServiceCollection services)
     {
-        private IServiceCollection _AddR2DefaultCore()
+        private IServiceCollection _AddBlobsDefaultCore()
         {
             services.AddBlobStorageProvider();
 
-            // R2-safe behavior on the reused AWS engine, applied to the default (unnamed) AwsBlobStorageOptions.
-            services.Configure<AwsBlobStorageOptions>(_ApplyR2ForcedDefaults);
+            // R2-safe behavior on the reused AWS engine, bound to an internal named-options slot so the forced
+            // settings are isolated to this default R2 store and never mutate the shared unnamed
+            // AwsBlobStorageOptions that other consumers may read. Mirrors the per-name binding the named path uses.
+            services.Configure<AwsBlobStorageOptions>(_DefaultAwsOptionsName, _ApplyR2ForcedDefaults);
 
             services.AddSingleton<IBlobStorage>(serviceProvider => new AwsBlobStorage(
                 R2ClientFactory.Create(serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>().Value),
                 serviceProvider.GetRequiredService<IMimeTypeProvider>(),
                 serviceProvider.GetRequiredService<IClock>(),
-                serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>(),
+                Options.Create(
+                    serviceProvider
+                        .GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>()
+                        .Get(_DefaultAwsOptionsName)
+                ),
                 new R2BlobNamingNormalizer(),
-                serviceProvider.GetService<ILogger<AwsBlobStorage>>()
+                serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
             ));
 
             services.AddSingleton<IPresignedUrlBlobStorage>(serviceProvider =>
@@ -135,7 +142,7 @@ public static class SetupCloudflareR2Blob
             return services;
         }
 
-        private IServiceCollection _AddR2NamedCore(string name)
+        private IServiceCollection _AddBlobsNamedCore(string name)
         {
             services.AddBlobStorageProvider();
 
@@ -156,7 +163,7 @@ public static class SetupCloudflareR2Blob
                             serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
                         ),
                         new R2BlobNamingNormalizer(),
-                        serviceProvider.GetService<ILogger<AwsBlobStorage>>()
+                        serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
                     )
             );
 
@@ -169,6 +176,10 @@ public static class SetupCloudflareR2Blob
             return services;
         }
     }
+
+    // Internal named-options slot for the default R2 store's AwsBlobStorageOptions. Keeps R2's forced settings
+    // out of the shared unnamed AwsBlobStorageOptions so a coexisting/consumer read of the default slot is clean.
+    private const string _DefaultAwsOptionsName = "__headless_blobs_r2_default";
 
     private static void _ApplyR2ForcedDefaults(AwsBlobStorageOptions options)
     {

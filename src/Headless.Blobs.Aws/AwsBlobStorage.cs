@@ -921,6 +921,10 @@ public sealed class AwsBlobStorage(
     {
         _ensureBucketLock.Dispose();
 
+        // The S3 client is built per-store by the DI factory and handed to this engine to own (it is not a
+        // container-tracked service), so this instance is responsible for releasing its HTTP handler/sockets.
+        (s3 as IDisposable)?.Dispose();
+
         return ValueTask.CompletedTask;
     }
 

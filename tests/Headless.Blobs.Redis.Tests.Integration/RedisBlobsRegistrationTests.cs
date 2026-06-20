@@ -3,6 +3,7 @@
 using Headless.Blobs;
 using Headless.Blobs.Redis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using StackExchange.Redis;
 
@@ -81,5 +82,33 @@ public sealed class RedisBlobsRegistrationTests
 
         // and — no default unkeyed IBlobStorage is registered
         serviceProvider.GetService<IBlobStorage>().Should().BeNull();
+    }
+
+    [Fact]
+    public async Task named_stores_bind_their_own_connection_multiplexer()
+    {
+        // given — distinct multiplexers per named store
+        var cacheMultiplexer = CreateMockMultiplexer();
+        var scratchMultiplexer = CreateMockMultiplexer();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessBlobs(blobs =>
+        {
+            blobs.AddNamed(
+                "cache",
+                instance => instance.UseRedis(options => options.ConnectionMultiplexer = cacheMultiplexer)
+            );
+            blobs.AddNamed(
+                "scratch",
+                instance => instance.UseRedis(options => options.ConnectionMultiplexer = scratchMultiplexer)
+            );
+        });
+        await using var serviceProvider = services.BuildServiceProvider();
+        var monitor = serviceProvider.GetRequiredService<IOptionsMonitor<RedisBlobStorageOptions>>();
+
+        // then — each named options snapshot carries its own multiplexer instance (per-instance isolation)
+        monitor.Get("cache").ConnectionMultiplexer.Should().BeSameAs(cacheMultiplexer);
+        monitor.Get("scratch").ConnectionMultiplexer.Should().BeSameAs(scratchMultiplexer);
     }
 }

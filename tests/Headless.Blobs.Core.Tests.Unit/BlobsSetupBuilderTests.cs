@@ -229,4 +229,38 @@ public sealed class BlobsSetupBuilderTests
         // then
         defaultStorage.Should().BeNull();
     }
+
+    [Fact]
+    public void repeated_registration_should_not_mutate_the_service_collection_on_the_second_call()
+    {
+        // given — a successful first registration
+        var services = new ServiceCollection();
+        services.AddHeadlessBlobs(setup => setup.RegisterDefaultProvider(static _ => { }));
+        var descriptorCountAfterFirstCall = services.Count;
+
+        // when — a second call hits the already-called gate
+        var action = () => services.AddHeadlessBlobs(setup => setup.RegisterDefaultProvider(static _ => { }));
+
+        // then — it throws before appending anything, so the collection is unchanged from the first call
+        action.Should().Throw<InvalidOperationException>().WithMessage("*already called on this service collection*");
+        services.Count.Should().Be(descriptorCountAfterFirstCall);
+    }
+
+    [Fact]
+    public async Task blob_storage_provider_should_reject_empty_name()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessBlobs(static _ => { });
+        await using var provider = services.BuildServiceProvider();
+        var blobProvider = provider.GetRequiredService<IBlobStorageProvider>();
+
+        // when
+        var getStorage = () => blobProvider.GetStorage("");
+        var getStorageOrNull = () => blobProvider.GetStorageOrNull("");
+
+        // then — both guard the empty name via Argument.IsNotNullOrEmpty
+        getStorage.Should().Throw<ArgumentException>();
+        getStorageOrNull.Should().Throw<ArgumentException>();
+    }
 }

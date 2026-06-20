@@ -7,6 +7,7 @@ using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
@@ -37,7 +38,7 @@ public static class SetupAwsS3
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(setupAction);
-                services._AddAwsDefaultCore(awsOptions);
+                services._AddBlobsDefaultCore(awsOptions);
             });
 
             return setup;
@@ -62,7 +63,7 @@ public static class SetupAwsS3
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(setupAction);
-                services._AddAwsDefaultCore(awsOptions);
+                services._AddBlobsDefaultCore(awsOptions);
             });
 
             return setup;
@@ -84,7 +85,7 @@ public static class SetupAwsS3
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(configuration);
-                services._AddAwsDefaultCore(awsOptions);
+                services._AddBlobsDefaultCore(awsOptions);
             });
 
             return setup;
@@ -114,7 +115,7 @@ public static class SetupAwsS3
             instance.RegisterProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(setupAction, name);
-                services._AddAwsNamedCore(name, awsOptions);
+                services._AddBlobsNamedCore(name, awsOptions);
             });
 
             return instance;
@@ -140,7 +141,7 @@ public static class SetupAwsS3
             instance.RegisterProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(setupAction, name);
-                services._AddAwsNamedCore(name, awsOptions);
+                services._AddBlobsNamedCore(name, awsOptions);
             });
 
             return instance;
@@ -163,7 +164,7 @@ public static class SetupAwsS3
             instance.RegisterProvider(services =>
             {
                 services.Configure<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>(configuration, name);
-                services._AddAwsNamedCore(name, awsOptions);
+                services._AddBlobsNamedCore(name, awsOptions);
             });
 
             return instance;
@@ -172,7 +173,7 @@ public static class SetupAwsS3
 
     extension(IServiceCollection services)
     {
-        private IServiceCollection _AddAwsDefaultCore(AWSOptions? awsOptions)
+        private IServiceCollection _AddBlobsDefaultCore(AWSOptions? awsOptions)
         {
             services.AddBlobStorageProvider();
 
@@ -182,7 +183,7 @@ public static class SetupAwsS3
                 serviceProvider.GetRequiredService<IClock>(),
                 serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>(),
                 new AwsBlobNamingNormalizer(),
-                serviceProvider.GetService<ILogger<AwsBlobStorage>>()
+                serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
             ));
 
             services.AddSingleton<IPresignedUrlBlobStorage>(serviceProvider =>
@@ -192,7 +193,7 @@ public static class SetupAwsS3
             return services;
         }
 
-        private IServiceCollection _AddAwsNamedCore(string name, AWSOptions? awsOptions)
+        private IServiceCollection _AddBlobsNamedCore(string name, AWSOptions? awsOptions)
         {
             services.AddBlobStorageProvider();
 
@@ -207,7 +208,7 @@ public static class SetupAwsS3
                             serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
                         ),
                         new AwsBlobNamingNormalizer(),
-                        serviceProvider.GetService<ILogger<AwsBlobStorage>>()
+                        serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
                     )
             );
 

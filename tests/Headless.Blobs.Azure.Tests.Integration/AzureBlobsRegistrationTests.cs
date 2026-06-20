@@ -148,8 +148,35 @@ public sealed class AzureBlobsRegistrationTests
 
         await using var sp = services.BuildServiceProvider();
 
-        // then — unkeyed IBlobStorage is not registered
+        // then — neither the unkeyed IBlobStorage nor its presigned alias is registered for a named-only setup
         sp.GetService<IBlobStorage>().Should().BeNull();
+        sp.GetService<IPresignedUrlBlobStorage>().Should().BeNull();
         sp.GetRequiredKeyedService<IBlobStorage>("reports").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task named_store_falls_back_to_ambient_client_when_no_factory_is_supplied()
+    {
+        // given — a named store WITHOUT a clientFactory; it must use the ambient BlobServiceClient from DI
+        var ambientClient = new BlobServiceClient(new Uri(_BlobServiceUri));
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        services.TryAddSingleton<IClock, Clock>();
+        services.AddSingleton(ambientClient);
+
+        services.AddHeadlessBlobs(blobs =>
+            blobs.AddNamed("backup", instance => instance.UseAzure(setupAction: options => { }))
+        );
+
+        await using var sp = services.BuildServiceProvider();
+
+        // when — resolving the named store exercises the null-clientFactory branch in _AddBlobsNamedCore
+        var backup = sp.GetRequiredKeyedService<IBlobStorage>("backup");
+
+        // then — the store constructs using the ambient client
+        backup.Should().BeOfType<AzureBlobStorage>();
     }
 }

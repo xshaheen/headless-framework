@@ -6,6 +6,7 @@ using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
@@ -43,16 +44,24 @@ public static class SetupAzureBlob
     {
         /// <summary>
         /// Uses Azure Blob Storage as the default (unkeyed) <see cref="IBlobStorage"/>.
-        /// The <see cref="BlobServiceClient"/> is resolved from DI.
         /// </summary>
-        public HeadlessBlobsSetupBuilder UseAzure(Action<AzureStorageOptions> setupAction)
+        /// <param name="setupAction">Options configuration delegate.</param>
+        /// <param name="clientFactory">
+        /// Optional factory that supplies the <see cref="BlobServiceClient"/> for the default store. When
+        /// <see langword="null"/> (the default), the ambient <see cref="BlobServiceClient"/> registered in DI is
+        /// used. Provide a factory to point the default store at a specific storage account.
+        /// </param>
+        public HeadlessBlobsSetupBuilder UseAzure(
+            Action<AzureStorageOptions> setupAction,
+            Func<IServiceProvider, BlobServiceClient>? clientFactory = null
+        )
         {
             Argument.IsNotNull(setupAction);
 
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
-                services._AddAzureDefaultCore();
+                services._AddBlobsDefaultCore(clientFactory);
             });
 
             return setup;
@@ -60,16 +69,25 @@ public static class SetupAzureBlob
 
         /// <summary>
         /// Uses Azure Blob Storage as the default (unkeyed) <see cref="IBlobStorage"/> with
-        /// service-provider-aware configuration. The <see cref="BlobServiceClient"/> is resolved from DI.
+        /// service-provider-aware configuration.
         /// </summary>
-        public HeadlessBlobsSetupBuilder UseAzure(Action<AzureStorageOptions, IServiceProvider> setupAction)
+        /// <param name="setupAction">Options configuration delegate.</param>
+        /// <param name="clientFactory">
+        /// Optional factory that supplies the <see cref="BlobServiceClient"/> for the default store. When
+        /// <see langword="null"/> (the default), the ambient <see cref="BlobServiceClient"/> registered in DI is
+        /// used. Provide a factory to point the default store at a specific storage account.
+        /// </param>
+        public HeadlessBlobsSetupBuilder UseAzure(
+            Action<AzureStorageOptions, IServiceProvider> setupAction,
+            Func<IServiceProvider, BlobServiceClient>? clientFactory = null
+        )
         {
             Argument.IsNotNull(setupAction);
 
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
-                services._AddAzureDefaultCore();
+                services._AddBlobsDefaultCore(clientFactory);
             });
 
             return setup;
@@ -77,16 +95,25 @@ public static class SetupAzureBlob
 
         /// <summary>
         /// Uses Azure Blob Storage as the default (unkeyed) <see cref="IBlobStorage"/>, binding options
-        /// from configuration. The <see cref="BlobServiceClient"/> is resolved from DI.
+        /// from configuration.
         /// </summary>
-        public HeadlessBlobsSetupBuilder UseAzure(IConfiguration configuration)
+        /// <param name="configuration">Configuration section to bind.</param>
+        /// <param name="clientFactory">
+        /// Optional factory that supplies the <see cref="BlobServiceClient"/> for the default store. When
+        /// <see langword="null"/> (the default), the ambient <see cref="BlobServiceClient"/> registered in DI is
+        /// used. Provide a factory to point the default store at a specific storage account.
+        /// </param>
+        public HeadlessBlobsSetupBuilder UseAzure(
+            IConfiguration configuration,
+            Func<IServiceProvider, BlobServiceClient>? clientFactory = null
+        )
         {
             Argument.IsNotNull(configuration);
 
             setup.RegisterDefaultProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(configuration);
-                services._AddAzureDefaultCore();
+                services._AddBlobsDefaultCore(clientFactory);
             });
 
             return setup;
@@ -117,7 +144,7 @@ public static class SetupAzureBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction, name);
-                services._AddAzureNamedCore(name, clientFactory);
+                services._AddBlobsNamedCore(name, clientFactory);
             });
 
             return instance;
@@ -144,7 +171,7 @@ public static class SetupAzureBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction, name);
-                services._AddAzureNamedCore(name, clientFactory);
+                services._AddBlobsNamedCore(name, clientFactory);
             });
 
             return instance;
@@ -171,7 +198,7 @@ public static class SetupAzureBlob
             instance.RegisterProvider(services =>
             {
                 services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(configuration, name);
-                services._AddAzureNamedCore(name, clientFactory);
+                services._AddBlobsNamedCore(name, clientFactory);
             });
 
             return instance;
@@ -180,17 +207,17 @@ public static class SetupAzureBlob
 
     extension(IServiceCollection services)
     {
-        private IServiceCollection _AddAzureDefaultCore()
+        private IServiceCollection _AddBlobsDefaultCore(Func<IServiceProvider, BlobServiceClient>? clientFactory)
         {
             services.AddBlobStorageProvider();
 
             services.AddSingleton<IBlobStorage>(sp => new AzureBlobStorage(
-                sp.GetRequiredService<BlobServiceClient>(),
+                clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>(),
                 sp.GetRequiredService<IMimeTypeProvider>(),
                 sp.GetRequiredService<IClock>(),
                 sp.GetRequiredService<IOptions<AzureStorageOptions>>(),
                 new AzureBlobNamingNormalizer(),
-                sp.GetRequiredService<ILogger<AzureBlobStorage>>()
+                sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance
             ));
 
             services.AddSingleton<IPresignedUrlBlobStorage>(sp =>
@@ -200,7 +227,7 @@ public static class SetupAzureBlob
             return services;
         }
 
-        private IServiceCollection _AddAzureNamedCore(
+        private IServiceCollection _AddBlobsNamedCore(
             string name,
             Func<IServiceProvider, BlobServiceClient>? clientFactory
         )
@@ -216,7 +243,7 @@ public static class SetupAzureBlob
                         sp.GetRequiredService<IClock>(),
                         Options.Create(sp.GetRequiredService<IOptionsMonitor<AzureStorageOptions>>().Get(name)),
                         new AzureBlobNamingNormalizer(),
-                        sp.GetRequiredService<ILogger<AzureBlobStorage>>()
+                        sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance
                     )
             );
 

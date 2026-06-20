@@ -1,104 +1,64 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Amazon.Runtime;
-using Amazon.S3;
 using Headless.Abstractions;
 using Headless.Blobs;
-using Headless.Blobs.Aws;
 using Headless.Blobs.CloudflareR2;
-using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class SetupCloudflareR2BlobTests : TestBase
+/// <summary>
+/// Verifies the <c>AddHeadlessBlobs(blobs =&gt; blobs.UseCloudflareR2(…))</c> default-store registration: options
+/// binding, validation, and that the store resolves as a presigned-capable <see cref="IBlobStorage"/>. The R2
+/// client configuration is covered by the shared <c>R2ClientFactory</c> and by
+/// <c>CloudflareR2BlobsRegistrationTests</c>; the R2 naming normalizer and options shape have dedicated unit
+/// tests. No network I/O is performed.
+/// </summary>
+public sealed class SetupCloudflareR2BlobTests
 {
-    private static ServiceProvider _BuildProvider(Action<R2BlobStorageOptions>? configure = null)
+    private static ServiceCollection _CreateServices()
     {
         var services = new ServiceCollection();
-
-        services.AddSingleton<IClock>(new Clock(TimeProvider.System));
-        services.AddSingleton<IMimeTypeProvider, MimeTypeProvider>();
         services.AddLogging();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        services.TryAddSingleton<IClock, Clock>();
 
-        services.AddCloudflareR2BlobStorage(
-            configure
-                ?? (
-                    options =>
-                    {
-                        options.AccountId = "acc123";
-                        options.AccessKeyId = "key";
-                        options.SecretAccessKey = "secret";
-                    }
-                )
-        );
+        return services;
+    }
 
-        return services.BuildServiceProvider();
+    private static void _ConfigureR2(R2BlobStorageOptions options)
+    {
+        options.AccountId = "acc123";
+        options.AccessKeyId = "key";
+        options.SecretAccessKey = "secret";
     }
 
     [Fact]
-    public void registers_amazon_s3_configured_for_r2()
+    public async Task default_r2_store_resolves_as_presigned_capable_blob_storage()
     {
-        using var sp = _BuildProvider();
+        // given
+        var services = _CreateServices();
+        services.AddHeadlessBlobs(blobs => blobs.UseCloudflareR2(_ConfigureR2));
 
-        var config = (AmazonS3Config)((AmazonS3Client)sp.GetRequiredService<IAmazonS3>()).Config;
-
-        // The AWS SDK normalizes ServiceURL with a trailing slash.
-        config.ServiceURL.Should().Be("https://acc123.r2.cloudflarestorage.com/");
-        config.ForcePathStyle.Should().BeTrue();
-        config.AuthenticationRegion.Should().Be("auto");
-        config.RequestChecksumCalculation.Should().Be(RequestChecksumCalculation.WHEN_REQUIRED);
-        config.ResponseChecksumValidation.Should().Be(ResponseChecksumValidation.WHEN_REQUIRED);
-    }
-
-    [Fact]
-    public void applies_r2_safe_blob_storage_options()
-    {
-        using var sp = _BuildProvider();
-
-        var options = sp.GetRequiredService<IOptions<AwsBlobStorageOptions>>().Value;
-
-        options.CannedAcl.Should().BeNull();
-        options.UseChunkEncoding.Should().BeFalse();
-        options.DisablePayloadSigning.Should().BeTrue();
-        options.AutoCreateContainer.Should().BeFalse();
-    }
-
-    [Fact]
-    public void registers_r2_naming_normalizer()
-    {
-        using var sp = _BuildProvider();
-
-        sp.GetRequiredService<IBlobNamingNormalizer>().Should().BeOfType<R2BlobNamingNormalizer>();
-    }
-
-    [Fact]
-    public async Task registers_aws_engine_with_presigned_capability()
-    {
         // AwsBlobStorage is IAsyncDisposable, so the provider must be disposed asynchronously once resolved.
-        await using var sp = _BuildProvider();
+        await using var sp = services.BuildServiceProvider();
 
+        // when
         var storage = sp.GetRequiredService<IBlobStorage>();
 
-        storage.Should().BeOfType<AwsBlobStorage>();
+        // then — the reused AWS engine implements IPresignedUrlBlobStorage; the unkeyed alias is the same instance
         storage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
-    }
-
-    [Fact]
-    public async Task presigned_capability_is_injectable_and_is_the_same_instance()
-    {
-        await using var sp = _BuildProvider();
-
-        var presigned = sp.GetRequiredService<IPresignedUrlBlobStorage>();
-
-        presigned.Should().BeSameAs(sp.GetRequiredService<IBlobStorage>());
+        sp.GetRequiredService<IPresignedUrlBlobStorage>().Should().BeSameAs(storage);
     }
 
     [Fact]
     public void binds_options_from_configuration_section()
     {
+        // given
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -110,29 +70,35 @@ public sealed class SetupCloudflareR2BlobTests : TestBase
             )
             .Build();
 
-        var services = new ServiceCollection();
-        services.AddSingleton<IClock>(new Clock(TimeProvider.System));
-        services.AddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        services.AddLogging();
-        services.AddCloudflareR2BlobStorage(configuration.GetSection("R2"));
+        var services = _CreateServices();
+        services.AddHeadlessBlobs(blobs => blobs.UseCloudflareR2(configuration.GetSection("R2")));
 
         using var sp = services.BuildServiceProvider();
 
+        // then
         sp.GetRequiredService<IOptions<R2BlobStorageOptions>>().Value.AccountId.Should().Be("acc123");
     }
 
     [Fact]
     public void invalid_options_fail_validation()
     {
-        using var sp = _BuildProvider(options =>
-        {
-            options.AccountId = "";
-            options.AccessKeyId = "";
-            options.SecretAccessKey = "";
-        });
+        // given
+        var services = _CreateServices();
+        services.AddHeadlessBlobs(blobs =>
+            blobs.UseCloudflareR2(options =>
+            {
+                options.AccountId = "";
+                options.AccessKeyId = "";
+                options.SecretAccessKey = "";
+            })
+        );
 
+        using var sp = services.BuildServiceProvider();
+
+        // when
         var act = () => sp.GetRequiredService<IOptions<R2BlobStorageOptions>>().Value;
 
+        // then
         act.Should().Throw<OptionsValidationException>();
     }
 }

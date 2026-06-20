@@ -15,8 +15,9 @@ public static class SetupBlobsCore
         /// Registers Headless blob storage from a single setup builder. Provider packages contribute through
         /// <c>Use*</c> (default) and <c>AddNamed(…, i => i.Use*(…))</c> (named) extensions on
         /// <see cref="HeadlessBlobsSetupBuilder"/>. A default store is optional (at most one); named stores are
-        /// unlimited with unique names. All contributions are deferred until the setup gates pass, so a failed
-        /// setup leaves the service collection unchanged.
+        /// unlimited with unique names. All contributions are deferred until the setup gates (at-most-one-default
+        /// and called-once) run, so a failed gate leaves the service collection unchanged. Once the gates pass the
+        /// queued contributions are applied in order.
         /// </summary>
         /// <param name="configure">The setup action selecting the providers.</param>
         /// <returns>The service collection for chaining.</returns>

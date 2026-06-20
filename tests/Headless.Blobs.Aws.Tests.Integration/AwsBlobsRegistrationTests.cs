@@ -132,5 +132,35 @@ public sealed class AwsBlobsRegistrationTests
         // then — keyed presigned alias points to the same keyed storage instance
         storage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
         presigned.Should().BeSameAs(storage);
+
+        // and — a named-only (no default) setup leaks no unkeyed presigned alias
+        serviceProvider.GetService<IPresignedUrlBlobStorage>().Should().BeNull();
+    }
+
+    [Fact]
+    public async Task default_store_without_aws_options_uses_credential_chain()
+    {
+        // given — no AWSOptions supplied, so S3ClientFactory builds `new AmazonS3Client()`, which resolves
+        // region/credentials from the SDK chain. Supply a region via the environment so client construction
+        // succeeds without a configured profile; restore it afterward.
+        var previousRegion = Environment.GetEnvironmentVariable("AWS_REGION");
+        Environment.SetEnvironmentVariable("AWS_REGION", "us-east-1");
+
+        try
+        {
+            var services = BuildBaseServices();
+            services.AddHeadlessBlobs(blobs => blobs.UseAws(options => { }));
+            await using var serviceProvider = services.BuildServiceProvider();
+
+            // when — resolving the default store exercises the new AmazonS3Client() (credential-chain) branch
+            var storage = serviceProvider.GetRequiredService<IBlobStorage>();
+
+            // then
+            storage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AWS_REGION", previousRegion);
+        }
     }
 }
