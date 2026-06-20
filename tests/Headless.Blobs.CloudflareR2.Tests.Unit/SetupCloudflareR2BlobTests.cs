@@ -101,7 +101,7 @@ public sealed class SetupCloudflareR2BlobTests : TestBase
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
-                new Dictionary<string, string?>
+                new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
                     ["R2:AccountId"] = "acc123",
                     ["R2:AccessKeyId"] = "key",
