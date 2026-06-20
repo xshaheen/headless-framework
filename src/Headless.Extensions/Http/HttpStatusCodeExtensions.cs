@@ -6,6 +6,7 @@ using System.Net;
 namespace System;
 
 /// <summary>Extensions for inspecting <see cref="HttpStatusCode"/> success ranges.</summary>
+[PublicAPI]
 public static class HttpStatusCodeExtensions
 {
     /// <summary>Determines whether <paramref name="code"/> is in the success range (2xx).</summary>

@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 namespace Headless.Http;
 
 /// <summary>An <see cref="AuthenticationHeaderValue"/> specialized for the HTTP <c>Basic</c> authentication scheme.</summary>
+[PublicAPI]
 public sealed class BasicAuthenticationValue : AuthenticationHeaderValue
 {
     /// <summary>The HTTP authentication scheme name (<c>Basic</c>) used by this header value.</summary>

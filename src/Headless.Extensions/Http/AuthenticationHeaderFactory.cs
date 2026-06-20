@@ -6,6 +6,7 @@ using Headless.Checks;
 namespace Headless.Http;
 
 /// <summary>Factory helpers for building HTTP <see cref="AuthenticationHeaderValue"/> instances.</summary>
+[PublicAPI]
 public static class AuthenticationHeaderFactory
 {
     /// <summary>Builds a <c>Basic</c> authentication header by Base64-encoding the <c>userName:password</c> pair.</summary>
