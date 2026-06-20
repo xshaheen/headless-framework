@@ -21,32 +21,15 @@ public sealed class TzConvertTimezoneProviderTests
     }
 
     [Fact]
-    public void get_windows_timezones_should_not_share_mutable_instances_across_calls()
+    public void get_windows_timezones_should_return_the_same_cached_instance_across_calls()
     {
-        // given
-        var first = _sut.GetWindowsTimezones();
-        var originalName = first[0].Name;
-
-        // when — mutating a returned element must not leak into a later call (no shared cache)
-        first[0].Name = "MUTATED";
-        var second = _sut.GetWindowsTimezones();
-
-        // then
-        second[0].Name.Should().Be(originalName);
+        // The immutable cache is returned directly — no per-call recomputation or copying.
+        _sut.GetWindowsTimezones().Should().BeSameAs(_sut.GetWindowsTimezones());
     }
 
     [Fact]
-    public void get_iana_timezones_should_not_share_mutable_instances_across_calls()
+    public void get_iana_timezones_should_return_the_same_cached_instance_across_calls()
     {
-        // given
-        var first = _sut.GetIanaTimezones();
-        var originalName = first[0].Name;
-
-        // when
-        first[0].Name = "MUTATED";
-        var second = _sut.GetIanaTimezones();
-
-        // then
-        second[0].Name.Should().Be(originalName);
+        _sut.GetIanaTimezones().Should().BeSameAs(_sut.GetIanaTimezones());
     }
 }
