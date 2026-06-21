@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -15,77 +16,128 @@ public static class SetupTwilio
 {
     internal const string HttpClientName = "Headless:TwilioSms";
 
-    public static IServiceCollection AddTwilioSmsSender(
-        this IServiceCollection services,
-        IConfiguration config,
-        Action<HttpClient>? configureClient = null,
-        Action<HttpStandardResilienceOptions>? configureResilience = null
-    )
+    extension(HeadlessSmsSetupBuilder setup)
     {
-        services.Configure<TwilioSmsOptions, TwilioSmsOptionsValidator>(config);
-
-        return _AddTwilioSmsSenderCore(services, configureClient, configureResilience);
-    }
-
-    public static IServiceCollection AddTwilioSmsSender(
-        this IServiceCollection services,
-        Action<TwilioSmsOptions> setupAction,
-        Action<HttpClient>? configureClient = null,
-        Action<HttpStandardResilienceOptions>? configureResilience = null
-    )
-    {
-        services.Configure<TwilioSmsOptions, TwilioSmsOptionsValidator>(setupAction);
-
-        return _AddTwilioSmsSenderCore(services, configureClient, configureResilience);
-    }
-
-    public static IServiceCollection AddTwilioSmsSender(
-        this IServiceCollection services,
-        Action<TwilioSmsOptions, IServiceProvider> setupAction,
-        Action<HttpClient>? configureClient = null,
-        Action<HttpStandardResilienceOptions>? configureResilience = null
-    )
-    {
-        services.Configure<TwilioSmsOptions, TwilioSmsOptionsValidator>(setupAction);
-
-        return _AddTwilioSmsSenderCore(services, configureClient, configureResilience);
-    }
-
-    private static IServiceCollection _AddTwilioSmsSenderCore(
-        IServiceCollection services,
-        Action<HttpClient>? configureClient,
-        Action<HttpStandardResilienceOptions>? configureResilience
-    )
-    {
-        var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient(HttpClientName)
-            : services.AddHttpClient(HttpClientName, configureClient);
-
-        // SMS sends are not idempotent: don't auto-retry by default to avoid duplicate messages.
-        // Consumers can opt back in via configureResilience (ideally with a provider idempotency key).
-        httpClientBuilder.AddStandardResilienceHandler(options =>
+        /// <summary>Selects Twilio, binding and validating <see cref="TwilioSmsOptions"/> from configuration.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
+        public HeadlessSmsSetupBuilder UseTwilio(
+            IConfiguration config,
+            Action<HttpClient>? configureClient = null,
+            Action<HttpStandardResilienceOptions>? configureResilience = null
+        )
         {
-            options.Retry.ShouldHandle = static _ => PredicateResult.False();
-            configureResilience?.Invoke(options);
-        });
+            Argument.IsNotNull(config);
+            setup.RegisterExtension(new TwilioProviderOptionsExtension(config, configureClient, configureResilience));
 
-        services.TryAddSingleton<ITwilioRestClient>(sp =>
+            return setup;
+        }
+
+        /// <summary>Selects Twilio, configuring <see cref="TwilioSmsOptions"/> via a delegate.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public HeadlessSmsSetupBuilder UseTwilio(
+            Action<TwilioSmsOptions> setupAction,
+            Action<HttpClient>? configureClient = null,
+            Action<HttpStandardResilienceOptions>? configureResilience = null
+        )
         {
-            var options = sp.GetRequiredService<IOptions<TwilioSmsOptions>>().Value;
-            var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(HttpClientName);
-
-            return new TwilioRestClient(
-                username: options.Sid,
-                password: options.AuthToken,
-                accountSid: options.Sid,
-                region: options.Region,
-                edge: options.Edge,
-                httpClient: new global::Twilio.Http.SystemNetHttpClient(httpClient)
+            Argument.IsNotNull(setupAction);
+            setup.RegisterExtension(
+                new TwilioProviderOptionsExtension(setupAction, configureClient, configureResilience)
             );
-        });
 
-        services.AddSingleton<ISmsSender, TwilioSmsSender>();
+            return setup;
+        }
 
-        return services;
+        /// <summary>Selects Twilio, configuring <see cref="TwilioSmsOptions"/> with access to the service provider.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public HeadlessSmsSetupBuilder UseTwilio(
+            Action<TwilioSmsOptions, IServiceProvider> setupAction,
+            Action<HttpClient>? configureClient = null,
+            Action<HttpStandardResilienceOptions>? configureResilience = null
+        )
+        {
+            Argument.IsNotNull(setupAction);
+            setup.RegisterExtension(
+                new TwilioProviderOptionsExtension(setupAction, configureClient, configureResilience)
+            );
+
+            return setup;
+        }
+    }
+
+    private sealed class TwilioProviderOptionsExtension : ISmsProviderOptionsExtension
+    {
+        private readonly Action<IServiceCollection> _configureOptions;
+        private readonly Action<HttpClient>? _configureClient;
+        private readonly Action<HttpStandardResilienceOptions>? _configureResilience;
+
+        public TwilioProviderOptionsExtension(
+            IConfiguration config,
+            Action<HttpClient>? configureClient,
+            Action<HttpStandardResilienceOptions>? configureResilience
+        )
+        {
+            _configureOptions = services => services.Configure<TwilioSmsOptions, TwilioSmsOptionsValidator>(config);
+            _configureClient = configureClient;
+            _configureResilience = configureResilience;
+        }
+
+        public TwilioProviderOptionsExtension(
+            Action<TwilioSmsOptions> setupAction,
+            Action<HttpClient>? configureClient,
+            Action<HttpStandardResilienceOptions>? configureResilience
+        )
+        {
+            _configureOptions = services =>
+                services.Configure<TwilioSmsOptions, TwilioSmsOptionsValidator>(setupAction);
+            _configureClient = configureClient;
+            _configureResilience = configureResilience;
+        }
+
+        public TwilioProviderOptionsExtension(
+            Action<TwilioSmsOptions, IServiceProvider> setupAction,
+            Action<HttpClient>? configureClient,
+            Action<HttpStandardResilienceOptions>? configureResilience
+        )
+        {
+            _configureOptions = services =>
+                services.Configure<TwilioSmsOptions, TwilioSmsOptionsValidator>(setupAction);
+            _configureClient = configureClient;
+            _configureResilience = configureResilience;
+        }
+
+        public void AddServices(IServiceCollection services)
+        {
+            _configureOptions(services);
+
+            var httpClientBuilder = _configureClient is null
+                ? services.AddHttpClient(HttpClientName)
+                : services.AddHttpClient(HttpClientName, _configureClient);
+
+            // SMS sends are not idempotent: don't auto-retry by default to avoid duplicate messages.
+            // Consumers can opt back in via configureResilience (ideally with a provider idempotency key).
+            httpClientBuilder.AddStandardResilienceHandler(options =>
+            {
+                options.Retry.ShouldHandle = static _ => PredicateResult.False();
+                _configureResilience?.Invoke(options);
+            });
+
+            services.TryAddSingleton<ITwilioRestClient>(sp =>
+            {
+                var options = sp.GetRequiredService<IOptions<TwilioSmsOptions>>().Value;
+                var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient(HttpClientName);
+
+                return new TwilioRestClient(
+                    username: options.Sid,
+                    password: options.AuthToken,
+                    accountSid: options.Sid,
+                    region: options.Region,
+                    edge: options.Edge,
+                    httpClient: new global::Twilio.Http.SystemNetHttpClient(httpClient)
+                );
+            });
+
+            services.AddSingleton<ISmsSender, TwilioSmsSender>();
+        }
     }
 }

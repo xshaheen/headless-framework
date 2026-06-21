@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
@@ -12,62 +13,112 @@ public static class SetupInfobip
 {
     internal const string HttpClientName = "Headless:InfobipSms";
 
-    public static IServiceCollection AddInfobipSmsSender(
-        this IServiceCollection services,
-        IConfiguration config,
-        Action<HttpClient>? configureClient = null,
-        Action<HttpStandardResilienceOptions>? configureResilience = null
-    )
+    extension(HeadlessSmsSetupBuilder setup)
     {
-        services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(config);
-
-        return _AddInfobipSmsSenderCore(services, configureClient, configureResilience);
-    }
-
-    public static IServiceCollection AddInfobipSmsSender(
-        this IServiceCollection services,
-        Action<InfobipSmsOptions> setupAction,
-        Action<HttpClient>? configureClient = null,
-        Action<HttpStandardResilienceOptions>? configureResilience = null
-    )
-    {
-        services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(setupAction);
-
-        return _AddInfobipSmsSenderCore(services, configureClient, configureResilience);
-    }
-
-    public static IServiceCollection AddInfobipSmsSender(
-        this IServiceCollection services,
-        Action<InfobipSmsOptions, IServiceProvider> setupAction,
-        Action<HttpClient>? configureClient = null,
-        Action<HttpStandardResilienceOptions>? configureResilience = null
-    )
-    {
-        services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(setupAction);
-
-        return _AddInfobipSmsSenderCore(services, configureClient, configureResilience);
-    }
-
-    private static IServiceCollection _AddInfobipSmsSenderCore(
-        IServiceCollection services,
-        Action<HttpClient>? configureClient,
-        Action<HttpStandardResilienceOptions>? configureResilience
-    )
-    {
-        services.AddSingleton<ISmsSender, InfobipSmsSender>();
-
-        var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient(HttpClientName)
-            : services.AddHttpClient(HttpClientName, configureClient);
-
-        // SMS sends are not idempotent: don't auto-retry by default to avoid duplicate messages.
-        // Consumers can opt back in via configureResilience (ideally with a provider idempotency key).
-        httpClientBuilder.AddStandardResilienceHandler(options =>
+        /// <summary>Selects Infobip, binding and validating <see cref="InfobipSmsOptions"/> from configuration.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
+        public HeadlessSmsSetupBuilder UseInfobip(
+            IConfiguration config,
+            Action<HttpClient>? configureClient = null,
+            Action<HttpStandardResilienceOptions>? configureResilience = null
+        )
         {
-            options.Retry.ShouldHandle = static _ => PredicateResult.False();
-            configureResilience?.Invoke(options);
-        });
+            Argument.IsNotNull(config);
+            setup.RegisterExtension(new InfobipProviderOptionsExtension(config, configureClient, configureResilience));
 
-        return services;
+            return setup;
+        }
+
+        /// <summary>Selects Infobip, configuring <see cref="InfobipSmsOptions"/> via a delegate.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public HeadlessSmsSetupBuilder UseInfobip(
+            Action<InfobipSmsOptions> setupAction,
+            Action<HttpClient>? configureClient = null,
+            Action<HttpStandardResilienceOptions>? configureResilience = null
+        )
+        {
+            Argument.IsNotNull(setupAction);
+            setup.RegisterExtension(
+                new InfobipProviderOptionsExtension(setupAction, configureClient, configureResilience)
+            );
+
+            return setup;
+        }
+
+        /// <summary>Selects Infobip, configuring <see cref="InfobipSmsOptions"/> with access to the service provider.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public HeadlessSmsSetupBuilder UseInfobip(
+            Action<InfobipSmsOptions, IServiceProvider> setupAction,
+            Action<HttpClient>? configureClient = null,
+            Action<HttpStandardResilienceOptions>? configureResilience = null
+        )
+        {
+            Argument.IsNotNull(setupAction);
+            setup.RegisterExtension(
+                new InfobipProviderOptionsExtension(setupAction, configureClient, configureResilience)
+            );
+
+            return setup;
+        }
+    }
+
+    private sealed class InfobipProviderOptionsExtension : ISmsProviderOptionsExtension
+    {
+        private readonly Action<IServiceCollection> _configureOptions;
+        private readonly Action<HttpClient>? _configureClient;
+        private readonly Action<HttpStandardResilienceOptions>? _configureResilience;
+
+        public InfobipProviderOptionsExtension(
+            IConfiguration config,
+            Action<HttpClient>? configureClient,
+            Action<HttpStandardResilienceOptions>? configureResilience
+        )
+        {
+            _configureOptions = services => services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(config);
+            _configureClient = configureClient;
+            _configureResilience = configureResilience;
+        }
+
+        public InfobipProviderOptionsExtension(
+            Action<InfobipSmsOptions> setupAction,
+            Action<HttpClient>? configureClient,
+            Action<HttpStandardResilienceOptions>? configureResilience
+        )
+        {
+            _configureOptions = services =>
+                services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(setupAction);
+            _configureClient = configureClient;
+            _configureResilience = configureResilience;
+        }
+
+        public InfobipProviderOptionsExtension(
+            Action<InfobipSmsOptions, IServiceProvider> setupAction,
+            Action<HttpClient>? configureClient,
+            Action<HttpStandardResilienceOptions>? configureResilience
+        )
+        {
+            _configureOptions = services =>
+                services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(setupAction);
+            _configureClient = configureClient;
+            _configureResilience = configureResilience;
+        }
+
+        public void AddServices(IServiceCollection services)
+        {
+            _configureOptions(services);
+            services.AddSingleton<ISmsSender, InfobipSmsSender>();
+
+            var httpClientBuilder = _configureClient is null
+                ? services.AddHttpClient(HttpClientName)
+                : services.AddHttpClient(HttpClientName, _configureClient);
+
+            // SMS sends are not idempotent: don't auto-retry by default to avoid duplicate messages.
+            // Consumers can opt back in via configureResilience (ideally with a provider idempotency key).
+            httpClientBuilder.AddStandardResilienceHandler(options =>
+            {
+                options.Retry.ShouldHandle = static _ => PredicateResult.False();
+                _configureResilience?.Invoke(options);
+            });
+        }
     }
 }
