@@ -40,7 +40,7 @@ public sealed class EditionFeatureValueProvider(IFeatureValueStore store, ICurre
             return null;
         }
 
-        return await Store.GetOrDefaultAsync(feature.Name, Name, editionId, cancellationToken);
+        return await Store.GetOrDefaultAsync(feature.Name, Name, editionId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

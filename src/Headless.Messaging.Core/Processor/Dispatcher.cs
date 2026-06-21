@@ -254,10 +254,10 @@ internal sealed class Dispatcher : IDispatcher
 
         if (_tasksCts is not null)
         {
-            await castAndDispose(_tasksCts);
+            await castAndDispose(_tasksCts).ConfigureAwait(false);
         }
 
-        await castAndDispose(_schedulerQueue);
+        await castAndDispose(_schedulerQueue).ConfigureAwait(false);
 
         _disposed = true;
 
@@ -267,7 +267,7 @@ internal sealed class Dispatcher : IDispatcher
         {
             if (resource is IAsyncDisposable asyncDisposable)
             {
-                await asyncDisposable.DisposeAsync();
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
             }
             else
             {

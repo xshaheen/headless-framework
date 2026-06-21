@@ -35,14 +35,16 @@ public sealed class ImageCompressor(IEnumerable<IImageCompressorContributor> con
         if (!stream.CanSeek)
         {
             var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream, cancellationToken);
+            await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
             _SeekToBegin(memoryStream);
             stream = memoryStream;
         }
 
         foreach (var compressorContributor in _contributors)
         {
-            var result = await compressorContributor.TryCompressAsync(stream, args, cancellationToken);
+            var result = await compressorContributor
+                .TryCompressAsync(stream, args, cancellationToken)
+                .ConfigureAwait(false);
 
             _SeekToBegin(stream);
 

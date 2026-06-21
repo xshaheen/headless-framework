@@ -158,19 +158,23 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNull(bucketName);
 
         var timestamp = Stopwatch.GetTimestamp();
-        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey);
+        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey).ConfigureAwait(false);
 
-        await _retryPipeline.ExecuteAsync(
-            static async (state, token) =>
-            {
-                await state.cluster.QueryIndexes.BuildDeferredIndexesAsync(
-                    state.bucketName,
-                    options => options.CancellationToken(token)
-                );
-            },
-            (cluster, bucketName),
-            cancellationToken
-        );
+        await _retryPipeline
+            .ExecuteAsync(
+                static async (state, token) =>
+                {
+                    await state
+                        .cluster.QueryIndexes.BuildDeferredIndexesAsync(
+                            state.bucketName,
+                            options => options.CancellationToken(token)
+                        )
+                        .ConfigureAwait(false);
+                },
+                (cluster, bucketName),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         if (_logger.IsEnabled(LogLevel.Information))
         {
@@ -195,8 +199,8 @@ public sealed class CouchbaseManager : ICouchbaseManager
             _logger.TryCreateScope(clusterKey, bucketName, scopeName);
         }
 
-        var bucket = await _GetBucketAsync(clusterKey, bucketName);
-        var bucketScopes = await _GetBucketScopeSpecsAsync(clusterKey, bucket);
+        var bucket = await _GetBucketAsync(clusterKey, bucketName).ConfigureAwait(false);
+        var bucketScopes = await _GetBucketScopeSpecsAsync(clusterKey, bucket).ConfigureAwait(false);
 
         if (bucketScopes.ContainsKey(scopeName))
         {
@@ -210,40 +214,41 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
         try
         {
-            return await _retryPipeline.ExecuteAsync(
-                static async (state, token) =>
-                {
-                    var (@this, clusterKey, scopeName, bucket) = state;
-
-                    try
+            return await _retryPipeline
+                .ExecuteAsync(
+                    static async (state, token) =>
                     {
-                        await bucket.Collections.CreateScopeAsync(
-                            scopeName,
-                            options => options.CancellationToken(token)
-                        );
+                        var (@this, clusterKey, scopeName, bucket) = state;
 
-                        @this._ClearScopesCache(clusterKey, bucket.Name);
-
-                        if (@this._logger.IsEnabled(LogLevel.Information))
+                        try
                         {
-                            @this._logger.CreateScopeSucceeded(clusterKey, bucket.Name, scopeName);
-                        }
+                            await bucket
+                                .Collections.CreateScopeAsync(scopeName, options => options.CancellationToken(token))
+                                .ConfigureAwait(false);
 
-                        return CreateScopeStatus.Success;
-                    }
-                    catch (ScopeExistsException)
-                    {
-                        if (@this._logger.IsEnabled(LogLevel.Information))
+                            @this._ClearScopesCache(clusterKey, bucket.Name);
+
+                            if (@this._logger.IsEnabled(LogLevel.Information))
+                            {
+                                @this._logger.CreateScopeSucceeded(clusterKey, bucket.Name, scopeName);
+                            }
+
+                            return CreateScopeStatus.Success;
+                        }
+                        catch (ScopeExistsException)
                         {
-                            @this._logger.CreateScopeSucceededAlreadyExists(clusterKey, bucket.Name, scopeName);
-                        }
+                            if (@this._logger.IsEnabled(LogLevel.Information))
+                            {
+                                @this._logger.CreateScopeSucceededAlreadyExists(clusterKey, bucket.Name, scopeName);
+                            }
 
-                        return CreateScopeStatus.Success;
-                    }
-                },
-                (this, clusterKey, scopeName, bucket),
-                cancellationToken
-            );
+                            return CreateScopeStatus.Success;
+                        }
+                    },
+                    (this, clusterKey, scopeName, bucket),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -268,31 +273,38 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotEmpty(collections);
 
         var timestamp = Stopwatch.GetTimestamp();
-        var bucket = await _GetBucketAsync(clusterKey, bucketName);
-        var (scope, scopeCollections) = await _GetScopeAsync(clusterKey, bucket, scopeName);
+        var bucket = await _GetBucketAsync(clusterKey, bucketName).ConfigureAwait(false);
+        var (scope, scopeCollections) = await _GetScopeAsync(clusterKey, bucket, scopeName).ConfigureAwait(false);
 
-        await Parallel.ForEachAsync(
-            collections,
-            cancellationToken,
-            async (collectionName, token) =>
-            {
-                if (scopeCollections.Contains(collectionName))
+        await Parallel
+            .ForEachAsync(
+                collections,
+                cancellationToken,
+                async (collectionName, token) =>
                 {
-                    var collection = await scope.CollectionAsync(collectionName);
-
-                    if (!await _HasPrimaryIndexAsync(collection, token))
+                    if (scopeCollections.Contains(collectionName))
                     {
-                        await _CreatePrimaryIndexOnCollectionAsync(clusterKey, collection);
+                        var collection = await scope.CollectionAsync(collectionName).ConfigureAwait(false);
+
+                        if (!await _HasPrimaryIndexAsync(collection, token).ConfigureAwait(false))
+                        {
+                            await _CreatePrimaryIndexOnCollectionAsync(clusterKey, collection).ConfigureAwait(false);
+                        }
+
+                        return;
                     }
 
-                    return;
+                    await _CreateCollectionAsync(clusterKey, bucket, scope, collectionName, token)
+                        .ConfigureAwait(false);
+                    await _timeProvider.Delay(50.Milliseconds(), token).ConfigureAwait(false);
+                    await _CreatePrimaryIndexOnCollectionAsync(
+                            clusterKey,
+                            await scope.CollectionAsync(collectionName).ConfigureAwait(false)
+                        )
+                        .ConfigureAwait(false);
                 }
-
-                await _CreateCollectionAsync(clusterKey, bucket, scope, collectionName, token);
-                await _timeProvider.Delay(50.Milliseconds(), token);
-                await _CreatePrimaryIndexOnCollectionAsync(clusterKey, await scope.CollectionAsync(collectionName));
-            }
-        );
+            )
+            .ConfigureAwait(false);
 
         var elapsed = Stopwatch.GetElapsedTime(timestamp);
 
@@ -314,28 +326,32 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
         try
         {
-            await _retryPipeline.ExecuteAsync(
-                static async (state, token) =>
-                {
-                    var (bucket, scope, collectionName) = state;
+            await _retryPipeline
+                .ExecuteAsync(
+                    static async (state, token) =>
+                    {
+                        var (bucket, scope, collectionName) = state;
 
-                    try
-                    {
-                        await bucket.Collections.CreateCollectionAsync(
-                            scope.Name,
-                            collectionName,
-                            CreateCollectionSettings.Default,
-                            CreateCollectionOptions.Default.CancellationToken(token)
-                        );
-                    }
-                    catch (CollectionExistsException)
-                    {
-                        // Ignore if a collection already exists it's same as success
-                    }
-                },
-                (bucket, scope, collectionName),
-                token
-            );
+                        try
+                        {
+                            await bucket
+                                .Collections.CreateCollectionAsync(
+                                    scope.Name,
+                                    collectionName,
+                                    CreateCollectionSettings.Default,
+                                    CreateCollectionOptions.Default.CancellationToken(token)
+                                )
+                                .ConfigureAwait(false);
+                        }
+                        catch (CollectionExistsException)
+                        {
+                            // Ignore if a collection already exists it's same as success
+                        }
+                    },
+                    (bucket, scope, collectionName),
+                    token
+                )
+                .ConfigureAwait(false);
 
             if (_logger.IsEnabled(LogLevel.Information))
             {
@@ -381,28 +397,32 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNullOrEmpty(fields);
 
         var timestamp = Stopwatch.GetTimestamp();
-        var bucket = await _GetBucketAsync(clusterKey, bucketName);
-        var scope = await bucket.ScopeAsync(scopeName);
-        var collection = await scope.CollectionAsync(collectionName);
+        var bucket = await _GetBucketAsync(clusterKey, bucketName).ConfigureAwait(false);
+        var scope = await bucket.ScopeAsync(scopeName).ConfigureAwait(false);
+        var collection = await scope.CollectionAsync(collectionName).ConfigureAwait(false);
 
         try
         {
-            await _retryPipeline.ExecuteAsync(
-                static async (state, token) =>
-                {
-                    var (collection, indexName, fields) = state;
+            await _retryPipeline
+                .ExecuteAsync(
+                    static async (state, token) =>
+                    {
+                        var (collection, indexName, fields) = state;
 
-                    var options = CreateQueryIndexOptions
-                        .Default.IgnoreIfExists(ignoreIfExists: true)
-                        .Deferred(deferred: false)
-                        .Timeout(5.Seconds())
-                        .CancellationToken(token);
+                        var options = CreateQueryIndexOptions
+                            .Default.IgnoreIfExists(ignoreIfExists: true)
+                            .Deferred(deferred: false)
+                            .Timeout(5.Seconds())
+                            .CancellationToken(token);
 
-                    await collection.QueryIndexes.CreateIndexAsync(indexName, fields, options);
-                },
-                (collection, indexName, fields),
-                cancellationToken
-            );
+                        await collection
+                            .QueryIndexes.CreateIndexAsync(indexName, fields, options)
+                            .ConfigureAwait(false);
+                    },
+                    (collection, indexName, fields),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
             if (_logger.IsEnabled(LogLevel.Information))
             {
@@ -439,9 +459,9 @@ public sealed class CouchbaseManager : ICouchbaseManager
         CancellationToken cancellationToken
     )
     {
-        var indexes = await collection.QueryIndexes.GetAllIndexesAsync(
-            GetAllQueryIndexOptions.Default.CancellationToken(cancellationToken)
-        );
+        var indexes = await collection
+            .QueryIndexes.GetAllIndexesAsync(GetAllQueryIndexOptions.Default.CancellationToken(cancellationToken))
+            .ConfigureAwait(false);
 
         return indexes.Any(index =>
             index.IsPrimary || string.Equals(index.Name, "#primary", StringComparison.OrdinalIgnoreCase)
@@ -454,20 +474,22 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
         try
         {
-            await _retryPipeline.ExecuteAsync(
-                static async (collection, token) =>
-                {
-                    var options = CreatePrimaryQueryIndexOptions
-                        .Default.IndexName("#primary")
-                        .IgnoreIfExists(ignoreIfExists: true)
-                        .Timeout(5.Seconds())
-                        .Deferred(deferred: false)
-                        .CancellationToken(token);
+            await _retryPipeline
+                .ExecuteAsync(
+                    static async (collection, token) =>
+                    {
+                        var options = CreatePrimaryQueryIndexOptions
+                            .Default.IndexName("#primary")
+                            .IgnoreIfExists(ignoreIfExists: true)
+                            .Timeout(5.Seconds())
+                            .Deferred(deferred: false)
+                            .CancellationToken(token);
 
-                    await collection.QueryIndexes.CreatePrimaryIndexAsync(options);
-                },
-                collection
-            );
+                        await collection.QueryIndexes.CreatePrimaryIndexAsync(options).ConfigureAwait(false);
+                    },
+                    collection
+                )
+                .ConfigureAwait(false);
 
             if (_logger.IsEnabled(LogLevel.Information))
             {
@@ -501,15 +523,15 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
     private async Task<ICluster> _GetClusterAsync(string clusterKey)
     {
-        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey);
+        var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey).ConfigureAwait(false);
 
         return cluster;
     }
 
     private async Task<IBucket> _GetBucketAsync(string clusterKey, string bucketName)
     {
-        var cluster = await _GetClusterAsync(clusterKey);
-        var bucket = await cluster.BucketAsync(bucketName);
+        var cluster = await _GetClusterAsync(clusterKey).ConfigureAwait(false);
+        var bucket = await cluster.BucketAsync(bucketName).ConfigureAwait(false);
 
         return bucket;
     }
@@ -520,11 +542,11 @@ public sealed class CouchbaseManager : ICouchbaseManager
         string scopeName
     )
     {
-        var scopeSpecList = await _GetBucketScopeSpecsAsync(clusterKey, bucket);
+        var scopeSpecList = await _GetBucketScopeSpecsAsync(clusterKey, bucket).ConfigureAwait(false);
         var scopeCollections = scopeSpecList[scopeName];
 
         // Note: `ScopeAsync` method is cached by the SDK
-        var scope = await bucket.ScopeAsync(scopeName);
+        var scope = await bucket.ScopeAsync(scopeName).ConfigureAwait(false);
 
         return (scope, scopeCollections);
     }
@@ -552,7 +574,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
             return scopes;
         }
 
-        var scopesEnumerable = await bucket.Collections.GetAllScopesAsync();
+        var scopesEnumerable = await bucket.Collections.GetAllScopesAsync().ConfigureAwait(false);
         var mapped = scopesEnumerable.ToDictionary(
             x => x.Name,
             x => x.Collections.Select(y => y.Name).ToHashSet(StringComparer.Ordinal),

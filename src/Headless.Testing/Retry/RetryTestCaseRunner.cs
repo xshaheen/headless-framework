@@ -48,7 +48,7 @@ public sealed class RetryTestCaseRunner
         // This code comes from XunitRunnerHelper.RunXunitTestCase, and it's centralized
         // here just so we don't have to duplicate it in both RetryTestCase and
         // RetryDelayEnumeratedTestCase.
-        var tests = await aggregator.RunAsync(testCase.CreateTests, []);
+        var tests = await aggregator.RunAsync(testCase.CreateTests, []).ConfigureAwait(false);
 
         if (aggregator.ToException() is { } e)
         {
@@ -85,9 +85,9 @@ public sealed class RetryTestCaseRunner
             constructorArguments
         );
 
-        await ctx.InitializeAsync();
+        await ctx.InitializeAsync().ConfigureAwait(false);
 
-        return await Run(ctx);
+        return await Run(ctx).ConfigureAwait(false);
     }
 
     protected override async ValueTask<RunSummary> RunTest(RetryTestCaseRunnerContext ctx, IXunitTest test)
@@ -107,15 +107,17 @@ public sealed class RetryTestCaseRunner
             var delayedMessageBus = new DelayedMessageBus(ctx.MessageBus);
             var aggregator = ctx.Aggregator.Clone();
 
-            var result = await XunitTestRunner.Instance.Run(
-                test,
-                delayedMessageBus,
-                ctx.ConstructorArguments,
-                ctx.ExplicitOption,
-                aggregator,
-                ctx.CancellationTokenSource,
-                ctx.BeforeAfterTestAttributes
-            );
+            var result = await XunitTestRunner
+                .Instance.Run(
+                    test,
+                    delayedMessageBus,
+                    ctx.ConstructorArguments,
+                    ctx.ExplicitOption,
+                    aggregator,
+                    ctx.CancellationTokenSource,
+                    ctx.BeforeAfterTestAttributes
+                )
+                .ConfigureAwait(false);
 
             if (!(aggregator.HasExceptions || result.Failed != 0) || ++runCount >= maxRetries)
             {

@@ -56,7 +56,7 @@ internal sealed partial class TenantResolutionMiddleware(
         }
 
         using var _ = currentTenant.Change(tenantId);
-        await next(context);
+        await next(context).ConfigureAwait(false);
     }
 
     private string? _GetTenantId(ClaimsPrincipal principal)

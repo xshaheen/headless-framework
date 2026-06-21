@@ -19,8 +19,11 @@ public sealed class EfSettingDefinitionRecordRepository<TContext>(IDbContextFact
     /// <inheritdoc/>
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var list = await db.Set<SettingDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var list = await db.Set<SettingDefinitionRecord>()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         return list;
     }
@@ -33,12 +36,12 @@ public sealed class EfSettingDefinitionRecordRepository<TContext>(IDbContextFact
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         db.Set<SettingDefinitionRecord>().AddRange(addedRecords);
         db.Set<SettingDefinitionRecord>().UpdateRange(changedRecords);
         db.Set<SettingDefinitionRecord>().RemoveRange(deletedRecords);
 
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 }

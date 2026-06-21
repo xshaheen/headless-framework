@@ -26,7 +26,9 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
                 config.WaitTime = TimeSpan.FromSeconds(5);
                 config.Address = new Uri($"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}");
             });
-            var serviceCatalog = await consul.Catalog.Service(nodeName, "messaging", cancellationToken);
+            var serviceCatalog = await consul
+                .Catalog.Service(nodeName, "messaging", cancellationToken)
+                .ConfigureAwait(false);
 
             if (serviceCatalog.StatusCode == HttpStatusCode.OK)
             {
@@ -62,11 +64,13 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
                 config.Address = new Uri($"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}");
             });
 
-            var services = await consul.Catalog.Services(cancellationToken);
+            var services = await consul.Catalog.Services(cancellationToken).ConfigureAwait(false);
 
             foreach (var service in services.Response)
             {
-                var serviceInfo = await consul.Catalog.Service(service.Key, "messaging", cancellationToken);
+                var serviceInfo = await consul
+                    .Catalog.Service(service.Key, "messaging", cancellationToken)
+                    .ConfigureAwait(false);
 
                 var node = serviceInfo
                     .Response.Select(info => new Node
@@ -128,18 +132,20 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cac
                 config.Address = new Uri($"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}");
             });
 
-            var result = await consul.Agent.ServiceRegister(
-                new AgentServiceRegistration
-                {
-                    ID = options.NodeId,
-                    Name = options.NodeName,
-                    Address = options.CurrentNodeHostName,
-                    Port = options.CurrentNodePort,
-                    Tags = tags,
-                    Check = healthCheck,
-                },
-                cancellationToken
-            );
+            var result = await consul
+                .Agent.ServiceRegister(
+                    new AgentServiceRegistration
+                    {
+                        ID = options.NodeId,
+                        Name = options.NodeName,
+                        Address = options.CurrentNodeHostName,
+                        Port = options.CurrentNodePort,
+                        Tags = tags,
+                        Check = healthCheck,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
             if (result.StatusCode == HttpStatusCode.OK)
             {

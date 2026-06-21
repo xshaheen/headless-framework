@@ -43,13 +43,14 @@ public sealed class GrantPermissionsSeedHelper(
     {
         using var _ = currentTenant.Change(tenantId);
 
-        var allPermissionNames = await _GetAllPermissionNamesAsync(cancellationToken);
+        var allPermissionNames = await _GetAllPermissionNamesAsync(cancellationToken).ConfigureAwait(false);
 
         var existsPermissionGrants = await _GetExistsPermissionGrantsAsync(
-            roleName,
-            allPermissionNames,
-            cancellationToken
-        );
+                roleName,
+                allPermissionNames,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         var notExistPermissionGrants = allPermissionNames
             .Except(existsPermissionGrants, StringComparer.Ordinal)
@@ -62,7 +63,9 @@ public sealed class GrantPermissionsSeedHelper(
                 tenantId: currentTenant.Id
             ));
 
-        await permissionGrantRepository.InsertManyAsync(notExistPermissionGrants, cancellationToken);
+        await permissionGrantRepository
+            .InsertManyAsync(notExistPermissionGrants, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<List<string>> _GetExistsPermissionGrantsAsync(
@@ -71,12 +74,9 @@ public sealed class GrantPermissionsSeedHelper(
         CancellationToken cancellationToken = default
     )
     {
-        var permissionGrants = await permissionGrantRepository.GetListAsync(
-            allPermissionNames,
-            RolePermissionGrantProvider.ProviderName,
-            roleName,
-            cancellationToken
-        );
+        var permissionGrants = await permissionGrantRepository
+            .GetListAsync(allPermissionNames, RolePermissionGrantProvider.ProviderName, roleName, cancellationToken)
+            .ConfigureAwait(false);
 
         var existsPermissionGrants = permissionGrants.ConvertAll(x => x.Name);
 
@@ -85,7 +85,9 @@ public sealed class GrantPermissionsSeedHelper(
 
     private async Task<string[]> _GetAllPermissionNamesAsync(CancellationToken cancellationToken = default)
     {
-        var permissions = await permissionDefinitionManager.GetPermissionsAsync(cancellationToken);
+        var permissions = await permissionDefinitionManager
+            .GetPermissionsAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var permissionNames = permissions
             .Where(p =>

@@ -30,7 +30,7 @@ public static class AsyncExExtensions
     {
         try
         {
-            await resetEvent.WaitAsync(timeout);
+            await resetEvent.WaitAsync(timeout).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
     }
@@ -44,7 +44,7 @@ public static class AsyncExExtensions
     {
         try
         {
-            await resetEvent.WaitAsync(cancellationToken);
+            await resetEvent.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
     }
@@ -70,7 +70,7 @@ public static class AsyncExExtensions
     {
         try
         {
-            await resetEvent.WaitAsync(timeout);
+            await resetEvent.WaitAsync(timeout).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
     }
@@ -84,7 +84,7 @@ public static class AsyncExExtensions
     {
         try
         {
-            await resetEvent.WaitAsync(cancellationToken);
+            await resetEvent.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
     }
@@ -117,7 +117,7 @@ public static class AsyncExExtensions
     {
         try
         {
-            await resetEvent.WaitAsync(timeout);
+            await resetEvent.WaitAsync(timeout).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
     }
@@ -131,7 +131,7 @@ public static class AsyncExExtensions
     {
         try
         {
-            await resetEvent.WaitAsync(cancellationToken);
+            await resetEvent.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { }
     }

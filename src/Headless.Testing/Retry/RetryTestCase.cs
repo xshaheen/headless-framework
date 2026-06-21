@@ -69,17 +69,19 @@ public sealed class RetryTestCase(
         CancellationTokenSource cancellationTokenSource
     )
     {
-        return await RetryTestCaseRunner.Instance.Run(
-            MaxRetries,
-            this,
-            messageBus,
-            aggregator.Clone(),
-            cancellationTokenSource,
-            TestCaseDisplayName,
-            SkipReason,
-            explicitOption,
-            constructorArguments
-        );
+        return await RetryTestCaseRunner
+            .Instance.Run(
+                MaxRetries,
+                this,
+                messageBus,
+                aggregator.Clone(),
+                cancellationTokenSource,
+                TestCaseDisplayName,
+                SkipReason,
+                explicitOption,
+                constructorArguments
+            )
+            .ConfigureAwait(false);
     }
 
     protected override void Serialize(IXunitSerializationInfo info)

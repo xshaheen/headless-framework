@@ -76,7 +76,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
     public async Task<CashOutResult<CashOutResponse>> DisburseAsync(VodafoneCashOutRequest request)
     {
         var disburseRequest = CashOutDisburseRequest.Vodafone(request.Amount, request.PhoneNumber);
-        var result = await _CoreDisburseAsync(disburseRequest);
+        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
@@ -84,7 +84,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
     public async Task<CashOutResult<CashOutResponse>> DisburseAsync(EtisalatCashOutRequest request)
     {
         var disburseRequest = CashOutDisburseRequest.Etisalat(request.Amount, request.PhoneNumber);
-        var result = await _CoreDisburseAsync(disburseRequest);
+        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
@@ -92,7 +92,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
     public async Task<CashOutResult<CashOutResponse>> DisburseAsync(OrangeCashOutRequest request)
     {
         var disburseRequest = CashOutDisburseRequest.Orange(request.Amount, request.PhoneNumber, request.FullName);
-        var result = await _CoreDisburseAsync(disburseRequest);
+        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
@@ -100,7 +100,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
     public async Task<CashOutResult<CashOutResponse>> DisburseAsync(BankWalletCashOutRequest request)
     {
         var disburseRequest = CashOutDisburseRequest.BankWallet(request.Amount, request.PhoneNumber, request.FullName);
-        var result = await _CoreDisburseAsync(disburseRequest);
+        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
@@ -117,7 +117,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
             request.FullName
         );
 
-        var result = await _CoreDisburseAsync(disburseRequest);
+        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
 
         return _ToCashOutCashOutResult(result);
     }
@@ -132,7 +132,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
             request.Email
         );
 
-        var result = await _CoreDisburseAsync(disburseRequest);
+        var result = await _CoreDisburseAsync(disburseRequest).ConfigureAwait(false);
 
         if (!result.Succeeded)
         {
@@ -166,7 +166,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
 
         try
         {
-            result = await broker.Disburse(request);
+            result = await broker.Disburse(request).ConfigureAwait(false);
         }
         catch (PaymobCashOutException e)
         {

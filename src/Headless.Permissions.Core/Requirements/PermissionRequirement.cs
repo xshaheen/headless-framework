@@ -31,7 +31,11 @@ public sealed class PermissionRequirementHandler(IPermissionManager permissionMa
         PermissionRequirement requirement
     )
     {
-        if (await permissionManager.IsGrantedAsync(new PrincipalCurrentUser(context.User), requirement.PermissionName))
+        if (
+            await permissionManager
+                .IsGrantedAsync(new PrincipalCurrentUser(context.User), requirement.PermissionName)
+                .ConfigureAwait(false)
+        )
         {
             context.Succeed(requirement);
         }

@@ -28,7 +28,7 @@ public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantSt
         CancellationToken cancellationToken = default
     )
     {
-        var result = await CheckAsync([permission], currentUser, cancellationToken);
+        var result = await CheckAsync([permission], currentUser, cancellationToken).ConfigureAwait(false);
 
         return result.First().Value;
     }

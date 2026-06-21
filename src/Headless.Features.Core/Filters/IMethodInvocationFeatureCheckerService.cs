@@ -34,7 +34,9 @@ public sealed class MethodInvocationFeatureCheckerService(IFeatureManager featur
 
         foreach (var requiresFeatureAttribute in _GetRequiredFeatureAttributes(context.Method))
         {
-            await featureManager.EnsureEnabledAsync(requiresFeatureAttribute.IsAnd, requiresFeatureAttribute.Features);
+            await featureManager
+                .EnsureEnabledAsync(requiresFeatureAttribute.IsAnd, requiresFeatureAttribute.Features)
+                .ConfigureAwait(false);
         }
     }
 

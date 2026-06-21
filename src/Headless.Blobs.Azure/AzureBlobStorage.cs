@@ -52,7 +52,7 @@ public sealed class AzureBlobStorage(
     {
         Argument.IsNotNullOrEmpty(container);
 
-        await _EnsureContainerOnceAsync(_GetContainer(container), cancellationToken);
+        await _EnsureContainerOnceAsync(_GetContainer(container), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _EnsureContainerOnceAsync(string container, CancellationToken cancellationToken)
@@ -374,7 +374,7 @@ public sealed class AzureBlobStorage(
         {
             if (memoryStream is not null)
             {
-                await memoryStream.DisposeAsync();
+                await memoryStream.DisposeAsync().ConfigureAwait(false);
             }
 
             return null;
@@ -383,7 +383,7 @@ public sealed class AzureBlobStorage(
         {
             if (memoryStream is not null)
             {
-                await memoryStream.DisposeAsync();
+                await memoryStream.DisposeAsync().ConfigureAwait(false);
             }
             throw;
         }

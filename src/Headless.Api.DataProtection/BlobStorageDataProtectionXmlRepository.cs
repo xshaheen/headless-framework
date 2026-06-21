@@ -71,7 +71,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     {
         _logger.LogLoadingElements();
 
-        var files = (await _storage.GetBlobsListAsync(_Containers, "*.xml")).ToList();
+        var files = (await _storage.GetBlobsListAsync(_Containers, "*.xml").ConfigureAwait(false)).ToList();
 
         if (files.Count == 0)
         {
@@ -87,7 +87,9 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         foreach (var file in files)
         {
             _logger.LogLoadingElement(file.BlobKey);
-            await using var downloadResult = await _storage.OpenReadStreamAsync(_Containers, file.BlobKey);
+            await using var downloadResult = await _storage
+                .OpenReadStreamAsync(_Containers, file.BlobKey)
+                .ConfigureAwait(false);
 
             if (downloadResult is null)
             {
@@ -98,7 +100,9 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
             try
             {
-                var element = await XElement.LoadAsync(downloadResult.Stream, LoadOptions.None, CancellationToken.None);
+                var element = await XElement
+                    .LoadAsync(downloadResult.Stream, LoadOptions.None, CancellationToken.None)
+                    .ConfigureAwait(false);
                 elements.Add(element);
                 _logger.LogLoadedElement(file.BlobKey);
             }
@@ -130,7 +134,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     private async Task _StoreElementAsync(XElement element, string fileName)
     {
         _logger.LogSavingElement(fileName);
-        await _RetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName));
+        await _RetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName)).ConfigureAwait(false);
         _logger.LogSavedElement(fileName);
 
         return;
@@ -143,10 +147,14 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
             var (storage, element, fileName) = state;
 
             await using var memoryStream = new MemoryStream();
-            await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, cancellationToken);
+            await element
+                .SaveAsync(memoryStream, SaveOptions.DisableFormatting, cancellationToken)
+                .ConfigureAwait(false);
             memoryStream.Seek(0, SeekOrigin.Begin);
 
-            await storage.UploadAsync(_Containers, new(memoryStream, fileName), cancellationToken);
+            await storage
+                .UploadAsync(_Containers, new(memoryStream, fileName), cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 }

@@ -232,7 +232,9 @@ public static class JobsRequestProvider
         try
         {
             var internalJobsManager = context.ServiceScope.ServiceProvider.GetRequiredService<IInternalJobManager>();
-            return await internalJobsManager.GetRequestAsync<T>(context.Id, context.Type, cancellationToken);
+            return await internalJobsManager
+                .GetRequestAsync<T>(context.Id, context.Type, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception e)
         {

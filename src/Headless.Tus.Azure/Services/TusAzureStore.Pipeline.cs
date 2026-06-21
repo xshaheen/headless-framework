@@ -48,10 +48,10 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         var blockBlobClient = _GetBlockBlobClient(fileId);
 
         var azureFile =
-            await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken)
+            await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"File {fileId} does not exist");
 
-        var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken);
+        var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
         var currentOffset = committedBlocks.Sum(b => b.SizeLong);
 
         // Get checksum info if provided (from request headers via tusdotnet extension method)
@@ -60,7 +60,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         if (checksumInfo is not null && hasher is null)
         {
-            var supportedAlgorithms = await GetSupportedAlgorithmsAsync(cancellationToken);
+            var supportedAlgorithms = await GetSupportedAlgorithmsAsync(cancellationToken).ConfigureAwait(false);
 
             throw new NotSupportedException(
                 $"Checksum algorithm '{checksumInfo.Algorithm}' is not supported. Supported algorithms: {string.Join(", ", supportedAlgorithms)}"

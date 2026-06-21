@@ -1291,7 +1291,7 @@ public sealed class InMemoryCache
     {
         _ThrowIfDisposed();
         var keys = _GetKeys(prefix);
-        return await GetAllAsync<T>(keys, cancellationToken);
+        return await GetAllAsync<T>(keys, cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(

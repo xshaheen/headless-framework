@@ -32,7 +32,7 @@ public static class EmailToMimMessageConverter
 
         try
         {
-            await message._BuildMimeMessageAsync(request, cancellationToken);
+            await message._BuildMimeMessageAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -84,7 +84,9 @@ public static class EmailToMimMessageConverter
         {
             var fileStream = new MemoryStream(requestAttachment.File);
             fileStream.Seek(0, SeekOrigin.Begin);
-            await emailBuilder.Attachments.AddAsync(requestAttachment.Name, fileStream, cancellationToken);
+            await emailBuilder
+                .Attachments.AddAsync(requestAttachment.Name, fileStream, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         message.Body = emailBuilder.ToMessageBody();

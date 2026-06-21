@@ -93,7 +93,7 @@ internal sealed class AzureServiceBusTransport(
     {
         if (_client is not null)
         {
-            await _client.DisposeAsync();
+            await _client.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

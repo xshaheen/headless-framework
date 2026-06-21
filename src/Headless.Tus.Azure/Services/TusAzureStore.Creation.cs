@@ -21,7 +21,7 @@ public sealed partial class TusAzureStore : ITusCreationStore
     /// <returns>the unique file identifier assigned to the new upload</returns>
     public async Task<string> CreateFileAsync(long uploadLength, string? metadata, CancellationToken cancellationToken)
     {
-        var fileId = await _fileIdProvider.CreateId(metadata);
+        var fileId = await _fileIdProvider.CreateId(metadata).ConfigureAwait(false);
 
         try
         {
@@ -35,12 +35,16 @@ public sealed partial class TusAzureStore : ITusCreationStore
             // This ensures the blob exists and has the correct metadata from the start
             // The actual data (blocks) will be uploaded in subsequent requests
             var blockBlobClient = _GetBlockBlobClient(fileId);
-            await blockBlobClient.UploadAsync(
-                content: Stream.Null,
-                httpHeaders: await _blobHttpHeadersProvider.GetBlobHttpHeadersAsync(blobMetadata.ToUser()),
-                metadata: blobMetadata.ToAzure(),
-                cancellationToken: cancellationToken
-            );
+            await blockBlobClient
+                .UploadAsync(
+                    content: Stream.Null,
+                    httpHeaders: await _blobHttpHeadersProvider
+                        .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
+                        .ConfigureAwait(false),
+                    metadata: blobMetadata.ToAzure(),
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
 
             _logger.FileCreated(fileId, uploadLength);
 
@@ -70,7 +74,7 @@ public sealed partial class TusAzureStore : ITusCreationStore
     /// </remarks>
     public async Task<string?> GetUploadMetadataAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return blobInfo?.Metadata.ToTusString();
     }

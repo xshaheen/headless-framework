@@ -91,9 +91,9 @@ public sealed class DynamicPermissionDefinitionStore(
             return null;
         }
 
-        using (await _syncSemaphore.LockAsync(cancellationToken))
+        using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
             return _permissionMemoryCache.GetOrDefault(name);
         }
     }
@@ -107,9 +107,9 @@ public sealed class DynamicPermissionDefinitionStore(
             return [];
         }
 
-        using (await _syncSemaphore.LockAsync(cancellationToken))
+        using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
             return _permissionMemoryCache.Values.ToImmutableList();
         }
     }
@@ -123,9 +123,9 @@ public sealed class DynamicPermissionDefinitionStore(
             return [];
         }
 
-        using (await _syncSemaphore.LockAsync(cancellationToken))
+        using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
             return _groupMemoryCache.Values.ToImmutableList();
         }
     }
@@ -147,7 +147,7 @@ public sealed class DynamicPermissionDefinitionStore(
             return; // Get the latest feature with a small delay for optimization
         }
 
-        var cacheStamp = await _GetOrSetDistributedCacheStampAsync(cancellationToken);
+        var cacheStamp = await _GetOrSetDistributedCacheStampAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.Equals(cacheStamp, _cacheStamp, StringComparison.Ordinal))
         {
@@ -156,7 +156,7 @@ public sealed class DynamicPermissionDefinitionStore(
             return;
         }
 
-        await _UpdateInMemoryStoreCacheAsync(cancellationToken);
+        await _UpdateInMemoryStoreCacheAsync(cancellationToken).ConfigureAwait(false);
         _cacheStamp = cacheStamp;
         _lastCheckTime = timeProvider.GetUtcNow();
     }
@@ -164,7 +164,7 @@ public sealed class DynamicPermissionDefinitionStore(
     private async Task<string> _GetOrSetDistributedCacheStampAsync(CancellationToken cancellationToken)
     {
         var cacheKey = _options.CommonPermissionsUpdatedStampCacheKey;
-        var cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken);
+        var cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken).ConfigureAwait(false);
 
         if (!cachedStamp.IsNull)
         {
@@ -172,35 +172,37 @@ public sealed class DynamicPermissionDefinitionStore(
         }
 
         await using var commonLockHandle =
-            await distributedLockProvider.TryAcquireAsync(
-                resource: _options.CrossApplicationsCommonLockKey,
-                new DistributedLockAcquireOptions
-                {
-                    TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
-                    AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
-                },
-                cancellationToken
-            )
+            await distributedLockProvider
+                .TryAcquireAsync(
+                    resource: _options.CrossApplicationsCommonLockKey,
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                        AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for permission definition common stamp check!"
             ); // This request will fail
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken);
+        cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken).ConfigureAwait(false);
 
         if (!cachedStamp.IsNull)
         {
             return cachedStamp.Value;
         }
 
-        return await _ChangeCommonStampAsync(cancellationToken);
+        return await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _UpdateInMemoryStoreCacheAsync(CancellationToken cancellationToken)
     {
-        var permissionGroupRecords = await repository.GetGroupsListAsync(cancellationToken);
-        var permissionRecords = await repository.GetPermissionsListAsync(cancellationToken);
+        var permissionGroupRecords = await repository.GetGroupsListAsync(cancellationToken).ConfigureAwait(false);
+        var permissionRecords = await repository.GetPermissionsListAsync(cancellationToken).ConfigureAwait(false);
 
         _groupMemoryCache.Clear();
         _permissionMemoryCache.Clear();
@@ -286,15 +288,17 @@ public sealed class DynamicPermissionDefinitionStore(
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        await using var appDistributedLock = await distributedLockProvider.TryAcquireAsync(
-            _appSaveLockKey,
-            new DistributedLockAcquireOptions
-            {
-                TimeUntilExpires = _options.ApplicationSaveLockExpiration,
-                AcquireTimeout = _options.ApplicationSaveLockAcquireTimeout,
-            },
-            cancellationToken
-        );
+        await using var appDistributedLock = await distributedLockProvider
+            .TryAcquireAsync(
+                _appSaveLockKey,
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = _options.ApplicationSaveLockExpiration,
+                    AcquireTimeout = _options.ApplicationSaveLockAcquireTimeout,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         if (appDistributedLock is null)
         {
@@ -308,8 +312,10 @@ public sealed class DynamicPermissionDefinitionStore(
         // But the code would be more complex.
         // This is enough for now.
 
-        var cachedHash = await distributedCache.GetAsync<string>(_appSavePermissionsHashCacheKey, cancellationToken);
-        var groups = await staticStore.GetGroupsAsync(cancellationToken);
+        var cachedHash = await distributedCache
+            .GetAsync<string>(_appSavePermissionsHashCacheKey, cancellationToken)
+            .ConfigureAwait(false);
+        var groups = await staticStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
         var (permissionGroupRecords, permissionRecords) = serializer.Serialize(groups);
 
         var currentHash = _CalculateHash(
@@ -325,26 +331,30 @@ public sealed class DynamicPermissionDefinitionStore(
         }
 
         await using var commonLockHandle =
-            await distributedLockProvider.TryAcquireAsync(
-                resource: _options.CrossApplicationsCommonLockKey,
-                new DistributedLockAcquireOptions
-                {
-                    TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
-                    AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
-                },
-                cancellationToken
-            )
+            await distributedLockProvider
+                .TryAcquireAsync(
+                    resource: _options.CrossApplicationsCommonLockKey,
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                        AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
             ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static permissions!"); // It will re-try
 
         var (newGroups, updatedGroups, deletedGroups) = await _UpdateChangedPermissionGroupsAsync(
-            permissionGroupRecords,
-            cancellationToken
-        );
+                permissionGroupRecords,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         var (newPermissions, updatedPermissions, deletedPermissions) = await _UpdateChangedPermissionsAsync(
-            permissionRecords,
-            cancellationToken
-        );
+                permissionRecords,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         var hasChangesInGroups = newGroups.Count != 0 || updatedGroups.Count != 0 || deletedGroups.Count != 0;
         var hasChangesInPermissions =
@@ -352,17 +362,19 @@ public sealed class DynamicPermissionDefinitionStore(
 
         if (hasChangesInGroups || hasChangesInPermissions)
         {
-            await repository.SaveAsync(
-                newGroups,
-                updatedGroups,
-                deletedGroups,
-                newPermissions,
-                updatedPermissions,
-                deletedPermissions,
-                cancellationToken
-            );
+            await repository
+                .SaveAsync(
+                    newGroups,
+                    updatedGroups,
+                    deletedGroups,
+                    newPermissions,
+                    updatedPermissions,
+                    deletedPermissions,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-            await _ChangeCommonStampAsync(cancellationToken);
+            await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
         }
 
         if (newPermissions.Count != 0 || updatedPermissions.Count != 0)
@@ -373,15 +385,17 @@ public sealed class DynamicPermissionDefinitionStore(
                 Permissions = [.. newPermissions.Select(x => x.Name), .. updatedPermissions.Select(x => x.Name)],
             };
 
-            await messagePublisher.PublishAsync(message, cancellationToken: cancellationToken);
+            await messagePublisher.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        await distributedCache.UpsertAsync(
-            _appSavePermissionsHashCacheKey,
-            currentHash,
-            _options.PermissionsHashCacheExpiration,
-            cancellationToken
-        );
+        await distributedCache
+            .UpsertAsync(
+                _appSavePermissionsHashCacheKey,
+                currentHash,
+                _options.PermissionsHashCacheExpiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -397,7 +411,7 @@ public sealed class DynamicPermissionDefinitionStore(
         CancellationToken cancellationToken
     )
     {
-        var dbRecords = await repository.GetGroupsListAsync(cancellationToken);
+        var dbRecords = await repository.GetGroupsListAsync(cancellationToken).ConfigureAwait(false);
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<PermissionGroupDefinitionRecord>();
@@ -470,7 +484,7 @@ public sealed class DynamicPermissionDefinitionStore(
         var changedRecords = new List<PermissionDefinitionRecord>();
         var deletedRecords = new List<PermissionDefinitionRecord>();
 
-        var dbRecords = await repository.GetPermissionsListAsync(cancellationToken);
+        var dbRecords = await repository.GetPermissionsListAsync(cancellationToken).ConfigureAwait(false);
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         // Handle new and changed records
@@ -537,12 +551,14 @@ public sealed class DynamicPermissionDefinitionStore(
     {
         var stamp = guidGenerator.Create().ToString("N");
 
-        await distributedCache.UpsertAsync(
-            _options.CommonPermissionsUpdatedStampCacheKey,
-            stamp,
-            _options.CommonPermissionsUpdatedStampCacheExpiration,
-            cancellationToken
-        );
+        await distributedCache
+            .UpsertAsync(
+                _options.CommonPermissionsUpdatedStampCacheKey,
+                stamp,
+                _options.CommonPermissionsUpdatedStampCacheExpiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         return stamp;
     }

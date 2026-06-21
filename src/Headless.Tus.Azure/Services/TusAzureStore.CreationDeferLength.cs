@@ -23,12 +23,12 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
 
             // Check if file exists
             var blobInfo =
-                await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken)
+                await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException($"File {fileId} does not exist");
 
             // Update metadata
             blobInfo.Metadata.UploadLength = uploadLength;
-            await _UpdateMetadataAsync(blobClient, blobInfo, cancellationToken);
+            await _UpdateMetadataAsync(blobClient, blobInfo, cancellationToken).ConfigureAwait(false);
 
             _logger.UploadLengthSet(fileId, uploadLength);
         }

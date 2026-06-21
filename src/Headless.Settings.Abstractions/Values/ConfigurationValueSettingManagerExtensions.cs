@@ -21,13 +21,15 @@ public static class ConfigurationValueSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsTrueAsync(
-                name,
-                SettingValueProviderNames.Configuration,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsTrueAsync(
+                    name,
+                    SettingValueProviderNames.Configuration,
+                    providerKey: null,
+                    fallback,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the setting's configuration value equals <c>"false"</c> (case-insensitive).</summary>
@@ -41,13 +43,15 @@ public static class ConfigurationValueSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsFalseAsync(
-                name,
-                SettingValueProviderNames.Configuration,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsFalseAsync(
+                    name,
+                    SettingValueProviderNames.Configuration,
+                    providerKey: null,
+                    fallback,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         /// <summary>Finds the setting value from <c>IConfiguration</c> and deserializes it to <typeparamref name="T"/>.</summary>

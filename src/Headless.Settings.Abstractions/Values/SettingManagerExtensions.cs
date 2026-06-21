@@ -25,13 +25,9 @@ public static class SettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var value = await settingManager.FindAsync(
-                settingName,
-                providerName,
-                providerKey,
-                fallback,
-                cancellationToken
-            );
+            var value = await settingManager
+                .FindAsync(settingName, providerName, providerKey, fallback, cancellationToken)
+                .ConfigureAwait(false);
 
             return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
         }
@@ -51,13 +47,9 @@ public static class SettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var value = await settingManager.FindAsync(
-                settingName,
-                providerName,
-                providerKey,
-                fallback,
-                cancellationToken
-            );
+            var value = await settingManager
+                .FindAsync(settingName, providerName, providerKey, fallback, cancellationToken)
+                .ConfigureAwait(false);
 
             return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
         }
@@ -78,13 +70,9 @@ public static class SettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var value = await settingManager.FindAsync(
-                settingName,
-                providerName,
-                providerKey,
-                fallback,
-                cancellationToken
-            );
+            var value = await settingManager
+                .FindAsync(settingName, providerName, providerKey, fallback, cancellationToken)
+                .ConfigureAwait(false);
 
             return string.IsNullOrEmpty(value)
                 ? default

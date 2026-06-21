@@ -75,33 +75,35 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
 
         try
         {
-            var transactionResult = await transactions.RunAsync(
-                async ctx =>
-                {
-                    bool commit;
+            var transactionResult = await transactions
+                .RunAsync(
+                    async ctx =>
+                    {
+                        bool commit;
 
-                    try
-                    {
-                        commit = await operation(ctx);
-                    }
-                    catch
-                    {
-                        await ctx.RollbackAsync();
+                        try
+                        {
+                            commit = await operation(ctx).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            await ctx.RollbackAsync().ConfigureAwait(false);
 
-                        throw;
-                    }
+                            throw;
+                        }
 
-                    if (commit)
-                    {
-                        await ctx.CommitAsync();
-                    }
-                    else
-                    {
-                        await ctx.RollbackAsync();
-                    }
-                },
-                config
-            );
+                        if (commit)
+                        {
+                            await ctx.CommitAsync().ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await ctx.RollbackAsync().ConfigureAwait(false);
+                        }
+                    },
+                    config
+                )
+                .ConfigureAwait(false);
 
             logger.LogTransactionCompleted(
                 transactionResult.TransactionId,

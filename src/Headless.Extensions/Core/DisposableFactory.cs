@@ -21,7 +21,8 @@ public static class DisposableFactory
     /// <summary>Creates an <see cref="IAsyncDisposable"/> that awaits <paramref name="action"/> when disposed.</summary>
     /// <param name="action">The asynchronous callback to invoke on disposal.</param>
     /// <returns>An <see cref="IAsyncDisposable"/> wrapping <paramref name="action"/>.</returns>
-    public static IAsyncDisposable Create(Func<Task> action) => new AsyncDisposable(async () => await action());
+    public static IAsyncDisposable Create(Func<Task> action) =>
+        new AsyncDisposable(async () => await action().ConfigureAwait(false));
 
     /// <summary>Creates an <see cref="IAsyncDisposable"/> that awaits <paramref name="dispose"/> when disposed.</summary>
     /// <param name="dispose">The asynchronous callback to invoke on disposal.</param>

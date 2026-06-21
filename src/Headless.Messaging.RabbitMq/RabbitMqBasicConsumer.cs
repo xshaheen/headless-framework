@@ -42,7 +42,7 @@ public sealed class RabbitMqBasicConsumer(
     {
         if (_usingTaskRun)
         {
-            await _semaphore.WaitAsync(cancellationToken);
+            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
             // Copy of the body safe to use outside the RabbitMQ thread context
             ReadOnlyMemory<byte> safeBody = body.ToArray();
             _ObserveBackgroundHandler(
@@ -168,7 +168,7 @@ public sealed class RabbitMqBasicConsumer(
     {
         if (Channel.IsOpen)
         {
-            await Channel.BasicAckAsync(deliveryTag, false);
+            await Channel.BasicAckAsync(deliveryTag, false).ConfigureAwait(false);
         }
     }
 
@@ -176,13 +176,13 @@ public sealed class RabbitMqBasicConsumer(
     {
         if (Channel.IsOpen)
         {
-            await Channel.BasicRejectAsync(deliveryTag, true);
+            await Channel.BasicRejectAsync(deliveryTag, true).ConfigureAwait(false);
         }
     }
 
     protected override async Task OnCancelAsync(string[] consumerTags, CancellationToken cancellationToken = default)
     {
-        await base.OnCancelAsync(consumerTags, cancellationToken);
+        await base.OnCancelAsync(consumerTags, cancellationToken).ConfigureAwait(false);
 
         var args = new LogMessageEventArgs
         {
@@ -198,7 +198,7 @@ public sealed class RabbitMqBasicConsumer(
         CancellationToken cancellationToken = default
     )
     {
-        await base.HandleBasicCancelOkAsync(consumerTag, cancellationToken);
+        await base.HandleBasicCancelOkAsync(consumerTag, cancellationToken).ConfigureAwait(false);
 
         var args = new LogMessageEventArgs { LogType = MqLogType.ConsumerUnregistered, Reason = consumerTag };
 
@@ -210,7 +210,7 @@ public sealed class RabbitMqBasicConsumer(
         CancellationToken cancellationToken = default
     )
     {
-        await base.HandleBasicConsumeOkAsync(consumerTag, cancellationToken);
+        await base.HandleBasicConsumeOkAsync(consumerTag, cancellationToken).ConfigureAwait(false);
 
         var args = new LogMessageEventArgs { LogType = MqLogType.ConsumerRegistered, Reason = consumerTag };
 
@@ -219,7 +219,7 @@ public sealed class RabbitMqBasicConsumer(
 
     public override async Task HandleChannelShutdownAsync(object channel, ShutdownEventArgs reason)
     {
-        await base.HandleChannelShutdownAsync(channel, reason);
+        await base.HandleChannelShutdownAsync(channel, reason).ConfigureAwait(false);
 
         var args = new LogMessageEventArgs { LogType = MqLogType.ConsumerShutdown, Reason = reason.ReplyText };
 

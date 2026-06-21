@@ -38,7 +38,7 @@ internal sealed class RedisConsumerClient(
 
         foreach (var messageName in arr)
         {
-            await redis.CreateStreamWithConsumerGroupAsync(messageName, groupId);
+            await redis.CreateStreamWithConsumerGroupAsync(messageName, groupId).ConfigureAwait(false);
         }
 
         _messageNames = arr;
@@ -68,7 +68,7 @@ internal sealed class RedisConsumerClient(
     {
         var (stream, group, id) = ((string stream, string group, string id))sender!;
 
-        await redis.Ack(stream, group, id);
+        await redis.Ack(stream, group, id).ConfigureAwait(false);
     }
 
     public ValueTask RejectAsync(object? sender)
@@ -76,9 +76,11 @@ internal sealed class RedisConsumerClient(
         return ValueTask.CompletedTask;
     }
 
-    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.PauseAsync().ConfigureAwait(false);
 
-    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.ResumeAsync().ConfigureAwait(false);
 
     public ValueTask DisposeAsync()
     {
@@ -141,7 +143,7 @@ internal sealed class RedisConsumerClient(
 
                     if (groupConcurrent > 0)
                     {
-                        await _semaphore.WaitAsync(cancellationToken);
+                        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
                         _ObserveBackgroundHandler(
                             Task.Run(
                                 async () =>
@@ -161,7 +163,7 @@ internal sealed class RedisConsumerClient(
                     }
                     else
                     {
-                        await consumeAsync(position, stream, entry);
+                        await consumeAsync(position, stream, entry).ConfigureAwait(false);
                     }
                 }
             }

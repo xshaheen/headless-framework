@@ -39,7 +39,7 @@ public sealed class PaymobCashOutException(string? message, HttpStatusCode statu
 
         try
         {
-            body = await response.Content.ReadAsStringAsync();
+            body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         }
 #pragma warning disable ERP022
         catch

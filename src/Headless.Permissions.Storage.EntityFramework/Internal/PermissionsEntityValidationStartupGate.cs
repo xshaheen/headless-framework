@@ -12,7 +12,7 @@ internal sealed class PermissionsEntityValidationStartupGate<TContext>(IDbContex
 {
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         _EnsureEntity(context, typeof(PermissionGrantRecord), nameof(PermissionGrantRecord));
         _EnsureEntity(context, typeof(PermissionDefinitionRecord), nameof(PermissionDefinitionRecord));

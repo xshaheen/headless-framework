@@ -39,8 +39,8 @@ public sealed class BucketContextProvider(
     public async ValueTask<T> GetAsync<T>(string clusterKey, string bucketName, string? defaultScopeName)
         where T : CouchbaseBucketContext
     {
-        var (cluster, transactions) = await couchbaseClustersProvider.GetClusterAsync(clusterKey);
-        var bucket = await _GetBucketAsync(cluster, bucketName);
+        var (cluster, transactions) = await couchbaseClustersProvider.GetClusterAsync(clusterKey).ConfigureAwait(false);
+        var bucket = await _GetBucketAsync(cluster, bucketName).ConfigureAwait(false);
 
         return CouchbaseBucketContextInitializer.Initialize<T>(serviceProvider, bucket, transactions, defaultScopeName);
     }

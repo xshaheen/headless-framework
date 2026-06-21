@@ -89,7 +89,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
             var blockBlobClient = _GetBlockBlobClient(fileId);
 
             // Get file info to access stored chunk metadata
-            var file = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken);
+            var file = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
             if (file is null)
             {
@@ -108,7 +108,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
                 _logger.ChecksumVerificationPassed(fileId, algorithm);
 
                 // Commit staged blocks and update metadata atomically
-                await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken);
+                await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken).ConfigureAwait(false);
 
                 return true;
             }
@@ -197,7 +197,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
         try
         {
-            var committedBlocks = await _GetCommittedBlocksAsync(client, token);
+            var committedBlocks = await _GetCommittedBlocksAsync(client, token).ConfigureAwait(false);
 
             // Build complete block list BEFORE clearing metadata (use LastChunkBlocks while it still has data)
             List<string> allBlockIds = [.. committedBlocks.Select(x => x.Name), .. file.Metadata.LastChunkBlocks ?? []];
@@ -208,7 +208,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
             // ATOMIC: Commit blocks + update metadata in single operation
             var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure() };
-            await client.CommitBlockListAsync(allBlockIds, options, cancellationToken: token);
+            await client.CommitBlockListAsync(allBlockIds, options, cancellationToken: token).ConfigureAwait(false);
 
             _logger.LastChunkCommitted(file.FileId, allBlockIds.Count);
         }

@@ -26,7 +26,7 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
         CancellationToken cancellationToken = default
     )
     {
-        var definitions = await definitionManager.GetPermissionsAsync(cancellationToken);
+        var definitions = await definitionManager.GetPermissionsAsync(cancellationToken).ConfigureAwait(false);
 
         return definitions.Select(x => new GrantedPermissionResult(x.Name, isGranted: true)).ToList();
     }

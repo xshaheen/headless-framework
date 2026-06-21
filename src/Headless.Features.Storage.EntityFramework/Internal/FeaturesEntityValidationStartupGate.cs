@@ -27,7 +27,7 @@ internal sealed class FeaturesEntityValidationStartupGate<TContext>(IDbContextFa
     /// </exception>
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         _EnsureEntity(context, typeof(FeatureValueRecord), nameof(FeatureValueRecord));
         _EnsureEntity(context, typeof(FeatureDefinitionRecord), nameof(FeatureDefinitionRecord));

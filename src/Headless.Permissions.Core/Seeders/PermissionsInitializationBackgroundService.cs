@@ -142,27 +142,29 @@ public sealed class PermissionsInitializationBackgroundService(
         var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
         var pipeline = builder.AddRetry(options).Build();
 
-        await pipeline.ExecuteAsync(
-            static async (state, cancellationToken) =>
-            {
-                var (scope, logger) = state;
-
-                var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
-
-                try
+        await pipeline
+            .ExecuteAsync(
+                static async (state, cancellationToken) =>
                 {
-                    await store.SaveAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception e)
-                {
-                    logger.LogFailedToSaveStaticPermissions(e);
+                    var (scope, logger) = state;
 
-                    throw; // Polly will catch it
-                }
-            },
-            (scope, logger),
-            cancellationToken
-        );
+                    var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
+
+                    try
+                    {
+                        await store.SaveAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogFailedToSaveStaticPermissions(e);
+
+                        throw; // Polly will catch it
+                    }
+                },
+                (scope, logger),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task _PreCacheDynamicPermissionsAsync(AsyncServiceScope scope, CancellationToken cancellationToken)

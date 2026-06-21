@@ -46,7 +46,7 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
                 // MemoryStream.
                 seekableStream = new MemoryStream();
                 // While this involves loading the file into memory, we don't really have a choice.
-                await fileStream.CopyToAsync(seekableStream);
+                await fileStream.CopyToAsync(seekableStream).ConfigureAwait(false);
                 seekableStream.Position = 0;
             }
 
@@ -64,7 +64,7 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
         {
             if (seekableStream is not null)
             {
-                await seekableStream.DisposeAsync();
+                await seekableStream.DisposeAsync().ConfigureAwait(false);
             }
         }
     }

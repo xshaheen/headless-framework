@@ -38,7 +38,9 @@ public sealed class UserPermissionGrantProvider(IPermissionGrantStore grantStore
         }
 
         var result = new MultiplePermissionGrantStatusResult();
-        var statusMap = await _grantStore.IsGrantedAsync(permissionNames, Name, userId, cancellationToken);
+        var statusMap = await _grantStore
+            .IsGrantedAsync(permissionNames, Name, userId, cancellationToken)
+            .ConfigureAwait(false);
 
         foreach (var permission in permissions)
         {

@@ -40,10 +40,9 @@ public sealed class PermissionsRequirementHandler(IPermissionManager permissionM
         PermissionsRequirement requirement
     )
     {
-        var multiplePermissionGrantResult = await permissionManager.IsGrantedAsync(
-            new PrincipalCurrentUser(context.User),
-            requirement.PermissionNames
-        );
+        var multiplePermissionGrantResult = await permissionManager
+            .IsGrantedAsync(new PrincipalCurrentUser(context.User), requirement.PermissionNames)
+            .ConfigureAwait(false);
 
         if (
             requirement.RequiresAll

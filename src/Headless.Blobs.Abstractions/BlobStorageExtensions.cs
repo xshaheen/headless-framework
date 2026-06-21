@@ -54,12 +54,18 @@ public static class BlobStorageExtensions
 
             limit ??= 1_000_000;
 
-            var result = await storage.GetPagedListAsync(container, blobSearchPattern, limit.Value, cancellationToken);
+            var result = await storage
+                .GetPagedListAsync(container, blobSearchPattern, limit.Value, cancellationToken)
+                .ConfigureAwait(false);
 
             do
             {
                 files.AddRange(result.Blobs);
-            } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync(cancellationToken));
+            } while (
+                result.HasMore
+                && files.Count < limit.Value
+                && await result.NextPageAsync(cancellationToken).ConfigureAwait(false)
+            );
 
             return files;
         }
@@ -99,10 +105,12 @@ public static class BlobStorageExtensions
         )
         {
             await using var memoryStream = new MemoryStream();
-            await memoryStream.WriteTextAsync(contents, cancellationToken);
+            await memoryStream.WriteTextAsync(contents, cancellationToken).ConfigureAwait(false);
             memoryStream.ResetPosition();
 
-            await storage.UploadAsync(container, blobName, memoryStream, metadata, cancellationToken);
+            await storage
+                .UploadAsync(container, blobName, memoryStream, metadata, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
@@ -129,17 +137,21 @@ public static class BlobStorageExtensions
 
             if (contents is not null)
             {
-                await JsonSerializer.SerializeAsync(
-                    utf8Json: memoryStream,
-                    value: contents,
-                    options: JsonConstants.DefaultInternalJsonOptions,
-                    cancellationToken: cancellationToken
-                );
+                await JsonSerializer
+                    .SerializeAsync(
+                        utf8Json: memoryStream,
+                        value: contents,
+                        options: JsonConstants.DefaultInternalJsonOptions,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
 
                 memoryStream.ResetPosition();
             }
 
-            await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
+            await storage
+                .UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
@@ -169,17 +181,21 @@ public static class BlobStorageExtensions
 
             if (contents is not null)
             {
-                await JsonSerializer.SerializeAsync(
-                    utf8Json: memoryStream,
-                    value: contents,
-                    options: options,
-                    cancellationToken: cancellationToken
-                );
+                await JsonSerializer
+                    .SerializeAsync(
+                        utf8Json: memoryStream,
+                        value: contents,
+                        options: options,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
 
                 memoryStream.ResetPosition();
             }
 
-            await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
+            await storage
+                .UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
@@ -204,11 +220,15 @@ public static class BlobStorageExtensions
 
             if (contents is not null)
             {
-                await JsonSerializer.SerializeAsync(memoryStream, contents, jsonTypeInfo, cancellationToken);
+                await JsonSerializer
+                    .SerializeAsync(memoryStream, contents, jsonTypeInfo, cancellationToken)
+                    .ConfigureAwait(false);
                 memoryStream.ResetPosition();
             }
 
-            await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
+            await storage
+                .UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
@@ -224,14 +244,16 @@ public static class BlobStorageExtensions
             CancellationToken cancellationToken = default
         )
         {
-            await using var result = await storage.OpenReadStreamAsync(container, blobName, cancellationToken);
+            await using var result = await storage
+                .OpenReadStreamAsync(container, blobName, cancellationToken)
+                .ConfigureAwait(false);
 
             if (result is null)
             {
                 return null;
             }
 
-            return await result.Stream.GetAllTextAsync(cancellationToken);
+            return await result.Stream.GetAllTextAsync(cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -256,7 +278,9 @@ public static class BlobStorageExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var content = await storage.GetBlobContentAsync(container, blobName, cancellationToken);
+            var content = await storage
+                .GetBlobContentAsync(container, blobName, cancellationToken)
+                .ConfigureAwait(false);
 
             if (content is null)
             {
@@ -286,7 +310,9 @@ public static class BlobStorageExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var content = await storage.GetBlobContentAsync(container, blobName, cancellationToken);
+            var content = await storage
+                .GetBlobContentAsync(container, blobName, cancellationToken)
+                .ConfigureAwait(false);
 
             if (content is null)
             {

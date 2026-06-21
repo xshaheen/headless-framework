@@ -21,13 +21,15 @@ public static class DefaultSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsTrueAsync(
-                name,
-                SettingValueProviderNames.DefaultValue,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsTrueAsync(
+                    name,
+                    SettingValueProviderNames.DefaultValue,
+                    providerKey: null,
+                    fallback,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the setting's default value equals <c>"false"</c> (case-insensitive).</summary>
@@ -41,13 +43,15 @@ public static class DefaultSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsFalseAsync(
-                name,
-                SettingValueProviderNames.DefaultValue,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsFalseAsync(
+                    name,
+                    SettingValueProviderNames.DefaultValue,
+                    providerKey: null,
+                    fallback,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         /// <summary>Finds the default setting value and deserializes it to <typeparamref name="T"/>.</summary>

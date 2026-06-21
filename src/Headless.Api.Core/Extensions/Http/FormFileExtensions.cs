@@ -25,7 +25,7 @@ public static class FormFileExtensions
 
         await using var blobStream = formFile.OpenReadStream();
 
-        await blobStream.SaveToLocalFileAsync(formFile.FileName, directoryPath, token);
+        await blobStream.SaveToLocalFileAsync(formFile.FileName, directoryPath, token).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -48,7 +48,7 @@ public static class FormFileExtensions
         {
             try
             {
-                await formFile.SaveAsync(directoryPath, token);
+                await formFile.SaveAsync(directoryPath, token).ConfigureAwait(false);
 
                 return Result<Exception>.Ok();
             }
@@ -58,7 +58,7 @@ public static class FormFileExtensions
             }
         });
 
-        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
+        var result = await Task.WhenAll(tasks).WithAggregatedExceptions().ConfigureAwait(false);
 
         return result;
     }
@@ -74,7 +74,7 @@ public static class FormFileExtensions
     {
         await using var stream = file.OpenReadStream();
 
-        return await stream.CalculateMd5Async(cancellationToken);
+        return await stream.CalculateMd5Async(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Reads all bytes from the uploaded file's content stream synchronously.</summary>
@@ -94,6 +94,6 @@ public static class FormFileExtensions
     {
         await using var stream = file.OpenReadStream();
 
-        return await stream.GetAllBytesAsync();
+        return await stream.GetAllBytesAsync().ConfigureAwait(false);
     }
 }

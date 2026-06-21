@@ -29,7 +29,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         return await db.Set<SettingValueRecord>()
             .AsNoTracking()
@@ -37,7 +37,8 @@ public sealed class EfSettingValueRecordRepository<TContext>(
             .FirstOrDefaultAsync(
                 s => s.Name == name && s.ProviderName == providerName && s.ProviderKey == providerKey,
                 cancellationToken
-            );
+            )
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -48,7 +49,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         var query = db.Set<SettingValueRecord>().AsNoTracking().Where(s => s.Name == name);
 
@@ -62,7 +63,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
             query = query.Where(s => s.ProviderKey == providerKey);
         }
 
-        return await query.ToListAsync(cancellationToken);
+        return await query.ToListAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -73,11 +74,12 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         return await db.Set<SettingValueRecord>()
             .AsNoTracking()
             .Where(s => names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -87,32 +89,35 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         return await db.Set<SettingValueRecord>()
             .AsNoTracking()
             .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         db.Set<SettingValueRecord>().Add(setting);
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         db.Set<SettingValueRecord>().Update(setting);
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await localPublisher.PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken);
+        await localPublisher
+            .PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -121,17 +126,16 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         db.Set<SettingValueRecord>().RemoveRange(settings);
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var setting in settings)
         {
-            await localPublisher.PublishAsync(
-                new EntityChangedEventData<SettingValueRecord>(setting),
-                cancellationToken
-            );
+            await localPublisher
+                .PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 }

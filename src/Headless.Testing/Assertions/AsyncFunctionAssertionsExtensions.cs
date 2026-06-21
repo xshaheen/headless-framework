@@ -54,7 +54,7 @@ public static class AsyncFunctionAssertionsExtensions
         where TTask : Task
         where TAssertions : AsyncFunctionAssertions<TTask, TAssertions>
     {
-        var assertions = await action.ThrowAsync<ConflictException>(because, becauseArgs);
+        var assertions = await action.ThrowAsync<ConflictException>(because, becauseArgs).ConfigureAwait(false);
 
         if (errors is not null)
         {
@@ -91,7 +91,7 @@ public static class AsyncFunctionAssertionsExtensions
         where TTask : Task
         where TAssertions : AsyncFunctionAssertions<TTask, TAssertions>
     {
-        var assertions = await action.ThrowAsync<EntityNotFoundException>(because, becauseArgs);
+        var assertions = await action.ThrowAsync<EntityNotFoundException>(because, becauseArgs).ConfigureAwait(false);
 
         if (key is not null)
         {

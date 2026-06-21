@@ -196,7 +196,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken);
+        await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
 
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }

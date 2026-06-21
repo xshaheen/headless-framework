@@ -26,7 +26,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
     public async Task<FileConcat?> GetUploadConcatAsync(string fileId, CancellationToken cancellationToken)
     {
         var blobClient = _GetBlobClient(fileId);
-        var tusFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken);
+        var tusFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
         if (tusFile == null)
         {
@@ -57,7 +57,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
         CancellationToken cancellationToken
     )
     {
-        var fileId = await _fileIdProvider.CreateId(metadata);
+        var fileId = await _fileIdProvider.CreateId(metadata).ConfigureAwait(false);
         var blobClient = _GetBlobClient(fileId);
 
         try
@@ -69,12 +69,16 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.UploadLength = uploadLength;
             blobMetadata.ConcatType = "partial";
 
-            await blobClient.UploadAsync(
-                content: Stream.Null,
-                httpHeaders: await _blobHttpHeadersProvider.GetBlobHttpHeadersAsync(blobMetadata.ToUser()),
-                metadata: blobMetadata.ToAzure(),
-                cancellationToken: cancellationToken
-            );
+            await blobClient
+                .UploadAsync(
+                    content: Stream.Null,
+                    httpHeaders: await _blobHttpHeadersProvider
+                        .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
+                        .ConfigureAwait(false),
+                    metadata: blobMetadata.ToAzure(),
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
 
             _logger.LogCreatedPartialFile(fileId, uploadLength);
 
@@ -120,13 +124,13 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
     {
         Argument.IsNotNullOrEmpty(partialFiles);
 
-        var fileId = await _fileIdProvider.CreateId(metadata);
+        var fileId = await _fileIdProvider.CreateId(metadata).ConfigureAwait(false);
         var blockBlobClient = _GetBlockBlobClient(fileId);
 
         try
         {
             // Validate all partial files exist and are complete
-            await _ValidatePartialFilesAsync(partialFiles, cancellationToken);
+            await _ValidatePartialFilesAsync(partialFiles, cancellationToken).ConfigureAwait(false);
 
             // Parse TUS metadata
             var blobMetadata = TusAzureMetadata.FromTus(metadata);
@@ -146,7 +150,8 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                 var partialBlockBlobClient = _GetBlockBlobClient(partialFileId);
 
                 // Get the partial file's committed blocks
-                var partialBlocks = await _GetCommittedBlocksAsync(partialBlockBlobClient, cancellationToken);
+                var partialBlocks = await _GetCommittedBlocksAsync(partialBlockBlobClient, cancellationToken)
+                    .ConfigureAwait(false);
 
                 // Track offset within this partial file (not across all files)
                 long partialOffset = 0;
@@ -162,12 +167,9 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                         {
                             // Server-side copy: data stays in Azure, no download/upload
                             var options = new StageBlockFromUriOptions { SourceRange = blockRange };
-                            await blockBlobClient.StageBlockFromUriAsync(
-                                partialBlobClient.Uri,
-                                newBlockId,
-                                options,
-                                cancellationToken
-                            );
+                            await blockBlobClient
+                                .StageBlockFromUriAsync(partialBlobClient.Uri, newBlockId, options, cancellationToken)
+                                .ConfigureAwait(false);
                         }
                         catch (RequestFailedException ex) when (ex.Status == 501)
                         {
@@ -176,26 +178,28 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                             _logger.LogStageBlockFromUriNotSupported();
 
                             await _StageBlockViaStreamingAsync(
-                                blockBlobClient,
-                                partialBlobClient,
-                                newBlockId,
-                                blockRange,
-                                block.SizeLong,
-                                cancellationToken
-                            );
+                                    blockBlobClient,
+                                    partialBlobClient,
+                                    newBlockId,
+                                    blockRange,
+                                    block.SizeLong,
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
                         }
                     }
                     else
                     {
                         // Streaming fallback: download and re-upload
                         await _StageBlockViaStreamingAsync(
-                            blockBlobClient,
-                            partialBlobClient,
-                            newBlockId,
-                            blockRange,
-                            block.SizeLong,
-                            cancellationToken
-                        );
+                                blockBlobClient,
+                                partialBlobClient,
+                                newBlockId,
+                                blockRange,
+                                block.SizeLong,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
                     }
 
                     blockIds.Add(newBlockId);
@@ -211,11 +215,9 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.PartialUploads = partialFiles;
 
             // Commit all blocks to create the final file
-            await blockBlobClient.CommitBlockListAsync(
-                blockIds,
-                metadata: blobMetadata.ToAzure(),
-                cancellationToken: cancellationToken
-            );
+            await blockBlobClient
+                .CommitBlockListAsync(blockIds, metadata: blobMetadata.ToAzure(), cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             _logger.LogCreatedFinalFile(fileId, partialFiles.Length, totalSize);
 
@@ -242,17 +244,18 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
         CancellationToken cancellationToken
     )
     {
-        var downloadResponse = await sourceClient.DownloadStreamingAsync(
-            new BlobDownloadOptions { Range = sourceRange },
-            cancellationToken
-        );
+        var downloadResponse = await sourceClient
+            .DownloadStreamingAsync(new BlobDownloadOptions { Range = sourceRange }, cancellationToken)
+            .ConfigureAwait(false);
 
         // Copy to MemoryStream since StageBlockAsync requires seekable stream with Length
         await using var buffer = new MemoryStream((int)blockSize);
-        await downloadResponse.Value.Content.CopyToAsync(buffer, cancellationToken);
+        await downloadResponse.Value.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
         buffer.Position = 0;
 
-        await destinationClient.StageBlockAsync(blockId, buffer, cancellationToken: cancellationToken);
+        await destinationClient
+            .StageBlockAsync(blockId, buffer, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task _ValidatePartialFilesAsync(string[] partialFiles, CancellationToken cancellationToken)
@@ -262,7 +265,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             var blobClient = _GetBlobClient(partialFileId);
 
             var blobInfo =
-                await _GetTusFileInfoAsync(blobClient, partialFileId, cancellationToken)
+                await _GetTusFileInfoAsync(blobClient, partialFileId, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException($"Partial file {partialFileId} does not exist");
 
             // Verify it's a partial file

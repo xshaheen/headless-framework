@@ -51,7 +51,7 @@ public sealed class AwsBlobStorage(
         Argument.IsNotNullOrEmpty(container);
 
         // Explicit creation always runs regardless of AutoCreateContainer; it also primes the per-instance cache.
-        await _EnsureBucketOnceAsync(_BuildBucketName(container), cancellationToken);
+        await _EnsureBucketOnceAsync(_BuildBucketName(container), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _EnsureBucketOnceAsync(string bucketName, CancellationToken cancellationToken)
@@ -112,7 +112,7 @@ public sealed class AwsBlobStorage(
 
         if (_options.AutoCreateContainer)
         {
-            await _EnsureBucketOnceAsync(bucket, cancellationToken);
+            await _EnsureBucketOnceAsync(bucket, cancellationToken).ConfigureAwait(false);
         }
 
         Stream inputStream;
@@ -432,7 +432,7 @@ public sealed class AwsBlobStorage(
         // Ensure new bucket exists (once per bucket per instance) when auto-create is enabled.
         if (_options.AutoCreateContainer)
         {
-            await _EnsureBucketOnceAsync(newBucket, cancellationToken);
+            await _EnsureBucketOnceAsync(newBucket, cancellationToken).ConfigureAwait(false);
         }
 
         var request = new CopyObjectRequest
@@ -471,7 +471,10 @@ public sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        if (!await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken))
+        if (
+            !await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken)
+                .ConfigureAwait(false)
+        )
         {
             return false;
         }

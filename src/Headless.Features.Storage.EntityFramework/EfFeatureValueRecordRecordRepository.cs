@@ -25,7 +25,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         return await db.Set<FeatureValueRecord>()
             .AsNoTracking()
@@ -33,7 +33,8 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
             .FirstOrDefaultAsync(
                 s => s.Name == name && s.ProviderName == providerName && s.ProviderKey == providerKey,
                 cancellationToken
-            );
+            )
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -44,7 +45,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         var query = db.Set<FeatureValueRecord>().AsNoTracking().Where(s => s.Name == name);
 
@@ -58,7 +59,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
             query = query.Where(s => s.ProviderKey == providerKey);
         }
 
-        return await query.ToListAsync(cancellationToken);
+        return await query.ToListAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -68,38 +69,37 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         return await db.Set<FeatureValueRecord>()
             .AsNoTracking()
             .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task InsertAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().Add(featureValue);
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await localPublisher.PublishAsync(
-            new EntityChangedEventData<FeatureValueRecord>(featureValue),
-            cancellationToken
-        );
+        await localPublisher
+            .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task UpdateAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().Update(featureValue);
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await localPublisher.PublishAsync(
-            new EntityChangedEventData<FeatureValueRecord>(featureValue),
-            cancellationToken
-        );
+        await localPublisher
+            .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -108,16 +108,15 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().RemoveRange(featureValues);
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var featureValue in featureValues)
         {
-            await localPublisher.PublishAsync(
-                new EntityChangedEventData<FeatureValueRecord>(featureValue),
-                cancellationToken
-            );
+            await localPublisher
+                .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 }

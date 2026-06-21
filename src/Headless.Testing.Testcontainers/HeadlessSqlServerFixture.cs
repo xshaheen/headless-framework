@@ -62,15 +62,15 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     /// </exception>
     public async ValueTask InitializeAsync()
     {
-        await _container.StartAsync();
-        await _WaitUntilLoginSucceedsAsync();
+        await _container.StartAsync().ConfigureAwait(false);
+        await _WaitUntilLoginSucceedsAsync().ConfigureAwait(false);
     }
 
     /// <summary>Stops and disposes the SQL Server container.</summary>
     public async ValueTask DisposeAsync()
     {
-        await _container.StopAsync();
-        await _container.DisposeAsync();
+        await _container.StopAsync().ConfigureAwait(false);
+        await _container.DisposeAsync().ConfigureAwait(false);
         GC.SuppressFinalize(this);
     }
 
@@ -84,19 +84,19 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
             try
             {
                 await using var connection = new SqlConnection(ConnectionString);
-                await connection.OpenAsync(CancellationToken.None);
+                await connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
 
                 return;
             }
             catch (SqlException ex)
             {
                 lastException = ex;
-                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None);
+                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None).ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
             {
                 lastException = ex;
-                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None);
+                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None).ConfigureAwait(false);
             }
         }
 

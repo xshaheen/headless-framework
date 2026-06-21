@@ -406,7 +406,7 @@ public sealed class FileSystemBlobStorage(
             yield break;
         }
 
-        await ValueTask.CompletedTask;
+        await ValueTask.CompletedTask.ConfigureAwait(false);
 
         foreach (var path in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
         {

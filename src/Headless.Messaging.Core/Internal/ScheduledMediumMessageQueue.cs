@@ -59,7 +59,7 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            await _semaphore.WaitAsync(cancellationToken);
+            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             (long, MediumMessage)? nextItem = null;
 
@@ -85,7 +85,7 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
             {
                 // Re-release the semaphore if no item is ready yet
                 _semaphore.Release();
-                await timeProvider.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+                await timeProvider.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).ConfigureAwait(false);
             }
         }
     }

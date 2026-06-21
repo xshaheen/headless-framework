@@ -20,7 +20,7 @@ public sealed partial class TusAzureStore
 
         try
         {
-            var response = await blobClient.ExistsAsync(cancellationToken);
+            var response = await blobClient.ExistsAsync(cancellationToken).ConfigureAwait(false);
 
             return response.Value;
         }
@@ -40,7 +40,7 @@ public sealed partial class TusAzureStore
     /// <returns>declared upload length in bytes, or <see langword="null"/> if not yet known</returns>
     public async Task<long?> GetUploadLengthAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return blobInfo?.Metadata.UploadLength;
     }
@@ -61,7 +61,7 @@ public sealed partial class TusAzureStore
     /// </remarks>
     public async Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         if (blobInfo == null)
         {
@@ -69,7 +69,7 @@ public sealed partial class TusAzureStore
         }
 
         var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
-        var blockList = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken);
+        var blockList = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
 
         return blockList.Sum(block => block.SizeLong);
     }

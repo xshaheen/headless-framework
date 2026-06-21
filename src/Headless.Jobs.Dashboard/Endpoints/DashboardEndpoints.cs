@@ -261,7 +261,7 @@ internal static class DashboardEndpoints
         DashboardOptionsBuilder dashboardOptions
     )
     {
-        var authResult = await authService.AuthenticateAsync(context);
+        var authResult = await authService.AuthenticateAsync(context).ConfigureAwait(false);
 
         if (authResult.IsAuthenticated)
         {
@@ -308,7 +308,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetTimeJobsAsync(cancellationToken);
+        var result = await repository.GetTimeJobsAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -322,7 +322,9 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetTimeJobsPaginatedAsync(pageNumber, pageSize, cancellationToken);
+        var result = await repository
+            .GetTimeJobsPaginatedAsync(pageNumber, pageSize, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -336,7 +338,9 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetTimeJobsGraphSpecificDataAsync(pastDays, futureDays, cancellationToken);
+        var result = await repository
+            .GetTimeJobsGraphSpecificDataAsync(pastDays, futureDays, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -348,7 +352,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetTimeJobFullDataAsync(cancellationToken);
+        var result = await repository.GetTimeJobFullDataAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(
             result.Select(x => new { item1 = x.Status, item2 = x.Count }).ToArray(),
             dashboardOptions.DashboardJsonOptions
@@ -367,7 +371,7 @@ internal static class DashboardEndpoints
     {
         // Read the raw JSON from request body
         using var reader = new StreamReader(context.Request.Body);
-        var jsonString = await reader.ReadToEndAsync(cancellationToken);
+        var jsonString = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 
         // Use Dashboard-specific JSON options
         var chainRoot = JsonSerializer.Deserialize<TTimeJob>(jsonString, dashboardOptions.DashboardJsonOptions);
@@ -383,7 +387,7 @@ internal static class DashboardEndpoints
         // AddAsync returns the persisted entity and throws on failure; the dashboard reports it as success/failure data.
         try
         {
-            var created = await timeJobsManager.AddAsync(chainRoot!, cancellationToken);
+            var created = await timeJobsManager.AddAsync(chainRoot!, cancellationToken).ConfigureAwait(false);
 
             return Results.Json(
                 new
@@ -422,7 +426,7 @@ internal static class DashboardEndpoints
     {
         // Read the raw JSON from request body
         using var reader = new StreamReader(context.Request.Body);
-        var jsonString = await reader.ReadToEndAsync(cancellationToken);
+        var jsonString = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 
         // Use Dashboard-specific JSON options
         var timeJob = JsonSerializer.Deserialize<TTimeJob>(jsonString, dashboardOptions.DashboardJsonOptions)!;
@@ -438,7 +442,7 @@ internal static class DashboardEndpoints
             timeJob.ExecutionTime = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
         }
 
-        var result = await timeJobsManager.UpdateAsync(timeJob, cancellationToken);
+        var result = await timeJobsManager.UpdateAsync(timeJob, cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
             new
@@ -459,7 +463,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await timeJobsManager.DeleteAsync(id, cancellationToken);
+        var result = await timeJobsManager.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
             new
@@ -481,7 +485,7 @@ internal static class DashboardEndpoints
         where TCronJob : CronJobEntity, new()
     {
         var idList = ids is { Length: > 0 } ? new List<Guid>(ids) : [];
-        var result = await timeJobsManager.DeleteBatchAsync(idList, cancellationToken);
+        var result = await timeJobsManager.DeleteBatchAsync(idList, cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
             new
@@ -501,7 +505,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronJobsAsync(cancellationToken);
+        var result = await repository.GetCronJobsAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -515,7 +519,9 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronJobsPaginatedAsync(pageNumber, pageSize, cancellationToken);
+        var result = await repository
+            .GetCronJobsPaginatedAsync(pageNumber, pageSize, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -529,7 +535,9 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronJobsGraphSpecificDataAsync(pastDays, futureDays, cancellationToken);
+        var result = await repository
+            .GetCronJobsGraphSpecificDataAsync(pastDays, futureDays, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -544,12 +552,9 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronJobsGraphSpecificDataByIdAsync(
-            id,
-            pastDays,
-            futureDays,
-            cancellationToken
-        );
+        var result = await repository
+            .GetCronJobsGraphSpecificDataByIdAsync(id, pastDays, futureDays, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -561,7 +566,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronJobFullDataAsync(cancellationToken);
+        var result = await repository.GetCronJobFullDataAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(
             result.Select(x => new { item1 = x.Status, item2 = x.Count }).ToArray(),
             dashboardOptions.DashboardJsonOptions
@@ -577,7 +582,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronJobsOccurrencesAsync(cronJobId, cancellationToken);
+        var result = await repository.GetCronJobsOccurrencesAsync(cronJobId, cancellationToken).ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -592,12 +597,9 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronJobsOccurrencesPaginatedAsync(
-            cronJobId,
-            pageNumber,
-            pageSize,
-            cancellationToken
-        );
+        var result = await repository
+            .GetCronJobsOccurrencesPaginatedAsync(cronJobId, pageNumber, pageSize, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -610,7 +612,9 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronJobsOccurrencesGraphDataAsync(cronJobId, cancellationToken);
+        var result = await repository
+            .GetCronJobsOccurrencesGraphDataAsync(cronJobId, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
@@ -625,7 +629,7 @@ internal static class DashboardEndpoints
     {
         // Read the raw JSON from request body
         using var reader = new StreamReader(context.Request.Body);
-        var jsonString = await reader.ReadToEndAsync(cancellationToken);
+        var jsonString = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 
         // Use Dashboard-specific JSON options
         var cronJob = JsonSerializer.Deserialize<TCronJob>(jsonString, dashboardOptions.DashboardJsonOptions)!;
@@ -633,7 +637,7 @@ internal static class DashboardEndpoints
         // AddAsync returns the persisted entity and throws on failure; the dashboard reports it as success/failure data.
         try
         {
-            var created = await cronJobsManager.AddAsync(cronJob, cancellationToken);
+            var created = await cronJobsManager.AddAsync(cronJob, cancellationToken).ConfigureAwait(false);
 
             return Results.Json(
                 new
@@ -671,7 +675,7 @@ internal static class DashboardEndpoints
     {
         // Read the raw JSON from request body
         using var reader = new StreamReader(context.Request.Body);
-        var jsonString = await reader.ReadToEndAsync(cancellationToken);
+        var jsonString = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 
         // Use Dashboard-specific JSON options
         var cronJob = JsonSerializer.Deserialize<TCronJob>(jsonString, dashboardOptions.DashboardJsonOptions)!;
@@ -679,7 +683,7 @@ internal static class DashboardEndpoints
         // Ensure the ID matches
         cronJob.Id = id;
 
-        var result = await cronJobsManager.UpdateAsync(cronJob, cancellationToken);
+        var result = await cronJobsManager.UpdateAsync(cronJob, cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
             new
@@ -699,7 +703,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        await repository.AddOnDemandCronJobOccurrenceAsync(id, cancellationToken);
+        await repository.AddOnDemandCronJobOccurrenceAsync(id, cancellationToken).ConfigureAwait(false);
         return Results.Ok();
     }
 
@@ -712,7 +716,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var result = await cronJobsManager.DeleteAsync(id, cancellationToken);
+        var result = await cronJobsManager.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
             new
@@ -733,7 +737,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        await repository.DeleteCronJobOccurrenceByIdAsync(id, cancellationToken);
+        await repository.DeleteCronJobOccurrenceByIdAsync(id, cancellationToken).ConfigureAwait(false);
         return Results.Ok();
     }
 
@@ -762,7 +766,9 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var resultData = await repository.GetJobRequestByIdAsync(jobId, jobType, cancellationToken);
+        var resultData = await repository
+            .GetJobRequestByIdAsync(jobId, jobType, cancellationToken)
+            .ConfigureAwait(false);
 
         var response = new { Result = resultData.Item1, MatchType = resultData.Item2 };
         return Results.Json(response, dashboardOptions.DashboardJsonOptions);
@@ -803,7 +809,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        await scheduler.StopAsync();
+        await scheduler.StopAsync().ConfigureAwait(false);
         return Results.Ok();
     }
 
@@ -811,7 +817,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        await scheduler.StartAsync();
+        await scheduler.StartAsync().ConfigureAwait(false);
         return Results.Ok();
     }
 
@@ -838,7 +844,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var jobStatuses = await repository.GetLastWeekJobStatusesAsync(cancellationToken);
+        var jobStatuses = await repository.GetLastWeekJobStatusesAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(
             jobStatuses.Select(x => new { x.Item1, x.Item2 }).ToArray(),
             dashboardOptions.DashboardJsonOptions
@@ -853,7 +859,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var jobStatuses = await repository.GetOverallJobStatusesAsync(cancellationToken);
+        var jobStatuses = await repository.GetOverallJobStatusesAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(
             jobStatuses.Select(x => new { x.Item1, x.Item2 }).ToArray(),
             dashboardOptions.DashboardJsonOptions
@@ -868,7 +874,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var machineJobs = await repository.GetMachineJobsAsync(cancellationToken);
+        var machineJobs = await repository.GetMachineJobsAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(
             machineJobs.Select(x => new { item1 = x.Item1, item2 = x.Item2 }).ToArray(),
             dashboardOptions.DashboardJsonOptions
@@ -883,7 +889,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var nodes = await repository.GetLiveNodesAsync(cancellationToken);
+        var nodes = await repository.GetLiveNodesAsync(cancellationToken).ConfigureAwait(false);
         return Results.Json(nodes, dashboardOptions.DashboardJsonOptions);
     }
 

@@ -90,7 +90,7 @@ public abstract class ApiControllerBase : ControllerBase
             return MalformedSyntax();
         }
 
-        await Sender.Send(req, token);
+        await Sender.Send(req, token).ConfigureAwait(false);
 
         return NoContent();
     }
@@ -107,7 +107,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected async Task<ActionResult<T>> Ok<T>(IRequest<T>? req, CancellationToken token = default)
     {
-        return req is null ? MalformedSyntax() : Ok(await Sender.Send(req, token));
+        return req is null ? MalformedSyntax() : Ok(await Sender.Send(req, token).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -126,7 +126,7 @@ public abstract class ApiControllerBase : ControllerBase
             return MalformedSyntax();
         }
 
-        await Sender.Send(req, token);
+        await Sender.Send(req, token).ConfigureAwait(false);
 
         return Ok();
     }

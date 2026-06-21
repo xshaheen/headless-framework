@@ -299,7 +299,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         var (blobsContainer, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
 
-        return await _DeleteAsync(blobPath, infoContainer, blobsContainer, cancellationToken);
+        return await _DeleteAsync(blobPath, infoContainer, blobsContainer, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> _DeleteAsync(
@@ -716,7 +716,8 @@ public sealed class RedisBlobStorage : IBlobStorage
             );
         }
 
-        var list = await _ScanBlobInfoListAsync(container, criteria, skip, pagingLimit, cancellationToken);
+        var list = await _ScanBlobInfoListAsync(container, criteria, skip, pagingLimit, cancellationToken)
+            .ConfigureAwait(false);
 
         var hasMore = false;
 
@@ -762,7 +763,8 @@ public sealed class RedisBlobStorage : IBlobStorage
             );
         }
 
-        var blobs = await _ScanBlobInfoListAsync(infoContainer, criteria, skip ?? 0, pageSize, cancellationToken);
+        var blobs = await _ScanBlobInfoListAsync(infoContainer, criteria, skip ?? 0, pageSize, cancellationToken)
+            .ConfigureAwait(false);
 
         return blobs;
     }

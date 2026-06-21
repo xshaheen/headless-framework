@@ -34,13 +34,13 @@ public sealed class NpgsqlConnectionStringChecker(ILogger<NpgsqlConnectionString
 
             await using var conn = new NpgsqlConnection(connectionBuilder.ConnectionString);
 
-            await conn.OpenAsync();
+            await conn.OpenAsync().ConfigureAwait(false);
             result.Connected = true;
 
-            await conn.ChangeDatabaseAsync(oldDatabaseName!);
+            await conn.ChangeDatabaseAsync(oldDatabaseName!).ConfigureAwait(false);
             result.DatabaseExists = true;
 
-            await conn.CloseAsync();
+            await conn.CloseAsync().ConfigureAwait(false);
 
             return result;
         }

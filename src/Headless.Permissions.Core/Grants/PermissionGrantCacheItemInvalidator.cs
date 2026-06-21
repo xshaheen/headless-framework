@@ -30,7 +30,7 @@ public sealed class PermissionGrantCacheItemInvalidator(
 
         using (currentTenant.Change(message.Entity.TenantId))
         {
-            await cache.RemoveAsync(cacheKey, cancellationToken);
+            await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
         }
     }
 }

@@ -18,17 +18,23 @@ public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFact
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        return await db.Set<FeatureGroupDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
+        return await db.Set<FeatureGroupDefinitionRecord>()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        return await db.Set<FeatureDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
+        return await db.Set<FeatureDefinitionRecord>()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -42,7 +48,7 @@ public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFact
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         db.Set<FeatureGroupDefinitionRecord>().AddRange(newGroups);
         db.Set<FeatureGroupDefinitionRecord>().UpdateRange(updatedGroups);
@@ -52,6 +58,6 @@ public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFact
         db.Set<FeatureDefinitionRecord>().UpdateRange(updatedFeatures);
         db.Set<FeatureDefinitionRecord>().RemoveRange(deletedFeatures);
 
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 }

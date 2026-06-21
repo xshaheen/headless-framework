@@ -94,7 +94,7 @@ public static class StreamExtensions
 
         stream.ResetPosition();
         using var reader = new StreamReader(stream, encoding, leaveOpen: true);
-        var text = await reader.ReadToEndAsync(cancellationToken);
+        var text = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 
         return text;
     }
@@ -165,7 +165,7 @@ public static class StreamExtensions
             return s.ToArray();
         }
 
-        await using var ms = await stream.CreateMemoryStreamAsync(cancellationToken);
+        await using var ms = await stream.CreateMemoryStreamAsync(cancellationToken).ConfigureAwait(false);
 
         return ms.ToArray();
     }
@@ -293,7 +293,7 @@ public static class StreamExtensions
 
         stream.ResetPosition();
         var memoryStream = new MemoryStream();
-        await stream.CopyToAsync(memoryStream, cancellationToken);
+        await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
 
         return memoryStream;
     }

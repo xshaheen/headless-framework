@@ -69,7 +69,7 @@ public class GatewayProxyAgent(
                 var cacheKey = $"{requestNodeName}\0{ns}";
                 if (!cache.TryGetValue(cacheKey, out node))
                 {
-                    node = await discoveryProvider.GetNode(requestNodeName, ns);
+                    node = await discoveryProvider.GetNode(requestNodeName, ns).ConfigureAwait(false);
                     cache.Set(cacheKey, node);
                 }
             }
@@ -87,7 +87,7 @@ public class GatewayProxyAgent(
 
             if (!cache.TryGetValue(requestNodeName, out node))
             {
-                node = await discoveryProvider.GetNode(requestNodeName);
+                node = await discoveryProvider.GetNode(requestNodeName).ConfigureAwait(false);
                 cache.Set(requestNodeName, node);
             }
         }
@@ -96,7 +96,7 @@ public class GatewayProxyAgent(
         {
             try
             {
-                var downstreamRequest = await requestMapper.Map(request);
+                var downstreamRequest = await requestMapper.Map(request).ConfigureAwait(false);
 
                 _SetDownStreamRequestUri(
                     downstreamRequest,
@@ -106,9 +106,11 @@ public class GatewayProxyAgent(
                 );
 
                 using var client = httpClientFactory.CreateClient("GatewayProxy");
-                using var response = await client.SendAsync(downstreamRequest, context.RequestAborted);
+                using var response = await client
+                    .SendAsync(downstreamRequest, context.RequestAborted)
+                    .ConfigureAwait(false);
 
-                await _SetResponseOnHttpContext(context, response);
+                await _SetResponseOnHttpContext(context, response).ConfigureAwait(false);
 
                 return true;
             }
@@ -146,7 +148,7 @@ public class GatewayProxyAgent(
 
         if (response.StatusCode != HttpStatusCode.NotModified)
         {
-            await response.Content.CopyToAsync(context.Response.Body);
+            await response.Content.CopyToAsync(context.Response.Body).ConfigureAwait(false);
         }
     }
 

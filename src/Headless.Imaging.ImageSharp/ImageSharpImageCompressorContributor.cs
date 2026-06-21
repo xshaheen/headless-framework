@@ -38,7 +38,7 @@ public sealed class ImageSharpImageCompressorContributor(
             return ImageStreamCompressResult.NotSupported();
         }
 
-        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken);
+        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
 
         if (error is not null)
         {
@@ -58,14 +58,14 @@ public sealed class ImageSharpImageCompressorContributor(
             return ImageStreamCompressResult.NotSupportedMimeType(format.DefaultMimeType);
         }
 
-        var memoryStream = await _CreateCompressedStreamAsync(image, format, cancellationToken);
+        var memoryStream = await _CreateCompressedStreamAsync(image, format, cancellationToken).ConfigureAwait(false);
 
         if (memoryStream.Length < stream.Length)
         {
             return ImageStreamCompressResult.Done(memoryStream);
         }
 
-        await memoryStream.DisposeAsync();
+        await memoryStream.DisposeAsync().ConfigureAwait(false);
 
         return ImageStreamCompressResult.Failed("The compressed image is larger than the original.");
     }
@@ -76,7 +76,9 @@ public sealed class ImageSharpImageCompressorContributor(
 
         try
         {
-            await image.SaveAsync(memoryStream, _GetCompressEncoder(format), cancellationToken: token);
+            await image
+                .SaveAsync(memoryStream, _GetCompressEncoder(format), cancellationToken: token)
+                .ConfigureAwait(false);
 
             memoryStream.Position = 0;
 
@@ -84,7 +86,7 @@ public sealed class ImageSharpImageCompressorContributor(
         }
         catch
         {
-            await memoryStream.DisposeAsync();
+            await memoryStream.DisposeAsync().ConfigureAwait(false);
 
             throw;
         }

@@ -62,7 +62,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     {
         Argument.IsNotNull(messageNames);
 
-        await ConnectAsync();
+        await ConnectAsync().ConfigureAwait(false);
 
         foreach (var messageName in messageNames)
         {
@@ -80,25 +80,31 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await ConnectAsync();
+        await ConnectAsync().ConfigureAwait(false);
 
         if (_consumerConfig?.PrefetchCount is { } configuredPrefetch)
         {
-            await _channel!.BasicQosAsync(0, configuredPrefetch, global: false, cancellationToken);
+            await _channel!
+                .BasicQosAsync(0, configuredPrefetch, global: false, cancellationToken)
+                .ConfigureAwait(false);
         }
         else if (_rabbitMqOptions.BasicQosOptions != null)
         {
-            await _channel!.BasicQosAsync(
-                0,
-                _rabbitMqOptions.BasicQosOptions.PrefetchCount,
-                _rabbitMqOptions.BasicQosOptions.Global,
-                cancellationToken
-            );
+            await _channel!
+                .BasicQosAsync(
+                    0,
+                    _rabbitMqOptions.BasicQosOptions.PrefetchCount,
+                    _rabbitMqOptions.BasicQosOptions.Global,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
         else
         {
             var prefetch = _groupConcurrent > 0 ? _groupConcurrent : (ushort)1;
-            await _channel!.BasicQosAsync(prefetchSize: 0, prefetchCount: prefetch, global: false, cancellationToken);
+            await _channel!
+                .BasicQosAsync(prefetchSize: 0, prefetchCount: prefetch, global: false, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
@@ -127,14 +133,16 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
         catch (TimeoutException ex)
         {
-            await _consumer.HandleChannelShutdownAsync(
-                null!,
-                new ShutdownEventArgs(
-                    ShutdownInitiator.Application,
-                    0,
-                    ex.Message + "-->" + nameof(_channel.BasicConsumeAsync)
+            await _consumer
+                .HandleChannelShutdownAsync(
+                    null!,
+                    new ShutdownEventArgs(
+                        ShutdownInitiator.Application,
+                        0,
+                        ex.Message + "-->" + nameof(_channel.BasicConsumeAsync)
+                    )
                 )
-            );
+                .ConfigureAwait(false);
             _ready.TrySetException(ex);
             throw;
         }
@@ -159,12 +167,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask CommitAsync(object? sender)
     {
-        await _consumer!.BasicAck((ulong)sender!);
+        await _consumer!.BasicAck((ulong)sender!).ConfigureAwait(false);
     }
 
     public async ValueTask RejectAsync(object? sender)
     {
-        await _consumer!.BasicReject((ulong)sender!);
+        await _consumer!.BasicReject((ulong)sender!).ConfigureAwait(false);
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
@@ -174,7 +182,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             return;
         }
 
-        if (!await _pauseGate.PauseAsync())
+        if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -194,7 +202,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             return;
         }
 
-        if (!await _pauseGate.ResumeAsync())
+        if (!await _pauseGate.ResumeAsync().ConfigureAwait(false))
         {
             return;
         }

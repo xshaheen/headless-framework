@@ -29,7 +29,7 @@ internal sealed class SettingsEntityValidationStartupGate<TContext>(IDbContextFa
     /// </exception>
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         _EnsureEntity(context, typeof(SettingValueRecord), nameof(SettingValueRecord));
         _EnsureEntity(context, typeof(SettingDefinitionRecord), nameof(SettingDefinitionRecord));

@@ -182,7 +182,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                 }
             );
 
-            await notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob);
+            await notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob).ConfigureAwait(false);
         }
 
         return results.ToArray();
@@ -424,9 +424,10 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
         if (resources is null)
         {
             await Task.WhenAll(
-                persistenceProvider.ReleaseAcquiredCronJobOccurrences([], cancellationToken),
-                persistenceProvider.ReleaseAcquiredTimeJobs([], cancellationToken)
-            );
+                    persistenceProvider.ReleaseAcquiredCronJobOccurrences([], cancellationToken),
+                    persistenceProvider.ReleaseAcquiredTimeJobs([], cancellationToken)
+                )
+                .ConfigureAwait(false);
             return;
         }
 

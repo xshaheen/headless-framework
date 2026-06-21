@@ -76,7 +76,8 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
 
             try
             {
-                await _RunJobsSchedulerAsync(loopToken, _schedulerLoopCancellationTokenSource.Token);
+                await _RunJobsSchedulerAsync(loopToken, _schedulerLoopCancellationTokenSource.Token)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
                 when (_schedulerLoopCancellationTokenSource.Token.IsCancellationRequested
@@ -84,25 +85,26 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 )
             {
                 // This is a restart request - release resources and continue loop
-                await _internalJobsManager.ReleaseAcquiredResources(_executionContext.Functions, loopToken);
+                await _internalJobsManager
+                    .ReleaseAcquiredResources(_executionContext.Functions, loopToken)
+                    .ConfigureAwait(false);
                 // Small delay to allow resources to be released
-                await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), loopToken);
+                await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), loopToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (loopToken.IsCancellationRequested)
             {
                 // Host shutdown or local membership loss - release resources and exit
-                await _internalJobsManager.ReleaseAcquiredResources(
-                    _executionContext.Functions,
-                    CancellationToken.None
-                );
+                await _internalJobsManager
+                    .ReleaseAcquiredResources(_executionContext.Functions, CancellationToken.None)
+                    .ConfigureAwait(false);
                 break;
             }
             catch (Exception ex)
             {
-                await _ReleaseAllResourcesAsync(ex);
+                await _ReleaseAllResourcesAsync(ex).ConfigureAwait(false);
                 // Continue running - don't exit the scheduler loop on exceptions
                 // Add a small delay to prevent tight loop if errors persist
-                await _timeProvider.Delay(TimeSpan.FromSeconds(1), loopToken);
+                await _timeProvider.Delay(TimeSpan.FromSeconds(1), loopToken).ConfigureAwait(false);
             }
             finally
             {
@@ -119,7 +121,9 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         {
             if (_executionContext.Functions.Length != 0)
             {
-                await _internalJobsManager.SetTickersInProgress(_executionContext.Functions, cancellationToken);
+                await _internalJobsManager
+                    .SetTickersInProgress(_executionContext.Functions, cancellationToken)
+                    .ConfigureAwait(false);
 
                 foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority))
                 {
@@ -138,7 +142,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
 
                             try
                             {
-                                await _taskHandler.ExecuteTaskAsync(function, false, ct);
+                                await _taskHandler.ExecuteTaskAsync(function, false, ct).ConfigureAwait(false);
                             }
                             finally
                             {
@@ -153,7 +157,9 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 _executionContext.SetFunctions(null);
             }
 
-            var (timeRemaining, functions) = await _internalJobsManager.GetNextJobs(cancellationToken);
+            var (timeRemaining, functions) = await _internalJobsManager
+                .GetNextJobs(cancellationToken)
+                .ConfigureAwait(false);
 
             _executionContext.SetFunctions(functions);
 
@@ -176,7 +182,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 notify(_executionContext.GetNextPlannedOccurrence(), CoreNotifyActionType.NotifyNextOccurence);
             }
 
-            await _timeProvider.Delay(sleepDuration, cancellationToken);
+            await _timeProvider.Delay(sleepDuration, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -187,7 +193,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
             _executionContext.NotifyCoreAction(ex.ToString(), CoreNotifyActionType.NotifyHostExceptionMessage);
         }
 
-        await _internalJobsManager.ReleaseAcquiredResources([], CancellationToken.None);
+        await _internalJobsManager.ReleaseAcquiredResources([], CancellationToken.None).ConfigureAwait(false);
     }
 
     public void RestartIfNeeded(DateTime? dateTime)
@@ -229,7 +235,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
     {
         _taskScheduler.Freeze();
         Interlocked.Exchange(ref _started, 0);
-        await base.StopAsync(cancellationToken);
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public override void Dispose()

@@ -79,7 +79,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
             return false;
         }
 
-        var result = await func.NextPageFunc(this, cancellationToken);
+        var result = await func.NextPageFunc(this, cancellationToken).ConfigureAwait(false);
 
         if (result.Success)
         {

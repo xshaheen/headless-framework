@@ -40,7 +40,7 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
         try
         {
             // Ensure the blob exists before trying to lease it
-            var blobExists = await blobClient.ExistsAsync();
+            var blobExists = await blobClient.ExistsAsync().ConfigureAwait(false);
 
             if (!blobExists.Value)
             {
@@ -50,7 +50,7 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
             }
 
             _leaseClient = blobClient.GetBlobLeaseClient();
-            await _leaseClient.AcquireAsync(leaseDuration);
+            await _leaseClient.AcquireAsync(leaseDuration).ConfigureAwait(false);
 
             _isLocked = true;
             logger.BlobLeaseAcquired(blobClient.Name);
@@ -87,7 +87,7 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
 
         try
         {
-            await _leaseClient.ReleaseAsync();
+            await _leaseClient.ReleaseAsync().ConfigureAwait(false);
             logger.BlobLeaseReleased(blobClient.Name);
         }
         catch (RequestFailedException e)

@@ -28,7 +28,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     {
         var pk = NormalizeProviderKey(providerKey);
 
-        return await Store.GetOrDefaultAsync(feature.Name, Name, pk, cancellationToken);
+        return await Store.GetOrDefaultAsync(feature.Name, Name, pk, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -41,7 +41,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     {
         var pk = NormalizeProviderKey(providerKey);
 
-        await Store.SetAsync(feature.Name, value, Name, pk, cancellationToken);
+        await Store.SetAsync(feature.Name, value, Name, pk, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -53,7 +53,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     {
         var pk = NormalizeProviderKey(providerKey);
 
-        await Store.DeleteAsync(feature.Name, Name, pk, cancellationToken);
+        await Store.DeleteAsync(feature.Name, Name, pk, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

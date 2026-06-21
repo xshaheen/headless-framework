@@ -23,7 +23,9 @@ public static class PermissionManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var result = await permissionManager.GetAsync(name, currentUser, cancellationToken: cancellationToken);
+        var result = await permissionManager
+            .GetAsync(name, currentUser, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         return result.IsGranted;
     }
@@ -36,7 +38,9 @@ public static class PermissionManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var grantResults = await permissionManager.GetAllAsync(name, currentUser, cancellationToken: cancellationToken);
+        var grantResults = await permissionManager
+            .GetAllAsync(name, currentUser, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         var result = new MultiplePermissionGrantResult();
 

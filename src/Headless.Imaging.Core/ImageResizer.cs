@@ -45,14 +45,14 @@ public sealed class ImageResizer(
         if (!stream.CanSeek)
         {
             var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream, cancellationToken);
+            await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
             _SeekToBegin(memoryStream);
             stream = memoryStream;
         }
 
         foreach (var resizerContributor in _contributors)
         {
-            var result = await resizerContributor.TryResizeAsync(stream, args, cancellationToken);
+            var result = await resizerContributor.TryResizeAsync(stream, args, cancellationToken).ConfigureAwait(false);
 
             _SeekToBegin(stream);
 

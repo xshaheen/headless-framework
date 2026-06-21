@@ -53,7 +53,7 @@ public sealed class DefaultSqlCurrentConnection(ISqlConnectionFactory factory) :
     /// <inheritdoc />
     public async ValueTask<DbConnection> GetOpenConnectionAsync(CancellationToken cancellationToken = default)
     {
-        using var _ = await _lock.LockAsync(cancellationToken);
+        using var _ = await _lock.LockAsync(cancellationToken).ConfigureAwait(false);
 
         if (_connection is { State: ConnectionState.Open })
         {
@@ -61,7 +61,7 @@ public sealed class DefaultSqlCurrentConnection(ISqlConnectionFactory factory) :
         }
 
         _connection?.Dispose();
-        _connection = await factory.CreateNewConnectionAsync(cancellationToken);
+        _connection = await factory.CreateNewConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         return _connection;
     }
@@ -71,7 +71,7 @@ public sealed class DefaultSqlCurrentConnection(ISqlConnectionFactory factory) :
     {
         if (_connection?.State is ConnectionState.Open)
         {
-            await (_connection?.DisposeAsync() ?? ValueTask.CompletedTask);
+            await (_connection?.DisposeAsync() ?? ValueTask.CompletedTask).ConfigureAwait(false);
             _connection = null;
         }
     }

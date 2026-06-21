@@ -35,7 +35,7 @@ public sealed class DbMigrationSeeder<TDbContext>(IServiceProvider provider) : I
 
         if (dbContext is not null)
         {
-            await dbContext.Database.MigrateAsync(cancellationToken);
+            await dbContext.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
 
             return;
         }
@@ -45,8 +45,10 @@ public sealed class DbMigrationSeeder<TDbContext>(IServiceProvider provider) : I
 
         if (factory is not null)
         {
-            await using var createdDbContext = await factory.CreateDbContextAsync(cancellationToken);
-            await createdDbContext.Database.MigrateAsync(cancellationToken);
+            await using var createdDbContext = await factory
+                .CreateDbContextAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await createdDbContext.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
 
             return;
         }

@@ -42,35 +42,40 @@ public sealed class DynamicAuthenticationSchemeProvider(
     /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultAuthenticateSchemeAsync()
     {
-        return await _GetRequestSchemeAsync() ?? await base.GetDefaultAuthenticateSchemeAsync();
+        return await _GetRequestSchemeAsync().ConfigureAwait(false)
+            ?? await base.GetDefaultAuthenticateSchemeAsync().ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultChallengeSchemeAsync()
     {
-        return await _GetRequestSchemeAsync() ?? await base.GetDefaultChallengeSchemeAsync();
+        return await _GetRequestSchemeAsync().ConfigureAwait(false)
+            ?? await base.GetDefaultChallengeSchemeAsync().ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultForbidSchemeAsync()
     {
-        return await _GetRequestSchemeAsync() ?? await base.GetDefaultForbidSchemeAsync();
+        return await _GetRequestSchemeAsync().ConfigureAwait(false)
+            ?? await base.GetDefaultForbidSchemeAsync().ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultSignInSchemeAsync()
     {
-        return await _GetRequestSchemeAsync() ?? await base.GetDefaultSignInSchemeAsync();
+        return await _GetRequestSchemeAsync().ConfigureAwait(false)
+            ?? await base.GetDefaultSignInSchemeAsync().ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultSignOutSchemeAsync()
     {
-        return await _GetRequestSchemeAsync() ?? await base.GetDefaultSignOutSchemeAsync();
+        return await _GetRequestSchemeAsync().ConfigureAwait(false)
+            ?? await base.GetDefaultSignOutSchemeAsync().ConfigureAwait(false);
     }
 
     private async ValueTask<AuthenticationScheme?> _GetRequestSchemeAsync()
@@ -88,7 +93,7 @@ public sealed class DynamicAuthenticationSchemeProvider(
 
         if (isApiKey)
         {
-            return await GetSchemeAsync(AuthenticationConstants.Schemas.ApiKey);
+            return await GetSchemeAsync(AuthenticationConstants.Schemas.ApiKey).ConfigureAwait(false);
         }
 
         var hasAuthorizationHeader = request.Headers.TryGetValue(HttpHeaderNames.Authorization, out var value);
@@ -100,8 +105,8 @@ public sealed class DynamicAuthenticationSchemeProvider(
                 .StartsWith(AuthenticationConstants.Schemas.Basic, StringComparison.OrdinalIgnoreCase);
 
             return isBasicAuth
-                ? await GetSchemeAsync(AuthenticationConstants.Schemas.Basic)
-                : await GetSchemeAsync(AuthenticationConstants.Schemas.Bearer);
+                ? await GetSchemeAsync(AuthenticationConstants.Schemas.Basic).ConfigureAwait(false)
+                : await GetSchemeAsync(AuthenticationConstants.Schemas.Bearer).ConfigureAwait(false);
         }
 
         return null;

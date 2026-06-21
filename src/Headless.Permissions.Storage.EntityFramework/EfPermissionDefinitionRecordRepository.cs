@@ -25,9 +25,12 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        return await db.Set<PermissionGroupDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
+        return await db.Set<PermissionGroupDefinitionRecord>()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>Returns all permission definition records, untracked.</summary>
@@ -35,9 +38,12 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        return await db.Set<PermissionDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
+        return await db.Set<PermissionDefinitionRecord>()
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -55,7 +61,7 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
         CancellationToken cancellationToken = default
     )
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         db.Set<PermissionGroupDefinitionRecord>().AddRange(newGroups);
         db.Set<PermissionGroupDefinitionRecord>().UpdateRange(updatedGroups);
@@ -65,6 +71,6 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
         db.Set<PermissionDefinitionRecord>().UpdateRange(updatedPermissions);
         db.Set<PermissionDefinitionRecord>().RemoveRange(deletedPermissions);
 
-        await db.SaveChangesAsync(cancellationToken);
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 }

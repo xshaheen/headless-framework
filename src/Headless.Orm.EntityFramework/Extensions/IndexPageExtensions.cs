@@ -28,7 +28,7 @@ public static class IndexPageExtensions
         /// <returns>An <c>IndexPage</c> containing all results.</returns>
         public async ValueTask<IndexPage<T>> ToIndexPageAsync(CancellationToken cancellationToken = default)
         {
-            var items = await source.ToListAsync(cancellationToken);
+            var items = await source.ToListAsync(cancellationToken).ConfigureAwait(false);
 
             return new(items, 0, items.Count, items.Count);
         }
@@ -50,7 +50,7 @@ public static class IndexPageExtensions
         {
             Argument.IsPositive(size);
 
-            var total = await source.CountAsync(cancellationToken);
+            var total = await source.CountAsync(cancellationToken).ConfigureAwait(false);
 
             if (total == 0)
             {
@@ -59,8 +59,12 @@ public static class IndexPageExtensions
 
             var items =
                 index < 0
-                    ? await source.SkipLast(-(index + 1) * size).TakeLast(size).ToListAsync(cancellationToken)
-                    : await source.Skip(index * size).Take(size).ToListAsync(cancellationToken);
+                    ? await source
+                        .SkipLast(-(index + 1) * size)
+                        .TakeLast(size)
+                        .ToListAsync(cancellationToken)
+                        .ConfigureAwait(false)
+                    : await source.Skip(index * size).Take(size).ToListAsync(cancellationToken).ConfigureAwait(false);
 
             return new IndexPage<T>(items, index, size, total);
         }
@@ -126,7 +130,7 @@ public static class IndexPageExtensions
             var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
             var projectedQuery = orderQuery.Select(selector);
 
-            var items = await projectedQuery.ToListAsync(cancellationToken);
+            var items = await projectedQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
 
             return new(items, 0, items.Count, items.Count);
         }
@@ -156,7 +160,7 @@ public static class IndexPageExtensions
             Argument.IsNotNull(selector);
             Argument.IsPositive(size);
 
-            var total = await source.CountAsync(cancellationToken);
+            var total = await source.CountAsync(cancellationToken).ConfigureAwait(false);
 
             if (total == 0)
             {
@@ -172,7 +176,7 @@ public static class IndexPageExtensions
 
             var projectedQuery = pagedQuery.Select(selector);
 
-            var items = await projectedQuery.ToListAsync(cancellationToken);
+            var items = await projectedQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
 
             return new(items, index, size, total);
         }
@@ -201,15 +205,10 @@ public static class IndexPageExtensions
             Argument.IsPositive(size);
 
             return index.HasValue && size.HasValue
-                ? await source.ToIndexPageAsync(
-                    orderBy,
-                    ascending,
-                    selector,
-                    index.Value,
-                    size.Value,
-                    cancellationToken
-                )
-                : await source.ToIndexPageAsync(orderBy, ascending, selector, cancellationToken);
+                ? await source
+                    .ToIndexPageAsync(orderBy, ascending, selector, index.Value, size.Value, cancellationToken)
+                    .ConfigureAwait(false)
+                : await source.ToIndexPageAsync(orderBy, ascending, selector, cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -255,7 +254,7 @@ public static class IndexPageExtensions
             // a separate CountAsync round-trip would be pure waste (mirrors the no-order overload).
             var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
 
-            var items = await orderQuery.ToListAsync(cancellationToken);
+            var items = await orderQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
 
             return new(items, 0, items.Count, items.Count);
         }
@@ -283,7 +282,7 @@ public static class IndexPageExtensions
             Argument.IsNotNull(orderBy);
             Argument.IsPositive(size);
 
-            var total = await source.CountAsync(cancellationToken);
+            var total = await source.CountAsync(cancellationToken).ConfigureAwait(false);
 
             if (total == 0)
             {
@@ -297,7 +296,7 @@ public static class IndexPageExtensions
                     ? orderQuery.SkipLast(-(index + 1) * size).TakeLast(size)
                     : orderQuery.Skip(index * size).Take(size);
 
-            var items = await pagedQuery.ToListAsync(cancellationToken);
+            var items = await pagedQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
 
             return new(items, index, size, total);
         }
@@ -326,12 +325,14 @@ public static class IndexPageExtensions
 
             if (index.HasValue && size.HasValue)
             {
-                return await source.ToIndexPageAsync(orderBy, ascending, index.Value, size.Value, cancellationToken);
+                return await source
+                    .ToIndexPageAsync(orderBy, ascending, index.Value, size.Value, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
 
-            var items = await orderQuery.ToListAsync(cancellationToken);
+            var items = await orderQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
 
             return new(items, 0, items.Count, items.Count);
         }

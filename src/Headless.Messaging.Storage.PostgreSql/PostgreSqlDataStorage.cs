@@ -689,8 +689,8 @@ public sealed class PostgreSqlDataStorage(
         };
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         var messageList = await connection
             .ExecuteReaderAsync(
@@ -725,9 +725,9 @@ public sealed class PostgreSqlDataStorage(
             )
             .ConfigureAwait(false);
 
-        await scheduleTask(transaction, messageList);
+        await scheduleTask(transaction, messageList).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally

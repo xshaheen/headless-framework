@@ -46,12 +46,14 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
 
         foreach (var role in roles)
         {
-            var roleGrantStatusResults = await _grantStore.IsGrantedAsync(
-                names: permissionNames,
-                providerName: Name,
-                providerKey: role,
-                cancellationToken: cancellationToken
-            );
+            var roleGrantStatusResults = await _grantStore
+                .IsGrantedAsync(
+                    names: permissionNames,
+                    providerName: Name,
+                    providerKey: role,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
 
             var foundedStatuses = roleGrantStatusResults.Where(newStatus =>
                 newStatus.Value is not PermissionGrantStatus.Undefined

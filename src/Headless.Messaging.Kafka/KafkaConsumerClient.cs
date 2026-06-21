@@ -92,14 +92,16 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
                 using var adminClient = _adminClientFactory(config);
 
-                await adminClient.CreateTopicsAsync(
-                    concreteTopicsToCreate.Select(x => new TopicSpecification
-                    {
-                        Name = x,
-                        NumPartitions = _kafkaOptions.TopicOptions.NumPartitions,
-                        ReplicationFactor = _kafkaOptions.TopicOptions.ReplicationFactor,
-                    })
-                );
+                await adminClient
+                    .CreateTopicsAsync(
+                        concreteTopicsToCreate.Select(x => new TopicSpecification
+                        {
+                            Name = x,
+                            NumPartitions = _kafkaOptions.TopicOptions.NumPartitions,
+                            ReplicationFactor = _kafkaOptions.TopicOptions.ReplicationFactor,
+                        })
+                    )
+                    .ConfigureAwait(false);
             }
 #pragma warning disable ERP022
             catch (CreateTopicsException e) when (e.Message.Contains("already exists", StringComparison.Ordinal)) { }
@@ -250,7 +252,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             return;
         }
 
-        if (!await _pauseGate.PauseAsync())
+        if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -268,7 +270,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             return;
         }
 
-        if (!await _pauseGate.ResumeAsync())
+        if (!await _pauseGate.ResumeAsync().ConfigureAwait(false))
         {
             return;
         }

@@ -532,7 +532,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        if (!await _pauseGate.PauseAsync())
+        if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -554,7 +554,7 @@ internal sealed class NatsConsumerClient(
 
         _ResetReceiveToken();
 
-        if (!await _pauseGate.ResumeAsync())
+        if (!await _pauseGate.ResumeAsync().ConfigureAwait(false))
         {
             return;
         }

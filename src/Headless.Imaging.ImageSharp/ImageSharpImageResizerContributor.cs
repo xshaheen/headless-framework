@@ -34,7 +34,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
             return ImageStreamResizeResult.NotSupportedMimeType(args.MimeType);
         }
 
-        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken);
+        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
 
         if (error is not null)
         {
@@ -69,7 +69,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
 
         try
         {
-            await image.SaveAsync(memoryStream, format, cancellationToken);
+            await image.SaveAsync(memoryStream, format, cancellationToken).ConfigureAwait(false);
 
             memoryStream.Position = 0;
 
@@ -77,7 +77,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
         }
         catch
         {
-            await memoryStream.DisposeAsync();
+            await memoryStream.DisposeAsync().ConfigureAwait(false);
 
             throw;
         }

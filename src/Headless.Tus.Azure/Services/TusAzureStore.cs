@@ -119,7 +119,7 @@ public sealed partial class TusAzureStore
 
     private static async Task _UpdateMetadataAsync(BlobClient blobClient, TusAzureFile file, CancellationToken token)
     {
-        await blobClient.SetMetadataAsync(file.Metadata.ToAzure(), cancellationToken: token);
+        await blobClient.SetMetadataAsync(file.Metadata.ToAzure(), cancellationToken: token).ConfigureAwait(false);
     }
 
     private Task<List<BlobBlock>> _GetCommittedBlocksAsync(string fileId, CancellationToken token)
@@ -131,7 +131,9 @@ public sealed partial class TusAzureStore
     {
         try
         {
-            var blockListResponse = await client.GetBlockListAsync(BlockListTypes.Committed, cancellationToken: token);
+            var blockListResponse = await client
+                .GetBlockListAsync(BlockListTypes.Committed, cancellationToken: token)
+                .ConfigureAwait(false);
 
             return blockListResponse.Value.CommittedBlocks.AsList();
         }
@@ -148,7 +150,9 @@ public sealed partial class TusAzureStore
     {
         try
         {
-            var blockListResponse = await client.GetBlockListAsync(BlockListTypes.Committed, cancellationToken: token);
+            var blockListResponse = await client
+                .GetBlockListAsync(BlockListTypes.Committed, cancellationToken: token)
+                .ConfigureAwait(false);
 
             return (
                 blockListResponse.Value.CommittedBlocks.AsList(),
@@ -165,7 +169,7 @@ public sealed partial class TusAzureStore
     {
         var blobClient = _GetBlobClient(fileId);
 
-        return await _GetTusFileInfoAsync(blobClient, fileId, token);
+        return await _GetTusFileInfoAsync(blobClient, fileId, token).ConfigureAwait(false);
     }
 
     private static async Task<TusAzureFile?> _GetTusFileInfoAsync(
@@ -176,7 +180,7 @@ public sealed partial class TusAzureStore
     {
         try
         {
-            var propertiesResponse = await client.GetPropertiesAsync(cancellationToken: token);
+            var propertiesResponse = await client.GetPropertiesAsync(cancellationToken: token).ConfigureAwait(false);
 
             return propertiesResponse.HasValue
                 ? TusAzureFile.FromBlobProperties(fileId, client.Name, propertiesResponse.Value)

@@ -107,12 +107,13 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
     public async Task<PaymobCardCashInResponse> StartAsync(PaymobCardCashInRequest request)
     {
         var (orderId, paymentKey) = await _StartAsync(
-            request.Customer,
-            request.Amount,
-            request.CardIntegrationId,
-            request.ExpirationSeconds,
-            request.MerchantOrderId
-        );
+                request.Customer,
+                request.Amount,
+                request.CardIntegrationId,
+                request.ExpirationSeconds,
+                request.MerchantOrderId
+            )
+            .ConfigureAwait(false);
 
         return new PaymobCardCashInResponse(
             IframeSrc: broker.CreateIframeSrc(iframeId: request.IframeSrc, token: paymentKey),
@@ -125,18 +126,21 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
     public async Task<PaymobWalletCashInResponse> StartAsync(PaymobWalletCashInRequest request)
     {
         var (orderId, paymentKey) = await _StartAsync(
-            request.Customer,
-            request.Amount,
-            request.WalletIntegrationId,
-            request.ExpirationSeconds,
-            request.MerchantOrderId
-        );
+                request.Customer,
+                request.Amount,
+                request.WalletIntegrationId,
+                request.ExpirationSeconds,
+                request.MerchantOrderId
+            )
+            .ConfigureAwait(false);
 
         CashInWalletPayResponse payResponse;
 
         try
         {
-            payResponse = await broker.CreateWalletPayAsync(paymentKey, request.WalletPhoneNumber);
+            payResponse = await broker
+                .CreateWalletPayAsync(paymentKey, request.WalletPhoneNumber)
+                .ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -160,18 +164,19 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
     public async Task<PaymobKioskCashInResponse> StartAsync(PaymobKioskCashInRequest request)
     {
         var (orderId, paymentKey) = await _StartAsync(
-            request.Customer,
-            request.Amount,
-            request.KioskIntegrationId,
-            request.ExpirationSeconds,
-            request.MerchantOrderId
-        );
+                request.Customer,
+                request.Amount,
+                request.KioskIntegrationId,
+                request.ExpirationSeconds,
+                request.MerchantOrderId
+            )
+            .ConfigureAwait(false);
 
         CashInKioskPayResponse payResponse;
 
         try
         {
-            payResponse = await broker.CreateKioskPayAsync(paymentKey);
+            payResponse = await broker.CreateKioskPayAsync(paymentKey).ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -195,18 +200,19 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
     public async Task<PaymobCardSavedTokenCashInResponse> StartAsync(PaymobCardSavedTokenCashInRequest request)
     {
         var (orderId, paymentKey) = await _StartAsync(
-            request.Customer,
-            request.Amount,
-            request.SavedTokenIntegrationId,
-            request.ExpirationSeconds,
-            request.MerchantOrderId
-        );
+                request.Customer,
+                request.Amount,
+                request.SavedTokenIntegrationId,
+                request.ExpirationSeconds,
+                request.MerchantOrderId
+            )
+            .ConfigureAwait(false);
 
         CashInSavedTokenPayResponse payResponse;
 
         try
         {
-            payResponse = await broker.CreateSavedTokenPayAsync(paymentKey, request.CardToken);
+            payResponse = await broker.CreateSavedTokenPayAsync(paymentKey, request.CardToken).ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -266,15 +272,16 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
     )
     {
         var amountCents = (int)Math.Ceiling(amount * 100);
-        var orderResponse = await _CreateOrderAsync(amountCents, merchantOrderId);
+        var orderResponse = await _CreateOrderAsync(amountCents, merchantOrderId).ConfigureAwait(false);
 
         var paymentKeyResponse = await _CreatePaymentKeyAsync(
-            customer,
-            integrationId,
-            orderResponse.Id,
-            amountCents,
-            expiration
-        );
+                customer,
+                integrationId,
+                orderResponse.Id,
+                amountCents,
+                expiration
+            )
+            .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(paymentKeyResponse.PaymentKey))
         {
@@ -312,7 +319,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
 
         try
         {
-            return await broker.RequestPaymentKeyAsync(request);
+            return await broker.RequestPaymentKeyAsync(request).ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -330,7 +337,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
 
         try
         {
-            response = await broker.CreateOrderAsync(request);
+            response = await broker.CreateOrderAsync(request).ConfigureAwait(false);
         }
         catch (Exception e)
         {

@@ -27,7 +27,7 @@ public static class DocumentSetExtensions
     {
         var options = new GetOptions().CancellationToken(cancellationToken);
 
-        return await set.GetAsync(id, options);
+        return await set.GetAsync(id, options).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -39,7 +39,7 @@ public static class DocumentSetExtensions
     {
         try
         {
-            var getResult = await set.Collection.GetAsync(id?.ToString()!, options);
+            var getResult = await set.Collection.GetAsync(id?.ToString()!, options).ConfigureAwait(false);
             var content = getResult.ContentAs<T>();
 
             return content;

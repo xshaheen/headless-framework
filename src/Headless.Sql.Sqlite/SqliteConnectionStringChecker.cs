@@ -30,10 +30,10 @@ public sealed class SqliteConnectionStringChecker(ILogger<SqliteConnectionString
         {
             await using var connection = new SqliteConnection(connectionString);
 
-            await connection.OpenAsync();
+            await connection.OpenAsync().ConfigureAwait(false);
             result.Connected = true;
             result.DatabaseExists = true;
-            await connection.CloseAsync();
+            await connection.CloseAsync().ConfigureAwait(false);
 
             return result;
         }

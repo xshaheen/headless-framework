@@ -17,7 +17,9 @@ public static class XmlHelper
     /// <returns>The XML-encoded text, or <see langword="null"/> when <paramref name="str"/> is <see langword="null"/>.</returns>
     public static async Task<string?> XmlEncodeAsync(string? str, XmlWriterSettings? settings = null)
     {
-        return str is not null ? await XmlEncodeAsIsAsync(str.RemoveHiddenChars(), settings) : null;
+        return str is not null
+            ? await XmlEncodeAsIsAsync(str.RemoveHiddenChars(), settings).ConfigureAwait(false)
+            : null;
     }
 
     /// <summary>XML-encodes <paramref name="str"/> without first stripping hidden/control characters.</summary>
@@ -36,8 +38,8 @@ public static class XmlHelper
 
         await using var sw = new StringWriter();
         await using var xwr = XmlWriter.Create(sw, settings);
-        await xwr.WriteStringAsync(str);
-        await xwr.FlushAsync();
+        await xwr.WriteStringAsync(str).ConfigureAwait(false);
+        await xwr.FlushAsync().ConfigureAwait(false);
 
         return sw.ToString();
     }

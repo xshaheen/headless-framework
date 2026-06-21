@@ -21,7 +21,7 @@ public sealed class FeatureValueCacheItemInvalidator(ICache<FeatureValueCacheIte
     {
         var cacheKey = _CalculateCacheKey(message.Entity.Name, message.Entity.ProviderName, message.Entity.ProviderKey);
 
-        await cache.RemoveAsync(cacheKey, cancellationToken);
+        await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
     }
 
     private static string _CalculateCacheKey(string name, string providerName, string? providerKey)

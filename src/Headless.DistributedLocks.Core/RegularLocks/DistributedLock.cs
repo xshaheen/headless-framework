@@ -224,7 +224,9 @@ public sealed class DistributedLock(
                 // Try to acquire the lock
                 try
                 {
-                    acquireResult = await _storage.InsertAsync(resource, leaseId, timeUntilExpires, attemptToken);
+                    acquireResult = await _storage
+                        .InsertAsync(resource, leaseId, timeUntilExpires, attemptToken)
+                        .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {

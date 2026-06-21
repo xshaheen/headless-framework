@@ -81,7 +81,9 @@ public sealed class FeatureValueStore(
     )
     {
         var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
-        var existValueCacheItem = await cache.GetAsync<FeatureValueCacheItem>(cacheKey, cancellationToken);
+        var existValueCacheItem = await cache
+            .GetAsync<FeatureValueCacheItem>(cacheKey, cancellationToken)
+            .ConfigureAwait(false);
 
         if (existValueCacheItem.HasValue)
         {
@@ -89,11 +91,12 @@ public sealed class FeatureValueStore(
         }
 
         var valueCacheItem = await _CacheAllAndGetAsync(
-            providerName,
-            providerKey,
-            featureNameToFind: name,
-            cancellationToken: cancellationToken
-        );
+                providerName,
+                providerKey,
+                featureNameToFind: name,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
 
         return valueCacheItem;
     }
@@ -107,25 +110,29 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var featureValue = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+        var featureValue = await repository
+            .FindAsync(name, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         if (featureValue is null)
         {
             featureValue = new FeatureValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await repository.InsertAsync(featureValue, cancellationToken);
+            await repository.InsertAsync(featureValue, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             featureValue.Value = value;
-            await repository.UpdateAsync(featureValue, cancellationToken);
+            await repository.UpdateAsync(featureValue, cancellationToken).ConfigureAwait(false);
         }
 
-        await cache.UpsertAsync(
-            key: FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
-            value: new FeatureValueCacheItem(featureValue.Value),
-            expiration: _cacheExpiration,
-            cancellationToken: cancellationToken
-        );
+        await cache
+            .UpsertAsync(
+                key: FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
+                value: new FeatureValueCacheItem(featureValue.Value),
+                expiration: _cacheExpiration,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -136,19 +143,21 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var features = await repository.FindAllAsync(name, providerName, providerKey, cancellationToken);
+        var features = await repository
+            .FindAllAsync(name, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         if (features.Count == 0)
         {
             return;
         }
 
-        await repository.DeleteAsync(features, cancellationToken);
+        await repository.DeleteAsync(features, cancellationToken).ConfigureAwait(false);
 
         foreach (var featureValue in features)
         {
             var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, featureValue.ProviderKey);
-            await cache.RemoveAsync(cacheKey, cancellationToken);
+            await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -161,8 +170,9 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var definitions = await featureDefinitionManager.GetFeaturesAsync(cancellationToken);
-        var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken);
+        var definitions = await featureDefinitionManager.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
+        var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         Dictionary<string, FeatureValueCacheItem> cacheItems = new(StringComparer.Ordinal);
         string? featureValueToFind = null;
@@ -180,7 +190,7 @@ public sealed class FeatureValueStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
 
         return featureValueToFind;
     }
@@ -191,7 +201,9 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken
     )
     {
-        var dbValues = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        var dbValues = await repository
+            .GetListAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
 

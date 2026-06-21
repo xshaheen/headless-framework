@@ -24,7 +24,7 @@ public static class TimeProviderExtensions
         {
             try
             {
-                await timeProvider.Delay(delay, cancellationToken);
+                await timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { }
         }

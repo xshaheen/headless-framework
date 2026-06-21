@@ -23,13 +23,9 @@ public static class TenantSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsTrueAsync(
-                name,
-                SettingValueProviderNames.Tenant,
-                tenantId,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsTrueAsync(name, SettingValueProviderNames.Tenant, tenantId, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the named setting value for the ambient current tenant equals <c>"true"</c> (case-insensitive).</summary>
@@ -43,13 +39,9 @@ public static class TenantSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsTrueAsync(
-                name,
-                SettingValueProviderNames.Tenant,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsTrueAsync(name, SettingValueProviderNames.Tenant, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the named setting value for the specified tenant equals <c>"false"</c> (case-insensitive).</summary>
@@ -65,13 +57,9 @@ public static class TenantSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsFalseAsync(
-                name,
-                SettingValueProviderNames.Tenant,
-                tenantId,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsFalseAsync(name, SettingValueProviderNames.Tenant, tenantId, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the named setting value for the ambient current tenant equals <c>"false"</c> (case-insensitive).</summary>
@@ -85,13 +73,9 @@ public static class TenantSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsFalseAsync(
-                name,
-                SettingValueProviderNames.Tenant,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsFalseAsync(name, SettingValueProviderNames.Tenant, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Finds the setting value for the specified tenant and deserializes it to <typeparamref name="T"/>.</summary>

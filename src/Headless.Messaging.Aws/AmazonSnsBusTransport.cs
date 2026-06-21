@@ -178,11 +178,11 @@ internal sealed class AmazonSnsBusTransport(
 
     public async ValueTask DisposeAsync()
     {
-        await castAndDispose(_semaphore);
+        await castAndDispose(_semaphore).ConfigureAwait(false);
 
         if (_snsClient is not null)
         {
-            await castAndDispose(_snsClient);
+            await castAndDispose(_snsClient).ConfigureAwait(false);
         }
 
         _topicArnMaps = null;

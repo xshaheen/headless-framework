@@ -68,7 +68,7 @@ public sealed class DevEmailSender(string filePath) : IEmailSender
 
         sb.AppendLine(_Separator);
 
-        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken);
+        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken).ConfigureAwait(false);
 
         return SendSingleEmailResponse.Succeeded();
     }

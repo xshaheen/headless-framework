@@ -19,7 +19,9 @@ public static class FeatureManagerExtensions
         /// <exception cref="InvalidOperationException">The stored value for the feature is not a valid boolean string.</exception>
         public async Task<bool> IsEnabledAsync(string name, CancellationToken cancellationToken = default)
         {
-            var featureValue = await featureManager.GetAsync(name, cancellationToken: cancellationToken);
+            var featureValue = await featureManager
+                .GetAsync(name, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             if (string.IsNullOrEmpty(featureValue?.Value))
             {
@@ -63,7 +65,7 @@ public static class FeatureManagerExtensions
             {
                 foreach (var featureName in featureNames)
                 {
-                    if (!await featureManager.IsEnabledAsync(featureName, cancellationToken))
+                    if (!await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
                     {
                         return false;
                     }
@@ -74,7 +76,7 @@ public static class FeatureManagerExtensions
 
             foreach (var featureName in featureNames)
             {
-                if (await featureManager.IsEnabledAsync(featureName, cancellationToken))
+                if (await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
                 {
                     return true;
                 }
@@ -103,13 +105,9 @@ public static class FeatureManagerExtensions
             Argument.IsNotNull(featureManager);
             Argument.IsNotNull(name);
 
-            var value = await featureManager.GetAsync(
-                name,
-                providerName,
-                providerKey,
-                fallback,
-                cancellationToken: cancellationToken
-            );
+            var value = await featureManager
+                .GetAsync(name, providerName, providerKey, fallback, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             return value.To<T>();
         }
@@ -121,7 +119,7 @@ public static class FeatureManagerExtensions
         /// <exception cref="InvalidOperationException">The stored feature value is not a valid boolean string.</exception>
         public async Task EnsureEnabledAsync(string featureName, CancellationToken cancellationToken = default)
         {
-            if (await featureManager.IsEnabledAsync(featureName, cancellationToken))
+            if (await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
             {
                 return;
             }
@@ -161,7 +159,7 @@ public static class FeatureManagerExtensions
             {
                 foreach (var featureName in featureNames)
                 {
-                    if (!await featureManager.IsEnabledAsync(featureName, cancellationToken))
+                    if (!await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
                     {
                         var error = MessageDescriber
                             .FeatureCurrentlyUnavailable()
@@ -176,7 +174,7 @@ public static class FeatureManagerExtensions
             {
                 foreach (var featureName in featureNames)
                 {
-                    if (await featureManager.IsEnabledAsync(featureName, cancellationToken))
+                    if (await featureManager.IsEnabledAsync(featureName, cancellationToken).ConfigureAwait(false))
                     {
                         return;
                     }

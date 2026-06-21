@@ -67,19 +67,19 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
         {
             var simpleRequest = _MapToSendEmailRequest(request);
 
-            return await _SendAsync(simpleRequest, cancellationToken);
+            return await _SendAsync(simpleRequest, cancellationToken).ConfigureAwait(false);
         }
 
-        using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken);
+        using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).ConfigureAwait(false);
         await using var memoryStream = new MemoryStream();
-        await mimeMessage.WriteToAsync(memoryStream, cancellationToken);
+        await mimeMessage.WriteToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
 
         var rawRequest = new SendEmailRequest
         {
             Content = new EmailContent { Raw = new RawMessage { Data = memoryStream } },
         };
 
-        return await _SendAsync(rawRequest, cancellationToken);
+        return await _SendAsync(rawRequest, cancellationToken).ConfigureAwait(false);
     }
 
     #region Helpers
@@ -93,7 +93,7 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
 
         try
         {
-            response = await ses.SendEmailAsync(request, cancellationToken);
+            response = await ses.SendEmailAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
             when (ex

@@ -26,10 +26,9 @@ public sealed partial class TusAzureStore : ITusTerminationStore
 
         try
         {
-            var response = await blobClient.DeleteIfExistsAsync(
-                DeleteSnapshotsOption.IncludeSnapshots,
-                cancellationToken: cancellationToken
-            );
+            var response = await blobClient
+                .DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             deleted = response.Value;
         }

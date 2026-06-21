@@ -76,7 +76,7 @@ public static class CouchbaseEventingFunctionsSeeder
 
         var upsertOptions = new UpsertFunctionOptions { Timeout = 1.Minutes(), Token = cancellationToken };
 
-        await cluster.EventingFunctions.UpsertFunctionAsync(function, upsertOptions);
+        await cluster.EventingFunctions.UpsertFunctionAsync(function, upsertOptions).ConfigureAwait(false);
     }
 
     #region Helpers

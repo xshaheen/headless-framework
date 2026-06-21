@@ -123,7 +123,7 @@ public sealed class PermissionGrantStore(
 
         logger.LogGetCacheItem(cacheKey);
 
-        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken);
+        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken).ConfigureAwait(false);
 
         if (existValueCacheItem.HasValue)
         {
@@ -134,7 +134,8 @@ public sealed class PermissionGrantStore(
 
         logger.LogPermissionNotFoundInCache(cacheKey);
 
-        var valueCacheItem = await _CacheAllAndGetAsync(providerName, providerKey, name, cancellationToken);
+        var valueCacheItem = await _CacheAllAndGetAsync(providerName, providerKey, name, cancellationToken)
+            .ConfigureAwait(false);
 
         return valueCacheItem;
     }
@@ -154,11 +155,11 @@ public sealed class PermissionGrantStore(
 
             return new(StringComparer.Ordinal)
             {
-                [name] = await IsGrantedAsync(name, providerName, providerKey, cancellationToken),
+                [name] = await IsGrantedAsync(name, providerName, providerKey, cancellationToken).ConfigureAwait(false),
             };
         }
 
-        return await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken);
+        return await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<List<PermissionGrant>> GetAllGrantsAsync(
@@ -167,7 +168,7 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
-        var result = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        var result = await repository.GetListAsync(providerName, providerKey, cancellationToken).ConfigureAwait(false);
 
         return result.ConvertAll(x => new PermissionGrant(x.Name, x.IsGranted));
     }
@@ -180,15 +181,39 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
-        var permissionGrant = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+        var permissionGrant = await repository
+            .FindAsync(name, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         if (permissionGrant is not null)
         {
             // Update existing record to granted if it was previously denied
             if (!permissionGrant.IsGranted)
             {
-                await repository.DeleteAsync(permissionGrant, cancellationToken);
-                await repository.InsertAsync(
+                await repository.DeleteAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
+                await repository
+                    .InsertAsync(
+                        new PermissionGrantRecord(
+                            guidGenerator.Create(),
+                            name,
+                            providerName,
+                            providerKey,
+                            isGranted: true,
+                            tenantId
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                return;
+            }
+        }
+        else
+        {
+            await repository
+                .InsertAsync(
                     new PermissionGrantRecord(
                         guidGenerator.Create(),
                         name,
@@ -198,34 +223,18 @@ public sealed class PermissionGrantStore(
                         tenantId
                     ),
                     cancellationToken
-                );
-            }
-            else
-            {
-                return;
-            }
-        }
-        else
-        {
-            await repository.InsertAsync(
-                new PermissionGrantRecord(
-                    guidGenerator.Create(),
-                    name,
-                    providerName,
-                    providerKey,
-                    isGranted: true,
-                    tenantId
-                ),
-                cancellationToken
-            );
+                )
+                .ConfigureAwait(false);
         }
 
-        await cache.UpsertAsync(
-            cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
-            cacheValue: new PermissionGrantCacheItem(isGranted: true),
-            expiration: _cacheExpiration,
-            cancellationToken: cancellationToken
-        );
+        await cache
+            .UpsertAsync(
+                cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
+                cacheValue: new PermissionGrantCacheItem(isGranted: true),
+                expiration: _cacheExpiration,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public async Task GrantAsync(
@@ -242,12 +251,9 @@ public sealed class PermissionGrantStore(
 
         var distinctNames = names.ToHashSet(StringComparer.Ordinal);
 
-        var existGrantRecords = await repository.GetListAsync(
-            distinctNames,
-            providerName,
-            providerKey,
-            cancellationToken
-        );
+        var existGrantRecords = await repository
+            .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         if (existGrantRecords.Count == distinctNames.Count)
         {
@@ -258,7 +264,7 @@ public sealed class PermissionGrantStore(
         var deniedRecords = existGrantRecords.Where(x => !x.IsGranted).ToList();
         if (deniedRecords.Count > 0)
         {
-            await repository.DeleteManyAsync(deniedRecords, cancellationToken);
+            await repository.DeleteManyAsync(deniedRecords, cancellationToken).ConfigureAwait(false);
             var updatedRecords = deniedRecords.Select(x => new PermissionGrantRecord(
                 guidGenerator.Create(),
                 x.Name,
@@ -267,7 +273,7 @@ public sealed class PermissionGrantStore(
                 isGranted: true,
                 tenantId
             ));
-            await repository.InsertManyAsync(updatedRecords, cancellationToken);
+            await repository.InsertManyAsync(updatedRecords, cancellationToken).ConfigureAwait(false);
         }
 
         var newRecords = distinctNames
@@ -281,7 +287,7 @@ public sealed class PermissionGrantStore(
                 tenantId
             ));
 
-        await repository.InsertManyAsync(newRecords, cancellationToken);
+        await repository.InsertManyAsync(newRecords, cancellationToken).ConfigureAwait(false);
 
         var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
         var cacheItem = new PermissionGrantCacheItem(isGranted: true);
@@ -291,7 +297,9 @@ public sealed class PermissionGrantStore(
             cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
         }
 
-        await cache.UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken);
+        await cache
+            .UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -301,25 +309,29 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
-        var permissionGrant = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+        var permissionGrant = await repository
+            .FindAsync(name, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         if (permissionGrant is not null)
         {
             // Update existing grant to explicit denial
             if (permissionGrant.IsGranted)
             {
-                await repository.DeleteAsync(permissionGrant, cancellationToken);
-                await repository.InsertAsync(
-                    new PermissionGrantRecord(
-                        guidGenerator.Create(),
-                        name,
-                        providerName,
-                        providerKey,
-                        isGranted: false,
-                        permissionGrant.TenantId
-                    ),
-                    cancellationToken
-                );
+                await repository.DeleteAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
+                await repository
+                    .InsertAsync(
+                        new PermissionGrantRecord(
+                            guidGenerator.Create(),
+                            name,
+                            providerName,
+                            providerKey,
+                            isGranted: false,
+                            permissionGrant.TenantId
+                        ),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
             else
             {
@@ -330,25 +342,29 @@ public sealed class PermissionGrantStore(
         {
             // Insert explicit denial
             var tenantId = currentTenant.Id;
-            await repository.InsertAsync(
-                new PermissionGrantRecord(
-                    guidGenerator.Create(),
-                    name,
-                    providerName,
-                    providerKey,
-                    isGranted: false,
-                    tenantId
-                ),
-                cancellationToken
-            );
+            await repository
+                .InsertAsync(
+                    new PermissionGrantRecord(
+                        guidGenerator.Create(),
+                        name,
+                        providerName,
+                        providerKey,
+                        isGranted: false,
+                        tenantId
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
-        await cache.UpsertAsync(
-            cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
-            cacheValue: new PermissionGrantCacheItem(isGranted: false),
-            expiration: _cacheExpiration,
-            cancellationToken: cancellationToken
-        );
+        await cache
+            .UpsertAsync(
+                cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
+                cacheValue: new PermissionGrantCacheItem(isGranted: false),
+                expiration: _cacheExpiration,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public async Task RevokeAsync(
@@ -364,18 +380,15 @@ public sealed class PermissionGrantStore(
 
         var distinctNames = names.ToHashSet(StringComparer.Ordinal);
 
-        var existGrantRecords = await repository.GetListAsync(
-            distinctNames,
-            providerName,
-            providerKey,
-            cancellationToken
-        );
+        var existGrantRecords = await repository
+            .GetListAsync(distinctNames, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         // Update existing grants to denials
         var grantedRecords = existGrantRecords.Where(x => x.IsGranted).ToList();
         if (grantedRecords.Count > 0)
         {
-            await repository.DeleteManyAsync(grantedRecords, cancellationToken);
+            await repository.DeleteManyAsync(grantedRecords, cancellationToken).ConfigureAwait(false);
             var deniedRecords = grantedRecords.Select(x => new PermissionGrantRecord(
                 guidGenerator.Create(),
                 x.Name,
@@ -384,7 +397,7 @@ public sealed class PermissionGrantStore(
                 isGranted: false,
                 x.TenantId
             ));
-            await repository.InsertManyAsync(deniedRecords, cancellationToken);
+            await repository.InsertManyAsync(deniedRecords, cancellationToken).ConfigureAwait(false);
         }
 
         // Insert explicit denials for names that don't have records
@@ -404,7 +417,7 @@ public sealed class PermissionGrantStore(
 
         if (permissionGrantRecords.Length > 0)
         {
-            await repository.InsertManyAsync(permissionGrantRecords, cancellationToken);
+            await repository.InsertManyAsync(permissionGrantRecords, cancellationToken).ConfigureAwait(false);
         }
 
         // Update cache with denials
@@ -416,7 +429,9 @@ public sealed class PermissionGrantStore(
             cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
         }
 
-        await cache.UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken);
+        await cache
+            .UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
 
     #region Helpers
@@ -432,7 +447,7 @@ public sealed class PermissionGrantStore(
             .Select(x => PermissionGrantCacheItem.CalculateCacheKey(x, providerName, providerKey))
             .ToList();
 
-        var cacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken);
+        var cacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken).ConfigureAwait(false);
 
         var notCachedNames = cacheItemsMap
             .Where(x => !x.Value.HasValue)
@@ -455,7 +470,8 @@ public sealed class PermissionGrantStore(
         // Some cache items aren't found in the cache, get them from the database
         logger.LogNotFoundInCache(notCachedNames);
 
-        var newCacheItems = await _CacheSomeAsync(notCachedNames, providerName, providerKey, cancellationToken);
+        var newCacheItems = await _CacheSomeAsync(notCachedNames, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
         var result = new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal);
 
         foreach (var cacheKey in cacheKeys)
@@ -479,8 +495,10 @@ public sealed class PermissionGrantStore(
     {
         logger.LogGettingNotCachedGrantedPermissions(providerName, providerKey);
 
-        var definitions = await _GetDbPermissionsDefinitionsAsync(names, cancellationToken);
-        var dbPermissionGrants = await repository.GetListAsync(names, providerName, providerKey, cancellationToken);
+        var definitions = await _GetDbPermissionsDefinitionsAsync(names, cancellationToken).ConfigureAwait(false);
+        var dbPermissionGrants = await repository
+            .GetListAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         var grantsLookup = dbPermissionGrants.ToDictionary(g => g.Name, g => g.IsGranted, StringComparer.Ordinal);
 
@@ -498,7 +516,7 @@ public sealed class PermissionGrantStore(
             cacheItems[cacheKey] = new PermissionGrantCacheItem(isGranted);
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
         logger.LogFinishedSettingCacheItems(definitions.Length);
 
         return cacheItems;
@@ -511,11 +529,15 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken
     )
     {
-        var definitions = await permissionDefinitionManager.GetPermissionsAsync(cancellationToken);
+        var definitions = await permissionDefinitionManager
+            .GetPermissionsAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         logger.LogGettingAllGrantedPermissions(providerName, providerKey);
 
-        var allPermissionGrants = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        var allPermissionGrants = await repository
+            .GetListAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
         var grantsLookup = allPermissionGrants.ToDictionary(g => g.Name, g => g.IsGranted, StringComparer.Ordinal);
 
         logger.LogSettingCacheItemsForDefinitions(definitions.Count);
@@ -539,7 +561,7 @@ public sealed class PermissionGrantStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
 
         logger.LogFinishedSettingCacheItemsForDefinitions(definitions.Count);
 
@@ -556,7 +578,9 @@ public sealed class PermissionGrantStore(
             return [];
         }
 
-        var definitions = await permissionDefinitionManager.GetPermissionsAsync(cancellationToken);
+        var definitions = await permissionDefinitionManager
+            .GetPermissionsAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         return definitions
             .Where(definition => names.Exists(name => string.Equals(name, definition.Name, StringComparison.Ordinal)))

@@ -711,8 +711,8 @@ public sealed class SqlServerDataStorage(
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var messageList = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -746,9 +746,9 @@ public sealed class SqlServerDataStorage(
             )
             .ConfigureAwait(false);
 
-        await scheduleTask(transaction, messageList);
+        await scheduleTask(transaction, messageList).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

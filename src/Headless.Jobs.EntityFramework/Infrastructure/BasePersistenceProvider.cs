@@ -114,7 +114,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .SetProperty(x => x.UpdatedAt, now)
                             .SetProperty(x => x.Status, JobStatus.Queued),
                     cancellationToken
-                );
+                )
+                .ConfigureAwait(false);
 
             if (updatedTicker <= 0)
             {

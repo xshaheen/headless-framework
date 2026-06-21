@@ -21,13 +21,9 @@ public static class GlobalSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsTrueAsync(
-                name,
-                SettingValueProviderNames.Global,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsTrueAsync(name, SettingValueProviderNames.Global, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the global setting value equals <c>"false"</c> (case-insensitive).</summary>
@@ -41,13 +37,9 @@ public static class GlobalSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsFalseAsync(
-                name,
-                SettingValueProviderNames.Global,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsFalseAsync(name, SettingValueProviderNames.Global, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Finds the global setting value and deserializes it to <typeparamref name="T"/>.</summary>

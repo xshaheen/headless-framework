@@ -49,7 +49,8 @@ internal sealed class PulsarConsumerClient(
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
             .SubscribeAsync()
-            .WaitAsync(cts.Token);
+            .WaitAsync(cts.Token)
+            .ConfigureAwait(false);
         _ready.TrySetResult();
     }
 
@@ -152,14 +153,14 @@ internal sealed class PulsarConsumerClient(
 
     public async ValueTask CommitAsync(object? sender)
     {
-        await _consumerClient!.AcknowledgeAsync((MessageId)sender!);
+        await _consumerClient!.AcknowledgeAsync((MessageId)sender!).ConfigureAwait(false);
     }
 
     public async ValueTask RejectAsync(object? sender)
     {
         if (sender is MessageId id)
         {
-            await _consumerClient!.NegativeAcknowledge(id);
+            await _consumerClient!.NegativeAcknowledge(id).ConfigureAwait(false);
         }
     }
 
@@ -207,9 +208,11 @@ internal sealed class PulsarConsumerClient(
         );
     }
 
-    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.PauseAsync().ConfigureAwait(false);
 
-    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.ResumeAsync().ConfigureAwait(false);
 
     public ValueTask DisposeAsync()
     {

@@ -34,13 +34,13 @@ public sealed class SqlServerConnectionFactory(string connectionString) : ISqlCo
     public async ValueTask<SqlConnection> CreateNewConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         return connection;
     }
 
     async ValueTask<DbConnection> ISqlConnectionFactory.CreateNewConnectionAsync(CancellationToken cancellationToken)
     {
-        return await CreateNewConnectionAsync(cancellationToken);
+        return await CreateNewConnectionAsync(cancellationToken).ConfigureAwait(false);
     }
 }

@@ -26,7 +26,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
         try
         {
-            var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken);
+            var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
             if (azureFile == null)
             {
@@ -36,7 +36,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             }
 
             azureFile.Metadata.DateExpiration = expires;
-            await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken);
+            await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
             _logger.ExpirationSet(fileId, expires);
         }
@@ -57,7 +57,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// <returns>the expiration instant, or <see langword="null"/></returns>
     public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
-        var azureFile = await _GetTusFileInfoAsync(fileId, cancellationToken);
+        var azureFile = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return azureFile?.Metadata.DateExpiration;
     }
@@ -123,14 +123,14 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// </remarks>
     public async Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken)
     {
-        var expiredFiles = await GetExpiredFilesAsync(cancellationToken);
+        var expiredFiles = await GetExpiredFilesAsync(cancellationToken).ConfigureAwait(false);
         var removedCount = 0;
 
         foreach (var fileId in expiredFiles)
         {
             try
             {
-                await DeleteFileAsync(fileId, cancellationToken);
+                await DeleteFileAsync(fileId, cancellationToken).ConfigureAwait(false);
                 removedCount++;
             }
             catch (Exception e)

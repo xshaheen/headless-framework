@@ -86,7 +86,7 @@ public abstract class TestBase : IAsyncLifetime
     public async ValueTask DisposeAsync()
     {
         // Do not change this code. Put cleanup code in 'DisposeAsyncCore()' method.
-        await DisposeAsyncCore();
+        await DisposeAsyncCore().ConfigureAwait(false);
         // Suppress finalization to prevent the finalizer from running.
         GC.SuppressFinalize(this);
     }

@@ -35,13 +35,13 @@ public sealed class SqliteConnectionFactory(string connectionString) : ISqlConne
     public async ValueTask<SqliteConnection> CreateNewConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         return connection;
     }
 
     async ValueTask<DbConnection> ISqlConnectionFactory.CreateNewConnectionAsync(CancellationToken cancellationToken)
     {
-        return await CreateNewConnectionAsync(cancellationToken);
+        return await CreateNewConnectionAsync(cancellationToken).ConfigureAwait(false);
     }
 }

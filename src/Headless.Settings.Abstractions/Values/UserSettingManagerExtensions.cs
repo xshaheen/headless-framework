@@ -23,13 +23,9 @@ public static class UserSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsTrueAsync(
-                name,
-                SettingValueProviderNames.User,
-                userId,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsTrueAsync(name, SettingValueProviderNames.User, userId, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the named setting value for the ambient current user equals <c>"true"</c> (case-insensitive).</summary>
@@ -43,13 +39,9 @@ public static class UserSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsTrueAsync(
-                name,
-                SettingValueProviderNames.User,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsTrueAsync(name, SettingValueProviderNames.User, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the named setting value for the specified user equals <c>"false"</c> (case-insensitive).</summary>
@@ -65,13 +57,9 @@ public static class UserSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsFalseAsync(
-                name,
-                SettingValueProviderNames.User,
-                userId,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsFalseAsync(name, SettingValueProviderNames.User, userId, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Returns <see langword="true"/> when the named setting value for the ambient current user equals <c>"false"</c> (case-insensitive).</summary>
@@ -85,13 +73,9 @@ public static class UserSettingManagerExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return await settingManager.IsFalseAsync(
-                name,
-                SettingValueProviderNames.User,
-                providerKey: null,
-                fallback,
-                cancellationToken
-            );
+            return await settingManager
+                .IsFalseAsync(name, SettingValueProviderNames.User, providerKey: null, fallback, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <summary>Finds the setting value for the specified user and deserializes it to <typeparamref name="T"/>.</summary>

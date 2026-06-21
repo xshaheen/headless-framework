@@ -26,11 +26,9 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         try
         {
             using var client = new Kubernetes(options.K8SClientConfig);
-            var service = await client.CoreV1.ReadNamespacedServiceAsync(
-                svcName,
-                ns,
-                cancellationToken: cancellationToken
-            );
+            var service = await client
+                .CoreV1.ReadNamespacedServiceAsync(svcName, ns, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             return new Node
             {
@@ -60,7 +58,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
                 return [];
             }
 
-            var nodes = await ListServices(ns);
+            var nodes = await ListServices(ns).ConfigureAwait(false);
 
             cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
 
@@ -82,7 +80,9 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
 
         try
         {
-            var namespaces = await client.ListNamespaceAsync(cancellationToken: cancellationToken);
+            var namespaces = await client
+                .ListNamespaceAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
             return namespaces.Items.Select(x => x.Name()).ToList();
         }
 #pragma warning disable ERP022
@@ -101,7 +101,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     public async Task<IList<Node>> ListServices(string? ns = null)
     {
         using var client = new Kubernetes(options.K8SClientConfig);
-        var services = await client.CoreV1.ListNamespacedServiceAsync(ns);
+        var services = await client.CoreV1.ListNamespacedServiceAsync(ns).ConfigureAwait(false);
 
         var result = new List<Node>();
         foreach (var service in services.Items)

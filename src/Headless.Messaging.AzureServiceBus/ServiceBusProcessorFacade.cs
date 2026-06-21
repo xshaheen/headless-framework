@@ -124,12 +124,12 @@ public sealed class ServiceBusProcessorFacade : IAsyncDisposable
     {
         if (_serviceBusProcessor is not null)
         {
-            await _serviceBusProcessor.DisposeAsync();
+            await _serviceBusProcessor.DisposeAsync().ConfigureAwait(false);
         }
 
         if (_serviceBusSessionProcessor is not null)
         {
-            await _serviceBusSessionProcessor.DisposeAsync();
+            await _serviceBusSessionProcessor.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

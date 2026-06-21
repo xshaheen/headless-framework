@@ -34,13 +34,13 @@ public sealed class SqlServerConnectionStringChecker(ILogger<SqlServerConnection
 
             await using var conn = new SqlConnection(connString.ConnectionString);
 
-            await conn.OpenAsync();
+            await conn.OpenAsync().ConfigureAwait(false);
             result.Connected = true;
 
-            await conn.ChangeDatabaseAsync(oldDatabaseName);
+            await conn.ChangeDatabaseAsync(oldDatabaseName).ConfigureAwait(false);
             result.DatabaseExists = true;
 
-            await conn.CloseAsync();
+            await conn.CloseAsync().ConfigureAwait(false);
 
             return result;
         }
