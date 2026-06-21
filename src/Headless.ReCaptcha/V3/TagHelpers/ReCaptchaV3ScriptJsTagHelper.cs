@@ -68,8 +68,11 @@ public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCapt
         var thenClause = Execute ? $".then(function(token){{{Callback}(token)}})" : ".then(callback)";
         var autoExecute = Execute ? "grecaptcha.reExecute()" : "";
 
+        // SiteKey is config-controlled, but JS-encode it for consistency with Action and defense-in-depth.
+        var encodedSiteKey = JavaScriptEncoder.Default.Encode(_options.SiteKey);
+
         var script =
-            $"grecaptcha.ready(function(){{ grecaptcha.reExecute = function({callbackParam}){{grecaptcha.execute('{_options.SiteKey}'{actionOption}){thenClause}}};{autoExecute}}});";
+            $"grecaptcha.ready(function(){{ grecaptcha.reExecute = function({callbackParam}){{grecaptcha.execute('{encodedSiteKey}'{actionOption}){thenClause}}};{autoExecute}}});";
 
         output.Content.SetHtmlContent(script);
     }

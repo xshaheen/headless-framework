@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Headless.ReCaptcha.Contracts;
 using Microsoft.Extensions.Logging;
 
@@ -28,4 +29,12 @@ internal static partial class ReCaptchaLoggerExtensions
         this ILogger logger,
         [LogProperties] ReCaptchaSiteVerifyV3Response? response
     );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "ReCaptchaHttpRequestFailed",
+        Level = LogLevel.Warning,
+        Message = "[reCAPTCHA] siteverify HTTP request failed with status code {StatusCode} and response {Response}"
+    )]
+    public static partial void LogReCaptchaHttpFailure(this ILogger logger, HttpStatusCode statusCode, string response);
 }

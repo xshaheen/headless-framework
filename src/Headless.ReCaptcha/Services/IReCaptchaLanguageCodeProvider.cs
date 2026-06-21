@@ -7,7 +7,7 @@ public interface IReCaptchaLanguageCodeProvider
     string GetLanguageCode();
 }
 
-public sealed class CultureInfoReCaptchaLanguageCodeProvider : IReCaptchaLanguageCodeProvider
+internal sealed class CultureInfoReCaptchaLanguageCodeProvider : IReCaptchaLanguageCodeProvider
 {
     public string GetLanguageCode() => CultureInfo.CurrentUICulture.ToString();
 }

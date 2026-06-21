@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net;
 using Headless.ReCaptcha.Contracts;
 using Headless.ReCaptcha.Internals;
 using Microsoft.Extensions.Logging;
@@ -18,23 +17,25 @@ namespace Headless.ReCaptcha.V2;
 /// </summary>
 public interface IReCaptchaSiteVerifyV2
 {
-    /// <summary>Validate Recapture token.</summary>
+    /// <summary>Validate a reCAPTCHA token against Google's siteverify endpoint.</summary>
     /// <param name="request">The verification request containing the reCAPTCHA response token.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The deserialized siteverify response.</returns>
     /// <exception cref="HttpRequestException">The HTTP response is unsuccessful.</exception>
+    /// <exception cref="InvalidOperationException">The response body could not be deserialized.</exception>
+    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
     Task<ReCaptchaSiteVerifyV2Response> VerifyAsync(
         ReCaptchaSiteVerifyRequest request,
         CancellationToken cancellationToken = default
     );
 }
 
-public sealed class ReCaptchaSiteVerifyV2(
-    IOptionsSnapshot<ReCaptchaOptions> optionsAccessor,
+internal sealed class ReCaptchaSiteVerifyV2(
+    IOptionsMonitor<ReCaptchaOptions> optionsAccessor,
     IHttpClientFactory clientFactory,
     ILogger<ReCaptchaSiteVerifyV2> logger
 ) : IReCaptchaSiteVerifyV2
 {
-    private readonly Uri _siteVerifyUri = new("recaptcha/api/siteverify", UriKind.Relative);
     private readonly HttpClient _client = clientFactory.CreateClient(SetupReCaptcha.V2Name);
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(SetupReCaptcha.V2Name);
 
@@ -43,69 +44,15 @@ public sealed class ReCaptchaSiteVerifyV2(
         CancellationToken cancellationToken = default
     )
     {
-        List<KeyValuePair<string, string>> formData =
-        [
-            new("secret", _options.SiteSecret),
-            new("response", request.Response),
-        ];
-
-        if (request.RemoteIp is not null)
-        {
-            formData.Add(new("remoteip", request.RemoteIp));
-        }
-
-        using var content = new FormUrlEncodedContent(formData);
-        using var httpResponseMessage = await _client
-            .PostAsync(_siteVerifyUri, content, cancellationToken)
+        var response = await ReCaptchaSiteVerifyClient
+            .SendAsync<ReCaptchaSiteVerifyV2Response>(_client, _options, request, logger, cancellationToken)
             .ConfigureAwait(false);
 
-        if (!httpResponseMessage.IsSuccessStatusCode)
-        {
-            if (logger.IsEnabled(LogLevel.Information))
-            {
-                var responseBody = await httpResponseMessage
-                    .Content.ReadAsStringAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-                logger.LogRecaptchaVerificationFailed(httpResponseMessage.StatusCode, responseBody);
-            }
-
-            httpResponseMessage.EnsureSuccessStatusCode();
-        }
-
-        await using var responseStream = await httpResponseMessage
-            .Content.ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var response = await JsonSerializer
-            .DeserializeAsync<ReCaptchaSiteVerifyV2Response>(
-                utf8Json: responseStream,
-                options: ReCaptchaJsonOptions.JsonOptions,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (response?.Success is not true)
+        if (!response.Success)
         {
             logger.LogReCaptchaFailure(response);
         }
 
-        return response
-            ?? throw new InvalidOperationException("Failed to deserialize reCAPTCHA response. Response was null.");
+        return response;
     }
-}
-
-internal static partial class ReCaptchaSiteVerifyV2Log
-{
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "RecaptchaV2VerificationFailed",
-        Level = LogLevel.Information,
-        Message = "Recaptcha verification failed with status code {StatusCode} and response {Response}"
-    )]
-    public static partial void LogRecaptchaVerificationFailed(
-        this ILogger logger,
-        HttpStatusCode statusCode,
-        string response
-    );
 }

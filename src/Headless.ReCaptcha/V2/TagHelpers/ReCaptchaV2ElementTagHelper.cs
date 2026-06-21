@@ -57,42 +57,16 @@ public sealed class ReCaptchaV2ElementTagHelper(IOptionsSnapshot<ReCaptchaOption
         </div>
         */
 
-        output.Attributes.Add("class", "g-recaptcha");
-        output.Attributes.Add("data-sitekey", _options.SiteKey);
-
-        if (!string.IsNullOrWhiteSpace(Badge))
-        {
-            output.Attributes.Add("data-badge", Badge);
-        }
-
-        if (!string.IsNullOrWhiteSpace(Theme))
-        {
-            output.Attributes.Add("data-theme", Theme);
-        }
-
-        if (!string.IsNullOrWhiteSpace(Size))
-        {
-            output.Attributes.Add("data-size", Size);
-        }
-
-        if (!string.IsNullOrWhiteSpace(TabIndex))
-        {
-            output.Attributes.Add("data-tabindex", TabIndex);
-        }
-
-        if (!string.IsNullOrWhiteSpace(Callback))
-        {
-            output.Attributes.Add("data-callback", Callback);
-        }
-
-        if (!string.IsNullOrWhiteSpace(ExpiredCallback))
-        {
-            output.Attributes.Add("data-expired-callback", ExpiredCallback);
-        }
-
-        if (!string.IsNullOrWhiteSpace(ErrorCallback))
-        {
-            output.Attributes.Add("data-error-callback", ErrorCallback);
-        }
+        ReCaptchaV2Widget.ApplyAttributes(
+            output,
+            _options.SiteKey,
+            Badge,
+            Theme,
+            Size,
+            TabIndex,
+            Callback,
+            ExpiredCallback,
+            ErrorCallback
+        );
     }
 }

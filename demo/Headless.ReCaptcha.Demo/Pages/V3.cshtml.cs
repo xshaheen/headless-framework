@@ -19,8 +19,9 @@ internal sealed class V3Model(IReCaptchaSiteVerifyV3 siteVerify) : PageModel
             RemoteIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
         };
 
-        var response = await siteVerify.VerifyAsync(request);
+        // Enforce success + action match (anti-replay) + score threshold server-side.
+        var result = await siteVerify.VerifyAsync(request, expectedAction: "login", minimumScore: 0.5f);
 
-        Result = JsonSerializer.Serialize(response, JsonConstants.DefaultPrettyJsonOptions);
+        Result = JsonSerializer.Serialize(result, JsonConstants.DefaultPrettyJsonOptions);
     }
 }

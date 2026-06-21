@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.ReCaptcha.Contracts;
 using Headless.ReCaptcha.Services;
 using Headless.ReCaptcha.V2;
 using Headless.ReCaptcha.V3;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
@@ -19,126 +21,175 @@ public static class SetupReCaptcha
 
     extension(IServiceCollection services)
     {
+        /// <summary>Adds reCAPTCHA v3 verification, binding options from the given configuration section.</summary>
+        /// <param name="configuration">The configuration section that supplies <see cref="ReCaptchaOptions"/>.</param>
+        /// <param name="configureClient">Optional hook to further configure the named <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional hook to override the standard resilience handler.</param>
+        /// <returns>The same service collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddReCaptchaV3(
-            Action<ReCaptchaOptions>? setupAction,
+            IConfiguration configuration,
             Action<HttpClient>? configureClient = null,
             Action<HttpStandardResilienceOptions>? configureResilience = null
         )
         {
-            if (setupAction is not null)
-            {
-                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V3Name);
-            }
+            Argument.IsNotNull(configuration);
+            services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(configuration, V3Name);
 
-            _AddCoreV3(services, configureClient, configureResilience);
-
-            return services;
+            return _AddReCaptchaCore<IReCaptchaSiteVerifyV3, ReCaptchaSiteVerifyV3>(
+                services,
+                V3Name,
+                configureClient,
+                configureResilience
+            );
         }
 
+        /// <summary>Adds reCAPTCHA v3 verification, configuring options via a delegate.</summary>
+        /// <param name="setupAction">Configures the required <see cref="ReCaptchaOptions"/>.</param>
+        /// <param name="configureClient">Optional hook to further configure the named <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional hook to override the standard resilience handler.</param>
+        /// <returns>The same service collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddReCaptchaV3(
-            Action<ReCaptchaOptions, IServiceProvider>? setupAction,
+            Action<ReCaptchaOptions> setupAction,
             Action<HttpClient>? configureClient = null,
             Action<HttpStandardResilienceOptions>? configureResilience = null
         )
         {
-            if (setupAction is not null)
-            {
-                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V3Name);
-            }
+            Argument.IsNotNull(setupAction);
+            services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V3Name);
 
-            _AddCoreV3(services, configureClient, configureResilience);
-
-            return services;
+            return _AddReCaptchaCore<IReCaptchaSiteVerifyV3, ReCaptchaSiteVerifyV3>(
+                services,
+                V3Name,
+                configureClient,
+                configureResilience
+            );
         }
 
-        public IServiceCollection AddReCaptchaV2(
-            Action<ReCaptchaOptions>? setupAction,
+        /// <summary>Adds reCAPTCHA v3 verification, configuring options via a delegate with service-provider access.</summary>
+        /// <param name="setupAction">Configures the required <see cref="ReCaptchaOptions"/>.</param>
+        /// <param name="configureClient">Optional hook to further configure the named <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional hook to override the standard resilience handler.</param>
+        /// <returns>The same service collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public IServiceCollection AddReCaptchaV3(
+            Action<ReCaptchaOptions, IServiceProvider> setupAction,
             Action<HttpClient>? configureClient = null,
             Action<HttpStandardResilienceOptions>? configureResilience = null
         )
         {
-            if (setupAction is not null)
-            {
-                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V2Name);
-            }
+            Argument.IsNotNull(setupAction);
+            services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V3Name);
 
-            _AddCoreV2(services, configureClient, configureResilience);
-
-            return services;
+            return _AddReCaptchaCore<IReCaptchaSiteVerifyV3, ReCaptchaSiteVerifyV3>(
+                services,
+                V3Name,
+                configureClient,
+                configureResilience
+            );
         }
 
+        /// <summary>Adds reCAPTCHA v2 verification, binding options from the given configuration section.</summary>
+        /// <param name="configuration">The configuration section that supplies <see cref="ReCaptchaOptions"/>.</param>
+        /// <param name="configureClient">Optional hook to further configure the named <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional hook to override the standard resilience handler.</param>
+        /// <returns>The same service collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddReCaptchaV2(
-            Action<ReCaptchaOptions, IServiceProvider>? setupAction,
+            IConfiguration configuration,
             Action<HttpClient>? configureClient = null,
             Action<HttpStandardResilienceOptions>? configureResilience = null
         )
         {
-            if (setupAction is not null)
-            {
-                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V2Name);
-            }
+            Argument.IsNotNull(configuration);
+            services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(configuration, V2Name);
 
-            _AddCoreV2(services, configureClient, configureResilience);
+            return _AddReCaptchaCore<IReCaptchaSiteVerifyV2, ReCaptchaSiteVerifyV2>(
+                services,
+                V2Name,
+                configureClient,
+                configureResilience
+            );
+        }
 
-            return services;
+        /// <summary>Adds reCAPTCHA v2 verification, configuring options via a delegate.</summary>
+        /// <param name="setupAction">Configures the required <see cref="ReCaptchaOptions"/>.</param>
+        /// <param name="configureClient">Optional hook to further configure the named <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional hook to override the standard resilience handler.</param>
+        /// <returns>The same service collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public IServiceCollection AddReCaptchaV2(
+            Action<ReCaptchaOptions> setupAction,
+            Action<HttpClient>? configureClient = null,
+            Action<HttpStandardResilienceOptions>? configureResilience = null
+        )
+        {
+            Argument.IsNotNull(setupAction);
+            services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V2Name);
+
+            return _AddReCaptchaCore<IReCaptchaSiteVerifyV2, ReCaptchaSiteVerifyV2>(
+                services,
+                V2Name,
+                configureClient,
+                configureResilience
+            );
+        }
+
+        /// <summary>Adds reCAPTCHA v2 verification, configuring options via a delegate with service-provider access.</summary>
+        /// <param name="setupAction">Configures the required <see cref="ReCaptchaOptions"/>.</param>
+        /// <param name="configureClient">Optional hook to further configure the named <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional hook to override the standard resilience handler.</param>
+        /// <returns>The same service collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
+        public IServiceCollection AddReCaptchaV2(
+            Action<ReCaptchaOptions, IServiceProvider> setupAction,
+            Action<HttpClient>? configureClient = null,
+            Action<HttpStandardResilienceOptions>? configureResilience = null
+        )
+        {
+            Argument.IsNotNull(setupAction);
+            services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V2Name);
+
+            return _AddReCaptchaCore<IReCaptchaSiteVerifyV2, ReCaptchaSiteVerifyV2>(
+                services,
+                V2Name,
+                configureClient,
+                configureResilience
+            );
         }
     }
 
-    private static void _AddCoreV3(
+    private static IServiceCollection _AddReCaptchaCore<TService, TImplementation>(
         IServiceCollection services,
+        string name,
         Action<HttpClient>? configureClient,
         Action<HttpStandardResilienceOptions>? configureResilience
     )
+        where TService : class
+        where TImplementation : class, TService
     {
         var httpClientBuilder = services.AddHttpClient(
-            V3Name,
+            name,
             (sp, client) =>
             {
-                var options = sp.GetRequiredService<IOptionsSnapshot<ReCaptchaOptions>>().Get(V3Name);
+                // IOptionsMonitor is singleton-safe; the HttpClient factory invokes this from the root provider.
+                var options = sp.GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>().Get(name);
                 client.BaseAddress = new Uri(options.VerifyBaseUrl);
                 configureClient?.Invoke(client);
             }
         );
 
-        if (configureResilience is not null)
+        httpClientBuilder.AddStandardResilienceHandler(options =>
         {
-            httpClientBuilder.AddStandardResilienceHandler(configureResilience);
-        }
-        else
-        {
-            httpClientBuilder.AddStandardResilienceHandler();
-        }
+            // reCAPTCHA tokens are single-use; retrying the verify POST yields a "timeout-or-duplicate" error.
+            options.Retry.DisableForUnsafeHttpMethods();
+            configureResilience?.Invoke(options);
+        });
 
         services.TryAddTransient<IReCaptchaLanguageCodeProvider, CultureInfoReCaptchaLanguageCodeProvider>();
-        services.AddTransient<IReCaptchaSiteVerifyV3, ReCaptchaSiteVerifyV3>();
-    }
+        services.AddTransient<TService, TImplementation>();
 
-    private static void _AddCoreV2(
-        IServiceCollection services,
-        Action<HttpClient>? configureClient,
-        Action<HttpStandardResilienceOptions>? configureResilience
-    )
-    {
-        var httpClientBuilder = services.AddHttpClient(
-            V2Name,
-            (sp, client) =>
-            {
-                var options = sp.GetRequiredService<IOptionsSnapshot<ReCaptchaOptions>>().Get(V2Name);
-                client.BaseAddress = new Uri(options.VerifyBaseUrl);
-                configureClient?.Invoke(client);
-            }
-        );
-
-        if (configureResilience is not null)
-        {
-            httpClientBuilder.AddStandardResilienceHandler(configureResilience);
-        }
-        else
-        {
-            httpClientBuilder.AddStandardResilienceHandler();
-        }
-
-        services.TryAddTransient<IReCaptchaLanguageCodeProvider, CultureInfoReCaptchaLanguageCodeProvider>();
-        services.AddTransient<IReCaptchaSiteVerifyV2, ReCaptchaSiteVerifyV2>();
+        return services;
     }
 }

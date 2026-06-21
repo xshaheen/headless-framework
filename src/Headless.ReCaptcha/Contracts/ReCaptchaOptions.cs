@@ -13,7 +13,7 @@ public sealed class ReCaptchaOptions
     public required string SiteSecret { get; set; }
 }
 
-public sealed class ReCaptchaOptionsValidator : AbstractValidator<ReCaptchaOptions>
+internal sealed class ReCaptchaOptionsValidator : AbstractValidator<ReCaptchaOptions>
 {
     public ReCaptchaOptionsValidator()
     {
