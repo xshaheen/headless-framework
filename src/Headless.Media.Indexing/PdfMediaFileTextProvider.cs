@@ -4,8 +4,32 @@ using UglyToad.PdfPig;
 
 namespace Headless.Media.Indexing;
 
+/// <summary>
+/// Extracts plain text from a PDF document using the PdfPig library.
+/// </summary>
+/// <remarks>
+/// Text is read from each page's native text layer in document order. Scanned PDFs that contain
+/// only rasterized images will return an empty string because OCR is not performed.
+/// <para>
+/// PdfPig requires a seekable stream. When the input stream is not seekable (for
+/// example, a stream from Azure Blob Storage), the content is transparently buffered into a
+/// <see cref="MemoryStream"/> before parsing. For large documents this may consume significant
+/// memory; callers that already hold seekable streams should prefer to pass them directly.
+/// </para>
+/// </remarks>
 public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
 {
+    /// <summary>
+    /// Reads <paramref name="fileStream"/> and returns the concatenated text from every page of the PDF.
+    /// </summary>
+    /// <param name="fileStream">
+    /// A stream containing a valid PDF document. May be non-seekable; in that case the content is
+    /// buffered into memory automatically before parsing.
+    /// </param>
+    /// <returns>
+    /// The plain-text content of all pages concatenated in page order, or an empty string when the
+    /// document contains no extractable text.
+    /// </returns>
     public async Task<string> GetTextAsync(Stream fileStream)
     {
         // PdfPig requires the stream to be seekable, see:
