@@ -36,6 +36,8 @@ public sealed partial class R2BlobNamingNormalizer : IBlobNamingNormalizer
         }
     }
 
+    /// <summary>Validates <paramref name="blobName"/> and returns it unchanged.</summary>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> contains path-traversal sequences or control characters.</exception>
     public string NormalizeBlobName(string blobName)
     {
         PathValidation.ValidatePathSegment(blobName);

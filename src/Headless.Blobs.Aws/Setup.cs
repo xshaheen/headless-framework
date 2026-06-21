@@ -7,11 +7,18 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Blobs.Aws;
 
+/// <summary>Extension methods to register the AWS S3 blob storage provider.</summary>
 [PublicAPI]
 public static class SetupAwsS3
 {
     /// <summary>
-    /// AWSOptions usage:
+    /// Registers <see cref="AwsBlobStorage"/> as <see cref="IBlobStorage"/> and <see cref="IPresignedUrlBlobStorage"/>
+    /// (same singleton instance) using the provided <see cref="AWSOptions"/> for S3 client configuration.
+    /// </summary>
+    /// <param name="services">The service collection to configure.</param>
+    /// <param name="awsOptions">
+    /// AWS SDK options specifying credentials and region. Pass <see langword="null"/> to resolve from the
+    /// <see cref="AWSOptions"/> already registered in DI (for example via <c>GetAWSOptions()</c>):
     /// <code>
     /// var awsOptions = builder.Configuration.GetAWSOptions();
     /// // or
@@ -22,7 +29,8 @@ public static class SetupAwsS3
     /// };
     /// // or pass null to use the default AWSOptions registered in the DI container
     /// </code>
-    /// </summary>
+    /// </param>
+    /// <param name="setupAction">Optional delegate to configure <see cref="AwsBlobStorageOptions"/>.</param>
     public static IServiceCollection AddAwsS3BlobStorage(
         this IServiceCollection services,
         AWSOptions? awsOptions = null,

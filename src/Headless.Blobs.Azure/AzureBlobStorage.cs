@@ -18,6 +18,16 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs.Azure;
 
+/// <summary>
+/// <see cref="IBlobStorage"/> implementation backed by Azure Blob Storage.
+/// Also implements <see cref="IPresignedUrlBlobStorage"/> using Azure SAS (Shared Access Signature) tokens.
+/// </summary>
+/// <remarks>
+/// Requires a <see cref="BlobServiceClient"/> registered in DI before calling the setup extension. The client
+/// must be built with a <c>StorageSharedKeyCredential</c> or a user-delegation key to generate SAS URIs;
+/// a bare SAS-token or anonymous connection will throw <see cref="InvalidOperationException"/> on presigned URL
+/// calls.
+/// </remarks>
 public sealed class AzureBlobStorage(
     BlobServiceClient blobServiceClient,
     IMimeTypeProvider mimeTypeProvider,
@@ -612,6 +622,10 @@ public sealed class AzureBlobStorage(
 
     #region Presigned Urls
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the <see cref="BlobServiceClient"/> cannot generate a SAS URI (no account key or user-delegation credentials).</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         string[] container,
         string blobName,
@@ -622,6 +636,10 @@ public sealed class AzureBlobStorage(
         return _GetPresignedUrlAsync(container, blobName, expiry, BlobSasPermissions.Read, cancellationToken);
     }
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the <see cref="BlobServiceClient"/> cannot generate a SAS URI (no account key or user-delegation credentials).</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         string[] container,
         string blobName,
@@ -638,6 +656,12 @@ public sealed class AzureBlobStorage(
         );
     }
 
+    /// <summary>Builds a SAS-signed presigned URL for a blob with the given permissions and expiry.</summary>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the <see cref="BlobServiceClient"/> was not built with signing credentials and cannot generate a SAS URI.
+    /// </exception>
     private ValueTask<Uri> _GetPresignedUrlAsync(
         string[] container,
         string blobName,

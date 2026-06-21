@@ -6,11 +6,15 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Blobs.Redis;
 
+/// <summary>Extension methods to register the Redis blob storage provider.</summary>
 [PublicAPI]
 public static class SetupRedisBlob
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers <see cref="RedisBlobStorage"/> as <see cref="IBlobStorage"/> using the supplied delegate to configure <see cref="RedisBlobStorageOptions"/>.
+        /// </summary>
         public IServiceCollection AddRedisBlobStorage(Action<RedisBlobStorageOptions, IServiceProvider> setupAction)
         {
             services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
@@ -18,6 +22,9 @@ public static class SetupRedisBlob
             return services._AddCore();
         }
 
+        /// <summary>
+        /// Registers <see cref="RedisBlobStorage"/> as <see cref="IBlobStorage"/> using the supplied delegate to configure <see cref="RedisBlobStorageOptions"/>.
+        /// </summary>
         public IServiceCollection AddRedisBlobStorage(Action<RedisBlobStorageOptions> setupAction)
         {
             services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
@@ -25,6 +32,9 @@ public static class SetupRedisBlob
             return services._AddCore();
         }
 
+        /// <summary>
+        /// Registers <see cref="RedisBlobStorage"/> as <see cref="IBlobStorage"/>, binding <see cref="RedisBlobStorageOptions"/> from <paramref name="config"/>.
+        /// </summary>
         public IServiceCollection AddRedisBlobStorage(IConfigurationSection config)
         {
             services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(config);

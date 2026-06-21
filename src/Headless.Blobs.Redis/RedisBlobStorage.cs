@@ -16,6 +16,19 @@ using StackExchange.Redis;
 
 namespace Headless.Blobs.Redis;
 
+/// <summary>
+/// <see cref="IBlobStorage"/> implementation backed by Redis hashes.
+/// </summary>
+/// <remarks>
+/// Blobs and their metadata are stored in separate Redis hashes keyed by the container path. All mutating
+/// operations (upload, delete, rename, copy) use Lua scripts for atomicity. A Polly retry pipeline retries
+/// transient <see cref="StackExchange.Redis.RedisConnectionException"/> and timeout errors with exponential
+/// back-off and jitter.
+/// <para>
+/// Redis blob storage is appropriate for small or ephemeral blobs. Uploads that exceed
+/// <see cref="RedisBlobStorageOptions.MaxBlobSizeBytes"/> throw <see cref="ArgumentException"/>.
+/// </para>
+/// </remarks>
 public sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
@@ -73,6 +86,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         return 0
         """;
 
+    /// <summary>The Redis database obtained from the configured <see cref="IConnectionMultiplexer"/>.</summary>
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
     public RedisBlobStorage(

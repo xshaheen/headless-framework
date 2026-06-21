@@ -18,6 +18,10 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs.Aws;
 
+/// <summary>
+/// <see cref="IBlobStorage"/> implementation backed by Amazon S3 (or any S3-compatible endpoint).
+/// Also implements <see cref="IPresignedUrlBlobStorage"/> using AWS Signature Version 4 (SigV4) pre-signing.
+/// </summary>
 public sealed class AwsBlobStorage(
     IAmazonS3 s3,
     IMimeTypeProvider mimeTypeProvider,
@@ -866,6 +870,9 @@ public sealed class AwsBlobStorage(
 
     #region Presigned Urls
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         string[] container,
         string blobName,
@@ -876,6 +883,9 @@ public sealed class AwsBlobStorage(
         return _GetPresignedUrlAsync(container, blobName, expiry, HttpVerb.GET, cancellationToken);
     }
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         string[] container,
         string blobName,

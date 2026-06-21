@@ -15,6 +15,19 @@ using Renci.SshNet.Sftp;
 
 namespace Headless.Blobs.SshNet;
 
+/// <summary>
+/// <see cref="IBlobStorage"/> implementation backed by an SFTP server via the Renci SSH.NET library.
+/// </summary>
+/// <remarks>
+/// Connections are managed by an internal <see cref="SftpClientPool"/>. SFTP does not support native server-side
+/// metadata or pagination; both features are emulated in the client. In particular, <c>GetPagedListAsync</c>
+/// re-enumerates from the start for every page, making full enumeration O(n²); prefer <c>GetBlobsAsync</c>
+/// for large directories.
+/// <para>
+/// Metadata supplied on upload is accepted for interface compatibility but is silently discarded — SFTP has no
+/// per-file metadata concept.
+/// </para>
+/// </remarks>
 public sealed class SshBlobStorage(
     SftpClientPool pool,
     IBlobNamingNormalizer normalizer,
@@ -53,16 +66,16 @@ public sealed class SshBlobStorage(
     }
 
     /// <summary>
-    /// Uploads a blob to SFTP storage.
+    /// Uploads <paramref name="stream"/> as a blob named <paramref name="blobName"/> to the SFTP server.
     /// </summary>
-    /// <param name="container">Container path segments</param>
-    /// <param name="blobName">Name of the blob to upload</param>
-    /// <param name="stream">Content stream to upload</param>
+    /// <param name="container">Hierarchical path segments identifying the target directory on the SFTP server.</param>
+    /// <param name="blobName">The file name to create or overwrite on the server.</param>
+    /// <param name="stream">Content stream to upload. Seekable streams are rewound to position 0 before upload.</param>
     /// <param name="metadata">
-    /// Optional metadata dictionary. Note: SFTP does not support blob metadata.
-    /// This parameter is accepted for compatibility with the IBlobStorage interface but is ignored.
+    /// Accepted for interface compatibility but silently ignored — SFTP has no per-file metadata concept.
     /// </param>
-    /// <param name="cancellationToken">Cancellation token</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> is null or empty.</exception>
     public async ValueTask UploadAsync(
         string[] container,
         string blobName,
@@ -323,6 +336,22 @@ public sealed class SshBlobStorage(
         }
     }
 
+    /// <summary>
+    /// Deletes all files and subdirectories inside <paramref name="directory"/> on the SFTP server, optionally
+    /// removing the directory itself.
+    /// </summary>
+    /// <param name="directory">Absolute SFTP path of the directory to delete.</param>
+    /// <param name="includeSelf">
+    /// When <see langword="true"/> (the default), the directory itself is removed after its contents; when
+    /// <see langword="false"/>, only the contents are deleted and the directory is left empty.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of files deleted. Subdirectories are not counted.</returns>
+    /// <remarks>
+    /// Files are deleted in parallel up to <see cref="SshBlobStorageOptions.MaxConcurrentOperations"/>.
+    /// Subdirectories are then deleted sequentially from deepest to shallowest. If the directory does not exist,
+    /// returns 0 without throwing.
+    /// </remarks>
     public async Task<int> DeleteDirectoryAsync(
         string directory,
         bool includeSelf = true,
@@ -707,9 +736,9 @@ public sealed class SshBlobStorage(
 
     /// <inheritdoc />
     /// <remarks>
-    /// WARNING: SFTP does not support server-side pagination. Each page request
-    /// enumerates from the beginning. For large directories, use GetBlobsAsync()
-    /// with client-side pagination instead.
+    /// SFTP does not support server-side pagination. Each page request re-enumerates the remote directory tree
+    /// from the beginning, resulting in O(n²) I/O cost for full enumeration. For large directories, use
+    /// <see cref="GetBlobsAsync"/> with client-side pagination instead.
     /// </remarks>
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,

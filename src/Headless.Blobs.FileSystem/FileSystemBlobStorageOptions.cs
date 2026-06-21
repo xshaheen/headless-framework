@@ -4,8 +4,14 @@ using FluentValidation;
 
 namespace Headless.Blobs.FileSystem;
 
+/// <summary>Configuration for the file-system blob storage provider.</summary>
 public sealed class FileSystemBlobStorageOptions
 {
+    /// <summary>
+    /// Absolute path to the root directory under which all containers and blobs are stored. Required.
+    /// All blob paths are resolved relative to this directory, and path-traversal attempts that escape it
+    /// are rejected with an <see cref="ArgumentException"/>.
+    /// </summary>
     public required string BaseDirectoryPath { get; set; }
 }
 
