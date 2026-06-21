@@ -9,6 +9,12 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Messaging.Dashboard.K8s;
 
 // ReSharper disable once InconsistentNaming
+/// <summary>
+/// Kubernetes-backed implementation of <see cref="INodeDiscoveryProvider"/>.
+/// Queries the Kubernetes API for services in the configured namespace and maps them to
+/// dashboard nodes, applying visibility and port-selection rules derived from
+/// <c>headless.messaging.*</c> labels on each service.
+/// </summary>
 public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, K8sDiscoveryOptions options)
     : INodeDiscoveryProvider
 {

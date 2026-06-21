@@ -70,14 +70,25 @@ public abstract class PublishContext
 
     private protected TimeSpan? DelayTimeCore { get; set; }
 
-    /// <summary>Replaces the active cancellation token for downstream middleware and the inner publisher.</summary>
+    /// <summary>
+    /// Replaces the active cancellation token forwarded to downstream middleware and the inner publisher.
+    /// Must not be called after the <c>next()</c> delegate has returned.
+    /// </summary>
+    /// <param name="cancellationToken">The replacement cancellation token.</param>
+    /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
     public void SetCancellationToken(CancellationToken cancellationToken)
     {
         _ThrowIfCompleted();
         CancellationToken = cancellationToken;
     }
 
-    /// <summary>Replaces the active publish options before the inner publisher runs.</summary>
+    /// <summary>
+    /// Replaces the active publish options forwarded to the inner publisher.
+    /// Also refreshes the <see cref="Headers"/> and <see cref="MessageName"/> snapshots from the new options.
+    /// Must not be called after the <c>next()</c> delegate has returned.
+    /// </summary>
+    /// <param name="options">The replacement options, or <see langword="null"/> to clear all option overrides.</param>
+    /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
     public void WithOptions(MessageOptions? options)
     {
         _ThrowIfCompleted();
@@ -85,7 +96,12 @@ public abstract class PublishContext
         RefreshOptionSnapshot(options);
     }
 
-    /// <summary>Replaces the active scheduled delay before the inner publisher runs.</summary>
+    /// <summary>
+    /// Replaces the scheduled delivery delay forwarded to the inner publisher.
+    /// Must not be called after the <c>next()</c> delegate has returned.
+    /// </summary>
+    /// <param name="delayTime">The replacement delay, or <see langword="null"/> for immediate delivery.</param>
+    /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
     public void WithDelayTime(TimeSpan? delayTime)
     {
         _ThrowIfCompleted();
@@ -162,6 +178,11 @@ public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePu
     /// </summary>
     public bool IsTransactional { get; init; }
 
+    /// <summary>
+    /// Marks this context as completed, making all mutator properties and methods throw
+    /// <see cref="InvalidOperationException"/> on subsequent calls. Called by the runtime after
+    /// the publish pipeline's <c>next()</c> delegate returns.
+    /// </summary>
     public void MarkCompleted()
     {
         Complete();

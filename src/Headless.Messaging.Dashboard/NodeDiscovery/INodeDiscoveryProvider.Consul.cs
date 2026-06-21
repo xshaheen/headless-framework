@@ -7,6 +7,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Dashboard.NodeDiscovery;
 
+/// <summary>
+/// Consul-backed implementation of <see cref="INodeDiscoveryProvider"/>.
+/// Queries the Consul catalog for services tagged <c>messaging</c> to discover peer dashboard nodes,
+/// and registers the current node so peers can discover it.
+/// </summary>
 public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, ConsulDiscoveryOptions options)
     : INodeDiscoveryProvider
 {

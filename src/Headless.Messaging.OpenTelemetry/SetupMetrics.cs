@@ -14,6 +14,7 @@ public static class SetupMetrics
     /// </summary>
     /// <param name="builder"><see cref="MeterProviderBuilder" /> being configured.</param>
     /// <returns>The instance of <see cref="MeterProviderBuilder" /> to chain the calls.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="builder"/> is <see langword="null"/>.</exception>
     public static MeterProviderBuilder AddMessagingInstrumentation(this MeterProviderBuilder builder)
     {
         Argument.IsNotNull(builder);

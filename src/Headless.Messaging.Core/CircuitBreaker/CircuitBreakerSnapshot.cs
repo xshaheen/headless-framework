@@ -5,6 +5,11 @@ namespace Headless.Messaging.CircuitBreaker;
 /// <summary>
 /// A point-in-time snapshot of a circuit breaker's state for programmatic observation.
 /// </summary>
+/// <remarks>
+/// Returned by <see cref="ICircuitBreakerMonitor.GetSnapshot(string)"/> and its overloads.
+/// All fields are captured atomically and are safe to hold across async boundaries.
+/// </remarks>
+[PublicAPI]
 public sealed record CircuitBreakerSnapshot
 {
     /// <summary>The current circuit breaker state.</summary>

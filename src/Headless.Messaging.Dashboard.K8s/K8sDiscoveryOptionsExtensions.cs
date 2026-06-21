@@ -30,9 +30,13 @@ public static class MessagingDiscoveryOptionsExtensions
 {
     // ReSharper disable once InconsistentNaming
     /// <summary>
-    /// Use K8s as a service discovery to view data from other nodes in the Dashboard.
+    /// Enables Kubernetes-based node discovery for the Messaging Dashboard using default options.
+    /// Services in the configured namespace that carry the <c>headless.messaging.visibility:show</c>
+    /// label (or all services when <see cref="K8sDiscoveryOptions.ShowOnlyExplicitVisibleNodes"/>
+    /// is <see langword="false"/>) will appear in the dashboard node list.
     /// </summary>
-    /// <param name="setup"></param>
+    /// <param name="setup">The messaging setup builder.</param>
+    /// <returns>The builder for chaining.</returns>
     public static MessagingSetupBuilder UseK8sDiscovery(this MessagingSetupBuilder setup)
     {
         return setup.UseK8sDiscovery(opt => { });
@@ -40,11 +44,12 @@ public static class MessagingDiscoveryOptionsExtensions
 
     // ReSharper disable once InconsistentNaming
     /// <summary>
-    /// Use K8s as a service discovery to view data from other nodes in the Dashboard.
+    /// Enables Kubernetes-based node discovery for the Messaging Dashboard with custom options.
     /// </summary>
-    /// <param name="setup"></param>
-    /// <param name="options">The option of <see cref="K8sDiscoveryOptions" /></param>
-    /// <exception cref="ArgumentNullException"></exception>
+    /// <param name="setup">The messaging setup builder.</param>
+    /// <param name="options">An action to configure <see cref="K8sDiscoveryOptions"/>.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is <see langword="null"/>.</exception>
     public static MessagingSetupBuilder UseK8sDiscovery(
         this MessagingSetupBuilder setup,
         Action<K8sDiscoveryOptions> options

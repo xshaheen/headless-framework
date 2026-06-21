@@ -21,8 +21,22 @@ public sealed class MessagingDashboardOptionsBuilder
     internal AuthConfig Auth { get; set; } = new();
 
     // Custom Middleware Integration
+
+    /// <summary>
+    /// Optional middleware injected after authentication but before the Minimal API endpoints.
+    /// Useful for adding custom request inspection, logging, or authorization logic scoped to the dashboard.
+    /// </summary>
     public Action<IApplicationBuilder>? CustomMiddleware { get; set; }
+
+    /// <summary>
+    /// Optional middleware injected at the very start of the dashboard branch, before static files
+    /// and authentication. Runs on every request that matches the dashboard base path.
+    /// </summary>
     public Action<IApplicationBuilder>? PreDashboardMiddleware { get; set; }
+
+    /// <summary>
+    /// Optional middleware injected after all dashboard endpoints and the SPA fallback handler.
+    /// </summary>
     public Action<IApplicationBuilder>? PostDashboardMiddleware { get; set; }
 
     /// <summary>

@@ -9,9 +9,14 @@ namespace Headless.Messaging.Persistence;
 [PublicAPI]
 public interface IDataStorage
 {
-    // Dashboard api
+    /// <summary>Returns the monitoring API for this storage provider, used by the dashboard and operator tooling.</summary>
     IMonitoringApi GetMonitoringApi();
 
+    /// <summary>
+    /// Transitions the specified published message rows to the <c>Delayed</c> state for deferred dispatch.
+    /// </summary>
+    /// <param name="storageIds">The storage row identifiers of the messages to transition.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask ChangePublishStateToDelayedAsync(Guid[] storageIds, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -132,6 +137,17 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Persists an outbound message envelope to the published table and returns the stored row with its assigned <c>StorageId</c>.
+    /// </summary>
+    /// <param name="name">The message name (topic or queue name) resolved at publish time.</param>
+    /// <param name="message">The message envelope to persist.</param>
+    /// <param name="transaction">
+    /// Optional ambient transaction (<see cref="System.Data.Common.DbTransaction"/> or an EF Core
+    /// <c>IDbContextTransaction</c>). When supplied, the insert participates in the caller's transaction.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
     ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         MediumMessage message,
@@ -139,6 +155,17 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Persists an outbound <see cref="Message"/> to the published table, wrapping it in a
+    /// <c>MediumMessage</c> envelope before delegating to the primary overload.
+    /// </summary>
+    /// <param name="name">The message name (topic or queue name) resolved at publish time.</param>
+    /// <param name="content">The raw message to wrap and persist.</param>
+    /// <param name="transaction">
+    /// Optional ambient transaction. When supplied, the insert participates in the caller's transaction.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
     ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         Message content,
@@ -161,9 +188,15 @@ public interface IDataStorage
     }
 
     /// <summary>
-    /// Stores a failed received message using serialized <see cref="Message"/> JSON so providers can persist message headers.
+    /// Stores a failed received message envelope in the received table so operators can inspect
+    /// and replay messages that caused unhandled exceptions.
     /// </summary>
+    /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
+    /// <param name="group">The consumer group that received the message.</param>
     /// <param name="message">The failed received message envelope, including serialized content and delivery intent.</param>
+    /// <param name="exceptionInfo">Optional serialized exception details to persist alongside the failed row.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns><see langword="true"/> when the row was stored; <see langword="false"/> when storage was skipped or failed.</returns>
     ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
@@ -172,6 +205,15 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores a failed received message using raw serialized content when no <c>MediumMessage</c> envelope is available.
+    /// </summary>
+    /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
+    /// <param name="group">The consumer group that received the message.</param>
+    /// <param name="content">The raw serialized message body.</param>
+    /// <param name="exceptionInfo">Optional serialized exception details to persist alongside the failed row.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns><see langword="true"/> when the row was stored; <see langword="false"/> when storage was skipped or failed.</returns>
     ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
@@ -180,6 +222,14 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Persists an inbound message envelope to the received table and returns the stored row with its assigned <c>StorageId</c>.
+    /// </summary>
+    /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
+    /// <param name="group">The consumer group that received the message.</param>
+    /// <param name="message">The received message envelope to persist.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
     ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
@@ -187,6 +237,15 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Persists an inbound <see cref="Message"/> to the received table, wrapping it in a
+    /// <c>MediumMessage</c> envelope before delegating to the primary overload.
+    /// </summary>
+    /// <param name="name">The message name (topic or queue name) as received from the broker.</param>
+    /// <param name="group">The consumer group that received the message.</param>
+    /// <param name="content">The raw message to wrap and persist.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The stored envelope with <c>StorageId</c> populated by the storage provider.</returns>
     ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
@@ -208,6 +267,14 @@ public interface IDataStorage
         );
     }
 
+    /// <summary>
+    /// Deletes expired message rows from the specified table in bounded batches.
+    /// </summary>
+    /// <param name="table">The physical table name to clean (use <c>IStorageInitializer.GetPublishedTableName()</c> or <c>GetReceivedTableName()</c>).</param>
+    /// <param name="timeout">Rows whose <c>ExpiresAt</c> is earlier than this UTC timestamp are eligible for deletion.</param>
+    /// <param name="batchCount">Maximum number of rows to delete in a single statement (default 1000).</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The number of rows deleted.</returns>
     ValueTask<int> DeleteExpiresAsync(
         string table,
         DateTime timeout,
@@ -305,11 +372,35 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Deletes a single received message row by its storage id.
+    /// </summary>
+    /// <param name="id">The internal storage row identifier.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The number of rows deleted (0 or 1).</returns>
     ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Deletes multiple received message rows by their storage ids in a single operation.
+    /// </summary>
+    /// <param name="ids">The internal storage row identifiers to delete.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The number of rows deleted.</returns>
     ValueTask<int> DeleteReceivedMessagesAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Deletes a single published message row by its storage id.
+    /// </summary>
+    /// <param name="id">The internal storage row identifier.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The number of rows deleted (0 or 1).</returns>
     ValueTask<int> DeletePublishedMessageAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Deletes multiple published message rows by their storage ids in a single operation.
+    /// </summary>
+    /// <param name="ids">The internal storage row identifiers to delete.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The number of rows deleted.</returns>
     ValueTask<int> DeletePublishedMessagesAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
 }

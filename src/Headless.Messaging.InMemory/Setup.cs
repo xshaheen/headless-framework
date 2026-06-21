@@ -8,13 +8,25 @@ using Headless.Messaging.Transport;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-/// <summary>Extension methods for configuring messaging with In-Memory message queue.</summary>
+/// <summary>
+/// Extension members that register the in-process, in-memory message transport.
+/// </summary>
+/// <remarks>
+/// The in-memory transport is intended for development, testing, and integration scenarios where
+/// no external broker is available. Messages are exchanged within the same process using
+/// <c>System.Threading.Channels</c>; no serialization or network I/O occurs.
+/// <para/>
+/// This transport does not persist messages: any message in transit at process shutdown is lost.
+/// Both a bus (fan-out) and a queue (point-to-point) transport are registered.
+/// </remarks>
 public static class SetupInMemory
 {
     extension(MessagingSetupBuilder setup)
     {
-        /// <summary>Configuration for messaging.</summary>
-        /// <returns>The setup builder for method chaining</returns>
+        /// <summary>
+        /// Registers the in-memory transport as the message broker.
+        /// </summary>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UseInMemory()
         {
             setup.RegisterExtension(new InMemoryOptionsExtension());

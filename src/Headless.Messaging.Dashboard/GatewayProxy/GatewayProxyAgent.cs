@@ -10,6 +10,12 @@ using Microsoft.Extensions.Primitives;
 
 namespace Headless.Messaging.Dashboard.GatewayProxy;
 
+/// <summary>
+/// Reverse-proxy agent that forwards dashboard API requests to a remote messaging node.
+/// Activated when the incoming request carries the <c>messaging.node</c> cookie identifying
+/// a peer node that is different from the current node. Uses the configured
+/// <see cref="INodeDiscoveryProvider"/> to resolve the peer's address.
+/// </summary>
 public class GatewayProxyAgent(
     ILoggerFactory loggerFactory,
     IRequestMapper requestMapper,
@@ -19,13 +25,26 @@ public class GatewayProxyAgent(
     INodeDiscoveryProvider discoveryProvider
 )
 {
+    /// <summary>Cookie name that carries the target node's service name.</summary>
     public const string CookieNodeName = "messaging.node";
+
+    /// <summary>Cookie name that carries the Kubernetes namespace of the target node.</summary>
     public const string CookieNodeNsName = "messaging.node.ns";
 
     private readonly ConsulDiscoveryOptions? _consulDiscoveryOptions =
         serviceProvider.GetService<ConsulDiscoveryOptions>();
     private readonly ILogger _logger = loggerFactory.CreateLogger<GatewayProxyAgent>();
 
+    /// <summary>
+    /// Inspects the incoming request for a <c>messaging.node</c> cookie and, when present,
+    /// resolves the target node via the discovery provider and proxies the request to it.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <returns>
+    /// <see langword="true"/> if the request was forwarded to a peer node;
+    /// <see langword="false"/> if the cookie is absent, the node could not be resolved, or the
+    /// target is the current node itself (Consul path only).
+    /// </returns>
     public async Task<bool> Invoke(HttpContext context)
     {
         var request = context.Request;

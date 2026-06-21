@@ -15,7 +15,9 @@ public sealed class MiddlewareRegistration
         _descriptor = descriptor;
     }
 
-    /// <summary>Sets this middleware's numeric priority. Lower values run earlier.</summary>
+    /// <summary>Sets this middleware's execution priority. Lower values run earlier in the pipeline.</summary>
+    /// <param name="priority">An integer priority value; middleware with a smaller value executes first.</param>
+    /// <returns>The parent <see cref="MessagingBuilder"/> for continued chaining.</returns>
     public MessagingBuilder WithPriority(int priority)
     {
         _descriptor.SetPriority(priority);

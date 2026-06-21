@@ -6,6 +6,16 @@ using RabbitMQ.Client.Events;
 
 namespace Headless.Messaging.RabbitMq;
 
+/// <summary>
+/// An AMQP consumer that adapts RabbitMQ delivery events to the framework's <c>TransportMessage</c>
+/// model and dispatches them to the registered message handler.
+/// </summary>
+/// <remarks>
+/// When <paramref name="concurrent"/> is greater than zero, each delivery is dispatched on a
+/// <c>Task.Run</c> thread pool task and a semaphore limits the number of in-flight handlers.
+/// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
+/// thread. On header or body parsing failure the message is nacked with <c>requeue=true</c>.
+/// </remarks>
 public sealed class RabbitMqBasicConsumer(
     IChannel channel,
     byte concurrent,

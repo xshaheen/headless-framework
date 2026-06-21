@@ -13,24 +13,63 @@ using StackExchange.Redis;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>
+/// Extension members that register Redis as the message transport.
+/// </summary>
+/// <remarks>
+/// Two independent Redis transport modes are available:
+/// <list type="bullet">
+/// <item>
+///   <term><c>UseRedis()</c> / <c>UseRedis(string)</c> / <c>UseRedis(Action)</c></term>
+///   <description>
+///     Redis Streams — durable, at-least-once, consumer-group-based queue transport. Supports
+///     point-to-point messaging with acknowledgement and pending-message redelivery.
+///   </description>
+/// </item>
+/// <item>
+///   <term><c>UseRedisPubSub()</c> / <c>UseRedisPubSub(string)</c> / <c>UseRedisPubSub(Action)</c></term>
+///   <description>
+///     Redis Pub/Sub — at-most-once fan-out bus transport. Messages sent while no subscriber is
+///     connected are silently dropped. Use only where occasional loss is acceptable.
+///   </description>
+/// </item>
+/// </list>
+/// Both modes can be registered simultaneously: streams handle queue (point-to-point) delivery
+/// and Pub/Sub handles bus (fan-out) delivery.
+/// </remarks>
 public static class SetupRedisMessaging
 {
     extension(MessagingSetupBuilder setup)
     {
+        /// <summary>
+        /// Registers Redis Streams as the queue transport, connecting to localhost on the default
+        /// Redis port with all other options at their defaults.
+        /// </summary>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UseRedis()
         {
             return setup.UseRedis(_ => { });
         }
 
-        /// <summary>Use redis streams as the message transport.</summary>
-        /// <param name="connection">The StackExchange.Redis <see cref="ConfigurationOptions" /> comma-delimited configuration string.</param>
+        /// <summary>
+        /// Registers Redis Streams as the queue transport using a StackExchange.Redis
+        /// comma-delimited configuration string.
+        /// </summary>
+        /// <param name="connection">
+        /// A StackExchange.Redis <c>ConfigurationOptions</c> configuration string
+        /// (for example <c>"localhost:6379,abortConnect=false"</c>).
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UseRedis(string connection)
         {
             return setup.UseRedis(opt => opt.Configuration = ConfigurationOptions.Parse(connection));
         }
 
-        /// <summary>Use redis streams as the message transport.</summary>
-        /// <param name="configure">The redis client options.</param>
+        /// <summary>
+        /// Registers Redis Streams as the queue transport with full programmatic configuration.
+        /// </summary>
+        /// <param name="configure">A delegate that configures <see cref="MessagingRedisOptions"/>.</param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UseRedis(Action<MessagingRedisOptions> configure)
         {

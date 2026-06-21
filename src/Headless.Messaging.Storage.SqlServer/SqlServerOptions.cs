@@ -9,6 +9,11 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.SqlServer;
 
+/// <summary>
+/// SQL Server-specific configuration for the messaging outbox storage backend.
+/// Extends <c>SqlServerEntityFrameworkMessagingOptions</c> with the raw-ADO connection
+/// string used when the storage is not wired through an EF Core <c>DbContext</c>.
+/// </summary>
 public sealed class SqlServerOptions : SqlServerEntityFrameworkMessagingOptions
 {
     /// <summary>
