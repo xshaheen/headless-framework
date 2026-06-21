@@ -8,12 +8,17 @@ Provides a provider-agnostic feature management API, enabling dynamic feature to
 
 ## Key Features
 
-- `IFeatureManager` - Core interface for getting/setting feature values
-- `IFeatureDefinitionProvider` - Define features in code
-- `IFeatureDefinitionManager` - Manage feature definitions
-- Feature value providers (Default, Edition, Tenant)
-- `RequiresFeatureAttribute` - Attribute-based feature gating
-- Hierarchical feature definitions with groups
+- `IFeatureManager` — reads and writes feature values across the registered provider chain; supports single-feature and bulk queries with optional provider targeting and fallback
+- `IFeatureDefinitionProvider` — contributes feature groups and feature definitions at startup via `IFeatureDefinitionContext`
+- `IFeatureDefinitionManager` — looks up and enumerates all registered feature definitions
+- `FeatureDefinition` — describes a feature's name, default value, display metadata, allowed providers, and child features (tree structure)
+- `FeatureGroupDefinition` — organizes related `FeatureDefinition` instances; supports `GetFlatFeatures()` for depth-first enumeration
+- `FeatureValue` — record returned by `GetAsync`/`GetAllAsync` carrying the resolved string value and the `FeatureValueProvider` that supplied it
+- `FeatureValueProviderNames` — constants `Tenant`, `Edition`, `DefaultValue` for targeting built-in providers
+- Extension methods on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`
+- Scoped extension methods: `GetForTenantAsync`, `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `DeleteForTenantAsync` (tenant); equivalent `*ForEditionAsync` / `*ToEditionAsync` set (edition); `GetDefaultAsync`, `GetAllDefaultAsync` (default provider)
+- `RequiresFeatureAttribute` — gates a controller class or action on one or more features; `IsAnd` property controls AND vs. OR policy (default: OR)
+- `DisableFeatureCheckAttribute` — bypasses a class-level `[RequiresFeature]` gate on individual action methods
 
 ## Installation
 
@@ -26,36 +31,58 @@ dotnet add package Headless.Features.Abstractions
 ```csharp
 public sealed class BillingService(IFeatureManager features)
 {
-    public async Task ProcessAsync(CancellationToken ct)
+    public async Task ProcessAsync(string tenantId, CancellationToken ct)
     {
-        var maxUsers = await features.GetAsync("MaxUsers", cancellationToken: ct).ConfigureAwait(false);
-
-        if (int.Parse(maxUsers.Value ?? "10") > 100)
+        // Check a boolean flag (defaults to false when value is absent)
+        if (await features.IsEnabledAsync("EnableReports", ct))
         {
-            // Premium feature logic
+            // report logic
         }
+
+        // Read a typed value for a specific tenant
+        var maxUsers = await features.GetAsync<int>(
+            "MaxUsers",
+            providerName: FeatureValueProviderNames.Tenant,
+            providerKey: tenantId,
+            fallback: true,
+            cancellationToken: ct
+        );
     }
+}
+
+// Shorter form using scoped extension members
+public sealed class TenantOnboardingService(IFeatureManager features)
+{
+    public Task GrantPremiumAsync(string tenantId)
+        => features.GrantToTenantAsync("EnableReports", tenantId);
+
+    public Task RevokeAsync(string tenantId)
+        => features.RevokeFromTenantAsync("EnableReports", tenantId);
 }
 ```
 
 ### Defining Features
 
 ```csharp
-public class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
+public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
 {
     public void Define(IFeatureDefinitionContext context)
     {
         var group = context.AddGroup("App.Features");
 
-        group.AddFeature("MaxUsers", defaultValue: "10");
-        group.AddFeature("EnableReports", defaultValue: "false");
+        group.AddChild("MaxUsers", defaultValue: "10");
+        group.AddChild("EnableReports", defaultValue: "false");
+
+        // Nested child features
+        var billingFeature = group.AddChild("Billing", defaultValue: "false");
+        billingFeature.AddChild("Billing.Invoices", defaultValue: "false");
     }
 }
 ```
 
 ## Configuration
 
-No configuration required. This is an abstractions-only package.
+None. This is an abstractions-only package.
 
 ## Dependencies
 
