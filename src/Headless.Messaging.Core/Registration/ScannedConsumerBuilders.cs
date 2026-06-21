@@ -34,24 +34,37 @@ public sealed record ScannedConsumerContext
 public interface IScannedConsumerBuilder
 {
     /// <summary>Registers the scanned consumer for broadcast bus delivery.</summary>
+    /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder OnBus();
 
     /// <summary>Registers the scanned consumer for point-to-point queue delivery.</summary>
+    /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder OnQueue();
 
     /// <summary>Sets the consumer group name for this scanned consumer registration.</summary>
+    /// <param name="group">A non-whitespace group name (Kafka group.id or RabbitMQ queue name).</param>
+    /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder Group(string group);
 
     /// <summary>Limits the number of messages consumed concurrently by this scanned consumer.</summary>
+    /// <param name="maxConcurrent">Maximum concurrent deliveries; must be greater than zero.</param>
+    /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder Concurrency(byte maxConcurrent);
 
     /// <summary>Overrides the deterministic handler identity for this scanned consumer registration.</summary>
+    /// <param name="handlerId">An explicit, stable handler identity string used for diagnostics and group generation.</param>
+    /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder HandlerId(string handlerId);
 
     /// <summary>Configures per-consumer circuit breaker overrides for this scanned registration.</summary>
+    /// <param name="configure">A callback that mutates a <see cref="ConsumerCircuitBreakerOptions"/> instance for this consumer.</param>
+    /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure);
 
-    /// <summary>Excludes this scanned consumer from both message registration and dependency injection.</summary>
+    /// <summary>
+    /// Excludes this scanned consumer from both message registration and dependency injection.
+    /// </summary>
+    /// <returns>The same builder instance for chaining.</returns>
     IScannedConsumerBuilder Skip();
 }
 

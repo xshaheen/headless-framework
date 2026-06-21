@@ -12,10 +12,18 @@ namespace Headless.Api;
 [PublicAPI]
 public static class DataProtectionBuilderExtensions
 {
-    /// <summary>Configures the data protection system to persist keys to file storage.</summary>
-    /// <param name="builder">The builder instance to modify.</param>
-    /// <param name="storage">The storage account to use.</param>
-    /// <param name="loggerFactory">The logger factory to use.</param>
+    /// <summary>
+    /// Configures the data protection system to persist XML key descriptors to an <see cref="IBlobStorage"/> backend.
+    /// </summary>
+    /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
+    /// <param name="storage">The blob storage instance that will store the key XML files.</param>
+    /// <param name="loggerFactory">
+    /// Optional logger factory passed to the repository; when <see langword="null"/>, logging is suppressed.
+    /// </param>
+    /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="builder"/> or <paramref name="storage"/> is <see langword="null"/>.
+    /// </exception>
     public static IDataProtectionBuilder PersistKeysToBlobStorage(
         this IDataProtectionBuilder builder,
         IBlobStorage storage,
@@ -30,9 +38,19 @@ public static class DataProtectionBuilderExtensions
         return builder;
     }
 
-    /// <summary>Configures the data protection system to persist keys to file storage.</summary>
-    /// <param name="builder">The builder instance to modify.</param>
-    /// <param name="storageFactory">The storage factory to use.</param>
+    /// <summary>
+    /// Configures the data protection system to persist XML key descriptors to an <see cref="IBlobStorage"/> backend
+    /// resolved from the application's DI container at first use.
+    /// </summary>
+    /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
+    /// <param name="storageFactory">
+    /// A factory delegate that receives the application's <see cref="IServiceProvider"/> and returns the
+    /// <see cref="IBlobStorage"/> instance to use. Invoked once when the <c>KeyManagementOptions</c> are first configured.
+    /// </param>
+    /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="builder"/> or <paramref name="storageFactory"/> is <see langword="null"/>.
+    /// </exception>
     public static IDataProtectionBuilder PersistKeysToBlobStorage(
         this IDataProtectionBuilder builder,
         Func<IServiceProvider, IBlobStorage> storageFactory
@@ -51,7 +69,18 @@ public static class DataProtectionBuilderExtensions
         return builder;
     }
 
-    /// <summary>Configures the data protection system to persist keys to file storage.</summary>
+    /// <summary>
+    /// Configures the data protection system to persist XML key descriptors to an <see cref="IBlobStorage"/> backend
+    /// resolved from the application's DI container.
+    /// </summary>
+    /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
+    /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
+    /// <remarks>
+    /// This overload resolves <see cref="IBlobStorage"/> via <c>IServiceProvider.GetRequiredService</c>.
+    /// Ensure a concrete <see cref="IBlobStorage"/> registration exists in the DI container; a missing
+    /// registration will throw <see cref="InvalidOperationException"/> when the service is first resolved.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
     public static IDataProtectionBuilder PersistKeysToBlobStorage(this IDataProtectionBuilder builder)
     {
         builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>

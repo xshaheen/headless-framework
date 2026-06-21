@@ -8,27 +8,23 @@ namespace Headless.Api.Controllers;
 public static class ControllerBaseExtensions
 {
     /// <summary>
-    /// Returns the proper ActionResult for unauthorized or unauthenticated users.
-    /// Will return a forbid when the user is authenticated.
-    /// Will return a challenge when the user is not authenticated.
+    /// Returns the appropriate action result for an unauthorized access attempt based on authentication state.
+    /// Returns 403 Forbidden when the user is authenticated; returns 401 Unauthorized (challenge) when the user is not authenticated.
     /// </summary>
-    /// <param name="controller"></param>
-    /// <returns>The proper ActionResult based upon if the user is authenticated.</returns>
+    /// <param name="controller">The controller handling the request.</param>
+    /// <returns>A <see cref="ForbidResult"/> when the user is authenticated, or a <see cref="ChallengeResult"/> when not.</returns>
     public static ActionResult ChallengeOrForbid(this ControllerBase controller)
     {
         return controller.User.Identity?.IsAuthenticated ?? false ? controller.Forbid() : controller.Challenge();
     }
 
     /// <summary>
-    /// Returns the proper ActionResult for unauthorized or unauthenticated users
-    /// with the specified authenticationSchemes.
-    /// Will return a forbid when the user is authenticated.
-    /// Will return a challenge when the user is not authenticated.
-    /// If authentication schemes are specified, will return a challenge to them.
+    /// Returns the appropriate action result for an unauthorized access attempt, targeting the specified authentication schemes.
+    /// Returns 403 Forbidden when the user is authenticated; returns 401 Unauthorized (challenge) when the user is not authenticated.
     /// </summary>
-    /// <param name="controller"></param>
-    /// <param name="authenticationSchemes">The authentication schemes to challenge.</param>
-    /// <returns>The proper ActionResult based upon if the user is authenticated.</returns>
+    /// <param name="controller">The controller handling the request.</param>
+    /// <param name="authenticationSchemes">The authentication schemes to use for the challenge or forbid result.</param>
+    /// <returns>A <see cref="ForbidResult"/> when the user is authenticated, or a <see cref="ChallengeResult"/> scoped to <paramref name="authenticationSchemes"/> when not.</returns>
     public static ActionResult ChallengeOrForbid(this ControllerBase controller, params string[] authenticationSchemes)
     {
         return controller.User.Identity?.IsAuthenticated ?? false
@@ -37,11 +33,13 @@ public static class ControllerBaseExtensions
     }
 
     /// <summary>
-    /// Creates a <see cref="LocalRedirectResult"/> object that redirects to the specified local localUrl.
+    /// Creates a <see cref="LocalRedirectResult"/> that redirects to the specified local URL,
+    /// optionally escaping the URL to a safe URI-component form.
     /// </summary>
-    /// <param name="controller"></param>
+    /// <param name="controller">The controller handling the request.</param>
     /// <param name="localUrl">The local URL to redirect to.</param>
-    /// <param name="escapeUrl">Whether to escape the url.</param>
+    /// <param name="escapeUrl">When <see langword="true"/>, <paramref name="localUrl"/> is converted to URI-component form before redirecting.</param>
+    /// <returns>A <see cref="LocalRedirectResult"/> targeting <paramref name="localUrl"/>.</returns>
     public static ActionResult LocalRedirect(this ControllerBase controller, string localUrl, bool escapeUrl)
     {
         if (!escapeUrl)
@@ -53,11 +51,13 @@ public static class ControllerBaseExtensions
     }
 
     /// <summary>
-    /// Creates a <see cref="RedirectResult"/> object that redirects to the specified url.
+    /// Creates a <see cref="RedirectResult"/> that redirects to the specified URL,
+    /// optionally escaping the URL to a safe URI-component form.
     /// </summary>
-    /// <param name="controller"></param>
+    /// <param name="controller">The controller handling the request.</param>
     /// <param name="url">The URL to redirect to.</param>
-    /// <param name="escapeUrl">Whether to escape the url.</param>
+    /// <param name="escapeUrl">When <see langword="true"/>, <paramref name="url"/> is converted to URI-component form before redirecting.</param>
+    /// <returns>A <see cref="RedirectResult"/> targeting <paramref name="url"/>.</returns>
     public static ActionResult Redirect(this ControllerBase controller, string url, bool escapeUrl)
     {
         if (!escapeUrl)

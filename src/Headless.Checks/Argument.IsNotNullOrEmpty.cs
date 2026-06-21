@@ -7,12 +7,16 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is null or empty.</summary>
+    /// <summary>
+    /// Throws an <see cref="ArgumentNullException" /> if <paramref name="argument" /> is null,
+    /// or an <see cref="ArgumentException" /> if <paramref name="argument" /> is empty.
+    /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the value is not null or empty.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is null or empty.</exception>
+    /// <returns><paramref name="argument" /> if the value is neither null nor empty.</returns>
+    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
+    /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IReadOnlyCollection<T> IsNotNullOrEmpty<T>(
@@ -27,7 +31,7 @@ public static partial class Argument
         return argument;
     }
 
-    /// <inheritdoc cref="IsNotNullOrEmpty{T}(System.Collections.Generic.IEnumerable{T}?,string?,string?)"/>
+    /// <inheritdoc cref="IsNotNullOrEmpty{T}(System.Collections.Generic.IReadOnlyCollection{T}?,string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IEnumerable<T> IsNotNullOrEmpty<T>(
@@ -42,7 +46,7 @@ public static partial class Argument
         return argument;
     }
 
-    /// <inheritdoc cref="IsNotNullOrEmpty{T}(System.Collections.Generic.IEnumerable{T}?,string?,string?)"/>
+    /// <inheritdoc cref="IsNotNullOrEmpty{T}(System.Collections.Generic.IReadOnlyCollection{T}?,string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string IsNotNullOrEmpty(

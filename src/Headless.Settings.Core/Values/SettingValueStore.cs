@@ -12,11 +12,17 @@ using Microsoft.Extensions.Options;
 namespace Headless.Settings.Values;
 
 /// <summary>
-/// Represents a store for setting values. It is used to get, set, and delete setting values from the repository
-/// and responsible for caching setting values.
+/// Persistence and caching layer for raw setting values. Abstracts repository access and manages
+/// the <see cref="SettingValueCacheItem"/> cache so callers never interact with the store directly.
 /// </summary>
 public interface ISettingValueStore
 {
+    /// <summary>Returns the stored value for the given setting, provider, and key, or <see langword="null"/> if not set.</summary>
+    /// <param name="name">The setting name.</param>
+    /// <param name="providerName">The provider name (e.g. <c>Global</c>, <c>Tenant</c>).</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/> for global providers.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>The stored value, or <see langword="null"/> if not found.</returns>
     Task<string?> GetOrDefaultAsync(
         string name,
         string providerName,
@@ -24,12 +30,25 @@ public interface ISettingValueStore
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Returns all setting values stored for the given provider and key, bypassing the per-name cache.</summary>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>All persisted values for the provider/key pair.</returns>
     Task<List<SettingValue>> GetAllProviderValuesAsync(
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Returns the stored values for the specified setting <paramref name="names"/>.</summary>
+    /// <param name="names">The set of setting names to retrieve.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>A list of <see cref="SettingValue"/> entries; a <see langword="null"/> <c>Value</c> means the setting has no stored entry.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="names"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="names"/> is empty.</exception>
     Task<List<SettingValue>> GetAllAsync(
         HashSet<string> names,
         string providerName,
@@ -37,6 +56,12 @@ public interface ISettingValueStore
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Persists or updates the value for a setting.</summary>
+    /// <param name="name">The setting name.</param>
+    /// <param name="value">The value to store.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
     Task SetAsync(
         string name,
         string value,
@@ -45,6 +70,11 @@ public interface ISettingValueStore
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Removes the stored value for a setting and invalidates its cache entry.</summary>
+    /// <param name="name">The setting name.</param>
+    /// <param name="providerName">The provider name.</param>
+    /// <param name="providerKey">The provider-scoped key, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
     Task DeleteAsync(
         string name,
         string providerName,
@@ -53,6 +83,7 @@ public interface ISettingValueStore
     );
 }
 
+/// <summary>Default <see cref="ISettingValueStore"/> implementation that reads from and writes to the repository, with read-through caching via <see cref="ICache{T}"/>.</summary>
 public sealed class SettingValueStore(
     ISettingValueRecordRepository valueRepository,
     ISettingDefinitionManager definitionManager,
@@ -63,6 +94,7 @@ public sealed class SettingValueStore(
 {
     private readonly TimeSpan _cacheExpiration = options.Value.ValueCacheExpiration;
 
+    /// <inheritdoc/>
     public async Task<string?> GetOrDefaultAsync(
         string name,
         string providerName,
@@ -89,6 +121,7 @@ public sealed class SettingValueStore(
         return valueCacheItem;
     }
 
+    /// <inheritdoc/>
     public async Task<List<SettingValue>> GetAllProviderValuesAsync(
         string providerName,
         string? providerKey,
@@ -102,6 +135,7 @@ public sealed class SettingValueStore(
         return settings.ConvertAll(x => new SettingValue(x.Name, x.Value));
     }
 
+    /// <inheritdoc/>
     public async Task<List<SettingValue>> GetAllAsync(
         HashSet<string> names,
         string providerName,
@@ -126,6 +160,7 @@ public sealed class SettingValueStore(
         return cacheItems;
     }
 
+    /// <inheritdoc/>
     public async Task SetAsync(
         string name,
         string value,
@@ -161,6 +196,7 @@ public sealed class SettingValueStore(
             .ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         string name,
         string providerName,
@@ -188,6 +224,7 @@ public sealed class SettingValueStore(
 
     #region Helpers
 
+    /// <summary>Returns setting values from the cache, fetching and caching any misses from the repository.</summary>
     private async Task<List<SettingValue>> _GetCachedItemsAsync(
         HashSet<string> names,
         string providerName,
@@ -245,6 +282,7 @@ public sealed class SettingValueStore(
         return result;
     }
 
+    /// <summary>Fetches the specified setting names from the repository and populates the cache.</summary>
     private async Task<Dictionary<string, SettingValueCacheItem>> _CacheSomeAsync(
         HashSet<string> names,
         string providerName,
@@ -270,6 +308,7 @@ public sealed class SettingValueStore(
         return cacheItems;
     }
 
+    /// <summary>Loads all settings for the provider/key into the cache and returns the value for <c>nameToFind</c>.</summary>
     private async Task<string?> _CacheAllAndGetAsync(
         string providerName,
         string? providerKey,
@@ -302,6 +341,7 @@ public sealed class SettingValueStore(
         return settingValueToFind;
     }
 
+    /// <summary>Returns setting definitions that match the requested <paramref name="names"/>.</summary>
     private async Task<IEnumerable<SettingDefinition>> _GetDbSettingDefinitionsAsync(
         HashSet<string> names,
         CancellationToken cancellationToken = default
@@ -317,6 +357,8 @@ public sealed class SettingValueStore(
         return definitions.Where(definition => names.Contains(definition.Name));
     }
 
+    /// <summary>Extracts the setting name from a cache key, throwing if the key is malformed.</summary>
+    /// <exception cref="InvalidOperationException">The <paramref name="key"/> does not match the expected cache key format.</exception>
     private static string _GetSettingNameFromCacheKey(string key)
     {
         var settingName = SettingValueCacheItem.GetSettingNameFromCacheKey(key);
@@ -325,6 +367,7 @@ public sealed class SettingValueStore(
         return settingName;
     }
 
+    /// <summary>Fetches all stored values for a provider/key pair and returns them as a name-to-value map.</summary>
     private async Task<Dictionary<string, string>> _GetProviderValuesMapAsync(
         string providerName,
         string? providerKey,
@@ -337,6 +380,7 @@ public sealed class SettingValueStore(
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
 
+    /// <summary>Fetches stored values for the given <paramref name="names"/> under a provider/key pair and returns them as a name-to-value map.</summary>
     private async Task<Dictionary<string, string>> _GetProviderValuesMapAsync(
         HashSet<string> names,
         string providerName,

@@ -2,9 +2,22 @@
 
 namespace FluentValidation;
 
+/// <summary>
+/// Maps FluentValidation built-in error codes to the framework's <c>g:snake_case</c> error code shape.
+/// </summary>
 [PublicAPI]
 public static class FluentValidationErrorCodeMapper
 {
+    /// <summary>
+    /// Maps a FluentValidation built-in error code (for example <c>"EmailValidator"</c>) to the
+    /// equivalent Headless error code (for example <c>"g:invalid_email"</c>).
+    /// </summary>
+    /// <param name="errorCode">The FluentValidation error code to map, or <see langword="null"/>.</param>
+    /// <returns>
+    /// The mapped Headless error code when a known mapping exists; the original
+    /// <paramref name="errorCode"/> when no mapping is defined; or <see langword="null"/> when
+    /// <paramref name="errorCode"/> is <see langword="null"/>.
+    /// </returns>
     [return: NotNullIfNotNull(nameof(errorCode))]
     public static string? MapToHeadlessErrorCode(string? errorCode)
     {

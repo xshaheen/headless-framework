@@ -17,8 +17,39 @@ using NJsonSchema.Generation;
 namespace Headless.Api.SchemaProcessors;
 
 /// <summary>
-/// Swagger <see cref="ISchemaProcessor"/> that uses FluentValidation validators instead System.ComponentModel based attributes.
+/// NSwag schema processor that translates FluentValidation validator rules into OpenAPI schema
+/// constraints (required, minLength, maxLength, pattern, minimum, maximum, etc.) instead of relying
+/// on <c>System.ComponentModel</c> data annotations.
 /// </summary>
+/// <remarks>
+/// <para>
+/// The processor resolves a registered <c>IValidator&lt;T&gt;</c> from a fresh DI scope for each
+/// schema type. Rules are merged with the built-in default rule set; callers may override or extend
+/// individual rules by passing a <paramref name="rules"/> collection — rules with the same
+/// <c>RuleName</c> replace the defaults.
+/// </para>
+/// <para>
+/// Errors during rule application are logged and swallowed by default. Set
+/// <see cref="HeadlessNswagOptions.ThrowOnSchemaProcessingError"/> to <see langword="true"/> to
+/// re-throw errors during development.
+/// </para>
+/// <para>
+/// Included validators (FluentValidation <c>Include()</c> / <c>RuleFor…SetValidator</c>) are followed
+/// recursively so that base-class rules are also reflected in the schema.
+/// </para>
+/// </remarks>
+/// <param name="serviceProvider">
+/// The application service provider used to resolve <c>IValidator&lt;T&gt;</c> instances and an
+/// optional <c>ILoggerFactory</c>.
+/// </param>
+/// <param name="options">
+/// Optional Headless NSwag options. When <see langword="null"/>, default options are used
+/// (<see cref="HeadlessNswagOptions.ThrowOnSchemaProcessingError"/> defaults to <see langword="false"/>).
+/// </param>
+/// <param name="rules">
+/// Optional set of <see cref="FluentValidationRule"/> instances that replace or extend the default
+/// rules. When <see langword="null"/>, <see cref="FluentValidationRule.DefaultRules"/> are used.
+/// </param>
 public sealed class FluentValidationSchemaProcessor(
     IServiceProvider serviceProvider,
     HeadlessNswagOptions? options = null,
@@ -39,6 +70,10 @@ public sealed class FluentValidationSchemaProcessor(
     private readonly IReadOnlyList<FluentValidationRule> _rules = _CreateRules(rules);
     private readonly bool _throwOnError = options?.ThrowOnSchemaProcessingError ?? false;
 
+    /// <summary>
+    /// Applies FluentValidation rules to the schema for the type being processed.
+    /// </summary>
+    /// <param name="context">The NSwag schema processor context for the type being processed.</param>
     public void Process(SchemaProcessorContext context)
     {
         if (context.Schema is { IsObject: true, Properties.Count: > 0 })

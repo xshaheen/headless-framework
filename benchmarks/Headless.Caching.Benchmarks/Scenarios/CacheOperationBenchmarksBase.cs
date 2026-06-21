@@ -7,7 +7,7 @@ namespace Headless.Caching.Benchmarks.Scenarios;
 [MemoryDiagnoser]
 public abstract class CacheOperationBenchmarksBase
 {
-    private const int Seed = 2112;
+    private const int _Seed = 2112;
     private readonly TimeSpan _expiration = TimeSpan.FromMinutes(1);
     private ICacheBenchmarkClient? _client;
     private BenchmarkPayload? _payload;
@@ -29,7 +29,7 @@ public abstract class CacheOperationBenchmarksBase
     {
         var prefix = BenchmarkKeyPrefix.Create(ProviderId, GetType().Name, Guid.NewGuid().ToString("N"));
         _client = CacheBenchmarkClientFactory.Create(ProviderId, prefix);
-        _payload = BenchmarkPayloadFactory.Create(PayloadSize, Seed);
+        _payload = BenchmarkPayloadFactory.Create(PayloadSize, _Seed);
         _keys = Enumerable.Range(0, KeyCardinality).Select(i => $"common:{i}").ToArray();
 
         // Bounded working sets so the miss/remove loops measure steady-state op cost rather than accumulating an

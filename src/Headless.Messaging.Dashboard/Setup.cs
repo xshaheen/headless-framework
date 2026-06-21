@@ -85,7 +85,7 @@ public static class SetupMessagingDashboard
                 dashboardApp.Use(
                     async (context, next) =>
                     {
-                        await next();
+                        await next().ConfigureAwait(false);
 
                         if (context.Response.StatusCode == 404)
                         {
@@ -94,13 +94,13 @@ public static class SetupMessagingDashboard
                             {
                                 await using var stream = file.CreateReadStream();
                                 using var reader = new StreamReader(stream);
-                                var htmlContent = await reader.ReadToEndAsync();
+                                var htmlContent = await reader.ReadToEndAsync().ConfigureAwait(false);
 
                                 htmlContent = _ReplaceBasePath(htmlContent, context, basePath, config);
 
                                 context.Response.ContentType = "text/html";
                                 context.Response.StatusCode = 200;
-                                await context.Response.WriteAsync(htmlContent);
+                                await context.Response.WriteAsync(htmlContent).ConfigureAwait(false);
                             }
                         }
                     }

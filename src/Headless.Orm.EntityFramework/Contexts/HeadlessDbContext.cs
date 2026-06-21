@@ -20,8 +20,16 @@ namespace Headless.EntityFramework;
 [PublicAPI]
 public interface IHeadlessDbContext
 {
+    /// <summary>
+    /// Optional database schema applied to all entities that do not declare an explicit schema.
+    /// <see langword="null"/> leaves the provider default in place.
+    /// </summary>
     string? DefaultSchema { get; }
 
+    /// <summary>
+    /// The identifier of the tenant whose data this context is scoped to, or <see langword="null"/>
+    /// when running in a host/admin context outside a tenant scope.
+    /// </summary>
     string? TenantId { get; }
 
     /// <summary>
@@ -83,6 +91,14 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
 {
     private readonly HeadlessDbContextRuntime _runtime;
 
+    /// <summary>
+    /// Initializes the context with the Headless infrastructure services and the EF Core options.
+    /// </summary>
+    /// <param name="services">
+    /// The Headless EF Core services bundle resolved from DI. Resolved automatically when the context is
+    /// registered with <c>AddHeadlessDbContext</c>.
+    /// </param>
+    /// <param name="options">The EF Core options for this context type.</param>
     protected HeadlessDbContext(HeadlessDbContextServices services, DbContextOptions options)
         : base(options)
     {
@@ -95,8 +111,17 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     // Disposed alongside the context so factory-created contexts don't leak per-call scopes.
     private IServiceScope? _ownedScope;
 
+    /// <summary>
+    /// Returns the optional default database schema applied to entities that do not declare their own.
+    /// Override in subclasses to set a schema (for example return <c>"myapp"</c>); return
+    /// <see langword="null"/> to use the provider default.
+    /// </summary>
     public abstract string? DefaultSchema { get; }
 
+    /// <summary>
+    /// Returns the tenant identifier captured from the ambient <c>ICurrentTenant</c> when this instance
+    /// was created. The multi-tenancy global query filter and the write guard both read this value.
+    /// </summary>
     public string? TenantId => _runtime.TenantId;
 
     // The IHeadlessDbContext seam is implemented explicitly (non-overridable) so it stays off this context's
@@ -117,21 +142,51 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     }
 #pragma warning restore CA1033
 
+    /// <summary>
+    /// Runs the Headless save pipeline (processor chain, audit capture, domain-event dispatch,
+    /// integration-event outbox enqueue) and then persists all changes to the database in a single
+    /// transaction.
+    /// </summary>
+    /// <returns>The number of state entries written to the database.</returns>
     public override int SaveChanges()
     {
         return _runtime.SaveChanges(base.SaveChanges, acceptAllChangesOnSuccess: true);
     }
 
+    /// <summary>
+    /// Runs the Headless save pipeline and persists changes, controlling whether EF Core calls
+    /// <c>AcceptAllChanges</c> on success.
+    /// </summary>
+    /// <param name="acceptAllChangesOnSuccess">
+    /// Indicates whether EF Core should call <c>AcceptAllChanges</c> after a successful save.
+    /// Pass <see langword="false"/> when you manage change-tracking resets yourself (for example in a
+    /// two-phase save pattern).
+    /// </param>
+    /// <returns>The number of state entries written to the database.</returns>
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         return _runtime.SaveChanges(base.SaveChanges, acceptAllChangesOnSuccess);
     }
 
+    /// <summary>
+    /// Asynchronously runs the Headless save pipeline and persists all changes to the database.
+    /// </summary>
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
+    /// <returns>The number of state entries written to the database.</returns>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         return _runtime.SaveChangesAsync(base.SaveChangesAsync, acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
+    /// <summary>
+    /// Asynchronously runs the Headless save pipeline and persists changes, controlling whether EF Core
+    /// calls <c>AcceptAllChanges</c> on success.
+    /// </summary>
+    /// <param name="acceptAllChangesOnSuccess">
+    /// Indicates whether EF Core should call <c>AcceptAllChanges</c> after a successful save.
+    /// </param>
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
+    /// <returns>The number of state entries written to the database.</returns>
     public override Task<int> SaveChangesAsync(
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default
@@ -140,6 +195,10 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
         return _runtime.SaveChangesAsync(base.SaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken);
     }
 
+    /// <summary>
+    /// Disposes the Headless runtime and the base EF Core context, then disposes any owned service
+    /// scope created by <c>IDbContextFactory</c>.
+    /// </summary>
     public override void Dispose()
     {
         // Drain the runtime (sync today — ValueTask.CompletedTask) then the base context. try/finally
@@ -162,6 +221,10 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
         }
     }
 
+    /// <summary>
+    /// Asynchronously disposes the Headless runtime and the base EF Core context, then disposes any
+    /// owned service scope created by <c>IDbContextFactory</c>.
+    /// </summary>
     public override async ValueTask DisposeAsync()
     {
         // Detach the runtime's ChangeTracker handlers before the base context tears down its services —
@@ -178,12 +241,23 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
         }
     }
 
+    /// <summary>
+    /// Applies Headless primitive-type value converter mappings in addition to any conventions the
+    /// subclass registers. Always call <c>base.ConfigureConventions</c> when overriding.
+    /// </summary>
+    /// <param name="configurationBuilder">The model configuration builder.</param>
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
         HeadlessDbContextRuntime.ConfigureConventions(configurationBuilder);
     }
 
+    /// <summary>
+    /// Applies the <see cref="DefaultSchema"/> (if non-null), calls <c>base.OnModelCreating</c>, and then
+    /// lets the Headless runtime apply global query filters (multi-tenancy, soft-delete, suspend) and
+    /// entity conventions. Always call <c>base.OnModelCreating</c> when overriding.
+    /// </summary>
+    /// <param name="modelBuilder">The model builder for the current context.</param>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         if (!string.IsNullOrWhiteSpace(DefaultSchema))

@@ -11,11 +11,25 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Couchbase.ContextProvider;
 
 /// <summary>
-/// The goal of this class to initialize any CouchbaseBucketContext properties that are
-/// of type IDocumentSet{TEntity} with the correct scope and collection.
+/// Constructs a <see cref="CouchbaseBucketContext"/> subclass and wires each
+/// <c>IDocumentSet&lt;T&gt;</c> property to its Couchbase scope and collection, as declared by
+/// <c>CouchbaseCollectionAttribute</c>. Uses a per-type compiled action cache for efficiency.
 /// </summary>
 public static class CouchbaseBucketContextInitializer
 {
+    /// <summary>
+    /// Creates an instance of <typeparamref name="TContext"/> via the DI activator and initializes its
+    /// document-set properties.
+    /// </summary>
+    /// <typeparam name="TContext">The <see cref="CouchbaseBucketContext"/> subclass to instantiate.</typeparam>
+    /// <param name="serviceProvider">The service provider used to activate the context.</param>
+    /// <param name="bucket">The Couchbase bucket the context is connected to.</param>
+    /// <param name="transactions">The transaction manager for this bucket.</param>
+    /// <param name="defaultScopeName">
+    /// When non-null, all document sets are placed in this scope with their declared scope prepended
+    /// to the collection name. Pass <see langword="null"/> to use each property's declared scope.
+    /// </param>
+    /// <returns>An initialized context with all document-set properties set.</returns>
     public static TContext Initialize<TContext>(
         IServiceProvider serviceProvider,
         IBucket bucket,

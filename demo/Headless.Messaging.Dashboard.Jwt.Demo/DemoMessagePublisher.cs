@@ -8,7 +8,7 @@ namespace Demo;
 public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILogger<DemoMessagePublisher> logger)
     : BackgroundService
 {
-    private static readonly string[] CustomerNames =
+    private static readonly string[] _CustomerNames =
     [
         "Alice Johnson",
         "Bob Smith",
@@ -19,7 +19,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
         "Grace Chen",
     ];
 
-    private static readonly string[] Products =
+    private static readonly string[] _Products =
     [
         "SKU-1001",
         "SKU-2042",
@@ -29,9 +29,9 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
         "SKU-6023",
     ];
 
-    private static readonly string[] Warehouses = ["US-East", "US-West", "EU-Central", "APAC-South"];
-    private static readonly string[] Currencies = ["USD", "EUR", "GBP"];
-    private static readonly string[] Plans = ["Free", "Starter", "Pro", "Enterprise"];
+    private static readonly string[] _Warehouses = ["US-East", "US-West", "EU-Central", "APAC-South"];
+    private static readonly string[] _Currencies = ["USD", "EUR", "GBP"];
+    private static readonly string[] _Plans = ["Free", "Starter", "Pro", "Enterprise"];
 
     private int _counter;
 
@@ -42,7 +42,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
 
         // Initial burst — populate dashboard with some history
         logger.LogInformation("Seeding initial demo messages...");
-        await PublishBatch(15, stoppingToken);
+        await _PublishBatch(15, stoppingToken);
         logger.LogInformation("Initial seed complete — switching to 30s interval");
 
         while (!stoppingToken.IsCancellationRequested)
@@ -52,7 +52,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
             try
             {
                 var count = Random.Shared.Next(2, 6);
-                await PublishBatch(count, stoppingToken);
+                await _PublishBatch(count, stoppingToken);
                 if (logger.IsEnabled(LogLevel.Information))
                 {
                     logger.LogInformation("Published {Count} demo messages (cycle #{Cycle})", count, _counter);
@@ -65,7 +65,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
         }
     }
 
-    private async Task PublishBatch(int count, CancellationToken ct)
+    private async Task _PublishBatch(int count, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<IOutboxBus>();
@@ -73,11 +73,11 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
         for (var i = 0; i < count; i++)
         {
             _counter++;
-            await PublishRandomMessage(publisher, ct);
+            await _PublishRandomMessage(publisher, ct);
         }
     }
 
-    private async Task PublishRandomMessage(IOutboxBus publisher, CancellationToken ct)
+    private async Task _PublishRandomMessage(IOutboxBus publisher, CancellationToken ct)
     {
         switch (Random.Shared.Next(4))
         {
@@ -86,7 +86,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                     new OrderCreated
                     {
                         OrderId = _counter,
-                        CustomerName = CustomerNames[Random.Shared.Next(CustomerNames.Length)],
+                        CustomerName = _CustomerNames[Random.Shared.Next(_CustomerNames.Length)],
                         Amount = Math.Round((decimal)(Random.Shared.NextDouble() * 500 + 10), 2),
                     },
                     cancellationToken: ct
@@ -100,7 +100,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                         PaymentId = $"PAY-{_counter:D6}",
                         OrderId = Random.Shared.Next(1, _counter + 1),
                         Amount = Math.Round((decimal)(Random.Shared.NextDouble() * 500 + 10), 2),
-                        Currency = Currencies[Random.Shared.Next(Currencies.Length)],
+                        Currency = _Currencies[Random.Shared.Next(_Currencies.Length)],
                     },
                     cancellationToken: ct
                 );
@@ -112,7 +112,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                     {
                         UserId = Guid.NewGuid().ToString()[..8],
                         Email = $"user{_counter}@example.com",
-                        Plan = Plans[Random.Shared.Next(Plans.Length)],
+                        Plan = _Plans[Random.Shared.Next(_Plans.Length)],
                     },
                     cancellationToken: ct
                 );
@@ -122,9 +122,9 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
                 await publisher.PublishAsync(
                     new InventoryUpdated
                     {
-                        ProductId = Products[Random.Shared.Next(Products.Length)],
+                        ProductId = _Products[Random.Shared.Next(_Products.Length)],
                         Quantity = Random.Shared.Next(0, 500),
-                        Warehouse = Warehouses[Random.Shared.Next(Warehouses.Length)],
+                        Warehouse = _Warehouses[Random.Shared.Next(_Warehouses.Length)],
                     },
                     cancellationToken: ct
                 );

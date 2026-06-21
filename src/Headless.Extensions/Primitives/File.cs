@@ -5,6 +5,7 @@ using System.Diagnostics;
 
 namespace Headless.Primitives;
 
+/// <summary>Describes a stored file: its identity, location, content metadata, and upload details.</summary>
 [PublicAPI]
 [ComplexType]
 [DebuggerDisplay("{" + nameof(DisplayName) + "}")]

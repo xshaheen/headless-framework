@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Collections.Immutable;
 using System.Text;
 using Headless.Jobs.SourceGenerator.AttributeSyntaxes;
@@ -11,11 +13,24 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace Headless.Jobs.SourceGenerator;
 
+/// <summary>
+/// Roslyn incremental source generator that discovers methods annotated with
+/// <c>[JobFunction]</c> and emits a per-assembly <c>JobsInstanceFactoryExtensions</c> class
+/// containing a <c>[ModuleInitializer]</c> that registers each function with
+/// <c>JobFunctionProvider</c> at process startup.
+/// </summary>
+/// <remarks>
+/// The generated <c>Initialize()</c> method calls <c>JobFunctionProvider.RegisterFunctions</c>
+/// and <c>JobFunctionProvider.RegisterRequestType</c> once per assembly, keyed by the
+/// function name declared on <c>[JobFunction]</c>. A TQ010 diagnostic is emitted when a class
+/// carries more than one <c>[JobsConstructor]</c> attribute.
+/// </remarks>
 [Generator]
 public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 {
     /// <summary>
-    /// Initializes the incremental source generator.
+    /// Registers the incremental pipeline that discovers <c>[JobFunction]</c> methods and emits
+    /// the registration source.
     /// </summary>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -68,9 +83,6 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                         typeNameConflicts
                     )
                     .ToList();
-
-                // Collect namespaces from the source types
-                var sourceNamespaces = NamespaceCollector.CollectNamespacesFromSourceTypes(methodPairs, compilation);
 
                 // Extract data once to avoid multiple enumeration
                 var delegateCodes = delegatesWithMetadata.Select(x => x.DelegateCode).ToList();
@@ -465,7 +477,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     {
         sb.AppendLine($"namespace {assemblyName}");
         sb.AppendLine("{");
-        sb.AppendLine($"    public static class JobsInstanceFactoryExtensions");
+        sb.AppendLine("    public static class JobsInstanceFactoryExtensions");
         sb.AppendLine("    {");
     }
 
@@ -473,7 +485,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     {
         sb.AppendLine($"namespace {assemblyName}");
         sb.AppendLine("{");
-        sb.AppendLine($"  public static class JobsInstanceFactoryExtensions");
+        sb.AppendLine("  public static class JobsInstanceFactoryExtensions");
         sb.AppendLine("  {");
     }
 

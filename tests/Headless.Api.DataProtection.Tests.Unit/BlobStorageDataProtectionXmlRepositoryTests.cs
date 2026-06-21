@@ -208,13 +208,11 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
-        // Malformed XML should cause XmlException but not crash the whole operation
-        // The current implementation will throw - this test documents expected behavior
-        var act = sut.GetAllElements;
+        // Malformed XML is caught per-blob; valid blobs are still returned
+        var result = sut.GetAllElements();
 
-        // If it throws, that's the current behavior (DoS risk if attacker uploads bad XML)
-        // If it doesn't throw and returns 2 elements, that's resilient behavior
-        act.Should().Throw<System.Xml.XmlException>();
+        result.Should().HaveCount(2);
+        result.Select(x => x.Attribute("id")?.Value).Should().BeEquivalentTo(["1", "3"]);
     }
 
     [Fact]
@@ -230,10 +228,10 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
-        var act = sut.GetAllElements;
+        // Empty file is malformed XML; the blob is skipped and an empty list is returned
+        var result = sut.GetAllElements();
 
-        // Empty file causes XmlException - documents current behavior
-        act.Should().Throw<System.Xml.XmlException>();
+        result.Should().BeEmpty();
     }
 
     [Fact]

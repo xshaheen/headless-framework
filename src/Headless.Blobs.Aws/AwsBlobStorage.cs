@@ -18,6 +18,10 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs.Aws;
 
+/// <summary>
+/// <see cref="IBlobStorage"/> implementation backed by Amazon S3 (or any S3-compatible endpoint).
+/// Also implements <see cref="IPresignedUrlBlobStorage"/> using AWS Signature Version 4 (SigV4) pre-signing.
+/// </summary>
 public sealed class AwsBlobStorage(
     IAmazonS3 s3,
     IMimeTypeProvider mimeTypeProvider,
@@ -47,7 +51,7 @@ public sealed class AwsBlobStorage(
         Argument.IsNotNullOrEmpty(container);
 
         // Explicit creation always runs regardless of AutoCreateContainer; it also primes the per-instance cache.
-        await _EnsureBucketOnceAsync(_BuildBucketName(container), cancellationToken);
+        await _EnsureBucketOnceAsync(_BuildBucketName(container), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _EnsureBucketOnceAsync(string bucketName, CancellationToken cancellationToken)
@@ -108,7 +112,7 @@ public sealed class AwsBlobStorage(
 
         if (_options.AutoCreateContainer)
         {
-            await _EnsureBucketOnceAsync(bucket, cancellationToken);
+            await _EnsureBucketOnceAsync(bucket, cancellationToken).ConfigureAwait(false);
         }
 
         Stream inputStream;
@@ -428,7 +432,7 @@ public sealed class AwsBlobStorage(
         // Ensure new bucket exists (once per bucket per instance) when auto-create is enabled.
         if (_options.AutoCreateContainer)
         {
-            await _EnsureBucketOnceAsync(newBucket, cancellationToken);
+            await _EnsureBucketOnceAsync(newBucket, cancellationToken).ConfigureAwait(false);
         }
 
         var request = new CopyObjectRequest
@@ -467,7 +471,10 @@ public sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        if (!await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken))
+        if (
+            !await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken)
+                .ConfigureAwait(false)
+        )
         {
             return false;
         }
@@ -866,6 +873,9 @@ public sealed class AwsBlobStorage(
 
     #region Presigned Urls
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         string[] container,
         string blobName,
@@ -876,6 +886,9 @@ public sealed class AwsBlobStorage(
         return _GetPresignedUrlAsync(container, blobName, expiry, HttpVerb.GET, cancellationToken);
     }
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         string[] container,
         string blobName,

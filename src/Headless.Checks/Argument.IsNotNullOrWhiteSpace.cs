@@ -15,7 +15,7 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the value is not null, or an empty or white space string.</returns>
+    /// <returns><paramref name="argument" /> if the value is not null, or an empty or white space string.</returns>
     /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is an empty or white space string.</exception>
     [DebuggerStepThrough]
@@ -32,7 +32,7 @@ public static partial class Argument
         if (_IsWhiteSpace(argument))
         {
             throw new ArgumentException(
-                message ?? $"Required argument {paramName.ToAssertString()} was empty.",
+                message ?? $"Required argument {paramName.ToAssertString()} was empty or white space.",
                 paramName
             );
         }

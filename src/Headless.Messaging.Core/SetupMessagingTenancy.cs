@@ -145,7 +145,7 @@ internal sealed class MessagingTenantRequiredCrossSeamValidator : IHeadlessTenan
             !string.Equals(seam.Seam, HeadlessMessagingTenancyBuilder.Seam, StringComparison.Ordinal)
         );
 
-        if (otherSeamsContributeTenant || _TenantSourceMissing.HasConsumerOverride(context.Services))
+        if (otherSeamsContributeTenant || TenantSourceMissing.HasConsumerOverride(context.Services))
         {
             yield break;
         }
@@ -162,7 +162,7 @@ internal sealed class MessagingTenantRequiredCrossSeamValidator : IHeadlessTenan
 }
 
 /// <summary>Shared "no tenant source" predicate used by the messaging tenancy validators.</summary>
-internal static class _TenantSourceMissing
+internal static class TenantSourceMissing
 {
     /// <summary>
     /// Returns <see langword="true"/> when the host registered a custom <see cref="ICurrentTenant"/> implementation
@@ -205,7 +205,7 @@ internal sealed class TenantPropagationStartupValidator : IHeadlessTenancyValida
             !string.Equals(seam.Seam, HeadlessMessagingTenancyBuilder.Seam, StringComparison.Ordinal)
         );
 
-        if (otherSeamsContributeTenant || _TenantSourceMissing.HasConsumerOverride(context.Services))
+        if (otherSeamsContributeTenant || TenantSourceMissing.HasConsumerOverride(context.Services))
         {
             yield break;
         }

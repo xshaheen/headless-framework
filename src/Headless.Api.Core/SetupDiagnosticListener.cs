@@ -8,11 +8,23 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api;
 
+/// <summary>
+/// Extension members on <see cref="WebApplication"/> for subscribing Headless diagnostic adapters
+/// to the process-wide <see cref="DiagnosticListener"/>.
+/// </summary>
 [PublicAPI]
 public static class SetupDiagnosticListener
 {
     extension(WebApplication app)
     {
+        /// <summary>
+        /// Subscribes <see cref="BadRequestDiagnosticAdapter"/> to the process-wide
+        /// <see cref="DiagnosticListener"/> so Kestrel bad-request events are logged.
+        /// </summary>
+        /// <returns>
+        /// A disposable subscription. Dispose it when the application shuts down to stop receiving events.
+        /// </returns>
+        /// <exception cref="InvalidOperationException"><see cref="DiagnosticListener"/> is not registered in the service container.</exception>
         [MustDisposeResource]
         public IDisposable AddApiBadRequestDiagnosticListeners()
         {
@@ -23,6 +35,15 @@ public static class SetupDiagnosticListener
             return badRequestSubscription;
         }
 
+        /// <summary>
+        /// Subscribes <see cref="MiddlewareAnalysisDiagnosticAdapter"/> to the process-wide
+        /// <see cref="DiagnosticListener"/> so middleware start/finish/exception events are logged.
+        /// Requires <see cref="AddMiddlewareAnalyzerFilterExtensions.AddMiddlewareAnalyzerFilter"/> to have been called.
+        /// </summary>
+        /// <returns>
+        /// A disposable subscription. Dispose it when the application shuts down to stop receiving events.
+        /// </returns>
+        /// <exception cref="InvalidOperationException"><see cref="DiagnosticListener"/> is not registered in the service container.</exception>
         [MustDisposeResource]
         public IDisposable AddMiddlewareAnalysisDiagnosticListeners()
         {
@@ -33,6 +54,16 @@ public static class SetupDiagnosticListener
             return middlewareAnalysisSubscription;
         }
 
+        /// <summary>
+        /// Subscribes all Headless diagnostic adapters (bad-request and middleware analysis) to the
+        /// process-wide <see cref="DiagnosticListener"/>. Composes the two individual subscriptions
+        /// into a single disposable root.
+        /// </summary>
+        /// <returns>
+        /// A composite disposable that disposes both subscriptions when disposed.
+        /// Dispose it when the application shuts down.
+        /// </returns>
+        /// <exception cref="InvalidOperationException"><see cref="DiagnosticListener"/> is not registered in the service container.</exception>
         [MustDisposeResource]
         public IDisposable AddHeadlessApiDiagnosticListeners()
         {

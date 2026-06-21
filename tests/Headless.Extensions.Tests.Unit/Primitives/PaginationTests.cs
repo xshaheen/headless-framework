@@ -203,23 +203,23 @@ public sealed class PaginationTests
     #region ContinuationPage - HasNext
 
     [Fact]
-    public void continuation_page_should_identify_has_more_when_token_is_null()
+    public void continuation_page_should_have_no_next_when_token_is_null()
     {
         // when
         var page = new ContinuationPage<int>([1], size: 10, continuationToken: null);
 
         // then
-        page.HasNext.Should().BeTrue();
+        page.HasNext.Should().BeFalse();
     }
 
     [Fact]
-    public void continuation_page_should_identify_no_more_when_token_exists()
+    public void continuation_page_should_have_next_when_token_exists()
     {
         // when
         var page = new ContinuationPage<int>([1], size: 10, continuationToken: "next");
 
         // then
-        page.HasNext.Should().BeFalse();
+        page.HasNext.Should().BeTrue();
     }
 
     #endregion

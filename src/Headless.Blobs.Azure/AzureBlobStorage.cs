@@ -17,6 +17,16 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs.Azure;
 
+/// <summary>
+/// <see cref="IBlobStorage"/> implementation backed by Azure Blob Storage.
+/// Also implements <see cref="IPresignedUrlBlobStorage"/> using Azure SAS (Shared Access Signature) tokens.
+/// </summary>
+/// <remarks>
+/// Requires a <see cref="BlobServiceClient"/> registered in DI before calling the setup extension. The client
+/// must be built with a <c>StorageSharedKeyCredential</c> or a user-delegation key to generate SAS URIs;
+/// a bare SAS-token or anonymous connection will throw <see cref="InvalidOperationException"/> on presigned URL
+/// calls.
+/// </remarks>
 public sealed class AzureBlobStorage(
     BlobServiceClient blobServiceClient,
     IMimeTypeProvider mimeTypeProvider,
@@ -41,7 +51,7 @@ public sealed class AzureBlobStorage(
     {
         Argument.IsNotNullOrEmpty(container);
 
-        await _EnsureContainerOnceAsync(_GetContainer(container), cancellationToken);
+        await _EnsureContainerOnceAsync(_GetContainer(container), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _EnsureContainerOnceAsync(string container, CancellationToken cancellationToken)
@@ -222,11 +232,11 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _DeleteAllAsync(container, blobSearchPattern, pageSize: 500, cancellationToken);
+        return DeleteAllAsync(container, blobSearchPattern, pageSize: 500, cancellationToken);
     }
 
     // pageSize is a test seam so the multi-page deletion path can be exercised without seeding 500+ blobs.
-    internal async ValueTask<int> _DeleteAllAsync(
+    internal async ValueTask<int> DeleteAllAsync(
         string[] container,
         string? blobSearchPattern,
         int pageSize,
@@ -383,7 +393,7 @@ public sealed class AzureBlobStorage(
         {
             if (memoryStream is not null)
             {
-                await memoryStream.DisposeAsync();
+                await memoryStream.DisposeAsync().ConfigureAwait(false);
             }
 
             return null;
@@ -392,7 +402,7 @@ public sealed class AzureBlobStorage(
         {
             if (memoryStream is not null)
             {
-                await memoryStream.DisposeAsync();
+                await memoryStream.DisposeAsync().ConfigureAwait(false);
             }
             throw;
         }
@@ -634,6 +644,10 @@ public sealed class AzureBlobStorage(
 
     #region Presigned Urls
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the <see cref="BlobServiceClient"/> cannot generate a SAS URI (no account key or user-delegation credentials).</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
         string[] container,
         string blobName,
@@ -644,6 +658,10 @@ public sealed class AzureBlobStorage(
         return _GetPresignedUrlAsync(container, blobName, expiry, BlobSasPermissions.Read, cancellationToken);
     }
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the <see cref="BlobServiceClient"/> cannot generate a SAS URI (no account key or user-delegation credentials).</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
         string[] container,
         string blobName,
@@ -660,6 +678,12 @@ public sealed class AzureBlobStorage(
         );
     }
 
+    /// <summary>Builds a SAS-signed presigned URL for a blob with the given permissions and expiry.</summary>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the <see cref="BlobServiceClient"/> was not built with signing credentials and cannot generate a SAS URI.
+    /// </exception>
     private async ValueTask<Uri> _GetPresignedUrlAsync(
         string[] container,
         string blobName,

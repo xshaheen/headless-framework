@@ -1,49 +1,110 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Text.Json.Serialization.Metadata;
 using Headless.Serializer;
 using Snappier;
 
 namespace Headless.Core;
 
+/// <summary>
+/// Provides static helpers for serializing .NET objects to JSON and compressing the result with
+/// Snappy, and for the inverse: decompressing Snappy data and deserializing the JSON payload.
+/// The caller owns the returned <see cref="IMemoryOwner{T}" /> and must dispose it.
+/// </summary>
 [PublicAPI]
 public static class SnappyCompressor
 {
-    public static ReadOnlyMemory<byte> Compress<T>(T? result, JsonSerializerOptions? options = null)
+    /// <summary>
+    /// Serializes <paramref name="result" /> to UTF-8 JSON and compresses the bytes using Snappy.
+    /// Uses reflection-based JSON serialization; prefer the <see cref="Compress{T}(T, JsonTypeInfo{T})" />
+    /// overload in AOT or trimming scenarios.
+    /// </summary>
+    /// <typeparam name="T">The type of the value to serialize.</typeparam>
+    /// <param name="result">The value to serialize. May be <see langword="null" />.</param>
+    /// <param name="options">
+    /// Optional <see cref="JsonSerializerOptions" />. When <see langword="null" />, the framework's
+    /// default internal options are used.
+    /// </param>
+    /// <returns>
+    /// An <see cref="IMemoryOwner{T}" /> wrapping the Snappy-compressed bytes. The caller must
+    /// dispose this instance to return the underlying buffer to the pool.
+    /// </returns>
+    [MustDisposeResource]
+    public static IMemoryOwner<byte> Compress<T>(T? result, JsonSerializerOptions? options = null)
     {
         options ??= JsonConstants.DefaultInternalJsonOptions;
         var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(result, options);
-        var compressedMemory = Snappy.CompressToMemory(serializedBytes);
 
-        return compressedMemory.Memory;
+        return Snappy.CompressToMemory(serializedBytes);
     }
 
     /// <summary>
-    /// Compresses an object using Snappy with source-generated JSON metadata. AOT/trimming compatible.
+    /// Serializes <paramref name="result" /> to UTF-8 JSON using source-generated metadata and
+    /// compresses the bytes using Snappy. AOT/trimming compatible.
     /// </summary>
-    public static ReadOnlyMemory<byte> Compress<T>(T result, JsonTypeInfo<T> jsonTypeInfo)
+    /// <typeparam name="T">The type of the value to serialize.</typeparam>
+    /// <param name="result">The value to serialize.</param>
+    /// <param name="jsonTypeInfo">
+    /// Source-generated <see cref="JsonTypeInfo{T}" /> that describes how to serialize
+    /// <typeparamref name="T" /> without reflection.
+    /// </param>
+    /// <returns>
+    /// An <see cref="IMemoryOwner{T}" /> wrapping the Snappy-compressed bytes. The caller must
+    /// dispose this instance to return the underlying buffer to the pool.
+    /// </returns>
+    [MustDisposeResource]
+    public static IMemoryOwner<byte> Compress<T>(T result, JsonTypeInfo<T> jsonTypeInfo)
     {
         var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(result, jsonTypeInfo);
-        var compressedMemory = Snappy.CompressToMemory(serializedBytes);
 
-        return compressedMemory.Memory;
-    }
-
-    public static T? Decompress<T>(ReadOnlyMemory<byte> compressed, JsonSerializerOptions? options = null)
-    {
-        var bytes = Snappy.DecompressToMemory(compressed.Span);
-        options ??= JsonConstants.DefaultInternalJsonOptions;
-        var result = JsonSerializer.Deserialize<T>(bytes.Memory.Span, options);
-
-        return result;
+        return Snappy.CompressToMemory(serializedBytes);
     }
 
     /// <summary>
-    /// Decompresses Snappy-compressed data using source-generated JSON metadata. AOT/trimming compatible.
+    /// Decompresses Snappy-compressed data and deserializes the resulting UTF-8 JSON into a value of
+    /// type <typeparamref name="T" />. Uses reflection-based JSON deserialization; prefer the
+    /// <see cref="Decompress{T}(ReadOnlyMemory{byte}, JsonTypeInfo{T})" /> overload in AOT or
+    /// trimming scenarios.
     /// </summary>
+    /// <typeparam name="T">The type to deserialize into.</typeparam>
+    /// <param name="compressed">The Snappy-compressed bytes to decompress and deserialize.</param>
+    /// <param name="options">
+    /// Optional <see cref="JsonSerializerOptions" />. When <see langword="null" />, the framework's
+    /// default internal options are used.
+    /// </param>
+    /// <returns>
+    /// The deserialized value, or <see langword="null" /> if the JSON payload represents a JSON
+    /// <c>null</c>.
+    /// </returns>
+    public static T? Decompress<T>(ReadOnlyMemory<byte> compressed, JsonSerializerOptions? options = null)
+    {
+        // DecompressToMemory rents a pooled buffer the caller must dispose; deserialization reads
+        // the span synchronously within this scope, so disposing on return is safe.
+        using var bytes = Snappy.DecompressToMemory(compressed.Span);
+        options ??= JsonConstants.DefaultInternalJsonOptions;
+
+        return JsonSerializer.Deserialize<T>(bytes.Memory.Span, options);
+    }
+
+    /// <summary>
+    /// Decompresses Snappy-compressed data and deserializes the resulting UTF-8 JSON into a value of
+    /// type <typeparamref name="T" /> using source-generated metadata. AOT/trimming compatible.
+    /// </summary>
+    /// <typeparam name="T">The type to deserialize into.</typeparam>
+    /// <param name="compressed">The Snappy-compressed bytes to decompress and deserialize.</param>
+    /// <param name="jsonTypeInfo">
+    /// Source-generated <see cref="JsonTypeInfo{T}" /> that describes how to deserialize
+    /// <typeparamref name="T" /> without reflection.
+    /// </param>
+    /// <returns>
+    /// The deserialized value, or <see langword="null" /> if the JSON payload represents a JSON
+    /// <c>null</c>.
+    /// </returns>
     public static T? Decompress<T>(ReadOnlyMemory<byte> compressed, JsonTypeInfo<T> jsonTypeInfo)
     {
-        var bytes = Snappy.DecompressToMemory(compressed.Span);
+        using var bytes = Snappy.DecompressToMemory(compressed.Span);
+
         return JsonSerializer.Deserialize(bytes.Memory.Span, jsonTypeInfo);
     }
 }

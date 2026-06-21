@@ -4,13 +4,10 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.InteropServices;
-using System.Text;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
-using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -268,9 +265,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await ((IFactoryCacheStore)this)
-            .UpsertEntryAsync(key, value, options, timeProvider, cancellationToken)
-            .ConfigureAwait(false);
+        await (this).UpsertEntryAsync(key, value, options, timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -512,7 +507,7 @@ public sealed class RedisCache(
             )
             .ConfigureAwait(false);
 
-        return double.Parse(result.ToString()!, CultureInfo.InvariantCulture);
+        return double.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> SetIfHigherAsync(
@@ -549,7 +544,7 @@ public sealed class RedisCache(
             )
             .ConfigureAwait(false);
 
-        return long.Parse(result.ToString()!, CultureInfo.InvariantCulture);
+        return long.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<double> SetIfLowerAsync(
@@ -1345,7 +1340,7 @@ public sealed class RedisCache(
         // stamp is cleared — a logically-expired entry must route the next caller through the factory, not eager
         // refresh. Last-writer-wins under a concurrent fresh write, consistent with the sliding re-arm RMW.
         var reStamped = RedisCacheEntryFrame.Encode(
-            (byte[])frame.ValueSegment.ToArray(),
+            frame.ValueSegment.ToArray(),
             frame.IsNull,
             logicalExpiresAt: now,
             physicalExpiresAt: frame.PhysicalExpiresAt,
@@ -2311,9 +2306,9 @@ public sealed class RedisCache(
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
     {
-        const string Prefix = "b64:";
+        const string prefix = "b64:";
 
-        if (!stamp.StartsWith(Prefix, StringComparison.Ordinal))
+        if (!stamp.StartsWith(prefix, StringComparison.Ordinal))
         {
             value = RedisValue.Null;
             return false;
@@ -2321,7 +2316,7 @@ public sealed class RedisCache(
 
         try
         {
-            value = Convert.FromBase64String(stamp[Prefix.Length..]);
+            value = Convert.FromBase64String(stamp[prefix.Length..]);
             return true;
         }
         catch (FormatException)

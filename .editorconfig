@@ -8,8 +8,6 @@ root = true
 ############ Core Options
 
 [*]
-is_global = true
-global_level = 1000
 charset = utf-8
 end_of_line = lf
 trim_trailing_whitespace = true
@@ -125,14 +123,10 @@ dotnet_diagnostic.ca5394.severity = suggestion
 dotnet_diagnostic.ca1861.severity = suggestion
 # CA1716: Identifiers should not match keywords
 dotnet_diagnostic.ca1716.severity = silent
-# CA1034: Nested types should not be visible
-dotnet_diagnostic.ca1034.severity = suggestion
 # CA1000: Do not declare static members on generic types
 dotnet_diagnostic.ca1000.severity = suggestion
-# CA1032: Implement standard exception constructors
-dotnet_diagnostic.ca1032.severity = silent
 # CA2016: Forward the CancellationToken parameter to methods that take one
-dotnet_diagnostic.ca2016.severity = warning
+dotnet_diagnostic.ca2016.severity = error
 # CA1859: Use concrete types when possible for improved performance
 dotnet_diagnostic.ca1859.severity = suggestion
 # CA1024: Use properties where appropriate
@@ -185,7 +179,7 @@ dotnet_diagnostic.ca5385.severity = warning
 dotnet_diagnostic.ca1851.severity = suggestion
 # CA1008: Enums should have zero value
 dotnet_diagnostic.ca1008.severity = suggestion
-# CA0184: 'is' expression's given expression is never of the provided type
+# CS0184: 'is' expression's given expression is never of the provided type
 dotnet_diagnostic.cs0184.severity = error
 # CA2249: Consider using 'string.Contains' instead of 'string.IndexOf'
 dotnet_diagnostic.ca2249.severity = warning
@@ -216,13 +210,13 @@ dotnet_diagnostic.ca2012.severity = warning
 # CA1036: A class that implements IComparable<T> or IComparable should override comparison operators
 dotnet_diagnostic.ca1036.severity = suggestion
 # CA1019: Define accessors for attribute arguments
-dotnet_diagnostic.CA1019.severity = suggestion
+dotnet_diagnostic.ca1019.severity = suggestion
 # CA2227: Collection properties should be read only
-dotnet_diagnostic.CA2227.severity = suggestion
+dotnet_diagnostic.ca2227.severity = suggestion
 # CA1028: Enum Storage should be Int32
-dotnet_diagnostic.CA1028.severity = suggestion
+dotnet_diagnostic.ca1028.severity = suggestion
 # CA1027: Mark enums with FlagsAttribute
-dotnet_diagnostic.CA1027.severity = none
+dotnet_diagnostic.ca1027.severity = none
 
 ############ Tests
 
@@ -267,9 +261,7 @@ dotnet_diagnostic.ma0022.severity = error
 dotnet_diagnostic.asyncfixer05.severity = error
 # VSTHRD114: Avoid returning a null Task
 dotnet_diagnostic.vsthrd114.severity = error
-# MA0040: Specify a cancellation token
-dotnet_diagnostic.ma0032.severity = warning
-# MA0079: Use a cancellation token using .WithCancellation()
+# MA0079: Forward the CancellationToken using .WithCancellation()
 dotnet_diagnostic.ma0079.severity = warning
 # MA0080: Use a cancellation token using .WithCancellation()
 dotnet_diagnostic.ma0080.severity = error
@@ -277,7 +269,6 @@ dotnet_diagnostic.ma0080.severity = error
 dotnet_diagnostic.ma0047.severity = suggestion
 # MA0006: Use String.Equals instead of equality operator
 dotnet_diagnostic.ma0006.severity = suggestion
-dotnet_diagnostic.asyncifyinvocation.severity = error
 
 ##########################################
 # Language Rules
@@ -377,7 +368,6 @@ dotnet_code_quality_unused_parameters = all:suggestion
 dotnet_remove_unnecessary_suppression_exclusions = none:suggestion
 dotnet_style_prefer_collection_expression = true:suggestion
 
-dotnet_style_namespace_match_folder = true:suggestion
 dotnet_style_allow_multiple_blank_lines_experimental = true:silent
 dotnet_style_allow_statement_immediately_after_block_experimental = true:silent
 dotnet_diagnostic.ca1823.severity = suggestion
@@ -397,7 +387,6 @@ dotnet_sort_system_directives_first = true
 dotnet_separate_import_directive_groups = false
 csharp_using_directive_placement = outside_namespace:silent
 # Dotnet namespace options
-dotnet_style_namespace_match_folder = true:suggestion
 dotnet_diagnostic.ide0130.severity = suggestion
 
 [*.{cs,csx,cake}]

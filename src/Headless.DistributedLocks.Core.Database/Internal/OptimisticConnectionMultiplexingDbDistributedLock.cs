@@ -18,6 +18,14 @@ internal sealed class OptimisticConnectionMultiplexingDbDistributedLock : IDbDis
     private readonly TimeSpan _keepaliveCadence;
     private readonly IDbDistributedLock _fallbackLock;
 
+    /// <summary>
+    /// Initializes an optimistic multiplexing lock.
+    /// </summary>
+    /// <param name="name">The lock resource name.</param>
+    /// <param name="connectionString">The connection string used to key the pool and open fallback connections.</param>
+    /// <param name="multiplexedConnectionLockPool">The shared pool of multiplexed connections for this connection string.</param>
+    /// <param name="keepaliveCadence">Keepalive interval forwarded to both the pool path and the dedicated fallback.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/>, <paramref name="connectionString"/>, or <paramref name="multiplexedConnectionLockPool"/> is <see langword="null"/>.</exception>
     public OptimisticConnectionMultiplexingDbDistributedLock(
         string name,
         string connectionString,
@@ -37,6 +45,21 @@ internal sealed class OptimisticConnectionMultiplexingDbDistributedLock : IDbDis
         );
     }
 
+    /// <summary>
+    /// Attempts to acquire the lock. Upgradeable strategies and nested acquires (non-null
+    /// <paramref name="contextHandle"/>) are routed directly to the dedicated-connection fallback.
+    /// All other acquires go through the <see cref="MultiplexedConnectionLockPool"/>.
+    /// </summary>
+    /// <typeparam name="TLockCookie">The strategy's opaque acquire/release state.</typeparam>
+    /// <param name="timeout">The maximum wait time for the strategy acquire.</param>
+    /// <param name="strategy">The SQL synchronization strategy.</param>
+    /// <param name="contextHandle">
+    /// When non-<see langword="null"/>, a nested acquire that must reuse the outer handle's connection;
+    /// routes to the dedicated fallback.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the acquire attempt.</param>
+    /// <returns>An <see cref="IDistributedLease"/> on success, or <see langword="null"/> on failure.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public ValueTask<IDistributedLease?> TryAcquireAsync<TLockCookie>(
         TimeSpan timeout,
         IDbSynchronizationStrategy<TLockCookie> strategy,

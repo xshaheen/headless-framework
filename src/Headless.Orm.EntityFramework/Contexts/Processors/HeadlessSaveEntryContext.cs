@@ -11,6 +11,7 @@ namespace Headless.EntityFramework.Contexts.Processors;
 [PublicAPI]
 public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenantId = null)
 {
+    // Constructor parameters are positional — documented via the type summary and property docs.
     /// <summary>Active EF Core context for this save.</summary>
     public DbContext DbContext { get; } = dbContext;
 

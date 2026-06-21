@@ -28,7 +28,7 @@
   <data name="g:obsolete_api" xml:space="preserve">
     <value>واجهة برمجة تطبيقات قديمة. هذا الطلب غير متوفر لهذا الحساب.</value>
   </data>
-  <data name="g:user_not_founded" xml:space="preserve">
+  <data name="g:user_not_found" xml:space="preserve">
     <value>حدث خطأ ما. حاول تسجيل الدخول مرة أخرى.</value>
   </data>
   <data name="g:invalid_recaptcha" xml:space="preserve">
@@ -171,5 +171,11 @@
   </data>
   <data name="g:duplicated_request" xml:space="preserve">
     <value>طلب مكرر.</value>
+  </data>
+  <data name="auth:used_before_password" xml:space="preserve">
+    <value>لا يمكنك استخدام كلمة مرور استخدمتها من قبل.</value>
+  </data>
+  <data name="user:phone_number_already_linked" xml:space="preserve">
+    <value>رقم الهاتف مرتبط بالفعل بهذا المستخدم.</value>
   </data>
 </root>

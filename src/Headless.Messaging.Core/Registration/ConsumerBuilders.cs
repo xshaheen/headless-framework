@@ -21,15 +21,23 @@ public interface IConsumerBuilderBase<TConsumer, out TBuilder>
     where TBuilder : IConsumerBuilderBase<TConsumer, TBuilder>
 {
     /// <summary>Sets the consumer group name for this consumer registration.</summary>
+    /// <param name="group">A non-whitespace group name (Kafka group.id or RabbitMQ queue name).</param>
+    /// <returns>The same builder instance for chaining.</returns>
     TBuilder Group(string group);
 
     /// <summary>Limits the number of messages consumed concurrently by this consumer.</summary>
+    /// <param name="maxConcurrent">Maximum concurrent deliveries; must be greater than zero.</param>
+    /// <returns>The same builder instance for chaining.</returns>
     TBuilder Concurrency(byte maxConcurrent);
 
     /// <summary>Overrides the deterministic handler identity for this consumer registration.</summary>
+    /// <param name="handlerId">An explicit, stable handler identity string used for diagnostics and group generation.</param>
+    /// <returns>The same builder instance for chaining.</returns>
     TBuilder HandlerId(string handlerId);
 
     /// <summary>Configures per-consumer circuit breaker overrides for this registration.</summary>
+    /// <param name="configure">A callback that mutates a <see cref="ConsumerCircuitBreakerOptions"/> instance for this consumer.</param>
+    /// <returns>The same builder instance for chaining.</returns>
     TBuilder WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure);
 }
 
@@ -64,25 +72,25 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
     public TBuilder Group(string group)
     {
         registration.SetGroup(group);
-        return _Self;
+        return Self;
     }
 
     public TBuilder Concurrency(byte maxConcurrent)
     {
         registration.SetConcurrency(maxConcurrent);
-        return _Self;
+        return Self;
     }
 
     public TBuilder HandlerId(string handlerId)
     {
         registration.SetHandlerId(handlerId);
-        return _Self;
+        return Self;
     }
 
     public TBuilder WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
     {
         registration.SetCircuitBreaker(configure);
-        return _Self;
+        return Self;
     }
 
     void IConsumerProviderConfigBuilder.SetConsumerProviderConfig(object config) =>
@@ -90,7 +98,7 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
 
     // The concrete builder always implements TBuilder, so this is a safe self-cast that keeps
     // the lane interface flowing through the fluent chain without duplicating the four methods.
-    private TBuilder _Self => (TBuilder)(object)this;
+    private TBuilder Self => (TBuilder)(object)this;
 }
 
 internal sealed class MessageConsumerRegistrationBuilder(

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Collections;
 
 namespace Headless.Urls;
@@ -5,6 +7,7 @@ namespace Headless.Urls;
 /// <summary>
 /// Represents a URL query as a collection of name/value pairs. Insertion order is preserved.
 /// </summary>
+[PublicAPI]
 public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
 {
     private readonly NameValueList<QueryParamValue> _values = new(true);
@@ -101,7 +104,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
             return;
         }
 
-        foreach (var val in _SplitCollection(value).ToList())
+        foreach (var val in _SplitCollection(value))
         {
             if (val is null && nullValueHandling != NullValueHandling.NameOnly)
             {
@@ -190,7 +193,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
         }
         else if (value is IEnumerable en)
         {
-            foreach (var item in en.Cast<object?>().SelectMany(_SplitCollection).ToList())
+            foreach (var item in en.Cast<object?>().SelectMany(_SplitCollection))
             {
                 yield return item;
             }

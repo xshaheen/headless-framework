@@ -20,6 +20,13 @@ public sealed class ResponseLoggingBehavior<TMessage, TResponse>(
     private readonly ICurrentUser _currentUser = Argument.IsNotNull(currentUser);
     private readonly ILogger<ResponseLoggingBehavior<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
 
+    /// <summary>
+    /// Emits a debug-level log entry for the message and its response after the handler executes.
+    /// </summary>
+    /// <param name="message">The Mediator message that was processed.</param>
+    /// <param name="response">The response returned by the handler.</param>
+    /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
+    /// <returns>A completed <see cref="ValueTask"/> because logging is synchronous.</returns>
     protected override ValueTask Handle(TMessage message, TResponse response, CancellationToken cancellationToken)
     {
         _LogMediatorResponse(

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -12,6 +14,16 @@ public sealed class AuthService : IAuthService
     private readonly AuthConfig _config;
     private readonly ILogger<AuthService> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="AuthService"/> and validates <paramref name="config"/>
+    /// immediately so misconfiguration is caught at startup rather than on the first request.
+    /// </summary>
+    /// <param name="config">The authentication configuration, including mode and credentials.</param>
+    /// <param name="logger">The logger used to record authentication errors.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown by <see cref="AuthConfig.Validate"/> when the configuration is incomplete for the
+    /// selected <see cref="AuthMode"/>.
+    /// </exception>
     public AuthService(AuthConfig config, ILogger<AuthService> logger)
     {
         _config = config;
@@ -19,6 +31,7 @@ public sealed class AuthService : IAuthService
         _config.Validate();
     }
 
+    /// <inheritdoc/>
     public async Task<AuthResult> AuthenticateAsync(HttpContext context)
     {
         try
@@ -58,6 +71,7 @@ public sealed class AuthService : IAuthService
         }
     }
 
+    /// <inheritdoc/>
     public AuthInfo GetAuthInfo()
     {
         return new AuthInfo

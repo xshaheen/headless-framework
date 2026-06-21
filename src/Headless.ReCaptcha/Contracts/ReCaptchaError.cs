@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.ReCaptcha.Internals;
+
 namespace Headless.ReCaptcha.Contracts;
 
+/// <summary>Error codes returned by the Google reCAPTCHA siteverify API.</summary>
 public enum ReCaptchaError
 {
     /// <summary>An unknown or unrecognized error code was returned by the API.</summary>
@@ -24,4 +27,20 @@ public enum ReCaptchaError
 
     /// <summary>The response is no longer valid: either is too old or has been used previously.</summary>
     TimeOutOrDuplicate = 5,
+}
+
+/// <summary>Helpers for converting Google's raw error-code strings into <see cref="ReCaptchaError"/> values.</summary>
+[PublicAPI]
+public static class ReCaptchaErrorCodesExtensions
+{
+    /// <summary>
+    /// Maps Google's <c>error-codes</c> strings to <see cref="ReCaptchaError"/> values; unrecognized codes
+    /// map to <see cref="ReCaptchaError.Unknown"/>. A <see langword="null"/> input yields an empty array.
+    /// </summary>
+    /// <param name="errorCodes">The raw error-code strings, typically <c>response.ErrorCodes</c>.</param>
+    /// <returns>The parsed error values (never <see langword="null"/>).</returns>
+    public static ReCaptchaError[] ToReCaptchaErrors(this string[]? errorCodes)
+    {
+        return errorCodes?.ConvertAll(static code => code.ToReCaptchaError()) ?? [];
+    }
 }

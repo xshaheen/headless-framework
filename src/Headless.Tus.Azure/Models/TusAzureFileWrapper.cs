@@ -15,7 +15,9 @@ internal sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blo
     {
         try
         {
-            var response = await blobClient.DownloadStreamingAsync(cancellationToken: cancellationToken);
+            var response = await blobClient
+                .DownloadStreamingAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
             return response.Value.Content;
         }
         catch (Exception e)
@@ -27,7 +29,7 @@ internal sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blo
 
     public async Task<Dictionary<string, Metadata>> GetMetadataAsync(CancellationToken cancellationToken)
     {
-        return await Task.FromResult(azureFile.Metadata.ToTus());
+        return await Task.FromResult(azureFile.Metadata.ToTus()).ConfigureAwait(false);
     }
 }
 

@@ -7,5 +7,6 @@ namespace Headless.Coordination;
 public sealed class MembershipLostException(NodeIdentity identity)
     : CoordinationException($"Local membership identity '{identity}' has been lost.")
 {
+    /// <summary>The lost <c>node@incarnation</c> identity.</summary>
     public NodeIdentity Identity { get; } = identity;
 }

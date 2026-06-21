@@ -9,21 +9,24 @@ namespace Headless.Domain;
 /// Used also to restrict repositories for example to work only with aggregate roots.
 /// </summary>
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
-public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot;
+[PublicAPI]
+public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot
+    where TId : notnull;
 
 /// <summary>Base class for aggregate roots with a single primary key.</summary>
+[PublicAPI]
 public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
-    where TId : IEquatable<TId>
+    where TId : notnull, IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }
 
+    /// <inheritdoc/>
     public override IReadOnlyList<object> GetKeys() => [Id];
 
-    protected override IEnumerable<object?> EqualityComponents()
-    {
-        yield return Id;
-    }
+    /// <inheritdoc/>
+    protected override IEnumerable<object?> EqualityComponents() => GetKeys();
 
+    /// <summary>Returns a diagnostic string of the form <c>[ENTITY: TypeName] Id = &lt;id&gt;</c>.</summary>
     public override string ToString() => $"[ENTITY: {GetType().Name}] Id = {Id}";
 }

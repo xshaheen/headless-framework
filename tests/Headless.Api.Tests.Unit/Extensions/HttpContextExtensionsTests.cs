@@ -7,6 +7,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 
+// NOTE: GetIpAddress now returns Connection.RemoteIpAddress only. UseForwardedHeaders (when
+// configured with trusted proxies) rewrites RemoteIpAddress from X-Forwarded-For / X-Real-IP
+// before the extension is called, so reading headers directly is no longer done here.
+
 namespace Tests.Extensions;
 
 public sealed class HttpContextExtensionsTests : TestBase
@@ -17,77 +21,6 @@ public sealed class HttpContextExtensionsTests : TestBase
     }
 
     #region GetIpAddress
-
-    [Fact]
-    public void should_get_ip_from_x_forwarded_for()
-    {
-        // given
-        var context = _CreateContext();
-        context.Request.Headers["X-Forwarded-For"] = "192.168.1.100, 10.0.0.1";
-
-        // when
-        var result = context.GetIpAddress();
-
-        // then
-        result.Should().Be("192.168.1.100");
-    }
-
-    [Fact]
-    public void should_get_ip_from_x_forwarded_for_with_single_ip()
-    {
-        // given
-        var context = _CreateContext();
-        context.Request.Headers["X-Forwarded-For"] = "203.0.113.50";
-
-        // when
-        var result = context.GetIpAddress();
-
-        // then
-        result.Should().Be("203.0.113.50");
-    }
-
-    [Fact]
-    public void should_map_ipv6_to_ipv4_from_x_forwarded_for()
-    {
-        // given
-        var context = _CreateContext();
-        // ::ffff:192.168.1.100 is IPv4-mapped IPv6
-        context.Request.Headers["X-Forwarded-For"] = "::ffff:192.168.1.100";
-
-        // when
-        var result = context.GetIpAddress();
-
-        // then
-        result.Should().Be("192.168.1.100");
-    }
-
-    [Fact]
-    public void should_get_ip_from_x_real_ip()
-    {
-        // given
-        var context = _CreateContext();
-        context.Request.Headers["X-Real-IP"] = "10.20.30.40";
-
-        // when
-        var result = context.GetIpAddress();
-
-        // then
-        result.Should().Be("10.20.30.40");
-    }
-
-    [Fact]
-    public void should_map_ipv6_to_ipv4_from_x_real_ip()
-    {
-        // given
-        var context = _CreateContext();
-        context.Request.Headers["X-Real-IP"] = "::ffff:10.20.30.40";
-
-        // when
-        var result = context.GetIpAddress();
-
-        // then
-        result.Should().Be("10.20.30.40");
-    }
 
     [Fact]
     public void should_get_ip_from_connection()
@@ -104,7 +37,7 @@ public sealed class HttpContextExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_map_ipv6_to_ipv4_from_connection()
+    public void should_map_ipv4_mapped_ipv6_to_ipv4_from_connection()
     {
         // given
         var context = _CreateContext();
@@ -115,6 +48,20 @@ public sealed class HttpContextExtensionsTests : TestBase
 
         // then
         result.Should().Be("172.16.0.1");
+    }
+
+    [Fact]
+    public void should_return_native_ipv6_address_from_connection()
+    {
+        // given
+        var context = _CreateContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse("2001:db8::1");
+
+        // when
+        var result = context.GetIpAddress();
+
+        // then
+        result.Should().Be("2001:db8::1");
     }
 
     [Fact]
@@ -131,62 +78,34 @@ public sealed class HttpContextExtensionsTests : TestBase
     }
 
     [Fact]
-    public void should_prefer_x_forwarded_for_over_x_real_ip()
+    public void should_ignore_x_forwarded_for_header()
     {
-        // given
+        // X-Forwarded-For headers are forged by clients; UseForwardedHeaders rewrites
+        // RemoteIpAddress before this extension is called. Without that middleware the header
+        // is untrusted and must not be read directly.
         var context = _CreateContext();
-        context.Request.Headers["X-Forwarded-For"] = "192.168.1.1";
+        context.Request.Headers["X-Forwarded-For"] = "192.168.1.100";
+        // RemoteIpAddress left null — simulates no UseForwardedHeaders in pipeline
+
+        // when
+        var result = context.GetIpAddress();
+
+        // then
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_ignore_x_real_ip_header()
+    {
+        // Same rationale as X-Forwarded-For above.
+        var context = _CreateContext();
         context.Request.Headers["X-Real-IP"] = "10.0.0.1";
 
         // when
         var result = context.GetIpAddress();
 
         // then
-        result.Should().Be("192.168.1.1");
-    }
-
-    [Fact]
-    public void should_prefer_x_real_ip_over_connection()
-    {
-        // given
-        var context = _CreateContext();
-        context.Request.Headers["X-Real-IP"] = "10.0.0.1";
-        context.Connection.RemoteIpAddress = IPAddress.Parse("172.16.0.1");
-
-        // when
-        var result = context.GetIpAddress();
-
-        // then
-        result.Should().Be("10.0.0.1");
-    }
-
-    [Fact]
-    public void should_skip_invalid_x_forwarded_for_and_use_x_real_ip()
-    {
-        // given
-        var context = _CreateContext();
-        context.Request.Headers["X-Forwarded-For"] = "invalid-ip";
-        context.Request.Headers["X-Real-IP"] = "10.0.0.1";
-
-        // when
-        var result = context.GetIpAddress();
-
-        // then
-        result.Should().Be("10.0.0.1");
-    }
-
-    [Fact]
-    public void should_return_ipv6_address_when_not_mapped()
-    {
-        // given
-        var context = _CreateContext();
-        context.Request.Headers["X-Forwarded-For"] = "2001:db8::1";
-
-        // when
-        var result = context.GetIpAddress();
-
-        // then
-        result.Should().Be("2001:db8::1");
+        result.Should().BeNull();
     }
 
     #endregion

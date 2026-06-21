@@ -143,6 +143,37 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
+    public async Task should_set_content_length_header_on_replay()
+    {
+        // Replay must set Content-Length = Body.Length so HTTP/1.1 clients that buffer on it
+        // do not hang waiting for the content boundary.
+        byte[] body = [1, 2, 3];
+        var fingerprint = SHA256.HashData(body);
+        byte[] storedBody = [10, 20, 30];
+
+        var record = new IdempotencyRecord
+        {
+            Kind = RecordKind.Complete,
+            StatusCode = 200,
+            Body = storedBody,
+            Fingerprint = fingerprint,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var cache = Substitute.For<ICache>();
+        cache
+            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CacheValue<IdempotencyRecord>(record, hasValue: true));
+
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        context.Response.ContentLength.Should().Be(storedBody.Length);
+    }
+
+    [Fact]
     public async Task should_not_call_next_on_replay()
     {
         byte[] body = [1, 2, 3];

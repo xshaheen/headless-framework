@@ -59,4 +59,12 @@ internal static partial class DataProtectionLoggerExtensions
 
     [LoggerMessage(EventId = 8, EventName = "SavedElement", Level = LogLevel.Trace, Message = "Saved element: {File}")]
     public static partial void LogSavedElement(this ILogger logger, string file);
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "MalformedElement",
+        Level = LogLevel.Warning,
+        Message = "Skipping malformed XML blob: {File}"
+    )]
+    public static partial void LogMalformedElement(this ILogger logger, string file, Exception exception);
 }

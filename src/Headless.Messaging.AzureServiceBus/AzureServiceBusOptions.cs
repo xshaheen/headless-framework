@@ -8,22 +8,28 @@ using Headless.Messaging.AzureServiceBus.Producer;
 namespace Headless.Messaging.AzureServiceBus;
 
 /// <summary>
-/// Provides programmatic configuration for the messaging Azure Service Bus project.
+/// Configuration options for the Azure Service Bus messaging transport.
 /// </summary>
+/// <remarks>
+/// Authentication requires either a <see cref="ConnectionString"/> or both a <see cref="Namespace"/>
+/// and a <see cref="TokenCredential"/>. Mixing both authentication modes is not supported.
+/// </remarks>
 public class AzureServiceBusOptions
 {
-    /// <summary>
-    /// TopicPath default value for messaging.
-    /// </summary>
+    /// <summary>The default topic path used for messaging (<c>"messaging"</c>).</summary>
     public const string DefaultTopicPath = "messaging";
 
     /// <summary>
-    /// Azure Service Bus Namespace connection string. Must not contain topic information.
+    /// The Service Bus namespace connection string. Must target the namespace, not a specific
+    /// entity. Leave <see langword="null"/> when using <see cref="TokenCredential"/> with
+    /// <see cref="Namespace"/> instead.
     /// </summary>
     public string ConnectionString { get; set; } = null!;
 
     /// <summary>
-    /// Namespace of service bus , Needs to be set when using with TokenCredential Property
+    /// The fully-qualified Service Bus namespace hostname
+    /// (for example <c>"mybus.servicebus.windows.net"</c>). Required when authenticating via
+    /// <see cref="TokenCredential"/>; ignored when <see cref="ConnectionString"/> is set.
     /// </summary>
     public string Namespace { get; set; } = null!;
 
@@ -155,6 +161,14 @@ public class AzureServiceBusOptions
 
     internal ICollection<IServiceBusProducerDescriptor> CustomProducers { get; set; } = [];
 
+    /// <summary>
+    /// Registers a custom producer for message type <typeparamref name="T"/>, directing its
+    /// messages to a topic path different from the shared <see cref="TopicPath"/>. Use this when
+    /// a message type must target a dedicated topic or integrate with an existing Service Bus topology.
+    /// </summary>
+    /// <typeparam name="T">The message type produced by the custom producer.</typeparam>
+    /// <param name="configuration">A delegate that configures the producer descriptor.</param>
+    /// <returns>The current options instance for chaining.</returns>
     public AzureServiceBusOptions ConfigureCustomProducer<T>(
         Action<ServiceBusProducerDescriptorBuilder<T>> configuration
     )

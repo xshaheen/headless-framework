@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
@@ -32,7 +34,7 @@ internal class JobsFallbackBackgroundService(
                 // skip queuing fallback work to avoid throwing and stopping the host.
                 if (jobsTaskScheduler.IsFrozen || jobsTaskScheduler.IsDisposed)
                 {
-                    await timeProvider.Delay(_fallbackJobPeriod, stoppingToken);
+                    await timeProvider.Delay(_fallbackJobPeriod, stoppingToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -40,9 +42,9 @@ internal class JobsFallbackBackgroundService(
                 // a Retry row released to Idle here is picked up by RunTimedOutTickers in the same tick. Closes the
                 // gap where a job wedged on a still-live node is reclaimed by neither the claim predicate nor the
                 // dead-node sweep.
-                await internalJobsManager.ReclaimStalledResources(stoppingToken);
+                await internalJobsManager.ReclaimStalledResources(stoppingToken).ConfigureAwait(false);
 
-                var functions = await internalJobsManager.RunTimedOutTickers(stoppingToken);
+                var functions = await internalJobsManager.RunTimedOutTickers(stoppingToken).ConfigureAwait(false);
 
                 if (functions.Length != 0)
                 {
@@ -87,26 +89,30 @@ internal class JobsFallbackBackgroundService(
 
                         try
                         {
-                            await jobsTaskScheduler.QueueAsync(
-                                async ct =>
-                                {
-                                    if (semaphore != null)
+                            await jobsTaskScheduler
+                                .QueueAsync(
+                                    async ct =>
                                     {
-                                        await semaphore.WaitAsync(ct).ConfigureAwait(false);
-                                    }
+                                        if (semaphore != null)
+                                        {
+                                            await semaphore.WaitAsync(ct).ConfigureAwait(false);
+                                        }
 
-                                    try
-                                    {
-                                        await tickerExecutionTaskHandler.ExecuteTaskAsync(function, true, ct);
-                                    }
-                                    finally
-                                    {
-                                        semaphore?.Release();
-                                    }
-                                },
-                                function.CachedPriority,
-                                stoppingToken
-                            );
+                                        try
+                                        {
+                                            await tickerExecutionTaskHandler
+                                                .ExecuteTaskAsync(function, true, ct)
+                                                .ConfigureAwait(false);
+                                        }
+                                        finally
+                                        {
+                                            semaphore?.Release();
+                                        }
+                                    },
+                                    function.CachedPriority,
+                                    stoppingToken
+                                )
+                                .ConfigureAwait(false);
                         }
                         catch (InvalidOperationException)
                             when (jobsTaskScheduler.IsFrozen || jobsTaskScheduler.IsDisposed)
@@ -116,11 +122,11 @@ internal class JobsFallbackBackgroundService(
                         }
                     }
 
-                    await timeProvider.Delay(TimeSpan.FromMilliseconds(10), stoppingToken);
+                    await timeProvider.Delay(TimeSpan.FromMilliseconds(10), stoppingToken).ConfigureAwait(false);
                 }
                 else
                 {
-                    await timeProvider.Delay(_fallbackJobPeriod, stoppingToken);
+                    await timeProvider.Delay(_fallbackJobPeriod, stoppingToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -133,7 +139,7 @@ internal class JobsFallbackBackgroundService(
             {
                 // Swallow unexpected exceptions so they don't bubble up
                 // and stop the host; wait a bit before retrying.
-                await timeProvider.Delay(_fallbackJobPeriod, stoppingToken);
+                await timeProvider.Delay(_fallbackJobPeriod, stoppingToken).ConfigureAwait(false);
             }
 #pragma warning restore ERP022
         }
@@ -142,6 +148,6 @@ internal class JobsFallbackBackgroundService(
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         Interlocked.Exchange(ref _started, 0);
-        await base.StopAsync(cancellationToken);
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 }

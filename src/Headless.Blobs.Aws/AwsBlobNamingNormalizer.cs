@@ -6,9 +6,20 @@ using Headless.Core;
 
 namespace Headless.Blobs.Aws;
 
+/// <summary>
+/// Normalizes container and blob names to comply with Amazon S3 naming rules.
+/// </summary>
+/// <remarks>
+/// Container names (S3 buckets) are normalized to 3–63 lowercase characters containing only letters, digits,
+/// dots, and hyphens, with no adjacent hyphens and dots, no IP-address pattern, and no leading or trailing
+/// hyphens or dots. Blob names (object keys) pass through S3's lenient key rules without character stripping.
+/// </remarks>
 public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
 {
-    /// <summary><a href="https://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html" /></summary>
+    /// <summary>
+    /// Normalizes a container name to a valid S3 bucket name per the
+    /// <a href="https://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html">S3 bucket naming rules</a>.
+    /// </summary>
     public string NormalizeContainerName(string containerName)
     {
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
@@ -54,7 +65,11 @@ public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
         }
     }
 
-    /// <summary><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html" /></summary>
+    /// <summary>
+    /// Validates <paramref name="blobName"/> against S3 object key rules and returns it unchanged.
+    /// See the <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html">S3 object key naming guidelines</a>.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> contains path-traversal sequences or control characters.</exception>
     public string NormalizeBlobName(string blobName)
     {
         PathValidation.ValidatePathSegment(blobName);

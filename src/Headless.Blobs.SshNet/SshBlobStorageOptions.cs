@@ -5,16 +5,34 @@ using Renci.SshNet;
 
 namespace Headless.Blobs.SshNet;
 
+/// <summary>Configuration for the SFTP blob storage provider.</summary>
 public sealed class SshBlobStorageOptions
 {
+    /// <summary>
+    /// SFTP connection URI in the form <c>sftp://user:password@host:port</c>. Required.
+    /// The password is URL-decoded before use, so special characters must be percent-encoded.
+    /// </summary>
     public required string ConnectionString { get; set; }
 
+    /// <summary>
+    /// Optional proxy URI (<c>http://user:pass@host:port</c> or a SOCKS URI). When set,
+    /// <see cref="ProxyType"/> is auto-detected from the scheme if left at <see cref="ProxyTypes.None"/>.
+    /// </summary>
     public string? Proxy { get; set; }
 
+    /// <summary>
+    /// Proxy type to use with <see cref="Proxy"/>. Defaults to <see cref="ProxyTypes.None"/>. When a proxy
+    /// URI is provided and this is <see cref="ProxyTypes.None"/>, HTTP proxy is auto-detected from the URI scheme.
+    /// </summary>
     public ProxyTypes ProxyType { get; set; } = ProxyTypes.None;
 
+    /// <summary>
+    /// Optional private key stream for SSH public-key authentication. When provided, a
+    /// <see cref="Renci.SshNet.PrivateKeyAuthenticationMethod"/> is added alongside any password method.
+    /// </summary>
     public Stream? PrivateKey { get; set; }
 
+    /// <summary>Passphrase for the <see cref="PrivateKey"/>, or <see langword="null"/> for unencrypted keys.</summary>
     public string? PrivateKeyPassPhrase { get; set; }
 
     /// <summary>

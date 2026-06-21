@@ -30,13 +30,33 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
     // and never try to re-open a broken connection.
     private bool _connectionOpened;
 
+    /// <summary>
+    /// Initializes a multiplexed lock over <paramref name="connection"/>. The connection must not
+    /// yet be open; <see cref="TryAcquireAsync{TLockCookie}"/> opens it on the first successful acquire.
+    /// </summary>
+    /// <param name="connection">The database connection to multiplex advisory locks on.</param>
     public MultiplexedConnectionLock(DatabaseConnection connection)
     {
         _connection = connection;
     }
 
-    private bool _IsConnectionBrokenNoLock => _connectionOpened && !_connection.CanExecuteQueries;
+    private bool IsConnectionBrokenNoLock => _connectionOpened && !_connection.CanExecuteQueries;
 
+    /// <summary>
+    /// Attempts to acquire an advisory lock for <paramref name="name"/> on the shared connection.
+    /// </summary>
+    /// <typeparam name="TLockCookie">The strategy's opaque acquire/release state.</typeparam>
+    /// <param name="name">The lock resource name.</param>
+    /// <param name="timeout">The acquire timeout passed to the strategy (ignored when <paramref name="opportunistic"/> is <see langword="true"/> — a zero timeout is used instead).</param>
+    /// <param name="strategy">The SQL synchronization strategy.</param>
+    /// <param name="keepaliveCadence">The keepalive interval to track alongside this lock on the shared connection.</param>
+    /// <param name="opportunistic">
+    /// When <see langword="true"/>, the method uses a zero mutex-wait and a zero strategy timeout to avoid
+    /// blocking on the shared connection; a non-acquired result carries a retry recommendation.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel connection open and strategy acquire.</param>
+    /// <returns>A <see cref="Result"/> carrying either a live handle or a retry/no-retry recommendation.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled while waiting for the mutex or during the strategy acquire.</exception>
     public async ValueTask<Result> TryAcquireAsync<TLockCookie>(
         string name,
         TimeSpan timeout,
@@ -64,7 +84,7 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         try
         {
             // Redundant with the catch below, but avoids issuing a query on a connection we already know is broken.
-            if (opportunistic && _IsConnectionBrokenNoLock)
+            if (opportunistic && IsConnectionBrokenNoLock)
             {
                 return _GetAlreadyBrokenResultNoLock();
             }
@@ -111,12 +131,12 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         // Never punish the caller for a connection that was already broken (https://github.com/madelson/DistributedLock/issues/83):
         // the broken connection — not the caller's request — is the failure, and the pool retries it on a fresh lock.
         // The same applies to a transient failure re-opening an idle pooled connection on the opportunistic path: the
-        // open faults before _connectionOpened flips, so _IsConnectionBrokenNoLock (which requires it) would miss it
+        // open faults before _connectionOpened flips, so IsConnectionBrokenNoLock (which requires it) would miss it
         // and let the exception fault the whole acquire loop. A not-yet-opened connection holds no locks (you cannot
         // hold an advisory lock on a closed connection), so treat the failed reuse like a broken connection and retry
         // on a fresh lock rather than failing the caller.
 #pragma warning disable ERP022
-        catch when (opportunistic && (_IsConnectionBrokenNoLock || !_connectionOpened))
+        catch when (opportunistic && (IsConnectionBrokenNoLock || !_connectionOpened))
         {
             return _GetAlreadyBrokenResultNoLock();
         }
@@ -128,6 +148,10 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Disposes the underlying connection. Must only be called when no locks are held on this instance
+    /// (i.e. the held-lock dictionary is empty).
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         Debug.Assert(_heldLockIdentitiesToKeepaliveCadences.Count == 0);
@@ -279,8 +303,14 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         _connection.SetKeepaliveCadence(minCadence);
     }
 
+    /// <summary>
+    /// Result returned by <see cref="TryAcquireAsync{TLockCookie}"/> carrying either a live handle on
+    /// success or a retry recommendation plus disposal hint on failure.
+    /// </summary>
     public readonly struct Result
     {
+        /// <summary>Constructs a successful result carrying a live <paramref name="handle"/>.</summary>
+        /// <param name="handle">The acquired <see cref="IDistributedLease"/>.</param>
         public Result(IDistributedLease handle)
         {
             Handle = handle;
@@ -288,6 +318,11 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
             CanSafelyDispose = false; // we have a handle
         }
 
+        /// <summary>Constructs a failure result with the given retry recommendation and disposal hint.</summary>
+        /// <param name="retry">Whether the pool should retry on a different lock instance or on this one.</param>
+        /// <param name="canSafelyDispose">
+        /// <see langword="true"/> when this instance holds no locks and can be disposed by the pool.
+        /// </param>
         public Result(MultiplexedConnectionLockRetry retry, bool canSafelyDispose)
         {
             Handle = null;
@@ -295,10 +330,16 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
             CanSafelyDispose = canSafelyDispose;
         }
 
+        /// <summary>The acquired lease on success; <see langword="null"/> on failure.</summary>
         public IDistributedLease? Handle { get; }
 
+        /// <summary>Retry recommendation for the pool when <see cref="Handle"/> is <see langword="null"/>.</summary>
         public MultiplexedConnectionLockRetry Retry { get; }
 
+        /// <summary>
+        /// <see langword="true"/> when the lock holds no advisory locks and can safely be disposed
+        /// and removed from the pool.
+        /// </summary>
         public bool CanSafelyDispose { get; }
     }
 
@@ -396,9 +437,18 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
     }
 }
 
+/// <summary>
+/// Retry recommendation returned by <see cref="MultiplexedConnectionLock.TryAcquireAsync{TLockCookie}"/>
+/// when the acquire fails on a pooled connection.
+/// </summary>
 internal enum MultiplexedConnectionLockRetry
 {
+    /// <summary>Do not retry; the caller should give up or surface a failure.</summary>
     NoRetry,
+
+    /// <summary>Retry the acquire on this same lock instance (the connection is idle and holding nothing).</summary>
     RetryOnThisLock,
+
+    /// <summary>Retry the acquire on a different lock instance (this one is busy, holding locks, or broken).</summary>
     Retry,
 }

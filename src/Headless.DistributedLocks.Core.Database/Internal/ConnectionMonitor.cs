@@ -50,6 +50,14 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 
     private Task _monitoringWorkerTask = Task.CompletedTask;
 
+    /// <summary>
+    /// Initializes a monitor for <paramref name="connection"/>.
+    /// </summary>
+    /// <param name="connection">The database connection to monitor and keepalive.</param>
+    /// <param name="timeProvider">Clock used for keepalive delays.</param>
+    /// <param name="monitoringCommandTimeoutSeconds">Bounded command timeout for keepalive and monitoring probes; must be positive.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="connection"/> or <paramref name="timeProvider"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="monitoringCommandTimeoutSeconds"/> is not positive.</exception>
     public ConnectionMonitor(
         DatabaseConnection connection,
         TimeProvider timeProvider,
@@ -74,9 +82,18 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
     /// <summary>Protects all mutable state. The weak reference is a stable, otherwise-unused lock object.</summary>
     private object Lock => _weakConnection;
 
-    private bool _HasRegisteredMonitoringHandlesNoLock =>
+    private bool HasRegisteredMonitoringHandlesNoLock =>
         (_monitoringHandleRegistrations?.Count).GetValueOrDefault() != 0;
 
+    /// <summary>
+    /// Acquires the internal connection semaphore, which gates concurrent query execution on the
+    /// underlying connection. If the monitor is actively probing (connection in monitoring mode), it fires
+    /// a state-change interrupt to cancel the probe and let this acquirer in. Retries in a timed loop
+    /// to avoid live-locking the monitor worker between fire-state-changed and the next probe.
+    /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the wait for the connection lock.</param>
+    /// <returns>An <see cref="IDisposable"/> whose <c>Dispose</c> releases the semaphore, or <see langword="null"/> when the caller is a monitoring query that already holds it.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled while waiting.</exception>
     public async ValueTask<IDisposable?> AcquireConnectionLockAsync(CancellationToken cancellationToken)
     {
         while (true)
@@ -85,7 +102,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             {
                 // If we're monitoring then the connection is almost constantly in use (the long sleep probe). Fire
                 // state changed to cancel that probe and let this acquirer in.
-                if (_state == State.Active && _HasRegisteredMonitoringHandlesNoLock)
+                if (_state == State.Active && HasRegisteredMonitoringHandlesNoLock)
                 {
                     _FireStateChangedNoLock();
                 }
@@ -100,6 +117,15 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Sets the keepalive cadence and starts or wakes the monitor worker if needed. Only valid for
+    /// internally-owned connections; keepalive is meaningless on externally-owned ones.
+    /// </summary>
+    /// <param name="keepaliveCadence">
+    /// Interval between keepalive pings. <see cref="Timeout.InfiniteTimeSpan"/> disables keepalive.
+    /// A shorter cadence than the current one fires a state-change interrupt to wake a sleeping worker.
+    /// </param>
+    /// <exception cref="InvalidOperationException">Thrown when called on an externally-owned connection or when the monitor is already disposed.</exception>
     public void SetKeepaliveCadence(TimeSpan keepaliveCadence)
     {
         Ensure.True(!_isExternallyOwnedConnection, "Cannot run keepalive on an externally-owned connection.");
@@ -114,7 +140,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             if (
                 !_StartMonitorWorkerIfNeededNoLock()
                 && _state == State.Active
-                && !_HasRegisteredMonitoringHandlesNoLock
+                && !HasRegisteredMonitoringHandlesNoLock
                 && TimeSpanCadence.CompareWithInfinite(keepaliveCadence, originalKeepaliveCadence) < 0
             )
             {
@@ -125,6 +151,17 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Returns a monitoring handle whose <see cref="IDatabaseConnectionMonitoringHandle.ConnectionLostToken"/> is
+    /// cancelled if the connection is observed to die. While any live handle is registered, the monitor worker
+    /// runs a long-sleeping probe against the connection. Disposing the handle unregisters it.
+    /// </summary>
+    /// <remarks>
+    /// Returns an already-cancelled handle when the connection is already closed, and a no-op handle when the
+    /// connection does not support state-change events. Thread-safe.
+    /// </remarks>
+    /// <returns>A live <see cref="IDatabaseConnectionMonitoringHandle"/> whose <c>ConnectionLostToken</c> fires on connection loss.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown when the monitor has already been disposed.</exception>
     public IDatabaseConnectionMonitoringHandle GetMonitoringHandle()
     {
         lock (Lock)
@@ -146,7 +183,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
                 return NullHandle.Instance;
             }
 
-            var hadRegisteredMonitoringHandles = _HasRegisteredMonitoringHandlesNoLock;
+            var hadRegisteredMonitoringHandles = HasRegisteredMonitoringHandlesNoLock;
 
             var connectionLostTokenSource = new CancellationTokenSource();
             var handle = new MonitoringHandle(this, connectionLostTokenSource.Token);
@@ -195,7 +232,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
                     _CloseOrCancelMonitoringHandleRegistrationsNoLock(isCancel: true);
                 }
 
-                Debug.Assert(!_HasRegisteredMonitoringHandlesNoLock);
+                Debug.Assert(!HasRegisteredMonitoringHandlesNoLock);
             }
         }
         else if (args is { OriginalState: not ConnectionState.Open, CurrentState: ConnectionState.Open })
@@ -210,6 +247,12 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Transitions the monitor from the initial <c>Stopped</c> state to <c>Idle</c> and starts the
+    /// background worker when keepalive or monitoring handles are registered. Must be called after
+    /// <see cref="DatabaseConnection.OpenAsync"/> for internally-owned connections.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when called on an externally-owned connection or when the monitor is not in the <c>Stopped</c> state.</exception>
     public void Start()
     {
         Ensure.True(!_isExternallyOwnedConnection, "Cannot start monitoring an externally-owned connection.");
@@ -227,8 +270,17 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         _StartMonitorWorkerIfNeededNoLock();
     }
 
+    /// <summary>
+    /// Stops the background worker and waits for it to drain. Does not cancel registered monitoring handles
+    /// (a stop represents clean teardown, not connection loss). Only valid for internally-owned connections.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when called on an externally-owned connection or when the monitor is already disposed.</exception>
     public ValueTask StopAsync() => _StopOrDisposeAsync(isDispose: false);
 
+    /// <summary>
+    /// Stops the background worker, unregisters the state-change handler, disposes internal resources,
+    /// and waits for the worker to drain. Monitoring handles are closed without cancellation.
+    /// </summary>
     public ValueTask DisposeAsync() => _StopOrDisposeAsync(isDispose: true);
 
     private async ValueTask _StopOrDisposeAsync(bool isDispose)
@@ -340,7 +392,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         }
 
         // nothing to do
-        if (_keepaliveCadence == Timeout.InfiniteTimeSpan && !_HasRegisteredMonitoringHandlesNoLock)
+        if (_keepaliveCadence == Timeout.InfiniteTimeSpan && !HasRegisteredMonitoringHandlesNoLock)
         {
             return false;
         }
@@ -406,7 +458,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             }
 
             keepaliveCadence = _keepaliveCadence;
-            isMonitoring = _HasRegisteredMonitoringHandlesNoLock;
+            isMonitoring = HasRegisteredMonitoringHandlesNoLock;
             stateChangedToken = _monitorStateChangedTokenSource!.Token;
         }
 
@@ -547,12 +599,8 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         private ConnectionMonitor? _monitor = monitor;
 #pragma warning restore CA2213
 
-        private CancellationToken _ConnectionLostToken { get; } = connectionLostToken;
-
         public CancellationToken ConnectionLostToken =>
-            Volatile.Read(ref _monitor) is not null
-                ? _ConnectionLostToken
-                : throw new ObjectDisposedException("handle");
+            Volatile.Read(ref _monitor) is not null ? connectionLostToken : throw new ObjectDisposedException("handle");
 
         public void Dispose()
         {
@@ -588,12 +636,22 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         public void Dispose() { }
     }
 
+    /// <summary>Lifecycle states of the connection monitor.</summary>
     private enum State : byte
     {
+        /// <summary>Monitor started but no background worker is running (no keepalive cadence and no monitoring handles).</summary>
         Idle,
+
+        /// <summary>Background worker is running.</summary>
         Active,
+
+        /// <summary>Connection closed spontaneously (state-change event); may restart if the connection reopens.</summary>
         AutoStopped,
+
+        /// <summary>Explicitly stopped via <see cref="StopAsync"/>.</summary>
         Stopped,
+
+        /// <summary>Disposed; no further use allowed.</summary>
         Disposed,
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Headless.ReCaptcha.Contracts;
 
+/// <summary>Parameters sent to the Google reCAPTCHA siteverify endpoint to validate a user response token.</summary>
 public sealed class ReCaptchaSiteVerifyRequest
 {
     /// <summary>Required. The user response token provided by the reCAPTCHA client-side integration on your site.</summary>

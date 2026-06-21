@@ -1,18 +1,23 @@
 # Headless.Emails.Mailkit
 
-SMTP implementation of the email abstraction using MailKit.
+SMTP implementation of the email abstraction using MailKit with connection pooling.
 
 ## Problem Solved
 
-Provides email sending via standard SMTP protocol using MailKit, supporting any SMTP server (Gmail, Outlook, SendGrid, on-premises, etc.).
+Provides email sending via standard SMTP protocol using MailKit, supporting any SMTP server (Gmail, Outlook, SendGrid, on-premises, etc.) with connection pooling to amortize reconnect cost.
 
 ## Key Features
 
 - Full `IEmailSender` implementation using MailKit
-- SSL/TLS support (StartTls, SslOnConnect)
-- Authentication support
-- Attachment support
-- Works with any SMTP server
+- SMTP connection pool (`ObjectPool<SmtpClient>`) — connections are retained and reused across sends
+- SSL/TLS support: `SecureSocketOptions.StartTls` (default), `SslOnConnect`, `None`, `Auto`
+- Optional authentication (username + password); anonymous SMTP when credentials are omitted
+- Three registration overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
+- `SmtpCommandException` and `SmtpProtocolException` are caught and returned as `Failed()` responses; `AuthenticationException` propagates
+
+## Design Notes
+
+The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected state. Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send.
 
 ## Installation
 
@@ -25,10 +30,10 @@ dotnet add package Headless.Emails.Mailkit
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Using IConfiguration
+// Option 1: from configuration section
 builder.Services.AddMailKitEmailSender(builder.Configuration.GetSection("Smtp"));
 
-// Or using action
+// Option 2: action
 builder.Services.AddMailKitEmailSender(options =>
 {
     options.Server = "smtp.example.com";
@@ -37,38 +42,49 @@ builder.Services.AddMailKitEmailSender(options =>
     options.Password = "securepassword";
     options.SocketOptions = SecureSocketOptions.StartTls;
 });
+
+// Option 3: action with IServiceProvider
+builder.Services.AddMailKitEmailSender((options, sp) =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    options.Server = cfg["Smtp:Server"]!;
+    options.Port = int.Parse(cfg["Smtp:Port"]!);
+});
 ```
 
 ## Configuration
 
-### appsettings.json
-
 ```json
 {
-  "Smtp": {
-    "Server": "smtp.example.com",
-    "Port": 587,
-    "User": "user@example.com",
-    "Password": "securepassword",
-    "SocketOptions": "StartTls"
-  }
+    "Smtp": {
+        "Server": "smtp.example.com",
+        "Port": 587,
+        "User": "user@example.com",
+        "Password": "securepassword",
+        "SocketOptions": "StartTls"
+    }
 }
 ```
 
-### Options (`MailkitSmtpOptions`)
+`MailkitSmtpOptions` properties:
 
-| Property | Description |
-|----------|-------------|
-| `Server` | SMTP server hostname (required) |
-| `Port` | SMTP port (default: 25) |
-| `User` | Authentication username |
-| `Password` | Authentication password |
-| `SocketOptions` | `SecureSocketOptions` (StartTls, SslOnConnect) |
+| Property | Default | Description |
+|---|---|---|
+| `Server` | *(required)* | SMTP server hostname |
+| `Port` | `587` | SMTP port |
+| `User` | `null` | Authentication username; omit for anonymous SMTP |
+| `Password` | `null` | Authentication password; use user-secrets or key vault in production |
+| `SocketOptions` | `StartTls` | `SecureSocketOptions`: `None`, `Auto`, `StartTls`, `StartTlsWhenAvailable`, `SslOnConnect` |
+| `Timeout` | `30s` | Per-connection timeout |
+| `MaxPoolSize` | `10` | Max pooled SMTP connections; set `0` to disable pooling |
 
 ## Dependencies
 
 - `Headless.Emails.Core`
+- `MailKit`
 
 ## Side Effects
 
+- Registers `IPooledObjectPolicy<SmtpClient>` as singleton
+- Registers `ObjectPool<SmtpClient>` as singleton
 - Registers `IEmailSender` as singleton

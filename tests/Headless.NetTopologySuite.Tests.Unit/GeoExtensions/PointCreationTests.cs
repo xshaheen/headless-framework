@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 
@@ -7,7 +8,7 @@ namespace Tests.GeoExtensions;
 
 public sealed class PointCreationTests
 {
-    private static GeometryFactory Factory => GeoConstants.GeometryFactory;
+    private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     [Fact]
     public void CreatePoint_should_create_point_with_coordinates()

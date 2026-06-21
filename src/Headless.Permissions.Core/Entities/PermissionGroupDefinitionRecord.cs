@@ -6,6 +6,12 @@ using Headless.Primitives;
 
 namespace Headless.Permissions.Entities;
 
+/// <summary>
+/// Aggregate root representing the DB-persisted snapshot of a <see cref="Models.PermissionGroupDefinition"/>.
+/// Serialized by <see cref="Definitions.IPermissionDefinitionSerializer"/> and stored by
+/// <see cref="Repositories.IPermissionDefinitionRecordRepository"/>. All string length constraints are
+/// defined in <see cref="PermissionGroupDefinitionRecordConstants"/>.
+/// </summary>
 public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
     public required string Name { get; set; }
@@ -33,6 +39,10 @@ public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasE
         ExtraProperties = [];
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when all observable fields (name, display name, and extra properties)
+    /// match those of <paramref name="otherRecord"/>. Used during the save diff to skip unchanged groups.
+    /// </summary>
     public bool HasSameData(PermissionGroupDefinitionRecord otherRecord)
     {
         if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
@@ -53,6 +63,10 @@ public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasE
         return true;
     }
 
+    /// <summary>
+    /// Overwrites all mutable fields on this record with values from <paramref name="otherRecord"/>.
+    /// Called during the save diff when a group is detected as changed.
+    /// </summary>
     public void Patch(PermissionGroupDefinitionRecord otherRecord)
     {
         Name = otherRecord.Name;

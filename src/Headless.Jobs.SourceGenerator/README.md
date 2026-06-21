@@ -1,19 +1,19 @@
 # Headless.Jobs.SourceGenerator
 
-C# source generator for Jobs that generates boilerplate code for background job registration and execution.
+Roslyn incremental source generator that eliminates reflection and manual job registration for the Jobs scheduler.
 
 ## Problem Solved
 
-Eliminates reflection overhead and manual job registration by generating compile-time code for Jobs job functions marked with `[Jobs]` attribute.
+Without the source generator, every job class or method must be manually registered with the Jobs runtime at startup, and job dispatch uses reflection to invoke methods. The source generator scans for `[JobFunction]` attributes at compile time and emits a module initializer that auto-registers all discovered jobs before `Main` runs, with zero reflection at runtime.
 
 ## Key Features
 
-- **Zero Reflection**: Compile-time code generation
-- **Auto-Registration**: Automatic job discovery and registration
-- **Type Safety**: Compile-time validation of job signatures
-- **DI Integration**: Generates constructor injection code
-- **Incremental**: Fast rebuild with incremental generation
-- **Diagnostics**: Rich compile-time error messages
+- **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
+- **Auto-registration**: a `[ModuleInitializer]` in the generated file (`JobsInstanceFactory.g.cs`) registers job delegates before any host startup code runs.
+- **Type safety**: compile-time validation of job method signatures and cron expression syntax.
+- **DI constructor injection**: generates constructor factory methods; uses `[JobsConstructor]` constructor when present, otherwise the first public constructor.
+- **Incremental**: only re-generates when marked methods change (fast on large solutions).
+- **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, and mismatched context types.
 
 ## Installation
 
@@ -24,77 +24,53 @@ dotnet add package Headless.Jobs.SourceGenerator
 ## Quick Start
 
 ```csharp
-// Define job with attribute
-[Jobs("*/5 * * * *")] // Every 5 minutes
-public static class CleanupJob
+using Headless.Jobs.Base;
+using Headless.Jobs.Enums;
+
+// Static cron job (no DI)
+[JobFunction("Cleanup", cronExpression: "*/5 * * * *")]
+public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
 {
-    public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
-    {
-        var logger = sp.GetRequiredService<ILogger<CleanupJob>>();
-        logger.LogInformation("Running cleanup");
-    }
+    sp.GetRequiredService<ILogger<Program>>().LogInformation("Cleaning up");
+    await Task.CompletedTask;
 }
 
-// Source generator creates:
-// - Job registration code
-// - Execution delegates
-// - Constructor injection
-// - Request type mapping
+// Instance job with primary constructor DI
+[JobFunction("ProcessOrder")]
+public sealed class OrderProcessor(IOrderService orders)
+{
+    public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct)
+        => await orders.ProcessAsync(context.Request, ct);
+}
 
-// No manual registration needed - jobs auto-discovered at compile time
+// Multiple constructors — mark the target with [JobsConstructor]
+public sealed class ComplexJob
+{
+    [JobsConstructor]
+    public ComplexJob(ILogger<ComplexJob> logger, IConfiguration config) { }
+
+    public ComplexJob() { } // ignored by generator
+
+    [JobFunction("ComplexTask")]
+    public async Task ExecuteAsync(CancellationToken ct) { }
+}
+
+// High-priority cron
+[JobFunction("DailyReport", cronExpression: "0 0 * * *", taskPriority: JobPriority.High)]
+public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
 ```
 
 ## Configuration
 
-No runtime configuration. Uses attributes:
-
-```csharp
-// Cron job
-[Jobs("0 0 * * *", Priority = JobPriority.High)]
-public static class DailyReport { /* ... */ }
-
-// Job with request payload
-[Jobs("ProcessOrder")]
-public sealed class OrderProcessor(IOrderService orders)
-{
-    public async Task ExecuteAsync(
-        JobFunctionContext<OrderRequest> context,
-        CancellationToken ct)
-    {
-        await orders.ProcessAsync(context.Request, ct);
-    }
-}
-
-// Custom constructor
-public sealed class ComplexJob
-{
-    [JobsConstructor]
-    public ComplexJob(ILogger<ComplexJob> logger, IConfiguration config)
-    {
-        // Custom initialization
-    }
-
-    [Jobs("ComplexTask")]
-    public async Task ExecuteAsync(/* ... */) { }
-}
-```
+No runtime configuration. Attributes are the sole interface. Generated output file: `JobsInstanceFactory.g.cs` (a `[ModuleInitializer]` in the consuming assembly).
 
 ## Dependencies
 
-- `Microsoft.CodeAnalysis.CSharp` (analyzer/generator)
+- `Microsoft.CodeAnalysis.CSharp` (build-time Roslyn API; not a runtime dependency)
 
 ## Side Effects
 
-Generates `JobsInstanceFactoryExtensions.g.cs` at compile time with:
-- Module initializer for auto-registration
-- Job execution delegates
-- Constructor factory methods
-- Request type registrations
-
-## Error Handling Notes
-
-Generated delegates fully support Jobs runtime error handling:
-
-- `JobFunctionContext`/`JobFunctionContext<TRequest>` are passed through to job methods.
-- `RetryCount` reflects the current attempt.
-- Exceptions flow into retry logic and `IJobExceptionHandler` when configured.
+Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
+- Contains a `[ModuleInitializer]` that registers job delegates and request-type mappings with the Jobs runtime.
+- Contains constructor factory lambdas for each discovered job class.
+- Has no effect at runtime beyond the one-time module initializer invocation.

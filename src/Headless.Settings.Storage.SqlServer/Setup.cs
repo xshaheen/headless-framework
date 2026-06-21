@@ -12,11 +12,17 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>Extension members that configure the SQL Server storage backend for the Headless settings feature.</summary>
 [PublicAPI]
 public static class SetupSettingsSqlServer
 {
     extension(HeadlessSettingsSetupBuilder setup)
     {
+        /// <summary>Configures the settings feature to use SQL Server, setting the connection string directly.</summary>
+        /// <param name="connectionString">SQL Server connection string. Must not be <see langword="null"/>, empty, or white space.</param>
+        /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="connectionString"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is empty or white space.</exception>
         public HeadlessSettingsSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -27,6 +33,10 @@ public static class SetupSettingsSqlServer
             });
         }
 
+        /// <summary>Configures the settings feature to use SQL Server, binding options from <paramref name="configuration"/>.</summary>
+        /// <param name="configuration">Configuration section to bind to <see cref="SqlServerSettingsOptions"/>. Must not be <see langword="null"/>.</param>
+        /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
         public HeadlessSettingsSetupBuilder UseSqlServer(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -36,6 +46,10 @@ public static class SetupSettingsSqlServer
             return setup;
         }
 
+        /// <summary>Configures the settings feature to use SQL Server, applying <paramref name="configure"/> to the provider options.</summary>
+        /// <param name="configure">Delegate used to configure <see cref="SqlServerSettingsOptions"/>. Must not be <see langword="null"/>.</param>
+        /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessSettingsSetupBuilder UseSqlServer(Action<SqlServerSettingsOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -45,6 +59,10 @@ public static class SetupSettingsSqlServer
             return setup;
         }
 
+        /// <summary>Configures the settings feature to use SQL Server, applying <paramref name="configure"/> to the provider options with access to the <see cref="IServiceProvider"/>.</summary>
+        /// <param name="configure">Delegate used to configure <see cref="SqlServerSettingsOptions"/> with service resolution. Must not be <see langword="null"/>.</param>
+        /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessSettingsSetupBuilder UseSqlServer(Action<SqlServerSettingsOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
@@ -55,6 +73,7 @@ public static class SetupSettingsSqlServer
         }
     }
 
+    /// <summary>Wires the SQL Server provider services into the DI container when applied to the settings setup builder.</summary>
     private sealed class SqlServerSettingsOptionsExtension : ISettingsStorageOptionsExtension
     {
         private readonly IConfiguration? _configuration;
@@ -99,6 +118,7 @@ public static class SetupSettingsSqlServer
         }
     }
 
+    /// <summary>Validates <see cref="SettingsStorageOptions"/> for use with the SQL Server backend, ensuring schema and table name identifiers are valid.</summary>
     private sealed class SqlServerSettingsStorageOptionsValidator : AbstractValidator<SettingsStorageOptions>
     {
         public SqlServerSettingsStorageOptionsValidator()

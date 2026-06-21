@@ -7,6 +7,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Headless.EntityFramework.Configurations;
 
+/// <summary>
+/// EF Core value converter that serializes a nullable <c>Locales</c> dictionary to a JSON string for
+/// storage and deserializes it on read. A <see langword="null"/> or <c>{}</c> value round-trips to
+/// <see langword="null"/>.
+/// </summary>
 [PublicAPI]
 public sealed class LocalesValueConverter()
     : ValueConverter<Locales?, string?>(x => _Serialize(x), x => _Deserialize(x))
@@ -26,6 +31,10 @@ public sealed class LocalesValueConverter()
     }
 }
 
+/// <summary>
+/// EF Core value comparer for nullable <c>Locales</c> that performs deep structural equality
+/// so EF Core can accurately detect changes and avoid spurious column updates.
+/// </summary>
 [PublicAPI]
 public sealed class LocalesValueComparer()
     : ValueComparer<Locales?>(

@@ -561,63 +561,95 @@ public sealed class CurrencyTests
 
     #region Parsing
 
-    // Note: The current parsing implementation has a bug - it splits on first digit
-    // and treats everything before it as the amount and after as the currency code.
-    // For input "USD100": amountSpan="USD" (fails), currencyCodeSpan="100"
-    // For input "100USD": amountSpan="" (empty, fails early)
-    // Only negative number prefixes like "-100USD" might work.
-
     [Fact]
-    public void try_parse_should_return_false_for_input_starting_with_digit()
+    public void try_parse_should_parse_amount_and_currency_code()
     {
-        // Input starting with digit produces empty amount span
         // when
         var success = Currency.TryParse("100USD", CultureInfo.InvariantCulture, out var result);
 
         // then
-        success.Should().BeFalse();
-        result.Should().BeNull();
+        success.Should().BeTrue();
+        result.Should().NotBeNull();
+        result!.Amount.Should().Be(100m);
+        result.CurrencyCode.Should().Be("USD");
     }
 
     [Fact]
-    public void try_parse_should_return_false_for_alpha_prefix()
+    public void try_parse_should_parse_decimal_amount()
     {
-        // Alpha prefix is treated as amount, which fails decimal parsing
         // when
-        var success = Currency.TryParse("USD100", CultureInfo.InvariantCulture, out var result);
+        var success = Currency.TryParse("100.5USD", CultureInfo.InvariantCulture, out var result);
 
         // then
-        success.Should().BeFalse();
-        result.Should().BeNull();
+        success.Should().BeTrue();
+        result!.Amount.Should().Be(100.5m);
+        result.CurrencyCode.Should().Be("USD");
     }
 
     [Fact]
-    public void try_parse_should_return_true_for_negative_number_prefix()
+    public void try_parse_should_parse_negative_amount()
     {
-        // "-100USD": amountSpan="-", currencyCodeSpan="100USD"
-        // "-" fails decimal parsing
         // when
         var success = Currency.TryParse("-100USD", CultureInfo.InvariantCulture, out var result);
 
         // then
-        success.Should().BeFalse();
+        success.Should().BeTrue();
+        result!.Amount.Should().Be(-100m);
+        result.CurrencyCode.Should().Be("USD");
     }
 
     [Fact]
-    public void parse_should_throw_for_input_starting_with_digit()
+    public void try_parse_should_round_trip_to_string_output()
     {
+        // given
+        var original = new Currency(1234.56m, "EUR");
+
         // when
-        var action = () => Currency.Parse("100USD", CultureInfo.InvariantCulture);
+        var success = Currency.TryParse(original.ToString(), CultureInfo.InvariantCulture, out var parsed);
 
         // then
-        action.Should().Throw<FormatException>();
+        success.Should().BeTrue();
+        parsed.Should().Be(original);
     }
 
     [Fact]
-    public void parse_should_throw_for_alpha_prefix()
+    public void try_parse_should_return_false_when_currency_code_is_missing()
     {
         // when
-        var action = () => Currency.Parse("USD100", CultureInfo.InvariantCulture);
+        var success = Currency.TryParse("100", CultureInfo.InvariantCulture, out var result);
+
+        // then
+        success.Should().BeFalse();
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void try_parse_should_return_false_when_amount_is_missing()
+    {
+        // when
+        var success = Currency.TryParse("USD", CultureInfo.InvariantCulture, out var result);
+
+        // then
+        success.Should().BeFalse();
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void parse_should_return_currency_for_valid_input()
+    {
+        // when
+        var result = Currency.Parse("100USD", CultureInfo.InvariantCulture);
+
+        // then
+        result.Amount.Should().Be(100m);
+        result.CurrencyCode.Should().Be("USD");
+    }
+
+    [Fact]
+    public void parse_should_throw_for_input_without_a_currency_code()
+    {
+        // when
+        var action = () => Currency.Parse("100", CultureInfo.InvariantCulture);
 
         // then
         action.Should().Throw<FormatException>();
@@ -630,17 +662,8 @@ public sealed class CurrencyTests
         var success = Currency.TryParse("100USD", CultureInfo.InvariantCulture, out var result);
 
         // then
-        success.Should().BeFalse();
-    }
-
-    [Fact]
-    public void parse_string_overload_should_delegate_to_span()
-    {
-        // when
-        var action = () => Currency.Parse("100USD", CultureInfo.InvariantCulture);
-
-        // then
-        action.Should().Throw<FormatException>();
+        success.Should().BeTrue();
+        result!.CurrencyCode.Should().Be("USD");
     }
 
     #endregion

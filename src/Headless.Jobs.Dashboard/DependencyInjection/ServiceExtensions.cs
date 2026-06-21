@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Coordination;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs.Coordination;
@@ -15,6 +17,24 @@ namespace Headless.Jobs.DependencyInjection;
 
 public static class ServiceExtensions
 {
+    /// <summary>
+    /// Registers the Jobs dashboard: an embedded SPA served at a configurable base path with a
+    /// SignalR hub for real-time updates and a configurable authentication layer.
+    /// </summary>
+    /// <remarks>
+    /// The dashboard is auto-injected into the ASP.NET Core middleware pipeline via an
+    /// <c>IStartupFilter</c>; no manual <c>app.Use…</c> call is required. To secure the dashboard,
+    /// use <see cref="DashboardOptionsBuilder.WithBasicAuth"/>, <see cref="DashboardOptionsBuilder.WithApiKey"/>,
+    /// <see cref="DashboardOptionsBuilder.WithHostAuthentication"/>, or
+    /// <see cref="DashboardOptionsBuilder.WithCustomAuth"/>. When coordination-based node membership
+    /// is registered, a live-nodes bridge is started automatically; otherwise the dashboard stays
+    /// inert on the live-nodes panel.
+    /// </remarks>
+    /// <param name="jobsConfiguration">The jobs options builder.</param>
+    /// <param name="configureDashboard">
+    /// Optional callback to configure the dashboard. When <see langword="null"/>, the dashboard is
+    /// served at <c>/jobs/dashboard</c> with CORS open to all origins and no authentication.
+    /// </param>
     public static JobsOptionsBuilder<TTimeJob, TCronJob> AddDashboard<TTimeJob, TCronJob>(
         this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
         Action<DashboardOptionsBuilder>? configureDashboard = null

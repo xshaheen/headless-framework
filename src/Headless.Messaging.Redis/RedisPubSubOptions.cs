@@ -1,12 +1,19 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
+/// <summary>
+/// Configuration options for the Redis Pub/Sub bus transport.
+/// </summary>
+/// <remarks>
+/// Redis Pub/Sub provides at-most-once fan-out delivery. Messages published when no subscriber
+/// is active are permanently lost. When <see cref="Configuration"/> is <see langword="null"/> and
+/// no endpoints are specified, the transport connects to <c>localhost</c> on the default Redis port.
+/// </remarks>
 public sealed class RedisPubSubOptions
 {
     /// <summary>

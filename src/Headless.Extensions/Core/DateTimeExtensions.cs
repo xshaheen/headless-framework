@@ -15,6 +15,7 @@ public static class DateTimeExtensions
     /// <param name="dateTime">The <see cref="DateTime"/> to convert.</param>
     /// <param name="timezone">The target <see cref="TimeZoneInfo"/>.</param>
     /// <returns>A <see cref="DateTimeOffset"/> representing the same date and time in the specified timezone.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="timezone"/> is <see langword="null"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset AsTimezone(this DateTime dateTime, TimeZoneInfo timezone)
@@ -26,6 +27,9 @@ public static class DateTimeExtensions
         return new DateTimeOffset(unspecifiedDateTime, offset);
     }
 
+    /// <summary>Returns a copy of <paramref name="dateTime"/> with the time-of-day reset to midnight (00:00:00).</summary>
+    /// <param name="dateTime">The <see cref="DateTime"/> whose date portion is preserved.</param>
+    /// <returns>A new <see cref="DateTime"/> at the start of the same day, retaining the original <see cref="DateTime.Kind"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateTime ClearTime(this DateTime dateTime)
@@ -147,6 +151,7 @@ public static class DateTimeExtensions
     /// <param name="date">The <see cref="DateTime"/> to floor.</param>
     /// <param name="interval">The <see cref="TimeSpan"/> interval to floor to.</param>
     /// <returns>A new <see cref="DateTime"/> floored to the nearest interval of the specified <paramref name="interval"/>.</returns>
+    /// <exception cref="DivideByZeroException">Thrown when <paramref name="interval"/> is <see cref="TimeSpan.Zero"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static DateTime Floor(this DateTime date, TimeSpan interval)
@@ -160,6 +165,7 @@ public static class DateTimeExtensions
     /// <param name="date">The <see cref="DateTime"/> to ceil.</param>
     /// <param name="interval">The <see cref="TimeSpan"/> interval to ceil to.</param>
     /// <returns>A new <see cref="DateTime"/> ceiled to the nearest interval of the specified <paramref name="interval"/>.</returns>
+    /// <exception cref="DivideByZeroException">Thrown when <paramref name="interval"/> is <see cref="TimeSpan.Zero"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static DateTime Ceiling(this DateTime date, TimeSpan interval)
@@ -167,6 +173,9 @@ public static class DateTimeExtensions
         return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
     }
 
+    /// <summary>Extracts the date portion of <paramref name="date"/> as a <see cref="DateOnly"/>, ignoring the time-of-day.</summary>
+    /// <param name="date">The <see cref="DateTime"/> to convert.</param>
+    /// <returns>A <see cref="DateOnly"/> for the same calendar date, without any time-zone conversion.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateOnly ToDateOnly(this DateTime date)
@@ -174,6 +183,9 @@ public static class DateTimeExtensions
         return DateOnly.FromDateTime(date);
     }
 
+    /// <summary>Converts <paramref name="date"/> to UTC and extracts the resulting date portion as a <see cref="DateOnly"/>.</summary>
+    /// <param name="date">The <see cref="DateTime"/> to convert to UTC before extracting the date.</param>
+    /// <returns>A <see cref="DateOnly"/> for the UTC calendar date corresponding to <paramref name="date"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static DateOnly ToUtcDateOnly(this DateTime date)
@@ -181,6 +193,9 @@ public static class DateTimeExtensions
         return DateOnly.FromDateTime(date.ToUniversalTime());
     }
 
+    /// <summary>Extracts the time-of-day portion of <paramref name="date"/> as a <see cref="TimeOnly"/>, ignoring the date.</summary>
+    /// <param name="date">The <see cref="DateTime"/> to convert.</param>
+    /// <returns>A <see cref="TimeOnly"/> for the same time-of-day, without any time-zone conversion.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static TimeOnly ToTimeOnly(this DateTime date)
@@ -188,6 +203,9 @@ public static class DateTimeExtensions
         return TimeOnly.FromDateTime(date);
     }
 
+    /// <summary>Converts <paramref name="date"/> to UTC and extracts the resulting time-of-day as a <see cref="TimeOnly"/>.</summary>
+    /// <param name="date">The <see cref="DateTime"/> to convert to UTC before extracting the time-of-day.</param>
+    /// <returns>A <see cref="TimeOnly"/> for the UTC time-of-day corresponding to <paramref name="date"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static TimeOnly ToUtcTimeOnly(this DateTime date)

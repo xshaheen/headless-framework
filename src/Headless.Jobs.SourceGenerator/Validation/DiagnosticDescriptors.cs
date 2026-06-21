@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Microsoft.CodeAnalysis;
 
 namespace Headless.Jobs.SourceGenerator.Validation;

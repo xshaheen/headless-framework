@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.DistributedLocks;
-
 namespace Headless.DistributedLocks.SqlServer;
 
 /// <summary>

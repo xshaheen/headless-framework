@@ -12,11 +12,19 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>
+/// Registers the PostgreSQL raw-DDL storage provider for Headless Permissions.
+/// </summary>
 [PublicAPI]
 public static class SetupPermissionsPostgreSql
 {
     extension(HeadlessPermissionsSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures the permissions system to use PostgreSQL for raw-DDL storage, setting the connection
+        /// string directly.
+        /// </summary>
+        /// <param name="connectionString">The Npgsql connection string for the PostgreSQL database.</param>
         public HeadlessPermissionsSetupBuilder UsePostgreSql(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -27,6 +35,13 @@ public static class SetupPermissionsPostgreSql
             });
         }
 
+        /// <summary>
+        /// Configures the permissions system to use PostgreSQL for raw-DDL storage, binding
+        /// <see cref="PostgreSqlPermissionsOptions"/> from <paramref name="configuration"/>.
+        /// </summary>
+        /// <param name="configuration">
+        /// The configuration section to bind into <see cref="PostgreSqlPermissionsOptions"/>.
+        /// </param>
         public HeadlessPermissionsSetupBuilder UsePostgreSql(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -36,6 +51,11 @@ public static class SetupPermissionsPostgreSql
             return setup;
         }
 
+        /// <summary>
+        /// Configures the permissions system to use PostgreSQL for raw-DDL storage, applying
+        /// <paramref name="configure"/> to <see cref="PostgreSqlPermissionsOptions"/>.
+        /// </summary>
+        /// <param name="configure">Delegate that configures the PostgreSQL provider options.</param>
         public HeadlessPermissionsSetupBuilder UsePostgreSql(Action<PostgreSqlPermissionsOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -45,6 +65,14 @@ public static class SetupPermissionsPostgreSql
             return setup;
         }
 
+        /// <summary>
+        /// Configures the permissions system to use PostgreSQL for raw-DDL storage, applying
+        /// <paramref name="configure"/> to <see cref="PostgreSqlPermissionsOptions"/> with access to
+        /// resolved services.
+        /// </summary>
+        /// <param name="configure">
+        /// Delegate that configures the PostgreSQL provider options with access to <see cref="IServiceProvider"/>.
+        /// </param>
         public HeadlessPermissionsSetupBuilder UsePostgreSql(
             Action<PostgreSqlPermissionsOptions, IServiceProvider> configure
         )

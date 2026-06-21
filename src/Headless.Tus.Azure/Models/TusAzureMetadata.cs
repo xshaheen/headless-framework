@@ -268,7 +268,7 @@ internal sealed partial class TusAzureMetadata
         return sanitized;
     }
 
-    [GeneratedRegex(@"[^a-zA-Z0-9_]", RegexOptions.None, 100)]
+    [GeneratedRegex("[^a-zA-Z0-9_]", RegexOptions.None, 100)]
     private static partial Regex _AzureMetadataKey();
 
     #endregion

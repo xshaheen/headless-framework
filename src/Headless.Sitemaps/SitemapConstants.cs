@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Xml;
-using Headless.Sitemaps.Internals;
+using Headless.Core;
 
 namespace Headless.Sitemaps;
 
+/// <summary>Shared constants for sitemap generation.</summary>
+[PublicAPI]
 public static class SitemapConstants
 {
     /// <summary>Gets a date and time format for the sitemap.</summary>

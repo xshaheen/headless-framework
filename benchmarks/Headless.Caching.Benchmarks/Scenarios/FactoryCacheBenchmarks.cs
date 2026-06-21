@@ -7,7 +7,7 @@ namespace Headless.Caching.Benchmarks.Scenarios;
 [MemoryDiagnoser]
 public class FactoryCacheBenchmarks
 {
-    private const int Seed = 5050;
+    private const int _Seed = 5050;
     private readonly TimeSpan _expiration = TimeSpan.FromMinutes(1);
     private ICacheBenchmarkClient? _client;
     private string _hotKey = "";
@@ -26,7 +26,7 @@ public class FactoryCacheBenchmarks
     {
         var prefix = BenchmarkKeyPrefix.Create(Provider, nameof(FactoryCacheBenchmarks), Guid.NewGuid().ToString("N"));
         _client = CacheBenchmarkClientFactory.Create(Provider, prefix);
-        PayloadValue = BenchmarkPayloadFactory.Create(PayloadSize, Seed);
+        PayloadValue = BenchmarkPayloadFactory.Create(PayloadSize, _Seed);
         _hotKey = "factory:hot";
 
         await Client

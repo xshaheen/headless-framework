@@ -106,6 +106,23 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
+    public void get_end_of_month_should_handle_offset_that_crosses_a_month_boundary()
+    {
+        // given - Jan 31 23:00 UTC; a +2h offset shifts the local calendar date into February
+        var dateTimeOffset = new DateTimeOffset(2021, 1, 31, 23, 0, 0, TimeSpan.Zero);
+
+        // when - must use February's day count, not build an invalid "February 31"
+        var result = dateTimeOffset.GetEndOfMonth(TimeSpan.FromHours(2));
+
+        // then - end of February (2021 has 28 days)
+        result.Month.Should().Be(2);
+        result.Day.Should().Be(28);
+        result.Hour.Should().Be(23);
+        result.Minute.Should().Be(59);
+        result.Offset.Should().Be(TimeSpan.FromHours(2));
+    }
+
+    [Fact]
     public void get_start_of_year_should_return_jan_1()
     {
         // given

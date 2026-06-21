@@ -17,7 +17,7 @@ internal sealed class CircuitBreakerMetrics
     /// </summary>
     internal const string UnknownGroupTag = "_unknown";
 
-    private const string GroupTagKey = "messaging.consumer.group";
+    private const string _GroupTagKey = "messaging.consumer.group";
 
     private readonly Counter<long> _circuitTrips;
     private readonly Histogram<double> _openDuration;
@@ -77,13 +77,13 @@ internal sealed class CircuitBreakerMetrics
     /// <summary>Records a circuit trip (Closed → Open or HalfOpen → Open).</summary>
     public void RecordTrip(string groupName)
     {
-        _circuitTrips.Add(1, new TagList { { GroupTagKey, _SafeTag(groupName) } });
+        _circuitTrips.Add(1, new TagList { { _GroupTagKey, _SafeTag(groupName) } });
     }
 
     /// <summary>Records how long the circuit was open before transitioning to HalfOpen or Closed.</summary>
     public void RecordOpenDuration(string groupName, TimeSpan duration)
     {
-        _openDuration.Record(duration.TotalSeconds, new TagList { { GroupTagKey, _SafeTag(groupName) } });
+        _openDuration.Record(duration.TotalSeconds, new TagList { { _GroupTagKey, _SafeTag(groupName) } });
     }
 
     private string _SafeTag(string groupName)
@@ -108,7 +108,7 @@ internal sealed class CircuitBreakerMetrics
 
         foreach (var (group, state) in snapshot)
         {
-            yield return new Measurement<int>((int)state, new TagList { { GroupTagKey, _SafeTag(group) } });
+            yield return new Measurement<int>((int)state, new TagList { { _GroupTagKey, _SafeTag(group) } });
         }
     }
 }

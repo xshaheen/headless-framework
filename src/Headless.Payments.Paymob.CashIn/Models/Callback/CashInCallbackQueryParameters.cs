@@ -5,6 +5,16 @@ using Humanizer;
 
 namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 
+/// <summary>
+/// Represents the flat query-string parameters Paymob appends to the merchant's callback URL
+/// for GET-style transaction notifications.
+/// </summary>
+/// <remarks>
+/// Bind these parameters from the incoming HTTP request (e.g., via model binding in ASP.NET Core).
+/// Verify authenticity by passing the instance to
+/// <c>IPaymobCashInBroker.Validate(CashInCallbackQueryParameters)</c>, which internally calls
+/// <c>ToConcatenatedString</c> and checks the HMAC.
+/// </remarks>
 [PublicAPI]
 public sealed class CashInCallbackQueryParameters
 {
@@ -119,7 +129,15 @@ public sealed class CashInCallbackQueryParameters
     [JsonPropertyName("txn_response_code")]
     public string? TxnResponseCode { get; init; }
 
-    /// <summary>Return the concatenated string of transaction.</summary>
+    /// <summary>
+    /// Produces the HMAC input string for these query parameters by concatenating the required
+    /// fields in Paymob's defined order.
+    /// </summary>
+    /// <remarks>
+    /// This string is passed to the HMAC-SHA512 function along with the configured HMAC secret.
+    /// Prefer <c>IPaymobCashInBroker.Validate(CashInCallbackQueryParameters)</c> over calling
+    /// this method directly.
+    /// </remarks>
     public string ToConcatenatedString()
     {
         static string toString(bool value)
@@ -149,6 +167,10 @@ public sealed class CashInCallbackQueryParameters
             + toString(Success);
     }
 
+    /// <summary>
+    /// Parses <c>CreatedAt</c> into a <see cref="DateTimeOffset"/>, applying the Egypt/Cairo UTC+2
+    /// offset when the raw string carries no timezone information.
+    /// </summary>
     public DateTimeOffset CreatedAtDateTimeOffset()
     {
         var dateTime = DateTime.Parse(CreatedAt, CultureInfo.InvariantCulture);
@@ -162,42 +184,55 @@ public sealed class CashInCallbackQueryParameters
             : DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture);
     }
 
+    /// <summary>Returns <see langword="true"/> when the payment method was a credit or debit card.</summary>
     public bool IsCard()
     {
         return string.Equals(SourceDataType, "card", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the payment method was a mobile wallet.</summary>
     public bool IsWallet()
     {
         return string.Equals(SourceDataType, "wallet", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the payment method was cash collection by courier.</summary>
     public bool IsCashCollection()
     {
         return string.Equals(SourceDataType, "cash_present", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the payment was made at an Aman kiosk.</summary>
     public bool IsAcceptKiosk()
     {
         return string.Equals(SourceDataType, "aggregator", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the failure reason is insufficient funds on the customer's card.</summary>
     public bool IsInsufficientFundError()
     {
         return string.Equals(TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the failure reason is a card authentication failure.</summary>
     public bool IsAuthenticationFailedError()
     {
         return string.Equals(TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when the issuing bank declined the transaction (generic decline).
+    /// </summary>
     public bool IsDeclinedError()
     {
         // "data.message": may be "Do not honour", or "Invalid card number", ...
         return string.Equals(TxnResponseCode, "DECLINED", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when Paymob's fraud management system rejected the transaction
+    /// because it did not pass risk checks.
+    /// </summary>
     public bool IsRiskChecksError()
     {
         return TxnResponseCode is "11"
@@ -205,6 +240,10 @@ public sealed class CashInCallbackQueryParameters
                 == true;
     }
 
+    /// <summary>
+    /// Returns normalised card information when the payment method was a card, or
+    /// <see langword="null"/> for non-card channels.
+    /// </summary>
     public CashInCardInfo? Card()
     {
         if (!IsCard())

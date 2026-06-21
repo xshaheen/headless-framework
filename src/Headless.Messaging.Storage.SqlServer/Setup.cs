@@ -16,6 +16,15 @@ public static class SetupSqlServerMessaging
 {
     extension(MessagingSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures the messaging outbox to use SQL Server with a raw ADO.NET connection string.
+        /// The connection string is stored in <c>SqlServerOptions.ConnectionString</c> and used
+        /// directly without an EF Core <c>DbContext</c>. The transactional outbox is not available
+        /// on this path; use <c>UseEntityFramework&lt;TContext&gt;()</c> for atomic outbox support.
+        /// </summary>
+        /// <param name="connectionString">The SQL Server connection string.</param>
+        /// <returns>The builder for chaining.</returns>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="connectionString"/> is null or whitespace.</exception>
         public MessagingSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -26,6 +35,13 @@ public static class SetupSqlServerMessaging
             });
         }
 
+        /// <summary>
+        /// Configures the messaging outbox to use SQL Server, delegating all option configuration
+        /// to the supplied <paramref name="configure"/> action.
+        /// </summary>
+        /// <param name="configure">An action that populates <see cref="SqlServerOptions"/>.</param>
+        /// <returns>The builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UseSqlServer(Action<SqlServerOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -37,12 +53,29 @@ public static class SetupSqlServerMessaging
             return setup;
         }
 
+        /// <summary>
+        /// Configures the messaging outbox to use SQL Server through the specified EF Core
+        /// <typeparamref name="TContext"/>. The connection string is derived from the registered
+        /// <c>DbContext</c> at startup. The transactional outbox is enabled by default.
+        /// </summary>
+        /// <typeparam name="TContext">The EF Core <c>DbContext</c> whose connection is used for message storage.</typeparam>
+        /// <returns>The builder for chaining.</returns>
         public MessagingSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext
         {
             return setup.UseEntityFramework<TContext>(_ => { });
         }
 
+        /// <summary>
+        /// Configures the messaging outbox to use SQL Server through the specified EF Core
+        /// <typeparamref name="TContext"/>, with additional EF-specific option overrides.
+        /// The transactional outbox is enabled by default; set
+        /// <c>options.EnableTransactionalOutbox = false</c> to opt out.
+        /// </summary>
+        /// <typeparam name="TContext">The EF Core <c>DbContext</c> whose connection is used for message storage.</typeparam>
+        /// <param name="configure">An action that populates <see cref="SqlServerEntityFrameworkMessagingOptions"/>.</param>
+        /// <returns>The builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UseEntityFramework<TContext>(
             Action<SqlServerEntityFrameworkMessagingOptions> configure
         )

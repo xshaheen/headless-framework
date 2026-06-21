@@ -14,7 +14,7 @@ namespace Headless.Primitives;
 public interface IAsyncEvent<TEvent> : IObservable<TEvent>
     where TEvent : EventArgs
 {
-    /// <summary>>Indicates whether to invoke handlers in parallel.</summary>
+    /// <summary>Indicates whether to invoke handlers in parallel.</summary>
     bool ParallelInvoke { get; }
 
     /// <summary>Indicates whether the event has any handlers.</summary>
@@ -22,21 +22,30 @@ public interface IAsyncEvent<TEvent> : IObservable<TEvent>
 
     /// <summary>Adds an asynchronous event handler to the invocation list.</summary>
     /// <param name="callback">The event handler to add.</param>
-    /// <returns>An IDisposable that can be used to remove the event handler.</returns>
+    /// <returns>An <see cref="IDisposable"/> that removes the registered handler when disposed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is <see langword="null"/>.</exception>
     IDisposable AddHandler(Func<object, TEvent, Task> callback);
 
     /// <summary>Adds a synchronous event handler to the invocation list.</summary>
     /// <param name="callback">The event handler to add.</param>
-    /// <returns>An IDisposable that can be used to remove the event handler.</returns>
+    /// <returns>An <see cref="IDisposable"/> that removes the registered handler when disposed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is <see langword="null"/>.</exception>
     IDisposable AddHandler(Action<object, TEvent> callback);
 
     /// <summary>Removes an asynchronous event handler from the invocation list.</summary>
     /// <param name="callback">The event handler to remove.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="callback"/> is <see langword="null"/>.</exception>
     void RemoveHandler(Func<object, TEvent, Task> callback);
 
-    /// <summary>Invokes all event handlers asynchronously.</summary>
+    /// <summary>Invokes all registered event handlers asynchronously over a snapshot of the invocation list.</summary>
     /// <param name="sender">The source of the event.</param>
     /// <param name="eventArgs">The event data.</param>
+    /// <returns>A <see cref="Task"/> that completes once every handler has run.</returns>
+    /// <remarks>
+    /// When <see cref="ParallelInvoke"/> is <see langword="true"/>, handlers run concurrently and any failures are
+    /// surfaced together; when <see langword="false"/>, handlers run sequentially and the first handler exception
+    /// stops the remaining handlers and propagates to the caller.
+    /// </remarks>
     Task InvokeAsync(object sender, TEvent eventArgs);
 
     /// <summary>Clear the event handlers.</summary>
@@ -57,9 +66,11 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
     private readonly List<Func<object, TEvent, Task>> _eventHandlers = [];
     private readonly Lock _lockObject = new();
 
+    /// <inheritdoc />
     public bool ParallelInvoke { get; } = parallelInvoke;
 
     // ReSharper disable once InconsistentlySynchronizedField
+    /// <inheritdoc />
     public bool HasHandlers => _eventHandlers.Count > 0;
 
     /// <inheritdoc />

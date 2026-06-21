@@ -84,35 +84,30 @@ public sealed class IsNotDefault
     }
 
     [Fact]
-    public void is_not_default_or_null_should_return_argument_if_not_default_or_null()
+    public void is_not_default_nullable_should_return_null_when_argument_is_null()
     {
-        // given
-        int? nonDefaultValue = 20;
+        // given - the nullable overload accepts null and returns it as-is
+        int? argument = null;
 
         // when & then
-        Argument.IsNotDefaultOrNull(nonDefaultValue).Should().Be(nonDefaultValue);
+        Argument.IsNotDefault(argument).Should().BeNull();
     }
 
     [Fact]
-    public void is_not_default_or_null_should_throw_if_argument_is_null()
+    public void is_not_default_nullable_should_throw_when_value_is_default()
     {
         // given
-        int? argument = null;
-        var customMessage = $"Error {nameof(argument)} = {argument} is default null for nullable type.";
+        int? argument = 0;
 
         // when
-        Action action = () => Argument.IsNotDefaultOrNull(argument);
-        Action actionWithCustomMessage = () => Argument.IsNotDefaultOrNull(argument, customMessage);
+        Action action = () => Argument.IsNotDefault(argument);
 
         // then
         action
             .Should()
-            .ThrowExactly<ArgumentNullException>()
-            .WithMessage("Required argument \"argument\" was null. (Parameter 'argument')");
-
-        actionWithCustomMessage
-            .Should()
-            .ThrowExactly<ArgumentNullException>()
-            .WithMessage($"{customMessage} (Parameter 'argument')");
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                "The argument \"argument\" can NOT be the default value of <System.Int32>. (Parameter 'argument')"
+            );
     }
 }

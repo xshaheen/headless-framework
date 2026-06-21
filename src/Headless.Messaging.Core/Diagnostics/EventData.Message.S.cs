@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Messaging.Messages;
-using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.Diagnostics;
 

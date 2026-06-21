@@ -5,8 +5,25 @@ using Microsoft.Extensions.Logging;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// High-performance <see cref="LoggerMessage"/>-based log methods for the distributed-lock and
+/// distributed-semaphore providers. Non-generated helpers that compute elapsed time from a
+/// <see cref="TimeProvider"/> timestamp are defined as regular methods to avoid allocating a
+/// <see cref="TimeSpan"/> before the log-level guard.
+/// </summary>
 public static partial class RegularLockLoggerExtensions
 {
+    /// <summary>
+    /// Logs a transient storage error during an acquire attempt, computing elapsed time from the
+    /// provided <paramref name="timeProvider"/> and <paramref name="timestamp"/> only when
+    /// <see cref="LogLevel.Trace"/> is enabled (avoids the elapsed-time computation on the hot path).
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="exception">The exception that occurred.</param>
+    /// <param name="resource">The resource being acquired.</param>
+    /// <param name="leaseId">The lease ID of the acquire attempt.</param>
+    /// <param name="timeProvider">Time provider used to compute elapsed time from <paramref name="timestamp"/>.</param>
+    /// <param name="timestamp">The <see cref="TimeProvider.GetTimestamp"/> value captured at the start of the acquire.</param>
     public static void LogErrorAcquiringLockElapsed(
         this ILogger logger,
         Exception exception,

@@ -94,7 +94,7 @@ public sealed class InMemoryCacheTests : TestBase
             physicalExpiresAt,
             null,
             typeof(InMemoryCache)
-                .GetField("_timeProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetField("_timeProvider", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
                 .GetValue(cache),
             false,
             true,
@@ -112,7 +112,10 @@ public sealed class InMemoryCacheTests : TestBase
 
     private static object _GetMemory(InMemoryCache cache)
     {
-        var field = typeof(InMemoryCache).GetField("_memory", BindingFlags.Instance | BindingFlags.NonPublic);
+        var field = typeof(InMemoryCache).GetField(
+            "_memory",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
         field.Should().NotBeNull();
 
         return field!.GetValue(cache)!;
@@ -122,7 +125,10 @@ public sealed class InMemoryCacheTests : TestBase
     {
         var method = typeof(InMemoryCache).GetMethod(
             "_StartMaintenanceAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(bool)],
+            null
         );
         method.Should().NotBeNull();
 
@@ -1872,12 +1878,7 @@ public sealed class InMemoryCacheTests : TestBase
             .BeFalse();
         (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(0);
 
-        var afterFlush = await cache.GetOrAddAsync<int>(
-            key,
-            _ => ValueTask.FromResult<int>(2),
-            failSafeOptions,
-            AbortToken
-        );
+        var afterFlush = await cache.GetOrAddAsync(key, _ => ValueTask.FromResult(2), failSafeOptions, AbortToken);
         afterFlush.IsStale.Should().BeFalse("flush wiped the stale reserve, so the factory runs fresh");
         afterFlush.Value.Should().Be(2);
     }
@@ -2322,7 +2323,7 @@ public sealed class InMemoryCacheTests : TestBase
         object boxed = boxedInt;
 
         // when
-        await cache.UpsertAsync<object>(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
         var result = await cache.GetAsync<int>(key, AbortToken);
 
         // then
@@ -2365,7 +2366,7 @@ public sealed class InMemoryCacheTests : TestBase
         object boxed = new TestClass { Value = 1234 };
 
         // when
-        await cache.UpsertAsync<object>(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
         var result = await cache.GetAsync<TestClass>(key, AbortToken);
 
         // then

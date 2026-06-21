@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.AuditLog;
 using Headless.Serializer;
 using Microsoft.Extensions.Options;
 using Npgsql;

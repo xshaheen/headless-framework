@@ -71,11 +71,17 @@ public readonly struct PrimitiveValidationResult : IEquatable<PrimitiveValidatio
         return HashCode.Combine(IsValid, ErrorMessage);
     }
 
+    /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are equal.</summary>
+    /// <param name="left">Left operand.</param>
+    /// <param name="right">Right operand.</param>
     public static bool operator ==(PrimitiveValidationResult left, PrimitiveValidationResult right)
     {
         return left.Equals(right);
     }
 
+    /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are not equal.</summary>
+    /// <param name="left">Left operand.</param>
+    /// <param name="right">Right operand.</param>
     public static bool operator !=(PrimitiveValidationResult left, PrimitiveValidationResult right)
     {
         return !(left == right);

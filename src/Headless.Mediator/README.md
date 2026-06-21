@@ -1,16 +1,24 @@
 # Headless.Mediator
 
-HTTP-agnostic Mediator behaviors for Headless applications.
-
 ## Problem Solved
 
-Provides validation and request logging behaviors for Mediator pipelines without tying dispatch to ASP.NET Core.
+Adds pipeline behaviors for FluentValidation pre-processing and structured request/response/slow-request logging to any Mediator pipeline. These behaviors are transport-agnostic: the same registrations work in ASP.NET Core API hosts, background workers, message consumers, and console applications.
 
 ## Key Features
 
-- `ValidationRequestPreProcessor<TMessage, TResponse>` runs FluentValidation validators before handlers
-- Request, response, and slow-request logging behaviors for Mediator pipelines
-- Idempotent setup extensions for validation and logging pipeline registration; every extension accepts an optional `ServiceLifetime` (default `Scoped`)
+- `ValidationRequestPreProcessor<TMessage, TResponse>` — runs all registered `IValidator<TMessage>` concurrently before the handler; throws `ValidationException` on any failure.
+- `RequestLoggingBehavior<TMessage, TResponse>` — logs the message name and payload at Debug level before handler execution.
+- `ResponseLoggingBehavior<TMessage, TResponse>` — logs the message name, payload, and response at Debug level after handler execution.
+- `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs at Warning level when a handler takes ≥ 1 second.
+- Idempotent composite setup extensions: `AddMediatorValidationRequestBehavior()` and `AddMediatorLoggingBehaviors()`.
+- Fine-grained split: `AddMediatorRequestResponseLoggingBehaviors()` (request + response only) and `AddMediatorSlowRequestsLoggingBehaviors()` (slow-request only).
+- Every setup extension accepts an optional `ServiceLifetime` parameter (default `Scoped`).
+
+## Design Notes
+
+**`ICurrentUser` instead of `IHttpContextAccessor`** — all logging behaviors resolve the current user through `ICurrentUser` from `Headless.Core` rather than reading `HttpContext`. This preserves host-agnosticism: the same handler and behavior registrations run identically from a web host and a worker service. Callers that have no real user (background processes) should register `NullCurrentUser`.
+
+**`TryAddEnumerable` for idempotency** — all setup extensions use `TryAddEnumerable` to register the open-generic `IPipelineBehavior<,>` descriptor. Calling the same extension twice does not produce duplicate behaviors in the pipeline.
 
 ## Installation
 
@@ -22,31 +30,40 @@ dotnet add package Headless.Mediator
 
 ```csharp
 using Headless.Mediator;
-using Mediator;
 
+// Register Mediator (source-generator library)
 builder.Services.AddMediator(options =>
 {
     options.ServiceLifetime = ServiceLifetime.Scoped;
 });
 
+// Register behaviors
 builder.Services.AddMediatorValidationRequestBehavior();
 builder.Services.AddMediatorLoggingBehaviors();
 ```
 
+Define a request and handler:
+
 ```csharp
+using Mediator;
+
 public sealed record CreateOrder(string ProductId) : IRequest<CreateOrderResponse>;
 
 public sealed record CreateOrderResponse(Guid OrderId);
+
+public sealed class CreateOrderHandler : IRequestHandler<CreateOrder, CreateOrderResponse>
+{
+    public ValueTask<CreateOrderResponse> Handle(CreateOrder request, CancellationToken cancellationToken)
+    {
+        return ValueTask.FromResult(new CreateOrderResponse(Guid.NewGuid()));
+    }
+}
 ```
 
-## Usage
-
-### Request Validation
-
-`AddMediatorValidationRequestBehavior()` registers a Mediator pre-processor that runs every registered `IValidator<TMessage>` for the dispatched message. If any validator returns failures, the pre-processor logs the validation event and throws FluentValidation's `ValidationException`.
+Add a FluentValidation validator (picked up automatically by the validation pre-processor):
 
 ```csharp
-public sealed record CreateOrder(string ProductId) : IRequest<CreateOrderResponse>;
+using FluentValidation;
 
 public sealed class CreateOrderValidator : AbstractValidator<CreateOrder>
 {
@@ -57,55 +74,40 @@ public sealed class CreateOrderValidator : AbstractValidator<CreateOrder>
 }
 ```
 
-Register validators through your normal FluentValidation DI setup. The validation pipeline is HTTP-agnostic; `Headless.Api` maps `ValidationException` to the standard 422 response when its exception handler is configured.
+## Configuration
 
-### Request and Response Logging
-
-`AddMediatorLoggingBehaviors()` is the composite that registers:
-
-- `RequestLoggingBehavior<TMessage, TResponse>` — logs before handler execution
-- `ResponseLoggingBehavior<TMessage, TResponse>` — logs after handler execution
-- `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs requests slower than one second
-
-For finer-grained control, the composite is split into two registrations you can opt into independently:
-
-- `AddMediatorRequestResponseLoggingBehaviors()` — request + response logging only
-- `AddMediatorSlowRequestsLoggingBehaviors()` — slow-request logging only
-
-These behaviors use `ICurrentUser` from `Headless.Core` instead of ASP.NET request context, so they work in API, worker, and console hosts. Register a real `ICurrentUser` where user identity exists, or `NullCurrentUser` for host-level background processes.
-
-### Service Lifetime
-
-All setup extensions accept an optional `ServiceLifetime` parameter that controls the descriptor lifetime of the registered pipeline behaviors. The default is `ServiceLifetime.Scoped`.
+All setup extensions accept an optional `ServiceLifetime` parameter:
 
 ```csharp
-// Scoped (default): one behavior instance per request scope.
+// Default: Scoped (one behavior instance per request scope)
 builder.Services.AddMediatorValidationRequestBehavior();
 builder.Services.AddMediatorLoggingBehaviors();
 
-// Opt into Transient if a behavior must capture no state across the request scope.
+// Override lifetime per registration
 builder.Services.AddMediatorValidationRequestBehavior(ServiceLifetime.Transient);
 builder.Services.AddMediatorLoggingBehaviors(ServiceLifetime.Transient);
 ```
 
-## Boundary doctrine
-
-Some cross-cuts look like Mediator behaviors but belong at the HTTP boundary instead. The framework rejects pipeline behaviors for **authentication/authorization**, **tenancy enforcement**, and **idempotency** — see [`docs/llms/mediator.md`](../../docs/llms/mediator.md) for the full reasoning.
-
-What belongs in the Mediator pipeline: FluentValidation pre-processors, request/response logging, slow-request alerts, response-shape transforms — concerns that have no HTTP semantics. What does NOT: anything requiring `HttpContext`, anything that should reject before model binding, anything that needs to cache HTTP status/headers/byte body rather than the typed CQRS response.
-
-## Tenancy
-
-Tenant enforcement is an HTTP authorization concern in `Headless.Api.Core`. Use `.Authorization(auth => auth.RequireTenant())`, `TenantRequirement`, endpoint-level `[AllowMissingTenant]` / `.AllowMissingTenant()`, and `[RequireTenant]` / `.RequireTenant()` for tenant-aware ASP.NET Core hosts.
-
-For worker, console, and message-consumer paths, establish tenant scope explicitly around the work:
+For finer-grained control over logging behaviors:
 
 ```csharp
-using (currentTenant.Change(tenantId))
-{
-    await mediator.Send(new CreateOrder(productId), cancellationToken);
-}
+// Request + response logging only (no slow-request alerting)
+builder.Services.AddMediatorRequestResponseLoggingBehaviors();
+
+// Slow-request alerting only (warns when handler takes >= 1 second)
+builder.Services.AddMediatorSlowRequestsLoggingBehaviors();
 ```
+
+For worker/console hosts where no real user exists, register `NullCurrentUser` before the logging behaviors:
+
+```csharp
+using Headless.Core;
+
+builder.Services.AddSingleton<ICurrentUser, NullCurrentUser>();
+builder.Services.AddMediatorLoggingBehaviors();
+```
+
+For non-HTTP paths where tenant scope must be established explicitly, use `currentTenant.Change(tenantId)` around the `mediator.Send()` call. Tenant enforcement is an HTTP authorization concern in `Headless.Api.Core` — see the boundary doctrine in `docs/llms/mediator.md`.
 
 ## Dependencies
 
@@ -118,4 +120,4 @@ using (currentTenant.Change(tenantId))
 
 ## Side Effects
 
-Registers open-generic `IPipelineBehavior<,>` descriptors when the setup extensions are called. Descriptor lifetime is `Scoped` by default; pass `ServiceLifetime.Transient` or `ServiceLifetime.Singleton` to override per registration.
+Registers open-generic `IPipelineBehavior<,>` descriptors when the setup extensions are called. Descriptor lifetime is `Scoped` by default; pass `ServiceLifetime.Transient` or `ServiceLifetime.Singleton` to override per registration. All registrations are idempotent — calling the same extension multiple times does not duplicate behaviors in the pipeline.

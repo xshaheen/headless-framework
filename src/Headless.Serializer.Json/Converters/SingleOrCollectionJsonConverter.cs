@@ -2,6 +2,16 @@
 
 namespace Headless.Serializer.Converters;
 
+/// <summary>
+/// Converts a JSON value that is either a single item or a JSON array into a <typeparamref name="TCollection"/>.
+/// A bare object token is wrapped in a one-element collection on read; on write the collection is always
+/// serialized as a JSON array.
+/// </summary>
+/// <remarks>
+/// A <see langword="null"/> JSON token or an empty JSON string is deserialized as <see langword="null"/>.
+/// </remarks>
+/// <typeparam name="TCollection">The collection type to produce. Must have a public parameterless constructor.</typeparam>
+/// <typeparam name="TItem">The element type of the collection.</typeparam>
 [RequiresUnreferencedCode(
     "JSON serialization and deserialization might require types that cannot be statically analyzed."
 )]
@@ -61,12 +71,22 @@ public class SingleOrCollectionJsonConverter<TCollection, TItem> : JsonConverter
     }
 }
 
+/// <summary>
+/// <see cref="SingleOrCollectionJsonConverter{TCollection,TItem}"/> specialization that produces a
+/// <see cref="List{T}"/>.
+/// </summary>
+/// <typeparam name="TItem">The list element type.</typeparam>
 [RequiresUnreferencedCode(
     "JSON serialization and deserialization might require types that cannot be statically analyzed."
 )]
 [RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class SingleOrListJsonConverter<TItem> : SingleOrCollectionJsonConverter<List<TItem?>, TItem>;
 
+/// <summary>
+/// <see cref="SingleOrCollectionJsonConverter{TCollection,TItem}"/> specialization that produces a
+/// <see cref="HashSet{T}"/>.
+/// </summary>
+/// <typeparam name="TItem">The set element type.</typeparam>
 [RequiresUnreferencedCode(
     "JSON serialization and deserialization might require types that cannot be statically analyzed."
 )]

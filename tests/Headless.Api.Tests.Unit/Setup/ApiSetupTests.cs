@@ -138,7 +138,6 @@ public sealed class SetupApiTests
             encryption =>
             {
                 encryption.DefaultPassPhrase = "ActionPassPhrase123";
-                encryption.InitVectorBytes = "ActionIV01234567"u8.ToArray();
                 encryption.DefaultSalt = "ActionSalt"u8.ToArray();
             },
             hash =>
@@ -170,7 +169,6 @@ public sealed class SetupApiTests
         builder.AddHeadless(encryption =>
         {
             encryption.DefaultPassPhrase = "ActionPassPhrase123";
-            encryption.InitVectorBytes = "ActionIV01234567"u8.ToArray();
             encryption.DefaultSalt = "ActionSalt"u8.ToArray();
         });
 
@@ -263,7 +261,6 @@ public sealed class SetupApiTests
             {
                 var values = serviceProvider.GetRequiredService<SecurityTestValues>();
                 encryption.DefaultPassPhrase = values.PassPhrase;
-                encryption.InitVectorBytes = "ProviderIV012345"u8.ToArray();
                 encryption.DefaultSalt = values.EncryptionSalt;
             },
             (hash, serviceProvider) =>

@@ -95,7 +95,7 @@ internal sealed class JobsInitializationHostedService(
 
         if (options is null || options.SeedDefinedCronJobs)
         {
-            await _SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
+            await SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
         }
 
         if (options?.TimeSeederAction is not null)
@@ -131,7 +131,7 @@ internal sealed class JobsInitializationHostedService(
     // JobsDeadOwnerReclaimer. Internal (not private) is the codebase's standard InternalsVisibleTo test seam: the guard
     // unit test constructs the service and calls this directly, avoiding a StartAsync run over global JobFunctionProvider
     // static state.
-    internal async Task _SeedDefinedCronJobsAsync(
+    internal async Task SeedDefinedCronJobsAsync(
         SchedulerOptionsBuilder schedulerOptions,
         CancellationToken cancellationToken
     )

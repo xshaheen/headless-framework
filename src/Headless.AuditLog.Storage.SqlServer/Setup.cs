@@ -16,6 +16,12 @@ public static class SetupAuditLogSqlServer
 {
     extension(HeadlessAuditLogSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures the audit log to persist entries to SQL Server using the provided
+        /// connection string.
+        /// </summary>
+        /// <param name="connectionString">Microsoft.Data.SqlClient connection string. Must not be <c>null</c> or whitespace.</param>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is <c>null</c> or whitespace.</exception>
         public HeadlessAuditLogSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -26,6 +32,21 @@ public static class SetupAuditLogSqlServer
             });
         }
 
+        /// <summary>
+        /// Configures the audit log to persist entries to SQL Server, applying the specified
+        /// options delegate to <see cref="SqlServerAuditLogOptions"/>.
+        /// </summary>
+        /// <param name="configure">Delegate that configures the provider options.</param>
+        /// <remarks>
+        /// The provider self-initializes the schema and table on startup (serialized with
+        /// <c>sp_getapplock</c> across replicas) unless
+        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <c>false</c>. Audit rows
+        /// are written via batched <c>INSERT … VALUES</c> statements (up to 100 rows per command).
+        /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
+        /// <c>DbContext</c> has an open <c>SqlTransaction</c>, writes enroll atomically in
+        /// that transaction; otherwise they commit on a separate connection.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <c>null</c>.</exception>
         public HeadlessAuditLogSetupBuilder UseSqlServer(Action<SqlServerAuditLogOptions> configure)
         {
             Argument.IsNotNull(configure);

@@ -21,11 +21,27 @@ using UserId = Headless.Primitives.UserId;
 
 namespace Headless.Api;
 
+/// <summary>
+/// Registration and middleware helpers for NSwag-based OpenAPI document generation and Swagger UI.
+/// </summary>
 [PublicAPI]
 public static class SetupNswag
 {
     #region Add
 
+    /// <summary>
+    /// Registers NSwag OpenAPI document generation with Headless defaults and an optional generator settings callback.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="setupHeadlessAction">
+    /// Optional callback to configure <see cref="HeadlessNswagOptions"/> (security schemes, primitive
+    /// mappings, error-on-schema-failure). When <see langword="null"/>, defaults are used.
+    /// </param>
+    /// <param name="setupGeneratorActions">
+    /// Optional callback invoked after Headless base settings are applied but before security schemes and
+    /// primitive mappings, allowing callers to override individual generator settings.
+    /// </param>
+    /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
     public static IServiceCollection AddNswagOpenApi(
         this IServiceCollection services,
         Action<HeadlessNswagOptions>? setupHeadlessAction = null,
@@ -46,6 +62,20 @@ public static class SetupNswag
         return services;
     }
 
+    /// <summary>
+    /// Registers NSwag OpenAPI document generation with Headless defaults and a service-provider-aware generator
+    /// settings callback.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="setupHeadlessAction">
+    /// Optional callback to configure <see cref="HeadlessNswagOptions"/>. When <see langword="null"/>, defaults
+    /// are used.
+    /// </param>
+    /// <param name="setupGeneratorActions">
+    /// Optional callback that receives both the generator settings and the <see cref="IServiceProvider"/>, invoked
+    /// after Headless base settings are applied but before security schemes and primitive mappings.
+    /// </param>
+    /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
     public static IServiceCollection AddNswagOpenApi(
         this IServiceCollection services,
         Action<HeadlessNswagOptions>? setupHeadlessAction,
@@ -70,6 +100,25 @@ public static class SetupNswag
 
     #region Map
 
+    /// <summary>
+    /// Mounts one OpenAPI JSON endpoint per API version and a single Swagger UI at <c>/swagger</c>.
+    /// </summary>
+    /// <param name="app">The web application to configure.</param>
+    /// <param name="documentSettings">
+    /// Optional per-version callback invoked for each <c>ApiVersionDescription</c> to customise the
+    /// <c>UseOpenApi</c> middleware settings (for example, to add custom headers or alter the path).
+    /// </param>
+    /// <param name="uiSettings">
+    /// Optional callback to further customise the Swagger UI (for example, to change the page title or
+    /// inject custom CSS). Headless defaults: authorization persistence enabled, try-it-out enabled,
+    /// tags sorted alphabetically, operations collapsed.
+    /// </param>
+    /// <returns>The same <paramref name="app"/> instance for chaining.</returns>
+    /// <remarks>
+    /// Each version is served at <c>/openapi/{groupName}.json</c> in descending version order.
+    /// The UI document selector pattern is <c>/openapi/{documentName}.json</c>, which matches all
+    /// version endpoints automatically.
+    /// </remarks>
     public static WebApplication MapNswagOpenApiVersions(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings, ApiVersionDescription>? documentSettings = null,
@@ -100,6 +149,19 @@ public static class SetupNswag
         return app;
     }
 
+    /// <summary>
+    /// Mounts an OpenAPI JSON endpoint at <c>/openapi/{documentName}.json</c> and a Swagger UI at <c>/swagger</c>
+    /// for a single-document (non-versioned) setup.
+    /// </summary>
+    /// <param name="app">The web application to configure.</param>
+    /// <param name="documentSettings">
+    /// Optional callback to customise the <c>UseOpenApi</c> middleware settings.
+    /// </param>
+    /// <param name="uiSettings">
+    /// Optional callback to further customise the Swagger UI. Headless defaults: authorization persistence
+    /// enabled, try-it-out enabled, tags sorted alphabetically, operations collapsed.
+    /// </param>
+    /// <returns>The same <paramref name="app"/> instance for chaining.</returns>
     public static WebApplication MapNswagOpenApi(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings>? documentSettings = null,
@@ -167,14 +229,22 @@ public static class SetupNswag
 
     #region Primitives
 
-    /// <summary>Adds Swagger mappings for specific custom types to ensure proper OpenAPI documentation generation.</summary>
-    /// <param name="settings">The JsonSchemaGeneratorSettings instance to which mappings are added.</param>
+    /// <summary>
+    /// Registers NJsonSchema type mappers for the built-in Headless primitive value types so they are
+    /// represented with correct JSON schema types and formats in the generated OpenAPI document.
+    /// </summary>
+    /// <param name="settings">The <c>JsonSchemaGeneratorSettings</c> to add the mappers to.</param>
     /// <remarks>
-    /// The method adds Swagger mappings for the following types:
-    /// <see cref="Money" />
-    /// <see cref="Month" />
-    /// <see cref="AccountId" />
-    /// <see cref="UserId" />
+    /// Mapped types and their resulting schema shapes:
+    /// <list type="bullet">
+    ///   <item><description><c>Money</c> / <c>Money?</c> — <c>number</c> (decimal format)</description></item>
+    ///   <item><description><c>Month</c> / <c>Month?</c> — <c>integer</c></description></item>
+    ///   <item><description><c>AccountId</c> — <c>string</c></description></item>
+    ///   <item><description><c>UserId</c> — <c>string</c></description></item>
+    /// </list>
+    /// This method is called automatically when <see cref="HeadlessNswagOptions.AddPrimitiveMappings"/> is
+    /// <see langword="true"/> (the default). Call it directly only when you manage your own
+    /// <c>JsonSchemaGeneratorSettings</c> outside of <c>AddNswagOpenApi</c>.
     /// </remarks>
     public static void AddBuildingBlocksPrimitiveMappings(this JsonSchemaGeneratorSettings settings)
     {
@@ -266,7 +336,7 @@ public static class SetupNswag
     )
     {
         // General Settings
-        var productName = AssemblyInformation.Entry.Product?.Replace('.', ' ');
+        var productName = AssemblyInformation.Entry?.Product?.Replace('.', ' ');
         settings.Title = productName is null ? "API" : productName.EnsureEndsWith(" API");
         settings.Description = SwaggerInformation.ResponsesDescription;
         settings.DefaultResponseReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;

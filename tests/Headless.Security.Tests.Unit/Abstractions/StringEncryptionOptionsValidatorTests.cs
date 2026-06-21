@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Abstractions;
 
 namespace Tests.Abstractions;
@@ -7,18 +8,17 @@ namespace Tests.Abstractions;
 public sealed class StringEncryptionOptionsValidatorTests
 {
     private static StringEncryptionOptions _CreateValidOptions() =>
-        new()
-        {
-            DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
-            DefaultSalt = "TestSalt"u8.ToArray(),
-        };
+        new() { DefaultPassPhrase = "TestPassPhrase123456", DefaultSalt = "TestSalt"u8.ToArray() };
 
-    [Fact]
-    public void should_success_when_valid_settings()
+    [Theory]
+    [InlineData(128)]
+    [InlineData(192)]
+    [InlineData(256)]
+    public void should_succeed_for_every_legal_aes_key_size(int keySize)
     {
         // given
         var settings = _CreateValidOptions();
+        settings.KeySize = keySize;
         var validator = new StringEncryptionOptionsValidator();
 
         // when
@@ -29,16 +29,11 @@ public sealed class StringEncryptionOptionsValidatorTests
     }
 
     [Fact]
-    public void should_fail_when_set_property_as_empty_settings()
+    public void should_fail_when_pass_phrase_is_empty()
     {
         // given
-        var settings = new StringEncryptionOptions
-        {
-            DefaultPassPhrase = string.Empty,
-            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
-            DefaultSalt = "TestSalt"u8.ToArray(),
-        };
-
+        var settings = _CreateValidOptions();
+        settings.DefaultPassPhrase = string.Empty;
         var validator = new StringEncryptionOptionsValidator();
 
         // when
@@ -46,63 +41,18 @@ public sealed class StringEncryptionOptionsValidatorTests
 
         // then
         result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.DefaultPassPhrase));
     }
 
-    [Fact]
-    public void should_fail_when_set_property_keySize_by_zero_settings()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(320)]
+    public void should_fail_when_key_size_is_not_a_legal_aes_size(int keySize)
     {
         // given
-        var settings = new StringEncryptionOptions
-        {
-            KeySize = 0,
-            DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
-            DefaultSalt = "TestSalt"u8.ToArray(),
-        };
-
-        var validator = new StringEncryptionOptionsValidator();
-
-        // when
-        var result = validator.Validate(settings);
-
-        // then
-        result.IsValid.Should().BeFalse();
-    }
-
-    [Fact]
-    public void should_return_true_when_size_initVectorBytes_length_equal_result_keySize_dividend_on_16()
-    {
-        // given
-        var settings = new StringEncryptionOptions
-        {
-            KeySize = 320,
-            DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = "shE49230Tf093b421723"u8.ToArray(),
-            DefaultSalt = "TestSalt"u8.ToArray(),
-        };
-
-        var validator = new StringEncryptionOptionsValidator();
-
-        // when
-        var result = validator.Validate(settings);
-
-        // then
-        settings.InitVectorBytes.Should().HaveCount(20);
-        result.IsValid.Should().BeTrue();
-    }
-
-    [Fact]
-    public void should_fail_when_key_size_is_negative()
-    {
-        // given
-        var settings = new StringEncryptionOptions
-        {
-            KeySize = -1,
-            DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
-            DefaultSalt = "TestSalt"u8.ToArray(),
-        };
-
+        var settings = _CreateValidOptions();
+        settings.KeySize = keySize;
         var validator = new StringEncryptionOptionsValidator();
 
         // when
@@ -114,16 +64,11 @@ public sealed class StringEncryptionOptionsValidatorTests
     }
 
     [Fact]
-    public void should_fail_when_init_vector_is_empty()
+    public void should_fail_when_iterations_are_zero()
     {
         // given
-        var settings = new StringEncryptionOptions
-        {
-            DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = [],
-            DefaultSalt = "TestSalt"u8.ToArray(),
-        };
-
+        var settings = _CreateValidOptions();
+        settings.Iterations = 0;
         var validator = new StringEncryptionOptionsValidator();
 
         // when
@@ -131,42 +76,15 @@ public sealed class StringEncryptionOptionsValidatorTests
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.InitVectorBytes));
-    }
-
-    [Fact]
-    public void should_fail_when_init_vector_length_mismatch()
-    {
-        // given
-        var settings = new StringEncryptionOptions
-        {
-            KeySize = 256,
-            DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = "TooShort"u8.ToArray(),
-            DefaultSalt = "TestSalt"u8.ToArray(),
-        };
-
-        var validator = new StringEncryptionOptionsValidator();
-
-        // when
-        var result = validator.Validate(settings);
-
-        // then
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.InitVectorBytes));
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.Iterations));
     }
 
     [Fact]
     public void should_fail_when_salt_is_empty()
     {
         // given
-        var settings = new StringEncryptionOptions
-        {
-            DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
-            DefaultSalt = [],
-        };
-
+        var settings = _CreateValidOptions();
+        settings.DefaultSalt = [];
         var validator = new StringEncryptionOptionsValidator();
 
         // when

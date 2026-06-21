@@ -6,14 +6,23 @@ using tusdotnet.Interfaces;
 
 namespace Headless.Tus;
 
+/// <summary>
+/// DI registration helpers for the TUS distributed-lock add-on.
+/// </summary>
 [PublicAPI]
 public static class SetupTusDistributedLock
 {
     /// <summary>
-    /// Extension method to add the <see cref="DistributedLockTusLockProvider"/> as the implementation
-    /// of <see cref="ITusFileLockProvider"/> to the dependency injection container.
-    /// Note: this depends on <see cref="IDistributedLock"/> being registered.
+    /// Registers <see cref="DistributedLockTusLockProvider"/> as the <c>ITusFileLockProvider</c>
+    /// singleton in the DI container.
     /// </summary>
+    /// <param name="services">the service collection to register into</param>
+    /// <returns><paramref name="services"/> for chaining</returns>
+    /// <remarks>
+    /// Requires <see cref="IDistributedLock"/> to be registered separately (e.g., via a Redis or
+    /// SQL Server distributed-lock provider). Call this after configuring the distributed-lock
+    /// backend to ensure the dependency is available at resolution time.
+    /// </remarks>
     public static IServiceCollection AddDistributedLockTusLockProvider(this IServiceCollection services)
     {
         return services.AddSingleton<ITusFileLockProvider, DistributedLockTusLockProvider>();

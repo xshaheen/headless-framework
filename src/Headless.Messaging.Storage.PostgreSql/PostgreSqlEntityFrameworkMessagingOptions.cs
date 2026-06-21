@@ -46,7 +46,7 @@ public partial class PostgreSqlEntityFrameworkMessagingOptions
     /// PostgreSQL identifier validation regex.
     /// Must start with a letter or underscore, contain only letters, digits, underscores, max 63 chars.
     /// </summary>
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$", RegexOptions.None, 100)]
+    [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]{0,62}$", RegexOptions.None, 100)]
     private static partial Regex _ValidIdentifier();
 
     /// <summary>

@@ -2,6 +2,12 @@
 
 namespace Headless.Constants;
 
+/// <summary>
+/// Two-letter language codes for the languages the framework recognizes. Most values are ISO 639-1
+/// codes, but a few deviate: <see cref="Korean"/> is <c>"kr"</c> (ISO 639-1 is <c>ko</c>) and
+/// <see cref="Chinese"/> is <c>"cn"</c> (ISO 639-1 is <c>zh</c>). Treat these as framework-internal
+/// identifiers rather than guaranteed ISO 639-1 codes.
+/// </summary>
 [PublicAPI]
 public static class LanguageCodes
 {

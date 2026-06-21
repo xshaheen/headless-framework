@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Sms.Aws;
 
-public sealed class AwsSnsSmsSender(
+internal sealed class AwsSnsSmsSender(
     IAmazonSimpleNotificationService client,
     IOptions<AwsSnsSmsOptions> optionsAccessor,
     ILogger<AwsSnsSmsSender> logger
@@ -22,6 +22,7 @@ public sealed class AwsSnsSmsSender(
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
@@ -56,7 +57,7 @@ public sealed class AwsSnsSmsSender(
 
         var publishRequest = new PublishRequest
         {
-            PhoneNumber = request.Destinations[0].ToString(),
+            PhoneNumber = request.Destinations[0].ToString(hasPlusPrefix: true),
             Message = request.Text,
             MessageAttributes = attributes,
         };
@@ -67,7 +68,7 @@ public sealed class AwsSnsSmsSender(
 
             if (publishResponse.HttpStatusCode.IsSuccessStatusCode())
             {
-                return SendSingleSmsResponse.Succeeded();
+                return SendSingleSmsResponse.Succeeded(publishResponse.MessageId);
             }
 
             logger.LogSmsSendFailed(request.Destinations.Count, publishResponse.HttpStatusCode);
@@ -84,7 +85,7 @@ public sealed class AwsSnsSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message);
+            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
         }
     }
 }

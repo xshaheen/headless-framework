@@ -4,12 +4,18 @@ using FluentValidation;
 
 namespace Headless.Imaging;
 
+/// <summary>Options that govern the core imaging pipeline.</summary>
 public sealed class ImagingOptions
 {
+    /// <summary>
+    /// Gets or sets the resize mode applied when a caller passes
+    /// <see cref="ImageResizeMode.Default"/> in <see cref="ImageResizeArgs.Mode"/>.
+    /// Defaults to <see cref="ImageResizeMode.None"/>, which leaves the image at its original size.
+    /// </summary>
     public ImageResizeMode DefaultResizeMode { get; set; } = ImageResizeMode.None;
 }
 
-public sealed class ImagingOptionsValidator : AbstractValidator<ImagingOptions>
+internal sealed class ImagingOptionsValidator : AbstractValidator<ImagingOptions>
 {
     public ImagingOptionsValidator()
     {

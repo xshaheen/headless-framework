@@ -1185,7 +1185,6 @@ The `configureCache` callback passed to `UseBclCache(...)` selects only the back
 - `Headless.Caching.Abstractions`
 - `Headless.Caching.Core`
 - `Headless.Hosting`
-- `Headless.Serializer.Abstractions`
 - `Microsoft.Extensions.Caching.Abstractions`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 
@@ -1282,7 +1281,6 @@ Options are validated through the Hosting FluentValidation pipeline with startup
 - `Headless.Caching.Abstractions`
 - `Headless.Caching.Core`
 - `Headless.Hosting`
-- `Headless.Serializer.Abstractions`
 - `Microsoft.AspNetCore.App` (framework reference)
 
 ### Side Effects

@@ -1,56 +1,57 @@
 # Headless.Settings.Core
 
-Core implementation of dynamic settings management with hierarchical value providers.
+Core implementation of dynamic settings management with hierarchical value providers, caching, encryption, and background initialization.
 
 ## Problem Solved
 
-Provides full settings management implementation with multiple value providers (default, configuration, global, tenant, user), caching, encryption for sensitive settings, and automatic initialization via background service.
+Provides the full settings management implementation including hierarchical value resolution (User > Tenant > Global > Configuration > DefaultValue), setting value caching with distributed invalidation, transparent encryption for sensitive settings, and background startup initialization that seeds static definitions to the database.
 
 ## Key Features
 
-- `SettingManager` - Full ISettingManager implementation
-- `SettingDefinitionManager` - Definition management with static/dynamic stores
-- Built-in value providers:
-  - `DefaultValueSettingValueProvider` - Default values from definitions
-  - `ConfigurationSettingValueProvider` - Values from IConfiguration
-  - `GlobalSettingValueProvider` - Application-wide settings
-  - `TenantSettingValueProvider` - Tenant-specific settings
-  - `UserSettingValueProvider` - User-specific settings
-- Setting encryption for sensitive values
-- Cache invalidation on changes
-- Background initialization service
+- `SettingManager` — full implementation of `ISettingManager`; walks the registered provider chain, caches results, and coordinates writes with cache invalidation
+- `ISettingValueReadProvider` / `ISettingValueProvider` — read-only and read-write contracts for custom value providers; register with `services.AddSettingValueProvider<T>()`
+- Built-in value providers (lowest to highest priority): `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider`
+- `IStaticSettingDefinitionStore` — builds the setting catalog lazily from all registered `ISettingDefinitionProvider` implementations
+- `IDynamicSettingDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
+- `SettingsInitializationBackgroundService` — seeds static definitions to the database at startup with exponential-back-off retry; pre-caches dynamic definitions when enabled
+- `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
+- `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
+- `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
+- `services.AddSettingDefinitionProvider<T>()` — registers a custom `ISettingDefinitionProvider`
+- `services.AddSettingValueProvider<T>()` — registers a custom value provider (idempotent by type)
+
+## Design Notes
+
+Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all.
+
+`AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
 ## Installation
 
 ```bash
 dotnet add package Headless.Settings.Core
-dotnet add package Headless.Settings.Storage.EntityFramework
 ```
 
 ## Quick Start
 
-`AddHeadlessSettings(...)` registers the management core automatically, so a storage
-provider is all you need. Register the required services (`TimeProvider`, caching,
-distributed lock, `IStringEncryptionService`) first, then call `AddHeadlessSettings`.
+Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IStringEncryptionService`) first, then call `AddHeadlessSettings`:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Add required dependencies
+// Required dependencies
 builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 
-// Add settings management + storage in one call (choose EF Core, PostgreSQL, or SQL Server)
+// Register management core + storage in one call
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 
 // Register setting definition providers
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 ```
-
-## Usage
 
 ### Define Settings
 
@@ -62,8 +63,7 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
         context.Add(new SettingDefinition(
             name: "App.MaxFileSize",
             displayName: "Maximum File Size",
-            defaultValue: "10485760",
-            isEncrypted: false
+            defaultValue: "10485760"
         ));
 
         context.Add(new SettingDefinition(
@@ -75,7 +75,7 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 }
 ```
 
-### Read/Write Settings
+### Read and Write Settings
 
 ```csharp
 public sealed class ConfigService(ISettingManager settings)
@@ -101,7 +101,7 @@ public sealed class ConfigService(ISettingManager settings)
 
 ## Configuration
 
-Settings management has a prerequisite: register `IStringEncryptionService` before calling `AddHeadlessSettings(...)`. The recommended setup is to bind `Headless:StringEncryption` explicitly:
+Pre-requisite: configure and register string encryption before settings management:
 
 ```json
 {
@@ -115,9 +115,7 @@ Settings management has a prerequisite: register `IStringEncryptionService` befo
 }
 ```
 
-Register encryption first, then configure settings management. Tune the management options
-through `setup.ConfigureManagement(...)` inside the `AddHeadlessSettings` block, next to
-`ConfigureStorage`:
+Tune management options through `setup.ConfigureManagement(...)` inside the `AddHeadlessSettings` block:
 
 ```csharp
 services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));
@@ -126,19 +124,33 @@ services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureManagement(options =>
     {
-        // Cache expiration for setting values (default: 5 hours)
+        // Distributed lock key coordinating cross-application definition saves (default: "settings:common_update_lock")
+        options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
+
+        // Lifetime of cached setting values in the distributed cache (default: 5 hours)
         options.ValueCacheExpiration = TimeSpan.FromHours(5);
 
-        // Lock settings for cross-application updates
-        options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
+        // Enable database-backed dynamic setting definition store (default: false)
+        options.IsDynamicSettingStoreEnabled = false;
+
+        // Persist static definitions to the DB on startup (default: true)
+        options.SaveStaticSettingsToDatabase = true;
+
+        // How long dynamic definitions stay in-process before the distributed stamp is re-checked (default: 30 seconds)
+        options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
+    });
+    setup.ConfigureStorage(o =>
+    {
+        o.Schema = "settings";                          // default
+        o.SettingValuesTableName = "SettingValues";     // default
+        o.SettingDefinitionsTableName = "SettingDefinitions"; // default
+        o.InitializeOnStartup = true;                   // default
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
-The `(options, IServiceProvider)` overload is available when configuration needs resolved
-services. `services.Configure<SettingManagementOptions>(...)` also works and composes with
-the auto-registration regardless of order.
+The `(options, IServiceProvider)` overload is available for `ConfigureManagement` when configuration needs resolved services. `services.Configure<SettingManagementOptions>(...)` also works and composes with the auto-registration regardless of order.
 
 ## Dependencies
 
@@ -151,6 +163,7 @@ the auto-registration regardless of order.
 ## Side Effects
 
 - Registers `ISettingManager` as singleton
-- Registers `ISettingDefinitionManager` as singleton
+- Registers `ISettingDefinitionManager`, `IStaticSettingDefinitionStore`, `IDynamicSettingDefinitionStore`, `ISettingValueStore`, `ISettingValueProviderManager` as singletons
+- Registers `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider` as singletons
 - Registers `SettingsInitializationBackgroundService` as hosted service
-- Registers cache invalidation event handler
+- Registers `SettingValueCacheItemInvalidator` as a domain event handler for `EntityChangedEventData<SettingValueRecord>`

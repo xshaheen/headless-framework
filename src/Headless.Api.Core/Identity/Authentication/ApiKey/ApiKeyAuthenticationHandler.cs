@@ -8,7 +8,23 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Identity.Authentication.ApiKey;
 
-/// <summary>Handle the Api Key scheme authentication.</summary>
+/// <summary>
+/// ASP.NET Core authentication handler for the API key scheme.
+/// Reads the key from the <c>X-API-Key</c> header (or an optional query-string parameter),
+/// resolves the associated user via <see cref="IApiKeyStore{TUser,TUserId}"/>, and
+/// issues an <see cref="Microsoft.AspNetCore.Authentication.AuthenticationTicket"/> on success.
+/// </summary>
+/// <remarks>
+/// Authentication flow:
+/// <list type="number">
+///   <item><description>If the request already carries an authenticated identity, the existing ticket is reused.</description></item>
+///   <item><description>If no API key is present in the header (or query string when <see cref="ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString"/> is <see langword="true"/>), <c>NoResult</c> is returned so other handlers can run.</description></item>
+///   <item><description>If the key is blank or not found in the store, <c>NoResult</c> is returned.</description></item>
+///   <item><description>If the user cannot sign in (email not confirmed, locked out, etc.) <c>Fail</c> is returned.</description></item>
+/// </list>
+/// </remarks>
+/// <typeparam name="TUser">The user type, derived from <see cref="IdentityUser{TKey}"/>.</typeparam>
+/// <typeparam name="TUserId">The type of the user's primary key.</typeparam>
 public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
     IOptionsMonitor<ApiKeyAuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -20,12 +36,16 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
     where TUser : IdentityUser<TUserId>
     where TUserId : IEquatable<TUserId>
 {
-    // This method gets called for every request that requires authentication.
-    // The logic goes something like this:
-    // If no ApiKey is present on query string -> Return no result, let other handlers (if present) handle the request.
-    // If the api_key is present but null or empty -> Return no result.
-    // If the provided key does not exists -> Fail the authentication.
-    // If the key is valid, create a new identity based on associated with key user
+    /// <summary>
+    /// Reads the API key from the <c>X-API-Key</c> header (or query string when
+    /// <see cref="ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString"/> is <see langword="true"/>),
+    /// resolves the user via <see cref="IApiKeyStore{TUser,TUserId}"/>, and issues a ticket on success.
+    /// </summary>
+    /// <returns>
+    /// <see cref="AuthenticateResult.Success(Microsoft.AspNetCore.Authentication.AuthenticationTicket)"/> when the key resolves to an active, non-locked-out user;
+    /// <see cref="AuthenticateResult.NoResult()"/> when no key is present or the key is unknown;
+    /// <see cref="AuthenticateResult.Fail(string)"/> when the user cannot sign in or is locked out.
+    /// </returns>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // This line is important to correct working the multiple authentication schemes
@@ -35,39 +55,42 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
             return AuthenticateResult.Success(new AuthenticationTicket(Context.User, "context.User"));
         }
 
-        if (
-            !Request.Headers.TryGetValue(Options.ApiKeyHeaderName, out var apiKeyValues)
-            && !Request.Query.TryGetValue(Options.ApiKeyParamName, out apiKeyValues)
-        )
+        var foundInHeader = Request.Headers.TryGetValue(Options.ApiKeyHeaderName, out var apiKeyValues);
+
+        if (!foundInHeader && Options.AllowApiKeyInQueryString)
         {
-            return AuthenticateResult.NoResult();
+            // Query-string fallback is opt-in: keys passed via the URL are visible in server access logs,
+            // CDN/proxy logs, and Referer headers, which risks unintentional exposure.
+            Request.Query.TryGetValue(Options.ApiKeyParamName, out apiKeyValues);
         }
 
         var providedApiKey = apiKeyValues.FirstOrDefault();
 
-        if (apiKeyValues.Count == 0 || string.IsNullOrWhiteSpace(providedApiKey))
+        if (string.IsNullOrWhiteSpace(providedApiKey))
         {
             return AuthenticateResult.NoResult();
         }
 
-        var apiKeyUser = await store.GetActiveApiKeyUserAsync(providedApiKey);
+        var apiKeyUser = await store
+            .GetActiveApiKeyUserAsync(providedApiKey, Context.RequestAborted)
+            .ConfigureAwait(false);
 
         if (apiKeyUser is null)
         {
             return AuthenticateResult.NoResult();
         }
 
-        if (!await signInManager.CanSignInAsync(apiKeyUser))
+        if (!await signInManager.CanSignInAsync(apiKeyUser).ConfigureAwait(false))
         {
             return AuthenticateResult.Fail("Authentication failed.");
         }
 
-        if (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(apiKeyUser))
+        if (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(apiKeyUser).ConfigureAwait(false))
         {
             return AuthenticateResult.Fail("Authentication failed.");
         }
 
-        var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(apiKeyUser);
+        var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(apiKeyUser).ConfigureAwait(false);
         var ticket = new AuthenticationTicket(claimsPrincipal, Scheme.Name);
 
         return AuthenticateResult.Success(ticket);

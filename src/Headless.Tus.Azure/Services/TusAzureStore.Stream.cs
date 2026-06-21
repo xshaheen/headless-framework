@@ -13,6 +13,29 @@ namespace Headless.Tus.Services;
 
 public sealed partial class TusAzureStore
 {
+    /// <summary>
+    /// Reads upload data from a <c>Stream</c> and stages it as Azure Block Blob blocks,
+    /// returning the number of bytes written in this request.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="stream">the stream supplying PATCH request body data</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>bytes appended by this PATCH request</returns>
+    /// <remarks>
+    /// Behavior mirrors the <c>PipeReader</c> overload: blocks are staged and committed
+    /// atomically when no checksum is requested; when a TUS-Checksum header is present, blocks
+    /// are staged only and the digest is stored in blob metadata pending
+    /// <c>VerifyChecksumAsync</c>. When <c>EnableChunkSplitting</c> is
+    /// <see langword="true"/>, the stream is split into fixed-size blocks using a pooled
+    /// buffer; otherwise the entire stream is staged as one block.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">thrown if the file does not exist</exception>
+    /// <exception cref="NotSupportedException">
+    /// thrown if the client requests a checksum algorithm not in the supported list
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// thrown if <paramref name="fileId"/> or <paramref name="stream"/> is null
+    /// </exception>
     public async Task<long> AppendDataAsync(string fileId, Stream stream, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(fileId);
@@ -24,28 +47,29 @@ public sealed partial class TusAzureStore
         var blockBlobClient = _GetBlockBlobClient(fileId);
 
         var azureFile =
-            await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken)
+            await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"File {fileId} does not exist");
 
-        var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken);
-        using var hasher = await _GetHasher(stream, cancellationToken);
+        var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
+        using var hasher = await _GetHasher(stream, cancellationToken).ConfigureAwait(false);
 
         // Stage blocks (with or without chunking)
         var (chunkBlockIds, bytesWritten) = await _StageAsync(
-            blockBlobClient,
-            stream,
-            nextBlockNumber: committedBlocks.Count,
-            azureFile.Metadata.UploadLength,
-            hasher: hasher,
-            cancellationToken: cancellationToken
-        );
+                blockBlobClient,
+                stream,
+                nextBlockNumber: committedBlocks.Count,
+                azureFile.Metadata.UploadLength,
+                hasher: hasher,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
 
         // ATOMIC: Commit blocks + update metadata in single operation for non-checksum uploads
         if (hasher == null)
         {
             List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
             var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
-            await blockBlobClient.CommitBlockListAsync(allBlockIds, options, cancellationToken);
+            await blockBlobClient.CommitBlockListAsync(allBlockIds, options, cancellationToken).ConfigureAwait(false);
 
             return bytesWritten;
         }
@@ -54,7 +78,7 @@ public sealed partial class TusAzureStore
 
         azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
         azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.Hash ?? []);
-        await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken);
+        await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
         _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);
 
@@ -79,7 +103,9 @@ public sealed partial class TusAzureStore
 
             if (hasher is null) // No checksum, upload directly
             {
-                await blockBlobClient.StageBlockAsync(blockId, stream, cancellationToken: cancellationToken);
+                await blockBlobClient
+                    .StageBlockAsync(blockId, stream, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
                 return ([blockId], stream.Length);
             }
 
@@ -281,7 +307,7 @@ public sealed partial class TusAzureStore
                 return hasher;
             }
 
-            var supportedAlgorithms = await GetSupportedAlgorithmsAsync(cancellationToken);
+            var supportedAlgorithms = await GetSupportedAlgorithmsAsync(cancellationToken).ConfigureAwait(false);
 
             throw new NotSupportedException(
                 $"Checksum algorithm '{checksum.Algorithm}' is not supported. Supported algorithms: {string.Join(", ", supportedAlgorithms)}"

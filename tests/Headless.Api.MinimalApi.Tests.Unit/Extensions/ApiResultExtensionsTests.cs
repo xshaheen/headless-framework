@@ -136,6 +136,20 @@ public sealed class ApiResultExtensionsTests : TestBase
     }
 
     [Fact]
+    public void should_pass_g_forbidden_error_code_to_creator_for_ForbiddenError()
+    {
+        // given — verify the g: prefix is used (framework snake_case convention)
+        var creator = _CreateProblemDetailsCreator();
+        var error = new ForbiddenError { Reason = "Access denied" };
+
+        // when
+        _ = error.ToHttpResult(creator);
+
+        // then
+        creator.Received(1).Forbidden(error: Arg.Is<ErrorDescriptor>(e => e.Code == "g:forbidden"));
+    }
+
+    [Fact]
     public void should_map_UnauthorizedError_to_401()
     {
         // given

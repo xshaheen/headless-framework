@@ -110,6 +110,10 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
 
         // Unmatched case
         "MyTestAppService".RemovePostfix(StringComparison.Ordinal, "Unmatched").Should().Be("MyTestAppService");
+
+        // Empty (non-null) input stays empty rather than becoming null (honors [NotNullIfNotNull])
+        "".RemovePostfix(StringComparison.Ordinal, "x").Should().Be("");
+        "".RemovePostfix('x').Should().Be("");
     }
 
     [Fact]
@@ -120,6 +124,9 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
 
         //Ignore case
         "Https://google.com".RemovePrefix(StringComparison.OrdinalIgnoreCase, "https://").Should().Be("google.com");
+
+        // Empty (non-null) input stays empty rather than becoming null
+        "".RemovePrefix(StringComparison.Ordinal, "x").Should().Be("");
     }
 
     [Fact]
@@ -277,5 +284,20 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
 
         // then
         result.Should().BeNull();
+    }
+
+    // Regression: empty path segments (consecutive, leading, or trailing dots) previously threw
+    // IndexOutOfRangeException because the first char of an empty segment was indexed.
+    [Theory]
+    [InlineData("A..B", "a..b")]
+    [InlineData("Trailing.", "trailing.")]
+    [InlineData(".Leading", "leading")]
+    public void CamelizePropertyPath_WithEmptySegments_ShouldNotThrow(string input, string expected)
+    {
+        // when
+        var result = input.CamelizePropertyPath();
+
+        // then
+        result.Should().Be(expected);
     }
 }

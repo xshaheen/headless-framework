@@ -24,7 +24,12 @@ public interface IStatusCodesRewriterCalledNotifier
 [PublicAPI]
 public static class SetupMiddlewares
 {
-    /// <summary>Adds the server timing middleware.</summary>
+    /// <summary>
+    /// Registers <c>ServerTimingMiddleware</c> as a singleton in the DI container.
+    /// Call <see cref="UseServerTiming"/> after this to add it to the pipeline.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The same service collection.</returns>
     public static IServiceCollection AddServerTimingMiddleware(this IServiceCollection services)
     {
         services.TryAddSingleton<ServerTimingMiddleware>();
@@ -32,22 +37,35 @@ public static class SetupMiddlewares
     }
 
     /// <summary>
-    /// Measures the time the request takes to process and returns this in a Server-Timing trailing HTTP header.
-    /// It is used to surface any back-end server timing metrics (e.g. database read/write, CPU time, file system
-    /// access, etc.) to the developer tools in the user's browser.
+    /// Adds the server-timing middleware to the pipeline. It measures end-to-end request processing
+    /// time and appends a <c>Server-Timing</c> trailer header so browser DevTools can surface the
+    /// duration. Only appended when the response supports trailers; silently no-ops otherwise.
     /// </summary>
+    /// <param name="application">The application builder.</param>
+    /// <returns>The same application builder.</returns>
     public static IApplicationBuilder UseServerTiming(this IApplicationBuilder application)
     {
         return application.UseMiddleware<ServerTimingMiddleware>();
     }
 
-    /// <summary>Adds a default no-cache response header when the response did not set cache headers.</summary>
+    /// <summary>
+    /// Adds the no-cache headers middleware to the pipeline. When the response completes without
+    /// an explicit <c>Cache-Control</c> header, the middleware injects
+    /// <c>Cache-Control: no-cache,no-store,must-revalidate</c>.
+    /// </summary>
+    /// <param name="application">The application builder.</param>
+    /// <returns>The same application builder.</returns>
     public static IApplicationBuilder UseNoCacheWhenMissingCacheHeaders(this IApplicationBuilder application)
     {
         return application.UseMiddleware<NoCacheHeadersMiddleware>();
     }
 
-    /// <summary>This is a custom middleware that rewrites the status code of the response.</summary>
+    /// <summary>
+    /// Registers <c>StatusCodesRewriterMiddleware</c> as a singleton in the DI container.
+    /// Call <see cref="UseStatusCodesRewriter"/> after this to add it to the pipeline.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The same service collection.</returns>
     public static IServiceCollection AddStatusCodesRewriterMiddleware(this IServiceCollection services)
     {
         services.TryAddSingleton<StatusCodesRewriterMiddleware>();
@@ -55,9 +73,19 @@ public static class SetupMiddlewares
     }
 
     /// <summary>
-    /// Add the status codes rewriter middleware to the pipeline to rewrite the endpoint not found status code as problem details response.
-    /// When request URL does not match any route, status code 404 is returned with a problem details response.
+    /// Adds the status-codes rewriter middleware to the ASP.NET Core request pipeline.
+    /// It intercepts bare 401, 403, and 404 responses (without an existing body) and rewrites them
+    /// as structured <c>application/problem+json</c> responses via <see cref="Headless.Api.Abstractions.IProblemDetailsCreator"/>.
+    /// For 403 responses that carry a <c>TenantContextRequiredFeature</c> marker, it substitutes the
+    /// <c>g:tenant_required</c> ProblemDetails body regardless of any upstream
+    /// <c>Content-Type</c> already set.
     /// </summary>
+    /// <param name="app">The application builder.</param>
+    /// <remarks>
+    /// Notifies any registered <see cref="IStatusCodesRewriterCalledNotifier"/> (e.g.,
+    /// <c>HeadlessServiceDefaultsValidationStartupFilter</c>) synchronously before adding the middleware.
+    /// </remarks>
+    /// <returns>The same application builder.</returns>
     public static IApplicationBuilder UseStatusCodesRewriter(this IApplicationBuilder app)
     {
         // Notify any registered observer (e.g. HeadlessServiceDefaultsValidationStartupFilter) that the middleware was wired.
@@ -72,7 +100,13 @@ public static class SetupMiddlewares
         return app.UseMiddleware<StatusCodesRewriterMiddleware>();
     }
 
-    /// <summary>Adds middleware that resolves the current tenant from authenticated user claims.</summary>
+    /// <summary>
+    /// Registers <c>TenantResolutionMiddleware</c> as a singleton in the DI container.
+    /// Call <see cref="UseTenantResolution"/> (or <see cref="SetupApiTenancy.UseHeadlessTenancy"/>)
+    /// after this to add it to the pipeline.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <returns>The same service collection.</returns>
     public static IServiceCollection AddTenantResolution(this IServiceCollection services)
     {
         services.TryAddSingleton<TenantResolutionMiddleware>();
@@ -80,9 +114,20 @@ public static class SetupMiddlewares
     }
 
     /// <summary>
-    /// Resolves the current tenant from the authenticated user's claims for the lifetime of the HTTP request.
-    /// Register this after <c>UseAuthentication()</c> and before <c>UseAuthorization()</c>.
+    /// Adds <c>TenantResolutionMiddleware</c> to the pipeline. It reads the configured tenant claim
+    /// from the authenticated principal and sets <see cref="Headless.Abstractions.ICurrentTenant"/>
+    /// for the duration of the request. Endpoints decorated with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/>
+    /// are bypassed entirely. Unauthenticated requests are passed through without setting a tenant.
     /// </summary>
+    /// <param name="application">The application builder.</param>
+    /// <returns>The same application builder.</returns>
+    /// <remarks>
+    /// Place this after <c>UseAuthentication()</c> and before <c>UseAuthorization()</c>.
+    /// A one-time process-level warning is emitted when the middleware observes a request that
+    /// has not been processed by <c>AuthenticationMiddleware</c> (likely ordering misconfiguration).
+    /// Prefer <see cref="SetupApiTenancy.UseHeadlessTenancy"/> when HTTP tenancy was configured
+    /// through the tenancy builder — it guards against double-registration and validates the setup.
+    /// </remarks>
     public static IApplicationBuilder UseTenantResolution(this IApplicationBuilder application)
     {
         return application.UseMiddleware<TenantResolutionMiddleware>();

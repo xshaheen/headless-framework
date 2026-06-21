@@ -3,8 +3,6 @@
 using System.Collections.Concurrent;
 using Amazon.SQS;
 using Amazon.SQS.Model;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

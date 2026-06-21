@@ -9,12 +9,16 @@ using Headless.Features.ValueProviders;
 
 namespace Headless.Features.Values;
 
+/// <summary>Default implementation of <see cref="IFeatureManager"/> that walks the registered provider chain to resolve and mutate feature values.</summary>
 public sealed class FeatureManager(
     IFeatureDefinitionManager definitionManager,
     IFeatureValueProviderManager valueProviderManager,
     IFeatureErrorsDescriptor errorsDescriptor
 ) : IFeatureManager
 {
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>. Also thrown for <paramref name="providerName"/> when <paramref name="fallback"/> is <see langword="false"/>.</exception>
+    /// <exception cref="ConflictException">The feature named <paramref name="name"/> is not defined.</exception>
     public async Task<FeatureValue> GetAsync(
         string name,
         string? providerName = null,
@@ -28,9 +32,12 @@ public sealed class FeatureManager(
             Argument.IsNotNull(providerName);
         }
 
-        return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
+        return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken)
+            .ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
     public async Task<List<FeatureValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
@@ -40,7 +47,7 @@ public sealed class FeatureManager(
     {
         Argument.IsNotNull(providerName);
 
-        var definitions = await definitionManager.GetFeaturesAsync(cancellationToken);
+        var definitions = await definitionManager.GetFeaturesAsync(cancellationToken).ConfigureAwait(false);
 
         var providers = valueProviderManager.ValueProviders.SkipWhile(c =>
             !string.Equals(c.Name, providerName, StringComparison.Ordinal)
@@ -65,7 +72,7 @@ public sealed class FeatureManager(
             foreach (var provider in providerList)
             {
                 var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-                var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken);
+                var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false);
 
                 if (value is not null)
                 {
@@ -79,6 +86,9 @@ public sealed class FeatureManager(
         return [.. featureValues.Values];
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ConflictException">The feature named <paramref name="name"/> is not defined (<c>FeatureIsNotDefined</c>), the provider named <paramref name="providerName"/> is not registered (<c>FeatureProviderNotDefined</c>), or the provider is read-only (<c>ProviderIsReadonly</c>).</exception>
     public async Task SetAsync(
         string name,
         string? value,
@@ -92,8 +102,8 @@ public sealed class FeatureManager(
         Argument.IsNotNull(providerName);
 
         var feature =
-            await definitionManager.FindAsync(name, cancellationToken)
-            ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name));
+            await definitionManager.FindAsync(name, cancellationToken).ConfigureAwait(false)
+            ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name).ConfigureAwait(false));
 
         var providers = valueProviderManager
             .ValueProviders.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -101,19 +111,26 @@ public sealed class FeatureManager(
 
         if (providers.Count == 0)
         {
-            throw new ConflictException(await errorsDescriptor.FeatureProviderNotDefined(name, providerName));
+            throw new ConflictException(
+                await errorsDescriptor.FeatureProviderNotDefined(name, providerName).ConfigureAwait(false)
+            );
         }
 
         if (providers.Count > 1 && !forceToSet && value is not null)
         {
-            await using (await providers[0].HandleContextAsync(providerName, providerKey, cancellationToken))
+            await using (
+                await providers[0]
+                    .HandleContextAsync(providerName, providerKey, cancellationToken)
+                    .ConfigureAwait(false)
+            )
             {
                 var fallbackValue = await _CoreGetOrDefaultAsync(
-                    name,
-                    providers[1].Name,
-                    providerKey: null,
-                    cancellationToken: cancellationToken
-                );
+                        name,
+                        providers[1].Name,
+                        providerKey: null,
+                        cancellationToken: cancellationToken
+                    )
+                    .ConfigureAwait(false);
 
                 if (string.Equals(fallbackValue.Value, value, StringComparison.Ordinal))
                 {
@@ -130,27 +147,32 @@ public sealed class FeatureManager(
         {
             if (provider is not IFeatureValueProvider p)
             {
-                throw new ConflictException(await errorsDescriptor.ProviderIsReadonly(providerName));
+                throw new ConflictException(
+                    await errorsDescriptor.ProviderIsReadonly(providerName).ConfigureAwait(false)
+                );
             }
 
             if (value is null)
             {
-                await p.ClearAsync(feature, providerKey, cancellationToken);
+                await p.ClearAsync(feature, providerKey, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                await p.SetAsync(feature, value, providerKey, cancellationToken);
+                await p.SetAsync(feature, value, providerKey, cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
+    /// <inheritdoc/>
+    /// <exception cref="ConflictException">A feature record exists whose definition is not found (<c>FeatureIsNotDefined</c>).</exception>
     public async Task DeleteAsync(
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        var featureNameValues = await GetAllAsync(providerName, providerKey, cancellationToken: cancellationToken);
+        var featureNameValues = await GetAllAsync(providerName, providerKey, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         var providers = valueProviderManager.ValueProviders.SkipWhile(p =>
             !string.Equals(p.Name, providerName, StringComparison.Ordinal)
@@ -169,12 +191,14 @@ public sealed class FeatureManager(
         foreach (var featureNameValue in featureNameValues)
         {
             var feature =
-                await definitionManager.FindAsync(featureNameValue.Name, cancellationToken)
-                ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(featureNameValue.Name));
+                await definitionManager.FindAsync(featureNameValue.Name, cancellationToken).ConfigureAwait(false)
+                ?? throw new ConflictException(
+                    await errorsDescriptor.FeatureIsNotDefined(featureNameValue.Name).ConfigureAwait(false)
+                );
 
             foreach (var provider in writableProviders)
             {
-                await provider.ClearAsync(feature, providerKey, cancellationToken);
+                await provider.ClearAsync(feature, providerKey, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -195,8 +219,8 @@ public sealed class FeatureManager(
         }
 
         var definition =
-            await definitionManager.FindAsync(name, cancellationToken)
-            ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name));
+            await definitionManager.FindAsync(name, cancellationToken).ConfigureAwait(false)
+            ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name).ConfigureAwait(false));
 
         IEnumerable<IFeatureValueReadProvider> providers = valueProviderManager.ValueProviders;
 
@@ -213,7 +237,7 @@ public sealed class FeatureManager(
         foreach (var provider in providers)
         {
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken);
+            var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false);
 
             if (value is not null)
             {

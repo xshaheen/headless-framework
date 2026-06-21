@@ -8,16 +8,24 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 
 ## Key Features
 
-- `IAuditTracked` - Marker interface; entities implementing it are automatically audited on SaveChanges
-- `AuditIgnoreAttribute` - Excludes a property (or entire entity) from change capture
-- `AuditSensitiveAttribute` - Marks a property as PII/secret; value is handled per configured strategy
-- `SensitiveDataStrategy` - `Redact` (replace with `"***"`), `Exclude` (omit entirely), or `Transform` (custom function)
-- `AuditLogOptions` - Master enable/disable, `AuditByDefault` mode, per-entity/property filters, configurable default exclusions, sensitive-value transformer
-- `IAuditLog<TContext>` - Explicit logging of non-mutation events (reads, reveals, failures); the `TContext` type-arg binds the logger to a specific persistence context so multi-context applications resolve a distinct logger per owning context
-- `IAuditLogStore` - Storage abstraction called by the change-tracking pipeline. `Save`/`SaveAsync` now take the saving context (the `DbContext` running `SaveChanges`) on every call and return one `IAuditLogStoreEntry` handle per audit row added to that context (empty list = nothing added, orchestrator skips the audit commit step)
-- `IAuditLogStoreEntry` - Provider-owned handle for an audit row added to the persistence context; the orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Implementations must be idempotent, and `ReleaseAfterCommit()` must not undo committed audit rows
-- `IReadAuditLog<TContext>` - Query abstraction for reading audit entries back without coupling callers to EF types; the `TContext` type-arg binds the reader to a specific persistence context, mirroring `IAuditLog<TContext>`
-- `IAuditChangeCapture` - Scans ChangeTracker entries and produces `AuditLogEntryData` records
+- `IAuditTracked` — marker interface; entities implementing it are audited automatically on `SaveChanges`.
+- `[AuditIgnore]` — excludes a property (on a property) or an entire entity from change capture (on a class, when `AuditByDefault` is enabled).
+- `[AuditSensitive]` — marks a property as PII/secret; value is handled per configured strategy. Accepts an optional `SensitiveDataStrategy` parameter to override the global default per-property.
+- `SensitiveDataStrategy` — `Redact` (replace with `"***"`), `Exclude` (omit entirely), or `Transform` (custom function).
+- `SensitiveValueContext` — passed to `SensitiveValueTransformer`; provides `EntityType`, `PropertyName`, `PropertyClrType`, `Value`.
+- `AuditChangeType` — `Created`, `Updated`, `Deleted`.
+- `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
+- `AuditLogStorageOptions` — shared storage options: `Schema`, `TableName`, `JsonColumnType`, `CreatedAtColumnType`, `InitializeOnStartup`.
+- `AuditLogJsonColumnType` — `Jsonb`, `Json`, `NvarcharMax`.
+- `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
+- `IReadAuditLog<TContext>` — query abstraction returning `IReadOnlyList<AuditLogEntryData>`; supports filtering by `action`, `entityType`, `entityId`, `userId`, `tenantId`, `from`, `to`, and `limit`.
+- `AuditLogEntryData` — immutable record capturing all fields; `OldValues`/`NewValues` are `Dictionary<string, object?>`.
+- `IAuditLogStore` — storage abstraction called by the change-tracking pipeline; `Save`/`SaveAsync` take the saving `DbContext` and return `IAuditLogStoreEntry` handles.
+- `IAuditLogStoreEntry` — provider handle; orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Both must be idempotent.
+- `IAuditChangeCapture` — scans ChangeTracker entries and produces `AuditLogEntryData` records.
+- `IAuditEntityIdResolver` — patches deferred entity IDs after `SaveChanges` assigns store-generated keys.
+- `IAmbientDbTransactionAccessor` — allows raw ADO.NET stores to enroll in the consumer's active `DbConnection`/`DbTransaction` without taking an EF dependency.
+- `HeadlessAuditLogSetupBuilder` — fluent builder passed to `AddHeadlessAuditLog(setup => ...)`; exposes `ConfigureOptions`, `ConfigureStorage`, and `RegisterExtension`.
 
 ## Installation
 
@@ -25,9 +33,9 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 dotnet add package Headless.AuditLog.Abstractions
 ```
 
-## Usage
+## Quick Start
 
-### Entity opt-in
+Mark entities to audit:
 
 ```csharp
 public class Patient : AggregateRoot<Guid>, IAuditTracked
@@ -37,18 +45,34 @@ public class Patient : AggregateRoot<Guid>, IAuditTracked
     [AuditSensitive]
     public string NationalId { get; set; } = "";
 
+    [AuditSensitive(SensitiveDataStrategy.Exclude)]
+    public string CreditCardToken { get; set; } = "";
+
     [AuditIgnore]
     public DateTime LastComputedAt { get; set; }
 }
 ```
 
-### Registration
+Log explicit events:
 
 ```csharp
-services.AddHeadlessAuditLog(o =>
-{
-    o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
-});
+await auditLog.LogAsync(
+    "pii.revealed",
+    entityType: typeof(Patient).FullName,
+    entityId: id.ToString(),
+    data: new Dictionary<string, object?> { ["requestedBy"] = currentUser.UserId }
+);
+```
+
+Query audit history:
+
+```csharp
+var entries = await readAuditLog.QueryAsync(
+    entityType: typeof(Patient).FullName,
+    entityId: patientId.ToString(),
+    limit: 50,
+    cancellationToken: ct
+);
 ```
 
 > This package registers options only. Add `Headless.AuditLog.Storage.EntityFramework`, `Headless.AuditLog.Storage.PostgreSql`, or `Headless.AuditLog.Storage.SqlServer` for storage.
@@ -56,23 +80,25 @@ services.AddHeadlessAuditLog(o =>
 ## Configuration
 
 | Option | Default | Description |
-|--------|---------|-------------|
-| `IsEnabled` | `true` | Master switch; `false` disables all capture |
-| `AuditByDefault` | `false` | When `true`, audits every entity unless `[AuditIgnore]` is present |
-| `SensitiveDataStrategy` | `Redact` | Global strategy for `[AuditSensitive]` properties |
-| `SensitiveValueTransformer` | `null` | Required whenever the effective strategy is `Transform`; must be a pure, synchronous function |
-| `EntityFilter` | `null` | Predicate returning `true` to exclude a type; first result is cached per type for the capture service lifetime |
-| `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; first result is cached per `(Type, propertyName)` for the capture service lifetime |
-| `DefaultExcludedProperties` | Framework-managed names | Default property names skipped during change capture; consumers can add/remove entries |
+|---|---|---|
+| `IsEnabled` | `true` | Master switch; `false` disables all capture. |
+| `AuditByDefault` | `false` | When `true`, audits every entity unless `[AuditIgnore]` is present. |
+| `SensitiveDataStrategy` | `Redact` | Global strategy for `[AuditSensitive]` properties. |
+| `SensitiveValueTransformer` | `null` | Required when effective strategy is `Transform`; must be pure and synchronous. |
+| `EntityFilter` | `null` | Predicate returning `true` to exclude a type; result cached per type. |
+| `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; result cached per `(Type, propertyName)`. |
+| `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. |
+| `CaptureErrorStrategy` | `Continue` | `Continue` logs an error and proceeds; `Throw` aborts the save. |
 
-## Important Notes
+Storage options (`AuditLogStorageOptions`):
 
-- `AddHeadlessAuditLog` validates the global `SensitiveDataStrategy.Transform` configuration and fails options resolution when no `SensitiveValueTransformer` is configured.
-- If a property explicitly uses `[AuditSensitive(SensitiveDataStrategy.Transform)]`, the first capture attempt throws an `OptionsValidationException` unless `SensitiveValueTransformer` is configured.
-- `EntityFilter` and `PropertyFilter` results are cached after first evaluation, so predicates must be pure and deterministic.
-- `AuditLogEntryData.OldValues` and `NewValues` may contain `JsonElement` values after provider round-trips; use `JsonElement` APIs such as `GetDecimal()` for typed access.
-- `EntityId` stays a plain string for single-column keys; composite keys are serialized as a JSON string array.
-- `IpAddress` and `UserAgent` are not auto-populated by the built-in EF change-capture pipeline; set them explicitly through `IAuditLog.LogAsync` or a custom capture implementation.
+| Option | Default | Description |
+|---|---|---|
+| `Schema` | `"audit"` | Database schema name. |
+| `TableName` | `"audit_log"` | Table name. |
+| `JsonColumnType` | `null` (provider default) | Override JSON column type: `Jsonb`, `Json`, or `NvarcharMax`. |
+| `CreatedAtColumnType` | `null` (provider default) | Override the timestamp column DDL type string. |
+| `InitializeOnStartup` | `true` | Set `false` to skip DDL at startup (raw providers only). |
 
 ## Dependencies
 
@@ -82,4 +108,4 @@ services.AddHeadlessAuditLog(o =>
 
 ## Side Effects
 
-None. This is an abstractions package.
+None. This is an abstractions package; it registers `AuditLogOptions` and its validator only when `AddHeadlessAuditLog` is called.

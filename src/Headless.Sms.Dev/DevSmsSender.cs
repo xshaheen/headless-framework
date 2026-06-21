@@ -5,10 +5,11 @@ using Headless.Sms.Dev.Internals;
 
 namespace Headless.Sms.Dev;
 
-public sealed class DevSmsSender(string filePath) : ISmsSender
+internal sealed class DevSmsSender(string filePath) : ISmsSender, IDisposable
 {
     private const string _Separator = "--------------------";
     private readonly string _filePath = Argument.IsNotNullOrEmpty(filePath);
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
@@ -43,8 +44,27 @@ public sealed class DevSmsSender(string filePath) : ISmsSender
 
         sb.AppendLine(_Separator);
 
-        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken).ConfigureAwait(false);
+        // Singleton sender shares one file across concurrent callers; serialize the appends.
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException e)
+        {
+            return SendSingleSmsResponse.Failed(e.Message);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
 
         return SendSingleSmsResponse.Succeeded();
+    }
+
+    public void Dispose()
+    {
+        _writeLock.Dispose();
     }
 }

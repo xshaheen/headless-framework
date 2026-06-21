@@ -13,13 +13,16 @@ internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
     {
         var state = _state.Value;
 
-        if (state?.IsActive != true)
+        // TryAddRef atomically rejects a state that already went terminal, closing the TOCTOU window
+        // between the active-check and the increment. AsyncLocal can flow the same BypassState object
+        // into parallel branches, so the increment must be race-safe against a concurrent last release;
+        // if the shared state died, install a fresh one rather than returning an inactive ("zombie") scope.
+        if (state is null || !state.TryAddRef())
         {
             state = new BypassState();
+            state.TryAddRef(); // 0 -> 1; the object is thread-private until published on the next line.
             _state.Value = state;
         }
-
-        state.AddRef();
 
         return new BypassScope(this, state);
     }
@@ -28,41 +31,61 @@ internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
     {
         state.Release();
 
+        // Non-atomic check-then-clear is safe: _state.Value is AsyncLocal (per-context), and the
+        // ReferenceEquals guard skips clearing when a concurrent BeginBypass already installed a fresh
+        // state. Do not replace this with Interlocked on the reference — it would break AsyncLocal flow.
         if (!state.IsActive && ReferenceEquals(_state.Value, state))
         {
             _state.Value = null;
         }
     }
 
-    private sealed class BypassState
+    // internal (not private) so the CAS ref-count state machine can be unit-tested directly via
+    // InternalsVisibleTo — its in-window TOCTOU is not reachable through the public BeginBypass API.
+    internal sealed class BypassState
     {
-        private int _isDisposed;
+        // 0 = freshly created (no refs yet); > 0 = active ref count; -1 = terminal (cannot be revived).
         private int _refCount;
 
-        public bool IsActive => Volatile.Read(ref _isDisposed) == 0 && Volatile.Read(ref _refCount) > 0;
+        public bool IsActive => Volatile.Read(ref _refCount) > 0;
 
-        public void AddRef()
+        /// <summary>Atomically increments the ref count unless the state is terminal.</summary>
+        /// <returns><c>true</c> if a ref was taken; <c>false</c> if the state is terminal.</returns>
+        public bool TryAddRef()
         {
-            Interlocked.Increment(ref _refCount);
+            int current;
+
+            do
+            {
+                current = Volatile.Read(ref _refCount);
+
+                if (current < 0)
+                {
+                    return false;
+                }
+            } while (Interlocked.CompareExchange(ref _refCount, current + 1, current) != current);
+
+            return true;
         }
 
+        /// <summary>Releases a ref; the last release latches the state terminal so it cannot be revived.</summary>
         public void Release()
         {
-            var newCount = Interlocked.Decrement(ref _refCount);
+            int current;
+            int next;
 
-            if (newCount < 0)
+            do
             {
-                // Defensive clamp: a misuse (Release without AddRef, or duplicate dispose) must not
-                // leave the counter negative, which would allow a future AddRef to land at 0 and
-                // be observed as inactive.
-                Interlocked.Exchange(ref _refCount, 0);
-                return;
-            }
+                current = Volatile.Read(ref _refCount);
 
-            if (newCount == 0)
-            {
-                Volatile.Write(ref _isDisposed, 1);
-            }
+                if (current <= 0)
+                {
+                    // Defensive no-op: already terminal, or a Release without a matching AddRef.
+                    return;
+                }
+
+                next = current == 1 ? -1 : current - 1;
+            } while (Interlocked.CompareExchange(ref _refCount, next, current) != current);
         }
     }
 

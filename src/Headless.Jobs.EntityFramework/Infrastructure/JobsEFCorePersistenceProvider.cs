@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
 using System.Linq.Expressions;
 using Headless.Caching;
 using Headless.CommitCoordination;
@@ -197,7 +196,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken);
+        await dbContext.Set<TTimeJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
 
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }

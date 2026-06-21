@@ -6,6 +6,10 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.ReCaptcha.V2.TagHelpers;
 
+/// <summary>
+/// Razor tag helper that injects reCAPTCHA v2 widget attributes onto any existing HTML element. Apply any
+/// of the <c>recaptcha-v2-*</c> attributes to an element to activate the helper.
+/// </summary>
 [PublicAPI]
 [HtmlTargetElement("*", Attributes = _BadgeAttributeName)]
 [HtmlTargetElement("*", Attributes = _ThemeAttributeName)]
@@ -25,27 +29,35 @@ public sealed class ReCaptchaV2ElementTagHelper(IOptionsSnapshot<ReCaptchaOption
     private const string _ErrorCallbackAttributeName = "recaptcha-v2-error-callback";
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(SetupReCaptcha.V2Name);
 
+    /// <summary>Maps to <c>recaptcha-v2-badge</c>. Controls badge position for invisible reCAPTCHA (<c>bottomright</c>, <c>bottomleft</c>, or <c>inline</c>).</summary>
     [HtmlAttributeName(_BadgeAttributeName)]
     public string? Badge { get; set; }
 
+    /// <summary>Maps to <c>recaptcha-v2-theme</c>. The color scheme of the widget (<c>light</c> or <c>dark</c>).</summary>
     [HtmlAttributeName(_ThemeAttributeName)]
     public string? Theme { get; set; }
 
+    /// <summary>Maps to <c>recaptcha-v2-size</c>. The size of the widget (<c>normal</c>, <c>compact</c>, or <c>invisible</c>).</summary>
     [HtmlAttributeName(_SizeAttributeName)]
     public string? Size { get; set; }
 
+    /// <summary>Maps to <c>recaptcha-v2-tab-index</c>. The tab index of the widget.</summary>
     [HtmlAttributeName(_TabIndexAttributeName)]
     public string? TabIndex { get; set; }
 
+    /// <summary>Maps to <c>recaptcha-v2-callback</c>. Name of the JavaScript callback invoked on successful response.</summary>
     [HtmlAttributeName(_CallbackAttributeName)]
     public string? Callback { get; set; }
 
+    /// <summary>Maps to <c>recaptcha-v2-expired-callback</c>. Name of the JavaScript callback invoked when the response expires.</summary>
     [HtmlAttributeName(_ExpiredCallbackAttributeName)]
     public string? ExpiredCallback { get; set; }
 
+    /// <summary>Maps to <c>recaptcha-v2-error-callback</c>. Name of the JavaScript callback invoked on error.</summary>
     [HtmlAttributeName(_ErrorCallbackAttributeName)]
     public string? ErrorCallback { get; set; }
 
+    /// <summary>Injects reCAPTCHA v2 widget data attributes onto the target element.</summary>
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
         /*
@@ -57,42 +69,16 @@ public sealed class ReCaptchaV2ElementTagHelper(IOptionsSnapshot<ReCaptchaOption
         </div>
         */
 
-        output.Attributes.Add("class", "g-recaptcha");
-        output.Attributes.Add("data-sitekey", _options.SiteKey);
-
-        if (!string.IsNullOrWhiteSpace(Badge))
-        {
-            output.Attributes.Add("data-badge", Badge);
-        }
-
-        if (!string.IsNullOrWhiteSpace(Theme))
-        {
-            output.Attributes.Add("data-theme", Theme);
-        }
-
-        if (!string.IsNullOrWhiteSpace(Size))
-        {
-            output.Attributes.Add("data-size", Size);
-        }
-
-        if (!string.IsNullOrWhiteSpace(TabIndex))
-        {
-            output.Attributes.Add("data-tabindex", TabIndex);
-        }
-
-        if (!string.IsNullOrWhiteSpace(Callback))
-        {
-            output.Attributes.Add("data-callback", Callback);
-        }
-
-        if (!string.IsNullOrWhiteSpace(ExpiredCallback))
-        {
-            output.Attributes.Add("data-expired-callback", ExpiredCallback);
-        }
-
-        if (!string.IsNullOrWhiteSpace(ErrorCallback))
-        {
-            output.Attributes.Add("data-error-callback", ErrorCallback);
-        }
+        ReCaptchaV2Widget.ApplyAttributes(
+            output,
+            _options.SiteKey,
+            Badge,
+            Theme,
+            Size,
+            TabIndex,
+            Callback,
+            ExpiredCallback,
+            ErrorCallback
+        );
     }
 }

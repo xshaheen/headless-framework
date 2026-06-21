@@ -9,12 +9,17 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Settings.SqlServer;
 
+/// <summary>
+/// SQL Server implementation of <see cref="ISettingDefinitionRecordRepository"/> that stores
+/// setting definition records directly via <c>Microsoft.Data.SqlClient</c> without an ORM.
+/// </summary>
 internal sealed class SqlServerSettingDefinitionRecordRepository(
     IOptions<SqlServerSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions,
     IJsonSerializer serializer
 ) : ISettingDefinitionRecordRepository
 {
+    /// <inheritdoc/>
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
         var sql =
@@ -52,6 +57,7 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         return result;
     }
 
+    /// <inheritdoc/>
     public async Task SaveAsync(
         List<SettingDefinitionRecord> addedRecords,
         List<SettingDefinitionRecord> changedRecords,
@@ -88,6 +94,7 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Executes <paramref name="sql"/> for a single <paramref name="record"/> within an existing <paramref name="transaction"/>.</summary>
     private async Task _ExecuteAsync(
         SqlConnection connection,
         SqlTransaction transaction,
@@ -114,17 +121,22 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns the parameterized INSERT SQL for the setting definitions table.</summary>
     private string _InsertSql() =>
         $"INSERT INTO {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} ([Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);";
 
+    /// <summary>Returns the parameterized UPDATE SQL for the setting definitions table.</summary>
     private string _UpdateSql() =>
         $"UPDATE {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} SET [Name]=@Name,[DisplayName]=@DisplayName,[Description]=@Description,[DefaultValue]=@DefaultValue,[Providers]=@Providers,[IsVisibleToClients]=@IsVisibleToClients,[IsInherited]=@IsInherited,[IsEncrypted]=@IsEncrypted,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
 
+    /// <summary>Returns the parameterized DELETE SQL for the setting definitions table.</summary>
     private string _DeleteSql() =>
         $"DELETE FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} WHERE [Id]=@Id;";
 
+    /// <summary>Deserializes <paramref name="json"/> into an <see cref="ExtraProperties"/> collection, returning an empty collection when the result is <see langword="null"/>.</summary>
     private ExtraProperties _DeserializeExtraProperties(string json) =>
         serializer.Deserialize<ExtraProperties>(json) ?? [];
 
+    /// <summary>Returns <see cref="SqlServerSettingsOptions.CommandTimeout"/> expressed in whole seconds for use as <c>CommandTimeout</c>.</summary>
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 }

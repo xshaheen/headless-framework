@@ -21,4 +21,12 @@ internal static partial class VictoryLinkLoggerExtensions
         Message = "Failed to send SMS to {DestinationCount} destination(s): {ResponseMessage}"
     )]
     public static partial void LogFailedToSendSms(this ILogger logger, int destinationCount, string responseMessage);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SmsSendException",
+        Level = LogLevel.Error,
+        Message = "Failed to send SMS using VictoryLink API to {DestinationCount} destination(s)"
+    )]
+    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 }

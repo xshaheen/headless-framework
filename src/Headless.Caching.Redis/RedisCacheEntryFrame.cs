@@ -2,8 +2,6 @@
 
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Globalization;
-using System.Text;
 using Headless.Checks;
 using StackExchange.Redis;
 

@@ -5,46 +5,64 @@ using Humanizer;
 
 namespace Headless.Settings.Models;
 
+/// <summary>Options controlling the runtime behaviour of the settings management system.</summary>
 public sealed class SettingManagementOptions
 {
-    /// <summary>Default: false.</summary>
+    /// <summary>
+    /// Gets or sets whether <see cref="Headless.Settings.Definitions.IDynamicSettingDefinitionStore"/> is active and should serve definitions
+    /// from the database. Default: <see langword="false"/>.
+    /// </summary>
     public bool IsDynamicSettingStoreEnabled { get; set; }
 
-    /// <summary>Default: true.</summary>
+    /// <summary>
+    /// Gets or sets whether static setting definitions are persisted to the database on startup.
+    /// Default: <see langword="true"/>.
+    /// </summary>
     public bool SaveStaticSettingsToDatabase { get; set; } = true;
 
-    /// <summary>A lock key for the setting update across all the applications.</summary>
+    /// <summary>
+    /// Gets or sets the distributed-lock key used to coordinate cross-application setting updates.
+    /// Default: <c>settings:common_update_lock</c>.
+    /// </summary>
     public string CrossApplicationsCommonLockKey { get; set; } = "settings:common_update_lock";
 
-    /// <summary>Default: 10 minutes.</summary>
+    /// <summary>Gets or sets how long the cross-application common lock is held before it expires. Default: 10 minutes.</summary>
     public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = 10.Minutes();
 
-    /// <summary>Default: 5 minutes.</summary>
+    /// <summary>Gets or sets how long to wait when attempting to acquire the cross-application common lock. Default: 5 minutes.</summary>
     public TimeSpan CrossApplicationsCommonLockAcquireTimeout { get; set; } = 5.Minutes();
 
-    /// <summary>Default: 10 minutes.</summary>
+    /// <summary>Gets or sets how long the per-application save lock is held before it expires. Default: 10 minutes.</summary>
     public TimeSpan ApplicationSaveLockExpiration { get; set; } = 10.Minutes();
 
-    /// <summary>Default: 5 minutes.</summary>
+    /// <summary>Gets or sets how long to wait when attempting to acquire the per-application save lock. Default: 5 minutes.</summary>
     public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = 5.Minutes();
 
-    /// <summary>Default: 5 hours.</summary>
+    /// <summary>Gets or sets the lifetime of cached setting values in the distributed cache. Default: 5 hours.</summary>
     public TimeSpan ValueCacheExpiration { get; set; } = 5.Hours();
 
-    /// <summary>Default: 30 days.</summary>
+    /// <summary>Gets or sets the lifetime of the settings hash stamp in the distributed cache, used to detect changes. Default: 30 days.</summary>
     public TimeSpan SettingsHashCacheExpiration { get; set; } = 30.Days();
 
-    /// <summary>Default: 30 days.</summary>
+    /// <summary>Gets or sets the lifetime of the common updated-stamp entry in the distributed cache. Default: 30 days.</summary>
     public TimeSpan CommonSettingsUpdatedStampCacheExpiration { get; set; } = 30.Days();
 
-    /// <summary>A stamp when changed the application updates its local cache.</summary>
+    /// <summary>
+    /// Gets or sets the distributed-cache key for the shared updated stamp.
+    /// When this stamp changes, each application instance refreshes its local in-memory cache.
+    /// Default: <c>settings:updated_local_stamp</c>.
+    /// </summary>
     public string CommonSettingsUpdatedStampCacheKey { get; set; } = "settings:updated_local_stamp";
 
-    /// <summary>Default: 30 seconds.</summary>
+    /// <summary>
+    /// Gets or sets how long the local in-memory definition cache is considered fresh before re-checking
+    /// the distributed stamp. Default: 30 seconds.
+    /// </summary>
     public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
 }
 
-public sealed class SettingManagementOptionsValidator : AbstractValidator<SettingManagementOptions>
+/// <summary>Validator for <see cref="SettingManagementOptions"/>.</summary>
+internal sealed class SettingManagementOptionsValidator : AbstractValidator<SettingManagementOptions>
 {
     public SettingManagementOptionsValidator()
     {

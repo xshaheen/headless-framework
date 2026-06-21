@@ -10,10 +10,13 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : IDistributedReadWriteLock
 {
+    /// <inheritdoc />
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
+    /// <inheritdoc />
     public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
+    /// <inheritdoc />
     public Task<IDistributedLease> AcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -26,6 +29,7 @@ public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : ID
         return Task.FromResult<IDistributedLease>(new NullReaderWriterLock(resource, timeProvider));
     }
 
+    /// <inheritdoc />
     public Task<IDistributedLease?> TryAcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -38,6 +42,7 @@ public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : ID
         return Task.FromResult<IDistributedLease?>(new NullReaderWriterLock(resource, timeProvider));
     }
 
+    /// <inheritdoc />
     public Task<IDistributedLease> AcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -50,6 +55,7 @@ public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : ID
         return Task.FromResult<IDistributedLease>(new NullReaderWriterLock(resource, timeProvider));
     }
 
+    /// <inheritdoc />
     public Task<IDistributedLease?> TryAcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -62,6 +68,7 @@ public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : ID
         return Task.FromResult<IDistributedLease?>(new NullReaderWriterLock(resource, timeProvider));
     }
 
+    /// <inheritdoc />
     public Task<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -69,6 +76,7 @@ public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : ID
         return Task.FromResult(false);
     }
 
+    /// <inheritdoc />
     public Task<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -76,6 +84,7 @@ public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : ID
         return Task.FromResult(false);
     }
 
+    /// <inheritdoc />
     public Task<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

@@ -1,18 +1,18 @@
 # Headless.Serializer.MessagePack
 
-MessagePack binary serialization implementation.
+MessagePack binary serialization implementation of `IBinarySerializer`.
 
 ## Problem Solved
 
-Provides compact, high-performance binary serialization using MessagePack format, ideal for caching, messaging, and scenarios requiring smaller payload sizes than JSON.
+Provides compact binary serialization for high-throughput scenarios (cache entries, internal message envelopes) where JSON text overhead is a bottleneck. Contractless by default — no `[MessagePackObject]` or `[Key]` attributes required.
 
 ## Key Features
 
-- `MessagePackSerializer` - IBinarySerializer implementation
-- Contractless serialization by default (no attributes required)
-- Configurable MessagePackSerializerOptions
-- Smaller payloads than JSON
-- Faster serialization/deserialization than text formats
+- `MessagePackSerializer` — `IBinarySerializer` implementation
+- Contractless by default: uses `ContractlessStandardResolver`, so plain POCOs serialize without any attributes
+- Accepts `MessagePackSerializerOptions` via constructor for compression, custom resolvers, or security settings
+- Built-in LZ4 compression available via `WithCompression(MessagePackCompression.Lz4BlockArray)`
+- Full `ISerializer` surface: generic `Serialize<T>` / `Deserialize<T>`, non-generic `Serialize(object?)` / `Deserialize(Stream, Type)`
 
 ## Installation
 
@@ -23,44 +23,37 @@ dotnet add package Headless.Serializer.MessagePack
 ## Quick Start
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-// Register with default options (contractless)
+// Default: contractless, no compression:
 builder.Services.AddSingleton<IBinarySerializer, MessagePackSerializer>();
-```
 
-## Usage
+// With LZ4 compression:
+var options = MessagePackSerializerOptions.Standard
+    .WithResolver(ContractlessStandardResolver.Instance)
+    .WithCompression(MessagePackCompression.Lz4BlockArray);
 
-```csharp
-public sealed class CacheService(IBinarySerializer serializer)
+builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(options));
+
+// Consume via abstraction — use extension helpers to avoid Stream boilerplate:
+public sealed class CacheWriter(IBinarySerializer serializer)
 {
-    public byte[] Serialize<T>(T value)
-    {
-        using var stream = new MemoryStream();
-        serializer.Serialize(value, stream);
-        return stream.ToArray();
-    }
+    public byte[]? Serialize<T>(T value) => serializer.SerializeToBytes(value);
 
-    public T? Deserialize<T>(byte[] data)
-    {
-        using var stream = new MemoryStream(data);
-        return serializer.Deserialize<T>(stream);
-    }
+    public T? Deserialize<T>(byte[] data) => serializer.Deserialize<T>(data);
 }
 ```
 
 ## Configuration
 
-Custom options can be provided via constructor:
+All configuration is passed via `MessagePackSerializerOptions` at construction time:
 
 ```csharp
+// Switch to attribute-based (non-contractless) mode:
+var options = MessagePackSerializerOptions.Standard; // requires [MessagePackObject]/[Key] attributes
+
+// Security: disallow deserialization of arbitrary types via typeless API:
 var options = MessagePackSerializerOptions.Standard
     .WithResolver(ContractlessStandardResolver.Instance)
-    .WithCompression(MessagePackCompression.Lz4BlockArray);
-
-builder.Services.AddSingleton<IBinarySerializer>(
-    new MessagePackSerializer(options)
-);
+    .WithSecurity(MessagePackSecurity.UntrustedData);
 ```
 
 ## Dependencies
@@ -70,4 +63,4 @@ builder.Services.AddSingleton<IBinarySerializer>(
 
 ## Side Effects
 
-None.
+None. Registration is fully explicit.

@@ -4,6 +4,15 @@ using FluentValidation;
 
 namespace Headless.Blobs.CloudflareR2;
 
+/// <summary>
+/// Configuration for the Cloudflare R2 blob storage provider.
+/// </summary>
+/// <remarks>
+/// R2 is accessed via the S3-compatible API using <see cref="AccountId"/>, <see cref="AccessKeyId"/>, and
+/// <see cref="SecretAccessKey"/>. The S3 endpoint is derived from <see cref="Jurisdiction"/> unless
+/// <see cref="EndpointUrl"/> is explicitly set. R2 does not support ACLs, chunked encoding, or payload signing;
+/// these are disabled automatically by the setup registration.
+/// </remarks>
 [PublicAPI]
 public sealed class R2BlobStorageOptions
 {
@@ -28,7 +37,12 @@ public sealed class R2BlobStorageOptions
     /// </summary>
     public string? EndpointUrl { get; set; }
 
-    /// <summary>Resolves the effective S3 endpoint URL for this configuration.</summary>
+    /// <summary>
+    /// Resolves the S3 endpoint URL for this configuration. Returns <see cref="EndpointUrl"/> (with
+    /// <see cref="AccountId"/> substituted for <c>{0}</c>) when set; otherwise derives the URL from
+    /// <see cref="AccountId"/> and <see cref="Jurisdiction"/>.
+    /// </summary>
+    /// <returns>The fully qualified HTTPS endpoint URL to use for S3 API calls against R2.</returns>
     public string GetEffectiveEndpointUrl()
     {
         if (!string.IsNullOrWhiteSpace(EndpointUrl))

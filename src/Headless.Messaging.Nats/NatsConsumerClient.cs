@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -57,14 +56,18 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
+        // Materialize once: the source is consumed by GroupBy and the return value, so a lazy
+        // input would otherwise be enumerated twice.
+        var names = messageNames as IReadOnlyList<string> ?? messageNames.ToList();
+
         if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {
-            return messageNames.ToList();
+            return [.. names];
         }
 
         // Preserve wildcard coverage for hierarchical subjects, but add exact
         // subjects for bare/non-prefix messageNames that the wildcard cannot match.
-        var streamGroups = messageNames.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
+        var streamGroups = names.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
 
         foreach (var streamGroup in streamGroups)
         {
@@ -84,7 +87,7 @@ internal sealed class NatsConsumerClient(
             await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
 
-        return messageNames.ToList();
+        return [.. names];
     }
 
     internal static IReadOnlyList<string> BuildStreamSubjects(
@@ -300,7 +303,7 @@ internal sealed class NatsConsumerClient(
                             }
                         );
 
-                        retryDelay = _NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
+                        retryDelay = NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
@@ -314,7 +317,7 @@ internal sealed class NatsConsumerClient(
                             }
                         );
 
-                        retryDelay = _NextBackoff(retryDelay);
+                        retryDelay = NextBackoff(retryDelay);
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
@@ -343,7 +346,7 @@ internal sealed class NatsConsumerClient(
                     }
                 );
 
-                retryDelay = _NextBackoff(retryDelay);
+                retryDelay = NextBackoff(retryDelay);
                 await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -404,7 +407,7 @@ internal sealed class NatsConsumerClient(
         );
     }
 
-    internal static TimeSpan _NextBackoff(TimeSpan current, TimeSpan floor = default)
+    internal static TimeSpan NextBackoff(TimeSpan current, TimeSpan floor = default)
     {
         var ceiling = TimeSpan.FromSeconds(30);
         var next = TimeSpan.FromTicks(Math.Min(current.Ticks * 2, ceiling.Ticks));
@@ -529,7 +532,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        if (!await _pauseGate.PauseAsync())
+        if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -551,7 +554,7 @@ internal sealed class NatsConsumerClient(
 
         _ResetReceiveToken();
 
-        if (!await _pauseGate.ResumeAsync())
+        if (!await _pauseGate.ResumeAsync().ConfigureAwait(false))
         {
             return;
         }

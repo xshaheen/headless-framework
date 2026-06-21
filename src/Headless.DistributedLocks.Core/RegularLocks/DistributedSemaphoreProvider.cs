@@ -12,6 +12,28 @@ using Polly;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// The distributed semaphore provider. Implements <see cref="IDistributedSemaphoreProvider"/> using
+/// a scored-set storage backend (<see cref="IDistributedSemaphoreStorage"/>) where each slot is
+/// stored with a finite expiry score, allowing the backend to reclaim capacity automatically when
+/// TTLs expire.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Semaphore slots require a finite TTL — <see cref="Timeout.InfiniteTimeSpan"/> is rejected at
+/// acquire time because a non-expiring slot would hold capacity until an explicit release, which
+/// breaks the capacity-reclaim contract.
+/// </para>
+/// <para>
+/// Wake-up model mirrors <see cref="DistributedLock"/>: when <see cref="IOutboxBus"/> is available,
+/// a <see cref="DistributedLockReleased"/> message is published after each confirmed release so
+/// blocked acquirers are woken immediately. Without the bus, callers fall back to polling.
+/// </para>
+/// <para>
+/// This class also implements <see cref="ICanReceiveLockReleased"/> so it participates in the same
+/// fan-out signal path as the mutex provider via the shared <c>LockReleasedConsumer</c>.
+/// </para>
+/// </remarks>
 internal sealed class DistributedSemaphoreProvider(
     IDistributedSemaphoreStorage storage,
     IOutboxBus? outboxBus,
@@ -44,6 +66,18 @@ internal sealed class DistributedSemaphoreProvider(
 
     public TimeSpan DefaultAcquireTimeout { get; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Creates a named semaphore view for the given resource and maximum slot count. The returned
+    /// <see cref="IDistributedSemaphore"/> is a lightweight wrapper that delegates acquires back to
+    /// this provider; no storage operation is performed here.
+    /// </summary>
+    /// <param name="resource">The resource name for the semaphore. Must be non-empty and within <see cref="DistributedLockOptions.MaxResourceNameLength"/>.</param>
+    /// <param name="maxCount">The maximum number of concurrent slot holders. Must be &gt;= 1.</param>
+    /// <returns>A new <see cref="IDistributedSemaphore"/> bound to this provider, <paramref name="resource"/>, and <paramref name="maxCount"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="resource"/> exceeds
+    /// <see cref="DistributedLockOptions.MaxResourceNameLength"/>, or when <paramref name="maxCount"/> is less than 1.</exception>
     public IDistributedSemaphore CreateSemaphore(string resource, int maxCount)
     {
         _ValidateResource(resource);
@@ -353,6 +387,16 @@ internal sealed class DistributedSemaphoreProvider(
         }
     }
 
+    /// <summary>
+    /// Returns the number of active (non-expired) slot holders for the given <paramref name="resource"/>.
+    /// </summary>
+    /// <param name="resource">The semaphore resource name.</param>
+    /// <param name="cancellationToken">Token to cancel the storage call.</param>
+    /// <returns>The count of live slot holders, excluding expired entries.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="resource"/> exceeds <see cref="DistributedLockOptions.MaxResourceNameLength"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<long> GetHolderCountAsync(string resource, CancellationToken cancellationToken = default)
     {
         _ValidateResource(resource);

@@ -1,17 +1,23 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.ExceptionServices;
-using System.Text.RegularExpressions;
 using Headless.Exceptions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
+/// <summary>Extensions for re-throwing, unwrapping, and rendering <see cref="Exception"/> instances.</summary>
 [PublicAPI]
 public static class ExceptionExtensions
 {
-    /// <summary>Uses <see cref="Capture"/> method to re-throws exception while preserving stack trace.</summary>
-    /// <param name="exception">Exception to be re-thrown</param>
+    /// <summary>
+    /// Uses <see cref="ExceptionDispatchInfo.Capture"/> to re-throw <paramref name="exception"/> while preserving its
+    /// original stack trace. This method never returns; the declared return type only enables
+    /// <c>throw exception.ReThrow()</c> usage so the compiler treats the call site as terminating.
+    /// </summary>
+    /// <param name="exception">Exception to be re-thrown.</param>
+    /// <returns>This method never returns normally.</returns>
+    /// <exception cref="Exception">Always re-throws <paramref name="exception"/> with its original stack trace preserved.</exception>
     [DoesNotReturn]
     public static Exception ReThrow(this Exception exception)
     {
@@ -20,6 +26,9 @@ public static class ExceptionExtensions
         return exception;
     }
 
+    /// <summary>Walks the <see cref="Exception.InnerException"/> chain and returns the deepest (root) exception.</summary>
+    /// <param name="exception">The exception whose innermost cause is requested; may be <see langword="null"/>.</param>
+    /// <returns>The innermost exception, or <see langword="null"/> when <paramref name="exception"/> is <see langword="null"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(exception))]
@@ -40,12 +49,22 @@ public static class ExceptionExtensions
         return current;
     }
 
+    /// <summary>Wraps <paramref name="exception"/> in a <see cref="ConflictException"/> and throws it.</summary>
+    /// <param name="exception">The exception to wrap; its message and instance become the conflict message and inner exception.</param>
+    /// <exception cref="ConflictException">Always thrown, wrapping <paramref name="exception"/> as the inner exception.</exception>
     [DoesNotReturn]
     public static void ThrowConflictException(this Exception exception)
     {
         throw new ConflictException(exception.Message, exception);
     }
 
+    /// <summary>
+    /// Renders <paramref name="e"/> and its inner exceptions (flattening any <see cref="AggregateException"/>) into a
+    /// human-readable multi-line string of type names, messages, and stack traces, bounded by <paramref name="maxDepth"/>.
+    /// </summary>
+    /// <param name="e">The exception to expand; may be <see langword="null"/>.</param>
+    /// <param name="maxDepth">The maximum number of nested or aggregated exceptions to include.</param>
+    /// <returns>The expanded text, or <see cref="string.Empty"/> when <paramref name="e"/> is <see langword="null"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static string ExpandMessage(this Exception? e, int maxDepth = 5)

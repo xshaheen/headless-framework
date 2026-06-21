@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Sms.Vodafone;
 
-public sealed class VodafoneSmsSender(
+internal sealed class VodafoneSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<VodafoneSmsOptions> optionsAccessor,
     ILogger<VodafoneSmsSender> logger
@@ -27,7 +27,28 @@ public sealed class VodafoneSmsSender(
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
-        var httpClient = httpClientFactory.CreateClient(SetupVodafone.HttpClientName);
+        try
+        {
+            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            logger.LogSmsSendException(e, request.Destinations.Count);
+
+            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+        }
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
+        SendSingleSmsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        using var httpClient = httpClientFactory.CreateClient(SetupVodafone.HttpClientName);
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/xml");
 
@@ -41,7 +62,7 @@ public sealed class VodafoneSmsSender(
             return SendSingleSmsResponse.Failed("Failed to send.");
         }
 
-        var isSuccess = rawContent.Contains("<Success>true</Success>", StringComparison.Ordinal);
+        var isSuccess = rawContent.Contains("<Success>true</Success>", StringComparison.OrdinalIgnoreCase);
 
         if (isSuccess)
         {
@@ -61,7 +82,6 @@ public sealed class VodafoneSmsSender(
             ? string.Join(',', request.Destinations.Select(d => SecurityElement.Escape(d.ToString())))
             : SecurityElement.Escape(request.Destinations[0].ToString());
 
-        // Simulate XML payload building.
         return "<Payload>"
             + $"<AccountId>{SecurityElement.Escape(_options.AccountId)}</AccountId>"
             + $"<Password>{SecurityElement.Escape(_options.Password)}</Password>"
@@ -106,8 +126,7 @@ public sealed class VodafoneSmsSender(
     {
         using var hmac = new HMACSHA256(_secureHash);
         var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(input));
-        var hashString = BitConverter.ToString(hashBytes);
 
-        return hashString.RemoveCharacter('-').ToUpper(CultureInfo.CurrentCulture);
+        return Convert.ToHexString(hashBytes);
     }
 }

@@ -32,11 +32,17 @@ public static class StorageProviderRegistration
         /// <param name="extensionCount">Number of registered storage-options extensions on the setup builder.</param>
         /// <param name="extensionTypeName">Type name of the chosen storage extension (for diagnostics).</param>
         /// <param name="domainName">Domain label used in the diagnostic message (e.g. <c>"Headless.Features"</c>).</param>
+        /// <param name="validProviderNames">The domain's valid <c>Use…</c> entry points, listed in the zero-provider diagnostic.</param>
         /// <param name="sentinelFactory">Constructs the per-domain sentinel from the extension type name.</param>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when not exactly one storage provider was configured, or when a storage provider was
+        /// already registered for the same domain.
+        /// </exception>
         public void GuardSingleStorageProvider<TSentinel>(
             int extensionCount,
             string extensionTypeName,
             string domainName,
+            IReadOnlyList<string> validProviderNames,
             Func<string, TSentinel> sentinelFactory
         )
             where TSentinel : class
@@ -45,7 +51,7 @@ public static class StorageProviderRegistration
             {
                 throw new InvalidOperationException(
                     extensionCount == 0
-                        ? $"{domainName} requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
+                        ? $"{domainName} requires exactly one storage provider. Call one of {_FormatProviderNames(validProviderNames)}."
                         : $"{domainName} requires exactly one storage provider. Multiple storage providers were configured."
                 );
             }
@@ -62,5 +68,17 @@ public static class StorageProviderRegistration
 
             services.AddSingleton(sentinelFactory(extensionTypeName));
         }
+    }
+
+    private static string _FormatProviderNames(IReadOnlyList<string> names)
+    {
+        var quoted = names.Select(static name => $"`{name}`").ToArray();
+
+        return quoted.Length switch
+        {
+            0 => "a storage provider",
+            1 => quoted[0],
+            _ => $"{string.Join(", ", quoted[..^1])}, or {quoted[^1]}",
+        };
     }
 }

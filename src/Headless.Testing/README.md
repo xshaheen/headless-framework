@@ -79,10 +79,11 @@ public sealed class MyTests : TestBase
 ### Controllable Time
 
 ```csharp
-var clock = new TestClock(new DateTime(2024, 1, 1));
+var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+var clock = new TestClock(timeProvider);
 var service = new ExpirationService(clock);
 
-clock.Advance(TimeSpan.FromDays(30));
+timeProvider.Advance(TimeSpan.FromDays(30)); // advance via the FakeTimeProvider
 var isExpired = service.IsExpired(); // true
 ```
 

@@ -5,12 +5,20 @@ using StackExchange.Redis;
 
 namespace Headless.Caching;
 
+/// <summary>Configuration options for <see cref="RedisCache"/>.</summary>
 [PublicAPI]
 public sealed class RedisCacheOptions : CacheOptions
 {
+    /// <summary>
+    /// Gets or sets the StackExchange.Redis connection multiplexer used for all cache operations. Required.
+    /// </summary>
     public required IConnectionMultiplexer ConnectionMultiplexer { get; set; }
 
-    /// <summary>The behaviour required when performing read operations from cache.</summary>
+    /// <summary>
+    /// Gets or sets the StackExchange.Redis command flags applied to all read operations (for example
+    /// <c>CommandFlags.PreferReplica</c> to route reads to replicas). Defaults to <c>CommandFlags.None</c>
+    /// (primary node reads).
+    /// </summary>
     public CommandFlags ReadMode { get; set; } = CommandFlags.None;
 
     /// <summary>

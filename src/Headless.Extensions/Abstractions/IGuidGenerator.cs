@@ -4,9 +4,11 @@ using Headless.Core;
 
 namespace Headless.Abstractions;
 
+/// <summary>Abstraction over <see cref="Guid"/> creation, allowing the ordering strategy to vary per implementation.</summary>
 public interface IGuidGenerator
 {
     /// <summary>Creates a new <see cref="Guid"/>.</summary>
+    /// <returns>A newly generated <see cref="Guid"/>.</returns>
     Guid Create();
 }
 
@@ -37,6 +39,9 @@ public enum SequentialGuidType
 /// </summary>
 public sealed class SequentialGuidGenerator(SequentialGuidType type) : IGuidGenerator
 {
+    /// <summary>Creates a new sequential <see cref="Guid"/> using the configured <see cref="SequentialGuidType"/>.</summary>
+    /// <returns>A newly generated sequential <see cref="Guid"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the configured <see cref="SequentialGuidType"/> is not a recognized value.</exception>
     public Guid Create() =>
         type switch
         {

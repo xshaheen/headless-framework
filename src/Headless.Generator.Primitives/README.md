@@ -62,9 +62,13 @@ modelBuilder.Entity<User>()
 
 ```xml
 <PropertyGroup>
-  <PrimitiveGenerator_GenerateDapper>true</PrimitiveGenerator_GenerateDapper>
-  <PrimitiveGenerator_GenerateEfCore>true</PrimitiveGenerator_GenerateEfCore>
-  <PrimitiveGenerator_GenerateSwashbuckle>false</PrimitiveGenerator_GenerateSwashbuckle>
+  <PrimitiveDapperConverters>true</PrimitiveDapperConverters>
+  <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
+  <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
+  <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
+  <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
+  <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
+  <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
 </PropertyGroup>
 ```
 

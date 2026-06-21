@@ -61,6 +61,7 @@ public sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IR
     /// </summary>
     /// <param name="resource">Resource key whose waiter should be woken.</param>
     /// <param name="cancellationToken">Token observed before publishing.</param>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask PublishAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

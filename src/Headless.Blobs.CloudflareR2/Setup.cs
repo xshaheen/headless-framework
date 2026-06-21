@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs.CloudflareR2;
 
+/// <summary>Extension methods to register the Cloudflare R2 blob storage provider.</summary>
 [PublicAPI]
 public static class SetupCloudflareR2Blob
 {

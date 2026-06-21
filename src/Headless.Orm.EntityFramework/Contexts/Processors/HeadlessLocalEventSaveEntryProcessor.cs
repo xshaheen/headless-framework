@@ -9,6 +9,22 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Headless.EntityFramework.Contexts.Processors;
 
+/// <summary>
+/// Terminal save-entry processor that enqueues lifecycle domain events
+/// (<c>EntityCreatedEventData</c>, <c>EntityUpdatedEventData</c>, <c>EntityDeletedEventData</c>,
+/// <c>EntityChangedEventData</c>) on entities that implement <c>IDomainEventEmitter</c>.
+/// </summary>
+/// <remarks>
+/// This processor runs last (terminal stage) so all preceding processors can mutate entities before
+/// domain events are collected. Events are published by the save pipeline within the active
+/// transaction before the database write, with an at-most-once guard across execution-strategy
+/// retries. Entities that do not implement <c>IDomainEventEmitter</c> are silently skipped.
+/// <para>
+/// <c>EntityUpdatedEventData</c> is only emitted when at least one non-generated, non-foreign-key
+/// property changed to avoid spurious update events on concurrency-stamp-only saves.
+/// </para>
+/// </remarks>
+[PublicAPI]
 public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
     private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>> _CreatedFactories = [];
@@ -28,6 +44,12 @@ public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryPro
     private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>>.CreateValueCallback _ChangedFactory =
         static type => _CompileEventFactory(typeof(EntityChangedEventData<>), type);
 
+    /// <summary>
+    /// Enqueues the appropriate lifecycle domain event on the entity based on its current
+    /// <see cref="EntityState"/>. No-ops for entities that do not implement <c>IDomainEventEmitter</c>.
+    /// </summary>
+    /// <param name="entry">The tracked entity entry to inspect.</param>
+    /// <param name="context">The per-save scratchpad (not used by this processor).</param>
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         switch (entry.State)

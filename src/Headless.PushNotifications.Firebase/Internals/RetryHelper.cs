@@ -36,18 +36,33 @@ internal static class RetryHelper
     }
 
     /// <summary>
-    /// Extracts Retry-After delay from HTTP response headers, if present.
+    /// Extracts the Retry-After delay from HTTP response headers (if present), clamped to <paramref name="maxDelay"/>.
     /// </summary>
-    /// <param name="exception">The exception containing HTTP response.</param>
-    /// <param name="defaultDelay">Default delay if Retry-After header not found.</param>
+    /// <param name="exception">The exception containing the HTTP response.</param>
+    /// <param name="defaultDelay">Default delay when no usable Retry-After header is present.</param>
+    /// <param name="maxDelay">Upper bound applied to the returned delay. Polly does not cap delays produced by a delay generator, so the cap is applied here.</param>
+    /// <param name="timeProvider">Clock used to compute the delay for HTTP-date Retry-After values.</param>
     /// <returns>
-    /// TimeSpan from Retry-After header, or defaultDelay if not present or invalid.
+    /// The Retry-After delay, or <paramref name="defaultDelay"/> when not present or invalid, never exceeding
+    /// <paramref name="maxDelay"/>.
     /// </returns>
     /// <remarks>
-    /// FCM returns Retry-After header with HTTP 429 QuotaExceeded.
+    /// FCM returns a Retry-After header with HTTP 429 QuotaExceeded.
     /// Header format: "Retry-After: 120" (seconds) or "Retry-After: Wed, 21 Oct 2015 07:28:00 GMT".
     /// </remarks>
     public static TimeSpan GetRetryAfterDelay(
+        FirebaseMessagingException exception,
+        TimeSpan defaultDelay,
+        TimeSpan maxDelay,
+        TimeProvider timeProvider
+    )
+    {
+        var delay = _ResolveRetryAfterDelay(exception, defaultDelay, timeProvider);
+
+        return delay > maxDelay ? maxDelay : delay;
+    }
+
+    private static TimeSpan _ResolveRetryAfterDelay(
         FirebaseMessagingException exception,
         TimeSpan defaultDelay,
         TimeProvider timeProvider
@@ -58,7 +73,7 @@ internal static class RetryHelper
             return defaultDelay;
         }
 
-        // Retry-After can be delta-seconds or HTTP-date
+        // Retry-After can be delta-seconds or HTTP-date.
         if (retryAfter.Delta.HasValue)
         {
             return retryAfter.Delta.Value;

@@ -9,6 +9,23 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Identity.Authentication.Basic;
 
+/// <summary>
+/// ASP.NET Core authentication handler for HTTP Basic authentication (RFC 7617).
+/// Decodes Base64 credentials from the <c>Authorization: Basic ...</c> header,
+/// looks up the user via <see cref="UserManager{TUser}"/>, and issues an
+/// <see cref="Microsoft.AspNetCore.Authentication.AuthenticationTicket"/> on success.
+/// </summary>
+/// <remarks>
+/// Authentication flow:
+/// <list type="number">
+///   <item><description>If the request already carries an authenticated identity, the existing ticket is reused.</description></item>
+///   <item><description>If no <c>Authorization: Basic</c> header is present, <c>NoResult</c> is returned so other handlers can run.</description></item>
+///   <item><description>If the header value cannot be Base64-decoded or parsed as <c>username:password</c>, <c>Fail</c> is returned.</description></item>
+///   <item><description>If the user is not found, cannot sign in, is locked out, or the password is wrong, <c>Fail</c> is returned.</description></item>
+/// </list>
+/// </remarks>
+/// <typeparam name="TUser">The user type, derived from <see cref="IdentityUser{TKey}"/>.</typeparam>
+/// <typeparam name="TUserId">The type of the user's primary key.</typeparam>
 public sealed class BasicAuthenticationHandler<TUser, TUserId>(
     IOptionsMonitor<BasicAuthenticationOptions> options,
     ILoggerFactory loggerFactory,
@@ -20,6 +37,15 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
     where TUser : IdentityUser<TUserId>
     where TUserId : IEquatable<TUserId>
 {
+    /// <summary>
+    /// Reads the <c>Authorization: Basic ...</c> header, decodes the Base64 credentials,
+    /// and validates the username and password against the Identity store.
+    /// </summary>
+    /// <returns>
+    /// <see cref="AuthenticateResult.Success(Microsoft.AspNetCore.Authentication.AuthenticationTicket)"/> when credentials are valid;
+    /// <see cref="AuthenticateResult.NoResult()"/> when no Basic header is present;
+    /// <see cref="AuthenticateResult.Fail(string)"/> when the header is malformed or credentials are incorrect.
+    /// </returns>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // This block is important when working with multiple authentication schemes
@@ -39,19 +65,19 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
             return AuthenticateResult.Fail("Invalid Authorization header value.");
         }
 
-        var user = await userManager.FindByNameAsync(userName);
+        var user = await userManager.FindByNameAsync(userName).ConfigureAwait(false);
 
         if (
             user is null
-            || !await signInManager.CanSignInAsync(user)
-            || (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(user))
-            || !await userManager.CheckPasswordAsync(user, password)
+            || !await signInManager.CanSignInAsync(user).ConfigureAwait(false)
+            || (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(user).ConfigureAwait(false))
+            || !await userManager.CheckPasswordAsync(user, password).ConfigureAwait(false)
         )
         {
             return AuthenticateResult.Fail("Invalid user name or password.");
         }
 
-        var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user);
+        var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(user).ConfigureAwait(false);
         var ticket = new AuthenticationTicket(claimsPrincipal, Options.Scheme);
 
         return AuthenticateResult.Success(ticket);

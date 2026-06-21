@@ -198,6 +198,126 @@ public sealed class SetupHeadlessTenancyTests
         seam.Capabilities.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_emit_synthetic_validator_threw_diagnostic_and_continue_when_a_validator_throws()
+    {
+        // given — a throwing validator registered ahead of a well-behaved error-returning one
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(new ThrowingValidator("validator-blew-up"));
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(
+            new TestValidator("HEADLESS_OTHER", "Other seam failed.")
+        );
+        builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = (IHostedLifecycleService)
+            provider
+                .GetServices<IHostedService>()
+                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+
+        // when
+        var act = () => hostedService.StartingAsync(CancellationToken.None);
+
+        // then — the throw is converted to a synthetic diagnostic AND iteration continues to the next validator
+        var exception = (await act.Should().ThrowAsync<HeadlessTenancyValidationException>()).Which;
+        exception.Message.Should().Contain("VALIDATOR_THREW").And.Contain("HEADLESS_OTHER");
+        exception
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "VALIDATOR_THREW")
+            .And.Contain(diagnostic => diagnostic.Code == "HEADLESS_OTHER");
+    }
+
+    [Fact]
+    public async Task should_attach_failing_diagnostics_to_the_thrown_exception()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(new TestValidator());
+        builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = (IHostedLifecycleService)
+            provider
+                .GetServices<IHostedService>()
+                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+
+        // when
+        var act = () => hostedService.StartingAsync(CancellationToken.None);
+
+        // then — the structured diagnostics are recoverable from the typed exception, not just the message
+        var exception = (await act.Should().ThrowAsync<HeadlessTenancyValidationException>()).Which;
+        exception.Diagnostics.Should().ContainSingle().Which.Code.Should().Be("HEADLESS_TEST");
+    }
+
+    [Fact]
+    public void should_replace_factory_manifest_registration_with_a_singleton_instance()
+    {
+        // given — a consumer pre-registers the manifest via a factory (the documented blind-spot)
+        var services = new ServiceCollection();
+        services.AddSingleton<TenantPostureManifest>(_ => new TenantPostureManifest());
+
+        // when
+        var manifest = services.GetOrAddTenantPostureManifest();
+
+        // then — the factory descriptor is replaced by a single instance descriptor holding the returned manifest
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(TenantPostureManifest))
+            .Should()
+            .ContainSingle()
+            .Which.ImplementationInstance.Should()
+            .BeSameAs(manifest);
+    }
+
+    [Theory]
+    [InlineData(TenantPostureStatus.Guarded, TenantPostureStatus.Enforcing, TenantPostureStatus.Enforcing)]
+    [InlineData(TenantPostureStatus.Enforcing, TenantPostureStatus.Guarded, TenantPostureStatus.Enforcing)]
+    [InlineData(TenantPostureStatus.Propagating, TenantPostureStatus.Guarded, TenantPostureStatus.Guarded)]
+    [InlineData(TenantPostureStatus.Configured, TenantPostureStatus.Propagating, TenantPostureStatus.Propagating)]
+    public void should_keep_the_strongest_status_regardless_of_record_order(
+        TenantPostureStatus first,
+        TenantPostureStatus second,
+        TenantPostureStatus expected
+    )
+    {
+        // given
+        var manifest = new TenantPostureManifest();
+
+        // when
+        manifest.RecordSeam("Seam", first);
+        manifest.RecordSeam("Seam", second);
+
+        // then
+        manifest.GetSeam("Seam")!.Status.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_throw_when_merging_an_undefined_status_value()
+    {
+        // given
+        var manifest = new TenantPostureManifest();
+        manifest.RecordSeam("Seam", TenantPostureStatus.Enforcing);
+
+        // when — an out-of-range cast must fail loudly instead of silently down-ranking the seam
+        var act = () => manifest.RecordSeam("Seam", (TenantPostureStatus)99);
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(null, "code", "message")]
+    [InlineData(" ", "code", "message")]
+    [InlineData("seam", "", "message")]
+    [InlineData("seam", "code", "  ")]
+    public void should_reject_blank_diagnostic_fields(string? seam, string code, string message)
+    {
+        // when — direct construction must validate, not only the static factories
+        var act = () => new HeadlessTenancyDiagnostic(seam!, code, message, HeadlessTenancyDiagnosticSeverity.Error);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
     private sealed class TestValidator(
         string code = "HEADLESS_TEST",
         string message = "Http seam is missing runtime marker."
@@ -206,6 +326,14 @@ public sealed class SetupHeadlessTenancyTests
         public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
         {
             yield return HeadlessTenancyDiagnostic.Error("Http", code, message);
+        }
+    }
+
+    private sealed class ThrowingValidator(string message) : IHeadlessTenancyValidator
+    {
+        public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
+        {
+            throw new InvalidOperationException(message);
         }
     }
 }

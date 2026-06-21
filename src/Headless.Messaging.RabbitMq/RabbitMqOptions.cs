@@ -6,6 +6,14 @@ using RabbitMQ.Client.Events;
 
 namespace Headless.Messaging.RabbitMq;
 
+/// <summary>
+/// Configuration options for the RabbitMQ messaging transport.
+/// </summary>
+/// <remarks>
+/// Credentials (<see cref="UserName"/> and <see cref="Password"/>) must be set explicitly.
+/// The validator rejects the RabbitMQ default credentials (<c>guest</c>/<c>guest</c>) to
+/// prevent accidental use in production environments.
+/// </remarks>
 // ReSharper disable once InconsistentNaming
 public sealed class RabbitMqOptions
 {
@@ -20,61 +28,67 @@ public sealed class RabbitMqOptions
     /// </summary>
     public const string DefaultExchangeName = "messaging.default.router";
 
-    /// <summary> The topic exchange type. </summary>
+    /// <summary>The AMQP exchange type used when declaring the topic exchange (<c>"topic"</c>).</summary>
     public const string ExchangeType = "topic";
 
     /// <summary>
-    /// The host to connect to.
-    /// If you want to connect to the cluster, you can assign like “192.168.1.111,192.168.1.112”
+    /// The broker hostname to connect to. For cluster connectivity, supply a comma-separated list
+    /// of hostnames (for example <c>"192.168.1.111,192.168.1.112"</c>). Defaults to <c>"localhost"</c>.
     /// </summary>
     public string HostName { get; set; } = "localhost";
 
     /// <summary>
-    /// Password to use when authenticating to the server.
-    /// Must be configured explicitly - no defaults provided for security reasons.
+    /// Password used to authenticate to the broker. Must be configured explicitly — no default
+    /// value is provided. The validator rejects <c>"guest"</c> for production safety.
     /// </summary>
     public string Password { get; set; } = string.Empty;
 
     /// <summary>
-    /// Username to use when authenticating to the server.
-    /// Must be configured explicitly - no defaults provided for security reasons.
+    /// Username used to authenticate to the broker. Must be configured explicitly — no default
+    /// value is provided. The validator rejects <c>"guest"</c> for production safety.
     /// </summary>
     public string UserName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Virtual host to access during this connection.
+    /// The RabbitMQ virtual host to access on this connection. Defaults to <see cref="DefaultVHost"/> (<c>"/"</c>).
     /// </summary>
     public string VirtualHost { get; set; } = DefaultVHost;
 
     /// <summary>
-    /// Topic exchange name when declare a topic exchange.
+    /// The topic exchange name declared on startup. Defaults to <see cref="DefaultExchangeName"/>.
+    /// When the messaging version is not <c>"v1"</c>, the version suffix is appended automatically
+    /// (for example <c>"messaging.default.router.v2"</c>).
     /// </summary>
     public string ExchangeName { get; set; } = DefaultExchangeName;
 
     /// <summary>
-    /// Enabling Publisher Confirms on a Channel
+    /// When <see langword="true"/>, enables publisher confirms on the AMQP channel so that
+    /// publish operations wait for the broker to acknowledge receipt. Adds latency in exchange
+    /// for at-least-once delivery guarantees at the broker level. Defaults to <see langword="false"/>.
     /// </summary>
     public bool PublishConfirms { get; set; }
 
     /// <summary>
-    /// The port to connect on.
+    /// The TCP port to connect on. Use <c>-1</c> (default) to let the client choose the default
+    /// AMQP port (5672) or the TLS port when TLS is configured.
     /// </summary>
     public int Port { get; set; } = -1;
 
     /// <summary>
-    /// Optional queue arguments, also known as "x-arguments" because of their field name in the AMQP 0-9-1 protocol,
-    /// is a map (dictionary) of arbitrary key/value pairs that can be provided by clients when a queue is declared.
+    /// Optional AMQP x-arguments applied when queues are declared. These are passed as the
+    /// <c>x-arguments</c> map in the AMQP 0-9-1 <c>queue.declare</c> method.
     /// </summary>
     public QueueArgumentsOptions QueueArguments { get; set; } = new();
 
     /// <summary>
-    /// Optional queue arguments, also known as "x-arguments" because of their field name in the AMQP 0-9-1 protocol,
-    /// is a map (dictionary) of arbitrary key/value pairs that can be provided by clients when a queue is declared.
+    /// Durability, exclusivity, and auto-delete flags applied when queues are declared.
     /// </summary>
     public QueueRabbitOptions QueueOptions { get; set; } = new();
 
     /// <summary>
-    /// If you need to get additional native delivery args, you can use this function to write into <see cref="MessageHeader" />.
+    /// Optional callback that adds extra headers to an inbound message from native RabbitMQ
+    /// delivery arguments. Use this to surface broker-native properties (for example delivery
+    /// tags, redelivery flags, or routing keys) as framework message headers.
     /// </summary>
     public Func<
         BasicDeliverEventArgs,
@@ -83,51 +97,59 @@ public sealed class RabbitMqOptions
     >? CustomHeadersBuilder { get; set; }
 
     /// <summary>
-    /// RabbitMQ native connection factory options
+    /// Optional callback that customises the underlying RabbitMQ <c>ConnectionFactory</c> before
+    /// the connection is opened. Use this to configure TLS, heartbeats, or any property not
+    /// directly exposed by <see cref="RabbitMqOptions"/>.
     /// </summary>
     public Action<ConnectionFactory>? ConnectionFactoryOptions { get; set; }
 
     /// <summary>
-    /// Specify quality of service.
-    /// <br /><br />
-    /// These settings request a specific quality of service.The QoS can be specified for the current channel or for all
-    /// channels on the connection.<br />
-    /// The particular properties and semantics of a qos method always depend on the content class semantics.<br />
-    /// Though the qos method could in principle apply to both peers, it is currently meaningful only for the server.<br />
-    /// <br />
-    /// <see href="https://www.rabbitmq.com/consumer-prefetch.html">
-    /// More info at:
-    /// https://www.rabbitmq.com/consumer-prefetch.html
-    /// </see>
+    /// Per-channel Quality-of-Service (prefetch) settings. When <see langword="null"/>, no
+    /// <c>basic.qos</c> is sent and the broker uses its own defaults.
+    /// See <see href="https://www.rabbitmq.com/consumer-prefetch.html"/>.
     /// </summary>
     public BasicQos? BasicQosOptions { get; set; }
 
+    /// <summary>AMQP x-arguments applied when declaring queues.</summary>
     public class QueueArgumentsOptions
     {
         /// <summary>
-        /// Gets or sets queue mode by supplying the 'x-queue-mode' declaration argument with a string specifying the desired mode.
+        /// Sets the <c>x-queue-mode</c> declaration argument. Use <c>"lazy"</c> to keep
+        /// messages on disk and reduce memory pressure, or omit to use the broker default.
         /// </summary>
         public string QueueMode { get; set; } = null!;
 
         /// <summary>
-        /// Gets or sets queue message automatic deletion time (in milliseconds) "x-message-ttl", Default 864000000 ms (10 days).
+        /// Sets the <c>x-message-ttl</c> declaration argument — the time in milliseconds
+        /// before a message is discarded. Defaults to 864,000,000 ms (10 days).
         /// </summary>
         // ReSharper disable once InconsistentNaming
         public int MessageTTL { get; set; } = 864000000;
 
         /// <summary>
-        /// Gets or sets queue type by supplying the 'x-queue-type' declaration argument with a string specifying the desired type.
+        /// Sets the <c>x-queue-type</c> declaration argument. Use <c>"quorum"</c> for
+        /// replicated, durable queues or <c>"stream"</c> for append-only log semantics.
+        /// Omit to use the broker default (<c>"classic"</c>).
         /// </summary>
         public string QueueType { get; set; } = null!;
     }
 
+    /// <summary>
+    /// Encapsulates the arguments for a <c>basic.qos</c> request applied to each consumer channel.
+    /// </summary>
     public class BasicQos
     {
         /// <summary>
-        /// New instance of BasicQos sets the use of basic qos setup on the basic channel.
+        /// Initialises a new <see cref="BasicQos"/> value.
         /// </summary>
-        /// <param name="prefetchCount">Sets the PrefetchCount.</param>
-        /// <param name="global">Sets Global flag (default false).</param>
+        /// <param name="prefetchCount">
+        /// The maximum number of unacknowledged messages the broker may push to the consumer
+        /// before an acknowledgement is received. A value of <c>0</c> means unlimited.
+        /// </param>
+        /// <param name="global">
+        /// When <see langword="false"/> (default), the limit is applied per consumer on the channel.
+        /// When <see langword="true"/>, the limit is shared across all consumers on the channel.
+        /// </param>
         public BasicQos(ushort prefetchCount, bool global = false)
         {
             PrefetchCount = prefetchCount;
@@ -135,24 +157,38 @@ public sealed class RabbitMqOptions
         }
 
         /// <summary>
-        /// Gets the PrefetchCount, a value of 0 is treated as infinite, allowing any number of unacknowledged message being pushed
-        /// to consumer.
-        /// The default value is 0.
+        /// The maximum number of unacknowledged messages the broker delivers before waiting for
+        /// an acknowledgement. <c>0</c> means unlimited. Defaults to <c>0</c>.
         /// </summary>
         public ushort PrefetchCount { get; }
 
         /// <summary>
-        /// Gets the global flag across all consumers in RabbitMq.
-        /// false (default) - applied separately to each new consumer on the channel
-        /// true - shared across all consumers on the channel
+        /// When <see langword="false"/> (default), the prefetch limit is applied independently
+        /// to each new consumer on the channel. When <see langword="true"/>, the limit is shared
+        /// across all consumers on the same channel.
         /// </summary>
         public bool Global { get; }
     }
 
+    /// <summary>Queue declaration flags applied when RabbitMQ queues are created.</summary>
     public class QueueRabbitOptions
     {
+        /// <summary>
+        /// When <see langword="true"/> (default), the queue survives broker restarts.
+        /// Set to <see langword="false"/> only for transient, non-critical queues.
+        /// </summary>
         public bool Durable { get; set; } = true;
+
+        /// <summary>
+        /// When <see langword="true"/>, the queue is restricted to the declaring connection
+        /// and is deleted when that connection closes. Defaults to <see langword="false"/>.
+        /// </summary>
         public bool Exclusive { get; set; }
+
+        /// <summary>
+        /// When <see langword="true"/>, the queue is automatically deleted when the last consumer
+        /// unsubscribes. Defaults to <see langword="false"/>.
+        /// </summary>
         public bool AutoDelete { get; set; }
     }
 }

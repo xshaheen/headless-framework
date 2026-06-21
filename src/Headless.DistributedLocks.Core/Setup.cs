@@ -10,13 +10,39 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// Entry point for registering Headless Distributed Locks in the DI container.
+/// Call <c>services.AddHeadlessDistributedLocks(setup => setup.Use…(…))</c> once per
+/// application to wire a backend provider and the shared lock infrastructure.
+/// </summary>
 [PublicAPI]
 public static class SetupDistributedLocks
 {
-    private const string ProvidersHint = "`UseInMemory`, `UseRedis`, `UsePostgreSql`, or `UseSqlServer`";
+    private const string _ProvidersHint = "`UseInMemory`, `UseRedis`, `UsePostgreSql`, or `UseSqlServer`";
 
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers Headless Distributed Locks and a single backend provider with the DI
+        /// container. The <paramref name="configure"/> callback must call exactly one
+        /// <c>Use*</c> provider extension (e.g., <c>setup.UseRedis(…)</c>); zero or multiple
+        /// provider registrations throw <see cref="InvalidOperationException"/> at setup time.
+        /// </summary>
+        /// <param name="configure">
+        /// Delegate that configures the setup builder, including selecting and configuring the
+        /// backend provider via a <c>Use*</c> extension method.
+        /// </param>
+        /// <returns>
+        /// A <see cref="HeadlessDistributedLocksBuilder"/> exposing the underlying
+        /// <see cref="IServiceCollection"/> for further chaining.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when <paramref name="configure"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when zero or more than one provider is configured, or when
+        /// <c>AddHeadlessDistributedLocks</c> is called more than once for the same provider.
+        /// </exception>
         public HeadlessDistributedLocksBuilder AddHeadlessDistributedLocks(
             Action<HeadlessDistributedLocksSetupBuilder> configure
         )
@@ -61,15 +87,15 @@ public static class SetupDistributedLocks
         {
             throw new InvalidOperationException(
                 extensionCount == 0
-                    ? $"Headless.DistributedLocks requires exactly one provider. Call one of {ProvidersHint}."
-                    : $"Headless.DistributedLocks requires exactly one provider. Multiple providers were configured; call only one of {ProvidersHint}."
+                    ? $"Headless.DistributedLocks requires exactly one provider. Call one of {_ProvidersHint}."
+                    : $"Headless.DistributedLocks requires exactly one provider. Multiple providers were configured; call only one of {_ProvidersHint}."
             );
         }
 
         if (services.Any(static descriptor => descriptor.ServiceType == typeof(DistributedLocksProviderRegistration)))
         {
             throw new InvalidOperationException(
-                $"Headless.DistributedLocks requires exactly one provider. Multiple providers were configured; call only one of {ProvidersHint}."
+                $"Headless.DistributedLocks requires exactly one provider. Multiple providers were configured; call only one of {_ProvidersHint}."
             );
         }
 
@@ -81,6 +107,10 @@ public static class SetupDistributedLocks
 
 internal static class DistributedLockCoreServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers mutex-lock core services using <typeparamref name="TStorage"/> as the
+    /// singleton storage backend. Delegates to the factory overload.
+    /// </summary>
     internal static IServiceCollection AddDistributedLockCore<TStorage>(this IServiceCollection services)
         where TStorage : class, IDistributedLockStorage
     {
@@ -89,6 +119,14 @@ internal static class DistributedLockCoreServiceCollectionExtensions
         return services.AddDistributedLockCore(static provider => provider.GetRequiredService<TStorage>());
     }
 
+    /// <summary>
+    /// Registers the <see cref="DistributedLock"/> singleton, its <see cref="IDistributedLock"/>
+    /// alias, and the <see cref="ICanReceiveLockReleased"/> enumerable entry using the supplied
+    /// <paramref name="storageFactory"/>. All registrations are idempotent via
+    /// <c>TryAdd*</c> so repeated calls (e.g., multi-provider extension) do not accumulate
+    /// duplicate descriptors. Also auto-registers the shared lock-released consumer so
+    /// messaging-driven wake-ups work when <c>AddHeadlessMessaging</c> is later called.
+    /// </summary>
     internal static IServiceCollection AddDistributedLockCore(
         this IServiceCollection services,
         Func<IServiceProvider, IDistributedLockStorage> storageFactory
@@ -137,6 +175,11 @@ internal static class DistributedLockCoreServiceCollectionExtensions
 
 internal static class DistributedReadWriteLockCoreServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the <see cref="DistributedReadWriteLock"/> singleton and its
+    /// <see cref="IDistributedReadWriteLock"/> alias using <typeparamref name="TStorage"/> as
+    /// the storage backend. Registrations are idempotent via <c>TryAdd*</c>.
+    /// </summary>
     internal static IServiceCollection AddDistributedReadWriteLockCore<TStorage>(this IServiceCollection services)
         where TStorage : class, IDistributedReadWriteLockStorage
     {
@@ -162,6 +205,13 @@ internal static class DistributedReadWriteLockCoreServiceCollectionExtensions
 
 internal static class DistributedSemaphoreCoreServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers the <see cref="DistributedSemaphoreProvider"/> singleton and its
+    /// <see cref="IDistributedSemaphoreProvider"/> alias using <typeparamref name="TStorage"/>
+    /// as the storage backend. Also registers the semaphore under
+    /// <see cref="ICanReceiveLockReleased"/> so messaging-driven wake-ups wake semaphore
+    /// waiters alongside mutex waiters. Registrations are idempotent via <c>TryAdd*</c>.
+    /// </summary>
     internal static IServiceCollection AddDistributedSemaphoreCore<TStorage>(this IServiceCollection services)
         where TStorage : class, IDistributedSemaphoreStorage
     {

@@ -16,12 +16,13 @@ public static class DependencyInjectionExtensions
 
     /// <summary>
     /// Executes the specified action if the specified <paramref name="condition"/> is <see langword="true"/> which can be
-    /// used to conditionally configure the MVC services.
+    /// used to conditionally configure the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
-    /// <param name="action">The action used to configure the MVC services.</param>
+    /// <param name="action">The action used to configure the services.</param>
     /// <returns>The same services collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static IServiceCollection AddIf(
         this IServiceCollection services,
         bool condition,
@@ -41,12 +42,13 @@ public static class DependencyInjectionExtensions
 
     /// <summary>
     /// Executes the specified action if the specified <paramref name="condition"/> is <see langword="true"/> which can be
-    /// used to conditionally configure the MVC services.
+    /// used to conditionally configure the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="condition">If <see langword="true"/> is returned the action is executed.</param>
-    /// <param name="action">The action used to configure the MVC services.</param>
+    /// <param name="action">The action used to configure the services.</param>
     /// <returns>The same services collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static IServiceCollection AddIf(
         this IServiceCollection services,
         Func<IServiceCollection, bool> condition,
@@ -68,14 +70,15 @@ public static class DependencyInjectionExtensions
     /// <summary>
     /// Executes the specified <paramref name="ifAction"/> if the specified <paramref name="condition"/> is
     /// <see langword="true"/>, otherwise executes the <paramref name="elseAction"/>. This can be used to conditionally
-    /// configure the MVC services.
+    /// configure the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="condition">If set to <see langword="true"/> the <paramref name="ifAction"/> is executed, otherwise the
     /// <paramref name="elseAction"/> is executed.</param>
-    /// <param name="ifAction">The action used to configure the MVC services if the condition is <see langword="true"/>.</param>
-    /// <param name="elseAction">The action used to configure the MVC services if the condition is <see langword="false"/>.</param>
+    /// <param name="ifAction">The action used to configure the services if the condition is <see langword="true"/>.</param>
+    /// <param name="elseAction">The action used to configure the services if the condition is <see langword="false"/>.</param>
     /// <returns>The same services collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static IServiceCollection AddIfElse(
         this IServiceCollection services,
         bool condition,
@@ -93,14 +96,15 @@ public static class DependencyInjectionExtensions
     /// <summary>
     /// Executes the specified <paramref name="ifAction"/> if the specified <paramref name="condition"/> is
     /// <see langword="true"/>, otherwise executes the <paramref name="elseAction"/>. This can be used to conditionally
-    /// configure the MVC services.
+    /// configure the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="condition">If <see langword="true"/> is returned the <paramref name="ifAction"/> is executed, otherwise the
     /// <paramref name="elseAction"/> is executed.</param>
-    /// <param name="ifAction">The action used to configure the MVC services if the condition is <see langword="true"/>.</param>
-    /// <param name="elseAction">The action used to configure the MVC services if the condition is <see langword="false"/>.</param>
+    /// <param name="ifAction">The action used to configure the services if the condition is <see langword="true"/>.</param>
+    /// <param name="elseAction">The action used to configure the services if the condition is <see langword="false"/>.</param>
     /// <returns>The same services collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static IServiceCollection AddIfElse(
         this IServiceCollection services,
         Func<IServiceCollection, bool> condition,
@@ -128,6 +132,7 @@ public static class DependencyInjectionExtensions
     /// <typeparam name="TDecorator">The decorator type.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when no unkeyed registration exists for <typeparamref name="TService"/>.
     /// </exception>
@@ -151,6 +156,7 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="decorator">Factory that receives the original service and returns the decorator.</param>
     /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when no unkeyed registration exists for <typeparamref name="TService"/>.
     /// </exception>
@@ -176,6 +182,7 @@ public static class DependencyInjectionExtensions
     /// <typeparam name="TDecorator">The decorator type.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     public static bool TryDecorate<TService, TDecorator>(this IServiceCollection services)
         where TService : class
         where TDecorator : class, TService
@@ -201,6 +208,7 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="decorator">Factory that receives the original service and returns the decorator.</param>
     /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static bool TryDecorate<TService>(
         this IServiceCollection services,
         Func<TService, IServiceProvider, TService> decorator
@@ -288,7 +296,8 @@ public static class DependencyInjectionExtensions
     /// <typeparam name="TService">The type of the service.</typeparam>
     /// <typeparam name="TImplementation">The type of the implementation.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <returns>True if the service was replaced, otherwise false.</returns>
+    /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     public static bool AddOrReplaceScoped<TService, TImplementation>(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
@@ -302,8 +311,9 @@ public static class DependencyInjectionExtensions
     /// <summary>Adds or replaces a scoped service in the service collection.</summary>
     /// <typeparam name="TService">The type of the service.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="implementationFactory">The factory to create the service implementation.</param>
-    /// <returns>True if the service was replaced, otherwise false.</returns>
+    /// <param name="implementationFactory">The factory to create the service implementation. Guarded by the underlying <c>AddScoped</c> call.</param>
+    /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static bool AddOrReplaceScoped<TService>(
         this IServiceCollection services,
         Func<IServiceProvider, TService> implementationFactory
@@ -320,7 +330,8 @@ public static class DependencyInjectionExtensions
     /// <typeparam name="TService">The type of the service.</typeparam>
     /// <typeparam name="TImplementation">The type of the implementation.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <returns>True if the service was replaced, otherwise false.</returns>
+    /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     public static bool AddOrReplaceTransient<TService, TImplementation>(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
@@ -334,8 +345,9 @@ public static class DependencyInjectionExtensions
     /// <summary>Adds or replaces a transient service in the service collection.</summary>
     /// <typeparam name="TService">The type of the service.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="implementationFactory">The factory to create the service implementation.</param>
-    /// <returns>True if the service was replaced, otherwise false.</returns>
+    /// <param name="implementationFactory">The factory to create the service implementation. Guarded by the underlying <c>AddTransient</c> call.</param>
+    /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static bool AddOrReplaceTransient<TService>(
         this IServiceCollection services,
         Func<IServiceProvider, TService> implementationFactory
@@ -352,7 +364,8 @@ public static class DependencyInjectionExtensions
     /// <typeparam name="TService">The type of the service.</typeparam>
     /// <typeparam name="TImplementation">The type of the implementation.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <returns>True if the service was replaced, otherwise false.</returns>
+    /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     public static bool AddOrReplaceSingleton<TService, TImplementation>(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
@@ -366,8 +379,9 @@ public static class DependencyInjectionExtensions
     /// <summary>Adds or replaces a singleton service in the service collection.</summary>
     /// <typeparam name="TService">The type of the service.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="implementationFactory">The factory to create the service implementation.</param>
-    /// <returns>True if the service was replaced, otherwise false.</returns>
+    /// <param name="implementationFactory">The factory to create the service implementation. Guarded by the underlying <c>AddSingleton</c> call.</param>
+    /// <returns><see langword="true"/> if an existing registration was removed (replaced); <see langword="false"/> if the service was newly added.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static bool AddOrReplaceSingleton<TService>(
         this IServiceCollection services,
         Func<IServiceProvider, TService> implementationFactory
@@ -389,9 +403,14 @@ public static class DependencyInjectionExtensions
     /// <typeparam name="TImplementation">The default implementation type to add when needed.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <returns>True if one or more fallback registrations were removed; otherwise false.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// This is useful when one package registers a safe fallback and another package can provide a
-    /// stronger default without overwriting consumer-provided implementations.
+    /// stronger default without overwriting consumer-provided implementations. Only type-based
+    /// (<c>AddSingleton&lt;TService, TFallback&gt;()</c>) and instance-based fallback registrations are
+    /// detected; a factory-registered fallback (<c>AddSingleton&lt;TService&gt;(_ =&gt; new TFallback())</c>)
+    /// is indistinguishable from a consumer override here and is intentionally preserved. Register
+    /// fallbacks by type to make them replaceable.
     /// </remarks>
     public static bool AddOrReplaceFallbackSingleton<TService, TFallback, TImplementation>(
         this IServiceCollection services
@@ -417,21 +436,6 @@ public static class DependencyInjectionExtensions
             {
                 services.RemoveAt(i);
                 replaced = true;
-                continue;
-            }
-
-            // Best-effort recognition of factory-backed fallback registrations. The compiler captures
-            // the lambda's declared return type as the factory's Method.ReturnType — when that matches
-            // TFallback exactly we treat the descriptor as a fallback. We intentionally do NOT invoke
-            // the factory here: at AddOrReplaceFallbackSingleton time the ServiceProvider has not been
-            // built yet, and even if it had been, invoking arbitrary factories could surface side
-            // effects. Consumers who hide the fallback behind a factory whose declared return type is
-            // TService (not TFallback) keep their registration — matches the documented contract that
-            // factory-backed consumer overrides are preserved.
-            if (descriptor.ImplementationFactory is { Method: { } method } && method.ReturnType == typeof(TFallback))
-            {
-                services.RemoveAt(i);
-                replaced = true;
             }
         }
 
@@ -447,6 +451,7 @@ public static class DependencyInjectionExtensions
     /// <typeparam name="TService">The service type to replace.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <param name="factory">Factory that creates the new implementation.</param>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when no prior registration exists for <typeparamref name="TService"/>.
     /// </exception>
@@ -460,9 +465,14 @@ public static class DependencyInjectionExtensions
     public static void Replace<TService>(this IServiceCollection services, Func<IServiceProvider, TService> factory)
         where TService : class
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(factory);
+
         for (var i = 0; i < services.Count; i++)
         {
-            if (services[i].ServiceType == typeof(TService))
+            // Skip keyed registrations: overwriting a keyed slot with a non-keyed descriptor would
+            // corrupt it (matches the IsKeyedService guard in _TryDecorate / AddOrReplaceFallbackSingleton).
+            if (!services[i].IsKeyedService && services[i].ServiceType == typeof(TService))
             {
                 var lifetime = services[i].Lifetime;
                 services[i] = new ServiceDescriptor(typeof(TService), factory, lifetime);
@@ -477,6 +487,16 @@ public static class DependencyInjectionExtensions
 
     #region Unregister
 
+    /// <summary>
+    /// Removes all unkeyed registrations for <typeparamref name="TService"/>. Keyed registrations are
+    /// left intact, matching the <see cref="ServiceDescriptor.IsKeyedService"/> guard in
+    /// <see cref="TryDecorate{TService,TDecorator}"/> and
+    /// <see cref="AddOrReplaceFallbackSingleton{TService,TFallback,TImplementation}"/>.
+    /// </summary>
+    /// <typeparam name="TService">The service type to remove.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns><see langword="true"/> if at least one registration was removed; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     public static bool Unregister<TService>(this IServiceCollection services)
     {
         Argument.IsNotNull(services);
@@ -485,7 +505,7 @@ public static class DependencyInjectionExtensions
 
         for (var i = services.Count - 1; i >= 0; i--)
         {
-            if (services[i].ServiceType == typeof(TService))
+            if (!services[i].IsKeyedService && services[i].ServiceType == typeof(TService))
             {
                 services.RemoveAt(i);
                 unregistered = true;
@@ -499,6 +519,11 @@ public static class DependencyInjectionExtensions
 
     #region IsAdded
 
+    /// <summary>Determines whether any registration exists for the service type <typeparamref name="T"/>.</summary>
+    /// <typeparam name="T">The service type to look up.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns><see langword="true"/> if a registration exists for <typeparamref name="T"/>; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     public static bool IsAdded<T>(this IServiceCollection services)
     {
         Argument.IsNotNull(services);
@@ -506,6 +531,11 @@ public static class DependencyInjectionExtensions
         return services.IsAdded(typeof(T));
     }
 
+    /// <summary>Determines whether any registration exists for the given service <paramref name="type"/>.</summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="type">The service type to look up.</param>
+    /// <returns><see langword="true"/> if a registration exists for <paramref name="type"/>; otherwise <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
     public static bool IsAdded(this IServiceCollection services, Type type)
     {
         Argument.IsNotNull(services);
@@ -518,6 +548,15 @@ public static class DependencyInjectionExtensions
 
     #region Keyed Services
 
+    /// <summary>
+    /// Registers a keyed singleton service whose factory ignores the resolution key.
+    /// </summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="serviceKey">The key the service is registered under. May be <see langword="null"/>.</param>
+    /// <param name="implementationFactory">The factory to create the service implementation.</param>
+    /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> or <paramref name="implementationFactory"/> is <see langword="null"/>.</exception>
     public static IServiceCollection AddKeyedSingleton<TService>(
         this IServiceCollection services,
         object? serviceKey,
@@ -531,6 +570,15 @@ public static class DependencyInjectionExtensions
         return services.AddKeyedSingleton<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
 
+    /// <summary>
+    /// Registers a keyed scoped service whose factory ignores the resolution key.
+    /// </summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="serviceKey">The key the service is registered under. May be <see langword="null"/>.</param>
+    /// <param name="implementationFactory">The factory to create the service implementation.</param>
+    /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> or <paramref name="implementationFactory"/> is <see langword="null"/>.</exception>
     public static IServiceCollection AddKeyedScoped<TService>(
         this IServiceCollection services,
         object? serviceKey,
@@ -544,6 +592,15 @@ public static class DependencyInjectionExtensions
         return services.AddKeyedScoped<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
 
+    /// <summary>
+    /// Registers a keyed transient service whose factory ignores the resolution key.
+    /// </summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="serviceKey">The key the service is registered under. May be <see langword="null"/>.</param>
+    /// <param name="implementationFactory">The factory to create the service implementation.</param>
+    /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> or <paramref name="implementationFactory"/> is <see langword="null"/>.</exception>
     public static IServiceCollection AddKeyedTransient<TService>(
         this IServiceCollection services,
         object? serviceKey,
@@ -566,6 +623,7 @@ public static class DependencyInjectionExtensions
     /// <typeparam name="T">The type of the hosted service to remove.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// This method only removes services registered via <c>AddHostedService&lt;T&gt;()</c> with a type parameter.
     /// Services registered with a factory delegate (e.g., <c>AddHostedService(sp => new T(...))</c>) will NOT be removed
@@ -605,6 +663,7 @@ public static class DependencyInjectionExtensions
     /// </typeparam>
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// Using <c>TryAddSingleton</c> and <c>TryAddEnumerable</c> guards against double-registration
     /// when the setup method is called more than once. The <c>ImplementationType</c> carried by the

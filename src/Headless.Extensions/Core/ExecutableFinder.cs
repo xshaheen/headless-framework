@@ -2,9 +2,20 @@
 
 namespace Headless.Core;
 
+/// <summary>Resolves the absolute path of an executable by searching the <c>PATH</c> environment variable.</summary>
 [PublicAPI]
 public static class ExecutableFinder
 {
+    /// <summary>
+    /// Searches for <paramref name="executableName"/> across the entries of the <c>PATH</c> environment variable
+    /// (and the optional <paramref name="workingDirectory"/> first), trying the registered <c>PATHEXT</c> extensions
+    /// on Windows when the name has no extension.
+    /// </summary>
+    /// <param name="executableName">The executable file name to locate, with or without an extension.</param>
+    /// <param name="workingDirectory">An optional directory searched before the <c>PATH</c> entries.</param>
+    /// <returns>
+    /// The full path of the first matching executable, or <see langword="null"/> when no match is found on any search path.
+    /// </returns>
     // https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/path
     public static string? GetFullExecutablePath(string executableName, string? workingDirectory = null)
     {

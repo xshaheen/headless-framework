@@ -68,7 +68,9 @@ public sealed class IsNotNullOrWhiteSpace
         action
             .Should()
             .ThrowExactly<ArgumentException>()
-            .WithMessage($"Required argument \"{nameof(argument)}\" was empty. (Parameter '{nameof(argument)}')");
+            .WithMessage(
+                $"Required argument \"{nameof(argument)}\" was empty or white space. (Parameter '{nameof(argument)}')"
+            );
 
         actionWithCustomMessage
             .Should()

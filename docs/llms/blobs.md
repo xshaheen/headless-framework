@@ -72,7 +72,7 @@ packages: Blobs.Abstractions, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.
   - [Installation](#installation-6)
   - [Quick Start](#quick-start-5)
   - [Configuration](#configuration-6)
-    - [appsettings.json](#appsettingsjson-5)
+    - [appsettings.json](#appsettingsjson-4)
   - [Behavior Notes](#behavior-notes)
   - [Dependencies](#dependencies-6)
   - [Side Effects](#side-effects-6)
@@ -104,7 +104,7 @@ All providers register `IBlobStorage` as singleton. Container paths are arrays o
 - Container paths are string arrays, not slash-delimited strings: `["uploads", "images"]` not `"uploads/images"`.
 - Naming is normalized two-tier through each provider's `IBlobNamingNormalizer`: the **first** container segment is the backend bucket/container (strict backend rules — e.g. lowercase, length, allowed characters) and the **remaining** segments plus the blob name are the object path (lenient — validated, not rewritten). This is applied uniformly by every provider (AWS, R2, Azure, FileSystem, SshNet, Redis); do not manually normalize paths.
 - Metadata is a `Dictionary<string, string?>`. For `FileSystem` provider, metadata is stored as companion JSON files. For `Redis`, metadata is stored alongside blobs in Redis.
-- `SshNet` supports both password and SSH key authentication. Use `PrivateKeyPath` for key-based auth.
+- `SshNet` accepts a `ConnectionString` (SSH URI) for both password and key-based auth. For key-based auth, set `PrivateKey` (a `Stream`) and optionally `PrivateKeyPassPhrase`.
 - Only one provider can be the default `IBlobStorage` registration. If you need multiple providers, use keyed services or named registrations.
 
 ---
@@ -286,21 +286,26 @@ dotnet add package Headless.Blobs.Azure
 
 ## Quick Start
 
+Register a `BlobServiceClient` in DI first, then call `AddAzureBlobStorage`:
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.ConnectionString = builder.Configuration["Azure:Storage:ConnectionString"];
-    options.ContainerName = "my-container";
-});
+// Option 1: connection string
+builder.Services.AddSingleton(new BlobServiceClient(
+    builder.Configuration["Azure:Storage:ConnectionString"]));
 
-// Or with Azure.Identity
+// Option 2: Azure.Identity (DefaultAzureCredential)
+builder.Services.AddSingleton(new BlobServiceClient(
+    new Uri($"https://mystorageaccount.blob.core.windows.net"),
+    new DefaultAzureCredential()));
+
+// Option 3: Aspire integration
+// builder.AddAzureBlobClient("blobs");
+
 builder.Services.AddAzureBlobStorage(options =>
 {
-    options.AccountName = "mystorageaccount";
-    options.ContainerName = "my-container";
-    // Uses DefaultAzureCredential
+    options.AutoCreateContainer = true; // default
 });
 ```
 
@@ -312,8 +317,7 @@ builder.Services.AddAzureBlobStorage(options =>
 {
   "Azure": {
     "Storage": {
-      "ConnectionString": "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
-      "ContainerName": "my-container"
+      "ConnectionString": "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
     }
   }
 }
@@ -330,7 +334,7 @@ builder.Services.AddAzureBlobStorage(options =>
 
 ## Side Effects
 
-- Registers `BlobServiceClient` via Azure client factory
+- Requires a `BlobServiceClient` to be registered in DI before this call
 - Registers `IBlobStorage` as singleton
 - Registers `IBlobNamingNormalizer` as singleton
 ---
@@ -363,7 +367,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddFileSystemBlobStorage(options =>
 {
-    options.BasePath = Path.Combine(builder.Environment.ContentRootPath, "storage");
+    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage");
 });
 ```
 
@@ -374,7 +378,7 @@ builder.Services.AddFileSystemBlobStorage(options =>
 ```json
 {
   "FileSystemBlob": {
-    "BasePath": "/var/data/blobs"
+    "BaseDirectoryPath": "/var/data/blobs"
   }
 }
 ```
@@ -382,7 +386,7 @@ builder.Services.AddFileSystemBlobStorage(options =>
 ### Options
 
 ```csharp
-options.BasePath = "/path/to/storage";
+options.BaseDirectoryPath = "/path/to/storage";
 ```
 
 ## Dependencies
@@ -422,31 +426,23 @@ dotnet add package Headless.Blobs.Redis
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+var multiplexer = ConnectionMultiplexer.Connect("localhost:6379");
 builder.Services.AddRedisBlobStorage(options =>
 {
-    options.ConnectionString = "localhost:6379";
-    options.KeyPrefix = "blobs:";
+    options.ConnectionMultiplexer = multiplexer;
 });
 ```
 
 ## Configuration
 
-### appsettings.json
-
-```json
-{
-  "RedisBlob": {
-    "ConnectionString": "localhost:6379,password=secret",
-    "KeyPrefix": "blobs:"
-  }
-}
-```
+`RedisBlobStorageOptions` requires an `IConnectionMultiplexer` instance; the options cannot be bound from `appsettings.json` directly. Wire up the multiplexer in code as shown in Quick Start.
 
 ### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `MaxBlobSizeBytes` | 10 MB | Maximum blob size. Set to 0 to disable. |
+| `ConnectionMultiplexer` | *(required)* | `IConnectionMultiplexer` instance for Redis. |
+| `MaxBlobSizeBytes` | 10 MB | Maximum blob size in bytes. Set to 0 to disable. |
 | `MaxBulkParallelism` | 10 | Maximum parallelism for bulk operations. |
 
 ## Usage Notes
@@ -463,7 +459,7 @@ builder.Services.AddRedisBlobStorage(options =>
 ## Side Effects
 
 - Registers `IBlobStorage` as singleton
-- Requires Redis connection (uses existing `IConnectionMultiplexer` if registered)
+- Requires an `IConnectionMultiplexer` to be provided via `RedisBlobStorageOptions.ConnectionMultiplexer`
 ---
 # Headless.Blobs.SshNet
 
@@ -492,13 +488,10 @@ dotnet add package Headless.Blobs.SshNet
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSshNetBlobStorage(options =>
+// Password authentication
+builder.Services.AddSshBlobStorage(options =>
 {
-    options.Host = "sftp.example.com";
-    options.Port = 22;
-    options.Username = "user";
-    options.Password = "password"; // Or use PrivateKeyPath
-    options.BasePath = "/home/user/uploads";
+    options.ConnectionString = "sftp://user:password@sftp.example.com:22/home/user/uploads";
 });
 ```
 
@@ -509,26 +502,21 @@ builder.Services.AddSshNetBlobStorage(options =>
 ```json
 {
   "SftpBlob": {
-    "Host": "sftp.example.com",
-    "Port": 22,
-    "Username": "user",
-    "Password": "secret",
-    "BasePath": "/home/user/uploads"
+    "ConnectionString": "sftp://user:password@sftp.example.com:22/home/user/uploads"
   }
 }
 ```
 
 ### SSH Key Authentication
 
-```json
+```csharp
+// Key-based authentication: provide PrivateKey as a Stream
+builder.Services.AddSshBlobStorage(options =>
 {
-  "SftpBlob": {
-    "Host": "sftp.example.com",
-    "Username": "user",
-    "PrivateKeyPath": "/path/to/key",
-    "PrivateKeyPassphrase": "optional-passphrase"
-  }
-}
+    options.ConnectionString = "sftp://user@sftp.example.com:22/home/user/uploads";
+    options.PrivateKey = File.OpenRead("/path/to/key");
+    options.PrivateKeyPassPhrase = "optional-passphrase"; // nullable
+});
 ```
 
 ## Dependencies

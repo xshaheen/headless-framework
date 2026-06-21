@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Logging;
-
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
@@ -60,6 +58,10 @@ public sealed partial class FactoryCacheCoordinator
                     options,
                     key,
                     ceilingLabel: "background-ceiling",
+                    // The observe lambda runs inside the awaited race; the finally below disposes internalCts only
+                    // when ctsTransferred is false (i.e. the factory was observed to completion, not abandoned), so
+                    // the closure never touches a disposed CTS.
+                    // ReSharper disable once AccessToDisposedClosure
                     () =>
                         _ObserveBackgroundFactoryAsync(
                             store,

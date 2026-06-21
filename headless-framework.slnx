@@ -125,6 +125,7 @@
     <Folder Name="/Captcha/">
         <Project Path="demo/Headless.ReCaptcha.Demo/Headless.ReCaptcha.Demo.csproj" />
         <Project Path="src/Headless.ReCaptcha/Headless.ReCaptcha.csproj" />
+        <Project Path="tests/Headless.ReCaptcha.Tests.Unit/Headless.ReCaptcha.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Database/">
         <Project Path="src\Headless.Redis\Headless.Redis.csproj" />
@@ -145,12 +146,12 @@
         <Project Path="src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
         <Project Path="src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
         <Project Path="src\Headless.DistributedLocks.Core.Database\Headless.DistributedLocks.Core.Database.csproj" />
-        <Project Path="src\Headless.DistributedLocks.Postgres\Headless.DistributedLocks.Postgres.csproj" />
+        <Project Path="src\Headless.DistributedLocks.PostgreSql\Headless.DistributedLocks.PostgreSql.csproj" />
         <Project Path="src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
         <Project Path="src\Headless.DistributedLocks.SqlServer\Headless.DistributedLocks.SqlServer.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Core.Database.Tests.Unit\Headless.DistributedLocks.Core.Database.Tests.Unit.csproj" />
         <Project Path="tests\Headless.DistributedLocks.InMemory.Tests.Integration\Headless.DistributedLocks.InMemory.Tests.Integration.csproj" />
-        <Project Path="tests\Headless.DistributedLocks.Postgres.Tests.Integration\Headless.DistributedLocks.Postgres.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.DistributedLocks.PostgreSql.Tests.Integration\Headless.DistributedLocks.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Redis.Tests.Integration\Headless.DistributedLocks.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.SqlServer.Tests.Integration\Headless.DistributedLocks.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Tests.Harness\Headless.DistributedLocks.Tests.Harness.csproj" />
@@ -341,6 +342,9 @@
         <Project Path="src\Headless.PushNotifications.Abstractions\Headless.PushNotifications.Abstractions.csproj" />
         <Project Path="src\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
         <Project Path="src\Headless.PushNotifications.Firebase\Headless.PushNotifications.Firebase.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Abstractions.Tests.Unit\Headless.PushNotifications.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Dev.Tests.Unit\Headless.PushNotifications.Dev.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Firebase.Tests.Unit\Headless.PushNotifications.Firebase.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Seo/">
         <Project Path="src\Headless.Sitemaps\Headless.Sitemaps.csproj" />
@@ -375,6 +379,16 @@
         <Project Path="src\Headless.Sms.Twilio\Headless.Sms.Twilio.csproj" />
         <Project Path="src\Headless.Sms.VictoryLink\Headless.Sms.VictoryLink.csproj" />
         <Project Path="src\Headless.Sms.Vodafone\Headless.Sms.Vodafone.csproj" />
+        <Project Path="tests\Headless.Sms.Tests.Harness\Headless.Sms.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.Sms.Abstractions.Tests.Unit\Headless.Sms.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Cequens.Tests.Unit\Headless.Sms.Cequens.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.VictoryLink.Tests.Unit\Headless.Sms.VictoryLink.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Aws.Tests.Unit\Headless.Sms.Aws.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Connekio.Tests.Unit\Headless.Sms.Connekio.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Dev.Tests.Unit\Headless.Sms.Dev.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Infobip.Tests.Unit\Headless.Sms.Infobip.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Twilio.Tests.Unit\Headless.Sms.Twilio.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Vodafone.Tests.Unit\Headless.Sms.Vodafone.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Solution Items/">
         <File Path=".editorconfig" />

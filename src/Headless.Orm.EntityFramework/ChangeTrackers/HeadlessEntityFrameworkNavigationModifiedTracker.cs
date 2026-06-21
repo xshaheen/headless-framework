@@ -14,7 +14,7 @@ namespace Headless.EntityFramework.ChangeTrackers;
 /// <a href="https://github.com/dotnet/efcore/issues/24076#issuecomment-1996623874">EF Core Issue #24076</a>
 /// Note: This class only track entities that implement <see cref="IEntity"/> interface.
 /// </summary>
-public sealed class HeadlessEntityFrameworkNavigationModifiedTracker
+internal sealed class HeadlessEntityFrameworkNavigationModifiedTracker
 {
     public void ChangeTrackerTracked(object? sender, EntityTrackedEventArgs e)
     {

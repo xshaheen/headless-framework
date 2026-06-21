@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 
@@ -7,7 +8,7 @@ namespace Tests.GeoExtensions;
 
 public sealed class ConversionTests
 {
-    private static GeometryFactory Factory => GeoConstants.GeometryFactory;
+    private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     private static Polygon _CreateSquare()
     {
@@ -135,6 +136,21 @@ public sealed class ConversionTests
         result.Should().BeOfType<MultiPolygon>();
         var multi = (MultiPolygon)result;
         multi.NumGeometries.Should().Be(2);
+    }
+
+    [Fact]
+    public void EnsurePolygonOrMulti_should_extract_polygons_nested_in_sub_collections()
+    {
+        // A polygon nested inside an inner GeometryCollection must not be silently dropped.
+        var polygon1 = _CreateSquare();
+        var polygon2 = _CreateSquare();
+        var inner = Factory.CreateGeometryCollection([polygon2]);
+        var outer = Factory.CreateGeometryCollection([polygon1, inner]);
+
+        var result = outer.EnsurePolygonOrMulti();
+
+        result.Should().BeOfType<MultiPolygon>();
+        ((MultiPolygon)result).NumGeometries.Should().Be(2);
     }
 
     [Fact]

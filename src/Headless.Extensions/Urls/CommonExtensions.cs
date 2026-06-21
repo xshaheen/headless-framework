@@ -1,11 +1,15 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Collections;
 using Headless.Checks;
 
 namespace Headless.Urls;
 
 /// <summary>
-/// CommonExtensions for objects.
+/// Extension methods used by the URL builder for converting objects to query name/value pairs and for ordinal
+/// string comparisons.
 /// </summary>
+[PublicAPI]
 public static class CommonExtensions
 {
     /// <summary>
@@ -24,6 +28,10 @@ public static class CommonExtensions
         return obj switch
         {
             string s => _StringToKV(s),
+            // Typed fast paths: dictionaries and KeyValuePair sequences expose Key/Value statically,
+            // so read them directly instead of reflecting over each element in _CollectionToKV.
+            IEnumerable<KeyValuePair<string, object?>> kv => kv.Select(p => (p.Key, p.Value)),
+            IEnumerable<KeyValuePair<string, string>> kv => kv.Select(p => (p.Key, (object?)p.Value)),
             IEnumerable e => _CollectionToKV(e),
             _ => _ObjectToKV(obj),
         };
@@ -48,7 +56,8 @@ public static class CommonExtensions
     /// <param name="s">The string to split.</param>
     /// <param name="separator">The separator to split on.</param>
     /// <returns>Array of at most 2 strings. (1 if separator is not found.)</returns>
-    public static string[] SplitOnFirstOccurence(this string s, string separator)
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="separator"/> is <see langword="null"/> and <paramref name="s"/> is neither <see langword="null"/> nor empty.</exception>
+    internal static string[] SplitOnFirstOccurrence(this string s, string separator)
     {
         if (string.IsNullOrEmpty(s))
         {
@@ -67,7 +76,7 @@ public static class CommonExtensions
         }
 
         return from p in s.Split('&')
-            let pair = p.SplitOnFirstOccurence("=")
+            let pair = p.SplitOnFirstOccurrence("=")
             let name = pair[0]
             let value = pair.Length == 1 ? null : pair[1]
             select (name, (object?)value);
@@ -79,10 +88,10 @@ public static class CommonExtensions
         let getter = prop.GetGetMethod(false)
         where getter is not null
         let val = getter.Invoke(obj, null)
-        select (prop.Name, _GetDeclaredTypeValue(val, prop.PropertyType));
+        select (prop.Name, GetDeclaredTypeValue(val, prop.PropertyType));
 
     [RequiresUnreferencedCode("Uses Type.GetInterfaces which is not compatible with trimming.")]
-    internal static object? _GetDeclaredTypeValue(object? value, Type declaredType)
+    internal static object? GetDeclaredTypeValue(object? value, Type declaredType)
     {
         if (value is null || value.GetType() == declaredType)
         {
@@ -143,11 +152,13 @@ public static class CommonExtensions
             value = prop.GetValue(obj, null);
             return true;
         }
+
         if (field is not null)
         {
             value = field.GetValue(obj);
             return true;
         }
+
         value = null;
         return false;
     }

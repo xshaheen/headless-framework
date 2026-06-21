@@ -8,11 +8,23 @@ using MoreLinq.Extensions;
 
 namespace Headless.Permissions.Grants;
 
+/// <summary>Resolves and exposes the ordered list of active grant providers.</summary>
 public interface IPermissionGrantProviderManager
 {
+    /// <summary>
+    /// Grant providers ordered by registration priority; last-registered has the highest priority index.
+    /// The built-in order (lowest to highest) is Role then User.
+    /// </summary>
     IReadOnlyList<IPermissionGrantProvider> ValueProviders { get; }
 }
 
+/// <summary>
+/// Default <see cref="IPermissionGrantProviderManager"/> implementation. Resolves providers from DI once
+/// (lazy, thread-safe) and validates that no two providers share the same <see cref="IPermissionGrantProvider.Name"/>.
+/// </summary>
+/// <exception cref="InvalidOperationException">
+/// Thrown on first access to <see cref="ValueProviders"/> when duplicate provider names are detected.
+/// </exception>
 public sealed class PermissionGrantProviderManager : IPermissionGrantProviderManager
 {
     private readonly IServiceProvider _serviceProvider;

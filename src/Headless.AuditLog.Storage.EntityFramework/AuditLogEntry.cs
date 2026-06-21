@@ -3,8 +3,17 @@
 namespace Headless.AuditLog;
 
 /// <summary>
-/// Persistent audit log entity. Single table with JSON columns for old/new values.
+/// EF Core entity that maps to the audit log table. Stores one row per captured change or
+/// explicit business event with JSON columns for <c>OldValues</c>, <c>NewValues</c>, and
+/// <c>ChangedFields</c>.
 /// </summary>
+/// <remarks>
+/// The composite primary key <c>(CreatedAt, Id)</c> is designed for time-range partitioning.
+/// JSON columns round-trip CLR values as <see cref="System.Text.Json.JsonElement"/> on read;
+/// use <c>GetDecimal()</c>, <c>GetInt32()</c>, and similar APIs for typed access.
+/// Decorated with <see cref="AuditIgnoreAttribute"/> to prevent recursive capture when
+/// <see cref="AuditLogOptions.AuditByDefault"/> is enabled.
+/// </remarks>
 [AuditIgnore] // Prevent recursive capture when AuditByDefault is enabled
 public sealed class AuditLogEntry
 {

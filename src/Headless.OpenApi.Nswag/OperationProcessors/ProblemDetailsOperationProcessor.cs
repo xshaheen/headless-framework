@@ -14,10 +14,32 @@ using NSwag.Generation.Processors.Contexts;
 namespace Headless.Api.OperationProcessors;
 
 /// <summary>
-/// Shows an example of a ProblemDetails containing errors for known status codes in NSwag.
+/// NSwag operation processor that attaches typed <c>ProblemDetails</c> schemas and concrete examples
+/// to known error-status responses (400, 401, 403, 404, 409, 422, 429).
 /// </summary>
+/// <remarks>
+/// <para>
+/// On each invocation the processor first ensures that every Headless problem-details type
+/// (<c>HeadlessProblemDetails</c> and its specialisations) is registered in the document's shared
+/// <c>Definitions</c> so they are emitted as named <c>$ref</c> schemas rather than inlined copies.
+/// It then iterates the operation's existing responses and, for each recognised status code, sets the
+/// <c>application/problem+json</c> media type with a reference to the matching schema definition
+/// and attaches a static example object.
+/// </para>
+/// <para>
+/// This processor must run after <c>UnauthorizedResponseOperationProcessor</c> and
+/// <c>ForbiddenResponseOperationProcessor</c> so that the 401 and 403 responses are already
+/// present in the operation when examples are applied.
+/// </para>
+/// </remarks>
 public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
+    /// <summary>
+    /// Registers problem-details schemas in the document and attaches typed examples to error responses.
+    /// </summary>
+    /// <param name="context">The NSwag operation processor context for the current operation.</param>
+    /// <returns>Always <see langword="true"/> so that subsequent processors continue to run.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="context"/> is <see langword="null"/>.</exception>
     public bool Process(OperationProcessorContext context)
     {
         Argument.IsNotNull(context);
@@ -194,7 +216,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         BuildNumber = "<version>",
         CommitNumber = "<commit>",
         Timestamp = _ExampleTimestamp,
-        Errors = [new("business_error", @"Some business rule failed.")],
+        Errors = [new("business_error", "Some business rule failed.")],
     };
 
     private static readonly UnprocessableEntityProblemDetails _Status422ProblemDetails = new()
@@ -212,12 +234,12 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         {
             ["email"] =
             [
-                new ErrorDescriptor("auth:invalid_email_format", @"The email address format is invalid."),
-                new ErrorDescriptor("auth:email_already_exists", @"The specified email address is already in use."),
+                new ErrorDescriptor("auth:invalid_email_format", "The email address format is invalid."),
+                new ErrorDescriptor("auth:email_already_exists", "The specified email address is already in use."),
             ],
             ["username"] =
             [
-                new ErrorDescriptor("auth:username_too_short", @"The username must be at least 6 characters long."),
+                new ErrorDescriptor("auth:username_too_short", "The username must be at least 6 characters long."),
             ],
         },
     };

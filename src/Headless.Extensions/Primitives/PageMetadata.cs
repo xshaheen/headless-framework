@@ -2,6 +2,7 @@
 
 namespace Headless.Primitives;
 
+/// <summary>SEO and routing metadata associated with a content page (slug, meta tags, keywords, and tags).</summary>
 [PublicAPI]
 public sealed class PageMetadata
 {

@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.ComponentModel;
 using System.Net.Http.Headers;
 using System.Reflection;
-using System.Text.Json;
 using FileSignatures;
 using FluentValidation;
 using Headless.Abstractions;
@@ -22,7 +22,6 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -84,6 +83,8 @@ public static class SetupApi
         /// <c>Headless:StringEncryption</c> and <c>Headless:StringHash</c> configuration sections.
         /// </summary>
         /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/> before registration.</param>
+        /// <returns><paramref name="builder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
         public WebApplicationBuilder AddHeadless(Action<HeadlessServiceDefaultsOptions>? configureServices = null)
         {
             Argument.IsNotNull(builder);
@@ -94,6 +95,16 @@ public static class SetupApi
             return builder._AddApiCore(configureServices);
         }
 
+        /// <summary>
+        /// Registers all Headless service defaults, binding encryption and hash options from the
+        /// supplied <see cref="IConfiguration"/> sections instead of the default
+        /// <c>Headless:StringEncryption</c> / <c>Headless:StringHash</c> paths.
+        /// </summary>
+        /// <param name="stringEncryptionConfig">Configuration section for string-encryption options.</param>
+        /// <param name="stringHashConfig">Configuration section for string-hash options.</param>
+        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
+        /// <returns><paramref name="builder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/>, <paramref name="stringEncryptionConfig"/>, or <paramref name="stringHashConfig"/> is <see langword="null"/>.</exception>
         public WebApplicationBuilder AddHeadless(
             IConfiguration stringEncryptionConfig,
             IConfiguration stringHashConfig,
@@ -110,6 +121,16 @@ public static class SetupApi
             return builder._AddApiCore(configureServices);
         }
 
+        /// <summary>
+        /// Registers all Headless service defaults, configuring encryption options via a delegate.
+        /// Hash options default to the <c>Headless:StringHash</c> configuration section when
+        /// <paramref name="configureHash"/> is <see langword="null"/>.
+        /// </summary>
+        /// <param name="configureEncryption">Required callback to configure string-encryption options.</param>
+        /// <param name="configureHash">Optional callback to configure string-hash options.</param>
+        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
+        /// <returns><paramref name="builder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configureEncryption"/> is <see langword="null"/>.</exception>
         public WebApplicationBuilder AddHeadless(
             Action<StringEncryptionOptions> configureEncryption,
             Action<StringHashOptions>? configureHash = null,
@@ -133,6 +154,16 @@ public static class SetupApi
             return builder._AddApiCore(configureServices);
         }
 
+        /// <summary>
+        /// Registers all Headless service defaults, configuring encryption options via a service-provider
+        /// delegate. Hash options default to the <c>Headless:StringHash</c> configuration section when
+        /// <paramref name="configureHash"/> is <see langword="null"/>.
+        /// </summary>
+        /// <param name="configureEncryption">Required callback (with <see cref="IServiceProvider"/>) to configure encryption options.</param>
+        /// <param name="configureHash">Optional callback (with <see cref="IServiceProvider"/>) to configure hash options.</param>
+        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
+        /// <returns><paramref name="builder"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configureEncryption"/> is <see langword="null"/>.</exception>
         public WebApplicationBuilder AddHeadless(
             Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
             Action<StringHashOptions, IServiceProvider>? configureHash = null,
@@ -184,9 +215,11 @@ public static class SetupApi
                 });
             }
 
+            var startupState = new HeadlessStartupState();
             builder.Services.TryAddSingleton(options);
+            builder.Services.TryAddSingleton(startupState);
             builder.Services.TryAddSingleton<IStatusCodesRewriterCalledNotifier>(
-                _ => new StatusCodesRewriterCalledNotifier(options)
+                _ => new StatusCodesRewriterCalledNotifier(startupState)
             );
             builder.Services.TryAddSingleton<HeadlessServiceDefaultsValidationStartupFilter>();
             builder.Services.TryAddEnumerable(
@@ -292,7 +325,7 @@ public static class SetupApi
                             var appAccessor = serviceProvider.GetRequiredService<IApplicationInformationAccessor>();
                             var buildAccessor = serviceProvider.GetRequiredService<IBuildInformationAccessor>();
                             client.DefaultRequestHeaders.UserAgent.Add(
-                                new ProductInfoHeaderValue(appAccessor.ApplicationName, buildAccessor.GetBuildNumber())
+                                new ProductInfoHeaderValue(appAccessor.ApplicationName, buildAccessor.GetVersion())
                             );
                         }
                     );
@@ -378,7 +411,22 @@ public static class SetupApi
         }
     }
 
-    /// <summary>Applies the default Headless API middleware order. Idempotent.</summary>
+    /// <summary>
+    /// Applies the default Headless API middleware pipeline in the correct order. Idempotent — subsequent
+    /// calls on the same <paramref name="app"/> instance are no-ops.
+    /// </summary>
+    /// <param name="app">The <see cref="WebApplication"/> to configure.</param>
+    /// <param name="configure">
+    /// Optional callback to tune <see cref="HeadlessApiDefaultsOptions"/> — forwarded headers,
+    /// response compression, status-code pages, exception handling, HTTPS redirection, HSTS,
+    /// and no-cache injection.
+    /// </param>
+    /// <returns><paramref name="app"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="app"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Must be called before the application starts for startup validation to pass when
+    /// <see cref="HeadlessServiceDefaultsValidationOptions.RequireUseHeadless"/> is <see langword="true"/> (the default).
+    /// </remarks>
     public static WebApplication UseHeadless(
         this WebApplication app,
         Action<HeadlessApiDefaultsOptions>? configure = null
@@ -450,15 +498,31 @@ public static class SetupApi
             app.UseNoCacheWhenMissingCacheHeaders();
         }
 
-        if (app.Services.GetService<HeadlessServiceDefaultsOptions>() is { } serviceOptions)
+        if (app.Services.GetService<HeadlessStartupState>() is { } startupState)
         {
-            serviceOptions.UseHeadlessCalled = true;
+            startupState.UseHeadlessCalled = true;
         }
 
         return app;
     }
 
-    /// <summary>Maps the default Headless API operational and convention endpoints. Idempotent.</summary>
+    /// <summary>
+    /// Maps the default Headless API operational and convention endpoints (health, alive, OpenAPI, static assets).
+    /// Idempotent — subsequent calls on the same <paramref name="app"/> instance are no-ops.
+    /// </summary>
+    /// <param name="app">The <see cref="WebApplication"/> to configure.</param>
+    /// <param name="configure">
+    /// Optional callback to tune <see cref="HeadlessApiDefaultEndpointOptions"/> — endpoint paths,
+    /// route names, anonymous access, OpenAPI inclusion, and liveness tag.
+    /// </param>
+    /// <returns><paramref name="app"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="app"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Must be called before the application starts for startup validation to pass when
+    /// <see cref="HeadlessServiceDefaultsValidationOptions.RequireMapHeadlessEndpoints"/> is <see langword="true"/> (the default).
+    /// This call also updates the OpenTelemetry tracing filter with the actual configured health and alive paths,
+    /// so it should run after all <c>AddHeadless</c> configuration is complete.
+    /// </remarks>
     public static WebApplication MapHeadlessEndpoints(
         this WebApplication app,
         Action<HeadlessApiDefaultEndpointOptions>? configure = null
@@ -530,9 +594,9 @@ public static class SetupApi
             }
         }
 
-        if (serviceOptions is not null)
+        if (app.Services.GetService<HeadlessStartupState>() is { } mapStartupState)
         {
-            serviceOptions.MapHeadlessEndpointsCalled = true;
+            mapStartupState.MapHeadlessEndpointsCalled = true;
         }
 
         return app;
@@ -575,28 +639,50 @@ public static class SetupApi
 
     internal static async Task WriteHealthReportAsync(HttpContext context, HealthReport report)
     {
-        context.Response.ContentType = ContentTypes.Applications.Json;
+        // Serialize into a buffer first so that a serialization fault cannot emit a partial body
+        // to load-balancer pollers. Headers are set only after the buffer is ready.
+        var buffer = new ArrayBufferWriter<byte>();
 
-        await using var writer = new Utf8JsonWriter(context.Response.Body);
-        writer.WriteStartObject();
-        writer.WriteString("status", report.Status.ToString());
-        writer.WriteStartObject("results");
-
-        foreach (var (name, entry) in report.Entries)
+        try
         {
-            writer.WriteStartObject(name);
-            writer.WriteString("status", entry.Status.ToString());
+            await using var writer = new Utf8JsonWriter(buffer);
+            writer.WriteStartObject();
+            writer.WriteString("status", report.Status.ToString());
+            writer.WriteStartObject("results");
 
-            if (entry.Description is not null)
+            foreach (var (name, entry) in report.Entries)
             {
-                writer.WriteString("description", entry.Description);
+                writer.WriteStartObject(name);
+                writer.WriteString("status", entry.Status.ToString());
+
+                if (entry.Description is not null)
+                {
+                    writer.WriteString("description", entry.Description);
+                }
+
+                writer.WriteEndObject();
             }
 
             writer.WriteEndObject();
+            writer.WriteEndObject();
+            // Flush to the in-memory buffer (no I/O cancellation needed here).
+            await writer.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Serialization failed before any bytes reached the client — set 500 and bail.
+            // Abort the connection so the client sees a clean error rather than a partial body.
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            _ = ex; // observed; see comment above
+
+            return;
         }
 
-        writer.WriteEndObject();
-        writer.WriteEndObject();
-        await writer.FlushAsync(context.RequestAborted).ConfigureAwait(false);
+        context.Response.ContentType = ContentTypes.Applications.Json;
+        context.Response.ContentLength = buffer.WrittenCount;
+
+        // Copy to the response body. Client disconnect here is expected and non-fatal, so we use
+        // CancellationToken.None to avoid propagating RequestAborted as a 500.
+        await context.Response.Body.WriteAsync(buffer.WrittenMemory, CancellationToken.None).ConfigureAwait(false);
     }
 }

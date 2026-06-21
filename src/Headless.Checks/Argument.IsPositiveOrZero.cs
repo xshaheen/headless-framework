@@ -13,8 +13,9 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the argument is not negative.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is negative.</exception>
+    /// <returns><paramref name="argument" /> if the argument is positive or zero.</returns>
+    /// <remarks>For floating-point types, non-finite values (<see cref="double.NaN"/>, infinities) are rejected.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is negative or non-finite.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsPositiveOrZero<T>(
@@ -24,15 +25,18 @@ public static partial class Argument
     )
         where T : INumber<T>
     {
-        return argument >= T.Zero
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
-            );
+        if (T.IsFinite(argument) && argument >= T.Zero)
+        {
+            return argument;
+        }
+
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
+        );
     }
 
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
+    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T? IsPositiveOrZero<T>(
@@ -42,15 +46,23 @@ public static partial class Argument
     )
         where T : struct, INumber<T>
     {
-        return argument is null ? null
-            : argument >= T.Zero ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
-            );
+        if (argument is null)
+        {
+            return null;
+        }
+
+        if (T.IsFinite(argument.Value) && argument.Value >= T.Zero)
+        {
+            return argument;
+        }
+
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
+        );
     }
 
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
+    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static TimeSpan IsPositiveOrZero(
@@ -67,7 +79,7 @@ public static partial class Argument
             );
     }
 
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
+    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static TimeSpan? IsPositiveOrZero(
@@ -78,108 +90,6 @@ public static partial class Argument
     {
         return argument is null ? null
             : argument >= TimeSpan.Zero ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static short IsPositiveOrZero(
-        short argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument >= 0
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int IsPositiveOrZero(
-        int argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument >= 0
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static long IsPositiveOrZero(
-        long argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument >= 0L
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float IsPositiveOrZero(
-        float argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument >= 0F
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static double IsPositiveOrZero(
-        double argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument >= 0D
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be negative."
-            );
-    }
-
-    /// <inheritdoc cref="IsPositiveOrZero{T}(T,string,string)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static decimal IsPositiveOrZero(
-        decimal argument,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
-    {
-        return argument >= 0M
-            ? argument
             : throw new ArgumentOutOfRangeException(
                 paramName,
                 message ?? $"The argument {paramName.ToAssertString()} cannot be negative."

@@ -5,8 +5,28 @@ using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Headless.Media.Indexing;
 
+/// <summary>
+/// Extracts plain text from a Word document (.docx) using the Open XML SDK.
+/// </summary>
+/// <remarks>
+/// Text is collected from every <c>Paragraph</c> element in the main document body, preserving
+/// paragraph boundaries as line breaks. Headers, footers, comments, text boxes, and embedded
+/// objects are not included. The extraction is purely structural — OCR is not performed.
+/// <para>
+/// The implementation is synchronous internally and returns a completed <see cref="Task{TResult}"/>
+/// via <c>Task.FromResult</c>; no I/O is performed after the initial read of the input stream.
+/// </para>
+/// </remarks>
 public sealed class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
 {
+    /// <summary>
+    /// Reads <paramref name="fileStream"/> and returns the paragraph text from the Word document body.
+    /// </summary>
+    /// <param name="fileStream">A stream containing a valid .docx (Open XML) Word document.</param>
+    /// <returns>
+    /// The plain-text content of all body paragraphs joined by line breaks, or an empty string when
+    /// the document body contains no paragraphs.
+    /// </returns>
     public Task<string> GetTextAsync(Stream fileStream)
     {
         using var document = WordprocessingDocument.Open(fileStream, isEditable: false);

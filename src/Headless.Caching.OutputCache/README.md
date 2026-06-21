@@ -84,7 +84,6 @@ Options are validated through the Hosting FluentValidation pipeline with startup
 - `Headless.Caching.Abstractions`
 - `Headless.Caching.Core`
 - `Headless.Hosting`
-- `Headless.Serializer.Abstractions`
 - `Microsoft.AspNetCore.App` (framework reference)
 
 ## Side Effects

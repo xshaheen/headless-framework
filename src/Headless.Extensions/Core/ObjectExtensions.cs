@@ -6,12 +6,18 @@ using Headless.Checks;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
+/// <summary>General-purpose extension methods for <see cref="object"/> and arbitrary values.</summary>
 public static class ObjectExtensions
 {
     /// <summary>
     /// Returns a string that represents the current object, using CultureInfo.InvariantCulture where possible.
     /// Dates are represented in IS0 8601.
     /// </summary>
+    /// <param name="obj">The object to convert.</param>
+    /// <returns>
+    /// The invariant-culture string representation of <paramref name="obj"/>, or <see langword="null"/> if
+    /// <paramref name="obj"/> is <see langword="null"/>.
+    /// </returns>
     [JetBrainsPure]
     [SystemPure]
     [return: NotNullIfNotNull(nameof(obj))]
@@ -33,6 +39,7 @@ public static class ObjectExtensions
     /// <param name="item">Item to check</param>
     /// <param name="collection">List of items</param>
     /// <typeparam name="T">Type of the items</typeparam>
+    /// <returns><see langword="true"/> if <paramref name="item"/> is found in <paramref name="collection"/>; otherwise, <see langword="false"/>.</returns>
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -47,6 +54,7 @@ public static class ObjectExtensions
     /// <param name="item">Item to check</param>
     /// <param name="collection">List of items</param>
     /// <typeparam name="T">Type of the items</typeparam>
+    /// <returns><see langword="true"/> if <paramref name="item"/> is found in <paramref name="collection"/>; otherwise, <see langword="false"/>.</returns>
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -60,6 +68,8 @@ public static class ObjectExtensions
     /// <param name="item">Item to check</param>
     /// <param name="collection">List of items</param>
     /// <typeparam name="T">Type of the items</typeparam>
+    /// <returns><see langword="true"/> if <paramref name="item"/> is found in <paramref name="collection"/>; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="collection"/> is <see langword="null"/>.</exception>
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -73,6 +83,8 @@ public static class ObjectExtensions
     /// <param name="item">Item to check</param>
     /// <param name="collection">List of items</param>
     /// <typeparam name="T">Type of the items</typeparam>
+    /// <returns><see langword="true"/> if <paramref name="item"/> is found in <paramref name="collection"/>; otherwise, <see langword="false"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="collection"/> is <see langword="null"/>.</exception>
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -87,6 +99,8 @@ public static class ObjectExtensions
     /// <summary>Safely casts the specified object to the type specified through <typeparamref name="TTo"/>.</summary>
     /// <remarks>Has been introduced to allow casting objects without breaking the fluent API.</remarks>
     /// <typeparam name="TTo">The <see cref="Type"/> to cast <paramref name="subject"/> to</typeparam>
+    /// <param name="subject">The object to cast.</param>
+    /// <returns><paramref name="subject"/> cast to <typeparamref name="TTo"/>, or the default value of <typeparamref name="TTo"/> if it is not of that type.</returns>
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -98,6 +112,9 @@ public static class ObjectExtensions
     /// <summary>Directly casts the specified object to the type specified through <typeparamref name="TTo"/>.</summary>
     /// <remarks>Has been introduced to allow casting objects without breaking the fluent API.</remarks>
     /// <typeparam name="TTo">The <see cref="Type"/> to cast <paramref name="subject"/> to</typeparam>
+    /// <param name="subject">The object to cast.</param>
+    /// <returns><paramref name="subject"/> cast to <typeparamref name="TTo"/>.</returns>
+    /// <exception cref="InvalidCastException">Thrown when <paramref name="subject"/> cannot be cast to <typeparamref name="TTo"/>.</exception>
     public static TTo Cast<TTo>(this object subject)
     {
         return (TTo)subject;

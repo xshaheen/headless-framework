@@ -1,9 +1,11 @@
-﻿<Project Sdk="Headless.NET.Sdk">
+<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <InternalsVisibleTo Include="Headless.PushNotifications.Dev.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.PushNotifications.Abstractions\Headless.PushNotifications.Abstractions.csproj" />
   </ItemGroup>
 </Project>

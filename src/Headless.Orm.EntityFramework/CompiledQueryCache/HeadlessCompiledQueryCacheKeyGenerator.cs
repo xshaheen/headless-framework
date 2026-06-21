@@ -7,11 +7,22 @@ using Microsoft.EntityFrameworkCore.Query;
 namespace Headless.EntityFramework.CompiledQueryCache;
 
 /// <summary>Adds the current tenant id to EF Core compiled query cache keys.</summary>
+[PublicAPI]
 public sealed class HeadlessCompiledQueryCacheKeyGenerator(
     ICompiledQueryCacheKeyGenerator inner,
     ICurrentDbContext currentDbContext
 ) : ICompiledQueryCacheKeyGenerator
 {
+    /// <summary>
+    /// Generates a cache key for the compiled query that incorporates the current tenant identifier
+    /// so each tenant's queries are cached independently, preventing cross-tenant query plan reuse.
+    /// </summary>
+    /// <param name="query">The LINQ query expression to generate a key for.</param>
+    /// <param name="async">Whether the query is asynchronous.</param>
+    /// <returns>
+    /// A composite key wrapping the inner key and the active tenant identifier, or the plain inner key
+    /// when the context is not a <see cref="IHeadlessDbContext"/>.
+    /// </returns>
     public object GenerateCacheKey(Expression query, bool async)
     {
         var innerCacheKey = inner.GenerateCacheKey(query, async);

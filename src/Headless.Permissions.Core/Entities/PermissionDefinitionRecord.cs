@@ -6,8 +6,15 @@ using Headless.Primitives;
 
 namespace Headless.Permissions.Entities;
 
+/// <summary>
+/// Aggregate root representing the DB-persisted snapshot of a single <see cref="Models.PermissionDefinition"/>.
+/// Serialized by <see cref="Definitions.IPermissionDefinitionSerializer"/> and stored by
+/// <see cref="Repositories.IPermissionDefinitionRecordRepository"/>. All string length constraints are
+/// defined in <see cref="PermissionDefinitionRecordConstants"/>.
+/// </summary>
 public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
+    /// <summary>The name of the owning <see cref="PermissionGroupDefinitionRecord"/>.</summary>
     public string GroupName { get; set; }
 
     public required string Name { get; set; }
@@ -16,9 +23,17 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
 
     public bool IsEnabled { get; set; }
 
+    /// <summary>
+    /// Name of the parent permission, or <see langword="null"/> if this permission is a direct child of the group.
+    /// Used to reconstruct the permission hierarchy when rebuilding the in-memory cache from DB records.
+    /// </summary>
     public string? ParentName { get; set; }
 
-    /// <summary>Comma separated the list of provider names.</summary>
+    /// <summary>
+    /// Comma-separated list of grant-provider names that are allowed to manage this permission, or
+    /// <see langword="null"/> when there are no restrictions (all providers may manage it).
+    /// Serialized/deserialized by <see cref="Definitions.IPermissionDefinitionSerializer"/>.
+    /// </summary>
     public required string? Providers { get; set; }
 
     public ExtraProperties ExtraProperties { get; private init; } = [];
@@ -65,6 +80,11 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
         Providers = providers;
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when all observable fields (name, group, display name, parent, enabled flag,
+    /// providers, and extra properties) are equal to those of <paramref name="otherRecord"/>. Used during the save
+    /// diff to skip unchanged records.
+    /// </summary>
     public bool HasSameData(PermissionDefinitionRecord otherRecord)
     {
         if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
@@ -105,6 +125,11 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
         return true;
     }
 
+    /// <summary>
+    /// Overwrites all mutable fields on this record with values from <paramref name="otherRecord"/>.
+    /// Called during the save diff when a record is detected as changed; the patched instance is then
+    /// passed to the repository for an update.
+    /// </summary>
     public void Patch(PermissionDefinitionRecord otherRecord)
     {
         Name = otherRecord.Name;

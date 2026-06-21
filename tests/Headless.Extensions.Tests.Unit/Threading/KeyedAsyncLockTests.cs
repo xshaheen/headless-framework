@@ -791,6 +791,100 @@ public sealed class KeyedAsyncLockTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_throw_when_lock_async_called_after_dispose()
+    {
+        // given
+        var keyedLock = new KeyedAsyncLock();
+        keyedLock.Dispose();
+
+        // when
+        var act = async () => await keyedLock.LockAsync("post-dispose-key");
+
+        // then
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_throw_when_timeout_lock_async_called_after_dispose()
+    {
+        // given
+        var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        keyedLock.Dispose();
+
+        // when
+        var act = async () =>
+            await keyedLock.LockAsync("post-dispose-timeout-key", TimeSpan.FromSeconds(5), timeProvider);
+
+        // then
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void should_throw_when_try_lock_called_after_dispose()
+    {
+        // given
+        var keyedLock = new KeyedAsyncLock();
+        keyedLock.Dispose();
+
+        // when
+        var act = () => keyedLock.TryLock("post-dispose-try-key");
+
+        // then
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_not_leak_semaphore_after_acquire_and_release()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when - acquire then release the same key
+        using (await keyedLock.LockAsync("leak-check-key", AbortToken))
+        {
+            // critical section
+        }
+
+        // then - the internal map returns to empty (no leaked semaphore)
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_not_grow_map_under_repeated_acquire_release()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when - many sequential acquire/release cycles across distinct keys
+        for (var i = 0; i < 200; i++)
+        {
+            using (await keyedLock.LockAsync($"repeated-key-{i}", AbortToken))
+            {
+                // critical section
+            }
+        }
+
+        // then - nothing accumulates; every key was evicted on release
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
+    public void should_not_leak_semaphore_after_try_lock_release()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when
+        var releaser = keyedLock.TryLock("try-leak-check-key");
+        releaser.Should().NotBeNull();
+        releaser!.Dispose();
+
+        // then
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
     private static int _SemaphoreCount(KeyedAsyncLock keyedLock)
     {
         var shardsField = typeof(KeyedAsyncLock).GetField("_shards", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -800,7 +894,7 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         foreach (var shard in shards)
         {
-            var mapField = shard!.GetType().GetField("Map", BindingFlags.Instance | BindingFlags.NonPublic);
+            var mapField = shard!.GetType().GetField("_map", BindingFlags.Instance | BindingFlags.NonPublic);
             var map = (System.Collections.IDictionary)mapField!.GetValue(shard)!;
             total += map.Count;
         }

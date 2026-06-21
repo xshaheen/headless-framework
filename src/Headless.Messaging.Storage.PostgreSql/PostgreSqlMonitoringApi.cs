@@ -30,6 +30,7 @@ public sealed class PostgreSqlMonitoringApi(
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
+    /// <summary>Returns a single published message by its storage identifier, or <see langword="null"/> if not found.</summary>
     public async ValueTask<MediumMessage?> GetPublishedMessageAsync(
         Guid id,
         CancellationToken cancellationToken = default
@@ -38,6 +39,7 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessageAsync(_publishedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns the published messages matching the supplied storage identifiers.</summary>
     public async ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
         IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
@@ -46,6 +48,7 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessagesAsync(_publishedTable, storageIds, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns a single received message by its storage identifier, or <see langword="null"/> if not found.</summary>
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
         Guid id,
         CancellationToken cancellationToken = default
@@ -54,6 +57,7 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessageAsync(_receivedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns the received messages matching the supplied storage identifiers.</summary>
     public async ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
         IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
@@ -62,6 +66,10 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessagesAsync(_receivedTable, storageIds, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns aggregate message counts broken down by status (succeeded, failed, delayed, pending retry)
+    /// for both the published and received tables.
+    /// </summary>
     public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -119,6 +127,10 @@ public sealed class PostgreSqlMonitoringApi(
         return statistics;
     }
 
+    /// <summary>
+    /// Returns a paginated list of messages from either the published or received table,
+    /// filtered by the criteria in <paramref name="query"/> (status, name, group, content substring, intent type).
+    /// </summary>
     public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
         MessageQuery query,
         CancellationToken cancellationToken = default
@@ -240,26 +252,34 @@ public sealed class PostgreSqlMonitoringApi(
         return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
+    /// <summary>Returns the total count of published messages in the <c>Failed</c> state.</summary>
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
+    /// <summary>Returns the total count of published messages in the <c>Succeeded</c> state.</summary>
     public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
+    /// <summary>Returns the total count of received messages in the <c>Failed</c> state.</summary>
     public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
+    /// <summary>Returns the total count of received messages in the <c>Succeeded</c> state.</summary>
     public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
+    /// <summary>
+    /// Returns a dictionary of UTC hour buckets to <c>Succeeded</c> message counts for the past 24 hours,
+    /// from the published or received table depending on <paramref name="type"/>.
+    /// </summary>
     public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
         MessageType type,
         CancellationToken cancellationToken = default
@@ -271,6 +291,10 @@ public sealed class PostgreSqlMonitoringApi(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns a dictionary of UTC hour buckets to <c>Failed</c> message counts for the past 24 hours,
+    /// from the published or received table depending on <paramref name="type"/>.
+    /// </summary>
     public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
         MessageType type,
         CancellationToken cancellationToken = default

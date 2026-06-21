@@ -25,7 +25,11 @@ public interface ICronJobManager<TCronJob>
     /// cannot write inside it (a mis-wire).
     /// </exception>
     Task<TCronJob> AddAsync(TCronJob entity, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing cron job definition and returns the result.</summary>
     Task<JobResult<TCronJob>> UpdateAsync(TCronJob cronJob, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes the cron job definition with the given identifier and returns the result.</summary>
     Task<JobResult<TCronJob>> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     // Batch operations
@@ -35,9 +39,13 @@ public interface ICronJobManager<TCronJob>
     /// One or more jobs failed validation; <see cref="Headless.Jobs.Exceptions.JobValidatorException.Errors" /> lists each.
     /// </exception>
     Task<List<TCronJob>> AddBatchAsync(List<TCronJob> entities, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a batch of cron job definitions and returns the aggregated result.</summary>
     Task<JobResult<List<TCronJob>>> UpdateBatchAsync(
         List<TCronJob> cronJobs,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>Deletes the cron job definitions with the given identifiers and returns the aggregated result.</summary>
     Task<JobResult<TCronJob>> DeleteBatchAsync(List<Guid> ids, CancellationToken cancellationToken = default);
 }

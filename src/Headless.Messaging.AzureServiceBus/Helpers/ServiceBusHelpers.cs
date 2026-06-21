@@ -1,9 +1,21 @@
-using Headless.Messaging.Transport;
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 namespace Headless.Messaging.AzureServiceBus.Helpers;
 
+/// <summary>Utility helpers for Azure Service Bus connection and address resolution.</summary>
 public static class ServiceBusHelpers
 {
+    /// <summary>
+    /// Resolves the broker address from either a Service Bus connection string or a namespace hostname.
+    /// </summary>
+    /// <param name="connectionString">A Service Bus SAS connection string, or <see langword="null"/>.</param>
+    /// <param name="namespace">
+    /// The fully-qualified Service Bus namespace hostname, or <see langword="null"/>.
+    /// When both are supplied, <paramref name="namespace"/> takes precedence.
+    /// </param>
+    /// <returns>A <c>BrokerAddress</c> suitable for telemetry and health checks.</returns>
+    /// <exception cref="ArgumentException">Both parameters are null or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">The namespace cannot be extracted from the connection string.</exception>
     public static BrokerAddress GetBrokerAddress(string? connectionString, string? @namespace)
     {
         var host = (@namespace, connectionString) switch

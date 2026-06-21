@@ -62,6 +62,9 @@ internal sealed partial class CommitInterceptorStartupGate<TContext>(
             committedObserved = await context
                 .Database.CreateExecutionStrategy()
                 .ExecuteAsync(
+                    // ExecuteAsync awaits this lambda to completion before the outer `await using scope` disposes,
+                    // so scope (and the context resolved from it) is always alive while the closure runs.
+                    // ReSharper disable once AccessToDisposedClosure
                     async ct =>
                     {
                         await using var transaction = await context

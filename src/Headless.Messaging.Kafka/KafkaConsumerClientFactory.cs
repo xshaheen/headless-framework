@@ -7,6 +7,13 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Kafka;
 
+/// <summary>
+/// Creates Kafka consumer clients for queue-lane message consumption.
+/// </summary>
+/// <remarks>
+/// Bus (fan-out) consumer creation is not supported by Kafka; attempting to create a bus consumer
+/// throws <see cref="NotSupportedException"/>.
+/// </remarks>
 public sealed class KafkaConsumerClientFactory(
     IOptions<MessagingKafkaOptions> kafkaOptions,
     IServiceProvider serviceProvider,

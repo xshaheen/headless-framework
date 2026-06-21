@@ -9,13 +9,25 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api;
 
+/// <summary>
+/// Configures the behavior of the idempotency middleware: key derivation, TTL, in-flight
+/// concurrency strategy, body-fingerprinting limits, response header allowlisting, and
+/// cache-error handling. All options can be set globally via <c>AddIdempotency()</c> and
+/// overridden per endpoint via <c>WithIdempotency()</c>.
+/// </summary>
 [PublicAPI]
 public sealed class IdempotencyOptions
 {
     /// <summary>How long an idempotency record is retained after the first successful response. Defaults to 24 hours.</summary>
     public TimeSpan IdempotencyKeyExpiration { get; set; } = TimeSpan.FromHours(24);
 
-    /// <summary>Request header that carries the idempotency key. Defaults to <c>Idempotency-Key</c> (per IETF <c>draft-ietf-httpapi-idempotency-key-header</c>).</summary>
+    /// <summary>
+    /// Request header that carries the idempotency key. Defaults to <c>Idempotency-Key</c>
+    /// (per IETF <c>draft-ietf-httpapi-idempotency-key-header</c>). This value is read at the
+    /// start of the middleware pipeline, before endpoint metadata is resolved, so
+    /// per-endpoint overrides via <see cref="IdempotencyMetadata.Configure"/> are ignored
+    /// for this property.
+    /// </summary>
     public string HeaderName { get; set; } = HttpHeaderNames.IdempotencyKey;
 
     /// <summary>HTTP methods for which idempotency is enforced. GET is never valid.</summary>
@@ -31,7 +43,13 @@ public sealed class IdempotencyOptions
     /// <summary>How concurrent in-flight requests with the same key are handled.</summary>
     public InFlightStrategy InFlightStrategy { get; set; } = InFlightStrategy.Reject;
 
-    /// <summary>How long to wait when <see cref="InFlightStrategy"/> is <see cref="InFlightStrategy.WaitAndReplay"/>. Defaults to 30 seconds.</summary>
+    /// <summary>
+    /// How long a loser request blocks waiting for the winner to finalize when
+    /// <see cref="InFlightStrategy"/> is <see cref="InFlightStrategy.WaitAndReplay"/>.
+    /// Defaults to 30 seconds. Capped at 1 minute by validation: each waiting request holds
+    /// an ASP.NET worker thread for this duration, so high concurrency combined with a long
+    /// timeout risks thread-pool exhaustion.
+    /// </summary>
     public TimeSpan InFlightLockTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
@@ -84,7 +102,13 @@ public sealed class IdempotencyOptions
     /// </remarks>
     public bool RequireUserIdentity { get; set; } = true;
 
-    /// <summary>Status code returned when the same key is reused with a different body. Must be 409 or 422. Defaults to 422.</summary>
+    /// <summary>
+    /// HTTP status code returned when the same idempotency key is reused with a different
+    /// request body. Must be 409 (Conflict) or 422 (Unprocessable Entity). Defaults to 422.
+    /// Use 409 when clients should treat the mismatch as a general conflict; use 422 (default)
+    /// when clients should treat it as a semantic validation error on the
+    /// <c>idempotency_key</c> field (matches the Stripe and OpenAPI convention).
+    /// </summary>
     public int MismatchStatusCode { get; set; } = StatusCodes.Status422UnprocessableEntity;
 
     /// <summary>

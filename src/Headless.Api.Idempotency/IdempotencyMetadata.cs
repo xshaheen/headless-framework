@@ -13,6 +13,14 @@ namespace Headless.Api;
 [PublicAPI]
 public sealed class IdempotencyMetadata
 {
+    /// <summary>Initializes a new instance with the given option-override delegate.</summary>
+    /// <param name="configure">
+    /// Delegate applied once per request to a fresh clone of <see cref="IdempotencyOptions"/>.
+    /// Must not be <see langword="null"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="configure"/> is <see langword="null"/>.
+    /// </exception>
     public IdempotencyMetadata(Action<IdempotencyOptions> configure)
     {
         Argument.IsNotNull(configure);

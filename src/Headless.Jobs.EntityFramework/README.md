@@ -1,12 +1,31 @@
 # Headless.Jobs.EntityFramework
 
-Entity Framework Core integration for Jobs, a high-performance background job scheduler for .NET.
+Entity Framework Core persistence provider for `Headless.Jobs` — durable, distributed, multi-node job storage with database-clock lease authority.
 
-This package enables persistence of time-based and cron-based jobs using EF Core, allowing for robust tracking, retry logic, and job state management. This is the durable operational-store path; it requires a `Headless.Coordination` provider for node identity and dead-node recovery.
+## Problem Solved
 
----
+Provides persistence of time jobs and cron occurrences across restarts and across multiple nodes, using EF Core-mapped tables. Integrates with `Headless.Coordination` for distributed node identity (`node@incarnation`), dead-node recovery, and fail-stop on membership loss.
 
-## 📦 Installation
+## Key Features
+
+- **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
+- **`AddOperationalStore(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
+- **`UseJobsDbContext<TDbContext>(dbOptions, schema?)`**: registers a dedicated `JobsDbContext` with configurable schema.
+- **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one.
+- **Database-clock lease authority**: lease renewal comparisons use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
+- **Node identity and recovery**: stamps `node@incarnation` as the row owner; dead-node reclaim driven by `NodeLeft` events plus periodic reconcile (`DeadNodeReconcileInterval`).
+- **Fail-fast coordination check**: startup throws `InvalidOperationException` when no coordination provider is registered.
+- **Cron-expression caching**: reuses the host's `ICache` (optional). No `ICache` → reads from DB, cache invalidation is skipped. Cache failures are fail-open.
+- **DbContext pool**: configurable via `SetDbContextPoolSize(n)` (default 1024).
+- **Custom schema**: `SetSchema("custom_schema")` or the `schema` parameter on `UseJobsDbContext`.
+
+## Design Notes
+
+Lease renewal on the EF path anchors `LockedUntil` comparison to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. This is an intentional divergence from the in-memory path: in-memory has no DB server, so it uses the application clock. On EF, the DB clock is the only way to guarantee cross-node clock skew cannot falsely reclaim a renewing job on a cluster. Do not write tests asserting precise lease timing using a fake `TimeProvider` against the EF provider.
+
+The `JobsDbContext<TTimeJob, TCronJob>` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
+
+## Installation
 
 ```bash
 dotnet add package Headless.Jobs.EntityFramework
@@ -14,18 +33,16 @@ dotnet add package Headless.Jobs.EntityFramework
 
 ## Quick Start
 
-The durable operational store requires a coordination provider. Register `AddHeadlessCoordination(...)` BEFORE `AddHeadlessJobs(...)`:
-
 ```csharp
 using Headless.Jobs.DbContextFactory;
 using Microsoft.EntityFrameworkCore;
 
 var conn = builder.Configuration.GetConnectionString("DefaultConnection");
 
-// 1. Coordination provider FIRST -- supplies node@incarnation identity + NodeLeft recovery.
+// 1. Register Coordination FIRST (supplies node@incarnation identity + NodeLeft recovery)
 builder.Services.AddHeadlessCoordination(c => c.UseSqlServer(conn));
 
-// 2. Jobs durable operational store.
+// 2. Register Jobs with the durable operational store
 builder.Services
     .AddHeadlessJobs(options =>
     {
@@ -35,34 +52,13 @@ builder.Services
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
     });
+
+// Optional: cron-expression caching via ICache
+builder.Services.AddHeadlessCaching(setup =>
+    setup.UseRedis(o => o.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379")));
 ```
 
-Without a registered coordination provider, the durable path throws `InvalidOperationException` naming `AddHeadlessCoordination`.
-
-### Node Identity and Recovery Model
-
-- **Owner identity is `node@incarnation`** (store-allocated incarnation), not the machine name. Each durable job row is stamped with the current node's `node@incarnation` owner.
-- **Recovery is event-driven and backend-neutral.** Dead-node reclaim is triggered by Coordination `NodeLeft` events plus a periodic liveness-snapshot reconcile, so it works on the EF/Postgres path WITHOUT Redis. Reclaim matches the dead `node@incarnation` exactly and never touches a restarted node's freshly-stamped rows or unowned-idle rows.
-- **Recovery latency trade-off.** On the no-Redis path, fast-restart recovery is TTL-bounded: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (previously the machine-name self-reclaim was immediate). Tune via the Coordination heartbeat/TTL and `DeadNodeReconcileInterval`.
-- **Fail-stop on membership loss.** If the local node loses membership, the durable scheduler stops processing rather than stamping a stale owner.
-
-### Cron-Expression Caching
-
-Jobs cron-expression caching uses the host application's optional default `Headless.Caching.ICache`. Register a cache provider such as `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` before or alongside Jobs:
-
-```csharp
-var redis = ConnectionMultiplexer.Connect("localhost:6379");
-builder.Services.AddHeadlessCaching(setup => setup.UseRedis(options => options.ConnectionMultiplexer = redis));
-
-builder.Services
-    .AddHeadlessJobs()
-    .AddOperationalStore(ef =>
-    {
-        ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
-    });
-```
-
-When no `ICache` is registered, cron-expression reads fall through to the database and invalidation after cron-job writes is skipped. Cache read/write/remove failures are fail-open for Jobs; caller cancellation still propagates.
+Without a registered coordination provider the durable path throws at startup.
 
 ## Configuration
 
@@ -72,32 +68,30 @@ builder.Services
     {
         options.ConfigureScheduler(scheduler =>
         {
-            // How often the durable path reconciles dead nodes from the liveness snapshot
-            // to catch any NodeLeft signal missed while not subscribed. Default: 1 minute.
-            scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1);
+            // How often the durable path reconciles dead nodes to catch missed NodeLeft signals.
+            scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // default: 1 min
         });
     })
     .AddOperationalStore(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
+        ef.SetDbContextPoolSize(512);   // default: 1024
+        ef.SetSchema("background");     // default: "jobs"
     });
 ```
 
+## Dependencies
+
+- `Headless.Jobs.Abstractions`
+- `Headless.Jobs.Core`
+- `Headless.Coordination.Abstractions`
+- `Microsoft.EntityFrameworkCore`
+
 ## Side Effects
 
-- Persists time-based and cron-based jobs in EF Core-mapped tables
-- Stamps the `node@incarnation` owner on durable job rows
-- Uses the optional default `Headless.Caching.ICache` for cron-expression caching when one is registered
-- Registers the membership-recovery bridge (NodeLeft + periodic reconcile) and a registration-before-start gate (scheduler processing starts only after coordination registration completes)
-- Requires a registered `Headless.Coordination` provider; fails fast at startup otherwise
-
-## Error Handling and Retry Persistence
-
-With EF enabled, Jobs persists retry and failure state across restarts:
-
-- `Retries`, `RetryIntervals`, `RetryCount`
-- Final status (`Failed`, `Cancelled`, `Skipped`, `Done`)
-- Exception details (`ExceptionMessage`) and skip reason (`SkippedReason`)
-- Execution timing (`ExecutionTime`, `ExecutedAt`, `ElapsedTime`)
-
-This allows reliable post-mortem analysis and dashboard visibility for failed or unstable jobs.
+- Replaces the in-memory `IJobPersistenceProvider` with `JobsEFCorePersistenceProvider`.
+- Registers `JobsOwnerIdentityAdapter` (overrides the default `DefaultJobsOwnerIdentity`).
+- Registers `JobsDeadOwnerReclaimer`, `DeadOwnerRecoveryBridge`, and `JobsCoordinationStartupGate` hosted services.
+- Persists job rows in EF Core-mapped tables under the configured schema.
+- Consumes the optional default `ICache` for cron-expression caching.
+- Fails fast at startup if no coordination provider is registered.

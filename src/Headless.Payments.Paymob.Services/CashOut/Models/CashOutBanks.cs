@@ -2,8 +2,18 @@
 
 namespace Headless.Payments.Paymob.Services.CashOut.Models;
 
+/// <summary>
+/// Represents an Egyptian bank supported by the Paymob CashOut bank-card disbursement channel,
+/// identified by its display name and Paymob bank code.
+/// </summary>
+/// <param name="Name">The bank's display name.</param>
+/// <param name="Code">The Paymob bank code used in <c>CashOutDisburseRequest.BankCard</c> and <c>BankAccountCashOutRequest</c>.</param>
 public sealed record CashOutBanks(string Name, string Code)
 {
+    /// <summary>
+    /// The complete list of Egyptian banks supported by Paymob's CashOut bank-card channel,
+    /// with their display names and corresponding bank codes.
+    /// </summary>
     public static IReadOnlyList<CashOutBanks> All { get; } =
     [
         new("Ahli United Bank", "AUB"),

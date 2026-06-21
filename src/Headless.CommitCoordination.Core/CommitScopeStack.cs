@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
-
 namespace Headless.CommitCoordination;
 
 /// <summary>
@@ -10,16 +8,16 @@ namespace Headless.CommitCoordination;
 /// </summary>
 internal sealed class CommitScopeStack : ICurrentCommitCoordinator
 {
-    private static readonly AsyncLocal<CommitScopeFrame?> _current = new();
+    private static readonly AsyncLocal<CommitScopeFrame?> _Current = new();
 
-    public ICommitCoordinator? Current => _current.Value?.Coordinator;
+    public ICommitCoordinator? Current => _Current.Value?.Coordinator;
 
     [SuppressMessage(
         "Performance",
         "CA1822:Mark members as static",
         Justification = "This property is intentionally instance-shaped for DI consumers."
     )]
-    internal CommitCoordinator? CurrentCore => _current.Value?.Coordinator;
+    internal CommitCoordinator? CurrentCore => _Current.Value?.Coordinator;
 
     [SuppressMessage(
         "Performance",
@@ -28,8 +26,8 @@ internal sealed class CommitScopeStack : ICurrentCommitCoordinator
     )]
     internal IDisposable Push(CommitCoordinator coordinator)
     {
-        var frame = new CommitScopeFrame(coordinator, _current.Value);
-        _current.Value = frame;
+        var frame = new CommitScopeFrame(coordinator, _Current.Value);
+        _Current.Value = frame;
 
         return new PopHandle(frame);
     }
@@ -47,15 +45,15 @@ internal sealed class CommitScopeStack : ICurrentCommitCoordinator
                 return;
             }
 
-            if (!ReferenceEquals(_current.Value, frame))
+            if (!ReferenceEquals(_Current.Value, frame))
             {
-                if (ReferenceEquals(_current.Value, frame.Parent))
+                if (ReferenceEquals(_Current.Value, frame.Parent))
                 {
                     _disposed = true;
                     return;
                 }
 
-                if (_Contains(_current.Value, frame))
+                if (_Contains(_Current.Value, frame))
                 {
                     throw new InvalidOperationException("Commit scope disposed out of order.");
                 }
@@ -64,7 +62,7 @@ internal sealed class CommitScopeStack : ICurrentCommitCoordinator
                 return;
             }
 
-            _current.Value = frame.Parent;
+            _Current.Value = frame.Parent;
             _disposed = true;
         }
 

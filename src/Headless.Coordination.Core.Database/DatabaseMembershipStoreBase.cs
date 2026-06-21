@@ -35,7 +35,7 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options,
         cancellationToken.ThrowIfCancellationRequested();
 
         return descriptor.Identity.NodeId.Value.Length == 0
-            ? throw new ArgumentException(@"Descriptor identity must include a node id.", nameof(descriptor))
+            ? throw new ArgumentException("Descriptor identity must include a node id.", nameof(descriptor))
             : UpsertDescriptorCoreAsync(ClusterName, descriptor, cancellationToken);
     }
 

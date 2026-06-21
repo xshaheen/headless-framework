@@ -9,6 +9,12 @@ using Npgsql;
 
 namespace Headless.Settings.PostgreSql;
 
+/// <summary>
+/// Hosted initializer that creates or migrates the PostgreSQL schema and tables required by the
+/// settings storage provider. Runs on startup when <see cref="SettingsStorageOptions.InitializeOnStartup"/> is
+/// <see langword="true"/>. Concurrent startup races are absorbed via PostgreSQL advisory locks and
+/// <c>IF NOT EXISTS</c> guards.
+/// </summary>
 internal sealed partial class PostgreSqlSettingsStorageInitializer(
     IOptions<PostgreSqlSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions,
@@ -18,8 +24,11 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
     private readonly ILogger<PostgreSqlSettingsStorageInitializer> _logger =
         logger ?? NullLogger<PostgreSqlSettingsStorageInitializer>.Instance;
 
+    /// <summary>Gets a value indicating whether this initializer should run when the host starts.</summary>
     protected override bool RunOnStartup => storageOptions.Value.InitializeOnStartup;
 
+    /// <summary>Creates the settings schema, tables, and indexes if they do not already exist.</summary>
+    /// <param name="cancellationToken">Token to observe for cancellation.</param>
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var options = storageOptions.Value;
@@ -34,6 +43,11 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         await _RunIndexesAsync(connection, options, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Runs the DDL transaction that creates the schema and both tables.
+    /// A <c>42P06</c>, <c>42P07</c>, <c>42710</c>, or <c>23505</c> error from a concurrent initializer
+    /// is swallowed and logged; any other error propagates.
+    /// </summary>
     private async Task _RunSchemaAndTablesAsync(
         NpgsqlConnection connection,
         SettingsStorageOptions options,
@@ -57,6 +71,11 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         }
     }
 
+    /// <summary>
+    /// Runs the DDL transaction that creates the unique indexes on the settings tables.
+    /// A <c>42P07</c> or <c>42710</c> error from a concurrent initializer is swallowed and logged;
+    /// any other error propagates.
+    /// </summary>
     private async Task _RunIndexesAsync(
         NpgsqlConnection connection,
         SettingsStorageOptions options,
@@ -80,6 +99,7 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         }
     }
 
+    /// <summary>Builds the SQL script that creates the schema and both settings tables using <c>IF NOT EXISTS</c> guards and an advisory lock.</summary>
     private static string _CreateSchemaAndTablesScript(SettingsStorageOptions options)
     {
         var valuesTable = _Qualified(options.Schema, options.SettingValuesTableName);
@@ -123,6 +143,7 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
             """;
     }
 
+    /// <summary>Builds the SQL script that creates the unique indexes on both settings tables using <c>IF NOT EXISTS</c> guards and an advisory lock.</summary>
     private static string _CreateIndexesScript(SettingsStorageOptions options)
     {
         var valuesTable = _Qualified(options.Schema, options.SettingValuesTableName);
@@ -140,9 +161,14 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
             """;
     }
 
+    /// <summary>Returns the fully-qualified, double-quoted <c>"schema"."table"</c> identifier for <paramref name="tableName"/>.</summary>
+    /// <param name="options">Storage options that supply the schema name.</param>
+    /// <param name="tableName">Unqualified table name.</param>
+    /// <returns>A double-quoted, schema-qualified table reference safe for interpolation into SQL.</returns>
     internal static string Qualified(SettingsStorageOptions options, string tableName) =>
         _Qualified(options.Schema, tableName);
 
+    /// <summary>Returns <c>"<paramref name="schema"/>"."<paramref name="tableName"/>"</c>.</summary>
     private static string _Qualified(string schema, string tableName)
     {
         return $"""

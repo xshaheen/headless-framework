@@ -14,10 +14,13 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) : IDistributedSemaphoreProvider
 {
+    /// <inheritdoc />
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
+    /// <inheritdoc />
     public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
+    /// <inheritdoc />
     public IDistributedSemaphore CreateSemaphore(string resource, int maxCount)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
@@ -26,6 +29,7 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
         return new NullDistributedSemaphore(resource, maxCount, timeProvider);
     }
 
+    /// <inheritdoc />
     public Task<long> GetHolderCountAsync(string resource, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);

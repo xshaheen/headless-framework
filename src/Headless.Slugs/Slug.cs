@@ -2,8 +2,29 @@
 
 namespace Headless.Slugs;
 
+/// <summary>Entry point for URL-slug generation.</summary>
 public static class Slug
 {
+    /// <summary>
+    /// Converts <paramref name="text"/> to a URL-friendly slug using the supplied options.
+    /// </summary>
+    /// <param name="text">The source text to slugify. Returns <see langword="null"/> when <see langword="null"/>.</param>
+    /// <param name="options">
+    /// Slug generation options. When <see langword="null"/>, a default <see cref="SlugOptions"/> instance is used
+    /// (lower-case, hyphen separator, 80-character limit, Latin + Arabic allowed ranges).
+    /// </param>
+    /// <returns>
+    /// The slugified string in Unicode NFC form, or <see langword="null"/> when <paramref name="text"/> is
+    /// <see langword="null"/>.
+    /// </returns>
+    /// <remarks>
+    /// The method normalizes the input to NFD before processing so that diacritic marks can be stripped as
+    /// non-spacing marks. Replacement pairs in <see cref="SlugOptions.Replacements"/> are applied first (for
+    /// example <c>&amp;</c> becomes <c> and </c>). Characters outside
+    /// <see cref="SlugOptions.AllowedRanges"/> are collapsed to a single separator. The result is truncated
+    /// to <see cref="SlugOptions.MaximumLength"/> characters, and trailing separators are removed unless
+    /// <see cref="SlugOptions.CanEndWithSeparator"/> is <see langword="true"/>.
+    /// </remarks>
     [return: NotNullIfNotNull(nameof(text))]
     public static string? Create(string? text, SlugOptions? options = null)
     {

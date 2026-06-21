@@ -66,7 +66,7 @@ public sealed class KeyedAsyncLock : IDisposable
     }
 
     private readonly Shard[] _shards;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <summary>Initializes a new <see cref="KeyedAsyncLock"/> instance.</summary>
     public KeyedAsyncLock()
@@ -80,15 +80,20 @@ public sealed class KeyedAsyncLock : IDisposable
     }
 
     /// <summary>
-    /// Asynchronously acquires a lock for the specified key.
+    /// Asynchronously acquires a lock for the specified key, waiting until it becomes available.
     /// </summary>
     /// <param name="key">The key to lock on.</param>
     /// <param name="cancellationToken">Optional cancellation token.</param>
     /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when this lock has already been disposed.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled before the lock is acquired.</exception>
     [MustDisposeResource]
     public async Task<IDisposable> LockAsync(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
+        Ensure.NotDisposed(_disposed, this);
 
         var semaphore = _GetOrCreate(key);
 
@@ -111,10 +116,14 @@ public sealed class KeyedAsyncLock : IDisposable
     /// </summary>
     /// <param name="key">The key to lock on.</param>
     /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed, or <see langword="null"/> when the lock is already held.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when this lock has already been disposed.</exception>
     [MustDisposeResource]
     public IDisposable? TryLock(string key)
     {
         Argument.IsNotNullOrEmpty(key);
+        Ensure.NotDisposed(_disposed, this);
 
         var semaphore = _GetOrCreate(key);
 
@@ -136,6 +145,11 @@ public sealed class KeyedAsyncLock : IDisposable
     /// <param name="timeProvider">The time provider used for deterministic timeout scheduling.</param>
     /// <param name="cancellationToken">Optional cancellation token.</param>
     /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed, or <see langword="null"/> on timeout.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> or <paramref name="timeProvider"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="timeout"/> is not positive and is not <see cref="Timeout.InfiniteTimeSpan"/>.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown when this lock has already been disposed.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled before the lock is acquired.</exception>
     [MustDisposeResource]
     public async Task<IDisposable?> LockAsync(
         string key,
@@ -146,6 +160,7 @@ public sealed class KeyedAsyncLock : IDisposable
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(timeProvider);
+        Ensure.NotDisposed(_disposed, this);
 
         if (timeout == Timeout.InfiniteTimeSpan)
         {
@@ -310,14 +325,14 @@ public sealed class KeyedAsyncLock : IDisposable
         // Lock is .NET 9+ and performs better than lock(object) on uncontended paths.
         private readonly Lock _gate = new();
 
-        // Internal (not private) so the test suite can reflect the live count; never used as a lock target.
-        internal readonly Dictionary<string, RefCountedSemaphore> Map = new(StringComparer.Ordinal);
+        // Private; the test suite reflects on this field for the live count. Never used as a lock target.
+        private readonly Dictionary<string, RefCountedSemaphore> _map = new(StringComparer.Ordinal);
 
         public SemaphoreSlim GetOrCreate(string key)
         {
             lock (_gate)
             {
-                if (Map.TryGetValue(key, out var item))
+                if (_map.TryGetValue(key, out var item))
                 {
                     ++item.RefCount;
                     return item.Semaphore;
@@ -326,7 +341,7 @@ public sealed class KeyedAsyncLock : IDisposable
 #pragma warning disable CA2000 // The SemaphoreSlim will be disposed when the RefCountedSemaphore is removed
                 var newItem = new RefCountedSemaphore(new SemaphoreSlim(1, 1));
 #pragma warning restore CA2000
-                Map[key] = newItem;
+                _map[key] = newItem;
                 return newItem.Semaphore;
             }
         }
@@ -335,14 +350,14 @@ public sealed class KeyedAsyncLock : IDisposable
         {
             lock (_gate)
             {
-                if (!Map.TryGetValue(key, out var item))
+                if (!_map.TryGetValue(key, out var item))
                 {
                     return;
                 }
 
                 if (--item.RefCount == 0)
                 {
-                    Map.Remove(key);
+                    _map.Remove(key);
                     item.Semaphore.Dispose();
                 }
             }
@@ -352,14 +367,14 @@ public sealed class KeyedAsyncLock : IDisposable
         {
             lock (_gate)
             {
-                if (!Map.TryGetValue(key, out var item))
+                if (!_map.TryGetValue(key, out var item))
                 {
                     return;
                 }
 
                 if (--item.RefCount == 0)
                 {
-                    Map.Remove(key);
+                    _map.Remove(key);
                     item.Semaphore.Release();
                     item.Semaphore.Dispose();
                 }
@@ -374,12 +389,12 @@ public sealed class KeyedAsyncLock : IDisposable
         {
             lock (_gate)
             {
-                foreach (var item in Map.Values)
+                foreach (var item in _map.Values)
                 {
                     item.Semaphore.Dispose();
                 }
 
-                Map.Clear();
+                _map.Clear();
             }
         }
     }

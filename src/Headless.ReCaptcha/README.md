@@ -25,11 +25,8 @@ dotnet add package Headless.ReCaptcha
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddReCaptchaV3(options =>
-{
-    options.SiteKey = builder.Configuration["ReCaptcha:SiteKey"];
-    options.SiteSecret = builder.Configuration["ReCaptcha:SiteSecret"];
-});
+// Bind from configuration (see appsettings.json below), or use the Action<ReCaptchaOptions> overload.
+builder.Services.AddReCaptchaV3(builder.Configuration.GetSection("ReCaptcha:V3"));
 ```
 
 ## Usage
@@ -42,13 +39,14 @@ public class LoginController(IReCaptchaSiteVerifyV3 recaptcha)
     [HttpPost]
     public async Task<IActionResult> Login(LoginRequest request)
     {
-        var result = await recaptcha.VerifyAsync(new ReCaptchaSiteVerifyRequest
-        {
-            Response = request.RecaptchaToken
-        });
+        // Enforces success + action match (anti-replay) + score threshold server-side.
+        var result = await recaptcha.VerifyAsync(
+            new ReCaptchaSiteVerifyRequest { Response = request.RecaptchaToken },
+            expectedAction: "login",
+            minimumScore: 0.5f);
 
-        if (!result.Success || result.Score < 0.5f)
-            return BadRequest("reCAPTCHA validation failed");
+        if (!result.IsValid)
+            return BadRequest($"reCAPTCHA validation failed: {result.FailureReason}");
 
         // Continue with login...
     }
@@ -69,22 +67,31 @@ public class LoginController(IReCaptchaSiteVerifyV3 recaptcha)
 
 ## Configuration
 
+reCAPTCHA v2 and v3 each have their own named options. Bind them from configuration sections:
+
+```csharp
+builder.Services.AddReCaptchaV3(builder.Configuration.GetSection("ReCaptcha:V3"));
+builder.Services.AddReCaptchaV2(builder.Configuration.GetSection("ReCaptcha:V2"));
+```
+
 ### appsettings.json
 
 ```json
 {
   "ReCaptcha": {
-    "SiteKey": "your-site-key",
-    "SiteSecret": "your-secret-key"
+    "V3": { "SiteKey": "your-v3-site-key", "SiteSecret": "your-v3-secret-key" },
+    "V2": { "SiteKey": "your-v2-site-key", "SiteSecret": "your-v2-secret-key" }
   }
 }
 ```
 
 ## Dependencies
 
-- `Microsoft.AspNetCore.Razor`
+- `Microsoft.AspNetCore.App` (framework reference)
+- `Microsoft.Extensions.Http.Resilience`
+- `Headless.Hosting`
 
 ## Side Effects
 
-- Registers `IReCaptchaSiteVerifyV2` and/or `IReCaptchaSiteVerifyV3` as scoped
-- Configures HttpClient for reCAPTCHA API
+- Registers `IReCaptchaSiteVerifyV2` and/or `IReCaptchaSiteVerifyV3` as transient
+- Configures a named `HttpClient` (with the standard resilience handler) for the reCAPTCHA API

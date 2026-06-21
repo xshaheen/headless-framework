@@ -1,16 +1,17 @@
 # Headless.PushNotifications.Dev
 
-Development push notification implementation that does nothing.
+No-op push notification provider for local development and testing.
 
 ## Problem Solved
 
-Provides a no-op push notification implementation for development/testing environments, preventing actual notifications from being sent during local development.
+Prevents real notifications from being sent during development or test runs. Uses the same `IPushNotificationService` interface as production so no application code changes are needed when switching environments.
 
 ## Key Features
 
-- `NoopPushNotificationService` - Silent implementation
-- No network calls
-- Always returns success responses
+- Silent `IPushNotificationService` implementation (`NoopPushNotificationService`)
+- No network calls or external dependencies
+- Always returns `Success` responses with a generated GUID as the message id
+- Never validates input or throws (inert for any caller, including invalid tokens or empty titles)
 
 ## Installation
 
@@ -25,13 +26,18 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddNoopPushNotificationService();
+    builder.Services.AddHeadlessPushNotifications(setup => setup.UseNoop());
+}
+else
+{
+    builder.Services.AddHeadlessPushNotifications(setup =>
+        setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
 }
 ```
 
 ## Configuration
 
-No configuration required.
+None. No options or configuration keys.
 
 ## Dependencies
 
@@ -39,4 +45,4 @@ No configuration required.
 
 ## Side Effects
 
-- Registers `IPushNotificationService` as singleton
+- Registers `IPushNotificationService` as singleton (`NoopPushNotificationService`)

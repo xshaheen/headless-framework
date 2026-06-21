@@ -14,12 +14,19 @@ public static class SetupPaymobCashOut
 {
     internal const string HttpClientName = "Headless:PaymobCashOut";
 
-    /// <summary>Adds services required for using paymob cash out.</summary>
+    /// <summary>
+    /// Registers Paymob CashOut services using an inline configuration delegate.
+    /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-    /// <param name="setupAction">The action used to configure <see cref="PaymobCashOutOptions"/>.</param>
-    /// <param name="configureClient"></param>
-    /// <param name="configureResilience"></param>
+    /// <param name="setupAction">Delegate that configures <see cref="PaymobCashOutOptions"/>.</param>
+    /// <param name="configureClient">Optional delegate to customise the internal <c>HttpClient</c>.</param>
+    /// <param name="configureResilience">Optional delegate to tune the standard resilience pipeline applied to the client.</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    /// <remarks>
+    /// Registers <c>IPaymobCashOutAuthenticator</c> as a singleton (token cache is process-scoped) and
+    /// <c>IPaymobCashOutBroker</c> as scoped. Options are validated on startup.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="setupAction"/> is <see langword="null"/>.</exception>
     public static IServiceCollection AddPaymobCashOut(
         this IServiceCollection services,
         Action<PaymobCashOutOptions> setupAction,
@@ -35,12 +42,20 @@ public static class SetupPaymobCashOut
         return _AddCore(services, configureClient, configureResilience);
     }
 
-    /// <summary>Adds services required for using paymob cash out.</summary>
+    /// <summary>
+    /// Registers Paymob CashOut services using an inline configuration delegate that receives the
+    /// <see cref="IServiceProvider"/>, allowing options to reference other registered services.
+    /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-    /// <param name="setupAction">The action used to configure <see cref="PaymobCashOutOptions"/>.</param>
-    /// <param name="configureClient"></param>
-    /// <param name="configureResilience"></param>
+    /// <param name="setupAction">Delegate that configures <see cref="PaymobCashOutOptions"/> using the service provider.</param>
+    /// <param name="configureClient">Optional delegate to customise the internal <c>HttpClient</c>.</param>
+    /// <param name="configureResilience">Optional delegate to tune the standard resilience pipeline applied to the client.</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    /// <remarks>
+    /// Registers <c>IPaymobCashOutAuthenticator</c> as a singleton and <c>IPaymobCashOutBroker</c>
+    /// as scoped. Options are validated on startup.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="setupAction"/> is <see langword="null"/>.</exception>
     public static IServiceCollection AddPaymobCashOut(
         this IServiceCollection services,
         Action<PaymobCashOutOptions, IServiceProvider> setupAction,
@@ -56,12 +71,19 @@ public static class SetupPaymobCashOut
         return _AddCore(services, configureClient, configureResilience);
     }
 
-    /// <summary>Adds services required for using paymob cash out.</summary>
+    /// <summary>
+    /// Registers Paymob CashOut services using an <see cref="IConfiguration"/> section.
+    /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
     /// <param name="config">The configuration section that contains <see cref="PaymobCashOutOptions"/> settings.</param>
-    /// <param name="configureClient"></param>
-    /// <param name="configureResilience"></param>
+    /// <param name="configureClient">Optional delegate to customise the internal <c>HttpClient</c>.</param>
+    /// <param name="configureResilience">Optional delegate to tune the standard resilience pipeline applied to the client.</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    /// <remarks>
+    /// Registers <c>IPaymobCashOutAuthenticator</c> as a singleton and <c>IPaymobCashOutBroker</c>
+    /// as scoped. Options are validated on startup.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="config"/> is <see langword="null"/>.</exception>
     public static IServiceCollection AddPaymobCashOut(
         this IServiceCollection services,
         IConfiguration config,

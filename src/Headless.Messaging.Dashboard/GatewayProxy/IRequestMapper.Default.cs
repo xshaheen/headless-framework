@@ -17,7 +17,7 @@ public class RequestMapper : IRequestMapper
         {
             var requestMessage = new HttpRequestMessage
             {
-                Content = await _MapContent(request),
+                Content = await _MapContent(request).ConfigureAwait(false),
                 Method = _MapMethod(request),
                 RequestUri = _MapUri(request),
             };
@@ -80,7 +80,7 @@ public class RequestMapper : IRequestMapper
             return null;
         }
 
-        var content = new ByteArrayContent(await _ToByteArray(request.Body));
+        var content = new ByteArrayContent(await _ToByteArray(request.Body).ConfigureAwait(false));
 
         content.Headers.TryAddWithoutValidation("Content-Type", [request.ContentType]);
 
@@ -113,7 +113,7 @@ public class RequestMapper : IRequestMapper
         await using (stream)
         {
             await using var memStream = new MemoryStream();
-            await stream.CopyToAsync(memStream);
+            await stream.CopyToAsync(memStream).ConfigureAwait(false);
             return memStream.ToArray();
         }
     }

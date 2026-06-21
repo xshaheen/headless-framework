@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 
@@ -7,7 +8,7 @@ namespace Tests.GeoExtensions;
 
 public sealed class PermissiveOperationsTests
 {
-    private static GeometryFactory Factory => GeoConstants.GeometryFactory;
+    private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     private static Polygon _CreateSquare(double size = 1.0, double originX = 0, double originY = 0)
     {

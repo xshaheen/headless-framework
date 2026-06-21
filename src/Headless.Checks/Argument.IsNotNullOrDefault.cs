@@ -14,7 +14,7 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="paramName" /> if the value is not null or default(T).</returns>
+    /// <returns><paramref name="argument" /> if the value is not null or default(T).</returns>
     /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is default for that type.</exception>
     [DebuggerStepThrough]

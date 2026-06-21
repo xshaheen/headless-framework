@@ -1,22 +1,31 @@
 # Headless.PushNotifications.Firebase
 
-Firebase Cloud Messaging (FCM) implementation for push notifications.
+Firebase Cloud Messaging (FCM) implementation of `IPushNotificationService` for production push notifications.
 
 ## Problem Solved
 
-Provides push notification delivery via Firebase Cloud Messaging using the `IPushNotificationService` abstraction for production mobile app notifications.
+Delivers push notifications to Android (FCM), iOS (via FCM-to-APNs bridge), and Web clients using the FCM v1 API. Handles multicast batching, transient-error retry with exponential backoff, and per-token outcome mapping behind the `IPushNotificationService` interface.
 
 ## Key Features
 
-- `GoogleCloudMessagingPushNotificationService` - FCM implementation
-- Single device and multicast support
-- Custom data payload support
-- Automatic token validation
-- Detailed error logging
-- **Automatic retry** for transient failures (rate limits, temporary outages, server errors)
-- Exponential backoff with jitter
-- Retry-After header support for rate limits
-- Configurable retry policy
+- FCM-backed `IPushNotificationService` implementation (`FcmPushNotificationService`)
+- Single-device (`SendToDeviceAsync`) and multicast (`SendMulticastAsync`) delivery
+- Automatic chunking of multicast sends into batches of ≤ 500 tokens (FCM hard limit)
+- Custom data payload support (with reserved-key enforcement)
+- Input validation: title ≤ 100 characters, body ≤ 4 000 characters
+- **Automatic retry** for transient failures: exponential backoff with jitter, Retry-After header support for rate limits
+- Configurable retry policy (`FirebaseRetryOptions`): `MaxAttempts` (0–10), `MaxDelay`, `RateLimitDelay`, `UseJitter`
+- Structured logging and OpenTelemetry Activity events on retry
+- Options validated at startup via FluentValidation
+
+## Design Notes
+
+The Firebase Admin SDK `FirebaseApp` is created **lazily on the first send**, not at DI registration time. This means:
+- Registration has no observable side effects (no credentials are loaded, no HTTP calls are made).
+- Multiple hosts in the same process can coexist with different credentials — each registration generates a uniquely-named `FirebaseApp`.
+- Configuration errors in `FirebaseOptions.Json` (malformed JSON, wrong credential type) surface as exceptions on the first call, not at startup. Supply the `IConfiguration` overload so the options validator catches missing `Json` at startup instead.
+
+Android messages are sent with `Priority.High`; iOS messages include an APNs badge count of 1. These are hardcoded defaults — the `data` payload provides the only customization surface exposed by this abstraction.
 
 ## Installation
 
@@ -29,56 +38,34 @@ dotnet add package Headless.PushNotifications.Firebase
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddFirebasePushNotificationService(options =>
-{
-    options.CredentialsPath = "path/to/service-account.json";
-    // Or use environment variable: GOOGLE_APPLICATION_CREDENTIALS
-});
+// Recommended: bind from configuration so the options validator runs at startup.
+builder.Services.AddHeadlessPushNotifications(setup =>
+    setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+```
+
+Sending:
+
+```csharp
+var response = await pushService.SendToDeviceAsync(
+    clientToken: deviceToken,
+    title: "Order shipped",
+    body: "Your order #1234 is on its way.",
+    data: new Dictionary<string, string> { ["orderId"] = "1234" },
+    cancellationToken: ct
+);
+
+if (response.IsUnregistered())
+    await tokenStore.RemoveAsync(deviceToken, ct);
 ```
 
 ## Configuration
-
-### Basic Setup
-
-```csharp
-services.AddPushNotifications(new FirebaseOptions
-{
-    Json = await File.ReadAllTextAsync("firebase-credentials.json")
-});
-```
-
-### Retry Configuration
-
-```csharp
-services.AddPushNotifications(new FirebaseOptions
-{
-    Json = await File.ReadAllTextAsync("firebase-credentials.json"),
-    Retry = new RetryOptions
-    {
-        MaxAttempts = 5,                              // 0-10, default: 5
-        MaxDelay = TimeSpan.FromMinutes(1),           // default: 1 min
-        RateLimitDelay = TimeSpan.FromSeconds(60),    // default: 60s
-        UseJitter = true                              // default: true
-    }
-});
-```
-
-### Disable Retry
-
-```csharp
-services.AddPushNotifications(new FirebaseOptions
-{
-    Json = json,
-    Retry = new RetryOptions { MaxAttempts = 0 } // Disable
-});
-```
 
 ### appsettings.json
 
 ```json
 {
   "Firebase": {
-    "Json": "{ ... firebase service account json ... }",
+    "Json": "{ ...service account JSON... }",
     "Retry": {
       "MaxAttempts": 5,
       "MaxDelay": "00:01:00",
@@ -89,32 +76,68 @@ services.AddPushNotifications(new FirebaseOptions
 }
 ```
 
-## Retry Behavior
+### FirebaseOptions
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `Json` | `string` | _(required)_ | Firebase service account JSON string. Do not log — `ToString()` redacts it. |
+| `Retry` | `FirebaseRetryOptions` | see below | Retry policy. |
+
+### FirebaseRetryOptions
+
+| Property | Type | Default | Range | Description |
+|---|---|---|---|---|
+| `MaxAttempts` | `int` | `5` | 0–10 | Max retry attempts. `0` disables retry. |
+| `MaxDelay` | `TimeSpan` | `00:01:00` | 1s–5min | Cap on any single retry delay. |
+| `RateLimitDelay` | `TimeSpan` | `00:01:00` | 1s–5min | Delay for HTTP 429 when no Retry-After header is present. |
+| `UseJitter` | `bool` | `true` | — | Adds ±25% variance to prevent thundering herd. |
+
+#### Retry overrides
+
+```csharp
+// Supply options with a delegate:
+builder.Services.AddHeadlessPushNotifications(setup =>
+    setup.UseFirebase(options =>
+    {
+        options.Json = configuration["Firebase:Json"]!;
+        options.Retry = new FirebaseRetryOptions { MaxAttempts = 3 };
+    }));
+
+// Disable retry:
+builder.Services.AddHeadlessPushNotifications(setup =>
+    setup.UseFirebase(options =>
+    {
+        options.Json = json;
+        options.Retry = new FirebaseRetryOptions { MaxAttempts = 0 };
+    }));
+```
 
 ### Transient Errors (Retried)
-- `QuotaExceeded` (HTTP 429): Rate limit - uses Retry-After header or RateLimitDelay (default 60s)
-- `Unavailable` (HTTP 503): Service temporarily down - exponential backoff
-- `Internal` (HTTP 500): Server error - exponential backoff
-- `HttpRequestException`: Network issues - exponential backoff
-- `TaskCanceledException`: Timeout (not user cancellation) - exponential backoff
+
+| Error | HTTP | Retry delay |
+|---|---|---|
+| `QuotaExceeded` | 429 | Retry-After header, or `RateLimitDelay` (default 60s), capped at `MaxDelay` |
+| `Unavailable` | 503 | Exponential backoff |
+| `Internal` | 500 | Exponential backoff |
+| `HttpRequestException` | — | Exponential backoff |
+| `TaskCanceledException` (timeout only) | — | Exponential backoff |
 
 ### Permanent Errors (No Retry)
-- `Unregistered`: Invalid device token - caller should remove token
-- `InvalidArgument`: Malformed request - code bug
-- `SenderIdMismatch`: Wrong credentials - config error
-- `ThirdPartyAuthError`: Bad APNs cert - config error
-- User-initiated cancellation via `CancellationToken`
+
+| Error | Meaning | Caller action |
+|---|---|---|
+| `Unregistered` | Token invalid | Returns `PushNotificationResponseStatus.Unregistered`; remove token |
+| `InvalidArgument` | Malformed request | Code bug; fix the payload |
+| `SenderIdMismatch` | Wrong credentials | Configuration error |
+| `ThirdPartyAuthError` | Bad APNs certificate | Configuration error |
+| User `CancellationToken` | Caller cancelled | Do not retry |
 
 ### Backoff Strategy
-- Initial delay: 1s
-- Exponential backoff: 1s → 2s → 4s → 8s → 16s → 32s...
-- Capped at `MaxDelay` (default 60s)
-- Jitter (±25%) to prevent thundering herd
 
-### Observability
-- Structured logging via `ILogger` for retry attempts
-- OpenTelemetry Activity events for distributed tracing
-- Polly telemetry auto-emitted via `System.Diagnostics.DiagnosticSource`
+- Initial delay: 1s
+- Exponential sequence: 1s → 2s → 4s → 8s → 16s → 32s, capped at `MaxDelay` (default 60s)
+- Jitter: ±25% (when `UseJitter = true`)
+- Retry pipeline key: `"Headless:FcmRetry"` (registered via Polly's `AddResiliencePipeline`)
 
 ## Dependencies
 
@@ -125,6 +148,7 @@ services.AddPushNotifications(new FirebaseOptions
 
 ## Side Effects
 
-- Registers `IPushNotificationService` as singleton
-- Registers `ResiliencePipeline` named "Headless:FcmRetry"
-- Initializes Firebase Admin SDK
+- Registers `IPushNotificationService` as singleton (`FcmPushNotificationService`)
+- Registers a `ResiliencePipeline` named `"Headless:FcmRetry"` (via Polly)
+- Registers `TimeProvider.System` as singleton (if not already registered)
+- The Firebase Admin SDK `FirebaseApp` is created lazily on first send; registration has no network side effects

@@ -98,6 +98,45 @@ public sealed class SitemapModelTests : TestBase
         sitemapUrl.WriteAlternateLanguageCodes.Should().BeEquivalentTo(langCodes);
     }
 
+    [Fact]
+    public void should_reject_null_location()
+    {
+        var act = () => new SitemapUrl((Uri)null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void should_reject_null_alternate_locations()
+    {
+        var act = () => new SitemapUrl((IEnumerable<SitemapAlternateUrl>)null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Theory]
+    [InlineData(-0.1f)]
+    [InlineData(1.1f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void should_reject_priority_outside_range(float priority)
+    {
+        var act = () => new SitemapUrl(new Uri("https://www.example.com"), priority: priority);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(0.5f)]
+    [InlineData(1f)]
+    public void should_accept_priority_within_range(float priority)
+    {
+        var act = () => new SitemapUrl(new Uri("https://www.example.com"), priority: priority);
+
+        act.Should().NotThrow();
+    }
+
     #endregion
 
     #region SitemapImage Tests

@@ -8,8 +8,40 @@ using NSwag.Generation.Processors.Contexts;
 
 namespace Headless.Api.OperationProcessors;
 
+/// <summary>
+/// NSwag operation processor that enriches generated operations with supplemental API-Explorer metadata:
+/// deprecated status, supported response content types, and parameter descriptions and default values.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Only processes <c>AspNetCoreOperationProcessorContext</c> instances; other context types are passed
+/// through unchanged.
+/// </para>
+/// <para>
+/// Three enrichments are applied per operation:
+/// <list type="number">
+///   <item><description>
+///     Sets <c>IsDeprecated = true</c> when the underlying <c>ApiDescription</c> is marked deprecated.
+///   </description></item>
+///   <item><description>
+///     Removes response content-type entries from each status-code response that are not listed in the
+///     API explorer's <c>SupportedResponseTypes</c>, keeping only the negotiated media types.
+///   </description></item>
+///   <item><description>
+///     For each operation parameter, fills in <c>Description</c> from model metadata and
+///     <c>Schema.Default</c> from the API explorer's default value when not already set.
+///     Also sets <c>IsRequired = true</c> when the parameter descriptor marks it as required.
+///   </description></item>
+/// </list>
+/// </para>
+/// </remarks>
 public sealed class ApiExtraInformationOperationProcessor : IOperationProcessor
 {
+    /// <summary>
+    /// Enriches the operation with deprecated status, response content types, and parameter metadata.
+    /// </summary>
+    /// <param name="context">The NSwag operation processor context for the current operation.</param>
+    /// <returns>Always <see langword="true"/> so that subsequent processors continue to run.</returns>
     public bool Process(OperationProcessorContext context)
     {
         if (context is not AspNetCoreOperationProcessorContext ctx)

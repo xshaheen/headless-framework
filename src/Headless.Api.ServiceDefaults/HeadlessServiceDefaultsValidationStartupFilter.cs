@@ -6,17 +6,33 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Api;
 
-internal sealed class HeadlessServiceDefaultsValidationStartupFilter(HeadlessServiceDefaultsOptions options)
-    : IStartupFilter,
-        IHostedLifecycleService
+/// <summary>
+/// Startup filter and hosted-lifecycle service that verifies Headless pipeline call-order invariants
+/// before the first request is handled. Runs during both the legacy <see cref="IStartupFilter"/> path
+/// (ASP.NET Core) and the hosted-lifecycle <see cref="IHostedLifecycleService.StartingAsync"/> path (.NET Generic Host).
+/// </summary>
+/// <remarks>
+/// Throws <see cref="InvalidOperationException"/> at startup when any of the following checks fail
+/// (each can be disabled via the corresponding option):
+/// <list type="bullet">
+///   <item><see cref="HeadlessServiceDefaultsValidationOptions.RequireUseHeadless"/> — <c>UseHeadless()</c> was not called.</item>
+///   <item><see cref="HeadlessServiceDefaultsValidationOptions.RequireMapHeadlessEndpoints"/> — <c>MapHeadlessEndpoints()</c> was not called.</item>
+///   <item><see cref="HeadlessServiceDefaultsValidationOptions.RequireStatusCodesRewriter"/> — <c>UseStatusCodesRewriter()</c> (or <c>UseHeadless()</c>) was not called.</item>
+/// </list>
+/// </remarks>
+internal sealed class HeadlessServiceDefaultsValidationStartupFilter(
+    HeadlessServiceDefaultsOptions options,
+    HeadlessStartupState state
+) : IStartupFilter, IHostedLifecycleService
 {
     private readonly HeadlessServiceDefaultsOptions _options = options;
+    private readonly HeadlessStartupState _state = state;
 
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
     {
         return app =>
         {
-            _Validate(_options);
+            _Validate(_options, _state);
 
             next(app);
         };
@@ -24,7 +40,7 @@ internal sealed class HeadlessServiceDefaultsValidationStartupFilter(HeadlessSer
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
-        _Validate(_options);
+        _Validate(_options, _state);
 
         return Task.CompletedTask;
     }
@@ -39,19 +55,19 @@ internal sealed class HeadlessServiceDefaultsValidationStartupFilter(HeadlessSer
 
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private static void _Validate(HeadlessServiceDefaultsOptions options)
+    private static void _Validate(HeadlessServiceDefaultsOptions options, HeadlessStartupState state)
     {
-        if (options.Validation.RequireUseHeadless && !options.UseHeadlessCalled)
+        if (options.Validation.RequireUseHeadless && !state.UseHeadlessCalled)
         {
             throw new InvalidOperationException("Call UseHeadless before the application starts.");
         }
 
-        if (options.Validation.RequireMapHeadlessEndpoints && !options.MapHeadlessEndpointsCalled)
+        if (options.Validation.RequireMapHeadlessEndpoints && !state.MapHeadlessEndpointsCalled)
         {
             throw new InvalidOperationException("Call MapHeadlessEndpoints before the application starts.");
         }
 
-        if (options.Validation.RequireStatusCodesRewriter && !options.UseStatusCodesRewriterCalled)
+        if (options.Validation.RequireStatusCodesRewriter && !state.UseStatusCodesRewriterCalled)
         {
             throw new InvalidOperationException(
                 "Call UseStatusCodesRewriter (or UseHeadless) before the application starts."

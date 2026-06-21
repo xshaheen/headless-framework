@@ -5,13 +5,47 @@ using Headless.Checks;
 
 namespace Headless.DistributedLocks.InMemory;
 
-/// <summary>Process-local lock storage for tests, local development, and single-instance apps.</summary>
-/// <remarks>This storage is in-process only. It does not coordinate across application instances.</remarks>
+/// <summary>
+/// In-process exclusive-lock storage backed by a <see cref="ConcurrentDictionary{TKey,TValue}"/> and
+/// <see cref="TimeProvider"/>-based TTL expiry.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Suitable for unit tests, local development, and single-instance applications only. This implementation
+/// does <b>not</b> coordinate across application instances or processes — it must not be used in
+/// horizontally-scaled deployments where multiple processes share the same named resources.
+/// </para>
+/// <para>
+/// Thread-safety is achieved with a per-resource <see langword="lock"/> that serialises the prune,
+/// free-check, grant, and fencing-token increment so that the granted fencing token is always monotonic
+/// with respect to grant order.
+/// </para>
+/// </remarks>
+/// <param name="timeProvider">The time source used to compute and evaluate TTL expiry timestamps.</param>
 [PublicAPI]
 public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : IDistributedLockStorage
 {
     private readonly ConcurrentDictionary<string, ResourceState> _resources = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Atomically grants an exclusive lock on <paramref name="key"/> to the caller identified by
+    /// <paramref name="leaseId"/>, issuing a monotonically increasing fencing token on success.
+    /// </summary>
+    /// <param name="key">The resource key to lock. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="leaseId">A caller-supplied identifier for this lease. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="ttl">
+    /// Optional time-to-live for the lock. When <see langword="null"/> the lock does not expire
+    /// until explicitly released via <see cref="RemoveIfEqualAsync"/>.
+    /// </param>
+    /// <param name="cancellationToken">Token to observe for cancellation before acquiring.</param>
+    /// <returns>
+    /// A <see cref="DistributedLockAcquireResult"/> with <c>Acquired = true</c> and the new fencing
+    /// token when the lock is granted; <see cref="DistributedLockAcquireResult.Failed"/> when the
+    /// resource is already held.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> or <paramref name="leaseId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> or <paramref name="leaseId"/> is empty.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
         string leaseId,
@@ -45,6 +79,26 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         }
     }
 
+    /// <summary>
+    /// Atomically replaces the lease on <paramref name="key"/> when the currently stored lease ID
+    /// matches <paramref name="expectedId"/> exactly, updating it to <paramref name="newId"/> and
+    /// optionally resetting the TTL. Used by the lock-renewal path.
+    /// </summary>
+    /// <param name="key">The resource key. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="expectedId">The lease ID the caller currently holds. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="newId">The replacement lease ID. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="newTtl">
+    /// Optional new TTL. When <see langword="null"/> the replaced entry has no expiry.
+    /// </param>
+    /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
+    /// <returns>
+    /// <see langword="true"/> when the stored ID matched <paramref name="expectedId"/> and the entry
+    /// was updated; <see langword="false"/> when the key does not exist, has expired, or the stored
+    /// ID does not match.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/>, <paramref name="expectedId"/>, or <paramref name="newId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/>, <paramref name="expectedId"/>, or <paramref name="newId"/> is empty.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<bool> ReplaceIfEqualAsync(
         string key,
         string expectedId,
@@ -81,6 +135,22 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         }
     }
 
+    /// <summary>
+    /// Atomically releases the lock on <paramref name="key"/> when the currently stored lease ID
+    /// matches <paramref name="expectedId"/> exactly. Used by the lock-release path to prevent
+    /// a caller from releasing a lock it no longer owns.
+    /// </summary>
+    /// <param name="key">The resource key. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="expectedId">The lease ID the caller holds. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
+    /// <returns>
+    /// <see langword="true"/> when the stored ID matched <paramref name="expectedId"/> and the entry
+    /// was removed; <see langword="false"/> when the key does not exist, has expired, or the stored
+    /// ID does not match.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> or <paramref name="expectedId"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> or <paramref name="expectedId"/> is empty.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<bool> RemoveIfEqualAsync(
         string key,
         string expectedId,
@@ -114,6 +184,20 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         }
     }
 
+    /// <summary>
+    /// Returns the remaining TTL for the lock held on <paramref name="key"/>, or <see langword="null"/> when
+    /// the key does not exist, has no expiry, or has already expired.
+    /// </summary>
+    /// <param name="key">The resource key to query. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
+    /// <returns>
+    /// The remaining time-to-live as a <see cref="TimeSpan"/> (clamped to <see cref="TimeSpan.Zero"/> if
+    /// the entry is at or past its expiry), or <see langword="null"/> when the key has no expiry or does
+    /// not exist.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
@@ -139,6 +223,18 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         }
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when a non-expired lock entry exists for <paramref name="key"/>.
+    /// </summary>
+    /// <param name="key">The resource key to check. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
+    /// <returns>
+    /// <see langword="true"/> when a live (non-expired) lock entry is present for <paramref name="key"/>;
+    /// <see langword="false"/> otherwise.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
@@ -157,6 +253,17 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         }
     }
 
+    /// <summary>Gets the lease ID stored for <paramref name="key"/>, or <see langword="null"/> when the key
+    /// does not exist or has expired.</summary>
+    /// <param name="key">The resource key to query. Must not be <see langword="null"/> or empty.</param>
+    /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
+    /// <returns>
+    /// The current lease ID string, or <see langword="null"/> when no live entry exists for
+    /// <paramref name="key"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<string?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
@@ -175,6 +282,20 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         }
     }
 
+    /// <summary>Gets all live lock entries whose keys begin with <paramref name="prefix"/>.</summary>
+    /// <remarks>
+    /// Expired entries are pruned per-key during iteration. The snapshot is point-in-time; the
+    /// dictionary may change concurrently after the call returns.
+    /// </remarks>
+    /// <param name="prefix">
+    /// The key prefix to filter by. A <see langword="null"/> or empty value matches all keys.
+    /// </param>
+    /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
+    /// <returns>
+    /// A read-only dictionary mapping each matching key to its current lease ID. Never
+    /// <see langword="null"/>; empty when no live entries match the prefix.
+    /// </returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
@@ -206,6 +327,25 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         return ValueTask.FromResult<IReadOnlyDictionary<string, string>>(result);
     }
 
+    /// <summary>
+    /// Gets all live lock entries whose keys begin with <paramref name="prefix"/>, including their
+    /// remaining TTL.
+    /// </summary>
+    /// <remarks>
+    /// Expired entries are pruned per-key during iteration. The snapshot is point-in-time; the
+    /// dictionary may change concurrently after the call returns. The TTL in each value is clamped
+    /// to <see cref="TimeSpan.Zero"/> when the entry is at or past its expiry but has not yet been
+    /// pruned; <see langword="null"/> means the entry has no expiry.
+    /// </remarks>
+    /// <param name="prefix">
+    /// The key prefix to filter by. A <see langword="null"/> or empty value matches all keys.
+    /// </param>
+    /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
+    /// <returns>
+    /// A read-only dictionary mapping each matching key to a tuple of its lease ID and remaining
+    /// TTL. Never <see langword="null"/>; empty when no live entries match the prefix.
+    /// </returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>> GetAllWithExpirationByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
@@ -246,6 +386,17 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         return ValueTask.FromResult<IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>>(result);
     }
 
+    /// <summary>Gets the count of live lock entries whose keys match the given <paramref name="prefix"/>.</summary>
+    /// <remarks>
+    /// Expired entries are pruned per-key during counting. The result is a point-in-time snapshot and
+    /// may change concurrently.
+    /// </remarks>
+    /// <param name="prefix">
+    /// The key prefix to filter by. An empty string (the default) counts all live entries.
+    /// </param>
+    /// <param name="cancellationToken">Token to observe for cancellation before the operation.</param>
+    /// <returns>The number of live lock entries matching <paramref name="prefix"/>.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         prefix ??= "";

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Headless.Api.Abstractions;
 
-public sealed class HttpRequestContext(
+internal sealed class HttpRequestContext(
     IHttpContextAccessor accessor,
     ICurrentUser currentUser,
     ICurrentTenant currentTenant,

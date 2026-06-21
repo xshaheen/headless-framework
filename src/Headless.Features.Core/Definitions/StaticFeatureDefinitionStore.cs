@@ -6,15 +6,30 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features.Definitions;
 
+/// <summary>Store for feature definitions that are registered statically at application startup via <see cref="IFeatureDefinitionProvider"/> implementations.</summary>
 public interface IStaticFeatureDefinitionStore
 {
+    /// <summary>Returns the statically-registered feature definition with the given <paramref name="name"/>, or <see langword="null"/> if not found.</summary>
+    /// <param name="name">The unique feature name to look up.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The matching <see cref="FeatureDefinition"/>, or <see langword="null"/> when absent.</returns>
     Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns all statically-registered feature definitions.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A read-only list of all <see cref="FeatureDefinition"/> instances.</returns>
     Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Returns all statically-registered feature group definitions.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A read-only list of all <see cref="FeatureGroupDefinition"/> instances.</returns>
     Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// <see cref="IStaticFeatureDefinitionStore"/> implementation that builds its catalog once (lazily, thread-safely)
+/// by invoking all registered <see cref="IFeatureDefinitionProvider"/> instances and caching the result in memory.
+/// </summary>
 public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
 {
     private readonly IServiceProvider _serviceProvider;
@@ -24,6 +39,9 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
     private Dictionary<string, FeatureGroupDefinition> FeatureGroupDefinitions => _lazyFeatureGroupDefinitions.Value;
     private Dictionary<string, FeatureDefinition> FeatureDefinitions => _lazyFeatureDefinitions.Value;
 
+    /// <summary>Initializes the store and configures lazy initialization of the feature and group catalogs.</summary>
+    /// <param name="serviceProvider">Used to create a scoped container when invoking definition providers.</param>
+    /// <param name="optionsAccessor">Provides the list of registered <see cref="IFeatureDefinitionProvider"/> types.</param>
     public StaticFeatureDefinitionStore(
         IServiceProvider serviceProvider,
         IOptions<FeatureManagementProvidersOptions> optionsAccessor
@@ -35,18 +53,21 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
         _lazyFeatureGroupDefinitions = new(_CreateFeatureGroupDefinitions, isThreadSafe: true);
     }
 
+    /// <inheritdoc/>
     public Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(FeatureDefinitions.GetOrDefault(name));
     }
 
+    /// <inheritdoc/>
     public Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<FeatureDefinition>>(FeatureDefinitions.Values.ToList());
     }
 
+    /// <inheritdoc/>
     public Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -72,6 +93,10 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
         return context.Groups;
     }
 
+    /// <summary>
+    /// Flattens all features from <see cref="FeatureGroupDefinitions"/> into a single dictionary keyed by name.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Two or more definition providers registered a feature with the same name.</exception>
     private Dictionary<string, FeatureDefinition> _CreateFeatureDefinitions()
     {
         var features = new Dictionary<string, FeatureDefinition>(StringComparer.Ordinal);

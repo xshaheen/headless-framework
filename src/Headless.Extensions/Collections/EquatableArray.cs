@@ -7,6 +7,8 @@ namespace Headless.Collections;
 /// <summary>An immutable, equatable array. This is equivalent to <see cref="Array"/> but with value equality support.</summary>
 /// <typeparam name="T">The type of values in the array.</typeparam>
 /// <remarks>Initializes a new instance of the <see cref="EquatableArray{T}"/> struct.</remarks>
+/// <param name="array">The underlying array to wrap. The instance keeps a reference to it rather than copying it.</param>
+/// <param name="equalityComparer">The comparer used for element equality and hashing, or <see langword="null"/> to use the default comparer for <typeparamref name="T"/>.</param>
 [PublicAPI]
 public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equalityComparer = null)
     : IEquatable<EquatableArray<T>>,
@@ -18,7 +20,7 @@ public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equali
     /// </summary>
     private readonly T[] _array = array;
 
-    /// <summary>Gets the length of the array, or 0 if the array is null</summary>
+    /// <summary>Gets the number of elements in the array, or <c>0</c> if the underlying array is <see langword="null"/>.</summary>
     public int Count => _array?.Length ?? 0;
 
     /// <summary>Checks whether two <see cref="EquatableArray{T}"/> values are the same.</summary>
@@ -81,16 +83,22 @@ public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equali
 
     /// <summary>Returns a <see cref="ReadOnlySpan{T}"/> wrapping the current items.</summary>
     /// <returns>A <see cref="ReadOnlySpan{T}"/> wrapping the current items.</returns>
-    public Span<T> AsSpan()
+    public ReadOnlySpan<T> AsSpan()
     {
         return _array.AsSpan();
     }
 
     /// <summary>Returns the underlying wrapped array.</summary>
-    /// <returns>Returns the underlying array.</returns>
+    /// <returns>The underlying array. This is <see langword="null"/> for a <c>default</c> instance that was never constructed with an array.</returns>
     public T[] AsArray()
     {
         return _array;
+    }
+
+    /// <summary>Returns an allocation-free enumerator over the underlying items (preferred by <c>foreach</c>).</summary>
+    public ReadOnlySpan<T>.Enumerator GetEnumerator()
+    {
+        return AsSpan().GetEnumerator();
     }
 
     /// <inheritdoc/>

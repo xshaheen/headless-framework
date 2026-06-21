@@ -27,7 +27,15 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
 {
     private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public bool IsInitialized { get; private set; }
+    /// <summary>Gets a value indicating whether initialization has completed successfully.</summary>
+    /// <remarks>
+    /// Derived from the completion promise so it can never disagree with it: <c>true</c> only after a
+    /// successful (or skipped) run, and <c>false</c> while initialization is still in progress —
+    /// including the host-restart re-entry window — or when the run faulted or was canceled. Reading a
+    /// stored flag instead would report a stale <c>true</c> across a restart while the new
+    /// <see cref="InitializeAsync"/> is still running.
+    /// </remarks>
+    public bool IsInitialized => _completion.Task.IsCompletedSuccessfully;
 
     /// <summary>
     /// When <c>false</c>, <see cref="StartingAsync"/> skips <see cref="InitializeAsync"/> entirely
@@ -37,6 +45,9 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
     /// </summary>
     protected virtual bool RunOnStartup => true;
 
+    /// <summary>
+    /// Runs <see cref="InitializeAsync"/> on host start and propagates any exception it throws.
+    /// </summary>
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
         if (_completion.Task.IsCompleted)
@@ -55,7 +66,6 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
         {
             // Opt-out: skip the actual work but still complete so WaitForInitializationAsync waiters
             // are released. Used when the schema/topology is provisioned out-of-band.
-            IsInitialized = true;
             _completion.TrySetResult();
 
             return;
@@ -64,7 +74,6 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
         try
         {
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
-            IsInitialized = true;
             _completion.TrySetResult();
         }
         catch (Exception ex)
@@ -84,6 +93,15 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <summary>
+    /// Asynchronously waits until initialization completes. Re-throws any exception thrown by
+    /// <see cref="InitializeAsync"/>.
+    /// </summary>
+    /// <param name="cancellationToken">A token to observe while waiting for completion.</param>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is canceled, or when a prior run's wait is
+    /// superseded by a host restart.
+    /// </exception>
     public async Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
     {
         await _completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);

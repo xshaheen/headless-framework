@@ -97,6 +97,7 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
         return Headers.TryGetValue(Messaging.Headers.ExecutionInstanceId, out var value) ? value : null;
     }
 
+    /// <inheritdoc />
     public bool Equals(TransportMessage other)
     {
         if (Headers.Count != other.Headers.Count)
@@ -120,11 +121,13 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
         return Body.Span.SequenceEqual(other.Body.Span);
     }
 
+    /// <inheritdoc />
     public override bool Equals(object? obj)
     {
         return obj is TransportMessage other && Equals(other);
     }
 
+    /// <inheritdoc />
     public override int GetHashCode()
     {
         // Equals is order-independent (TryGetValue per key); GetHashCode must also be
@@ -169,11 +172,13 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
         return sample;
     }
 
+    /// <summary>Returns <see langword="true"/> when <paramref name="left"/> equals <paramref name="right"/>.</summary>
     public static bool operator ==(TransportMessage left, TransportMessage right)
     {
         return left.Equals(right);
     }
 
+    /// <summary>Returns <see langword="true"/> when <paramref name="left"/> does not equal <paramref name="right"/>.</summary>
     public static bool operator !=(TransportMessage left, TransportMessage right)
     {
         return !(left == right);

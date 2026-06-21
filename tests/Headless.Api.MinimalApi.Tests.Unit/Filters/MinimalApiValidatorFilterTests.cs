@@ -2,9 +2,12 @@
 
 using FluentValidation;
 using FluentValidation.Results;
+using Headless.Api.Abstractions;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using ValidationResult = FluentValidation.Results.ValidationResult;
 
@@ -60,22 +63,25 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_validation_problem_when_fails()
+    public async Task should_return_422_problem_when_validation_fails()
     {
         // given
+        var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = new ValidatorFilterTestRequestValidator();
-        var context = _CreateContext(new ValidatorFilterTestRequest("", "invalid-email"), [validator]);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("", "invalid-email"),
+            [validator],
+            creator: creator
+        );
         var next = _CreateNext();
 
         // when
         var result = await filter.InvokeAsync(context, next);
 
         // then
-        var (statusCode, errors) = await _ExecuteAndGetValidationErrors(result);
-        statusCode.Should().Be(StatusCodes.Status400BadRequest);
-        errors.Should().ContainKey("Name");
-        errors.Should().ContainKey("Email");
+        result.Should().BeAssignableTo<IResult>();
+        creator.Received(1).UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>());
     }
 
     #endregion
@@ -133,6 +139,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     public async Task should_aggregate_errors_from_multiple_validators()
     {
         // given
+        var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator1 = _CreateMockValidator(
             new ValidationResult([new ValidationFailure("Name", "Name error from validator 1")])
@@ -140,24 +147,34 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var validator2 = _CreateMockValidator(
             new ValidationResult([new ValidationFailure("Email", "Email error from validator 2")])
         );
-        var context = _CreateContext(new ValidatorFilterTestRequest("", "invalid"), [validator1, validator2]);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("", "invalid"),
+            [validator1, validator2],
+            creator: creator
+        );
         var next = _CreateNext();
 
         // when
-        var result = await filter.InvokeAsync(context, next);
+        await filter.InvokeAsync(context, next);
 
-        // then
-        var (_, errors) = await _ExecuteAndGetValidationErrors(result);
-        errors.Should().ContainKey("Name");
-        errors.Should().ContainKey("Email");
-        errors["Name"].Should().Contain("Name error from validator 1");
-        errors["Email"].Should().Contain("Email error from validator 2");
+        // then — ToErrorDescriptors() camelizes property keys: "Name" → "name", "Email" → "email"
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                    d.ContainsKey("name")
+                    && d.ContainsKey("email")
+                    && d["name"].Any(e => e.Description == "Name error from validator 1")
+                    && d["email"].Any(e => e.Description == "Email error from validator 2")
+                )
+            );
     }
 
     [Fact]
     public async Task should_group_errors_by_property_name()
     {
         // given
+        var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator1 = _CreateMockValidator(
             new ValidationResult([new ValidationFailure("Name", "Name must not be empty")])
@@ -165,27 +182,37 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var validator2 = _CreateMockValidator(
             new ValidationResult([new ValidationFailure("Name", "Name must be at least 3 characters")])
         );
-        var context = _CreateContext(new ValidatorFilterTestRequest("", "test@example.com"), [validator1, validator2]);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("", "test@example.com"),
+            [validator1, validator2],
+            creator: creator
+        );
         var next = _CreateNext();
 
         // when
-        var result = await filter.InvokeAsync(context, next);
+        await filter.InvokeAsync(context, next);
 
-        // then
-        var (_, errors) = await _ExecuteAndGetValidationErrors(result);
-        errors.Should().ContainKey("Name");
-        errors["Name"].Should().HaveCount(2);
-        errors["Name"].Should().Contain("Name must not be empty");
-        errors["Name"].Should().Contain("Name must be at least 3 characters");
+        // then — ToErrorDescriptors() camelizes keys: "Name" → "name"
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                    d.ContainsKey("name")
+                    && d["name"].Count == 2
+                    && d["name"].Any(e => e.Description == "Name must not be empty")
+                    && d["name"].Any(e => e.Description == "Name must be at least 3 characters")
+                )
+            );
     }
 
     [Fact]
     public async Task should_return_problem_when_request_type_mismatch()
     {
         // given
+        var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = new ValidatorFilterTestRequestValidator();
-        var context = _CreateContextWithMismatchedRequest(validator);
+        var context = _CreateContextWithMismatchedRequest(validator, creator);
         var next = _CreateNext();
 
         // when
@@ -193,6 +220,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
         // then
         result.Should().BeAssignableTo<IResult>();
+        creator.Received(1).BadRequest(error: Arg.Is<ErrorDescriptor>(e => e.Code == "g:invalid_request_type"));
     }
 
     #endregion
@@ -203,9 +231,10 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     public async Task should_handle_null_request_in_arguments()
     {
         // given
+        var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = new ValidatorFilterTestRequestValidator();
-        var context = _CreateContext(null, [validator]);
+        var context = _CreateContext(null, [validator], creator: creator);
         var next = _CreateNext();
 
         // when
@@ -213,6 +242,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
         // then
         result.Should().BeAssignableTo<IResult>();
+        creator.Received(1).BadRequest(error: Arg.Is<ErrorDescriptor>(e => e.Code == "g:invalid_request_type"));
     }
 
     [Fact]
@@ -225,7 +255,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var context = _CreateContext(
             new ValidatorFilterTestRequest("Name", "test@example.com"),
             [validator],
-            cts.Token
+            cancellationToken: cts.Token
         );
         var next = _CreateNext(new object());
 
@@ -240,44 +270,55 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     public async Task should_filter_null_validation_failures()
     {
         // given
+        var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var failures = new List<ValidationFailure> { new("Name", "Error"), null! };
         var validator = _CreateMockValidator(new ValidationResult(failures));
-        var context = _CreateContext(new ValidatorFilterTestRequest("", "test@example.com"), [validator]);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("", "test@example.com"),
+            [validator],
+            creator: creator
+        );
         var next = _CreateNext();
 
         // when
-        var result = await filter.InvokeAsync(context, next);
+        await filter.InvokeAsync(context, next);
 
-        // then
-        var (_, errors) = await _ExecuteAndGetValidationErrors(result);
-        errors.Should().ContainKey("Name");
-        errors["Name"].Should().HaveCount(1);
+        // then — only one non-null failure should be passed to the creator; key camelized to "name"
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d => d.ContainsKey("name") && d["name"].Count == 1)
+            );
     }
 
     [Fact]
-    public async Task should_use_ordinal_string_comparison_for_grouping()
+    public async Task should_camelize_property_keys_in_error_descriptors()
     {
-        // given - test case sensitivity with ordinal comparison
+        // given — ToErrorDescriptors() normalizes property paths to camelCase
+        var creator = _CreateProblemDetailsCreator();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
-        var validator1 = _CreateMockValidator(
-            new ValidationResult([new ValidationFailure("name", "lowercase name error")])
+        var validator = _CreateMockValidator(
+            new ValidationResult([new ValidationFailure("FirstName", "First name is required")])
         );
-        var validator2 = _CreateMockValidator(
-            new ValidationResult([new ValidationFailure("Name", "uppercase Name error")])
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("", "test@example.com"),
+            [validator],
+            creator: creator
         );
-        var context = _CreateContext(new ValidatorFilterTestRequest("", "test@example.com"), [validator1, validator2]);
         var next = _CreateNext();
 
         // when
-        var result = await filter.InvokeAsync(context, next);
+        await filter.InvokeAsync(context, next);
 
-        // then - ordinal comparison means "name" and "Name" are different keys
-        var (_, errors) = await _ExecuteAndGetValidationErrors(result);
-        errors.Should().ContainKey("name");
-        errors.Should().ContainKey("Name");
-        errors["name"].Should().HaveCount(1);
-        errors["Name"].Should().HaveCount(1);
+        // then — "FirstName" is camelized to "firstName"
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                    d.ContainsKey("firstName") && d["firstName"].Count == 1
+                )
+            );
     }
 
     #endregion
@@ -350,44 +391,29 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         return validator;
     }
 
-    private static async Task<(int StatusCode, Dictionary<string, string[]> Errors)> _ExecuteAndGetValidationErrors(
-        object? result
-    )
+    private static IProblemDetailsCreator _CreateProblemDetailsCreator()
     {
-        result.Should().NotBeNull();
-        var httpResult = result as IResult;
-        httpResult.Should().NotBeNull();
+        var creator = Substitute.For<IProblemDetailsCreator>();
 
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
+        creator
+            .BadRequest(detail: Arg.Any<string?>(), error: Arg.Any<ErrorDescriptor?>())
+            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Bad Request" });
 
-        var httpContext = new DefaultHttpContext { RequestServices = sp, Response = { Body = new MemoryStream() } };
-
-        await httpResult!.ExecuteAsync(httpContext);
-
-        httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
-        using var reader = new StreamReader(httpContext.Response.Body);
-        var body = await reader.ReadToEndAsync();
-
-        var problemDetails = JsonSerializer.Deserialize<JsonElement>(body);
-        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
-
-        if (problemDetails.TryGetProperty("errors", out var errorsElement))
-        {
-            foreach (var prop in errorsElement.EnumerateObject())
+        creator
+            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .Returns(ci => new ProblemDetails
             {
-                var values = prop.Value.EnumerateArray().Select(v => v.GetString()!).ToArray();
-                errors[prop.Name] = values;
-            }
-        }
+                Status = StatusCodes.Status422UnprocessableEntity,
+                Title = "Unprocessable Entity",
+            });
 
-        return (httpContext.Response.StatusCode, errors);
+        return creator;
     }
 
     private static EndpointFilterInvocationContext _CreateContext<TRequest>(
         TRequest? request,
         IReadOnlyList<IValidator<TRequest>>? validators = null,
+        IProblemDetailsCreator? creator = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -404,6 +430,10 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
             services.AddSingleton(validators);
         }
 
+        // Register IProblemDetailsCreator so the filter can resolve it when needed
+        var resolvedCreator = creator ?? _CreateProblemDetailsCreator();
+        services.AddSingleton(resolvedCreator);
+
         httpContext.RequestServices = services.BuildServiceProvider();
         httpContext.RequestAborted = cancellationToken;
 
@@ -415,7 +445,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     }
 
     private static EndpointFilterInvocationContext _CreateContextWithMismatchedRequest<TRequest>(
-        IValidator<TRequest> validator
+        IValidator<TRequest> validator,
+        IProblemDetailsCreator? creator = null
     )
     {
         var httpContext = new DefaultHttpContext();
@@ -423,6 +454,10 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(validator);
         services.AddSingleton<IEnumerable<IValidator<TRequest>>>([validator]);
+
+        var resolvedCreator = creator ?? _CreateProblemDetailsCreator();
+        services.AddSingleton(resolvedCreator);
+
         httpContext.RequestServices = services.BuildServiceProvider();
 
         var context = Substitute.For<EndpointFilterInvocationContext>();

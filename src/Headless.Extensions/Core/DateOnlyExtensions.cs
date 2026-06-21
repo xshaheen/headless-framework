@@ -15,6 +15,7 @@ public static class DateOnlyExtensions
     /// <param name="dateOnly">The <see cref="DateOnly"/> to convert.</param>
     /// <param name="timezone">The target <see cref="TimeZoneInfo"/>.</param>
     /// <returns>A <see cref="DateTimeOffset"/> representing the date at midnight in the specified timezone.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="timezone"/> is <see langword="null"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset AsTimezone(this DateOnly dateOnly, TimeZoneInfo timezone)
