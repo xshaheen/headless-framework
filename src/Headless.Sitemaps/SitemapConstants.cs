@@ -5,6 +5,7 @@ using Headless.Core;
 
 namespace Headless.Sitemaps;
 
+/// <summary>Shared constants for sitemap generation.</summary>
 [PublicAPI]
 public static class SitemapConstants
 {

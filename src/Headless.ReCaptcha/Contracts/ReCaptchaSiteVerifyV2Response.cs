@@ -2,6 +2,7 @@
 
 namespace Headless.ReCaptcha.Contracts;
 
+/// <summary>The response returned by the Google reCAPTCHA v2 siteverify API.</summary>
 public sealed class ReCaptchaSiteVerifyV2Response
 {
     /// <summary>Whether this request was a valid reCAPTCHA token for your site.</summary>

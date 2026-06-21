@@ -13,6 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.ReCaptcha;
 
+/// <summary>Extension members that register Google reCAPTCHA v2 or v3 verification services.</summary>
 [PublicAPI]
 public static class SetupReCaptcha
 {

@@ -4,6 +4,7 @@ using Headless.ReCaptcha.Internals;
 
 namespace Headless.ReCaptcha.Contracts;
 
+/// <summary>Error codes returned by the Google reCAPTCHA siteverify API.</summary>
 public enum ReCaptchaError
 {
     /// <summary>An unknown or unrecognized error code was returned by the API.</summary>
