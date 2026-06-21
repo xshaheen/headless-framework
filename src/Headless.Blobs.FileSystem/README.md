@@ -27,7 +27,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddFileSystemBlobStorage(options =>
 {
-    options.BasePath = Path.Combine(builder.Environment.ContentRootPath, "storage");
+    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage");
 });
 ```
 
@@ -38,7 +38,7 @@ builder.Services.AddFileSystemBlobStorage(options =>
 ```json
 {
   "FileSystemBlob": {
-    "BasePath": "/var/data/blobs"
+    "BaseDirectoryPath": "/var/data/blobs"
   }
 }
 ```
@@ -46,7 +46,7 @@ builder.Services.AddFileSystemBlobStorage(options =>
 ### Options
 
 ```csharp
-options.BasePath = "/path/to/storage";
+options.BaseDirectoryPath = "/path/to/storage";
 ```
 
 ## Dependencies
