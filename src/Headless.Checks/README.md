@@ -46,7 +46,7 @@ public void CreateUser(string name, int age, List<string> roles)
 - `Argument.IsInEnum(enumValue)`
 - `Argument.HasNoNulls(collection)`
 - `Argument.FileExists(path)` / `DirectoryExists(path)`
-- `Argument.Matches(string, regex)`
+- `Argument.Matches(string, regex)` — throws `ArgumentException` when the string does not match the pattern
 - `Argument.Is(condition, message, nameof(arg))` — custom argument precondition; throws `ArgumentException`
 
 ### Runtime Assertions
