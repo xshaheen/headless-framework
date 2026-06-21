@@ -8,18 +8,29 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.CommitCoordination.EntityFramework;
 
 /// <summary>
-/// Bridges EF Core's true post-commit/rollback transaction edges to the commit coordinator. Registered on the
-/// DbContext so a transaction enlisted via <c>DatabaseFacade.EnlistCommitCoordination</c> drains its enlisted
-/// work when the EF transaction commits, and discards it when the transaction rolls back.
+/// EF Core <see cref="DbTransactionInterceptor" /> that bridges the post-commit and post-rollback transaction
+/// edges to the commit coordination infrastructure.
 /// </summary>
 /// <remarks>
-/// Keyed off <see cref="IDbTransactionInterceptor.TransactionCommitted" /> (true post-commit on explicit
-/// transactions), not <c>ISaveChangesInterceptor.SavedChanges</c> which fires before an explicit
-/// <c>CommitAsync</c>. The signal source silently ignores transactions it never attached, so this interceptor
-/// is a no-op for uncoordinated transactions. Drain faults never escape these edges: the transaction outcome is
-/// already durable when they fire, so a propagating fault would surface a phantom failure (and, inside an EF
-/// execution strategy, re-run the delegate and double-apply); faults are logged and the work is relay-recovered —
-/// mirroring the sync paths and the PostgreSql/SqlServer helper guards.
+/// Registered on the <c>DbContext</c> options (automatically by the Headless ORM setup, or manually via
+/// <c>AddInterceptors</c> for plain <c>AddDbContext</c> registrations). When a transaction that was enrolled
+/// via <c>DatabaseFacade.EnlistCommitCoordination</c> commits or rolls back, the interceptor drives the
+/// corresponding signal on <see cref="EntityFrameworkCommitSignalSource" />, which drains registered callbacks.
+/// <para>
+/// The synchronous overrides (<see cref="TransactionCommitted" />, <see cref="TransactionRolledBack" />) fire
+/// the signal in the background (fire-and-forget) so the EF commit/rollback call does not block on the drain.
+/// The async overrides await the drain directly.
+/// </para>
+/// <para>
+/// Drain faults are logged and swallowed here: by the time these methods fire, the transaction outcome is
+/// already durable. Propagating a drain fault would surface a phantom failure to the caller (and, inside an EF
+/// execution strategy, cause the operation to be retried and double-applied). The enlisted durable rows are
+/// relay-recoverable.
+/// </para>
+/// <para>
+/// The interceptor is a no-op for transactions that were never enrolled in commit coordination — absent keys
+/// are silently ignored by <see cref="EntityFrameworkCommitSignalSource" />.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public sealed partial class CommitCoordinationTransactionInterceptor(

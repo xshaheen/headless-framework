@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.CommitCoordination;
 
 /// <summary>
-/// Registers commit coordination core services.
+/// Registers the core commit coordination services.
 /// </summary>
 [PublicAPI]
 public static class SetupCommitCoordination
@@ -14,10 +14,15 @@ public static class SetupCommitCoordination
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Adds the core commit coordination services. Idempotent: repeated calls do not stack duplicate
-        /// <see cref="ICurrentCommitCoordinator" /> descriptors.
+        /// Adds the core commit coordination infrastructure: the ambient scope stack,
+        /// <see cref="ICurrentCommitCoordinator" />, and <see cref="ICommitScopeFactory" />.
         /// </summary>
-        /// <returns>The service collection.</returns>
+        /// <remarks>
+        /// Idempotent: repeated calls register the services at most once. Provider packages
+        /// (<c>AddEntityFrameworkCommitCoordination</c>, <c>AddPostgreSqlCommitCoordination</c>, etc.) call
+        /// this internally, so consuming code normally does not need to call it directly.
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         public IServiceCollection AddCommitCoordination()
         {
             services.TryAddSingleton<CommitScopeStack>();

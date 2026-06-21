@@ -8,8 +8,16 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.CommitCoordination.EntityFramework;
 
 /// <summary>
-/// Correlates EF Core <c>IDbTransactionInterceptor</c> commit/rollback edges to commit coordination scopes.
+/// Correlates EF Core transaction commit and rollback edges — as reported by
+/// <see cref="CommitCoordinationTransactionInterceptor" /> — to the commit coordination scopes opened via
+/// <c>DatabaseFacade.EnlistCommitCoordination</c>.
 /// </summary>
+/// <remarks>
+/// Scopes are keyed by the underlying <c>DbTransaction</c> instance. When the interceptor fires,
+/// <see cref="SignalCommittedAsync" /> or <see cref="SignalRolledBackAsync" /> removes the scope by key and
+/// drains its registered callbacks. An absent key means the transaction was never enrolled in commit
+/// coordination — this is the normal case for uncoordinated transactions and is silently ignored.
+/// </remarks>
 [PublicAPI]
 public sealed partial class EntityFrameworkCommitSignalSource(
     ICommitScopeFactory scopeFactory,
@@ -37,15 +45,19 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         );
 
     /// <summary>
-    /// Signals a commit for the scope correlated to the given transaction, if one is attached.
+    /// Signals a commit for the scope correlated to the given transaction, draining its registered
+    /// <see cref="ICommitCoordinator.OnCommit" /> callbacks.
     /// </summary>
     /// <remarks>
     /// The interceptor fires for every EF transaction, most of which are not coordinated; an absent key is the
-    /// normal case and is silently ignored (never a warning).
+    /// normal case and is silently ignored without a warning.
     /// </remarks>
-    /// <param name="providerTransactionKey">The transaction correlation key (the intercepted <c>DbTransaction</c>).</param>
+    /// <param name="providerTransactionKey">
+    /// The transaction correlation key — the <c>DbTransaction</c> instance passed to the interceptor.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The signal task.</returns>
+    /// <returns>A task that completes when the drain has finished.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
@@ -77,11 +89,15 @@ public sealed partial class EntityFrameworkCommitSignalSource(
     }
 
     /// <summary>
-    /// Signals a rollback for the scope correlated to the given transaction, if one is attached.
+    /// Signals a rollback for the scope correlated to the given transaction, draining its registered
+    /// <see cref="ICommitCoordinator.OnRollback" /> callbacks.
     /// </summary>
-    /// <param name="providerTransactionKey">The transaction correlation key (the intercepted <c>DbTransaction</c>).</param>
+    /// <param name="providerTransactionKey">
+    /// The transaction correlation key — the <c>DbTransaction</c> instance passed to the interceptor.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The signal task.</returns>
+    /// <returns>A task that completes when the drain has finished.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",

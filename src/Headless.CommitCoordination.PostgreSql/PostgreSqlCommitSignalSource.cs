@@ -45,12 +45,17 @@ public sealed partial class PostgreSqlCommitSignalSource(
         );
 
     /// <summary>
-    /// Signals a commit for a previously attached provider transaction key.
+    /// Signals a commit for a previously attached scope, draining its registered
+    /// <see cref="ICommitCoordinator.OnCommit" /> callbacks.
     /// </summary>
     /// <remarks>An absent key is silently ignored — the normal case for an uncoordinated transaction.</remarks>
-    /// <param name="providerTransactionKey">The provider transaction key (the open <c>NpgsqlTransaction</c>).</param>
+    /// <param name="providerTransactionKey">
+    /// The provider transaction key — the <c>NpgsqlTransaction</c> instance passed to
+    /// <c>NpgsqlConnection.EnlistCommitCoordination</c>.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The signal task.</returns>
+    /// <returns>A task that completes when the drain has finished.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
@@ -69,11 +74,16 @@ public sealed partial class PostgreSqlCommitSignalSource(
     }
 
     /// <summary>
-    /// Signals a rollback for a previously attached provider transaction key.
+    /// Signals a rollback for a previously attached scope, draining its registered
+    /// <see cref="ICommitCoordinator.OnRollback" /> callbacks.
     /// </summary>
-    /// <param name="providerTransactionKey">The provider transaction key (the open <c>NpgsqlTransaction</c>).</param>
+    /// <param name="providerTransactionKey">
+    /// The provider transaction key — the <c>NpgsqlTransaction</c> instance passed to
+    /// <c>NpgsqlConnection.EnlistCommitCoordination</c>.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The signal task.</returns>
+    /// <returns>A task that completes when the drain has finished.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",

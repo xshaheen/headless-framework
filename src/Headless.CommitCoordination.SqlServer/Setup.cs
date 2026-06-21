@@ -15,9 +15,22 @@ public static class SetupSqlServerCommitCoordination
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Adds SQL Server commit coordination services.
+        /// Adds SQL Server commit coordination services: the core infrastructure, the out-of-band SqlClient
+        /// diagnostic observer, the <see cref="SqlServerCommitSignalSource" />, the startup diagnostic self-probe,
+        /// and the <see cref="SqlServerCommitDiagnosticProbeState" /> singleton.
         /// </summary>
-        /// <returns>The service collection.</returns>
+        /// <remarks>
+        /// SQL Server commit detection is out-of-band: a <c>DiagnosticListener</c> subscription on the SqlClient
+        /// diagnostic source fires after each native commit or rollback. The hosted service
+        /// (<c>SqlServerCommitDiagnosticHostedService</c>) subscribes at startup and unsubscribes on stop.
+        /// The startup self-probe verifies the diagnostic listener is firing; configure its behavior via
+        /// <paramref name="configure" />. Idempotent: repeated calls register each service at most once.
+        /// </remarks>
+        /// <param name="configure">
+        /// Optional delegate to configure <see cref="SqlServerCommitCoordinationOptions" /> (probe mode,
+        /// connection factory, timeout). When <see langword="null" />, defaults are used.
+        /// </param>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         public IServiceCollection AddSqlServerCommitCoordination(
             Action<SqlServerCommitCoordinationOptions>? configure = null
         )

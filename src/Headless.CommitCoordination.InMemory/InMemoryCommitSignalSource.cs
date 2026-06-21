@@ -6,8 +6,15 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.CommitCoordination.InMemory;
 
 /// <summary>
-/// Driven in-memory signal source for owners that explicitly signal commit or rollback.
+/// Caller-driven in-memory signal source for flows where the owner explicitly signals the commit or rollback
+/// outcome, rather than relying on a database diagnostic or interceptor.
 /// </summary>
+/// <remarks>
+/// This source is primarily used in tests and non-relational scenarios. The caller holds the
+/// <see cref="ICommitScope" /> returned by <see cref="Attach" />, performs its work, then calls
+/// <see cref="ICommitScope.SignalAsync" /> to drain the registered callbacks. Disposing the scope without
+/// signalling discards the enlisted work (treated as a rollback).
+/// </remarks>
 [PublicAPI]
 public sealed class InMemoryCommitSignalSource(ICommitScopeFactory scopeFactory) : ICommitSignalSource
 {
