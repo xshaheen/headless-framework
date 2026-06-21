@@ -8,12 +8,17 @@ using DataAnnotationsPhoneAttribute = System.ComponentModel.DataAnnotations.Phon
 
 namespace FluentValidation;
 
+/// <summary>FluentValidation extension rules for phone number and country code properties.</summary>
 [PublicAPI]
 public static class PhoneNumberValidators
 {
     private static readonly DataAnnotationsPhoneAttribute _PhoneAttribute = new();
     private static readonly PhoneNumberUtil _PhoneNumberUtil = PhoneNumberUtil.GetInstance();
 
+    /// <summary>
+    /// Validates that the nullable phone country code, when present, is greater than zero.
+    /// </summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, int?> PhoneCountryCode<T>(this IRuleBuilder<T, int?> builder)
     {
         return builder
@@ -21,6 +26,8 @@ public static class PhoneNumberValidators
             .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumberCountryCodeValidator());
     }
 
+    /// <summary>Validates that the phone country code is greater than zero.</summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, int> PhoneCountryCode<T>(this IRuleBuilder<T, int> builder)
     {
         return builder
@@ -110,6 +117,12 @@ public static class PhoneNumberValidators
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
     extension<T>(IRuleBuilder<T, string> builder)
     {
+        /// <summary>
+        /// Validates the phone number using the .NET <c>PhoneAttribute</c> heuristic (basic format
+        /// check only; does not verify the number against a country code).
+        /// Passes <see langword="null"/> and whitespace-only values through without failure.
+        /// </summary>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> BasicPhoneNumber()
         {
             return builder
@@ -117,6 +130,13 @@ public static class PhoneNumberValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber());
         }
 
+        /// <summary>
+        /// Validates a local phone number combined with a country code resolved at validation time
+        /// via <paramref name="countryCodeFunc"/>. The number is prepended with <c>+{countryCode}</c>
+        /// and parsed by libphonenumber. Passes <see langword="null"/> and whitespace-only values through without failure.
+        /// </summary>
+        /// <param name="countryCodeFunc">A function that extracts the numeric country code (e.g. 20 for Egypt) from the root object.</param>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptionsConditions<T, string> PhoneNumber(Func<T, int> countryCodeFunc)
         {
             return builder.Custom(
@@ -138,6 +158,12 @@ public static class PhoneNumberValidators
             );
         }
 
+        /// <summary>
+        /// Validates an E.164-style international phone number (must include country code prefix,
+        /// e.g. <c>+201234567890</c>). Parsed by libphonenumber.
+        /// Passes <see langword="null"/> and whitespace-only values through without failure.
+        /// </summary>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptionsConditions<T, string> InternationalPhoneNumber()
         {
             return builder.Custom(

@@ -7,6 +7,23 @@ using StackExchange.Redis;
 
 namespace Headless.Redis;
 
+/// <summary>
+/// Manages loading and evaluating Lua scripts on a Redis cluster, with automatic recovery from
+/// NOSCRIPT errors caused by topology changes (failover, node restart, script-cache flush).
+/// </summary>
+/// <remarks>
+/// Callers register one or more <see cref="RedisScriptDefinition"/> singletons, then call
+/// <see cref="LoadAsync"/> at startup to pre-load every script onto all writable nodes via
+/// <c>SCRIPT LOAD</c>. <see cref="EvaluateAsync"/> subsequently runs each script by SHA using
+/// <c>EVALSHA</c>. When a node returns <c>NOSCRIPT</c> (for example after a promoted replica or
+/// a cache flush), the loader falls back to plain <c>EVAL</c> for the affected call and resets
+/// the internal SHA cache so the next caller triggers a fresh reload.
+/// <para>
+/// Each concrete <see cref="RedisScriptDefinition"/> type must be represented by a single shared
+/// instance; the loader keys its cache on the concrete type and rejects duplicate instances of the
+/// same type.
+/// </para>
+/// </remarks>
 // ReSharper disable InconsistentNaming
 #pragma warning disable IDE1006
 public sealed class HeadlessRedisScriptsLoader(
@@ -28,6 +45,28 @@ public sealed class HeadlessRedisScriptsLoader(
 
     private ScriptsLoadState _state = new(1, new Dictionary<Type, LoadedRedisScript>());
 
+    /// <summary>
+    /// Loads all <paramref name="scriptDefinitions"/> onto every writable Redis node via
+    /// <c>SCRIPT LOAD</c>, skipping any already loaded. Safe to call concurrently and idempotently.
+    /// </summary>
+    /// <param name="scriptDefinitions">
+    /// The script definitions to load. Each concrete type must appear only once across all calls
+    /// (the same singleton instance). Duplicate types with the same instance are de-duplicated
+    /// silently; duplicate types with different instances throw <see cref="InvalidOperationException"/>.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the load operation.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="scriptDefinitions"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when multiple distinct instances of the same <see cref="RedisScriptDefinition"/>
+    /// concrete type are provided.
+    /// </exception>
+    /// <exception cref="RedisConnectionException">
+    /// Thrown when no writable Redis endpoints are reachable during the load.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is canceled or the per-load 30-second
+    /// timeout elapses.
+    /// </exception>
     public async ValueTask LoadAsync(
         IEnumerable<RedisScriptDefinition> scriptDefinitions,
         CancellationToken cancellationToken = default
@@ -142,8 +181,20 @@ public sealed class HeadlessRedisScriptsLoader(
     }
 
     /// <summary>
-    /// Evaluates a Lua script definition with automatic recovery from NOSCRIPT errors.
+    /// Evaluates a Lua script on <paramref name="db"/> with automatic recovery from NOSCRIPT errors.
     /// </summary>
+    /// <param name="db">The Redis database to execute the script on.</param>
+    /// <param name="scriptDefinition">The script to evaluate. Must be registered via <see cref="LoadAsync"/> beforehand, or it will be loaded on demand.</param>
+    /// <param name="parameters">Parameters passed to the Lua script (keys and argv), or <see langword="null"/> if the script takes no parameters.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The raw result returned by the Lua script.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="db"/> or <paramref name="scriptDefinition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="RedisConnectionException">
+    /// Thrown when no writable Redis endpoints are reachable during an on-demand script load.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is canceled.
+    /// </exception>
     public async Task<RedisResult> EvaluateAsync(
         IDatabase db,
         RedisScriptDefinition scriptDefinition,
@@ -179,7 +230,15 @@ public sealed class HeadlessRedisScriptsLoader(
         }
     }
 
-    /// <summary>Resets the scripts loaded state, forcing a reload on next operation.</summary>
+    /// <summary>
+    /// Clears all cached script SHAs, forcing a full reload on the next <see cref="LoadAsync"/>
+    /// or <see cref="EvaluateAsync"/> call.
+    /// </summary>
+    /// <remarks>
+    /// Called automatically when the multiplexer raises <c>ConnectionRestored</c> (a reconnected
+    /// node may have lost its script cache). May also be called manually after an out-of-band
+    /// topology change. The method is lock-free and safe to call concurrently.
+    /// </remarks>
     public void ResetScripts()
     {
         while (true)
@@ -208,6 +267,8 @@ public sealed class HeadlessRedisScriptsLoader(
     }
 
     /// <summary>Returns <c>true</c> when <paramref name="e"/> is a NOSCRIPT error from Redis.</summary>
+    /// <param name="e">The server exception to inspect.</param>
+    /// <returns><see langword="true"/> when the exception message starts with <c>NOSCRIPT</c>; otherwise <see langword="false"/>.</returns>
     public static bool IsNoScriptError(RedisServerException e)
     {
         return e.Message.StartsWith("NOSCRIPT", StringComparison.Ordinal);

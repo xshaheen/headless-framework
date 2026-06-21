@@ -74,18 +74,20 @@ public static class DbSeedersExtensions
 
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(
-                seeders.Select(x => x.GetType()),
-                token,
-                async (type, ct) =>
-                {
-                    var typeName = type.GetFriendlyTypeName();
-                    logger.LogSeedingUsing(typeName);
-                    await using var innerScope = services.CreateAsyncScope();
-                    var seeder = (ISeeder)innerScope.ServiceProvider.GetRequiredService(type);
-                    await seeder.SeedAsync(ct).ConfigureAwait(false);
-                }
-            );
+            await Parallel
+                .ForEachAsync(
+                    seeders.Select(x => x.GetType()),
+                    token,
+                    async (type, ct) =>
+                    {
+                        var typeName = type.GetFriendlyTypeName();
+                        logger.LogSeedingUsing(typeName);
+                        await using var innerScope = services.CreateAsyncScope();
+                        var seeder = (ISeeder)innerScope.ServiceProvider.GetRequiredService(type);
+                        await seeder.SeedAsync(ct).ConfigureAwait(false);
+                    }
+                )
+                .ConfigureAwait(false);
         }
         else
         {

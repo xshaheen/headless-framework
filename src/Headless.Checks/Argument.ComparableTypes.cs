@@ -124,9 +124,9 @@ public static partial class Argument
     /// </summary>
     /// <param name="minimumValue">The minimum value of the range.</param>
     /// <param name="maximumValue">The maximum value of the range.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="minimumValueParamName"></param>
-    /// <param name="maximumValueParamName"></param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
+    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
     /// <exception cref="ArgumentException">if the <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -157,10 +157,10 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="argumentParamName"></param>
-    /// <param name="minimumValueParamName"></param>
-    /// <param name="maximumValueParamName"></param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
+    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
+    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
     /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
@@ -197,10 +197,10 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="argumentParamName"></param>
-    /// <param name="minimumValueParamName"></param>
-    /// <param name="maximumValueParamName"></param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
+    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
+    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
     /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
@@ -237,10 +237,10 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="argumentParamName"></param>
-    /// <param name="minimumValueParamName"></param>
-    /// <param name="maximumValueParamName"></param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
+    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
+    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
     /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
@@ -277,10 +277,10 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="argumentParamName"></param>
-    /// <param name="minimumValueParamName"></param>
-    /// <param name="maximumValueParamName"></param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
+    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
+    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
     /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
@@ -317,10 +317,10 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="argumentParamName"></param>
-    /// <param name="minimumValueParamName"></param>
-    /// <param name="maximumValueParamName"></param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
+    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
+    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
     /// <returns><paramref name="argument" /> if every item is within range.</returns>
     /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">if any item in <paramref name="argument" /> is out of range.</exception>

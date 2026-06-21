@@ -17,6 +17,7 @@ namespace Microsoft.Extensions.Options;
 public sealed class OptionsMonitorWrapper<TOptions>(TOptions options) : IOptionsMonitor<TOptions>
     where TOptions : class
 {
+    /// <summary>Gets the fixed options value. Always returns the value provided at construction.</summary>
     public TOptions CurrentValue { get; } = options;
 
     /// <summary>Returns <see cref="CurrentValue"/> regardless of <paramref name="name"/>.</summary>

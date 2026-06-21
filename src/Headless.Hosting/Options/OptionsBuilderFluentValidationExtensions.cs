@@ -7,10 +7,17 @@ using Microsoft.Extensions.DependencyInjection;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Options;
 
+/// <summary>
+/// Extension methods that wire FluentValidation validators into the <see cref="OptionsBuilder{TOptions}"/> pipeline.
+/// </summary>
 [PublicAPI]
 public static class OptionsBuilderFluentValidationExtensions
 {
-    /// <summary>Register this options instance for validation of its fluent validation.</summary>
+    /// <summary>
+    /// Registers an <see cref="IValidateOptions{TOptions}"/> that resolves an
+    /// <c>IValidator&lt;TOptions&gt;</c> from DI and validates the options instance at startup (when
+    /// chained with <c>ValidateOnStart()</c>).
+    /// </summary>
     /// <typeparam name="TOptions">The options type to be configured.</typeparam>
     /// <param name="optionsBuilder">The options builder to add the services to.</param>
     /// <returns>The <see cref="OptionsBuilder{TOptions}"/> so that additional calls can be chained.</returns>

@@ -13,6 +13,7 @@ namespace Microsoft.Extensions.Options;
 public sealed class OptionsSnapshotWrapper<TOptions>(TOptions options) : IOptionsSnapshot<TOptions>
     where TOptions : class
 {
+    /// <summary>Gets the fixed options value. Always returns the value provided at construction.</summary>
     public TOptions Value { get; } = options;
 
     /// <summary>Returns <see cref="Value"/> regardless of <paramref name="name"/>.</summary>

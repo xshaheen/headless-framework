@@ -17,6 +17,10 @@ public abstract class RedisScriptDefinition
 {
     private readonly LuaScript _script;
 
+    /// <summary>Initializes a new script definition from raw Lua source.</summary>
+    /// <param name="source">The Lua script body. Must not be null, empty, or whitespace.</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="source"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
     protected RedisScriptDefinition(string source)
     {
         Argument.IsNotNullOrWhiteSpace(source);
@@ -25,6 +29,7 @@ public abstract class RedisScriptDefinition
         _script = LuaScript.Prepare(source);
     }
 
+    /// <summary>Gets the name of this script definition, derived from the concrete type name.</summary>
     public string Name { get; }
 
     internal Task<LoadedLuaScript> LoadAsync(IServer server)

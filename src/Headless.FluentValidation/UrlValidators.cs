@@ -6,6 +6,7 @@ using Headless.Primitives;
 
 namespace FluentValidation;
 
+/// <summary>FluentValidation extension rules for URL and CORS origin string properties.</summary>
 [PublicAPI]
 public static class UrlValidators
 {
@@ -14,7 +15,7 @@ public static class UrlValidators
     {
         /// <summary>
         /// Validates that the value is any absolute URI. Accepts every scheme, including
-        /// <c>javascript:</c> and <c>data:</c>; use <see cref="HttpUrl"/> or <see cref="HttpsOnlyUrl"/>
+        /// <c>javascript:</c> and <c>data:</c>; use <c>HttpUrl</c> or <c>HttpsOnlyUrl</c>
         /// for any URL that will be rendered in markup or dereferenced.
         /// </summary>
         public IRuleBuilderOptions<T, string> Url()
@@ -23,6 +24,11 @@ public static class UrlValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Urls.InvalidUrl());
         }
 
+        /// <summary>
+        /// Validates that the value is an absolute <c>http://</c> or <c>https://</c> URL.
+        /// Passes <see langword="null"/> through without failure.
+        /// </summary>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> HttpUrl()
         {
             return _SchemeUrl(
@@ -33,26 +39,57 @@ public static class UrlValidators
             );
         }
 
+        /// <summary>
+        /// Validates that the value is an absolute <c>https://</c> URL.
+        /// Passes <see langword="null"/> through without failure.
+        /// </summary>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> HttpsOnlyUrl()
         {
             return _SchemeUrl(rule, scheme => string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.Ordinal));
         }
 
+        /// <summary>
+        /// Validates that the value is an absolute <c>file://</c> URL.
+        /// Passes <see langword="null"/> through without failure.
+        /// </summary>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> FileUrl()
         {
             return _SchemeUrl(rule, scheme => string.Equals(scheme, Uri.UriSchemeFile, StringComparison.Ordinal));
         }
 
+        /// <summary>
+        /// Validates that the value is an absolute <c>ftp://</c> URL.
+        /// Passes <see langword="null"/> through without failure.
+        /// </summary>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> FtpUrl()
         {
             return _SchemeUrl(rule, scheme => string.Equals(scheme, Uri.UriSchemeFtp, StringComparison.Ordinal));
         }
 
+        /// <summary>
+        /// Validates that the value is an absolute <c>mailto:</c> URL.
+        /// Passes <see langword="null"/> through without failure.
+        /// </summary>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, string> MailtoUrl()
         {
             return _SchemeUrl(rule, scheme => string.Equals(scheme, Uri.UriSchemeMailto, StringComparison.Ordinal));
         }
 
+        /// <summary>
+        /// Validates that the value is a well-formed CORS origin: an absolute
+        /// <c>http://</c> or <c>https://</c> URI with no path, query, fragment, or trailing slash
+        /// (for example <c>https://example.com</c> or <c>https://example.com:8080</c>), or the
+        /// wildcard <c>*</c>. Passes <see langword="null"/> through without failure.
+        /// </summary>
+        /// <remarks>
+        /// Surrounding whitespace causes a format failure — trimmed values are never valid Origin
+        /// headers and the raw string must match exactly.
+        /// </remarks>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptionsConditions<T, string> CorsOrigin()
         {
             return rule.Custom(

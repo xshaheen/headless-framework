@@ -5,9 +5,12 @@ using Headless.Validators;
 
 namespace FluentValidation;
 
+/// <summary>FluentValidation extension rules for geographic coordinate values.</summary>
 [PublicAPI]
 public static class GeoValidators
 {
+    /// <summary>Validates that the value is a valid latitude in the range [-90, 90].</summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, double> Latitude<T>(this IRuleBuilder<T, double> builder)
     {
         return builder
@@ -15,6 +18,8 @@ public static class GeoValidators
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
     }
 
+    /// <summary>Validates that the value is a valid latitude in the range [-90, 90]. Passes <see langword="null"/> through without failure.</summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, double?> Latitude<T>(this IRuleBuilder<T, double?> builder)
     {
         return builder
@@ -22,6 +27,8 @@ public static class GeoValidators
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
     }
 
+    /// <summary>Validates that the value is a valid longitude in the range [-180, 180].</summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, double> Longitude<T>(this IRuleBuilder<T, double> builder)
     {
         return builder
@@ -29,6 +36,8 @@ public static class GeoValidators
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
     }
 
+    /// <summary>Validates that the value is a valid longitude in the range [-180, 180]. Passes <see langword="null"/> through without failure.</summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, double?> Longitude<T>(this IRuleBuilder<T, double?> builder)
     {
         return builder
@@ -37,6 +46,11 @@ public static class GeoValidators
     }
 
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    /// <summary>
+    /// Validates that the string value, when parsed as a decimal number, represents a valid latitude
+    /// in the range [-90, 90]. Passes <see langword="null"/> through without failure.
+    /// </summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, string> Latitude<T>(this IRuleBuilder<T, string> builder)
 #nullable restore
     {
@@ -52,6 +66,11 @@ public static class GeoValidators
     }
 
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    /// <summary>
+    /// Validates that the string value, when parsed as a decimal number, represents a valid longitude
+    /// in the range [-180, 180]. Passes <see langword="null"/> through without failure.
+    /// </summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, string> Longitude<T>(this IRuleBuilder<T, string> builder)
 #nullable restore
     {

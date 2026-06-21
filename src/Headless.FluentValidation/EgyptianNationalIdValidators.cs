@@ -5,10 +5,16 @@ using Headless.Validators;
 
 namespace FluentValidation;
 
+/// <summary>FluentValidation extension rules for Egyptian national ID numbers.</summary>
 [PublicAPI]
 public static class EgyptianNationalIdValidators
 {
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    /// <summary>
+    /// Validates an Egyptian national ID (14-digit number with a valid birth date and governorate code).
+    /// Passes <see langword="null"/> values through without failure.
+    /// </summary>
+    /// <returns>The rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, string> EgyptianNationalId<T>(this IRuleBuilder<T, string> builder)
 #nullable restore
     {

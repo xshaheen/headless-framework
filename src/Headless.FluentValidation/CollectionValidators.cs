@@ -5,12 +5,17 @@ using Headless.Checks;
 
 namespace FluentValidation;
 
+/// <summary>FluentValidation extension rules for <see cref="IEnumerable{T}"/> collection properties.</summary>
 [PublicAPI]
 public static class CollectionValidators
 {
 #nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
     extension<T, TElement>(IRuleBuilder<T, IEnumerable<TElement>> builder)
     {
+        /// <summary>Validates that the collection contains at most <paramref name="maxElements"/> elements.</summary>
+        /// <param name="maxElements">The maximum allowed number of elements. Must be positive.</param>
+        /// <returns>The rule builder options for chaining.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="maxElements"/> is not positive.</exception>
         public IRuleBuilderOptions<T, IEnumerable<TElement>> MaximumElements(int maxElements)
         {
             Argument.IsPositive(maxElements);
@@ -44,6 +49,10 @@ public static class CollectionValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MaximumElementsValidator());
         }
 
+        /// <summary>Validates that the collection contains at least <paramref name="minElements"/> elements.</summary>
+        /// <param name="minElements">The minimum required number of elements. Must be zero or positive.</param>
+        /// <returns>The rule builder options for chaining.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="minElements"/> is negative.</exception>
         public IRuleBuilderOptions<T, IEnumerable<TElement>> MinimumElements(int minElements)
         {
             Argument.IsPositiveOrZero(minElements);
@@ -77,6 +86,9 @@ public static class CollectionValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MinimumElementsValidator());
         }
 
+        /// <summary>Validates that all elements in the collection are distinct.</summary>
+        /// <param name="comparer">An optional equality comparer. Uses the default comparer when <see langword="null"/>.</param>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, IEnumerable<TElement>> UniqueElements(IEqualityComparer<TElement> comparer = null)
         {
             return builder
@@ -115,6 +127,13 @@ public static class CollectionValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator());
         }
 
+        /// <summary>
+        /// Validates that all elements produce distinct keys according to <paramref name="keySelector"/>.
+        /// </summary>
+        /// <typeparam name="TKey">The type of the key extracted from each element.</typeparam>
+        /// <param name="keySelector">A function that extracts the comparison key from each element.</param>
+        /// <param name="comparer">An optional equality comparer for keys. Uses the default comparer when <see langword="null"/>.</param>
+        /// <returns>The rule builder options for chaining.</returns>
         public IRuleBuilderOptions<T, IEnumerable<TElement>> UniqueElements<TKey>(
             Func<TElement, TKey> keySelector,
             IEqualityComparer<TKey> comparer = null
