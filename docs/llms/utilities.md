@@ -101,7 +101,7 @@ packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstracti
   - [Problem Solved](#problem-solved-8)
   - [Key Features](#key-features-8)
   - [Installation](#installation-8)
-  - [Usage](#usage-6)
+  - [Usage](#usage-5)
     - [Basic Usage](#basic-usage)
     - [Custom Options](#custom-options)
     - [Character Replacements](#character-replacements)

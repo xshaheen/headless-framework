@@ -26,7 +26,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
         - [Structured Logging](#structured-logging)
-        - [Retry with Backoff](#retry-with-backoff)
+        - [Retry and Deferred Execution](#retry-and-deferred-execution)
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
@@ -285,7 +285,7 @@ logger.LogInformation(
 );
 ```
 
-### Retry / Deferred Execution
+### Retry and Deferred Execution
 
 For retries and delayed execution, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
 

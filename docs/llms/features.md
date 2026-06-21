@@ -32,7 +32,7 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
   - [Quick Start](#quick-start)
   - [Configuration](#configuration-1)
     - [FeatureManagementOptions](#featuremanagementoptions)
-    - [FeaturesStorageOptions](#featuresstorageoptionssection)
+    - [FeaturesStorageOptions](#featuresstorageoptions)
   - [Dependencies](#dependencies-1)
   - [Side Effects](#side-effects-1)
 - [Headless.Features.Storage.EntityFramework](#headlessfeaturesstorageentityframework)

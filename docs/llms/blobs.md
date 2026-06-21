@@ -72,7 +72,7 @@ packages: Blobs.Abstractions, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.
   - [Installation](#installation-6)
   - [Quick Start](#quick-start-5)
   - [Configuration](#configuration-6)
-    - [appsettings.json](#appsettingsjson-5)
+    - [appsettings.json](#appsettingsjson-4)
   - [Behavior Notes](#behavior-notes)
   - [Dependencies](#dependencies-6)
   - [Side Effects](#side-effects-6)
