@@ -33,7 +33,7 @@ public sealed class ReCaptchaSetupTests
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
-                new Dictionary<string, string?>
+                new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
                     ["Headless:Captcha:ReCaptchaV3:SiteKey"] = "cfg-key",
                     ["Headless:Captcha:ReCaptchaV3:SiteSecret"] = "cfg-secret",
