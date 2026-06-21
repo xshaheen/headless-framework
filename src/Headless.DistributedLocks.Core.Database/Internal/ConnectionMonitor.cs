@@ -82,7 +82,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
     /// <summary>Protects all mutable state. The weak reference is a stable, otherwise-unused lock object.</summary>
     private object Lock => _weakConnection;
 
-    private bool _HasRegisteredMonitoringHandlesNoLock =>
+    private bool HasRegisteredMonitoringHandlesNoLock =>
         (_monitoringHandleRegistrations?.Count).GetValueOrDefault() != 0;
 
     /// <summary>
@@ -102,7 +102,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             {
                 // If we're monitoring then the connection is almost constantly in use (the long sleep probe). Fire
                 // state changed to cancel that probe and let this acquirer in.
-                if (_state == State.Active && _HasRegisteredMonitoringHandlesNoLock)
+                if (_state == State.Active && HasRegisteredMonitoringHandlesNoLock)
                 {
                     _FireStateChangedNoLock();
                 }
@@ -140,7 +140,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             if (
                 !_StartMonitorWorkerIfNeededNoLock()
                 && _state == State.Active
-                && !_HasRegisteredMonitoringHandlesNoLock
+                && !HasRegisteredMonitoringHandlesNoLock
                 && TimeSpanCadence.CompareWithInfinite(keepaliveCadence, originalKeepaliveCadence) < 0
             )
             {
@@ -183,7 +183,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
                 return NullHandle.Instance;
             }
 
-            var hadRegisteredMonitoringHandles = _HasRegisteredMonitoringHandlesNoLock;
+            var hadRegisteredMonitoringHandles = HasRegisteredMonitoringHandlesNoLock;
 
             var connectionLostTokenSource = new CancellationTokenSource();
             var handle = new MonitoringHandle(this, connectionLostTokenSource.Token);
@@ -232,7 +232,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
                     _CloseOrCancelMonitoringHandleRegistrationsNoLock(isCancel: true);
                 }
 
-                Debug.Assert(!_HasRegisteredMonitoringHandlesNoLock);
+                Debug.Assert(!HasRegisteredMonitoringHandlesNoLock);
             }
         }
         else if (args is { OriginalState: not ConnectionState.Open, CurrentState: ConnectionState.Open })
@@ -392,7 +392,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         }
 
         // nothing to do
-        if (_keepaliveCadence == Timeout.InfiniteTimeSpan && !_HasRegisteredMonitoringHandlesNoLock)
+        if (_keepaliveCadence == Timeout.InfiniteTimeSpan && !HasRegisteredMonitoringHandlesNoLock)
         {
             return false;
         }
@@ -458,7 +458,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             }
 
             keepaliveCadence = _keepaliveCadence;
-            isMonitoring = _HasRegisteredMonitoringHandlesNoLock;
+            isMonitoring = HasRegisteredMonitoringHandlesNoLock;
             stateChangedToken = _monitorStateChangedTokenSource!.Token;
         }
 
@@ -599,12 +599,8 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         private ConnectionMonitor? _monitor = monitor;
 #pragma warning restore CA2213
 
-        private CancellationToken _ConnectionLostToken { get; } = connectionLostToken;
-
         public CancellationToken ConnectionLostToken =>
-            Volatile.Read(ref _monitor) is not null
-                ? _ConnectionLostToken
-                : throw new ObjectDisposedException("handle");
+            Volatile.Read(ref _monitor) is not null ? connectionLostToken : throw new ObjectDisposedException("handle");
 
         public void Dispose()
         {

@@ -97,7 +97,7 @@ internal static class RecordingTransportRecorder
 
         if (message.Body.Length > 0 && messageTypeName != null)
         {
-            var resolvedType = ResolveType(messageTypeName);
+            var resolvedType = _ResolveType(messageTypeName);
 
             if (resolvedType != null)
             {
@@ -122,7 +122,7 @@ internal static class RecordingTransportRecorder
         store.Record(recorded, MessageObservationType.Published);
     }
 
-    private static Type? ResolveType(string typeName) =>
+    private static Type? _ResolveType(string typeName) =>
         _TypeCache.GetOrAdd(
             typeName,
             static name =>

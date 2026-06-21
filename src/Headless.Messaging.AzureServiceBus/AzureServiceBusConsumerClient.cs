@@ -134,14 +134,14 @@ internal sealed class AzureServiceBusConsumerClient(
         {
             if (processor.IsSessionProcessor)
             {
-                processor.ProcessSessionMessageAsync += _serviceBusProcessor_ProcessSessionMessageAsync;
+                processor.ProcessSessionMessageAsync += _ServiceBusProcessor_ProcessSessionMessageAsync;
             }
             else
             {
-                processor.ProcessMessageAsync += _serviceBusProcessor_ProcessMessageAsync;
+                processor.ProcessMessageAsync += _ServiceBusProcessor_ProcessMessageAsync;
             }
 
-            processor.ProcessErrorAsync += _serviceBusProcessor_ProcessErrorAsync;
+            processor.ProcessErrorAsync += _ServiceBusProcessor_ProcessErrorAsync;
         }
 
         await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
@@ -267,7 +267,7 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
-    private Task _serviceBusProcessor_ProcessErrorAsync(ProcessErrorEventArgs args)
+    private Task _ServiceBusProcessor_ProcessErrorAsync(ProcessErrorEventArgs args)
     {
         var exceptionMessage =
             $"- Identifier: {args.Identifier}"
@@ -285,7 +285,7 @@ internal sealed class AzureServiceBusConsumerClient(
         return Task.CompletedTask;
     }
 
-    private async Task _serviceBusProcessor_ProcessMessageAsync(ProcessMessageEventArgs arg)
+    private async Task _ServiceBusProcessor_ProcessMessageAsync(ProcessMessageEventArgs arg)
     {
         var context = _ConvertMessage(arg.Message);
 
@@ -307,7 +307,7 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
-    private async Task _serviceBusProcessor_ProcessSessionMessageAsync(ProcessSessionMessageEventArgs arg)
+    private async Task _ServiceBusProcessor_ProcessSessionMessageAsync(ProcessSessionMessageEventArgs arg)
     {
         var context = _ConvertMessage(arg.Message);
 

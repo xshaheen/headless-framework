@@ -156,8 +156,8 @@ internal static class DashboardEndpoints
             .WithSummary("Update cron job");
 
         apiGroup
-            .MapPost("/cron-job/run", RunCronJobOnDemand<TTimeJob, TCronJob>)
-            .WithName("RunCronJobOnDemand")
+            .MapPost("/cron-job/run", _RunCronJobOnDemand<TTimeJob, TCronJob>)
+            .WithName("_RunCronJobOnDemand")
             .WithSummary("Run cron job on demand");
 
         apiGroup
@@ -695,7 +695,7 @@ internal static class DashboardEndpoints
         );
     }
 
-    private static async Task<IResult> RunCronJobOnDemand<TTimeJob, TCronJob>(
+    private static async Task<IResult> _RunCronJobOnDemand<TTimeJob, TCronJob>(
         Guid id,
         IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         CancellationToken cancellationToken

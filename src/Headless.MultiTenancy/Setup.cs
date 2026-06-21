@@ -28,7 +28,7 @@ public static class SetupHeadlessTenancy
         Argument.IsNotNull(builder);
         Argument.IsNotNull(configure);
 
-        var manifest = builder.Services._AddHeadlessTenancyCore();
+        var manifest = builder.Services.AddHeadlessTenancyCore();
         configure(new HeadlessTenancyBuilder(builder, manifest));
 
         return builder;
@@ -38,7 +38,7 @@ public static class SetupHeadlessTenancy
     /// <param name="services">The service collection.</param>
     /// <returns>The singleton manifest instance registered in the service collection.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
-    internal static TenantPostureManifest _AddHeadlessTenancyCore(this IServiceCollection services)
+    internal static TenantPostureManifest AddHeadlessTenancyCore(this IServiceCollection services)
     {
         Argument.IsNotNull(services);
 

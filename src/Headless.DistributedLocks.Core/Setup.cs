@@ -18,7 +18,7 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public static class SetupDistributedLocks
 {
-    private const string ProvidersHint = "`UseInMemory`, `UseRedis`, `UsePostgreSql`, or `UseSqlServer`";
+    private const string _ProvidersHint = "`UseInMemory`, `UseRedis`, `UsePostgreSql`, or `UseSqlServer`";
 
     extension(IServiceCollection services)
     {
@@ -87,15 +87,15 @@ public static class SetupDistributedLocks
         {
             throw new InvalidOperationException(
                 extensionCount == 0
-                    ? $"Headless.DistributedLocks requires exactly one provider. Call one of {ProvidersHint}."
-                    : $"Headless.DistributedLocks requires exactly one provider. Multiple providers were configured; call only one of {ProvidersHint}."
+                    ? $"Headless.DistributedLocks requires exactly one provider. Call one of {_ProvidersHint}."
+                    : $"Headless.DistributedLocks requires exactly one provider. Multiple providers were configured; call only one of {_ProvidersHint}."
             );
         }
 
         if (services.Any(static descriptor => descriptor.ServiceType == typeof(DistributedLocksProviderRegistration)))
         {
             throw new InvalidOperationException(
-                $"Headless.DistributedLocks requires exactly one provider. Multiple providers were configured; call only one of {ProvidersHint}."
+                $"Headless.DistributedLocks requires exactly one provider. Multiple providers were configured; call only one of {_ProvidersHint}."
             );
         }
 

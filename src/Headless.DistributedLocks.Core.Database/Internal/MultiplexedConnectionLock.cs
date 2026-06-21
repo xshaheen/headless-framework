@@ -40,7 +40,7 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         _connection = connection;
     }
 
-    private bool _IsConnectionBrokenNoLock => _connectionOpened && !_connection.CanExecuteQueries;
+    private bool IsConnectionBrokenNoLock => _connectionOpened && !_connection.CanExecuteQueries;
 
     /// <summary>
     /// Attempts to acquire an advisory lock for <paramref name="name"/> on the shared connection.
@@ -84,7 +84,7 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         try
         {
             // Redundant with the catch below, but avoids issuing a query on a connection we already know is broken.
-            if (opportunistic && _IsConnectionBrokenNoLock)
+            if (opportunistic && IsConnectionBrokenNoLock)
             {
                 return _GetAlreadyBrokenResultNoLock();
             }
@@ -131,12 +131,12 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         // Never punish the caller for a connection that was already broken (https://github.com/madelson/DistributedLock/issues/83):
         // the broken connection — not the caller's request — is the failure, and the pool retries it on a fresh lock.
         // The same applies to a transient failure re-opening an idle pooled connection on the opportunistic path: the
-        // open faults before _connectionOpened flips, so _IsConnectionBrokenNoLock (which requires it) would miss it
+        // open faults before _connectionOpened flips, so IsConnectionBrokenNoLock (which requires it) would miss it
         // and let the exception fault the whole acquire loop. A not-yet-opened connection holds no locks (you cannot
         // hold an advisory lock on a closed connection), so treat the failed reuse like a broken connection and retry
         // on a fresh lock rather than failing the caller.
 #pragma warning disable ERP022
-        catch when (opportunistic && (_IsConnectionBrokenNoLock || !_connectionOpened))
+        catch when (opportunistic && (IsConnectionBrokenNoLock || !_connectionOpened))
         {
             return _GetAlreadyBrokenResultNoLock();
         }

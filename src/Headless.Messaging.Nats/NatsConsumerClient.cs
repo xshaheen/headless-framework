@@ -303,7 +303,7 @@ internal sealed class NatsConsumerClient(
                             }
                         );
 
-                        retryDelay = _NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
+                        retryDelay = NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
@@ -317,7 +317,7 @@ internal sealed class NatsConsumerClient(
                             }
                         );
 
-                        retryDelay = _NextBackoff(retryDelay);
+                        retryDelay = NextBackoff(retryDelay);
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
@@ -346,7 +346,7 @@ internal sealed class NatsConsumerClient(
                     }
                 );
 
-                retryDelay = _NextBackoff(retryDelay);
+                retryDelay = NextBackoff(retryDelay);
                 await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -407,7 +407,7 @@ internal sealed class NatsConsumerClient(
         );
     }
 
-    internal static TimeSpan _NextBackoff(TimeSpan current, TimeSpan floor = default)
+    internal static TimeSpan NextBackoff(TimeSpan current, TimeSpan floor = default)
     {
         var ceiling = TimeSpan.FromSeconds(30);
         var next = TimeSpan.FromTicks(Math.Min(current.Ticks * 2, ceiling.Ticks));

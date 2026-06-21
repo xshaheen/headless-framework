@@ -894,7 +894,7 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         foreach (var shard in shards)
         {
-            var mapField = shard!.GetType().GetField("Map", BindingFlags.Instance | BindingFlags.NonPublic);
+            var mapField = shard!.GetType().GetField("_map", BindingFlags.Instance | BindingFlags.NonPublic);
             var map = (System.Collections.IDictionary)mapField!.GetValue(shard)!;
             total += map.Count;
         }

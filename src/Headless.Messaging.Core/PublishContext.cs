@@ -78,7 +78,7 @@ public abstract class PublishContext
     /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
     public void SetCancellationToken(CancellationToken cancellationToken)
     {
-        _ThrowIfCompleted();
+        ThrowIfCompleted();
         CancellationToken = cancellationToken;
     }
 
@@ -91,7 +91,7 @@ public abstract class PublishContext
     /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
     public void WithOptions(MessageOptions? options)
     {
-        _ThrowIfCompleted();
+        ThrowIfCompleted();
         OptionsCore = options;
         RefreshOptionSnapshot(options);
     }
@@ -104,7 +104,7 @@ public abstract class PublishContext
     /// <exception cref="InvalidOperationException">Thrown when called after the publish pipeline has completed (R10).</exception>
     public void WithDelayTime(TimeSpan? delayTime)
     {
-        _ThrowIfCompleted();
+        ThrowIfCompleted();
         DelayTimeCore = delayTime;
     }
 
@@ -125,7 +125,7 @@ public abstract class PublishContext
         IsCompleted = true;
     }
 
-    private protected void _ThrowIfCompleted()
+    private protected void ThrowIfCompleted()
     {
         if (IsCompleted)
         {

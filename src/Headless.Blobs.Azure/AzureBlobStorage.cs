@@ -232,11 +232,11 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return _DeleteAllAsync(container, blobSearchPattern, pageSize: 500, cancellationToken);
+        return DeleteAllAsync(container, blobSearchPattern, pageSize: 500, cancellationToken);
     }
 
     // pageSize is a test seam so the multi-page deletion path can be exercised without seeding 500+ blobs.
-    internal async ValueTask<int> _DeleteAllAsync(
+    internal async ValueTask<int> DeleteAllAsync(
         string[] container,
         string? blobSearchPattern,
         int pageSize,

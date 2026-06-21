@@ -19,7 +19,7 @@ public sealed class RestartThrottleManager(Action onRestartTriggered) : IDisposa
             // Create timer only when first needed
             if (_debounceTimer == null)
             {
-                _debounceTimer = new Timer(OnTimerCallback, null, _debounceWindow, Timeout.InfiniteTimeSpan);
+                _debounceTimer = new Timer(_OnTimerCallback, null, _debounceWindow, Timeout.InfiniteTimeSpan);
             }
             else
             {
@@ -29,7 +29,7 @@ public sealed class RestartThrottleManager(Action onRestartTriggered) : IDisposa
         }
     }
 
-    private void OnTimerCallback(object? state)
+    private void _OnTimerCallback(object? state)
     {
         lock (_lock)
         {

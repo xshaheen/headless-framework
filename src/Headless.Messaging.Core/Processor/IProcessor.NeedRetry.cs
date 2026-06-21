@@ -36,8 +36,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private Task? _publishedRetryConsumeTask;
 
     // Threading contract:
-    // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
-    // - _currentIntervalTicks is mutated by both _AdjustPollingInterval (sequential) and
+    // - AdjustPollingInterval is called only from ProcessAsync (sequential).
+    // - _currentIntervalTicks is mutated by both AdjustPollingInterval (sequential) and
     //   ResetBackpressureAsync (callable from any thread). All mutations use CAS loops
     //   (Interlocked.CompareExchange) to avoid non-atomic read-modify-write races.
     // - _consecutiveHealthyCycles and _consecutiveCleanCycles are written by both ProcessAsync
@@ -414,7 +414,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             var hadPickupFailure = Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 0) != 0;
             if (!hadPickupFailure)
             {
-                _AdjustPollingInterval(enqueued, skippedCircuitOpen);
+                AdjustPollingInterval(enqueued, skippedCircuitOpen);
             }
         }
     }
@@ -537,7 +537,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     /// All mutations of _currentIntervalTicks use CAS (CompareExchange) loops to avoid
     /// non-atomic read-modify-write races with concurrent ResetBackpressureAsync calls.
     /// </summary>
-    internal void _AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
+    internal void AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
     {
         var total = enqueued + skippedCircuitOpen;
 

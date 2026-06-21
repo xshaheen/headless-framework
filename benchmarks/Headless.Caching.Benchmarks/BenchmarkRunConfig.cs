@@ -8,7 +8,7 @@ namespace Headless.Caching.Benchmarks;
 
 internal static class BenchmarkRunConfig
 {
-    private static readonly string s_artifactsPath = Path.Combine("artifacts", "benchmark", "caching");
+    private static readonly string _ArtifactsPath = Path.Combine("artifacts", "benchmark", "caching");
 
     public static IConfig Create(string[] args)
     {
@@ -16,7 +16,7 @@ internal static class BenchmarkRunConfig
         // a "exporter already present" config warning and duplicate output, so only the diagnoser is added here.
         var config = ManualConfig
             .Create(DefaultConfig.Instance)
-            .WithArtifactsPath(s_artifactsPath)
+            .WithArtifactsPath(_ArtifactsPath)
             .AddDiagnoser(MemoryDiagnoser.Default);
 
         if (!_HasExplicitJob(args))

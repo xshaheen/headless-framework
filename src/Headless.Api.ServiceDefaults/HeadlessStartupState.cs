@@ -9,9 +9,9 @@ namespace Headless.Api;
 /// </remarks>
 internal sealed class HeadlessStartupState
 {
-    public volatile bool UseHeadlessCalled;
+    public bool UseHeadlessCalled { get; set; }
 
-    public volatile bool MapHeadlessEndpointsCalled;
+    public bool MapHeadlessEndpointsCalled { get; set; }
 
-    public volatile bool UseStatusCodesRewriterCalled;
+    public bool UseStatusCodesRewriterCalled { get; set; }
 }

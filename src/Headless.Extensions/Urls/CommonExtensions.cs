@@ -88,10 +88,10 @@ public static class CommonExtensions
         let getter = prop.GetGetMethod(false)
         where getter is not null
         let val = getter.Invoke(obj, null)
-        select (prop.Name, _GetDeclaredTypeValue(val, prop.PropertyType));
+        select (prop.Name, GetDeclaredTypeValue(val, prop.PropertyType));
 
     [RequiresUnreferencedCode("Uses Type.GetInterfaces which is not compatible with trimming.")]
-    internal static object? _GetDeclaredTypeValue(object? value, Type declaredType)
+    internal static object? GetDeclaredTypeValue(object? value, Type declaredType)
     {
         if (value is null || value.GetType() == declaredType)
         {

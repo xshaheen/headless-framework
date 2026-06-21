@@ -2306,9 +2306,9 @@ public sealed class RedisCache(
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
     {
-        const string Prefix = "b64:";
+        const string prefix = "b64:";
 
-        if (!stamp.StartsWith(Prefix, StringComparison.Ordinal))
+        if (!stamp.StartsWith(prefix, StringComparison.Ordinal))
         {
             value = RedisValue.Null;
             return false;
@@ -2316,7 +2316,7 @@ public sealed class RedisCache(
 
         try
         {
-            value = Convert.FromBase64String(stamp[Prefix.Length..]);
+            value = Convert.FromBase64String(stamp[prefix.Length..]);
             return true;
         }
         catch (FormatException)
