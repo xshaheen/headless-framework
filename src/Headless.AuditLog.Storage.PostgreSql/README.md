@@ -1,10 +1,36 @@
 # Headless.AuditLog.Storage.PostgreSql
 
-PostgreSQL raw storage provider for `Headless.AuditLog`. No Entity Framework dependency — uses Npgsql directly. Creates the audit table at host startup and stores JSON columns as `jsonb` by default.
+Raw PostgreSQL storage provider for `Headless.AuditLog`. No Entity Framework dependency — uses Npgsql directly. Creates the audit table at host startup and stores JSON columns as `jsonb` by default.
+
+## Problem Solved
+
+Provides PostgreSQL-native audit log storage without pulling Entity Framework into the dependency graph. Creates and maintains the audit table via self-initializing DDL, stores JSON columns as `jsonb` by default, and can enroll writes atomically in the consumer's active Npgsql transaction.
+
+## Key Features
+
+- No EF Core dependency — depends only on `Npgsql` and `Headless.AuditLog.Abstractions`.
+- `PostgreSqlAuditLogStore` — implements `IAuditLogStore`; enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
+- `PostgreSqlAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
+- `PostgreSqlReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` via parameterized SQL queries.
+- Self-initializing DDL at startup; DDL races across replicas serialized with `pg_advisory_xact_lock`.
+- Batched INSERT: up to 500 rows per command (cached per row count).
+- `jsonb` by default for JSON columns; override via `AuditLogStorageOptions.JsonColumnType` (`Jsonb` or `Json` accepted; `NvarcharMax` rejected at options validation).
+- `PostgreSqlAuditLogOptions` — `ConnectionString` (required) and `CommandTimeout` (default 30 s).
+- Same index set as `Headless.AuditLog.Storage.EntityFramework`: tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, correlation ID.
+
+## Design Notes
+
+Transaction enrollment is conditional: the store attempts to resolve a `NpgsqlConnection` and `NpgsqlTransaction` from `IAmbientDbTransactionAccessor`. If no ambient transaction exists or the driver differs, it falls back to its own connection — audit rows then commit before `SaveChanges`, and an entity-save failure leaves orphan rows. A deduplicated warning fires once per distinct saving-context type and once per driver mismatch.
+
+DDL initialization uses two separate transactions (schema+table, then indexes) so a concurrent-startup race that aborts the table transaction does not wipe the index DDL.
+
+## Installation
 
 ```bash
 dotnet add package Headless.AuditLog.Storage.PostgreSql
 ```
+
+## Quick Start
 
 ```csharp
 services.AddHeadlessAuditLog(setup =>
@@ -14,13 +40,11 @@ services.AddHeadlessAuditLog(setup =>
         options.Schema = "audit";
         options.TableName = "audit_log";
     });
-    setup.UsePostgreSql(connectionString);
+    setup.UsePostgreSql(builder.Configuration.GetConnectionString("AuditLog")!);
 });
 ```
 
-Override `AuditLogStorageOptions.JsonColumnType` when a different PostgreSQL JSON/text column type is required (`Jsonb`, `Json`, `NvarcharMax`).
-
-Set `AuditLogStorageOptions.InitializeOnStartup = false` to skip the startup DDL when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. Defaults to `true`.
+Skip startup DDL when schema is provisioned out-of-band:
 
 ```csharp
 services.AddHeadlessAuditLog(setup =>
@@ -30,10 +54,39 @@ services.AddHeadlessAuditLog(setup =>
 });
 ```
 
-## Mixed mode (raw store + HeadlessDbContext)
+Configure provider-specific options:
 
-When the consumer also uses `AddHeadlessDbContext<TContext>`, EF change-capture is wired automatically (registered alongside the SaveChanges pipeline in `Headless.Orm.EntityFramework`). No extra setup is required. The raw store enrolls in the consumer's ambient `DbContext` transaction when the providers match (both Npgsql) so audit rows commit atomically with the entity batch; on provider mismatch the store falls back to its own connection with a one-time warning log.
+```csharp
+setup.UsePostgreSql(options =>
+{
+    options.ConnectionString = connectionString;
+    options.CommandTimeout = TimeSpan.FromSeconds(60);
+});
+```
 
-## Standalone mode (no EF)
+## Configuration
 
-The package's only external dependencies are `Npgsql` and `Headless.AuditLog.Abstractions`. Consumers that don't use a `HeadlessDbContext` get the audit log without pulling Entity Framework into the dependency graph.
+`PostgreSqlAuditLogOptions`:
+
+| Option | Default | Description |
+|---|---|---|
+| `ConnectionString` | (required) | Npgsql connection string. |
+| `CommandTimeout` | `30s` | Timeout for DDL and DML commands. |
+
+`AuditLogStorageOptions.JsonColumnType` for this provider: `Jsonb` (default) or `Json`. `NvarcharMax` is rejected at options validation time.
+
+## Dependencies
+
+- `Headless.AuditLog.Abstractions`
+- `Headless.Hosting`
+- `Headless.Serializer`
+- `Npgsql`
+
+## Side Effects
+
+- Registers `PostgreSqlAuditLogStorageInitializer` as a hosted service (creates schema + table + indexes at startup).
+- Registers `PostgreSqlAuditLogWriter` as singleton.
+- Registers `IAuditLogStore` as scoped (`PostgreSqlAuditLogStore`).
+- Registers `IAuditLog<TContext>` as singleton (`PostgreSqlAuditLog<TContext>`).
+- Registers `IReadAuditLog<TContext>` as singleton (`PostgreSqlReadAuditLog<TContext>`).
+- Registers `IJsonSerializer`, `IClock`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
