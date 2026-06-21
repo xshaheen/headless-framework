@@ -4,43 +4,76 @@ using FluentValidation;
 
 namespace Headless.Payments.Paymob.CashIn.Models;
 
+/// <summary>
+/// Configuration options for the Paymob Accept (CashIn) integration.
+/// </summary>
+/// <remarks>
+/// Register via <c>SetupPaymobCashIn.AddPaymobCashIn</c>. Options are validated on startup using
+/// FluentValidation; missing required properties or invalid URLs cause the application to fail fast.
+/// </remarks>
 [PublicAPI]
 public sealed record PaymobCashInOptions
 {
-    /// <summary>API base url default: "https://accept.paymobsolutions.com/api"</summary>
+    /// <summary>
+    /// Base URL for the legacy Paymob Accept API.
+    /// Defaults to <c>https://accept.paymobsolutions.com/api</c>.
+    /// </summary>
     public string ApiBaseUrl { get; set; } = "https://accept.paymobsolutions.com/api";
 
-    /// <summary>Intention url default: "https://accept.paymob.com/v1/intention/"</summary>
+    /// <summary>
+    /// Endpoint URL for the Intention API (newer unified checkout flow).
+    /// Defaults to <c>https://accept.paymob.com/v1/intention/</c>.
+    /// </summary>
     public string CreateIntentionUrl { get; set; } = "https://accept.paymob.com/v1/intention/";
 
-    /// <summary>Refund url default: "https://accept.paymob.com/api/acceptance/void_refund/refund"</summary>
+    /// <summary>
+    /// Endpoint URL used to submit refund requests.
+    /// Defaults to <c>https://accept.paymob.com/api/acceptance/void_refund/refund</c>.
+    /// </summary>
     public string RefundUrl { get; set; } = "https://accept.paymob.com/api/acceptance/void_refund/refund";
 
-    /// <summary>Void refund url default: "https://accept.paymob.com/api/acceptance/void_refund/void"</summary>
+    /// <summary>
+    /// Endpoint URL used to submit void requests.
+    /// Defaults to <c>https://accept.paymob.com/api/acceptance/void_refund/void</c>.
+    /// </summary>
     public string VoidRefundUrl { get; set; } = "https://accept.paymob.com/api/acceptance/void_refund/void";
 
-    /// <summary>Iframe base url default: "https://accept.paymob.com/api/acceptance/iframes"</summary>
+    /// <summary>
+    /// Base URL used to construct the hosted card-payment iframe embed URL.
+    /// Defaults to <c>https://accept.paymob.com/api/acceptance/iframes</c>.
+    /// </summary>
     public string IframeBaseUrl { get; set; } = "https://accept.paymob.com/api/acceptance/iframes";
 
     /// <summary>
-    /// The unique identifier for the merchant which used to authenticate requests calling
-    /// any of the "Paymob Accept"'s API.
+    /// The merchant API key used to authenticate requests against the legacy Paymob Accept API.
+    /// Obtain this from the Paymob dashboard under Settings &gt; Account Info.
     /// </summary>
     public required string ApiKey { get; set; }
 
-    /// <summary>Used to check the integrity of the callback inputs.</summary>
+    /// <summary>
+    /// The HMAC secret key used to verify the integrity of callback submissions from Paymob.
+    /// Every transaction and token callback is signed with this key; use <c>IPaymobCashInBroker.Validate</c>
+    /// to verify incoming webhooks.
+    /// </summary>
     public required string Hmac { get; set; }
 
-    /// <summary>The default expiration time of this payment token in seconds.</summary>
+    /// <summary>
+    /// Default expiration period for payment keys, in seconds. Must be greater than 60.
+    /// Defaults to <c>3600</c> (60 minutes).
+    /// </summary>
     public int ExpirationPeriod { get; set; } = 3600;
 
     /// <summary>
-    /// Token refresh buffer. Auth tokens are refreshed this much before actual expiration.
-    /// Default is 55 minutes (5 minutes before Paymob's 60-minute token lifetime).
+    /// Controls how early the cached authentication token is refreshed before it expires.
+    /// Must be positive and less than 60 minutes. Defaults to 55 minutes, which renews the token
+    /// 5 minutes before Paymob's 60-minute token lifetime ends.
     /// </summary>
     public TimeSpan TokenRefreshBuffer { get; set; } = TimeSpan.FromMinutes(55);
 
-    /// <summary>New intention API secret key for the merchant.</summary>
+    /// <summary>
+    /// The merchant secret key used to authenticate requests against the Intention API.
+    /// This is separate from <c>ApiKey</c> and is issued alongside the intention-flow integration.
+    /// </summary>
     public required string SecretKey { get; set; }
 }
 

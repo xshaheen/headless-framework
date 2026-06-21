@@ -14,34 +14,89 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Payments.Paymob.Services.CashIn;
 
+/// <summary>
+/// High-level service that orchestrates Paymob Accept (CashIn) payment collection across multiple
+/// channels: card iframe, saved card token, mobile wallet, and kiosk.
+/// </summary>
+/// <remarks>
+/// Each <c>StartAsync</c> overload executes the full legacy Paymob flow internally — order
+/// creation, payment-key issuance, and channel-specific pay initiation — and returns a
+/// channel-specific response ready for the client. Provider connectivity failures are surfaced as
+/// <c>ConflictException</c> with a structured error descriptor from <c>PaymobMessageDescriptor</c>.
+///
+/// The Intention API flow (<c>StartAsync(CashInCreateIntentionRequest)</c>) bypasses the
+/// multi-step legacy flow and delegates directly to the broker.
+///
+/// Register via the Services package setup class. The implementation depends on
+/// <c>IPaymobCashInBroker</c> and is itself scoped.
+/// </remarks>
 public interface IPaymobCashInService
 {
+    /// <summary>
+    /// Initiates a card payment and returns the hosted iframe URL and payment key.
+    /// </summary>
+    /// <param name="request">Card payment parameters including amount, customer data, and integration ID.</param>
+    /// <returns>
+    /// A response containing the iframe embed URL (<c>IframeSrc</c>), raw payment key, order ID,
+    /// and expiration in seconds.
+    /// </returns>
     [Pure]
     Task<PaymobCardCashInResponse> StartAsync(PaymobCardCashInRequest request);
 
+    /// <summary>
+    /// Charges a previously tokenised card and returns the transaction outcome.
+    /// </summary>
+    /// <param name="request">Saved-token payment parameters including the card token and integration ID.</param>
+    /// <returns>
+    /// A response indicating whether the charge succeeded, whether 3-D Secure is required
+    /// (with a redirect URL), and the resulting transaction and order IDs.
+    /// </returns>
     [Pure]
     Task<PaymobCardSavedTokenCashInResponse> StartAsync(PaymobCardSavedTokenCashInRequest request);
 
+    /// <summary>
+    /// Initiates a mobile-wallet payment and returns the OTP redirect URL.
+    /// </summary>
+    /// <param name="request">Wallet payment parameters including the wallet phone number and integration ID.</param>
+    /// <returns>A response containing the redirect URL the customer must follow and the order ID.</returns>
     [Pure]
     Task<PaymobWalletCashInResponse> StartAsync(PaymobWalletCashInRequest request);
 
+    /// <summary>
+    /// Initiates a kiosk payment and returns the bill reference the customer uses to pay at the outlet.
+    /// </summary>
+    /// <param name="request">Kiosk payment parameters including the integration ID.</param>
+    /// <returns>A response containing the billing reference number and the order ID.</returns>
     [Pure]
     Task<PaymobKioskCashInResponse> StartAsync(PaymobKioskCashInRequest request);
 
+    /// <summary>
+    /// Creates a payment intention using the newer Paymob Intention API.
+    /// </summary>
+    /// <param name="request">The intention request including amount, currency, billing data, and integration identifiers.</param>
+    /// <returns>
+    /// The intention response from Paymob, or <see langword="null"/> when the response body is empty.
+    /// </returns>
     [Pure]
     Task<CashInCreateIntentionResponse?> StartAsync(CashInCreateIntentionRequest request);
 
     /// <summary>
-    /// A refund transaction is essentially a reverse transaction, representing a normal transaction that occurs
-    /// in the opposite direction. Please note that transaction fees will apply to the refund transaction.
+    /// Refunds a previously captured transaction. A refund is a reverse transaction; fees apply.
     /// </summary>
+    /// <param name="request">The refund request containing the transaction ID and amount to refund.</param>
+    /// <returns>
+    /// The resulting refund transaction from Paymob, or <see langword="null"/> when the response body is empty.
+    /// </returns>
     [Pure]
     Task<CashInCallbackTransaction?> RefundAsync(PaymobRefundRequest request);
 
     /// <summary>
-    /// A void transaction is a reversal action that allows you to cancel a transaction that occurred on the same
-    /// business day, without incurring any transaction fees.
+    /// Voids a transaction that occurred on the same business day. No fees apply.
     /// </summary>
+    /// <param name="request">The void request containing the transaction ID to cancel.</param>
+    /// <returns>
+    /// The resulting void transaction from Paymob, or <see langword="null"/> when the response body is empty.
+    /// </returns>
     [Pure]
     Task<CashInCallbackTransaction?> VoidAsync(PaymobVoidRequest request);
 }

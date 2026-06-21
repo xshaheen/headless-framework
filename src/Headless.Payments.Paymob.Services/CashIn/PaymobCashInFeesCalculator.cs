@@ -2,6 +2,15 @@
 
 namespace Headless.Payments.Paymob.Services.CashIn;
 
+/// <summary>
+/// Calculates Paymob Accept payment-gateway fees for a given transaction amount.
+/// </summary>
+/// <remarks>
+/// All calculations apply ceiling rounding at two decimal places. The default fee structure
+/// used by <c>PaymobCashInFeesCalculator</c> is: fixed fee of 6 EGP, 2.5% percentage fee,
+/// and 14% VAT on the total fee. Instantiate <c>PaymobCashInFeesCalculator</c> directly
+/// with custom parameters when the merchant's negotiated rates differ.
+/// </remarks>
 public interface IPaymobCashInFeesCalculator
 {
     /// <summary>Calculate the fess that the payment gateway will deduct from the <paramref name="amount"/>.</summary>

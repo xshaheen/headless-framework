@@ -4,6 +4,11 @@ using Headless.Primitives;
 
 namespace Headless.Payments.Paymob.Services.Resources;
 
+/// <summary>
+/// Provides structured <c>ErrorDescriptor</c> instances for Paymob CashIn and CashOut failures,
+/// mapping provider-specific error conditions to localised, code-tagged descriptors used in
+/// service-layer responses and problem-details payloads.
+/// </summary>
 public static class PaymobMessageDescriptor
 {
     public static class General

@@ -2,4 +2,7 @@
 
 namespace Headless.Payments.Paymob.Services.CashOut.Requests;
 
+/// <summary>Parameters for a CashOut disbursement to an Etisalat Cash mobile wallet.</summary>
+/// <param name="Amount">The amount to disburse in Egyptian Pounds (EGP). Must be positive.</param>
+/// <param name="PhoneNumber">The recipient's Etisalat Cash phone number.</param>
 public sealed record EtisalatCashOutRequest(decimal Amount, string PhoneNumber);
