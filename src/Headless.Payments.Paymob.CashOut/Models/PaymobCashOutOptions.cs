@@ -24,7 +24,7 @@ public sealed class PaymobCashOutOptions
     public TimeSpan TokenRefreshBuffer { get; set; } = TimeSpan.FromMinutes(10);
 }
 
-public sealed class PaymobCashOutOptionsValidator : AbstractValidator<PaymobCashOutOptions>
+internal sealed class PaymobCashOutOptionsValidator : AbstractValidator<PaymobCashOutOptions>
 {
     public PaymobCashOutOptionsValidator()
     {

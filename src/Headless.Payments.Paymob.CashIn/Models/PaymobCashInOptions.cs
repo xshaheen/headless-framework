@@ -44,7 +44,7 @@ public sealed record PaymobCashInOptions
     public required string SecretKey { get; set; }
 }
 
-public sealed class PaymobCashInOptionsValidator : AbstractValidator<PaymobCashInOptions>
+internal sealed class PaymobCashInOptionsValidator : AbstractValidator<PaymobCashInOptions>
 {
     public PaymobCashInOptionsValidator()
     {

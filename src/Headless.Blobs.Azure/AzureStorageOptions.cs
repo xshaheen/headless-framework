@@ -26,7 +26,7 @@ public sealed class AzureStorageOptions
     public string CacheControl { get; set; } = "max-age=7776000, must-revalidate";
 }
 
-public sealed class AzureStorageOptionsValidator : AbstractValidator<AzureStorageOptions>
+internal sealed class AzureStorageOptionsValidator : AbstractValidator<AzureStorageOptions>
 {
     public AzureStorageOptionsValidator()
     {

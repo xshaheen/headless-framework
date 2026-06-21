@@ -62,7 +62,7 @@ public sealed class SettingManagementOptions
 }
 
 /// <summary>Validator for <see cref="SettingManagementOptions"/>.</summary>
-public sealed class SettingManagementOptionsValidator : AbstractValidator<SettingManagementOptions>
+internal sealed class SettingManagementOptionsValidator : AbstractValidator<SettingManagementOptions>
 {
     public SettingManagementOptionsValidator()
     {

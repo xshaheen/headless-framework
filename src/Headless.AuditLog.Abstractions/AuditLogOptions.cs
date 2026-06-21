@@ -85,7 +85,7 @@ public enum CaptureErrorStrategy
 }
 
 /// <summary>Validates <see cref="AuditLogOptions"/>.</summary>
-public sealed class AuditLogOptionsValidator : AbstractValidator<AuditLogOptions>
+internal sealed class AuditLogOptionsValidator : AbstractValidator<AuditLogOptions>
 {
     public AuditLogOptionsValidator()
     {

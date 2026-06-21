@@ -69,7 +69,7 @@ public sealed class PermissionManagementOptions
     public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
 }
 
-public sealed class PermissionManagementOptionsValidator : AbstractValidator<PermissionManagementOptions>
+internal sealed class PermissionManagementOptionsValidator : AbstractValidator<PermissionManagementOptions>
 {
     public PermissionManagementOptionsValidator()
     {

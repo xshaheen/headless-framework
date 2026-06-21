@@ -31,7 +31,7 @@ public sealed class ImageSharpOptions
     }
 }
 
-public sealed class ImageSharpOptionsValidator : AbstractValidator<ImageSharpOptions>
+internal sealed class ImageSharpOptionsValidator : AbstractValidator<ImageSharpOptions>
 {
     public ImageSharpOptionsValidator()
     {

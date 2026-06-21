@@ -61,7 +61,7 @@ public sealed class FeatureManagementOptions
 }
 
 /// <summary>Validates <see cref="FeatureManagementOptions"/> on startup.</summary>
-public sealed class FeatureManagementOptionsValidator : AbstractValidator<FeatureManagementOptions>
+internal sealed class FeatureManagementOptionsValidator : AbstractValidator<FeatureManagementOptions>
 {
     public FeatureManagementOptionsValidator()
     {
