@@ -19,5 +19,9 @@ public sealed class RetryFactAttribute(
     [CallerLineNumber] int sourceLineNumber = -1
 ) : FactAttribute(sourceFilePath, sourceLineNumber)
 {
+    /// <summary>
+    /// Maximum number of total execution attempts. Must be at least 1; values less than 1
+    /// are treated as 3 by the runner. Defaults to 3.
+    /// </summary>
     public int MaxRetries { get; set; } = 3;
 }

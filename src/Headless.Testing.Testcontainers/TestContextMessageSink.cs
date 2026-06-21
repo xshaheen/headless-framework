@@ -18,6 +18,12 @@ public sealed class TestContextMessageSink : IMessageSink
 
     private TestContextMessageSink() { }
 
+    /// <summary>
+    /// Forwards <paramref name="message"/> as a diagnostic message on <see cref="TestContext.Current"/>.
+    /// Always returns <see langword="true"/> to continue receiving messages.
+    /// </summary>
+    /// <param name="message">The Testcontainers message to forward.</param>
+    /// <returns><see langword="true"/> always.</returns>
     public bool OnMessage(IMessageSinkMessage message)
     {
         TestContext.Current.SendDiagnosticMessage(message.ToJson() ?? message.ToString() ?? string.Empty);

@@ -40,6 +40,9 @@ public sealed class DatabaseReset
     /// Optional configuration. When <c>null</c>, defaults to Postgres adapter with only the
     /// EF migrations history table excluded.
     /// </param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="connection"/> is not in the <see cref="System.Data.ConnectionState.Open"/> state.
+    /// </exception>
     public static async Task<DatabaseReset> CreateAsync(DbConnection connection, DatabaseResetOptions? options = null)
     {
         Ensure.True(connection.State == ConnectionState.Open, "Connection must be open to create Respawner.");
@@ -66,6 +69,9 @@ public sealed class DatabaseReset
     /// Deletes all data from non-excluded tables using the provided open <paramref name="connection"/>.
     /// </summary>
     /// <param name="connection">An <b>open</b> <see cref="DbConnection"/>.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="connection"/> is not in the <see cref="System.Data.ConnectionState.Open"/> state.
+    /// </exception>
     public Task ResetAsync(DbConnection connection)
     {
         Ensure.True(connection.State == ConnectionState.Open, "Connection must be open to reset database.");

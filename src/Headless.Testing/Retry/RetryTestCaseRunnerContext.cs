@@ -5,6 +5,10 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
+/// <summary>
+/// Execution context for <see cref="RetryTestCaseRunner"/>. Extends the base xUnit context
+/// with the <see cref="MaxRetries"/> limit.
+/// </summary>
 [PublicAPI]
 public sealed class RetryTestCaseRunnerContext(
     int maxRetries,
@@ -30,5 +34,6 @@ public sealed class RetryTestCaseRunnerContext(
         constructorArguments
     )
 {
+    /// <summary>Maximum total execution attempts for the test in this context.</summary>
     public int MaxRetries { get; } = maxRetries;
 }

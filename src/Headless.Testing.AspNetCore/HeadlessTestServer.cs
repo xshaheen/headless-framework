@@ -96,8 +96,15 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </param>
     /// <param name="timeout">
     /// Maximum time to wait for the check to complete. Defaults to 30 seconds.
-    /// Throws <see cref="TimeoutException"/> if exceeded.
     /// </param>
+    /// <returns>This instance for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when called after <see cref="InitializeAsync"/> has started.
+    /// </exception>
+    /// <exception cref="TimeoutException">
+    /// Thrown during <see cref="InitializeAsync"/> when the check does not complete within
+    /// <paramref name="timeout"/>.
+    /// </exception>
     public HeadlessTestServer<TProgram> WaitForReadiness(Func<IServiceProvider, Task> check, TimeSpan? timeout = null)
     {
         if (_factory is not null || _initStarted)
@@ -114,6 +121,11 @@ public sealed class HeadlessTestServer<TProgram>(
     /// <see cref="InitializeAsync"/>. Requires <see cref="DatabaseResetOptions.ConnectionProvider"/>
     /// to be set.
     /// </summary>
+    /// <param name="configure">Delegate that configures the <see cref="DatabaseResetOptions"/>.</param>
+    /// <returns>This instance for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when called after <see cref="InitializeAsync"/> has started.
+    /// </exception>
     public HeadlessTestServer<TProgram> ConfigureDatabaseReset(Action<DatabaseResetOptions> configure)
     {
         if (_factory is not null || _initStarted)
@@ -202,7 +214,9 @@ public sealed class HeadlessTestServer<TProgram>(
         }
     }
 
-    /// <summary>Creates a DI scope, invokes the delegate, and disposes the scope.</summary>
+    /// <summary>Creates a DI scope, invokes <paramref name="action"/>, and disposes the scope.</summary>
+    /// <param name="action">Delegate that receives the scoped <see cref="IServiceProvider"/>.</param>
+    /// <returns>The value returned by <paramref name="action"/>.</returns>
     public async Task<T> ExecuteScopeAsync<T>(Func<IServiceProvider, Task<T>> action)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -210,9 +224,13 @@ public sealed class HeadlessTestServer<TProgram>(
     }
 
     /// <summary>
-    /// Creates a DI scope, wires the <paramref name="principal"/> to <see cref="Microsoft.AspNetCore.Http.HttpContext"/>,
-    /// invokes the delegate, and disposes the scope.
+    /// Creates a DI scope, wires <paramref name="principal"/> to an ambient
+    /// <see cref="Microsoft.AspNetCore.Http.HttpContext"/> via <c>TestHttpContextExtensions.SetHttpContext</c>,
+    /// invokes <paramref name="action"/>, and disposes the scope.
     /// </summary>
+    /// <param name="action">Delegate that receives the scoped <see cref="IServiceProvider"/>.</param>
+    /// <param name="principal">The claims principal to associate with the request context.</param>
+    /// <returns>The value returned by <paramref name="action"/>.</returns>
     public async Task<T> ExecuteScopeAsync<T>(Func<IServiceProvider, Task<T>> action, ClaimsPrincipal principal)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -220,7 +238,8 @@ public sealed class HeadlessTestServer<TProgram>(
         return await action(scope.ServiceProvider).ConfigureAwait(false);
     }
 
-    /// <summary>Creates a DI scope, invokes the delegate, and disposes the scope.</summary>
+    /// <summary>Creates a DI scope, invokes <paramref name="action"/>, and disposes the scope.</summary>
+    /// <param name="action">Delegate that receives the scoped <see cref="IServiceProvider"/>.</param>
     public async Task ExecuteScopeAsync(Func<IServiceProvider, Task> action)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -228,9 +247,12 @@ public sealed class HeadlessTestServer<TProgram>(
     }
 
     /// <summary>
-    /// Creates a DI scope, wires the <paramref name="principal"/> to <see cref="Microsoft.AspNetCore.Http.HttpContext"/>,
-    /// invokes the delegate, and disposes the scope.
+    /// Creates a DI scope, wires <paramref name="principal"/> to an ambient
+    /// <see cref="Microsoft.AspNetCore.Http.HttpContext"/> via <c>TestHttpContextExtensions.SetHttpContext</c>,
+    /// invokes <paramref name="action"/>, and disposes the scope.
     /// </summary>
+    /// <param name="action">Delegate that receives the scoped <see cref="IServiceProvider"/>.</param>
+    /// <param name="principal">The claims principal to associate with the request context.</param>
     public async Task ExecuteScopeAsync(Func<IServiceProvider, Task> action, ClaimsPrincipal principal)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -248,6 +270,14 @@ public sealed class HeadlessTestServer<TProgram>(
     }
 
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the host does not register a <see cref="FakeTimeProvider"/>, when an
+    /// <c>IInitializer</c> faults, or when <see cref="DisposeAsync"/> has already been called.
+    /// </exception>
+    /// <exception cref="TimeoutException">
+    /// Thrown when an <c>IInitializer</c> or a registered readiness check does not complete
+    /// within its configured timeout.
+    /// </exception>
     public async ValueTask InitializeAsync()
     {
         _initStarted = true;
