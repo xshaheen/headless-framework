@@ -1,110 +1,124 @@
 # Headless.Permissions.Core
 
-Core implementation of permission management with caching, providers, and authorization.
+Core implementation of permission management with grant resolution, caching, background initialization, and ASP.NET Core authorization integration.
 
 ## Problem Solved
 
-Provides the full permission management implementation including hierarchical grant resolution (User > Role > Store), caching, background initialization, and ASP.NET Core authorization integration.
+Provides the full permission management runtime: AWS IAM-style grant resolution (User > Role), grant caching with cross-process invalidation, background startup sync of static definitions, and `PermissionRequirement` / `PermissionsRequirement` for wiring into ASP.NET Core authorization policies.
 
 ## Key Features
 
-- `PermissionManager` - Full implementation of `IPermissionManager`
-- Grant providers: User, Role, Store
-- Static and dynamic permission definition stores
-- Permission grant caching with invalidation
-- Background service for permission initialization
-- ASP.NET Core authorization requirements
-- `AlwaysAllowPermissionManager` for testing
+- `PermissionManager` — full `IPermissionManager` implementation; walks the grant-provider chain, caches results, and coordinates writes with cache invalidation
+- `IPermissionGrantProvider` / built-in providers: `UserPermissionGrantProvider` (`"User"`) and `RolePermissionGrantProvider` (`"Role"`)
+- `IStaticPermissionDefinitionStore` — builds the permission catalog lazily and thread-safely from all registered `IPermissionDefinitionProvider` instances
+- `IDynamicPermissionDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination; disabled by default
+- `PermissionsInitializationBackgroundService` — seeds static definitions to the database at startup with exponential-back-off retry; pre-caches dynamic definitions when enabled; implements `IInitializer`
+- `PermissionManagementOptions` — all tuning options for lock keys/timeouts, cache expiry, dynamic store toggle
+- `PermissionsStorageOptions` — schema and table name configuration shared across all storage providers
+- `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `RegisterExtension`
+- `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
+- `services.AddPermissionDefinitionProvider<T>()` — registers a custom `IPermissionDefinitionProvider` as singleton
+- `services.AddPermissionGrantProvider<T>()` — registers an additional grant provider (last-registered = highest priority)
+- `services.AddAlwaysAllowAuthorization()` — replaces `IPermissionManager` and `IAuthorizationService` with always-allow stubs for integration testing
+- `IGrantPermissionsSeedHelper` / `GrantPermissionsSeedHelper` — seed-time helper for granting all allowed permissions to a role idempotently
+- `PermissionRequirement` / `PermissionRequirementHandler` — ASP.NET Core `IAuthorizationRequirement` for a single permission
+- `PermissionsRequirement` / `PermissionsRequirementHandler` — multi-permission requirement with AND (`RequiresAll = true`) or OR semantics
+- `AlwaysAllowPermissionManager` / `AlwaysAllowAuthorizationService` — test doubles
+
+## Design Notes
+
+- Grant providers are stored in registration order with last-registered = highest priority. Built-in registration is `Role` first, then `User`, making User the highest-priority built-in provider. Custom providers added via `AddPermissionGrantProvider<T>()` are appended after `User` and override both built-ins.
+- `AddHeadlessPermissions` is guarded on `IPermissionGrantStore` so calling it more than once is safe — the management core registers once. Registering a second storage provider extension throws at host startup.
+- The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
 
 ## Installation
 
 ```bash
 dotnet add package Headless.Permissions.Core
-dotnet add package Headless.Permissions.Storage.EntityFramework # or PostgreSql / SqlServer
 ```
 
 ## Quick Start
 
-`AddHeadlessPermissions(...)` registers the management core automatically, so a storage
-provider is all you need. Register the required services (`TimeProvider`, `ICache`,
-`IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessPermissions`.
+Register required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessPermissions`:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
-
-// Register permission definition providers
+// 1. Register definition providers
 builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
 
-// Add management core + storage in one call (Entity Framework shown)
+// 2. Register management core + storage
 builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
-### Authorization Requirement
+### ASP.NET Core Authorization Integration
+
+There is no `[HasPermission]` attribute. Wire permissions into ASP.NET Core policies using `PermissionRequirement` or `PermissionsRequirement`:
 
 ```csharp
-[Authorize]
-[HasPermission("Orders.Edit")]
-public async Task<IActionResult> EditOrder(Guid id) { }
+// Single-permission policy
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("CanEditOrders", policy =>
+        policy.Requirements.Add(new PermissionRequirement("Orders.Edit")));
+});
+
+// Multi-permission policy (AND)
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("CanManageOrders", policy =>
+        policy.Requirements.Add(new PermissionsRequirement(
+            ["Orders.Create", "Orders.Edit"],
+            requiresAll: true
+        )));
+});
 ```
 
-## Permission Resolution
-
-Permission resolution follows AWS IAM-style rules:
-
-1. **Explicit Deny Overrides All Grants** - If ANY provider returns `Prohibited`, permission is denied regardless of other grants
-2. **Grant if No Denials** - Permission granted if at least one provider grants and no provider denies
-3. **Default Deny** - If no provider grants permission, access is denied
-
-### Resolution Examples
+Or check inline with `IPermissionManager`:
 
 ```csharp
-// Scenario 1: Explicit denial overrides grant
-await permissionManager.GrantToUserAsync("Orders.Delete", userId); // User granted
-await permissionManager.RevokeFromRoleAsync("Orders.Delete", role); // Role denied
-
-var result = await permissionManager.GetAsync("Orders.Delete", currentUser);
-// result.IsGranted = false (explicit deny overrides)
+var isGranted = await permissionManager.IsGrantedAsync(currentUser, "Orders.Edit");
 ```
+
+### Seeding Permissions at Startup
 
 ```csharp
-// Scenario 2: Multiple grants
-await permissionManager.GrantToRoleAsync("Orders.View", role);
-await permissionManager.GrantToUserAsync("Orders.View", userId);
-
-var result = await permissionManager.GetAsync("Orders.View", currentUser);
-// result.IsGranted = true
-// result.Providers contains both Role and User providers
+// In a data seeder or IHostedService:
+await seedHelper.GrantAllPermissionsToRoleAsync("admin", tenantId: null, ct);
 ```
-
-### Permission States
-
-- **Granted** - Record exists with `IsGranted = true`
-- **Prohibited** - Record exists with `IsGranted = false` (explicit denial)
-- **Undefined** - No record exists (default deny)
 
 ## Configuration
 
-### Options
-
-Tune the management options through `setup.ConfigureManagement(...)` inside the
-`AddHeadlessPermissions` block, next to `ConfigureStorage`:
+Tune management options through `setup.ConfigureManagement(...)` inside the `AddHeadlessPermissions` block:
 
 ```csharp
-services.AddHeadlessPermissions(setup =>
+builder.Services.AddHeadlessPermissions(setup =>
 {
     setup.ConfigureManagement(options =>
     {
         options.CrossApplicationsCommonLockKey = "permissions:common_update_lock";
+        options.SaveStaticPermissionsToDatabase = true;
+        options.IsDynamicPermissionStoreEnabled = false;
+        options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
-The `(options, IServiceProvider)` overload is available when configuration needs resolved
-services. `services.Configure<PermissionManagementOptions>(...)` also works and composes with
-the auto-registration regardless of order.
+An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<PermissionManagementOptions>(...)` also works and composes regardless of call order.
+
+Configure schema and table names via `setup.ConfigureStorage(...)`:
+
+```csharp
+setup.ConfigureStorage(o =>
+{
+    o.Schema = "permissions";
+    o.PermissionGrantsTableName = "PermissionGrants";
+    o.PermissionDefinitionsTableName = "PermissionDefinitions";
+    o.PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions";
+    o.InitializeOnStartup = true;
+});
+```
 
 ## Dependencies
 
@@ -115,7 +129,13 @@ the auto-registration regardless of order.
 
 ## Side Effects
 
-- Registers `IPermissionManager` as transient
-- Registers permission stores as singletons
-- Starts `PermissionsInitializationBackgroundService` hosted service
-- Registers cache invalidation handler
+- Registers `IPermissionManager` (`PermissionManager`) as singleton
+- Registers `IPermissionGrantStore` (`PermissionGrantStore`) as singleton
+- Registers `IPermissionGrantProviderManager` as singleton
+- Registers `IStaticPermissionDefinitionStore`, `IDynamicPermissionDefinitionStore`, `IPermissionDefinitionManager` as singletons
+- Registers `RolePermissionGrantProvider`, `UserPermissionGrantProvider` as singletons
+- Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`)
+- Registers `IGrantPermissionsSeedHelper` as transient
+- Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
+- Registers `PermissionGrantCacheItemInvalidator` as `IDomainEventHandler<EntityChangedEventData<PermissionGrantRecord>>`
+- Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton
