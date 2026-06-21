@@ -33,6 +33,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
     - [State That DB Reset Doesn't Clear](#state-that-db-reset-doesnt-clear)
     - [Time Advancement](#time-advancement)
     - [DB Round-Trip Precision](#db-round-trip-precision)
+  - [Configuration](#configuration-1)
   - [Dependencies](#dependencies-1)
   - [Side Effects](#side-effects-1)
 - [Headless.Testing.Testcontainers](#headlesstestingtestcontainers)
@@ -41,7 +42,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
   - [Installation](#installation-2)
   - [Quick Start](#quick-start-2)
   - [Prerequisites](#prerequisites)
-  - [Configuration](#configuration-1)
+  - [Configuration](#configuration-2)
   - [Dependencies](#dependencies-2)
   - [Side Effects](#side-effects-2)
 - [Headless.Messaging.Testing](#headlessmessagingtesting)
@@ -53,6 +54,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
     - [Choosing the Right Wait Method](#choosing-the-right-wait-method)
     - [Why Not Query the Outbox Directly](#why-not-query-the-outbox-directly)
     - [Isolation Between Tests](#isolation-between-tests)
+  - [Configuration](#configuration-3)
   - [Dependencies](#dependencies-3)
   - [Side Effects](#side-effects-3)
 
@@ -364,6 +366,26 @@ result.DateCreated.Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1));
 
 The same caveat applies to other databases with sub-tick storage precision (MySQL `DATETIME(6)`, SQL Server `datetime2(N)` for `N < 7`). Match the assertion tolerance to the column precision.
 
+## Configuration
+
+`HeadlessTestServer<TProgram>` is configured through its constructor and fluent pre-initialization methods — there is no options class bound from `appsettings.json`.
+
+| Parameter / Method | Type | Default | Description |
+|---|---|---|---|
+| `configureTestServices` | `Action<IServiceCollection>?` | `null` | Additional DI registrations layered on top of the application's own `ConfigureTestServices`. |
+| `configureWebHost` | `Action<IWebHostBuilder>?` | `null` | Additional web host configuration (e.g., environment, configuration sources). |
+| `initializerTimeout` | `TimeSpan?` | 60 s | Per-`IInitializer` wait budget before a `TimeoutException` is thrown. |
+| `WaitForReadiness(check, timeout)` | fluent | 30 s per check | Registers a post-startup readiness probe. Must be called before `InitializeAsync()`. |
+| `ConfigureDatabaseReset(configure)` | fluent | (disabled) | Opts into Respawner-based DB reset. Must be called before `InitializeAsync()`. |
+
+`DatabaseResetOptions` properties (passed to `ConfigureDatabaseReset`):
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `DbAdapter` | `IDbAdapter` | `DbAdapter.Postgres` | Respawner adapter matching the target database engine. |
+| `TablesToIgnore` | `List<Table>` | `[]` | Additional tables to skip during reset. `__EFMigrationsHistory` is always excluded automatically. |
+| `ConnectionProvider` | `Func<IServiceProvider, DbConnection>?` | `null` | **Required** when using `ResetDatabaseAsync()`. Factory for an unopened `DbConnection` to the test database. |
+
 ## Dependencies
 
 - `Headless.Testing`
@@ -509,6 +531,10 @@ A common reflex is to assert by selecting from the outbox table (`outbox.publish
 ### Isolation Between Tests
 
 Call `harness.Clear()` (or `App.ResetMessagingHarness()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both methods drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections without re-creating the transport decorators. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since transport and consume observations can arrive on background processing threads.
+
+## Configuration
+
+None. `MessagingTestHarness` has no configuration class or options object. The only tuneable is the per-call `timeout` parameter on `WaitFor*` methods; when omitted it defaults to `MessagingTestHarness.DefaultTimeout` (5 seconds). Transport parallelism is intentionally disabled by the harness (`EnablePublishParallelSend = false`, `EnableSubscriberParallelExecute = false`) to guarantee deterministic single-threaded test execution — this is a fixed internal choice and cannot be overridden.
 
 ## Dependencies
 
