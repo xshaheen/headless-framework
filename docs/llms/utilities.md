@@ -129,10 +129,10 @@ Install individually as needed -- these packages are independent of each other:
 - Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
 - Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `InternationalPhoneNumber()`, `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
 - Use `ErrorDescriptor` with `.WithErrorDescriptor()` for structured API error responses. Convert results via `result.Errors.ToErrorDescriptors()`.
-- Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `AddOptionsWithFluentValidation<TOptions, TValidator>(sectionName)`.
+- Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `Configure<TOptions, TValidator>(configuration, name)`.
 - Use `ISeeder` from Hosting for database seeding; register with `services.AddSeeder<T>()`. Run all seeders with `await app.Services.SeedAsync()` at startup. Use `[SeederPriority(n)]` to control order (lower runs first, default `0`); EF migrations seed first via `AddDbMigrationSeeder<TContext>()` (`SeederPriority` `int.MinValue`).
 - Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID.
-- Use `Headless.ReCaptcha` (note capital C in directory name) for Google reCAPTCHA. Register with `AddReCaptchaV3(options => ...)`. Verify with `IReCaptchaSiteVerifyV3.VerifyAsync()`. Check `result.Success` and `result.Score`.
+- Use `Headless.ReCaptcha` (note capital C in directory name) for Google reCAPTCHA. Register with `AddReCaptchaV3(options => ...)`. Verify with `IReCaptchaSiteVerifyV3.VerifyAsync()`. For the raw response check `result.Success` and `result.Score`; for the enforced overload check `result.IsValid` and `result.FailureReason`.
 - Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` for on-demand loading. Provider packages own hosted warmup for their own script bundles.
 - Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)`. Auto-splits at 50,000 URLs via `urls.WriteAsync()`. Use `SitemapAlternateUrl` for hreflang/localized URLs.
 - Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
@@ -166,7 +166,7 @@ dotnet add package Headless.FluentValidation
 ## Quick Start
 
 ```csharp
-using Headless.FluentValidation;
+using FluentValidation;
 
 public sealed class UserValidator : AbstractValidator<User>
 {
@@ -292,9 +292,13 @@ modelBuilder.Entity<User>()
 
 ```xml
 <PropertyGroup>
-  <PrimitiveGenerator_GenerateDapper>true</PrimitiveGenerator_GenerateDapper>
-  <PrimitiveGenerator_GenerateEfCore>true</PrimitiveGenerator_GenerateEfCore>
-  <PrimitiveGenerator_GenerateSwashbuckle>false</PrimitiveGenerator_GenerateSwashbuckle>
+  <PrimitiveDapperConverters>true</PrimitiveDapperConverters>
+  <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
+  <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
+  <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
+  <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
+  <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
+  <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
 </PropertyGroup>
 ```
 
@@ -415,7 +419,7 @@ builder.Services.AddIf(
 );
 
 // Options with FluentValidation
-builder.Services.AddOptionsWithFluentValidation<MyOptions, MyOptionsValidator>("MySection");
+builder.Services.Configure<MyOptions, MyOptionsValidator>(builder.Configuration.GetSection("MySection"));
 
 // Replace existing service
 builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
@@ -433,7 +437,7 @@ services.AddIfElse(condition, ifAction, elseAction);
 ### Options with Validation
 
 ```csharp
-services.AddOptionsWithFluentValidation<AppOptions, AppOptionsValidator>("App");
+services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("App"));
 ```
 
 ### Database Seeders
@@ -475,7 +479,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Headless.Checks`
+- `Headless.FluentValidation`
 - `Microsoft.Extensions.Hosting`
 - `Microsoft.Extensions.Options`
 
@@ -555,8 +559,8 @@ No configuration required.
 ## Dependencies
 
 - `NetTopologySuite`
-- `NetTopologySuite.Features`
-- `Headless.Checks`
+- `NetTopologySuite.IO.GeoJSON4STJ`
+- `Headless.Extensions`
 
 ## Side Effects
 
@@ -865,7 +869,7 @@ var options = new SlugOptions
 {
     Separator = "_",
     MaximumLength = 50,
-    CasingTransformation = CasingTransformation.LowerCase,
+    CasingTransformation = CasingTransformation.ToLowerCase,
     CanEndWithSeparator = false
 };
 
@@ -895,9 +899,9 @@ var slug = Slug.Create("Tom & Jerry @ Home", options);
 var options = new SlugOptions
 {
     Separator = "-",              // Default: "-"
-    MaximumLength = 100,          // Default: 0 (unlimited)
+    MaximumLength = 100,          // Default: 80
     CanEndWithSeparator = false,  // Default: false
-    CasingTransformation = CasingTransformation.LowerCase
+    CasingTransformation = CasingTransformation.ToLowerCase
 };
 ```
 

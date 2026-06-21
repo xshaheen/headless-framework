@@ -70,8 +70,8 @@ No configuration required.
 ## Dependencies
 
 - `NetTopologySuite`
-- `NetTopologySuite.Features`
-- `Headless.Checks`
+- `NetTopologySuite.IO.GeoJSON4STJ`
+- `Headless.Extensions`
 
 ## Side Effects
 

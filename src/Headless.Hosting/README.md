@@ -105,7 +105,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Headless.Checks`
+- `Headless.FluentValidation`
 - `Microsoft.Extensions.Hosting`
 - `Microsoft.Extensions.Options`
 

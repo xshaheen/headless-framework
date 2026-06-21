@@ -41,7 +41,7 @@ var options = new SlugOptions
 {
     Separator = "_",
     MaximumLength = 50,
-    CasingTransformation = CasingTransformation.LowerCase,
+    CasingTransformation = CasingTransformation.ToLowerCase,
     CanEndWithSeparator = false
 };
 
@@ -71,9 +71,9 @@ var slug = Slug.Create("Tom & Jerry @ Home", options);
 var options = new SlugOptions
 {
     Separator = "-",              // Default: "-"
-    MaximumLength = 100,          // Default: 0 (unlimited)
+    MaximumLength = 100,          // Default: 80
     CanEndWithSeparator = false,  // Default: false
-    CasingTransformation = CasingTransformation.LowerCase
+    CasingTransformation = CasingTransformation.ToLowerCase
 };
 ```
 
