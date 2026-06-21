@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Collections.Immutable;
 using System.Text;
 using Headless.Jobs.SourceGenerator.AttributeSyntaxes;

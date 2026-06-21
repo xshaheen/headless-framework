@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Headless.Jobs.Entities.BaseEntity;
 
 public class BaseJobEntity

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Headless.Jobs.Models;
 
 public class PaginationResult<T>

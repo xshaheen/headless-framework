@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Headless.Messaging.AzureServiceBus.Helpers;
 
 public static class ServiceBusHelpers

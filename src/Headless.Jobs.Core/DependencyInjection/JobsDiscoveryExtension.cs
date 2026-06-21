@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Reflection;
 using Headless.Jobs.Entities;
 

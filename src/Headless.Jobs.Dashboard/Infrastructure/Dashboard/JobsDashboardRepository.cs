@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.Jobs.DashboardDtos;

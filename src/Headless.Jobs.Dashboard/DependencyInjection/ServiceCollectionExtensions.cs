@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Reflection;
 using System.Text.Encodings.Web;
 using Headless.Dashboard.Authentication;

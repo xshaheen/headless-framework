@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Checks;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;

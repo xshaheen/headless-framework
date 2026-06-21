@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Collections;
 
 namespace Headless.Jobs.Infrastructure.Dashboard;

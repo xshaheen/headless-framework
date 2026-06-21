@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Coordination;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs.Coordination;

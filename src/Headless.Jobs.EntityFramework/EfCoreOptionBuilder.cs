@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs.Customizer;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;

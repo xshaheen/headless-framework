@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Diagnostics;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;

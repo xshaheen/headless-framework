@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore;

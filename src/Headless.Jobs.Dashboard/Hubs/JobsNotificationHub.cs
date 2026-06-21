@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
