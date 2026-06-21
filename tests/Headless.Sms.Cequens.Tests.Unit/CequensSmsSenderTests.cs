@@ -67,12 +67,12 @@ public sealed class CequensSmsSenderTests : IClassFixture<SmsWireMockFixture>
 
     private int TokenCalls()
     {
-        return _fixture.Server.FindLogEntries(Request.Create().WithPath("/auth").UsingPost()).Count();
+        return _fixture.Server.FindLogEntries(Request.Create().WithPath("/auth").UsingPost()).Count;
     }
 
     private int SendCalls()
     {
-        return _fixture.Server.FindLogEntries(Request.Create().WithPath("/sms").UsingPost()).Count();
+        return _fixture.Server.FindLogEntries(Request.Create().WithPath("/sms").UsingPost()).Count;
     }
 
     [Fact]

@@ -69,9 +69,9 @@ public sealed class DefaultSqlCurrentConnection(ISqlConnectionFactory factory) :
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        if (_connection?.State is ConnectionState.Open)
+        if (_connection is { State: ConnectionState.Open })
         {
-            await (_connection?.DisposeAsync() ?? ValueTask.CompletedTask).ConfigureAwait(false);
+            await _connection.DisposeAsync().ConfigureAwait(false);
             _connection = null;
         }
     }
