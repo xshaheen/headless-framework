@@ -11,11 +11,27 @@ using StackExchange.Redis;
 
 namespace Headless.Coordination.Redis;
 
+/// <summary>
+/// Extension members on <see cref="HeadlessCoordinationSetupBuilder"/> for selecting Redis as the
+/// coordination backing store.
+/// </summary>
+/// <remarks>
+/// Requires a pre-registered <c>IConnectionMultiplexer</c> in the DI container (for example from
+/// <c>AddHeadlessRedis</c>). The Redis store uses Lua scripts for atomic heartbeat and incarnation
+/// allocation; scripts are loaded at startup by an initializer hosted service.
+/// </remarks>
 [PublicAPI]
 public static class SetupRedisCoordination
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {
+        /// <summary>
+        /// Selects Redis as the coordination backing store, binding <see cref="RedisCoordinationOptions"/>
+        /// from the supplied <see cref="IConfiguration"/> section.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind provider options from.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
         public HeadlessCoordinationSetupBuilder UseRedis(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -25,6 +41,12 @@ public static class SetupRedisCoordination
             return setup;
         }
 
+        /// <summary>
+        /// Selects Redis as the coordination backing store using the supplied options delegate.
+        /// </summary>
+        /// <param name="configure">Delegate that configures <see cref="RedisCoordinationOptions"/>.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessCoordinationSetupBuilder UseRedis(Action<RedisCoordinationOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -34,6 +56,13 @@ public static class SetupRedisCoordination
             return setup;
         }
 
+        /// <summary>
+        /// Selects Redis as the coordination backing store using the supplied options delegate with access
+        /// to the DI container.
+        /// </summary>
+        /// <param name="configure">Delegate that configures <see cref="RedisCoordinationOptions"/> with service-provider access.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessCoordinationSetupBuilder UseRedis(Action<RedisCoordinationOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);

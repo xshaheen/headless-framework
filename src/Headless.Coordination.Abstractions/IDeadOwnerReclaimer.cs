@@ -22,6 +22,18 @@ public interface IDeadOwnerReclaimer
     /// <summary>How often the bridge's reconcile backstop reclaims dead owners from the liveness snapshot.</summary>
     TimeSpan ReconcileInterval { get; }
 
-    /// <summary>Reclaims resources owned by <paramref name="owners"/> (each a <c>node@incarnation</c> identity).</summary>
+    /// <summary>
+    /// Reclaims resources owned by <paramref name="owners"/> (each a <c>node@incarnation</c> string).
+    /// </summary>
+    /// <param name="owners">
+    /// One or more dead <c>node@incarnation</c> owner identities whose resources must be reassigned or
+    /// cleaned up. Implementations should handle the batch atomically when possible (for example a single
+    /// <c>UPDATE … WHERE Owner IN (@owners)</c>) to minimise write amplification under mass node loss.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// By contract this is <see cref="CancellationToken.None"/> — the bridge intentionally passes an
+    /// uncancellable token so a reclaim racing host shutdown is not torn mid-write. Implementations must
+    /// not substitute a different cancellable token for the write path.
+    /// </param>
     Task ReclaimAsync(IReadOnlyCollection<string> owners, CancellationToken cancellationToken);
 }
