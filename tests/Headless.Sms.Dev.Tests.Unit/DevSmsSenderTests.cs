@@ -42,7 +42,7 @@ public sealed class NoopSmsSenderTests
     public async Task should_honor_cancellation()
     {
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         var act = async () => await new NoopSmsSender().SendAsync(SmsRequests.Single(), cts.Token);
 

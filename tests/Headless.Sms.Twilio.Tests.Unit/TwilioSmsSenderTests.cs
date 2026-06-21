@@ -34,7 +34,6 @@ public sealed class TwilioSmsSenderTests
         var client = Substitute.For<ITwilioRestClient>();
         var response = new Response(HttpStatusCode.Created, """{"sid":"SM123","status":"queued"}""");
         client.RequestAsync(Arg.Any<Request>()).Returns(response);
-        client.Request(Arg.Any<Request>()).Returns(response);
 
         var result = await CreateSender(client).SendAsync(SmsRequests.Single());
 
@@ -58,7 +57,6 @@ public sealed class TwilioSmsSenderTests
     {
         var client = Substitute.For<ITwilioRestClient>();
         client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(new HttpRequestException("network down"));
-        client.Request(Arg.Any<Request>()).Throws(new HttpRequestException("network down"));
 
         var result = await CreateSender(client).SendAsync(SmsRequests.Single());
 

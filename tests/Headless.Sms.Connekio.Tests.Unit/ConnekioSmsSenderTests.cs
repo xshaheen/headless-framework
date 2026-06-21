@@ -126,7 +126,7 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     {
         Stub("/single", HttpStatusCode.OK, "{}");
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         var act = async () => await CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
 

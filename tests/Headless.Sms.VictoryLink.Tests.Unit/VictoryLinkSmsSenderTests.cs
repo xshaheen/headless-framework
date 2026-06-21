@@ -108,7 +108,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     {
         StubSend(HttpStatusCode.OK, "0");
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         var act = async () => await CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
 
