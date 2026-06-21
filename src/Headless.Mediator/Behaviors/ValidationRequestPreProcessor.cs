@@ -25,6 +25,16 @@ public sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
     private readonly IEnumerable<IValidator<TMessage>> _validators = Argument.IsNotNull(validators);
     private readonly ILogger<ValidationRequestPreProcessor<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
 
+    /// <summary>
+    /// Runs all registered validators for <typeparamref name="TMessage"/> and throws when any produce failures.
+    /// </summary>
+    /// <param name="message">The Mediator message to validate.</param>
+    /// <param name="cancellationToken">A token that can be used to cancel the validation.</param>
+    /// <returns>A completed <see cref="ValueTask"/> when all validators pass.</returns>
+    /// <exception cref="FluentValidation.ValidationException">
+    /// Thrown when one or more validators return validation failures. All failures from all validators
+    /// are aggregated into a single exception.
+    /// </exception>
     protected override async ValueTask Handle(TMessage message, CancellationToken cancellationToken)
     {
         var validatorList = _validators as IList<IValidator<TMessage>> ?? [.. _validators];

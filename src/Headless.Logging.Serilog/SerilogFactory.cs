@@ -16,15 +16,60 @@ using Serilog.Sinks.SystemConsole.Themes;
 
 namespace Headless.Logging;
 
+/// <summary>
+/// Factory methods and extension methods for building Serilog <see cref="LoggerConfiguration"/>
+/// instances with Headless-standard enrichers, sinks, and structured-logging defaults.
+/// </summary>
+/// <remarks>
+/// Two configuration profiles are provided:
+/// <list type="bullet">
+///   <item>
+///     <term>Bootstrap</term>
+///     <description>
+///     A lightweight configuration for the very early startup phase, before the DI container or
+///     <see cref="IConfiguration"/> are available. Writes to the console and an async file sink
+///     (Fatal/Error/Warning only). Use <see cref="ConfigureBootstrapLoggerConfiguration"/> (or
+///     its factory wrapper <see cref="CreateBootstrapLoggerConfiguration"/>) with
+///     <c>Log.Logger = Log.Logger.CreateBootstrapLogger()</c>.
+///     </description>
+///   </item>
+///   <item>
+///     <term>Reloadable</term>
+///     <description>
+///     The full production configuration, applied after the host is built. Reads from the
+///     <c>Serilog</c> configuration section, adds richer enrichers (span, application version,
+///     commit hash), and optionally writes to per-severity rolling files. Use
+///     <see cref="ConfigureReloadableLoggerConfiguration"/> (or its factory wrapper
+///     <see cref="CreateReloadableLoggerConfiguration"/>) with
+///     <c>UseSerilog((ctx, sp, cfg) => cfg.ConfigureReloadableLoggerConfiguration(...))</c>.
+///     </description>
+///   </item>
+/// </list>
+/// </remarks>
 [PublicAPI]
 public static class SerilogFactory
 {
+    /// <summary>
+    /// The default Serilog output template used by all console and file sinks in this factory.
+    /// Includes timestamp, level (3-char uppercase), request path, source context, message, and
+    /// exception on a new line.
+    /// </summary>
     public const string OutputTemplate =
         "[{Timestamp:HH:mm:ss.fff zzz} {Level:u3}] {RequestPath} {SourceContext} {Message:lj}{NewLine}{Exception}";
 
     private static readonly Func<IPAddress?, string> _IpAddressTransform = ip => ip?.ToString() ?? string.Empty;
 
-    /// <inheritdoc cref="CreateBootstrapLoggerConfiguration"/>
+    /// <summary>
+    /// Creates a new <see cref="LoggerConfiguration"/> configured for the bootstrap (pre-DI) phase.
+    /// </summary>
+    /// <param name="options">
+    /// Optional Serilog options controlling file sink behaviour. Defaults are applied when
+    /// <see langword="null"/>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="LoggerConfiguration"/> ready to be passed to
+    /// <c>Log.Logger = configuration.CreateBootstrapLogger()</c>.
+    /// </returns>
     public static LoggerConfiguration CreateBootstrapLoggerConfiguration(SerilogOptions? options = null)
     {
         var loggerConfiguration = new LoggerConfiguration();
@@ -35,19 +80,23 @@ public static class SerilogFactory
     }
 
     /// <summary>
-    /// Creates a bootstrap logger configuration with various enrichers and sinks.
+    /// Applies the Headless bootstrap logging profile to <paramref name="loggerConfiguration"/>.
     /// </summary>
     /// <remarks>
-    /// This method configures a <see cref="LoggerConfiguration"/> instance with the following:
+    /// The bootstrap profile is intentionally minimal, suitable for the pre-DI startup phase:
     /// <list type="bullet">
-    ///   <item>Enrichers for environment name, username, thread ID, process ID, process name, and machine name.</item>
-    ///   <item>Console sink for logging to the console.</item>
-    ///   <item>Debug sink for logging to the debug output in debug mode.</item>
-    ///  <item>Asynchronous file sink for logging fatal, error, and warning levels to a file with the path "Logs/bootstrap-.log".</item>
+    ///   <item>Enrichers: environment name, thread ID, process ID, process name, machine name.</item>
+    ///   <item>Console sink (invariant culture, no theme).</item>
+    ///   <item>Debug sink (DEBUG builds only).</item>
+    ///   <item>Async file sink at <c>{LogDirectory}/bootstrap-.log</c> limited to Fatal, Error, and Warning levels.</item>
     /// </list>
     /// </remarks>
-    /// <param name="options">Serilog configuration options.</param>
-    /// <returns>A <see cref="LoggerConfiguration"/> instance configured for bootstrap logging.</returns>
+    /// <param name="loggerConfiguration">The <see cref="LoggerConfiguration"/> to configure.</param>
+    /// <param name="options">
+    /// Optional Serilog options controlling file sink behaviour. Defaults are applied when
+    /// <see langword="null"/>.
+    /// </param>
+    /// <returns>The same <paramref name="loggerConfiguration"/> instance so calls can be chained.</returns>
     public static LoggerConfiguration ConfigureBootstrapLoggerConfiguration(
         this LoggerConfiguration loggerConfiguration,
         SerilogOptions? options = null
@@ -84,7 +133,21 @@ public static class SerilogFactory
         return loggerConfiguration;
     }
 
-    /// <inheritdoc cref="ConfigureReloadableLoggerConfiguration"/>
+    /// <summary>
+    /// Creates a new <see cref="LoggerConfiguration"/> configured for the full production (reloadable) phase.
+    /// </summary>
+    /// <param name="services">
+    /// The application <see cref="IServiceProvider"/>, used to read Serilog sink registrations from
+    /// DI. Pass <see langword="null"/> when DI is not yet available (design-time tooling).
+    /// </param>
+    /// <param name="configuration">
+    /// The host configuration from which the <c>Serilog</c> section is read.
+    /// </param>
+    /// <param name="environment">The host environment, used to select console theme and detect development mode.</param>
+    /// <returns>
+    /// A <see cref="LoggerConfiguration"/> ready to be passed to
+    /// <c>UseSerilog((ctx, sp, cfg) => cfg.ConfigureReloadableLoggerConfiguration(...))</c>.
+    /// </returns>
     public static LoggerConfiguration CreateReloadableLoggerConfiguration(
         IServiceProvider? services,
         IConfiguration configuration,
@@ -97,19 +160,34 @@ public static class SerilogFactory
     }
 
     /// <summary>
-    /// Configures a <see cref="LoggerConfiguration"/> instance with various enrichers and sinks for reloadable logging.
+    /// Applies the Headless production (reloadable) logging profile to <paramref name="loggerConfiguration"/>.
     /// </summary>
     /// <remarks>
-    /// This method configures the logger with the following:
+    /// The reloadable profile is richer than the bootstrap profile and reads from the host configuration:
     /// <list type="bullet">
-    ///   <item>Reads configuration settings from the provided <see cref="IConfiguration"/> instance.</item>
-    ///   <item>If a <see cref="IServiceProvider"/> is provided, reads additional configuration from the services.</item>
-    ///   <item>Adds various enrichers to include context information such as log context, span, environment name, username, thread ID, process ID, process name, machine name, application name, version, and commit hash.</item>
-    ///   <item>Configures console sink.</item>
-    ///   <item>In debug mode, adds a debug sink for logging to the debug output.</item>
+    ///   <item>Reads the <c>Serilog</c> configuration section, enabling log-level overrides without a restart.</item>
+    ///   <item>When <paramref name="services"/> is not null, also reads DI-registered sink/enricher contributions.</item>
+    ///   <item>Enrichers: log context, distributed tracing span, environment name, thread/process/machine IDs,
+    ///   application name, version, and commit hash (from entry-assembly metadata).</item>
+    ///   <item>Console sink with ANSI theme in Development, no theme otherwise.</item>
+    ///   <item>Debug sink (DEBUG builds only).</item>
+    ///   <item>Per-severity rolling file sinks (Fatal, Error, Warning) when <see cref="SerilogOptions.WriteToFiles"/> is <see langword="true"/>.</item>
     /// </list>
     /// </remarks>
-    /// <param name="options">Serilog configuration options.</param>
+    /// <param name="loggerConfiguration">The <see cref="LoggerConfiguration"/> to configure.</param>
+    /// <param name="services">
+    /// The application <see cref="IServiceProvider"/>, used to read Serilog sink registrations from
+    /// DI. Pass <see langword="null"/> when DI is not yet available.
+    /// </param>
+    /// <param name="configuration">
+    /// The host configuration from which the <c>Serilog</c> section is read.
+    /// </param>
+    /// <param name="environment">The host environment, used to select console theme and detect development mode.</param>
+    /// <param name="options">
+    /// Optional Serilog options controlling file sink behaviour. Defaults are applied when
+    /// <see langword="null"/>.
+    /// </param>
+    /// <returns>The same <paramref name="loggerConfiguration"/> instance so calls can be chained.</returns>
     public static LoggerConfiguration ConfigureReloadableLoggerConfiguration(
         this LoggerConfiguration loggerConfiguration,
         IServiceProvider? services,

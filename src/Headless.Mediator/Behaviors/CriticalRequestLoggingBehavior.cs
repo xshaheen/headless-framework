@@ -23,6 +23,14 @@ public sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
     private readonly ICurrentUser _currentUser = Argument.IsNotNull(currentUser);
     private readonly ILogger<CriticalRequestLoggingBehavior<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
 
+    /// <summary>
+    /// Executes the next handler in the pipeline and emits a warning-level log entry when the
+    /// elapsed time exceeds the critical threshold (1 second).
+    /// </summary>
+    /// <param name="message">The Mediator message being processed.</param>
+    /// <param name="next">The delegate that invokes the next pipeline stage or the final handler.</param>
+    /// <param name="cancellationToken">A token that can be used to cancel the operation.</param>
+    /// <returns>The response produced by the downstream pipeline.</returns>
     public async ValueTask<TResponse> Handle(
         TMessage message,
         MessageHandlerDelegate<TMessage, TResponse> next,
