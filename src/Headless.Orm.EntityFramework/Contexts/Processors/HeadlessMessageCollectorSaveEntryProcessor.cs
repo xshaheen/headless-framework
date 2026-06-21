@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Headless.EntityFramework.Contexts.Processors;
 
+[PublicAPI]
 public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)

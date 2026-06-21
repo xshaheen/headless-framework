@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Headless.EntityFramework.ChangeTrackers;
 
-public sealed class HeadlessEntityEntry(string id, EntityEntry entry)
+internal sealed class HeadlessEntityEntry(string id, EntityEntry entry)
 {
     public string Id { get; } = id;
 

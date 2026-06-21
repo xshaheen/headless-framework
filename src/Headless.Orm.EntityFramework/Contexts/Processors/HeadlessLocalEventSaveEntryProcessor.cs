@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Headless.EntityFramework.Contexts.Processors;
 
+[PublicAPI]
 public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
     private static readonly ConditionalWeakTable<Type, Func<object, IDomainEvent>> _CreatedFactories = [];

@@ -12,6 +12,7 @@ using UserId = Headless.Primitives.UserId;
 
 namespace Headless.EntityFramework.Contexts.Processors;
 
+[PublicAPI]
 public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser currentUser)
     : IHeadlessSaveEntryProcessor
 {

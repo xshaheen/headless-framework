@@ -47,7 +47,7 @@ public static class MigrateDbContextExtensions
         public void EnsureDbCreated<TContext>()
             where TContext : DbContext
         {
-            using var scope = services.CreateAsyncScope();
+            using var scope = services.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             context.Database.EnsureCreated();
         }
@@ -81,7 +81,7 @@ public static class MigrateDbContextExtensions
         public void EnsureDbDeleted<TContext>()
             where TContext : DbContext
         {
-            using var scope = services.CreateAsyncScope();
+            using var scope = services.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             context.Database.EnsureDeleted();
         }
@@ -115,7 +115,7 @@ public static class MigrateDbContextExtensions
         public void EnsureDbRecreated<TContext>()
             where TContext : DbContext
         {
-            using var scope = services.CreateAsyncScope();
+            using var scope = services.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             context.Database.EnsureDeleted();
             context.Database.EnsureCreated();

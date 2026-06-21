@@ -164,13 +164,8 @@ public static class IndexPageExtensions
             Argument.IsNotNull(source);
             Argument.IsNotNull(orderBy);
 
-            var total = await source.CountAsync(cancellationToken);
-
-            if (total == 0)
-            {
-                return new([], 0, 0, 0);
-            }
-
+            // No paging: the materialized list is the full result, so its count is the total —
+            // a separate CountAsync round-trip would be pure waste (mirrors the no-order overload).
             var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
 
             var items = await orderQuery.ToListAsync(cancellationToken);
