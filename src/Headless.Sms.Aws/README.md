@@ -1,17 +1,17 @@
 # Headless.Sms.Aws
 
-AWS SNS SMS implementation.
+AWS SNS SMS implementation of `ISmsSender`.
 
 ## Problem Solved
 
-Provides SMS sending via Amazon Simple Notification Service (SNS), supporting transactional and promotional message types with AWS SDK integration.
+Provides SMS sending via Amazon Simple Notification Service (SNS), reusing existing AWS SDK credentials and IAM-based access control already present in AWS-hosted applications.
 
 ## Key Features
 
-- `AwsSnsSmsSender` - ISmsSender implementation using AWS SNS
-- Configurable sender ID
-- Message type selection (transactional/promotional)
-- AWS SDK integration with flexible credentials
+- `AwsSnsSmsSender` — `ISmsSender` implementation backed by AWS SNS.
+- `SenderId` — alphanumeric sender ID displayed to recipients (support varies by country).
+- `MaxPrice` — optional per-message USD price cap; SNS rejects sends that would exceed it.
+- Accepts any AWS credential source: environment, instance metadata, `appsettings.json` via `AWSOptions`, or explicit `BasicAWSCredentials`.
 
 ## Installation
 
@@ -24,11 +24,19 @@ dotnet add package Headless.Sms.Aws
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Option 1: bind from appsettings (recommended)
 var awsOptions = builder.Configuration.GetAWSOptions();
 builder.Services.AddAwsSnsSmsSender(
     builder.Configuration.GetSection("Sms:Aws"),
     awsOptions
 );
+
+// Option 2: configure in code
+builder.Services.AddAwsSnsSmsSender(options =>
+{
+    options.SenderId = "MyApp";
+    // options.MaxPrice = 0.05m; // optional per-message USD cap
+}, awsOptions);
 ```
 
 ## Configuration
@@ -39,7 +47,8 @@ builder.Services.AddAwsSnsSmsSender(
 {
   "Sms": {
     "Aws": {
-      "SenderId": "MyApp"
+      "SenderId": "MyApp",
+      "MaxPrice": null
     }
   },
   "AWS": {
@@ -48,14 +57,12 @@ builder.Services.AddAwsSnsSmsSender(
 }
 ```
 
-### Code Configuration
+### Options
 
-```csharp
-builder.Services.AddAwsSnsSmsSender(options =>
-{
-    options.SenderId = "MyApp";
-});
-```
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `SenderId` | `string` | Yes | Alphanumeric sender ID shown to recipients (country support varies). |
+| `MaxPrice` | `decimal?` | No | Maximum USD price per message. SNS rejects if exceeded. |
 
 ## Dependencies
 
@@ -65,5 +72,5 @@ builder.Services.AddAwsSnsSmsSender(options =>
 
 ## Side Effects
 
-- Registers `ISmsSender` as singleton
-- Registers `IAmazonSimpleNotificationService` if not already registered
+- Registers `IAmazonSimpleNotificationService` if not already registered.
+- Registers `ISmsSender` as singleton (`AwsSnsSmsSender`).

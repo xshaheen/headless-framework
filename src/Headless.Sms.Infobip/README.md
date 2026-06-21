@@ -1,17 +1,19 @@
 # Headless.Sms.Infobip
 
-Infobip SMS gateway implementation.
+Infobip global SMS platform implementation of `ISmsSender`.
 
 ## Problem Solved
 
-Provides SMS sending via Infobip's global messaging platform with comprehensive delivery reporting.
+Provides SMS sending via Infobip's REST API, a global messaging platform with delivery reporting and per-account regional base paths.
 
 ## Key Features
 
-- `InfobipSmsSender` - ISmsSender implementation using Infobip
-- API key authentication
-- Configurable base URL for regional endpoints
-- Comprehensive delivery status reporting
+- `InfobipSmsSender` — `ISmsSender` implementation backed by the Infobip REST API.
+- API key authentication via HTTP `Authorization` header.
+- `BasePath` — Infobip-assigned base URL for your account (varies per account; not a shared endpoint).
+- `Sender` — alphanumeric or numeric sender shown to recipients.
+- Standard resilience pipeline with auto-retry **disabled** by default to prevent duplicate SMS.
+- Optional `configureClient` and `configureResilience` hooks for fine-grained `HttpClient` control.
 
 ## Installation
 
@@ -24,11 +26,16 @@ dotnet add package Headless.Sms.Infobip
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddInfobipSmsSender(
+    builder.Configuration.GetSection("Sms:Infobip")
+);
+
+// Or in code:
 builder.Services.AddInfobipSmsSender(options =>
 {
     options.ApiKey = "your-api-key";
-    options.BaseUrl = "https://api.infobip.com";
-    options.SenderName = "MyApp";
+    options.BasePath = "https://XXXXXXXX.api.infobip.com"; // account-specific URL
+    options.Sender = "MyApp";
 });
 ```
 
@@ -41,17 +48,27 @@ builder.Services.AddInfobipSmsSender(options =>
   "Sms": {
     "Infobip": {
       "ApiKey": "your-api-key",
-      "BaseUrl": "https://api.infobip.com",
-      "SenderName": "MyApp"
+      "BasePath": "https://XXXXXXXX.api.infobip.com",
+      "Sender": "MyApp"
     }
   }
 }
 ```
 
+### Options
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `ApiKey` | `string` | Yes | Infobip API key for bearer authentication. |
+| `BasePath` | `string` | Yes | Account-specific Infobip base URL (must be HTTPS). |
+| `Sender` | `string` | Yes | Sender name or number shown to recipients. |
+
 ## Dependencies
 
 - `Headless.Sms.Abstractions`
+- `Microsoft.Extensions.Http.Resilience`
 
 ## Side Effects
 
-- Registers `ISmsSender` as singleton
+- Registers `ISmsSender` as singleton (`InfobipSmsSender`).
+- Registers a named `HttpClient` (`Headless:InfobipSms`) with a standard resilience handler (retry disabled).
