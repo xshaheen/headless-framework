@@ -15,6 +15,24 @@ public static class SetupAuditLogEntityFramework
 {
     extension(HeadlessAuditLogSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures the audit log to persist entries through the specified EF Core
+        /// <typeparamref name="TContext"/>. Audit entries are added to the same
+        /// <c>DbContext</c> that is executing <c>SaveChanges</c> and commit atomically
+        /// with the entity changes — no separate connection or transaction is opened.
+        /// </summary>
+        /// <typeparam name="TContext">
+        /// The <c>DbContext</c> subclass that owns the audit log table. The context must call
+        /// <see cref="AuditLogModelBuilderExtensions.AddHeadlessAuditLog"/> inside
+        /// <c>OnModelCreating</c>, which is validated at application startup.
+        /// </typeparam>
+        /// <remarks>
+        /// This overload uses EF Core migrations for schema management; the startup storage
+        /// initializer (<see cref="AuditLogStorageOptions.InitializeOnStartup"/>) has no effect
+        /// in EF mode. A startup gate validates that the registered
+        /// <typeparamref name="TContext"/> contains the <c>AuditLogEntry</c> entity and throws
+        /// <see cref="InvalidOperationException"/> when the model does not include it.
+        /// </remarks>
         public HeadlessAuditLogSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext
         {
