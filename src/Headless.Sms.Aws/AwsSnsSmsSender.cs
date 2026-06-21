@@ -22,6 +22,7 @@ public sealed class AwsSnsSmsSender(
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 

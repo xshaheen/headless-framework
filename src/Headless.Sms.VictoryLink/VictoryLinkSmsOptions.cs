@@ -16,11 +16,12 @@ public sealed class VictoryLinkSmsOptions
     public required string Password { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class VictoryLinkSmsOptionsValidator : AbstractValidator<VictoryLinkSmsOptions>
 {
     public VictoryLinkSmsOptionsValidator()
     {
-        RuleFor(x => x.Endpoint).NotEmpty().HttpUrl();
+        RuleFor(x => x.Endpoint).NotEmpty().HttpsOnlyUrl();
         RuleFor(x => x.Sender).NotEmpty();
         RuleFor(x => x.UserName).NotEmpty();
         RuleFor(x => x.Password).NotEmpty();

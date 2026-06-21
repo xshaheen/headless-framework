@@ -15,8 +15,6 @@ public sealed class InfobipSmsSender(
     ILogger<InfobipSmsSender> logger
 ) : ISmsSender
 {
-    internal const string HttpClientName = "Headless:InfobipSms";
-
     private readonly InfobipSmsOptions _options = optionsAccessor.Value;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -56,7 +54,7 @@ public sealed class InfobipSmsSender(
         );
         var smsRequest = new SmsRequest([smsMessage]);
 
-        using var httpClient = httpClientFactory.CreateClient(HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(SetupInfobip.HttpClientName);
         using var smsApi = new SmsApi(
             httpClient,
             new Configuration { BasePath = _options.BasePath, ApiKey = _options.ApiKey }
@@ -75,6 +73,16 @@ public sealed class InfobipSmsSender(
             FormattableString error = $"ErrorCode: {e.ErrorCode} {e.Message}";
 
             return SendSingleSmsResponse.Failed(error.ToInvariantString());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            logger.LogSmsSendException(e, request.Destinations.Count);
+
+            return SendSingleSmsResponse.Failed(e.Message);
         }
     }
 }

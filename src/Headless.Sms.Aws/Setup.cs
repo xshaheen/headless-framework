@@ -31,7 +31,7 @@ public static class SetupAwsSns
     {
         services.Configure<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(config);
 
-        return _AddCore(services, awsOptions);
+        return _AddAwsSnsSmsSenderCore(services, awsOptions);
     }
 
     /// <inheritdoc cref="AddAwsSnsSmsSender(IServiceCollection,IConfiguration,AWSOptions?)"/>
@@ -43,7 +43,7 @@ public static class SetupAwsSns
     {
         services.Configure<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(setupAction);
 
-        return _AddCore(services, awsOptions);
+        return _AddAwsSnsSmsSenderCore(services, awsOptions);
     }
 
     /// <inheritdoc cref="AddAwsSnsSmsSender(IServiceCollection,IConfiguration,AWSOptions?)"/>
@@ -55,10 +55,10 @@ public static class SetupAwsSns
     {
         services.Configure<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(setupAction);
 
-        return _AddCore(services, awsOptions);
+        return _AddAwsSnsSmsSenderCore(services, awsOptions);
     }
 
-    private static IServiceCollection _AddCore(IServiceCollection services, AWSOptions? awsOptions)
+    private static IServiceCollection _AddAwsSnsSmsSenderCore(IServiceCollection services, AWSOptions? awsOptions)
     {
         services.TryAddAWSService<IAmazonSimpleNotificationService>(awsOptions);
         services.AddSingleton<ISmsSender, AwsSnsSmsSender>();

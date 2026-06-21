@@ -17,11 +17,12 @@ public sealed class VodafoneSmsOptions
     public required string SecureHash { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class VodafoneSmsOptionsValidator : AbstractValidator<VodafoneSmsOptions>
 {
     public VodafoneSmsOptionsValidator()
     {
-        RuleFor(x => x.SendSmsEndpoint).NotEmpty().HttpUrl();
+        RuleFor(x => x.SendSmsEndpoint).NotEmpty().HttpsOnlyUrl();
         RuleFor(x => x.Sender).NotEmpty();
         RuleFor(x => x.AccountId).NotEmpty();
         RuleFor(x => x.Password).NotEmpty();

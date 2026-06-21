@@ -3,6 +3,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
+using Polly;
 
 namespace Headless.Sms.Connekio;
 
@@ -20,7 +21,7 @@ public static class SetupConnekio
     {
         services.Configure<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(config);
 
-        return _AddCore(services, configureClient, configureResilience);
+        return _AddConnekioSmsSenderCore(services, configureClient, configureResilience);
     }
 
     public static IServiceCollection AddConnekioSmsSender(
@@ -32,7 +33,7 @@ public static class SetupConnekio
     {
         services.Configure<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(setupAction);
 
-        return _AddCore(services, configureClient, configureResilience);
+        return _AddConnekioSmsSenderCore(services, configureClient, configureResilience);
     }
 
     public static IServiceCollection AddConnekioSmsSender(
@@ -44,10 +45,10 @@ public static class SetupConnekio
     {
         services.Configure<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(setupAction);
 
-        return _AddCore(services, configureClient, configureResilience);
+        return _AddConnekioSmsSenderCore(services, configureClient, configureResilience);
     }
 
-    private static IServiceCollection _AddCore(
+    private static IServiceCollection _AddConnekioSmsSenderCore(
         IServiceCollection services,
         Action<HttpClient>? configureClient,
         Action<HttpStandardResilienceOptions>? configureResilience
@@ -59,14 +60,13 @@ public static class SetupConnekio
             ? services.AddHttpClient(HttpClientName)
             : services.AddHttpClient(HttpClientName, configureClient);
 
-        if (configureResilience is not null)
+        // SMS sends are not idempotent: don't auto-retry by default to avoid duplicate messages.
+        // Consumers can opt back in via configureResilience (ideally with a provider idempotency key).
+        httpClientBuilder.AddStandardResilienceHandler(options =>
         {
-            httpClientBuilder.AddStandardResilienceHandler(configureResilience);
-        }
-        else
-        {
-            httpClientBuilder.AddStandardResilienceHandler();
-        }
+            options.Retry.ShouldHandle = static _ => PredicateResult.False();
+            configureResilience?.Invoke(options);
+        });
 
         return services;
     }

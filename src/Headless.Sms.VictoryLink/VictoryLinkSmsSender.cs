@@ -33,6 +33,27 @@ public sealed class VictoryLinkSmsSender(
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        try
+        {
+            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            logger.LogSmsSendException(e, request.Destinations.Count);
+
+            return SendSingleSmsResponse.Failed(e.Message);
+        }
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
+        SendSingleSmsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
         var victoryLinkRequest = new VictoryLinkRequest
         {
             SmsId = request.MessageId ?? Guid.NewGuid().ToString(),
@@ -59,12 +80,15 @@ public sealed class VictoryLinkSmsSender(
             return SendSingleSmsResponse.Failed("Failed to send.");
         }
 
-        if (VictoryLinkResponseCodes.IsSuccess(rawContent))
+        // The API returns the numeric code as a bare/JSON-quoted string; normalize before matching.
+        var code = rawContent.Trim().Trim('"').Trim();
+
+        if (VictoryLinkResponseCodes.IsSuccess(code))
         {
             return SendSingleSmsResponse.Succeeded();
         }
 
-        var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(rawContent);
+        var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(code);
 
         logger.LogFailedToSendSms(request.Destinations.Count, responseMessage);
 

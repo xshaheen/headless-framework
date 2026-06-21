@@ -22,4 +22,12 @@ internal static partial class VodafoneLoggerExtensions
         Message = "Failed to send SMS to {DestinationCount} destination(s), status: {StatusCode}"
     )]
     public static partial void LogFailedToSendSms(this ILogger logger, int destinationCount, HttpStatusCode statusCode);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SmsSendException",
+        Level = LogLevel.Error,
+        Message = "Failed to send SMS using Vodafone API to {DestinationCount} destination(s)"
+    )]
+    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 }

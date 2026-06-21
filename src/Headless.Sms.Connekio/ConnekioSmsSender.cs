@@ -21,9 +21,7 @@ public sealed class ConnekioSmsSender(
         TypeInfoResolver = ConnekioJsonSerializerContext.Default,
     };
 
-    private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly ConnekioSmsOptions _options = optionsAccessor.Value;
-    private readonly ILogger<ConnekioSmsSender> _logger = logger;
     private readonly Uri _singleSmsEndpoint = new(optionsAccessor.Value.SingleSmsEndpoint);
     private readonly Uri _batchSmsEndpoint = new(optionsAccessor.Value.BatchSmsEndpoint);
 
@@ -36,6 +34,29 @@ public sealed class ConnekioSmsSender(
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        try
+        {
+            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            logger.LogSmsSendException(e, request.Destinations.Count);
+
+            return SendSingleSmsResponse.Failed(e.Message);
+        }
+    }
+
+    #region Helpers
+
+    private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
+        SendSingleSmsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _GetEndpoint(request.IsBatch));
 
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/json");
@@ -44,28 +65,28 @@ public sealed class ConnekioSmsSender(
             $"{_options.UserName}:{_options.Password}:{_options.AccountId}"
         );
 
-        using var httpClient = _httpClientFactory.CreateClient(SetupConnekio.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(SetupConnekio.HttpClientName);
         var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
-        if (string.IsNullOrWhiteSpace(rawContent))
-        {
-            _logger.LogEmptyResponse();
-
-            return SendSingleSmsResponse.Failed("Failed to send.");
-        }
-
+        // A success status code is authoritative; only read the body to explain a failure.
         if (response.IsSuccessStatusCode)
         {
             return SendSingleSmsResponse.Succeeded();
         }
 
-        _logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(rawContent))
+        {
+            logger.LogEmptyResponse();
+        }
+        else
+        {
+            logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
+        }
 
         return SendSingleSmsResponse.Failed("Failed to send.");
     }
-
-    #region Helpers
 
     private string _BuildPayload(SendSingleSmsRequest request)
     {

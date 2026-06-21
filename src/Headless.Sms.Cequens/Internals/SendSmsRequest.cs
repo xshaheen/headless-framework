@@ -2,7 +2,7 @@
 
 namespace Headless.Sms.Cequens.Internals;
 
-public sealed class SendSmsRequest
+internal sealed class SendSmsRequest
 {
     [JsonPropertyName("senderName")]
     public required string SenderName { get; init; }

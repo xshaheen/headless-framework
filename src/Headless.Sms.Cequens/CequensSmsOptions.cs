@@ -19,12 +19,13 @@ public sealed class CequensSmsOptions
     public string? Token { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class CequensSmsOptionsValidator : AbstractValidator<CequensSmsOptions>
 {
     public CequensSmsOptionsValidator()
     {
-        RuleFor(x => x.SingleSmsEndpoint).NotEmpty().HttpUrl();
-        RuleFor(x => x.TokenEndpoint).NotEmpty().HttpUrl();
+        RuleFor(x => x.SingleSmsEndpoint).NotEmpty().HttpsOnlyUrl();
+        RuleFor(x => x.TokenEndpoint).NotEmpty().HttpsOnlyUrl();
         RuleFor(x => x.ApiKey).NotEmpty();
         RuleFor(x => x.UserName).NotEmpty();
         RuleFor(x => x.SenderName).NotEmpty();

@@ -19,12 +19,13 @@ public sealed class ConnekioSmsOptions
     public required string Password { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class ConnekioSmsOptionsValidator : AbstractValidator<ConnekioSmsOptions>
 {
     public ConnekioSmsOptionsValidator()
     {
-        RuleFor(x => x.SingleSmsEndpoint).NotEmpty().HttpUrl();
-        RuleFor(x => x.BatchSmsEndpoint).NotEmpty().HttpUrl();
+        RuleFor(x => x.SingleSmsEndpoint).NotEmpty().HttpsOnlyUrl();
+        RuleFor(x => x.BatchSmsEndpoint).NotEmpty().HttpsOnlyUrl();
         RuleFor(x => x.Sender).NotEmpty();
         RuleFor(x => x.AccountId).NotEmpty();
         RuleFor(x => x.UserName).NotEmpty();

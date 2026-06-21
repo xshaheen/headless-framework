@@ -38,6 +38,27 @@ public sealed class CequensSmsSender(
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        try
+        {
+            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            logger.LogSmsSendException(e, request.Destinations.Count);
+
+            return SendSingleSmsResponse.Failed(e.Message);
+        }
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
+        SendSingleSmsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
         using var httpClient = httpClientFactory.CreateClient(SetupCequens.HttpClientName);
 
         var jwtToken =
@@ -108,29 +129,43 @@ public sealed class CequensSmsSender(
                 return _cachedToken;
             }
 
-            var signInRequest = new SigningInRequest(_options.ApiKey, _options.UserName);
-            using var signInContent = JsonContent.Create(signInRequest, options: _JsonOptions);
-            var response = await httpClient
-                .PostAsync(_options.TokenEndpoint, signInContent, cancellationToken)
-                .ConfigureAwait(false);
-            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                logger.LogFailedToGetTokenWithStatusCode(response.StatusCode);
+                var signInRequest = new SigningInRequest(_options.ApiKey, _options.UserName);
+                using var signInContent = JsonContent.Create(signInRequest, options: _JsonOptions);
+                var response = await httpClient
+                    .PostAsync(_options.TokenEndpoint, signInContent, cancellationToken)
+                    .ConfigureAwait(false);
+                var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    logger.LogFailedToGetTokenWithStatusCode(response.StatusCode);
+
+                    return null;
+                }
+
+                var token = JsonSerializer.Deserialize<SigningInResponse>(content, _JsonOptions)?.Data?.AccessToken;
+
+                if (token != null)
+                {
+                    _cachedToken = token;
+                    _tokenExpiration = now.AddMinutes(10);
+                }
+
+                return token;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                // Return null so the caller can fall back to a statically configured token.
+                logger.LogFailedToGetTokenException(e);
 
                 return null;
             }
-
-            var token = JsonSerializer.Deserialize<SigningInResponse>(content, _JsonOptions)?.Data?.AccessToken;
-
-            if (token != null)
-            {
-                _cachedToken = token;
-                _tokenExpiration = now.AddMinutes(10);
-            }
-
-            return token;
         }
         finally
         {

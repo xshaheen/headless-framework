@@ -7,13 +7,17 @@ namespace Headless.Sms.Dev;
 [PublicAPI]
 public static class SetupDevSms
 {
-    public static void AddDevSmsSender(this IServiceCollection services, string filePath)
+    public static IServiceCollection AddDevSmsSender(this IServiceCollection services, string filePath)
     {
-        services.AddSingleton<ISmsSender>(new DevSmsSender(filePath));
+        services.AddSingleton<ISmsSender>(_ => new DevSmsSender(filePath));
+
+        return services;
     }
 
-    public static void AddNoopSmsSender(this IServiceCollection services)
+    public static IServiceCollection AddNoopSmsSender(this IServiceCollection services)
     {
         services.AddSingleton<ISmsSender, NoopSmsSender>();
+
+        return services;
     }
 }

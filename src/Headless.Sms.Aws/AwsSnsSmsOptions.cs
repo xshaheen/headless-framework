@@ -8,7 +8,7 @@ public sealed class AwsSnsSmsOptions
 {
     public required string SenderId { get; init; }
 
-    public required decimal? MaxPrice { get; init; }
+    public decimal? MaxPrice { get; init; }
 }
 
 [UsedImplicitly]
