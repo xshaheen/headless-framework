@@ -4,13 +4,13 @@ Defines the interface for extracting text from media files for indexing.
 
 ## Problem Solved
 
-Provides a unified API for extracting textual content from various document formats (PDF, Word, PowerPoint), enabling full-text search indexing of uploaded files.
+Provides a single, format-agnostic contract (`IMediaFileTextProvider`) for extracting textual content from document streams. Application code depends on this interface only; concrete format implementations are provided by `Headless.Media.Indexing` or custom implementations.
 
 ## Key Features
 
-- `IMediaFileTextProvider` - Interface for text extraction
-- Stream-based API for memory efficiency
-- Async support for large file processing
+- `IMediaFileTextProvider` — single-method interface: `Task<string> GetTextAsync(Stream fileStream)`
+- Stream-based API keeps format-parsing details out of application code
+- No MIME-type coupling in the interface — format selection is the caller's responsibility
 
 ## Installation
 
@@ -18,15 +18,28 @@ Provides a unified API for extracting textual content from various document form
 dotnet add package Headless.Media.Indexing.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
+// Application service depending only on the abstraction
 public sealed class DocumentIndexer(IEnumerable<IMediaFileTextProvider> providers)
 {
-    public async Task<string> ExtractTextAsync(Stream fileStream, string mimeType)
+    private static readonly Dictionary<string, Type> _mimeMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        var provider = providers.FirstOrDefault(p => p.SupportsMimeType(mimeType));
-        if (provider is null) return string.Empty;
+        ["application/pdf"] = typeof(PdfMediaFileTextProvider),
+        ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = typeof(WordDocumentMediaFileTextProvider),
+        ["application/vnd.openxmlformats-officedocument.presentationml.presentation"] = typeof(PresentationDocumentMediaFileTextProvider),
+    };
+
+    public async Task<string?> ExtractTextAsync(Stream fileStream, string mimeType, CancellationToken ct = default)
+    {
+        if (!_mimeMap.TryGetValue(mimeType, out var providerType))
+        {
+            return null;
+        }
+
+        var provider = providers.FirstOrDefault(p => p.GetType() == providerType);
+        if (provider is null) return null;
 
         return await provider.GetTextAsync(fileStream).ConfigureAwait(false);
     }
@@ -35,7 +48,7 @@ public sealed class DocumentIndexer(IEnumerable<IMediaFileTextProvider> provider
 
 ## Configuration
 
-No configuration required. This is an abstractions-only package.
+None. This is an abstractions-only package with no configuration.
 
 ## Dependencies
 
