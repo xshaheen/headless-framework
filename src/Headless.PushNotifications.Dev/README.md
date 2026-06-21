@@ -8,7 +8,7 @@ Provides a no-op push notification implementation for development/testing enviro
 
 ## Key Features
 
-- `NoopPushNotificationService` - Silent implementation
+- Silent no-op `IPushNotificationService` implementation
 - No network calls
 - Always returns success responses
 
@@ -25,7 +25,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddNoopPushNotificationService();
+    builder.Services.AddHeadlessPushNotifications(setup => setup.UseNoop());
 }
 ```
 

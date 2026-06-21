@@ -33,8 +33,8 @@ public sealed class NotificationService(IPushNotificationService pushService)
             new Dictionary<string, string> { ["orderId"] = "123" }
         );
 
-        if (!response.IsSuccess)
-            _logger.LogError("Push failed: {Error}", response.Error);
+        if (response.IsFailed())
+            _logger.LogError("Push failed: {Error}", response.FailureError);
     }
 
     public async Task SendToManyAsync(IReadOnlyList<string> tokens, string title, string message)

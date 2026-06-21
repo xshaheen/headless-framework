@@ -58,6 +58,16 @@ public sealed record PushNotificationResponse
         return Status is PushNotificationResponseStatus.Failure;
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when the device token is no longer registered with the provider and
+    /// should be removed from the caller's token store. Exactly one of <see cref="IsSucceeded"/>,
+    /// <see cref="IsFailed"/>, and <see cref="IsUnregistered"/> returns <see langword="true"/> for any response.
+    /// </summary>
+    public bool IsUnregistered()
+    {
+        return Status is PushNotificationResponseStatus.Unregistered;
+    }
+
     /// <summary>Creates a response indicating the notification was accepted for delivery.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="token"/> or <paramref name="messageId"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="token"/> or <paramref name="messageId"/> is empty or white space.</exception>
@@ -68,6 +78,20 @@ public sealed record PushNotificationResponse
             Status = PushNotificationResponseStatus.Success,
             Token = Argument.IsNotNullOrWhiteSpace(token),
             MessageId = Argument.IsNotNullOrWhiteSpace(messageId),
+        };
+    }
+
+    /// <summary>
+    /// Builds a success response without validating the arguments. Intended only for the no-op development
+    /// provider, which must never throw on inputs that a real provider would reject.
+    /// </summary>
+    internal static PushNotificationResponse SucceededUnchecked(string token, string messageId)
+    {
+        return new PushNotificationResponse
+        {
+            Status = PushNotificationResponseStatus.Success,
+            Token = token,
+            MessageId = messageId,
         };
     }
 

@@ -8,7 +8,7 @@ Provides push notification delivery via Firebase Cloud Messaging using the `IPus
 
 ## Key Features
 
-- `GoogleCloudMessagingPushNotificationService` - FCM implementation
+- FCM-backed `IPushNotificationService` implementation
 - Single device and multicast support
 - Custom data payload support
 - Automatic token validation
@@ -29,11 +29,16 @@ dotnet add package Headless.PushNotifications.Firebase
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddFirebasePushNotificationService(options =>
-{
-    options.CredentialsPath = "path/to/service-account.json";
-    // Or use environment variable: GOOGLE_APPLICATION_CREDENTIALS
-});
+// Bind and validate the "Firebase" configuration section (recommended).
+builder.Services.AddHeadlessPushNotifications(setup =>
+    setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+
+// Or supply options directly:
+builder.Services.AddHeadlessPushNotifications(setup =>
+    setup.UseFirebase(new FirebaseOptions
+    {
+        Json = await File.ReadAllTextAsync("service-account.json"),
+    }));
 ```
 
 ## Configuration
@@ -41,36 +46,39 @@ builder.Services.AddFirebasePushNotificationService(options =>
 ### Basic Setup
 
 ```csharp
-services.AddPushNotifications(new FirebaseOptions
-{
-    Json = await File.ReadAllTextAsync("firebase-credentials.json")
-});
+services.AddHeadlessPushNotifications(setup =>
+    setup.UseFirebase(new FirebaseOptions
+    {
+        Json = await File.ReadAllTextAsync("firebase-credentials.json"),
+    }));
 ```
 
 ### Retry Configuration
 
 ```csharp
-services.AddPushNotifications(new FirebaseOptions
-{
-    Json = await File.ReadAllTextAsync("firebase-credentials.json"),
-    Retry = new RetryOptions
+services.AddHeadlessPushNotifications(setup =>
+    setup.UseFirebase(new FirebaseOptions
     {
-        MaxAttempts = 5,                              // 0-10, default: 5
-        MaxDelay = TimeSpan.FromMinutes(1),           // default: 1 min
-        RateLimitDelay = TimeSpan.FromSeconds(60),    // default: 60s
-        UseJitter = true                              // default: true
-    }
-});
+        Json = await File.ReadAllTextAsync("firebase-credentials.json"),
+        Retry = new FirebaseRetryOptions
+        {
+            MaxAttempts = 5,                              // 0-10, default: 5
+            MaxDelay = TimeSpan.FromMinutes(1),           // default: 1 min
+            RateLimitDelay = TimeSpan.FromSeconds(60),    // default: 60s
+            UseJitter = true                              // default: true
+        }
+    }));
 ```
 
 ### Disable Retry
 
 ```csharp
-services.AddPushNotifications(new FirebaseOptions
-{
-    Json = json,
-    Retry = new RetryOptions { MaxAttempts = 0 } // Disable
-});
+services.AddHeadlessPushNotifications(setup =>
+    setup.UseFirebase(new FirebaseOptions
+    {
+        Json = json,
+        Retry = new FirebaseRetryOptions { MaxAttempts = 0 } // Disable
+    }));
 ```
 
 ### appsettings.json
@@ -126,5 +134,5 @@ services.AddPushNotifications(new FirebaseOptions
 ## Side Effects
 
 - Registers `IPushNotificationService` as singleton
-- Registers `ResiliencePipeline` named "Headless:FcmRetry"
-- Initializes Firebase Admin SDK
+- Registers a `ResiliencePipeline` named "Headless:FcmRetry"
+- Initializes the Firebase Admin SDK lazily on the first send; registration itself has no side effects

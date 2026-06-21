@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Checks;
 
 namespace Headless.PushNotifications.Firebase;
 
@@ -17,12 +16,12 @@ public sealed class FirebaseOptions
     /// Contains sensitive private key data. Do not log or serialize.
     /// </remarks>
     [JsonIgnore]
-    public required string Json { get; init; }
+    public required string Json { get; set; }
 
     /// <summary>
     /// Retry policy configuration for FCM API calls.
     /// </summary>
-    public FirebaseRetryOptions Retry { get; init; } = new();
+    public FirebaseRetryOptions Retry { get; set; } = new();
 
     /// <inheritdoc />
     public override string ToString() => "FirebaseOptions { Json = [REDACTED] }";
@@ -31,6 +30,10 @@ public sealed class FirebaseOptions
 /// <summary>
 /// Retry policy configuration for Firebase Cloud Messaging API calls.
 /// </summary>
+/// <remarks>
+/// All values are validated by <see cref="FirebaseOptionsValidator"/> at application startup; the validator
+/// is the single source of truth for the accepted ranges.
+/// </remarks>
 public sealed class FirebaseRetryOptions
 {
     /// <summary>
@@ -41,62 +44,26 @@ public sealed class FirebaseRetryOptions
     /// Transient errors (QuotaExceeded, Unavailable, Internal) retry with exponential backoff.
     /// Permanent errors (Unregistered, InvalidArgument) return immediately.
     /// </remarks>
-    public int MaxAttempts
-    {
-        get;
-        init
-        {
-            field = Argument.IsInclusiveBetween(
-                argument: value,
-                minimumValue: 0,
-                maximumValue: 10,
-                argumentParamName: nameof(MaxAttempts)
-            );
-        }
-    } = 5;
+    public int MaxAttempts { get; set; } = 5;
 
     /// <summary>
-    /// Maximum delay between retry attempts. Individual retries capped at this value.
+    /// Maximum delay between retry attempts. Individual retries (including Retry-After delays) are capped at
+    /// this value.
     /// </summary>
     /// <remarks>
-    /// Default: 1 minute. Valid range: > 0 and &lt;= 5 minutes.
+    /// Default: 1 minute. Valid range: 1 second to 5 minutes.
     /// Exponential backoff sequence (1s, 2s, 4s, 8s, 16s, 32s) capped at MaxDelay.
     /// </remarks>
-    public TimeSpan MaxDelay
-    {
-        get;
-        init
-        {
-            field = Argument.IsInclusiveBetween(
-                argument: value,
-                minimumValue: TimeSpan.Zero,
-                maximumValue: TimeSpan.FromMinutes(5),
-                argumentParamName: nameof(MaxDelay)
-            );
-        }
-    } = TimeSpan.FromMinutes(1);
+    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// Delay used when FCM returns HTTP 429 QuotaExceeded error.
     /// </summary>
     /// <remarks>
-    /// Default: 60 seconds per FCM recommendation.
-    /// If FCM response includes Retry-After header, that value is used instead.
-    /// Valid range: > 0 and &lt;= 5 minutes.
+    /// Default: 60 seconds per FCM recommendation. If the FCM response includes a Retry-After header, that
+    /// value is used instead (clamped to <see cref="MaxDelay"/>). Valid range: 1 second to 5 minutes.
     /// </remarks>
-    public TimeSpan RateLimitDelay
-    {
-        get;
-        init
-        {
-            field = Argument.IsInclusiveBetween(
-                argument: value,
-                minimumValue: TimeSpan.Zero,
-                maximumValue: TimeSpan.FromMinutes(5),
-                argumentParamName: nameof(RateLimitDelay)
-            );
-        }
-    } = TimeSpan.FromSeconds(60);
+    public TimeSpan RateLimitDelay { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// Enable jitter to prevent thundering herd on retry.
@@ -105,14 +72,14 @@ public sealed class FirebaseRetryOptions
     /// Default: true. Adds random variance (±25%) to retry delays.
     /// Distributes retry load across time to avoid overwhelming FCM servers.
     /// </remarks>
-    public bool UseJitter { get; init; } = true;
+    public bool UseJitter { get; set; } = true;
 }
 
 /// <summary>
 /// FluentValidation validator for <see cref="FirebaseOptions"/>. Wired up and executed automatically by the
-/// <c>AddFirebasePushNotifications</c> setup methods.
+/// <c>UseFirebase</c> setup methods.
 /// </summary>
-public sealed class FirebaseOptionsValidator : AbstractValidator<FirebaseOptions>
+internal sealed class FirebaseOptionsValidator : AbstractValidator<FirebaseOptions>
 {
     public FirebaseOptionsValidator()
     {

@@ -125,6 +125,7 @@
     <Folder Name="/Captcha/">
         <Project Path="demo/Headless.ReCaptcha.Demo/Headless.ReCaptcha.Demo.csproj" />
         <Project Path="src/Headless.ReCaptcha/Headless.ReCaptcha.csproj" />
+        <Project Path="tests/Headless.ReCaptcha.Tests.Unit/Headless.ReCaptcha.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Database/">
         <Project Path="src\Headless.Redis\Headless.Redis.csproj" />

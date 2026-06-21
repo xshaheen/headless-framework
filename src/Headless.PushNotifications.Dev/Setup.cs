@@ -5,18 +5,31 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.PushNotifications.Dev;
 
-/// <summary>Registration helper for the no-op (development/testing) push-notification provider.</summary>
+/// <summary>
+/// Registers the no-op (development/testing) provider on a <see cref="HeadlessPushNotificationsSetupBuilder"/>.
+/// </summary>
 [PublicAPI]
-public static class SetupNoopPushNotification
+public static class SetupNoopPushNotifications
 {
-    /// <summary>
-    /// Registers <see cref="NoopPushNotificationService"/> as the singleton
-    /// <see cref="IPushNotificationService"/>. Intended for development and testing only.
-    /// </summary>
-    public static IServiceCollection AddNoopPushNotification(this IServiceCollection services)
+    extension(HeadlessPushNotificationsSetupBuilder setup)
     {
-        services.AddSingleton<IPushNotificationService, NoopPushNotificationService>();
+        /// <summary>
+        /// Selects the no-op provider, which sends nothing and always reports success. Intended for
+        /// development and testing only.
+        /// </summary>
+        public HeadlessPushNotificationsSetupBuilder UseNoop()
+        {
+            setup.RegisterExtension(new NoopProviderOptionsExtension());
 
-        return services;
+            return setup;
+        }
+    }
+
+    private sealed class NoopProviderOptionsExtension : IPushNotificationsProviderOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddSingleton<IPushNotificationService, NoopPushNotificationService>();
+        }
     }
 }

@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
-using Google.Apis.Auth.OAuth2;
 using Headless.Checks;
 using Headless.PushNotifications.Abstractions;
 using Headless.PushNotifications.Firebase.Internals;
@@ -11,167 +9,186 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 
 namespace Headless.PushNotifications.Firebase;
 
 /// <summary>
-/// Registration helpers for the Firebase Cloud Messaging push-notification provider.
+/// Registers the Firebase Cloud Messaging provider on a <see cref="HeadlessPushNotificationsSetupBuilder"/>.
 /// </summary>
 /// <remarks>
-/// All overloads register <see cref="IPushNotificationService"/> (as <see cref="FcmPushNotificationService"/>)
-/// and the FCM retry resilience pipeline, and create the process-wide <see cref="FirebaseApp.DefaultInstance"/>
-/// from the supplied service-account JSON. Because <see cref="FirebaseApp.DefaultInstance"/> is a process-global
-/// singleton, it is created only once: if it already exists (a second registration, or another caller created
-/// it first), the credentials passed here are ignored.
+/// The Firebase app and credentials are created lazily on the first send (not during registration), so
+/// configuration errors surface through the options validator at startup rather than as registration-time
+/// side effects, and several hosts can coexist in one process with different credentials.
 /// </remarks>
 [PublicAPI]
-public static class SetupFirebase
+public static class SetupFirebasePushNotifications
 {
-    extension(IServiceCollection services)
+    extension(HeadlessPushNotificationsSetupBuilder setup)
     {
-        /// <summary>
-        /// Registers the Firebase provider, binding and validating <see cref="FirebaseOptions"/> from the
-        /// given configuration section. Validation runs eagerly during registration.
-        /// </summary>
-        /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="configuration"/> is <see langword="null"/>.</exception>
-        /// <exception cref="InvalidOperationException">The section is missing or the bound options fail <see cref="FirebaseOptionsValidator"/> validation (for example missing JSON credentials).</exception>
-        public IServiceCollection AddFirebasePushNotifications(IConfigurationSection configuration)
+        /// <summary>Selects Firebase, binding and validating <see cref="FirebaseOptions"/> from configuration.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public HeadlessPushNotificationsSetupBuilder UseFirebase(IConfiguration configuration)
         {
-            Argument.IsNotNull(services);
             Argument.IsNotNull(configuration);
+            setup.RegisterExtension(new FirebaseProviderOptionsExtension(configuration));
 
-            var firebaseOptions = configuration.GetRequired<FirebaseOptions, FirebaseOptionsValidator>();
-            services.Configure<FirebaseOptions, FirebaseOptionsValidator>(configuration);
-            return services._AddCore(firebaseOptions);
+            return setup;
         }
 
-        /// <summary>
-        /// Registers the Firebase provider, configuring <see cref="FirebaseOptions"/> via a delegate. Options
-        /// are validated by <see cref="FirebaseOptionsValidator"/> at application startup.
-        /// </summary>
-        /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
-        public IServiceCollection AddFirebasePushNotifications(Action<FirebaseOptions> options)
+        /// <summary>Selects Firebase, configuring <see cref="FirebaseOptions"/> via a delegate.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessPushNotificationsSetupBuilder UseFirebase(Action<FirebaseOptions> configure)
         {
-            Argument.IsNotNull(services);
+            Argument.IsNotNull(configure);
+            setup.RegisterExtension(new FirebaseProviderOptionsExtension(configure));
+
+            return setup;
+        }
+
+        /// <summary>Selects Firebase, configuring <see cref="FirebaseOptions"/> with access to the service provider.</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessPushNotificationsSetupBuilder UseFirebase(Action<FirebaseOptions, IServiceProvider> configure)
+        {
+            Argument.IsNotNull(configure);
+            setup.RegisterExtension(new FirebaseProviderOptionsExtension(configure));
+
+            return setup;
+        }
+
+        /// <summary>Selects Firebase from a pre-built options instance (validated at startup).</summary>
+        /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+        public HeadlessPushNotificationsSetupBuilder UseFirebase(FirebaseOptions options)
+        {
             Argument.IsNotNull(options);
+            setup.RegisterExtension(new FirebaseProviderOptionsExtension(options));
 
-            var firebaseOptions = new FirebaseOptions { Json = string.Empty };
-            options(firebaseOptions);
-            services.Configure<FirebaseOptions, FirebaseOptionsValidator>(options);
-
-            return services._AddCore(firebaseOptions);
+            return setup;
         }
+    }
 
-        /// <summary>
-        /// Registers the Firebase provider from a pre-built options instance. This overload does not register
-        /// startup validation; the caller is responsible for supplying valid options.
-        /// </summary>
-        /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="options"/> is <see langword="null"/>.</exception>
-        public IServiceCollection AddFirebasePushNotifications(FirebaseOptions options)
-        {
-            Argument.IsNotNull(services);
-            Argument.IsNotNull(options);
-
-            return services._AddCore(options);
-        }
-
-        private IServiceCollection _AddCore(FirebaseOptions options)
-        {
-            services.TryAddSingleton(TimeProvider.System);
-
-            if (FirebaseApp.DefaultInstance is null)
+    private static void _AddFirebaseRetryPipeline(IServiceCollection services)
+    {
+        services.AddResiliencePipeline(
+            FcmResilienceKeys.RetryPipeline,
+            static (builder, context) =>
             {
-                FirebaseApp.Create(
-                    new AppOptions
+                var serviceProvider = context.ServiceProvider;
+                var retry = serviceProvider.GetRequiredService<IOptions<FirebaseOptions>>().Value.Retry;
+                var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+                var logger = serviceProvider.GetRequiredService<ILogger<FcmMessageSender>>();
+
+                // MaxAttempts == 0 disables retry: leave the pipeline empty (pass-through).
+                if (retry.MaxAttempts == 0)
+                {
+                    return;
+                }
+
+                builder.AddRetry(
+                    new RetryStrategyOptions
                     {
-                        Credential = CredentialFactory
-                            .FromJson<ServiceAccountCredential>(options.Json)
-                            .ToGoogleCredential(),
+                        ShouldHandle = new PredicateBuilder()
+                            .Handle<FirebaseMessagingException>(RetryHelper.IsTransientError)
+                            .Handle<HttpRequestException>()
+                            // Only retry timeouts, not user-initiated cancellation.
+                            .Handle<TaskCanceledException>(static ex => !ex.CancellationToken.IsCancellationRequested),
+                        MaxRetryAttempts = retry.MaxAttempts,
+                        Delay = TimeSpan.FromSeconds(1), // Initial delay.
+                        BackoffType = DelayBackoffType.Exponential,
+                        UseJitter = retry.UseJitter,
+                        MaxDelay = retry.MaxDelay,
+                        DelayGenerator = args =>
+                        {
+                            // Honor (and cap) the Retry-After header for rate limits. Polly ignores MaxDelay for
+                            // DelayGenerator output, so GetRetryAfterDelay applies the cap itself.
+                            if (
+                                args.Outcome.Exception is FirebaseMessagingException
+                                {
+                                    MessagingErrorCode: MessagingErrorCode.QuotaExceeded,
+                                } ex
+                            )
+                            {
+                                var delay = RetryHelper.GetRetryAfterDelay(
+                                    ex,
+                                    retry.RateLimitDelay,
+                                    retry.MaxDelay,
+                                    timeProvider
+                                );
+
+                                return ValueTask.FromResult<TimeSpan?>(delay);
+                            }
+
+                            // Use default exponential backoff for other transient errors.
+                            return ValueTask.FromResult<TimeSpan?>(null);
+                        },
+                        OnRetry = args =>
+                        {
+                            logger.LogRetryAttempt(
+                                args.AttemptNumber,
+                                args.RetryDelay.TotalSeconds,
+                                args.Outcome.Exception?.Message ?? "Unknown error"
+                            );
+
+                            var activity = Activity.Current;
+                            activity?.AddEvent(
+                                new ActivityEvent(
+                                    "FCM Retry",
+                                    tags: new ActivityTagsCollection
+                                    {
+                                        ["retry.attempt"] = args.AttemptNumber,
+                                        ["retry.delay_seconds"] = args.RetryDelay.TotalSeconds,
+                                        ["error.type"] = args.Outcome.Exception?.GetType().Name,
+                                    }
+                                )
+                            );
+
+                            return default;
+                        },
                     }
                 );
             }
+        );
+    }
 
-            // Register resilience pipeline for FCM retry logic
-            services.AddResiliencePipeline(
-                "Headless:FcmRetry",
-                builder =>
+    private sealed class FirebaseProviderOptionsExtension : IPushNotificationsProviderOptionsExtension
+    {
+        private readonly Action<IServiceCollection> _configureOptions;
+
+        public FirebaseProviderOptionsExtension(IConfiguration configuration)
+        {
+            _configureOptions = services =>
+                services.Configure<FirebaseOptions, FirebaseOptionsValidator>(configuration);
+        }
+
+        public FirebaseProviderOptionsExtension(Action<FirebaseOptions> configure)
+        {
+            _configureOptions = services => services.Configure<FirebaseOptions, FirebaseOptionsValidator>(configure);
+        }
+
+        public FirebaseProviderOptionsExtension(Action<FirebaseOptions, IServiceProvider> configure)
+        {
+            _configureOptions = services => services.Configure<FirebaseOptions, FirebaseOptionsValidator>(configure);
+        }
+
+        public FirebaseProviderOptionsExtension(FirebaseOptions options)
+        {
+            _configureOptions = services =>
+                services.Configure<FirebaseOptions, FirebaseOptionsValidator>(target =>
                 {
-                    builder.AddRetry(
-                        new RetryStrategyOptions
-                        {
-                            ShouldHandle = new PredicateBuilder()
-                                .Handle<FirebaseMessagingException>(RetryHelper.IsTransientError)
-                                .Handle<HttpRequestException>()
-                                // Only retry timeouts, not user-initiated cancellation
-                                .Handle<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested),
-                            MaxRetryAttempts = options.Retry.MaxAttempts,
-                            Delay = TimeSpan.FromSeconds(1), // Initial delay
-                            BackoffType = DelayBackoffType.Exponential,
-                            UseJitter = options.Retry.UseJitter,
-                            MaxDelay = options.Retry.MaxDelay,
-                            DelayGenerator = args =>
-                            {
-                                // Honor Retry-After header for rate limits
-                                if (
-                                    args.Outcome.Exception is FirebaseMessagingException
-                                    {
-                                        MessagingErrorCode: MessagingErrorCode.QuotaExceeded,
-                                    } ex
-                                )
-                                {
-                                    var delay = RetryHelper.GetRetryAfterDelay(
-                                        ex,
-                                        options.Retry.RateLimitDelay,
-                                        TimeProvider.System
-                                    );
-                                    return ValueTask.FromResult<TimeSpan?>(delay);
-                                }
+                    target.Json = options.Json;
+                    target.Retry = options.Retry;
+                });
+        }
 
-                                // Use default exponential backoff for other transient errors
-                                return ValueTask.FromResult<TimeSpan?>(null);
-                            },
-                            OnRetry = args =>
-                            {
-                                // Respect user cancellation immediately
-                                args.Context.CancellationToken.ThrowIfCancellationRequested();
-
-                                // Log retry attempt
-                                var loggerKey = new ResiliencePropertyKey<ILogger>("logger");
-                                if (args.Context.Properties.TryGetValue(loggerKey, out var loggerInstance))
-                                {
-                                    loggerInstance.LogRetryAttempt(
-                                        args.AttemptNumber,
-                                        args.RetryDelay.TotalSeconds,
-                                        args.Outcome.Exception?.Message ?? "Unknown error"
-                                    );
-                                }
-
-                                // OpenTelemetry Activity tracking
-                                var activity = Activity.Current;
-                                activity?.AddEvent(
-                                    new ActivityEvent(
-                                        "FCM Retry",
-                                        tags: new ActivityTagsCollection
-                                        {
-                                            ["retry.attempt"] = args.AttemptNumber,
-                                            ["retry.delay_seconds"] = args.RetryDelay.TotalSeconds,
-                                            ["error.type"] = args.Outcome.Exception?.GetType().Name,
-                                        }
-                                    )
-                                );
-
-                                return default;
-                            },
-                        }
-                    );
-                }
-            );
-
+        public void AddServices(IServiceCollection services)
+        {
+            _configureOptions(services);
+            services.TryAddSingleton(TimeProvider.System);
+            _AddFirebaseRetryPipeline(services);
+            services.TryAddSingleton<IFcmMessageSender, FcmMessageSender>();
             services.AddSingleton<IPushNotificationService, FcmPushNotificationService>();
-
-            return services;
         }
     }
 }
