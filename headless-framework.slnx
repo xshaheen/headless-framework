@@ -383,6 +383,12 @@
         <Project Path="tests\Headless.Sms.Abstractions.Tests.Unit\Headless.Sms.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sms.Cequens.Tests.Unit\Headless.Sms.Cequens.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sms.VictoryLink.Tests.Unit\Headless.Sms.VictoryLink.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Aws.Tests.Unit\Headless.Sms.Aws.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Connekio.Tests.Unit\Headless.Sms.Connekio.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Dev.Tests.Unit\Headless.Sms.Dev.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Infobip.Tests.Unit\Headless.Sms.Infobip.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Twilio.Tests.Unit\Headless.Sms.Twilio.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Vodafone.Tests.Unit\Headless.Sms.Vodafone.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Solution Items/">
         <File Path=".editorconfig" />
