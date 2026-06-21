@@ -13,6 +13,29 @@ namespace Headless.Tus.Services;
 
 public sealed partial class TusAzureStore
 {
+    /// <summary>
+    /// Reads upload data from a <c>Stream</c> and stages it as Azure Block Blob blocks,
+    /// returning the number of bytes written in this request.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="stream">the stream supplying PATCH request body data</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>bytes appended by this PATCH request</returns>
+    /// <remarks>
+    /// Behavior mirrors the <c>PipeReader</c> overload: blocks are staged and committed
+    /// atomically when no checksum is requested; when a TUS-Checksum header is present, blocks
+    /// are staged only and the digest is stored in blob metadata pending
+    /// <c>VerifyChecksumAsync</c>. When <c>EnableChunkSplitting</c> is
+    /// <see langword="true"/>, the stream is split into fixed-size blocks using a pooled
+    /// buffer; otherwise the entire stream is staged as one block.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">thrown if the file does not exist</exception>
+    /// <exception cref="NotSupportedException">
+    /// thrown if the client requests a checksum algorithm not in the supported list
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// thrown if <paramref name="fileId"/> or <paramref name="stream"/> is null
+    /// </exception>
     public async Task<long> AppendDataAsync(string fileId, Stream stream, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(fileId);

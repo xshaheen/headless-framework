@@ -9,6 +9,17 @@ namespace Headless.Tus.Services;
 
 public sealed partial class TusAzureStore : ITusExpirationStore
 {
+    /// <summary>
+    /// Stores the expiration timestamp for the given upload in the blob's metadata.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="expires">the UTC instant after which the upload is considered expired</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <remarks>
+    /// If the blob does not exist, the call is silently ignored and a warning is logged. The
+    /// expiration value is persisted in the <c>tus_expiration</c> blob metadata key and evaluated
+    /// during <c>GetExpiredFilesAsync</c> and <c>RemoveExpiredFilesAsync</c>.
+    /// </remarks>
     public async Task SetExpirationAsync(string fileId, DateTimeOffset expires, CancellationToken cancellationToken)
     {
         var blobClient = _GetBlobClient(fileId);
@@ -37,6 +48,13 @@ public sealed partial class TusAzureStore : ITusExpirationStore
         }
     }
 
+    /// <summary>
+    /// Returns the expiration timestamp stored for the given upload, or <see langword="null"/>
+    /// if the file does not exist or no expiration has been set.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>the expiration instant, or <see langword="null"/></returns>
     public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
         var azureFile = await _GetTusFileInfoAsync(fileId, cancellationToken);
@@ -44,6 +62,15 @@ public sealed partial class TusAzureStore : ITusExpirationStore
         return azureFile?.Metadata.DateExpiration;
     }
 
+    /// <summary>
+    /// Enumerates all uploads in the configured container whose expiration timestamp is in the
+    /// past.
+    /// </summary>
+    /// <param name="cancellationToken">token to cancel the enumeration</param>
+    /// <returns>
+    /// a collection of file identifiers for uploads whose <c>tus_expiration</c> metadata value is
+    /// at or before the current UTC time
+    /// </returns>
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
     {
         var expiredFiles = new List<string>();
@@ -83,6 +110,17 @@ public sealed partial class TusAzureStore : ITusExpirationStore
         return expiredFiles;
     }
 
+    /// <summary>
+    /// Deletes all expired uploads discovered by <c>GetExpiredFilesAsync</c> and returns the
+    /// number of blobs successfully removed.
+    /// </summary>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>the number of expired files deleted in this call</returns>
+    /// <remarks>
+    /// Individual deletion failures are logged at <c>Error</c> level and do not abort the
+    /// remaining deletions. The method always returns the count of files that were actually
+    /// removed rather than throwing on partial failure.
+    /// </remarks>
     public async Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken)
     {
         var expiredFiles = await GetExpiredFilesAsync(cancellationToken);

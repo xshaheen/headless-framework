@@ -13,6 +13,36 @@ using tusdotnet.Stores.FileIdProviders;
 
 namespace Headless.Tus.Services;
 
+/// <summary>
+/// TUS resumable-upload store backed by Azure Block Blob Storage.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Implements the core TUS protocol extensions — Creation, CreationDeferLength, Checksum,
+/// Concatenation, Expiration, Termination, and pipeline-aware append — all on top of Azure
+/// Block Blob staged blocks. Each PATCH request stages one or more blocks and commits them
+/// atomically alongside updated metadata.
+/// </para>
+/// <para>
+/// When <see cref="TusAzureStoreOptions.EnableChunkSplitting"/> is enabled (the default), incoming
+/// PATCH bodies are split into fixed-size blocks so that individual blocks never exceed Azure's
+/// 100 MB per-block limit. Without splitting, the entire PATCH body is staged as one block.
+/// </para>
+/// <para>
+/// <b>Checksum deferred commit:</b> when a PATCH request carries a TUS-Checksum header, blocks
+/// are staged but <em>not</em> committed until <c>VerifyChecksumAsync</c> confirms the digest.
+/// The block IDs and the pre-calculated digest are stored in blob metadata
+/// (<c>tus_last_chunk_blocks</c> / <c>tus_last_chunk_checksum</c>) so verification and commit
+/// happen in a separate call. Failed verification leaves the blocks uncommitted; Azure
+/// automatically discards uncommitted blocks after seven days.
+/// </para>
+/// <para>
+/// When <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>
+/// (the default), the container is created <em>synchronously</em> inside the constructor. Any
+/// connectivity or authorization failure is therefore surfaced at startup, not on the first
+/// upload.
+/// </para>
+/// </remarks>
 [PublicAPI]
 public sealed partial class TusAzureStore
 {
@@ -27,6 +57,26 @@ public sealed partial class TusAzureStore
     private readonly ILogger<TusAzureStore> _logger;
     private readonly BlobContainerClient _containerClient;
 
+    /// <summary>
+    /// Initializes a new <c>TusAzureStore</c> and, when
+    /// <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>,
+    /// creates the Blob Storage container synchronously before returning.
+    /// </summary>
+    /// <param name="blobServiceClient">authenticated Azure Blob service client</param>
+    /// <param name="options">store configuration</param>
+    /// <param name="blobHttpHeadersProvider">
+    /// optional provider for customizing blob HTTP headers (content type, cache control, etc.);
+    /// defaults to <c>DefaultTusAzureBlobHttpHeadersProvider</c> which sets
+    /// <c>application/octet-stream</c>
+    /// </param>
+    /// <param name="fileIdProvider">
+    /// optional strategy for generating TUS file identifiers; defaults to a GUID-based provider
+    /// </param>
+    /// <param name="loggerFactory">optional logger factory; defaults to the null logger</param>
+    /// <param name="timeProvider">optional time abstraction; defaults to <c>TimeProvider.System</c></param>
+    /// <exception cref="Azure.RequestFailedException">
+    /// thrown during construction when container creation is enabled and Azure returns an error
+    /// </exception>
     public TusAzureStore(
         BlobServiceClient blobServiceClient,
         TusAzureStoreOptions options,

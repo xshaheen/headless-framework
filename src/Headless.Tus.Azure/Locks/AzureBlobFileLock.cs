@@ -9,12 +9,27 @@ using tusdotnet.Interfaces;
 
 namespace Headless.Tus.Locks;
 
+/// <summary>
+/// TUS file lock backed by an Azure Blob Storage lease.
+/// </summary>
+/// <remarks>
+/// Acquires an exclusive Azure Blob lease on the upload blob to prevent concurrent PATCH requests
+/// from corrupting block-level state. Returns <see langword="false"/> rather than throwing when
+/// the blob is already leased or does not yet exist, matching tusdotnet's lock contract.
+/// </remarks>
 public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDuration, ILogger<AzureBlobFileLock> logger)
     : ITusFileLock
 {
     private BlobLeaseClient? _leaseClient;
     private bool _isLocked;
 
+    /// <summary>
+    /// Attempts to acquire an exclusive Azure Blob lease on the upload blob.
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> if the lease was acquired (or was already held by this instance);
+    /// <see langword="false"/> if the blob does not exist or another client holds the lease.
+    /// </returns>
     public async Task<bool> Lock()
     {
         if (_isLocked)
@@ -56,6 +71,13 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
         }
     }
 
+    /// <summary>
+    /// Releases the Azure Blob lease if this instance currently holds it.
+    /// </summary>
+    /// <remarks>
+    /// Silently no-ops when no lease is held. Azure lease-mismatch and lease-not-present errors
+    /// are treated as already-released and are logged at <c>Debug</c> level rather than thrown.
+    /// </remarks>
     public async Task ReleaseIfHeld()
     {
         if (!_isLocked || _leaseClient == null)

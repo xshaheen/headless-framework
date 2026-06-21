@@ -7,6 +7,14 @@ namespace Headless.Tus.Services;
 
 public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
 {
+    /// <summary>
+    /// Sets the final upload length on a file that was created with the TUS
+    /// Creation-Defer-Length extension (i.e., without an initial size declaration).
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="uploadLength">the total upload size in bytes now known by the client</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <exception cref="InvalidOperationException">thrown if the file does not exist</exception>
     public async Task SetUploadLengthAsync(string fileId, long uploadLength, CancellationToken cancellationToken)
     {
         try

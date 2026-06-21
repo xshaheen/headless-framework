@@ -15,6 +15,28 @@ namespace Headless.Tus.Services;
 
 public sealed partial class TusAzureStore : ITusPipelineStore
 {
+    /// <summary>
+    /// Reads upload data from a <c>PipeReader</c> and stages it as Azure Block Blob blocks,
+    /// returning the number of bytes written in this request.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="pipeReader">the pipeline reader supplying PATCH request body data</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>bytes appended by this PATCH request</returns>
+    /// <remarks>
+    /// When the pipe carries a TUS-Checksum extension header (detected via
+    /// <c>GetUploadChecksumInfo</c>), blocks are staged but <em>not</em> committed; the digest
+    /// and block IDs are stored in blob metadata so that a subsequent <c>VerifyChecksumAsync</c>
+    /// call can commit or discard them. Without a checksum header, all blocks are committed
+    /// atomically alongside the updated metadata before returning.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">thrown if the file does not exist</exception>
+    /// <exception cref="NotSupportedException">
+    /// thrown if the client requests a checksum algorithm not in the supported list
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// thrown if <paramref name="fileId"/> or <paramref name="pipeReader"/> is null
+    /// </exception>
     public async Task<long> AppendDataAsync(string fileId, PipeReader pipeReader, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(fileId);

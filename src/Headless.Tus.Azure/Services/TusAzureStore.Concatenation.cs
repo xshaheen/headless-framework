@@ -13,6 +13,16 @@ namespace Headless.Tus.Services;
 
 public sealed partial class TusAzureStore : ITusConcatenationStore
 {
+    /// <summary>
+    /// Returns the TUS concatenation type for the given file.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>
+    /// a <c>FileConcatPartial</c> for partial uploads, a <c>FileConcatFinal</c> carrying the
+    /// constituent partial file IDs for final uploads, or <see langword="null"/> if the file is a
+    /// regular (non-concatenated) upload or does not exist
+    /// </returns>
     public async Task<FileConcat?> GetUploadConcatAsync(string fileId, CancellationToken cancellationToken)
     {
         var blobClient = _GetBlobClient(fileId);
@@ -31,6 +41,16 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
         };
     }
 
+    /// <summary>
+    /// Creates a new partial TUS file that will later be combined into a final upload via
+    /// <c>CreateFinalFileAsync</c>.
+    /// </summary>
+    /// <param name="uploadLength">total bytes that will be uploaded to this partial file</param>
+    /// <param name="metadata">
+    /// raw TUS metadata string from the Upload-Metadata header, or <see langword="null"/>
+    /// </param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>the unique file identifier assigned to the new partial upload</returns>
     public async Task<string> CreatePartialFileAsync(
         long uploadLength,
         string? metadata,
@@ -68,6 +88,30 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
         }
     }
 
+    /// <summary>
+    /// Concatenates a set of completed partial uploads into a single final blob and returns the
+    /// new file identifier.
+    /// </summary>
+    /// <param name="partialFiles">
+    /// ordered array of partial TUS file identifiers to concatenate; must be non-empty and each
+    /// file must already be fully uploaded
+    /// </param>
+    /// <param name="metadata">
+    /// raw TUS metadata string for the resulting final file, or <see langword="null"/>
+    /// </param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>the unique file identifier of the newly created final upload blob</returns>
+    /// <remarks>
+    /// Attempts server-side block copy (<c>StageBlockFromUri</c>) for efficiency; falls back to
+    /// streaming download-and-re-upload when the operation is not supported (e.g., Azurite
+    /// emulator). All partial files must be marked complete before calling this method.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">thrown if <paramref name="partialFiles"/> is null</exception>
+    /// <exception cref="ArgumentException">thrown if <paramref name="partialFiles"/> is empty</exception>
+    /// <exception cref="InvalidOperationException">
+    /// thrown if any partial file does not exist, is not a partial upload, or has not been fully
+    /// uploaded
+    /// </exception>
     public async Task<string> CreateFinalFileAsync(
         string[] partialFiles,
         string? metadata,
