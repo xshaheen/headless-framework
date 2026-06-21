@@ -1,17 +1,21 @@
 # Headless.PushNotifications.Abstractions
 
-Defines the unified interface for push notification services.
+Defines the unified interface and contract types for push notification services.
 
 ## Problem Solved
 
-Provides a provider-agnostic push notification API, enabling seamless switching between push notification providers (Firebase, development) without changing application code.
+Provides a provider-agnostic push notification API so application code never depends on a specific backend. Switching from the dev no-op to Firebase for production requires only a DI registration change.
 
 ## Key Features
 
-- `IPushNotificationService` - Core interface for sending notifications
-- `PushNotificationResponse` - Single notification response
-- `BatchPushNotificationResponse` - Multicast response with success/failure counts
-- Support for custom data payloads
+- `IPushNotificationService` — core sending interface:
+  - `SendToDeviceAsync(clientToken, title, body, data?, ct)` — single-device delivery
+  - `SendMulticastAsync(clientTokens, title, body, data?, ct)` — batch delivery
+- `PushNotificationResponse` — single-device outcome with three states (`Success`, `Failure`, `Unregistered`); factory methods `Succeeded`, `Failed`, `Unregistered`; query methods `IsSucceeded()`, `IsFailed()`, `IsUnregistered()`; properties `Token`, `MessageId?`, `FailureError?`, `Status`
+- `PushNotificationResponseStatus` enum — `Success`, `Failure`, `Unregistered`
+- `BatchPushNotificationResponse` — multicast aggregate: `SuccessCount`, `FailureCount`, `Responses` (one per token)
+- `HeadlessPushNotificationsSetupBuilder` — builder used by `AddHeadlessPushNotifications` to select exactly one provider
+- `IPushNotificationsProviderOptionsExtension` — hook implemented by each provider package to register its services; exposed so third-party providers can integrate
 
 ## Installation
 
@@ -19,35 +23,51 @@ Provides a provider-agnostic push notification API, enabling seamless switching 
 dotnet add package Headless.PushNotifications.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
-public sealed class NotificationService(IPushNotificationService pushService)
+public sealed class NotificationService(IPushNotificationService pushService, ILogger<NotificationService> logger)
 {
-    public async Task SendAsync(string deviceToken, string title, string message)
+    public async Task SendAsync(string deviceToken, string title, string message, CancellationToken ct)
     {
         var response = await pushService.SendToDeviceAsync(
             deviceToken,
             title,
             message,
-            new Dictionary<string, string> { ["orderId"] = "123" }
+            data: new Dictionary<string, string> { ["orderId"] = "123" },
+            cancellationToken: ct
         );
 
-        if (response.IsFailed())
-            _logger.LogError("Push failed: {Error}", response.FailureError);
+        if (response.IsUnregistered())
+        {
+            // Token is stale — remove it from your store.
+            await RemoveTokenAsync(deviceToken, ct);
+        }
+        else if (response.IsFailed())
+        {
+            logger.LogError("Push notification failed for token {Token}: {Error}", deviceToken, response.FailureError);
+        }
     }
 
-    public async Task SendToManyAsync(IReadOnlyList<string> tokens, string title, string message)
+    public async Task SendToManyAsync(IReadOnlyList<string> tokens, string title, string message, CancellationToken ct)
     {
-        var response = await pushService.SendMulticastAsync(tokens, title, message);
-        _logger.LogInformation("Sent: {Success}/{Total}", response.SuccessCount, tokens.Count);
+        var result = await pushService.SendMulticastAsync(tokens, title, message, cancellationToken: ct);
+
+        logger.LogInformation("Push sent: {Success}/{Total}", result.SuccessCount, tokens.Count);
+
+        // Remove stale tokens.
+        foreach (var r in result.Responses)
+        {
+            if (r.IsUnregistered())
+                await RemoveTokenAsync(r.Token, ct);
+        }
     }
 }
 ```
 
 ## Configuration
 
-No configuration required. This is an abstractions-only package.
+None. This is an abstractions-only package.
 
 ## Dependencies
 
@@ -55,4 +75,4 @@ None.
 
 ## Side Effects
 
-None.
+None. This package defines only interfaces and contracts.
