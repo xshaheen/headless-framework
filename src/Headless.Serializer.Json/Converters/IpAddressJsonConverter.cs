@@ -4,6 +4,14 @@ using System.Net;
 
 namespace Headless.Serializer.Converters;
 
+/// <summary>
+/// Converts <see cref="IPAddress"/> to and from its string representation (e.g., <c>"192.168.1.1"</c>
+/// or <c>"::1"</c>). Both IPv4 and IPv6 addresses are supported.
+/// </summary>
+/// <remarks>
+/// This converter is included in <see cref="JsonConstants.DefaultWebJsonOptions"/> and
+/// <see cref="JsonConstants.DefaultInternalJsonOptions"/> by default via <c>JsonConstants._AddDefaultConverters</c>.
+/// </remarks>
 public sealed class IpAddressJsonConverter : JsonConverter<IPAddress?>
 {
     public override bool HandleNull => true;

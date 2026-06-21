@@ -4,6 +4,16 @@ using System.Runtime.CompilerServices;
 
 namespace Headless.Serializer.Converters;
 
+/// <summary>
+/// Treats an empty JSON string (<c>""</c>) as <see langword="null"/> during deserialization, and writes
+/// <see langword="null"/> (or an empty string value) as a JSON <c>null</c> token during serialization.
+/// </summary>
+/// <remarks>
+/// To avoid infinite recursion the converter internally clones the active <see cref="JsonSerializerOptions"/>
+/// with itself removed and delegates actual value reading and writing to the resulting fallback options. The
+/// cloned options instance is cached per source options instance via <see cref="System.Runtime.CompilerServices.ConditionalWeakTable{TKey, TValue}"/>.
+/// </remarks>
+/// <typeparam name="T">A reference type whose empty-string representation should map to <see langword="null"/>.</typeparam>
 [RequiresUnreferencedCode(
     "JSON serialization and deserialization might require types that cannot be statically analyzed."
 )]

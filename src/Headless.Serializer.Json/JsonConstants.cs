@@ -5,17 +5,63 @@ using Headless.Serializer.Converters;
 
 namespace Headless.Serializer;
 
+/// <summary>
+/// Pre-built <see cref="JsonSerializerOptions"/> presets and factory helpers for common serialization scenarios.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="DefaultWebJsonOptions"/> — camelCase naming, case-insensitive reads, numbers from strings,
+/// cycle-safe reference handling, <c>RespectNullableAnnotations</c>/<c>RespectRequiredConstructorParameters</c>,
+/// and the <see cref="IpAddressJsonConverter"/> included. Intended for public-facing HTTP APIs. Used by
+/// <see cref="DefaultJsonOptionsProvider"/>.
+/// </para>
+/// <para>
+/// <see cref="DefaultInternalJsonOptions"/> — strict number handling, no naming policy (preserves property
+/// casing), unknown members disallowed, null values omitted. Intended for internal persistence or
+/// inter-service payloads where schema drift must surface immediately.
+/// </para>
+/// <para>
+/// <see cref="DefaultPrettyJsonOptions"/> — identical to <see cref="DefaultWebJsonOptions"/> with
+/// <see cref="JsonSerializerOptions.WriteIndented"/> set to <see langword="true"/>. Useful for logging and
+/// diagnostics.
+/// </para>
+/// <para>
+/// All three presets include <see cref="System.Text.Json.Serialization.JsonStringEnumConverter"/> (camelCase,
+/// integer values disallowed) and <see cref="Converters.IpAddressJsonConverter"/> via the shared
+/// <see cref="ConfigureWebJsonOptions"/> / <see cref="ConfigureInternalJsonOptions"/> helpers.
+/// </para>
+/// </remarks>
 public static class JsonConstants
 {
+    /// <summary>
+    /// Shared options for public-facing HTTP API serialization. See the <see cref="JsonConstants"/> remarks for
+    /// the full configuration applied.
+    /// </summary>
     public static readonly JsonSerializerOptions DefaultWebJsonOptions = CreateWebJsonOptions();
+
+    /// <summary>
+    /// Shared options for internal persistence or inter-service serialization. See the <see cref="JsonConstants"/>
+    /// remarks for the full configuration applied.
+    /// </summary>
     public static readonly JsonSerializerOptions DefaultInternalJsonOptions = CreateInternalJsonOptions();
+
+    /// <summary>
+    /// Shared options for human-readable (indented) output. Identical to <see cref="DefaultWebJsonOptions"/>
+    /// with <see cref="JsonSerializerOptions.WriteIndented"/> set to <see langword="true"/>.
+    /// </summary>
     public static readonly JsonSerializerOptions DefaultPrettyJsonOptions = CreatePrettyJsonOptions();
 
+    /// <summary>Creates a new <see cref="JsonSerializerOptions"/> instance configured for public-facing HTTP APIs.</summary>
+    /// <returns>A new, mutable options instance with the web preset applied.</returns>
     public static JsonSerializerOptions CreateWebJsonOptions()
     {
         return ConfigureWebJsonOptions(new JsonSerializerOptions());
     }
 
+    /// <summary>
+    /// Creates a new <see cref="JsonSerializerOptions"/> instance configured for human-readable (indented) output.
+    /// </summary>
+    /// <returns>A new, mutable options instance based on the web preset with <see cref="JsonSerializerOptions.WriteIndented"/> enabled.</returns>
     public static JsonSerializerOptions CreatePrettyJsonOptions()
     {
         var webJsonOptions = CreateWebJsonOptions();
@@ -24,11 +70,18 @@ public static class JsonConstants
         return webJsonOptions;
     }
 
+    /// <summary>Creates a new <see cref="JsonSerializerOptions"/> instance configured for internal serialization.</summary>
+    /// <returns>A new, mutable options instance with the internal preset applied.</returns>
     public static JsonSerializerOptions CreateInternalJsonOptions()
     {
         return ConfigureInternalJsonOptions(new JsonSerializerOptions());
     }
 
+    /// <summary>
+    /// Applies the web-API preset to an existing <paramref name="options"/> instance.
+    /// </summary>
+    /// <param name="options">The options instance to configure. Must not be read-only.</param>
+    /// <returns>The same <paramref name="options"/> instance, to support a fluent call style.</returns>
     public static JsonSerializerOptions ConfigureWebJsonOptions(JsonSerializerOptions options)
     {
         options.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
@@ -53,6 +106,11 @@ public static class JsonConstants
         return options;
     }
 
+    /// <summary>
+    /// Applies the internal-serialization preset to an existing <paramref name="options"/> instance.
+    /// </summary>
+    /// <param name="options">The options instance to configure. Must not be read-only.</param>
+    /// <returns>The same <paramref name="options"/> instance, to support a fluent call style.</returns>
     public static JsonSerializerOptions ConfigureInternalJsonOptions(JsonSerializerOptions options)
     {
         options.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;

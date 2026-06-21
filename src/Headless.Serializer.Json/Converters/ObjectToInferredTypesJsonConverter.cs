@@ -3,8 +3,16 @@
 namespace Headless.Serializer.Converters;
 
 /// <summary>
-/// See <a href="https://docs.microsoft.com/en-us/dotnet/standard/serialization/system-text-json-converters-how-to#deserialize-inferred-types-to-object-properties">Deserialize inferred types to object properties</a>
+/// Deserializes <c>object</c>-typed properties to their most appropriate .NET type by inspecting the
+/// JSON token: booleans become <see cref="bool"/>, integers become <see cref="long"/>, floats become
+/// <see cref="double"/>, ISO-8601 date strings become <see cref="DateTimeOffset"/>, plain strings remain
+/// <see cref="string"/>, and everything else is returned as a <see cref="System.Text.Json.JsonElement"/>.
 /// </summary>
+/// <remarks>
+/// See
+/// <see href="https://docs.microsoft.com/en-us/dotnet/standard/serialization/system-text-json-converters-how-to#deserialize-inferred-types-to-object-properties">Deserialize inferred types to object properties</see>
+/// for background.
+/// </remarks>
 [RequiresUnreferencedCode(
     "JSON serialization and deserialization might require types that cannot be statically analyzed."
 )]

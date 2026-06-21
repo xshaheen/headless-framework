@@ -2,9 +2,15 @@
 
 namespace Headless.Serializer.Converters;
 
-/// <summary>Json collection converter.</summary>
-/// <typeparam name="TDatatype">Type of item to convert.</typeparam>
-/// <typeparam name="TConverterType">Converter to use for individual items.</typeparam>
+/// <summary>
+/// Converts <see cref="IEnumerable{T}"/> collections by applying a custom per-item converter
+/// (<typeparamref name="TConverterType"/>) to each element, overriding whatever converter the parent
+/// <see cref="JsonSerializerOptions"/> would normally select for <typeparamref name="TDatatype"/>.
+/// </summary>
+/// <typeparam name="TDatatype">The collection element type.</typeparam>
+/// <typeparam name="TConverterType">
+/// The <see cref="JsonConverter"/> type to use for individual items. Must have a public parameterless constructor.
+/// </typeparam>
 [RequiresUnreferencedCode(
     "JSON serialization and deserialization might require types that cannot be statically analyzed."
 )]
