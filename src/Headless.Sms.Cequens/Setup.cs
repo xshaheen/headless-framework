@@ -16,6 +16,15 @@ public static class SetupCequens
     extension(HeadlessSmsSetupBuilder setup)
     {
         /// <summary>Selects Cequens, binding and validating <see cref="CequensSmsOptions"/> from configuration.</summary>
+        /// <remarks>
+        /// HTTP retry is disabled by default because SMS sends are not idempotent. Pass
+        /// <paramref name="configureResilience"/> to opt back in (ideally after verifying the provider
+        /// supports an idempotency key).
+        /// </remarks>
+        /// <param name="config">Configuration section containing <see cref="CequensSmsOptions"/> values.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseCequens(
             IConfiguration config,
@@ -30,6 +39,10 @@ public static class SetupCequens
         }
 
         /// <summary>Selects Cequens, configuring <see cref="CequensSmsOptions"/> via a delegate.</summary>
+        /// <param name="setupAction">Delegate that populates the options.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseCequens(
             Action<CequensSmsOptions> setupAction,
@@ -46,6 +59,10 @@ public static class SetupCequens
         }
 
         /// <summary>Selects Cequens, configuring <see cref="CequensSmsOptions"/> with access to the service provider.</summary>
+        /// <param name="setupAction">Delegate that populates the options, with access to the resolved service provider.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseCequens(
             Action<CequensSmsOptions, IServiceProvider> setupAction,

@@ -15,7 +15,12 @@ public static class SetupAwsSns
     {
         /// <summary>
         /// Selects AWS SNS, binding and validating <see cref="AwsSnsSmsOptions"/> from configuration.
-        /// <para>AWSOptions usage:</para>
+        /// </summary>
+        /// <remarks>
+        /// <para>AWS credentials and region are taken from <paramref name="awsOptions"/> when provided, or from the
+        /// default AWS SDK credential chain (environment variables, instance profile, etc.) when
+        /// <see langword="null"/>.</para>
+        /// <para>Example <c>AWSOptions</c> patterns:</para>
         /// <code>
         /// var awsOptions = builder.Configuration.GetAWSOptions();
         /// // or
@@ -26,7 +31,10 @@ public static class SetupAwsSns
         /// };
         /// // or pass null to use the default AWSOptions registered in the DI container
         /// </code>
-        /// </summary>
+        /// </remarks>
+        /// <param name="config">Configuration section containing <see cref="AwsSnsSmsOptions"/> values.</param>
+        /// <param name="awsOptions">Optional AWS credentials and region override. <see langword="null"/> uses the SDK default chain.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseAwsSns(IConfiguration config, AWSOptions? awsOptions = null)
         {
@@ -36,7 +44,10 @@ public static class SetupAwsSns
             return setup;
         }
 
-        /// <summary>Selects AWS SNS, configuring <see cref="AwsSnsSmsOptions"/> via a delegate (see the configuration overload for AWS credential/region setup).</summary>
+        /// <summary>Selects AWS SNS, configuring <see cref="AwsSnsSmsOptions"/> via a delegate.</summary>
+        /// <param name="setupAction">Delegate that populates the options.</param>
+        /// <param name="awsOptions">Optional AWS credentials and region override. <see langword="null"/> uses the SDK default chain.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseAwsSns(Action<AwsSnsSmsOptions> setupAction, AWSOptions? awsOptions = null)
         {
@@ -46,7 +57,10 @@ public static class SetupAwsSns
             return setup;
         }
 
-        /// <summary>Selects AWS SNS, configuring <see cref="AwsSnsSmsOptions"/> via a delegate (see the configuration overload for AWS credential/region setup).</summary>
+        /// <summary>Selects AWS SNS, configuring <see cref="AwsSnsSmsOptions"/> with access to the service provider.</summary>
+        /// <param name="setupAction">Delegate that populates the options, with access to the resolved service provider.</param>
+        /// <param name="awsOptions">Optional AWS credentials and region override. <see langword="null"/> uses the SDK default chain.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseAwsSns(
             Action<AwsSnsSmsOptions, IServiceProvider> setupAction,

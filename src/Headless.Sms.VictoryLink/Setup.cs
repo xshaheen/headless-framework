@@ -16,6 +16,14 @@ public static class SetupVictoryLink
     extension(HeadlessSmsSetupBuilder setup)
     {
         /// <summary>Selects VictoryLink, binding and validating <see cref="VictoryLinkSmsOptions"/> from configuration.</summary>
+        /// <remarks>
+        /// HTTP retry is disabled by default because SMS sends are not idempotent. Pass
+        /// <paramref name="configureResilience"/> to opt back in.
+        /// </remarks>
+        /// <param name="config">Configuration section containing <see cref="VictoryLinkSmsOptions"/> values.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseVictoryLink(
             IConfiguration config,
@@ -32,6 +40,10 @@ public static class SetupVictoryLink
         }
 
         /// <summary>Selects VictoryLink, configuring <see cref="VictoryLinkSmsOptions"/> via a delegate.</summary>
+        /// <param name="setupAction">Delegate that populates the options.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseVictoryLink(
             Action<VictoryLinkSmsOptions> setupAction,
@@ -48,6 +60,10 @@ public static class SetupVictoryLink
         }
 
         /// <summary>Selects VictoryLink, configuring <see cref="VictoryLinkSmsOptions"/> with access to the service provider.</summary>
+        /// <param name="setupAction">Delegate that populates the options, with access to the resolved service provider.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseVictoryLink(
             Action<VictoryLinkSmsOptions, IServiceProvider> setupAction,

@@ -15,7 +15,15 @@ public static class SetupVodafone
 
     extension(HeadlessSmsSetupBuilder setup)
     {
-        /// <summary>Selects Vodafone, binding and validating <see cref="VodafoneSmsOptions"/> from configuration.</summary>
+        /// <summary>Selects Vodafone Egypt, binding and validating <see cref="VodafoneSmsOptions"/> from configuration.</summary>
+        /// <remarks>
+        /// HTTP retry is disabled by default because SMS sends are not idempotent. Pass
+        /// <paramref name="configureResilience"/> to opt back in.
+        /// </remarks>
+        /// <param name="config">Configuration section containing <see cref="VodafoneSmsOptions"/> values.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseVodafone(
             IConfiguration config,
@@ -29,7 +37,11 @@ public static class SetupVodafone
             return setup;
         }
 
-        /// <summary>Selects Vodafone, configuring <see cref="VodafoneSmsOptions"/> via a delegate.</summary>
+        /// <summary>Selects Vodafone Egypt, configuring <see cref="VodafoneSmsOptions"/> via a delegate.</summary>
+        /// <param name="setupAction">Delegate that populates the options.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseVodafone(
             Action<VodafoneSmsOptions> setupAction,
@@ -45,7 +57,11 @@ public static class SetupVodafone
             return setup;
         }
 
-        /// <summary>Selects Vodafone, configuring <see cref="VodafoneSmsOptions"/> with access to the service provider.</summary>
+        /// <summary>Selects Vodafone Egypt, configuring <see cref="VodafoneSmsOptions"/> with access to the service provider.</summary>
+        /// <param name="setupAction">Delegate that populates the options, with access to the resolved service provider.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseVodafone(
             Action<VodafoneSmsOptions, IServiceProvider> setupAction,

@@ -4,18 +4,30 @@ using FluentValidation;
 
 namespace Headless.Sms.Connekio;
 
+/// <summary>Options for the Connekio SMS provider.</summary>
+/// <remarks>
+/// Connekio uses HTTP Basic authentication composed as <c>{UserName}:{Password}:{AccountId}</c>. Single
+/// and batch sends route to separate endpoints; the sender selects the endpoint automatically based on the
+/// number of recipients in the request.
+/// </remarks>
 public sealed class ConnekioSmsOptions
 {
+    /// <summary>The Connekio endpoint for sending a single SMS. Defaults to the Connekio production URL.</summary>
     public string SingleSmsEndpoint { get; init; } = "https://api.connekio.com/sms/single";
 
+    /// <summary>The Connekio endpoint for sending a batch SMS to multiple recipients. Defaults to the Connekio production URL.</summary>
     public string BatchSmsEndpoint { get; init; } = "https://api.connekio.com/sms/batch";
 
+    /// <summary>The registered sender name or number displayed to recipients.</summary>
     public required string Sender { get; init; }
 
+    /// <summary>The Connekio account identifier, included in the Basic auth credential string.</summary>
     public required string AccountId { get; init; }
 
+    /// <summary>The Connekio account username used for Basic authentication.</summary>
     public required string UserName { get; init; }
 
+    /// <summary>The Connekio account password used for Basic authentication.</summary>
     public required string Password { get; init; }
 }
 

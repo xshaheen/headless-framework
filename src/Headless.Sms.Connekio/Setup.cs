@@ -16,6 +16,14 @@ public static class SetupConnekio
     extension(HeadlessSmsSetupBuilder setup)
     {
         /// <summary>Selects Connekio, binding and validating <see cref="ConnekioSmsOptions"/> from configuration.</summary>
+        /// <remarks>
+        /// HTTP retry is disabled by default because SMS sends are not idempotent. Pass
+        /// <paramref name="configureResilience"/> to opt back in.
+        /// </remarks>
+        /// <param name="config">Configuration section containing <see cref="ConnekioSmsOptions"/> values.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseConnekio(
             IConfiguration config,
@@ -30,6 +38,10 @@ public static class SetupConnekio
         }
 
         /// <summary>Selects Connekio, configuring <see cref="ConnekioSmsOptions"/> via a delegate.</summary>
+        /// <param name="setupAction">Delegate that populates the options.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseConnekio(
             Action<ConnekioSmsOptions> setupAction,
@@ -46,6 +58,10 @@ public static class SetupConnekio
         }
 
         /// <summary>Selects Connekio, configuring <see cref="ConnekioSmsOptions"/> with access to the service provider.</summary>
+        /// <param name="setupAction">Delegate that populates the options, with access to the resolved service provider.</param>
+        /// <param name="configureClient">Optional delegate to further configure the underlying <see cref="HttpClient"/>.</param>
+        /// <param name="configureResilience">Optional delegate to override the default resilience pipeline.</param>
+        /// <returns>The same builder, for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public HeadlessSmsSetupBuilder UseConnekio(
             Action<ConnekioSmsOptions, IServiceProvider> setupAction,
