@@ -62,10 +62,10 @@ public sealed class InfobipSmsSender(
 
         try
         {
-            _ = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
+            var smsResponse = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
             logger.LogSmsSentSuccessfully(request.Destinations.Count);
 
-            return SendSingleSmsResponse.Succeeded();
+            return SendSingleSmsResponse.Succeeded(smsResponse.BulkId);
         }
         catch (ApiException e)
         {
@@ -82,7 +82,7 @@ public sealed class InfobipSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message);
+            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
         }
     }
 }

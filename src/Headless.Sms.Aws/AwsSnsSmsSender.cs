@@ -68,7 +68,7 @@ public sealed class AwsSnsSmsSender(
 
             if (publishResponse.HttpStatusCode.IsSuccessStatusCode())
             {
-                return SendSingleSmsResponse.Succeeded();
+                return SendSingleSmsResponse.Succeeded(publishResponse.MessageId);
             }
 
             logger.LogSmsSendFailed(request.Destinations.Count, publishResponse.HttpStatusCode);
@@ -85,7 +85,7 @@ public sealed class AwsSnsSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message);
+            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
         }
     }
 }

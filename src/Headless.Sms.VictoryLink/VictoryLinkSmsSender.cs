@@ -45,7 +45,7 @@ public sealed class VictoryLinkSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message);
+            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
         }
     }
 
@@ -92,6 +92,6 @@ public sealed class VictoryLinkSmsSender(
 
         logger.LogFailedToSendSms(request.Destinations.Count, responseMessage);
 
-        return SendSingleSmsResponse.Failed(responseMessage);
+        return SendSingleSmsResponse.Failed(responseMessage, VictoryLinkResponseCodes.GetFailureKind(code));
     }
 }

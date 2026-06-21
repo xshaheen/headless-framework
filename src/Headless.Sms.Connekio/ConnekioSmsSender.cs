@@ -46,7 +46,7 @@ public sealed class ConnekioSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message);
+            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
         }
     }
 

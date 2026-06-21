@@ -52,7 +52,7 @@ public sealed class TwilioSmsSender(
 
             if (!response.ErrorCode.HasValue)
             {
-                return SendSingleSmsResponse.Succeeded();
+                return SendSingleSmsResponse.Succeeded(response.Sid);
             }
 
             logger.LogFailedToSendSms(request.Destinations.Count, response.ErrorCode);
@@ -70,7 +70,7 @@ public sealed class TwilioSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message);
+            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
         }
     }
 }
