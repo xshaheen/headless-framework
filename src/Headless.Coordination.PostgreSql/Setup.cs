@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Coordination.PostgreSql;
 
 [PublicAPI]
-public static class SetupCoordinationPostgreSql
+public static class SetupPostgreSqlCoordination
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {
