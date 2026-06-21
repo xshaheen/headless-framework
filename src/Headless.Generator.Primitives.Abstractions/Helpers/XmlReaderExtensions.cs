@@ -13,10 +13,12 @@ namespace Headless.Generator.Primitives;
 public static class XmlReaderExtensions
 {
     /// <summary>
-    /// Reads the content of the current element as a <see cref="byte" /> object.
+    /// Reads the text content of the current element and parses it as <typeparamref name="T"/>
+    /// using the invariant culture.
     /// </summary>
-    /// <param name="reader">The XmlReader instance.</param>
-    /// <returns>A byte object representing the value read from the element.</returns>
+    /// <typeparam name="T">The target type, which must implement <c>IParsable&lt;T&gt;</c>.</typeparam>
+    /// <param name="reader">The XmlReader positioned on the element whose content is to be read.</param>
+    /// <returns>The parsed value of type <typeparamref name="T"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T ReadElementContentAs<T>(this XmlReader reader)
         where T : IParsable<T>

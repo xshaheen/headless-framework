@@ -38,18 +38,18 @@ public static class ToXmlStringExtensions
         value.ToString("HH:mm:sszzz", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Converts a <see cref="DateTimeOffset" /> value to its XML string representation
+    /// Converts a <see cref="DateTimeOffset" /> value to its XML string representation.
     /// </summary>
-    /// <param name="value">The TimeOnly value to convert.</param>
-    /// <returns>The XML string representation of the TimeOnly value.</returns>
+    /// <param name="value">The DateTimeOffset value to convert.</param>
+    /// <returns>The XML string representation of the DateTimeOffset value.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this DateTimeOffset value) => XmlConvert.ToString(value);
 
     /// <summary>
-    /// Converts a <see cref="TimeSpan" /> value to its XML string representation
+    /// Converts a <see cref="TimeSpan" /> value to its XML string representation.
     /// </summary>
-    /// <param name="value">The TimeOnly value to convert.</param>
-    /// <returns>The XML string representation of the TimeOnly value.</returns>
+    /// <param name="value">The TimeSpan value to convert.</param>
+    /// <returns>The XML string representation of the TimeSpan value.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this TimeSpan value) => XmlConvert.ToString(value);
 
