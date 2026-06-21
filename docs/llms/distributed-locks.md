@@ -1,6 +1,6 @@
 ---
 domain: Distributed Locks
-packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks.Core.Database, DistributedLocks.InMemory, DistributedLocks.Postgres, DistributedLocks.Redis, DistributedLocks.SqlServer
+packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks.Core.Database, DistributedLocks.InMemory, DistributedLocks.PostgreSql, DistributedLocks.Redis, DistributedLocks.SqlServer
 ---
 
 # Distributed Locks
