@@ -493,6 +493,7 @@ Default mode is `Warn`. Without a `DiagnosticProbeConnectionFactory`, startup co
 - `Headless.CommitCoordination.Core`
 - `Microsoft.Data.SqlClient`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Hosting.Abstractions` — required by the `IHostedService` diagnostic subscription
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Microsoft.Extensions.Options`
 
