@@ -9,12 +9,30 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework.Contexts.Processors;
 
+/// <summary>
+/// Save-entry processor that enforces tenant write isolation and stamps infrastructure fields
+/// (tenant identifier and concurrency stamp) on entities before they reach the database.
+/// </summary>
+/// <remarks>
+/// When the tenant write guard is enabled this processor rejects writes that lack an ambient tenant
+/// context (<c>MissingTenantContextException</c>) and writes whose entity <c>TenantId</c> does not
+/// match the current tenant's identifier, including the original-value check that blocks
+/// Attach+rewrite+Remove attacks (<c>CrossTenantWriteException</c>). Use
+/// <c>ITenantWriteGuardBypass.BeginBypass()</c> for intentional host or admin writes that must
+/// operate across tenants.
+/// </remarks>
 [PublicAPI]
 public sealed class HeadlessEntitySaveEntryProcessor(
     IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions,
     ITenantWriteGuardBypass tenantWriteGuardBypass
 ) : IHeadlessSaveEntryProcessor
 {
+    /// <summary>
+    /// Enforces tenant write isolation and stamps the tenant identifier and concurrency stamp on the
+    /// entry.
+    /// </summary>
+    /// <param name="entry">The tracked entity entry to process.</param>
+    /// <param name="context">The per-save scratchpad carrying the ambient tenant identifier.</param>
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         _EnsureTenantWriteAllowed(entry, context.TenantId);

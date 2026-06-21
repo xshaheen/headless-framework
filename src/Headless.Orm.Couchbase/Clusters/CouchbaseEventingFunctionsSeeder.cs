@@ -8,8 +8,23 @@ using Humanizer;
 
 namespace Headless.Couchbase.Clusters;
 
+/// <summary>
+/// Extension method for deploying or updating a Couchbase Eventing function on a cluster.
+/// </summary>
 public static class CouchbaseEventingFunctionsSeeder
 {
+    /// <summary>
+    /// Creates or updates the named Eventing function on the cluster, configuring its source and
+    /// metadata keyspaces, bucket binding aliases, worker count, and deploying it immediately.
+    /// </summary>
+    /// <param name="cluster">The Couchbase cluster to deploy to.</param>
+    /// <param name="dataKeyspace">The bucket/scope/collection that acts as the event source.</param>
+    /// <param name="eventsKeyspace">The bucket/scope/collection used for function metadata storage.</param>
+    /// <param name="aliases">Named read-only bucket aliases available to the function's JavaScript code.</param>
+    /// <param name="functionName">The name to assign to the Eventing function.</param>
+    /// <param name="javaScriptCode">The JavaScript source code of the function.</param>
+    /// <param name="workers">Number of worker threads. Defaults to 1.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
     public static async Task UpsertFunctionAsync(
         this ICluster cluster,
         CouchbaseKeyspace dataKeyspace,
@@ -99,4 +114,7 @@ public static class CouchbaseEventingFunctionsSeeder
     #endregion
 }
 
+/// <summary>
+/// Identifies a Couchbase storage location by bucket, scope, and collection name.
+/// </summary>
 public readonly record struct CouchbaseKeyspace(string Bucket, string Scope, string Collection);

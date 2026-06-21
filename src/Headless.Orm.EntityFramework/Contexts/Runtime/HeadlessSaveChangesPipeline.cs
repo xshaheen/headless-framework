@@ -35,6 +35,15 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// </remarks>
 public interface IHeadlessSaveChangesPipeline
 {
+    /// <summary>
+    /// Asynchronously executes the full Headless save pipeline: runs processors, captures audit entries,
+    /// dispatches domain events, persists the entity batch, enqueues integration events, and commits.
+    /// </summary>
+    /// <param name="context">The EF Core context being saved.</param>
+    /// <param name="baseSaveChangesAsync">The base <c>SaveChangesAsync</c> delegate from the context.</param>
+    /// <param name="acceptAllChangesOnSuccess">Whether to accept all changes on success.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
+    /// <returns>The number of state entries written to the database.</returns>
     Task<int> SaveChangesAsync(
         DbContext context,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
@@ -42,6 +51,13 @@ public interface IHeadlessSaveChangesPipeline
         CancellationToken cancellationToken
     );
 
+    /// <summary>
+    /// Synchronously executes the full Headless save pipeline.
+    /// </summary>
+    /// <param name="context">The EF Core context being saved.</param>
+    /// <param name="baseSaveChanges">The base <c>SaveChanges</c> delegate from the context.</param>
+    /// <param name="acceptAllChangesOnSuccess">Whether to accept all changes on success.</param>
+    /// <returns>The number of state entries written to the database.</returns>
     int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess);
 }
 

@@ -94,6 +94,10 @@ public static class EntityTypeBuilderExtensions
 
     #region Configure ICreateAudit
 
+    /// <summary>
+    /// Configures a required <c>CreatedById</c> foreign key and <c>CreatedBy</c> navigation for entities
+    /// that implement <c>ICreateAudit&lt;TId, TCreator&gt;</c> with a non-nullable actor reference.
+    /// </summary>
     public static void ConfigureRequiredCreateAudit<TId, TEntity, TCreator>(this EntityTypeBuilder<TEntity> builder)
         where TEntity : class, ICreateAudit<TId, TCreator>
         where TCreator : class
@@ -108,6 +112,10 @@ public static class EntityTypeBuilderExtensions
             .OnDelete(DeleteBehavior.Restrict);
     }
 
+    /// <summary>
+    /// Configures an optional <c>CreatedById</c> foreign key and <c>CreatedBy</c> navigation for entities
+    /// that implement <c>ICreateAudit&lt;TId?, TCreator?&gt;</c> with a nullable actor reference.
+    /// </summary>
     public static void ConfigureOptionalCreateAudit<TId, TEntity, TCreator>(this EntityTypeBuilder<TEntity> builder)
         where TEntity : class, ICreateAudit<TId?, TCreator?>
         where TCreator : class
@@ -122,6 +130,12 @@ public static class EntityTypeBuilderExtensions
             .OnDelete(DeleteBehavior.Restrict);
     }
 
+    /// <summary>
+    /// Applies create-audit column configuration if the entity type implements <c>ICreateAudit</c>.
+    /// No-ops silently when the entity does not implement the interface.
+    /// </summary>
+    /// <param name="builder">The entity type builder.</param>
+    /// <param name="isRequired">Whether <c>CreatedById</c> is required. Defaults to <see langword="false"/>.</param>
     public static void TryConfigureCreateAudit(this EntityTypeBuilder builder, bool isRequired = false)
     {
         if (!builder.Metadata.ClrType.IsAssignableTo<ICreateAudit>())
@@ -168,6 +182,7 @@ public static class EntityTypeBuilderExtensions
         }
     }
 
+    /// <summary>Applies create-audit column configuration for a strongly-typed entity builder.</summary>
     public static void ConfigureCreateAudit<TEntity>(this EntityTypeBuilder<TEntity> b)
         where TEntity : class, ICreateAudit
     {
@@ -178,6 +193,10 @@ public static class EntityTypeBuilderExtensions
 
     #region Configure IUpdateAudit
 
+    /// <summary>
+    /// Applies update-audit column configuration if the entity type implements <c>IUpdateAudit</c>.
+    /// No-ops silently when the entity does not implement the interface.
+    /// </summary>
     public static void TryConfigureUpdateAudit(this EntityTypeBuilder builder)
     {
         if (!builder.Metadata.ClrType.IsAssignableTo<IUpdateAudit>())
@@ -224,12 +243,17 @@ public static class EntityTypeBuilderExtensions
         }
     }
 
+    /// <summary>Applies update-audit column configuration for a strongly-typed entity builder.</summary>
     public static void ConfigureUpdateAudit<TEntity>(this EntityTypeBuilder<TEntity> b)
         where TEntity : class, IDeleteAudit
     {
         b.Cast<EntityTypeBuilder>().TryConfigureUpdateAudit();
     }
 
+    /// <summary>
+    /// Configures <c>UpdatedById</c> and <c>DateUpdated</c> as optional, and wires the <c>UpdatedBy</c>
+    /// navigation with a restrict delete behavior.
+    /// </summary>
     public static void ConfigureUpdateAudit<TId, TEntity, TCreator>(this EntityTypeBuilder<TEntity> builder)
         where TId : struct, IEquatable<TId>
         where TEntity : class, IUpdateAudit<TId, TCreator>
@@ -250,6 +274,10 @@ public static class EntityTypeBuilderExtensions
 
     #region Configure IDeletedAudit
 
+    /// <summary>
+    /// Applies delete-audit column configuration if the entity type implements <c>IDeleteAudit</c>.
+    /// No-ops silently when the entity does not implement the interface.
+    /// </summary>
     public static void TryConfigureDeleteAudit(this EntityTypeBuilder builder)
     {
         if (!builder.Metadata.ClrType.IsAssignableTo<IDeleteAudit>())
@@ -321,12 +349,17 @@ public static class EntityTypeBuilderExtensions
         }
     }
 
+    /// <summary>Applies delete-audit column configuration for a strongly-typed entity builder.</summary>
     public static void ConfigureDeleteAudit<TEntity>(this EntityTypeBuilder<TEntity> b)
         where TEntity : class, IDeleteAudit
     {
         b.Cast<EntityTypeBuilder>().TryConfigureDeleteAudit();
     }
 
+    /// <summary>
+    /// Configures <c>DeletedById</c> and <c>DateDeleted</c> as optional, and wires the <c>DeletedBy</c>
+    /// navigation with a restrict delete behavior.
+    /// </summary>
     public static void ConfigureDeleteAudit<TId, TEntity, TCreator>(this EntityTypeBuilder<TEntity> builder)
         where TId : struct, IEquatable<TId>
         where TEntity : class, IDeleteAudit<TId, TCreator>
@@ -347,6 +380,10 @@ public static class EntityTypeBuilderExtensions
 
     #region Configure ISuspendAudit
 
+    /// <summary>
+    /// Applies suspend-audit column configuration if the entity type implements <c>ISuspendAudit</c>.
+    /// No-ops silently when the entity does not implement the interface.
+    /// </summary>
     public static void TryConfigureSuspendAudit(this EntityTypeBuilder builder)
     {
         if (!builder.Metadata.ClrType.IsAssignableTo<ISuspendAudit>())
@@ -418,6 +455,7 @@ public static class EntityTypeBuilderExtensions
         }
     }
 
+    /// <summary>Applies suspend-audit column configuration for a strongly-typed entity builder.</summary>
     public static void ConfigureSuspendAudit<T>(this EntityTypeBuilder<T> builder)
         where T : class, ISuspendAudit
     {
@@ -428,6 +466,10 @@ public static class EntityTypeBuilderExtensions
 
     #region Configure IHasConcurrencyStamp
 
+    /// <summary>
+    /// Configures the <c>ConcurrencyStamp</c> column as an optimistic-concurrency token if the entity
+    /// implements <c>IHasConcurrencyStamp</c>. No-ops silently otherwise.
+    /// </summary>
     public static void TryConfigureConcurrencyStamp(this EntityTypeBuilder b)
     {
         if (b.Metadata.ClrType.IsAssignableTo<IHasConcurrencyStamp>())
@@ -439,6 +481,7 @@ public static class EntityTypeBuilderExtensions
         }
     }
 
+    /// <summary>Configures the concurrency stamp for a strongly-typed entity builder.</summary>
     public static void ConfigureConcurrencyStamp<T>(this EntityTypeBuilder<T> b)
         where T : class, IHasConcurrencyStamp
     {
@@ -449,6 +492,10 @@ public static class EntityTypeBuilderExtensions
 
     #region Configure IHasExtraProperties
 
+    /// <summary>
+    /// Configures the <c>ExtraProperties</c> column with JSON serialization if the entity implements
+    /// <c>IHasExtraProperties</c>. No-ops silently otherwise.
+    /// </summary>
     public static void TryConfigureExtraProperties(this EntityTypeBuilder b)
     {
         if (b.Metadata.ClrType.IsAssignableTo<IHasExtraProperties>())
@@ -460,6 +507,7 @@ public static class EntityTypeBuilderExtensions
         }
     }
 
+    /// <summary>Configures <c>ExtraProperties</c> for a strongly-typed entity builder.</summary>
     public static void ConfigureExtraProperties<T>(this EntityTypeBuilder<T> b)
         where T : class, IHasExtraProperties
     {
