@@ -123,8 +123,13 @@
         <Project Path="tests/Headless.CommitCoordination.Tests.Harness/Headless.CommitCoordination.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Captcha/">
-        <Project Path="demo/Headless.ReCaptcha.Demo/Headless.ReCaptcha.Demo.csproj" />
-        <Project Path="src/Headless.ReCaptcha/Headless.ReCaptcha.csproj" />
+        <Project Path="src/Headless.Captcha.Abstractions/Headless.Captcha.Abstractions.csproj" />
+        <Project Path="src/Headless.Captcha.ReCaptcha/Headless.Captcha.ReCaptcha.csproj" />
+        <Project Path="src/Headless.Captcha.Turnstile/Headless.Captcha.Turnstile.csproj" />
+        <Project Path="tests/Headless.Captcha.Tests.Harness/Headless.Captcha.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.Captcha.ReCaptcha.Tests.Unit/Headless.Captcha.ReCaptcha.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Captcha.Turnstile.Tests.Unit/Headless.Captcha.Turnstile.Tests.Unit.csproj" />
+        <Project Path="demo/Headless.Captcha.Demo/Headless.Captcha.Demo.csproj" />
     </Folder>
     <Folder Name="/Database/">
         <Project Path="src\Headless.Redis\Headless.Redis.csproj" />
