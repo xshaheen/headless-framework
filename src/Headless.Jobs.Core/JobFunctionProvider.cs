@@ -11,19 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Jobs;
 
 /// <summary>
-/// Delegate type for job function handlers. The source generator emits implementations of this signature
-/// that instantiate the job class from DI and invoke its <c>[JobFunction]</c>-annotated method.
-/// </summary>
-/// <param name="cancellationToken">Token signalled when the job is cancelled or the host is shutting down.</param>
-/// <param name="serviceProvider">The scoped service provider for this execution.</param>
-/// <param name="context">Scheduling metadata and cooperative-cancel hook for this execution.</param>
-public delegate Task JobFunctionDelegate(
-    CancellationToken cancellationToken,
-    IServiceProvider serviceProvider,
-    JobFunctionContext context
-);
-
-/// <summary>
 /// Global registry of job function delegates and their associated request types. Populated at application
 /// startup by the source-generated <c>ModuleInitializer</c> and frozen into read-optimized dictionaries
 /// via <see cref="Build"/> before the first job is dispatched.
