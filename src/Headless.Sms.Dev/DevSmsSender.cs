@@ -5,7 +5,7 @@ using Headless.Sms.Dev.Internals;
 
 namespace Headless.Sms.Dev;
 
-public sealed class DevSmsSender(string filePath) : ISmsSender, IDisposable
+internal sealed class DevSmsSender(string filePath) : ISmsSender, IDisposable
 {
     private const string _Separator = "--------------------";
     private readonly string _filePath = Argument.IsNotNullOrEmpty(filePath);

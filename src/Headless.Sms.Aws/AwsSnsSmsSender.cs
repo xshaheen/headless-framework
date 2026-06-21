@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Sms.Aws;
 
-public sealed class AwsSnsSmsSender(
+internal sealed class AwsSnsSmsSender(
     IAmazonSimpleNotificationService client,
     IOptions<AwsSnsSmsOptions> optionsAccessor,
     ILogger<AwsSnsSmsSender> logger

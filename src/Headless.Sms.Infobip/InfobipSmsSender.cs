@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Sms.Infobip;
 
-public sealed class InfobipSmsSender(
+internal sealed class InfobipSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<InfobipSmsOptions> optionsAccessor,
     ILogger<InfobipSmsSender> logger

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Sms.VictoryLink;
 
-public sealed class VictoryLinkSmsSender(
+internal sealed class VictoryLinkSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<VictoryLinkSmsOptions> optionsAccessor,
     ILogger<VictoryLinkSmsSender> logger
@@ -63,8 +63,8 @@ public sealed class VictoryLinkSmsSender(
             SmsLang = request.Text.IsRtlText() ? "a" : "e",
             SmsSender = _options.Sender,
             SmsReceiver = request.IsBatch
-                ? string.Join(',', request.Destinations.Select(x => x.Number))
-                : request.Destinations[0].Number,
+                ? string.Join(',', request.Destinations.Select(x => x.ToString()))
+                : request.Destinations[0].ToString(),
         };
 
         using var httpClient = httpClientFactory.CreateClient(SetupVictoryLink.HttpClientName);

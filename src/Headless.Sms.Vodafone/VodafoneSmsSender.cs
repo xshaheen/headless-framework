@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Sms.Vodafone;
 
-public sealed class VodafoneSmsSender(
+internal sealed class VodafoneSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<VodafoneSmsOptions> optionsAccessor,
     ILogger<VodafoneSmsSender> logger

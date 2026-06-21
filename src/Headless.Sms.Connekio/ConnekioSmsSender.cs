@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Sms.Connekio;
 
-public sealed class ConnekioSmsSender(
+internal sealed class ConnekioSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<ConnekioSmsOptions> optionsAccessor,
     ILogger<ConnekioSmsSender> logger

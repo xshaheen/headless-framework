@@ -14,7 +14,7 @@ namespace Headless.Sms.Cequens;
 /*
  * Docs: https://developer.cequens.com/reference/sending-sms
  */
-public sealed class CequensSmsSender(
+internal sealed class CequensSmsSender(
     IHttpClientFactory httpClientFactory,
     TimeProvider timeProvider,
     IOptions<CequensSmsOptions> optionsAccessor,

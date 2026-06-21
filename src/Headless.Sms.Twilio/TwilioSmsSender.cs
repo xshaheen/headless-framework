@@ -16,7 +16,7 @@ namespace Headless.Sms.Twilio;
 /// Accepts <see cref="ITwilioRestClient"/> for testability and multi-tenant support.
 /// Register the client via DI or use <see cref="TwilioRestClient"/> directly.
 /// </remarks>
-public sealed class TwilioSmsSender(
+internal sealed class TwilioSmsSender(
     ITwilioRestClient client,
     IOptions<TwilioSmsOptions> optionsAccessor,
     ILogger<TwilioSmsSender> logger
