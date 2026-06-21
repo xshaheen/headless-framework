@@ -38,26 +38,36 @@ public sealed class DynamicAuthenticationSchemeProvider(
 {
     private readonly ApiKeyAuthenticationSchemeOptions _apiKeyAuthenticationOptions = apiKeySchemeOptions.Value;
 
+    /// <inheritdoc/>
+    /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultAuthenticateSchemeAsync()
     {
         return await _GetRequestSchemeAsync() ?? await base.GetDefaultAuthenticateSchemeAsync();
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultChallengeSchemeAsync()
     {
         return await _GetRequestSchemeAsync() ?? await base.GetDefaultChallengeSchemeAsync();
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultForbidSchemeAsync()
     {
         return await _GetRequestSchemeAsync() ?? await base.GetDefaultForbidSchemeAsync();
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultSignInSchemeAsync()
     {
         return await _GetRequestSchemeAsync() ?? await base.GetDefaultSignInSchemeAsync();
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Selects the scheme based on request credentials before falling back to the configured default.</remarks>
     public override async Task<AuthenticationScheme?> GetDefaultSignOutSchemeAsync()
     {
         return await _GetRequestSchemeAsync() ?? await base.GetDefaultSignOutSchemeAsync();

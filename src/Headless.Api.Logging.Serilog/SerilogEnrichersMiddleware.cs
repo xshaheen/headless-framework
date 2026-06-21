@@ -12,6 +12,10 @@ namespace Headless.Logging;
 /// Properties written: <c>UserId</c>, <c>AccountId</c>, and <c>CorrelationId</c> — each
 /// only when the corresponding value is non-null on the current <see cref="IRequestContext"/>.
 /// </summary>
+/// <param name="requestContext">
+/// The ambient request context providing the <c>UserId</c>, <c>AccountId</c>, and <c>CorrelationId</c>
+/// values pushed into the Serilog log context.
+/// </param>
 public sealed class SerilogEnrichersMiddleware(IRequestContext requestContext) : IMiddleware
 {
     private const string _UserId = "UserId";

@@ -122,12 +122,18 @@ public interface IProblemDetailsCreator
     /// Builds a normalized 408 <see cref="ProblemDetails"/> for request-timeout responses
     /// (typically mapped from <see cref="System.TimeoutException"/>).
     /// </summary>
+    /// <param name="error">
+    /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>.
+    /// </param>
     ProblemDetails RequestTimeout(ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 501 <see cref="ProblemDetails"/> for unimplemented-functionality
     /// responses (typically mapped from <see cref="System.NotImplementedException"/>).
     /// </summary>
+    /// <param name="error">
+    /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>.
+    /// </param>
     ProblemDetails NotImplemented(ErrorDescriptor? error = null);
 
     /// <summary>

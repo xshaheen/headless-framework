@@ -15,6 +15,9 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api;
 
+/// <summary>
+/// Extension methods and builder types for configuring Headless multi-tenancy on the HTTP pipeline.
+/// </summary>
 [PublicAPI]
 public static class SetupApiTenancy
 {
@@ -57,6 +60,7 @@ public static class SetupApiTenancy
     /// <param name="builder">The root tenancy builder.</param>
     /// <param name="configure">The HTTP tenancy configuration callback.</param>
     /// <returns>The same root tenancy builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.</exception>
     public static HeadlessTenancyBuilder Http(
         this HeadlessTenancyBuilder builder,
         Action<HeadlessHttpTenancyBuilder> configure
@@ -74,6 +78,7 @@ public static class SetupApiTenancy
     /// <param name="builder">The root tenancy builder.</param>
     /// <param name="configure">The authorization tenancy configuration callback.</param>
     /// <returns>The same root tenancy builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.</exception>
     public static HeadlessTenancyBuilder Authorization(
         this HeadlessTenancyBuilder builder,
         Action<HeadlessAuthorizationTenancyBuilder> configure

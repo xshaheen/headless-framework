@@ -23,7 +23,10 @@ public sealed class HeadlessApiDefaultsOptions
     public ForwardedHeaders ForwardedHeaders { get; set; } =
         ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
 
-    /// <summary>Allows callers to tune ASP.NET Core forwarded-header options.</summary>
+    /// <summary>
+    /// Optional callback applied to <see cref="ForwardedHeadersOptions"/> before the forwarded-headers middleware
+    /// is registered. Only invoked when <see cref="UseForwardedHeaders"/> is <see langword="true"/>.
+    /// </summary>
     public Action<ForwardedHeadersOptions>? ConfigureForwardedHeaders { get; set; }
 
     /// <summary>Whether to run response compression middleware.</summary>

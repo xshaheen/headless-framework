@@ -18,13 +18,29 @@ public static class ApiSerilogFactory
 
     #region Bootstrap
 
-    /// <inheritdoc cref="SerilogFactory.CreateBootstrapLoggerConfiguration"/>
+    /// <summary>
+    /// Creates a bootstrap <see cref="Logger"/> suitable for capturing log output before the application host
+    /// and DI container are fully initialized.
+    /// </summary>
+    /// <returns>A configured <see cref="Logger"/> instance. The caller is responsible for disposing it.</returns>
+    /// <remarks>
+    /// Delegates to <see cref="SerilogFactory.ConfigureBootstrapLoggerConfiguration"/> for the base configuration.
+    /// The returned logger writes to the console and, for Warning/Error/Fatal events, to a rolling file under
+    /// the default log directory.
+    /// </remarks>
     public static Logger CreateApiBootstrapLogger()
     {
         return CreateApiBootstrapLoggerConfiguration().CreateLogger();
     }
 
-    /// <inheritdoc cref="SerilogFactory.CreateBootstrapLoggerConfiguration"/>
+    /// <summary>
+    /// Produces a <see cref="LoggerConfiguration"/> for bootstrap-phase logging before the DI container is available.
+    /// </summary>
+    /// <returns>A pre-configured <see cref="LoggerConfiguration"/> instance.</returns>
+    /// <remarks>
+    /// Delegates to <see cref="SerilogFactory.ConfigureBootstrapLoggerConfiguration"/>. Call
+    /// <see cref="CreateApiBootstrapLogger"/> to directly obtain the materialized <see cref="Logger"/>.
+    /// </remarks>
     public static LoggerConfiguration CreateApiBootstrapLoggerConfiguration()
     {
         return SerilogFactory.CreateBootstrapLoggerConfiguration();
@@ -34,7 +50,17 @@ public static class ApiSerilogFactory
 
     #region Reloadable
 
-    /// <inheritdoc cref="ConfigureApiLoggerConfiguration"/>
+    /// <summary>
+    /// Creates a reloadable <see cref="Logger"/> configured with API-specific enrichers, resolving
+    /// services, configuration, and environment from the given <see cref="WebApplication"/>.
+    /// </summary>
+    /// <param name="app">The <see cref="WebApplication"/> whose <c>Services</c>, <c>Configuration</c>, and <c>Environment</c> are used.</param>
+    /// <param name="options">Optional tuning options; defaults are applied when <see langword="null"/>.</param>
+    /// <returns>A configured <see cref="Logger"/> instance. The caller is responsible for disposing it.</returns>
+    /// <remarks>
+    /// Adds client IP, <c>User-Agent</c>, <c>X-Client-Version</c>, and <c>X-Api-Version</c> enrichers on top
+    /// of the base reloadable logger configuration. See <see cref="ConfigureApiLoggerConfiguration"/> for details.
+    /// </remarks>
     public static Logger CreateApiLogger(WebApplication app, SerilogOptions? options = null)
     {
         var configuration = CreateApiLoggerConfiguration(app.Services, app.Configuration, app.Environment, options);
@@ -42,7 +68,21 @@ public static class ApiSerilogFactory
         return configuration.CreateLogger();
     }
 
-    /// <inheritdoc cref="ConfigureApiLoggerConfiguration"/>
+    /// <summary>
+    /// Creates a reloadable <see cref="Logger"/> configured with API-specific enrichers.
+    /// </summary>
+    /// <param name="services">
+    /// Optional service provider used to resolve <c>IHttpContextAccessor</c>. When <see langword="null"/>,
+    /// a new <c>HttpContextAccessor</c> instance is created.
+    /// </param>
+    /// <param name="configuration">The application configuration (read by <c>Serilog</c> via the <c>Serilog</c> section).</param>
+    /// <param name="environment">The host environment (used by the environment enricher and console theme selection).</param>
+    /// <param name="options">Optional tuning options; defaults are applied when <see langword="null"/>.</param>
+    /// <returns>A configured <see cref="Logger"/> instance. The caller is responsible for disposing it.</returns>
+    /// <remarks>
+    /// Adds client IP, <c>User-Agent</c>, <c>X-Client-Version</c>, and <c>X-Api-Version</c> enrichers on top
+    /// of the base reloadable logger configuration. See <see cref="ConfigureApiLoggerConfiguration"/> for details.
+    /// </remarks>
     public static Logger CreateApiLogger(
         IServiceProvider? services,
         IConfiguration configuration,
@@ -53,7 +93,21 @@ public static class ApiSerilogFactory
         return CreateApiLoggerConfiguration(services, configuration, environment, options).CreateLogger();
     }
 
-    /// <inheritdoc cref="ConfigureApiLoggerConfiguration"/>
+    /// <summary>
+    /// Creates a <see cref="LoggerConfiguration"/> configured with API-specific enrichers.
+    /// </summary>
+    /// <param name="services">
+    /// Optional service provider used to resolve <c>IHttpContextAccessor</c>. When <see langword="null"/>,
+    /// a new <c>HttpContextAccessor</c> instance is created.
+    /// </param>
+    /// <param name="configuration">The application configuration (read by <c>Serilog</c> via the <c>Serilog</c> section).</param>
+    /// <param name="environment">The host environment (used by the environment enricher and console theme selection).</param>
+    /// <param name="options">Optional tuning options; defaults are applied when <see langword="null"/>.</param>
+    /// <returns>A pre-configured <see cref="LoggerConfiguration"/> instance.</returns>
+    /// <remarks>
+    /// Adds client IP, <c>User-Agent</c>, <c>X-Client-Version</c>, and <c>X-Api-Version</c> enrichers on top
+    /// of the base reloadable logger configuration. See <see cref="ConfigureApiLoggerConfiguration"/> for details.
+    /// </remarks>
     public static LoggerConfiguration CreateApiLoggerConfiguration(
         IServiceProvider? services,
         IConfiguration configuration,

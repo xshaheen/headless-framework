@@ -24,6 +24,7 @@ public static class SetupDiagnosticListener
         /// <returns>
         /// A disposable subscription. Dispose it when the application shuts down to stop receiving events.
         /// </returns>
+        /// <exception cref="InvalidOperationException"><see cref="DiagnosticListener"/> is not registered in the service container.</exception>
         [MustDisposeResource]
         public IDisposable AddApiBadRequestDiagnosticListeners()
         {
@@ -42,6 +43,7 @@ public static class SetupDiagnosticListener
         /// <returns>
         /// A disposable subscription. Dispose it when the application shuts down to stop receiving events.
         /// </returns>
+        /// <exception cref="InvalidOperationException"><see cref="DiagnosticListener"/> is not registered in the service container.</exception>
         [MustDisposeResource]
         public IDisposable AddMiddlewareAnalysisDiagnosticListeners()
         {
@@ -61,6 +63,7 @@ public static class SetupDiagnosticListener
         /// A composite disposable that disposes both subscriptions when disposed.
         /// Dispose it when the application shuts down.
         /// </returns>
+        /// <exception cref="InvalidOperationException"><see cref="DiagnosticListener"/> is not registered in the service container.</exception>
         [MustDisposeResource]
         public IDisposable AddHeadlessApiDiagnosticListeners()
         {

@@ -10,6 +10,7 @@ namespace Headless.Api.Identity.TokenProviders;
 /// <summary>
 /// Generates and validates RFC 6238 TOTP codes using HMAC-SHA1, HMAC-SHA256, or HMAC-SHA512.
 /// </summary>
+/// <param name="timeProvider">The time provider used to obtain the current UTC time for step calculation.</param>
 public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 {
     private static readonly UTF8Encoding _Encoding = new(

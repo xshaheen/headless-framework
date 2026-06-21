@@ -36,6 +36,10 @@ public class FileView
     [return: NotNullIfNotNull(nameof(operand))]
     public static FileView? FromFile(File? operand) => operand;
 
+    /// <summary>
+    /// Implicitly converts a domain <see cref="File"/> to a <see cref="FileView"/>.
+    /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
+    /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
     public static implicit operator FileView?(File? operand)
     {

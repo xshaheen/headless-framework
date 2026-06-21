@@ -37,6 +37,15 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
     where TUser : IdentityUser<TUserId>
     where TUserId : IEquatable<TUserId>
 {
+    /// <summary>
+    /// Reads the <c>Authorization: Basic ...</c> header, decodes the Base64 credentials,
+    /// and validates the username and password against the Identity store.
+    /// </summary>
+    /// <returns>
+    /// <see cref="AuthenticateResult.Success(Microsoft.AspNetCore.Authentication.AuthenticationTicket)"/> when credentials are valid;
+    /// <see cref="AuthenticateResult.NoResult()"/> when no Basic header is present;
+    /// <see cref="AuthenticateResult.Fail(string)"/> when the header is malformed or credentials are incorrect.
+    /// </returns>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // This block is important when working with multiple authentication schemes

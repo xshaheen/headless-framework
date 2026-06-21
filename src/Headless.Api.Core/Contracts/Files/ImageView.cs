@@ -27,6 +27,10 @@ public sealed class ImageView : FileView
     [return: NotNullIfNotNull(nameof(operand))]
     public static ImageView? FromImage(Image? operand) => operand;
 
+    /// <summary>
+    /// Implicitly converts a domain <see cref="Image"/> to an <see cref="ImageView"/>.
+    /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
+    /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
     public static implicit operator ImageView?(Image? operand)
     {

@@ -36,13 +36,16 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
     where TUser : IdentityUser<TUserId>
     where TUserId : IEquatable<TUserId>
 {
-    // This method gets called for every request that requires authentication.
-    // The logic goes something like this:
-    // If no ApiKey is present on the header (or query string when AllowApiKeyInQueryString is true) -> Return no result,
-    //   let other handlers (if present) handle the request.
-    // If the api_key is present but null or empty -> Return no result.
-    // If the provided key does not exist -> Return no result (key not found).
-    // If the key is valid, create a new identity based on the user associated with the key.
+    /// <summary>
+    /// Reads the API key from the <c>X-API-Key</c> header (or query string when
+    /// <see cref="ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString"/> is <see langword="true"/>),
+    /// resolves the user via <see cref="IApiKeyStore{TUser,TUserId}"/>, and issues a ticket on success.
+    /// </summary>
+    /// <returns>
+    /// <see cref="AuthenticateResult.Success(Microsoft.AspNetCore.Authentication.AuthenticationTicket)"/> when the key resolves to an active, non-locked-out user;
+    /// <see cref="AuthenticateResult.NoResult()"/> when no key is present or the key is unknown;
+    /// <see cref="AuthenticateResult.Fail(string)"/> when the user cannot sign in or is locked out.
+    /// </returns>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         // This line is important to correct working the multiple authentication schemes

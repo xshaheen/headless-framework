@@ -22,6 +22,10 @@ public static class ConfigureApplicationCookiesExtensions
     /// This makes cookie-authenticated APIs behave correctly for non-browser clients.
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
+    /// <remarks>
+    /// Requires <c>AddIdentity</c> or <c>AddAuthentication</c> to have been called first so
+    /// the application cookie options are already registered.
+    /// </remarks>
     public static void ConfigureApiApplicationCookie(this IServiceCollection services)
     {
         services.ConfigureApplicationCookie(options =>

@@ -16,6 +16,7 @@ public static class RouteBuilderExtensions
     /// <typeparam name="TArgument">The request type whose validators should be applied.</typeparam>
     /// <param name="builder">The route handler builder to add the filter to.</param>
     /// <returns><paramref name="builder"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
     public static RouteHandlerBuilder Validate<TArgument>(this RouteHandlerBuilder builder)
     {
         return builder.AddEndpointFilter<MinimalApiValidatorFilter<TArgument>>();

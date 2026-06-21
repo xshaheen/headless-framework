@@ -49,6 +49,7 @@ public static class GeoCoordinateValidatorExtensions
     /// Adds a rule that passes when <paramref name="rule"/>'s value is <see langword="null"/> or
     /// contains valid WGS-84 latitude/longitude values (latitude in [-90, 90], longitude in [-180, 180]).
     /// </summary>
+    /// <returns>The rule builder so that additional calls can be chained.</returns>
     public static IRuleBuilderOptions<T, GeoCoordinateRequest?> GeoCoordinate<T>(
         this IRuleBuilder<T, GeoCoordinateRequest?> rule
     )

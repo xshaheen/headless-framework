@@ -26,7 +26,7 @@ public static class HttpContextExtensions
     /// <param name="context">The HTTP context.</param>
     /// <param name="cacheProfile">The cache profile.</param>
     /// <returns>The same HTTP context.</returns>
-    /// <exception cref="ArgumentNullException">context or cacheProfile.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> or <paramref name="cacheProfile"/> is <see langword="null"/>.</exception>
     public static HttpContext ApplyCacheProfile(this HttpContext context, CacheProfile cacheProfile)
     {
         Argument.IsNotNull(context);
@@ -110,6 +110,8 @@ public static class HttpContextExtensions
     /// is unsafe because any client can forge them; relying on the rewritten connection address
     /// is the secure default.
     /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <returns>The IPv4 or IPv6 address string, or <see langword="null"/> when no remote address is available.</returns>
     public static string? GetIpAddress(this HttpContext httpContext)
     {
         var ip = httpContext.Connection.RemoteIpAddress;
@@ -121,6 +123,7 @@ public static class HttpContextExtensions
 
     /// <summary>Returns the <c>User-Agent</c> request header value, or <see langword="null"/> when absent.</summary>
     /// <param name="httpContext">The current HTTP context.</param>
+    /// <returns>The raw <c>User-Agent</c> header value, or <see langword="null"/> when the header is missing.</returns>
     public static string? GetUserAgent(this HttpContext httpContext)
     {
         return httpContext.Request.Headers.TryGetValue(HeaderNames.UserAgent, out var value)
@@ -132,6 +135,7 @@ public static class HttpContextExtensions
     /// Returns the <c>X-Correlation-ID</c> request header value, or <see langword="null"/> when absent.
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
+    /// <returns>The raw <c>X-Correlation-ID</c> header value, or <see langword="null"/> when the header is missing.</returns>
     public static string? GetCorrelationId(this HttpContext httpContext)
     {
         return httpContext.Request.Headers.TryGetValue(HttpHeaderNames.CorrelationId, out var value)

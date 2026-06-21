@@ -16,6 +16,7 @@ public static class SetupMinimalApi
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
     /// <returns><paramref name="services"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
     public static IServiceCollection ConfigureMinimalApi(this IServiceCollection services)
     {
         services.ConfigureOptions<ConfigureMinimalApiJsonOptions>();
@@ -29,6 +30,7 @@ public static class SetupMinimalApi
     /// with indented output enabled in Development and Test environments.
     /// </summary>
     /// <param name="builder">The <see cref="WebApplicationBuilder"/> to configure.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
     public static void ConfigureMinimalApi(this WebApplicationBuilder builder)
     {
         builder.Services.ConfigureOptions<ConfigureMinimalApiJsonOptions>();

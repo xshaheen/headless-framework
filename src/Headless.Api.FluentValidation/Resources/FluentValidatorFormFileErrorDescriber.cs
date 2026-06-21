@@ -41,7 +41,7 @@ public static class FluentValidatorFormFileErrorDescriber
     }
 
     /// <summary>Returns the error descriptor for a file whose declared content type is not in the allowed list.</summary>
-    /// <returns>An <see cref="ErrorDescriptor"/> with code <c>file:unexpected_signature</c>.</returns>
+    /// <returns>An <see cref="ErrorDescriptor"/> with code <c>file:unexpected_signature</c>. Both content-type and signature failures share this code intentionally.</returns>
     public static ErrorDescriptor FileContentTypeValidator()
     {
         return new(code: "file:unexpected_signature", description: FluentValidatorErrors.file_unexpected_signature);

@@ -28,6 +28,7 @@ public static class SetupMiddlewares
     /// Registers <c>ServerTimingMiddleware</c> as a singleton in the DI container.
     /// Call <see cref="UseServerTiming"/> after this to add it to the pipeline.
     /// </summary>
+    /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
     public static IServiceCollection AddServerTimingMiddleware(this IServiceCollection services)
     {
@@ -63,6 +64,7 @@ public static class SetupMiddlewares
     /// Registers <c>StatusCodesRewriterMiddleware</c> as a singleton in the DI container.
     /// Call <see cref="UseStatusCodesRewriter"/> after this to add it to the pipeline.
     /// </summary>
+    /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
     public static IServiceCollection AddStatusCodesRewriterMiddleware(this IServiceCollection services)
     {
@@ -78,6 +80,7 @@ public static class SetupMiddlewares
     /// <c>g:tenant_required</c> ProblemDetails body regardless of any upstream
     /// <c>Content-Type</c> already set.
     /// </summary>
+    /// <param name="app">The application builder.</param>
     /// <remarks>
     /// Notifies any registered <see cref="IStatusCodesRewriterCalledNotifier"/> (e.g.,
     /// <c>HeadlessServiceDefaultsValidationStartupFilter</c>) synchronously before adding the middleware.
@@ -102,6 +105,7 @@ public static class SetupMiddlewares
     /// Call <see cref="UseTenantResolution"/> (or <see cref="SetupApiTenancy.UseHeadlessTenancy"/>)
     /// after this to add it to the pipeline.
     /// </summary>
+    /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
     public static IServiceCollection AddTenantResolution(this IServiceCollection services)
     {

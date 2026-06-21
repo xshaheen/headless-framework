@@ -33,6 +33,10 @@ public sealed class PageMetadataView
     [return: NotNullIfNotNull(nameof(operand))]
     public static PageMetadataView? FromPageMetadata(PageMetadata? operand) => operand;
 
+    /// <summary>
+    /// Implicitly converts a domain <see cref="PageMetadata"/> to a <see cref="PageMetadataView"/>.
+    /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
+    /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
     public static implicit operator PageMetadataView?(PageMetadata? operand)
     {
