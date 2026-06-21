@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.ReCaptcha.Internals;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Captcha;
 
 internal static class StringExtensions
 {

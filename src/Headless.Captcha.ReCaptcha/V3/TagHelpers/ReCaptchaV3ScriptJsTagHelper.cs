@@ -2,17 +2,17 @@
 
 using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
-using Headless.ReCaptcha.Contracts;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
 
-namespace Headless.ReCaptcha.V3.TagHelpers;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Captcha;
 
 [PublicAPI]
 [HtmlTargetElement("recaptcha-script-v3-js", TagStructure = TagStructure.WithoutEndTag)]
 public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCaptchaOptions> optionsAccessor) : TagHelper
 {
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(SetupReCaptcha.V3Name);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(CaptchaConstants.ReCaptchaV3Provider);
 
     [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled, 100)]
     private static partial Regex _ValidJsIdentifierRegex();

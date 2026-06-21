@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.ReCaptcha.Contracts;
-using Headless.ReCaptcha.Internals;
-using Headless.ReCaptcha.Services;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
 
-namespace Headless.ReCaptcha.V3.TagHelpers;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.Captcha;
 
 [PublicAPI]
 [HtmlTargetElement("recaptcha-script-v3", TagStructure = TagStructure.WithoutEndTag)]
@@ -15,7 +13,7 @@ public sealed class ReCaptchaV3ScriptTagHelper(
     IReCaptchaLanguageCodeProvider reCaptchaLanguageCodeProvider
 ) : TagHelper
 {
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(SetupReCaptcha.V3Name);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(CaptchaConstants.ReCaptchaV3Provider);
 
     public bool HideBadge { get; set; }
 
