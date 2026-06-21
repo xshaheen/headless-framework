@@ -60,7 +60,7 @@ public static class TestHttpContextExtensions
 
     /// <summary>
     /// Overload of <see cref="SetHttpContext(IServiceProvider, ClaimsPrincipal?, IPAddress?, string?)"/>
-    /// that accepts the remote IP as a string and parses it via <see cref="System.Net.IPAddress.Parse"/>.
+    /// that accepts the remote IP as a string and parses it via <see cref="System.Net.IPAddress.Parse(string)"/>.
     /// </summary>
     /// <param name="serviceProvider">The scoped service provider to attach to the context.</param>
     /// <param name="principal">The claims principal for the simulated request. Defaults to an empty principal.</param>
