@@ -21,7 +21,7 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 dotnet add package Headless.Sitemaps
 ```
 
-## Usage
+## Quick Start
 
 ### Basic Sitemap
 

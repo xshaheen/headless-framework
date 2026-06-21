@@ -2,6 +2,8 @@
 
 namespace Headless.Sitemaps;
 
+/// <summary>Represents an image associated with a sitemap URL node.</summary>
+[PublicAPI]
 public sealed class SitemapImage(Uri location)
 {
     /// <summary>

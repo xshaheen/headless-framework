@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Xml;
 
 namespace Headless.Sitemaps;
@@ -11,12 +11,37 @@ namespace Headless.Sitemaps;
 public static class SitemapUrls
 {
     /// <summary>
-    /// Generate sitemap and separate it if exceeded max urls in single file.
-    /// <see cref="SitemapConstants.MaxSitemapUrls"/>
+    /// Generate one or more sitemap files, splitting into separate files when the URL count exceeds
+    /// <see cref="SitemapConstants.MaxSitemapUrls"/>. Each returned stream is rewound to its start
+    /// (<see cref="Stream.Position"/> is <c>0</c>) and is owned by the caller, who must dispose it.
     /// </summary>
-    public static async Task<List<MemoryStream>> WriteAsync(
+    /// <remarks>
+    /// This eagerly buffers every shard in memory. For very large sites prefer <see cref="WriteEachAsync"/>,
+    /// which yields shards lazily so the caller can flush and dispose each one before the next is built.
+    /// </remarks>
+    public static async Task<IReadOnlyList<Stream>> WriteAsync(
         this IReadOnlyCollection<SitemapUrl> sitemapUrls,
         CancellationToken cancellationToken = default
+    )
+    {
+        var streams = new List<Stream>();
+
+        await foreach (var stream in sitemapUrls.WriteEachAsync(cancellationToken).ConfigureAwait(false))
+        {
+            streams.Add(stream);
+        }
+
+        return streams;
+    }
+
+    /// <summary>
+    /// Lazily generate sitemap files, splitting into separate files when the URL count exceeds
+    /// <see cref="SitemapConstants.MaxSitemapUrls"/>. Each yielded stream is rewound to its start
+    /// (<see cref="Stream.Position"/> is <c>0</c>); the caller owns it and should dispose it before requesting the next.
+    /// </summary>
+    public static async IAsyncEnumerable<MemoryStream> WriteEachAsync(
+        this IReadOnlyCollection<SitemapUrl> sitemapUrls,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
         // split URLs into separate lists based on the max size
@@ -25,16 +50,13 @@ public static class SitemapUrls
             .GroupBy(group => group.Index / SitemapConstants.MaxSitemapUrls)
             .Select(group => group.Select(url => url.Value).ToArray());
 
-        var streams = new List<MemoryStream>();
-
         foreach (var sitemap in sitemaps)
         {
             var stream = new MemoryStream();
             await sitemap.WriteToAsync(stream, cancellationToken).ConfigureAwait(false);
-            streams.Add(stream);
+            stream.Position = 0;
+            yield return stream;
         }
-
-        return streams;
     }
 
     /// <summary>Write a sitemap file into the stream.</summary>
@@ -113,12 +135,15 @@ public static class SitemapUrls
         CancellationToken cancellationToken
     )
     {
-        var hasAlternates = sitemapUrl.AlternateLocations is not null;
+        var alternateLocations = sitemapUrl.AlternateLocations;
 
-        if (!hasAlternates)
+        if (alternateLocations is null)
         {
             await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null).ConfigureAwait(false);
 
+            // Location is non-null here: the alternates constructor is the only one that leaves it null, and it
+            // always sets AlternateLocations. A null AlternateLocations therefore implies the simple constructor,
+            // which validates Location is non-null.
             await writer
                 .WriteElementStringAsync(
                     prefix: null,
@@ -133,18 +158,16 @@ public static class SitemapUrls
                 await _WriteImagesAsync(writer, sitemapUrl.Images, cancellationToken).ConfigureAwait(false);
             }
 
-            _WriteOtherNodes(writer, sitemapUrl);
+            await _WriteOtherNodesAsync(writer, sitemapUrl).ConfigureAwait(false);
             await writer.WriteEndElementAsync().ConfigureAwait(false);
 
             return;
         }
 
         // write with alternates
-        Debug.Assert(sitemapUrl.AlternateLocations is not null);
-
         var filteredAlternates = sitemapUrl.WriteAlternateLanguageCodes is null
-            ? sitemapUrl.AlternateLocations
-            : sitemapUrl.AlternateLocations.Where(predicate: alt =>
+            ? alternateLocations
+            : alternateLocations.Where(predicate: alt =>
                 sitemapUrl.WriteAlternateLanguageCodes!.Contains(alt.LanguageCode, StringComparer.OrdinalIgnoreCase)
             );
 
@@ -165,11 +188,11 @@ public static class SitemapUrls
             }
 
             // Write alternate URLs
-            await _WriteAlternateUrlsReferenceAsync(writer, sitemapUrl.AlternateLocations, cancellationToken)
+            await _WriteAlternateUrlsReferenceAsync(writer, alternateLocations, cancellationToken)
                 .ConfigureAwait(false);
 
             // Write properties
-            _WriteOtherNodes(writer, sitemapUrl);
+            await _WriteOtherNodesAsync(writer, sitemapUrl).ConfigureAwait(false);
 
             await writer.WriteEndElementAsync().ConfigureAwait(false);
         }
@@ -233,18 +256,22 @@ public static class SitemapUrls
         }
     }
 
-    private static void _WriteOtherNodes(XmlWriter writer, SitemapUrl sitemapUrl)
+    private static async Task _WriteOtherNodesAsync(XmlWriter writer, SitemapUrl sitemapUrl)
     {
         if (sitemapUrl.Priority is not null)
         {
             var value = sitemapUrl.Priority.Value.ToString(format: "N1", provider: CultureInfo.InvariantCulture);
-            writer.WriteElementString(localName: "priority", value);
+            await writer
+                .WriteElementStringAsync(prefix: null, localName: "priority", ns: null, value)
+                .ConfigureAwait(false);
         }
 
         if (sitemapUrl.ChangeFrequency is not null)
         {
             var value = sitemapUrl.ChangeFrequency.Value.ToString().ToLowerInvariant();
-            writer.WriteElementString(localName: "changefreq", value);
+            await writer
+                .WriteElementStringAsync(prefix: null, localName: "changefreq", ns: null, value)
+                .ConfigureAwait(false);
         }
 
         if (sitemapUrl.LastModified is not null)
@@ -254,7 +281,9 @@ public static class SitemapUrls
                 provider: CultureInfo.InvariantCulture
             );
 
-            writer.WriteElementString(localName: "lastmod", value);
+            await writer
+                .WriteElementStringAsync(prefix: null, localName: "lastmod", ns: null, value)
+                .ConfigureAwait(false);
         }
     }
 

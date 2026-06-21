@@ -3,6 +3,7 @@
 namespace Headless.Sitemaps;
 
 /// <summary>Represents a sitemap update frequency</summary>
+[PublicAPI]
 public enum ChangeFrequency
 {
     Always,
