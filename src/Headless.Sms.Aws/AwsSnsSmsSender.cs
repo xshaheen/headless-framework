@@ -57,7 +57,7 @@ public sealed class AwsSnsSmsSender(
 
         var publishRequest = new PublishRequest
         {
-            PhoneNumber = request.Destinations[0].ToString(),
+            PhoneNumber = request.Destinations[0].ToString(hasPlusPrefix: true),
             Message = request.Text,
             MessageAttributes = attributes,
         };
