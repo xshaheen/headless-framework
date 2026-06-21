@@ -18,7 +18,7 @@ internal sealed class TurnstileModel(ITurnstileVerifier verifier) : PageModel
             RemoteIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
         };
 
-        var result = await verifier.VerifyAsync(request);
+        var result = await verifier.VerifyAsync(request, HttpContext.RequestAborted);
 
         Result = JsonSerializer.Serialize(result, JsonConstants.DefaultPrettyJsonOptions);
     }

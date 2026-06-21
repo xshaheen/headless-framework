@@ -7,6 +7,7 @@ namespace Headless.Captcha;
 [PublicAPI]
 public interface IReCaptchaLanguageCodeProvider
 {
+    /// <summary>Gets the reCAPTCHA language code rendered into the script URL's <c>?hl=</c> parameter (for example <c>en</c> / <c>en-US</c>).</summary>
     string GetLanguageCode();
 }
 

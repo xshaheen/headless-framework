@@ -6,27 +6,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorPages();
 
-// Compose multiple CAPTCHA providers behind one abstraction:
+// Compose multiple CAPTCHA providers behind one abstraction, bound from the Headless:Captcha:* sections:
 //  - Turnstile as the default provider (its tag helpers render the default widget),
 //  - reCAPTCHA v3 as a named provider, selected at runtime through ICaptchaProvider.
 builder.Services.AddHeadlessCaptcha(captcha =>
     captcha
-        .UseTurnstile(options =>
-        {
-            options.SiteKey = builder.Configuration["Headless:Captcha:Turnstile:SiteKey"] ?? "YOUR_TURNSTILE_SITE_KEY";
-            options.SiteSecret =
-                builder.Configuration["Headless:Captcha:Turnstile:SiteSecret"] ?? "YOUR_TURNSTILE_SITE_SECRET";
-        })
-        .UseReCaptchaV3(
-            "recaptcha",
-            options =>
-            {
-                options.SiteKey =
-                    builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteKey"] ?? "YOUR_RECAPTCHA_V3_SITE_KEY";
-                options.SiteSecret =
-                    builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteSecret"] ?? "YOUR_RECAPTCHA_V3_SITE_SECRET";
-            }
-        )
+        .UseTurnstile(builder.Configuration.GetSection("Headless:Captcha:Turnstile"))
+        .UseReCaptchaV3("recaptcha", builder.Configuration.GetSection("Headless:Captcha:ReCaptchaV3"))
 );
 
 var app = builder.Build();

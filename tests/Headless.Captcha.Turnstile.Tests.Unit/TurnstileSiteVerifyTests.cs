@@ -48,5 +48,20 @@ public sealed class TurnstileSiteVerifyTests : IDisposable
         baseResult.Success.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task success_without_optional_fields_is_not_an_error_and_leaves_them_null()
+    {
+        // A success body that omits hostname/challenge_ts is valid — the base result must not over-promise
+        // them as non-null on success (no MemberNotNullWhen contract), and verification must not throw.
+        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, """{"success":true}""");
+        var verifier = _fixture.CreateTurnstileVerifier(stub);
+
+        var result = await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" });
+
+        result.Success.Should().BeTrue();
+        result.HostName.Should().BeNull();
+        result.ChallengeTimestamp.Should().BeNull();
+    }
+
     public void Dispose() => _fixture.Dispose();
 }

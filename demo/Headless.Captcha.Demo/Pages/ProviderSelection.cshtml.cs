@@ -26,7 +26,7 @@ internal sealed class ProviderSelectionModel(ICaptchaProvider captchaProvider) :
             RemoteIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
         };
 
-        var result = await verifier.VerifyAsync(request);
+        var result = await verifier.VerifyAsync(request, HttpContext.RequestAborted);
 
         Result = JsonSerializer.Serialize(result, JsonConstants.DefaultPrettyJsonOptions);
     }
