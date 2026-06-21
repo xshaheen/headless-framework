@@ -4,14 +4,13 @@ Development email implementations for local testing and debugging.
 
 ## Problem Solved
 
-Provides safe email implementations for development/testing that don't send real emails, preventing accidental sends and enabling easy inspection of email content.
+Provides safe email implementations for development and testing that do not send real emails, preventing accidental sends and enabling easy inspection of email content locally.
 
 ## Key Features
 
-- `DevEmailSender` - Writes full email content to a local file
-- `NoopEmailSender` - Discards emails silently
-- No network calls required
-- Easy inspection of email content
+- `DevEmailSender` — writes full email content to a local file; appends with a `--------------------` separator per message; prefers `MessageText` over `MessageHtml` for readability
+- `NoopEmailSender` — silently discards all emails, always returns `Succeeded()`
+- No network calls, no external dependencies beyond the abstractions package
 
 ## Installation
 
@@ -26,37 +25,37 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
+    // Write emails to a local file for inspection
     builder.Services.AddDevEmailSender("path/to/emails.txt");
+
+    // Or discard silently (useful in automated tests)
+    // builder.Services.AddNoopEmailSender();
 }
 ```
 
-## Output Format
-
-The `DevEmailSender` appends to the file with a separator:
+Example output written to the file:
 
 ```text
 From: sender@example.com
 To: recipient@example.com
 Subject: Test Email
 Message:
+
 Hello World!
 --------------------
 ```
 
 ## Configuration
 
-### Options
+`AddDevEmailSender(string filePath)` — the file path is the only parameter. The file is created if it does not exist; emails are appended.
 
-```csharp
-services.AddDevEmailSender("emails.txt"); // Path to output file
-```
+`AddNoopEmailSender()` — no parameters. Useful in test projects where you want `IEmailSender` resolved but do not want file I/O.
 
 ## Dependencies
 
 - `Headless.Emails.Abstractions`
-- `Headless.Hosting`
 
 ## Side Effects
 
-- Registers `IEmailSender` as singleton
-- Writes emails to specified file
+- `AddDevEmailSender` registers `IEmailSender` as singleton (instance of `DevEmailSender`); appends to the specified file on each `SendAsync` call
+- `AddNoopEmailSender` registers `IEmailSender` as singleton (instance of `NoopEmailSender`); no I/O

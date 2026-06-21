@@ -8,9 +8,12 @@ Provides a provider-agnostic email sending API, enabling seamless switching betw
 
 ## Key Features
 
-- `IEmailSender` - Core interface for sending emails
-- `SendSingleEmailRequest` - Request model with recipients, subject, body, attachments
-- `SendSingleEmailResponse` - Response with success status and message ID
+- `IEmailSender` — core interface with a single `SendAsync(SendSingleEmailRequest, CancellationToken)` method returning `ValueTask<SendSingleEmailResponse>`
+- `SendSingleEmailRequest` — immutable record with required `From`, `Destination`, `Subject`; optional `MessageHtml`, `MessageText`, `Attachments`
+- `EmailRequestAddress` — wraps email address + optional display name; supports implicit conversion from `string`
+- `EmailRequestDestination` — groups `ToAddresses` (required), `CcAddresses`, `BccAddresses`
+- `EmailRequestAttachment` — `Name` + `File` (byte array)
+- `SendSingleEmailResponse` — closed result type with `Success` bool and nullable `FailureError` string
 
 ## Installation
 
@@ -18,7 +21,7 @@ Provides a provider-agnostic email sending API, enabling seamless switching betw
 dotnet add package Headless.Emails.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class NotificationService(IEmailSender emailSender)
@@ -27,14 +30,20 @@ public sealed class NotificationService(IEmailSender emailSender)
     {
         var response = await emailSender.SendAsync(new SendSingleEmailRequest
         {
-            To = [to],
+            From = "noreply@example.com",
+            Destination = new EmailRequestDestination
+            {
+                ToAddresses = [new EmailRequestAddress(to)],
+            },
             Subject = "Welcome!",
-            HtmlBody = $"<h1>Hello {name}!</h1>",
-            TextBody = $"Hello {name}!"
+            MessageHtml = $"<h1>Hello {name}!</h1>",
+            MessageText = $"Hello {name}!",
         }, ct).ConfigureAwait(false);
 
-        if (!response.IsSuccess)
-            _logger.LogError("Failed to send email: {Error}", response.Error);
+        if (!response.Success)
+        {
+            logger.LogError("Failed to send email: {Error}", response.FailureError);
+        }
     }
 }
 ```
