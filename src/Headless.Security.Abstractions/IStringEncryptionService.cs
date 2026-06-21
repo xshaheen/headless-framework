@@ -19,17 +19,24 @@ public interface IStringEncryptionService
     string? Encrypt(string? plainText, string? passPhrase = null, byte[]? salt = null);
 
     /// <summary>Decrypts a value produced by <see cref="Encrypt" />.</summary>
-    /// <param name="cipherText">The encrypted value to decrypt.</param>
-    /// <param name="passPhrase">An optional pass phrase override. Uses the configured default when omitted.</param>
-    /// <param name="salt">An optional salt override. Uses the configured default when omitted.</param>
+    /// <param name="cipherText">The Base64-encoded encrypted value to decrypt.</param>
+    /// <param name="passPhrase">
+    /// An optional pass phrase override. Uses the configured default when <see langword="null" />. Must match the pass
+    /// phrase used during encryption; a mismatch causes a <see cref="System.Security.Cryptography.CryptographicException" />.
+    /// </param>
+    /// <param name="salt">
+    /// An optional salt override. Uses the configured default when <see langword="null" />. Must match the salt used
+    /// during encryption; a mismatch causes a <see cref="System.Security.Cryptography.CryptographicException" />.
+    /// </param>
     /// <returns>
-    /// The decrypted value, or <see langword="null" /> when <paramref name="cipherText" /> is <see langword="null" />
-    /// or empty.
+    /// The decrypted plain text, or <see langword="null" /> when <paramref name="cipherText" /> is
+    /// <see langword="null" /> or empty.
     /// </returns>
     /// <exception cref="System.FormatException"><paramref name="cipherText" /> is not a valid Base64 string.</exception>
     /// <exception cref="System.Security.Cryptography.CryptographicException">
-    /// The cipher text is too short to contain a nonce and tag, or its authentication tag does not verify (the value
-    /// was tampered with, or the pass phrase / salt does not match the one used to encrypt it).
+    /// The cipher text is too short to contain a valid nonce and authentication tag, or the authentication tag does
+    /// not verify — indicating the value was tampered with or the pass phrase / salt does not match the one used to
+    /// encrypt it.
     /// </exception>
     string? Decrypt(string? cipherText, string? passPhrase = null, byte[]? salt = null);
 }
