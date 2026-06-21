@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
   </ItemGroup>

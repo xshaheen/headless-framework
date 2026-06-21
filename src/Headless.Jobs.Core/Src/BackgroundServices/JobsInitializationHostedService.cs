@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,7 +16,10 @@ namespace Headless.Jobs.BackgroundServices;
 /// Handles Jobs core initialization (function building, seeding, notification wiring, external provider init).
 /// Registered before the scheduler to guarantee correct startup order.
 /// </summary>
-internal sealed class JobsInitializationHostedService(IServiceProvider serviceProvider) : IHostedService
+internal sealed class JobsInitializationHostedService(
+    IServiceProvider serviceProvider,
+    ILogger<JobsInitializationHostedService> logger
+) : IHostedService
 {
     private Action<object?, CoreNotifyActionType>? _notifyCoreHandler;
     private JobsExecutionContext? _executionContext;
@@ -32,7 +37,6 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         // operator widens LeaseDuration — the Jobs analog of messaging's DeadThreshold >= DispatchTimeout guard.
         if (schedulerOptions.LeaseDuration < schedulerOptions.FallbackIntervalChecker)
         {
-            var logger = serviceProvider.GetRequiredService<ILogger<JobsInitializationHostedService>>();
             logger.LeaseDurationShorterThanFallback(
                 schedulerOptions.LeaseDuration,
                 schedulerOptions.FallbackIntervalChecker
@@ -91,7 +95,7 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
 
         if (options is null || options.SeedDefinedCronJobs)
         {
-            await _SeedDefinedCronJobsAsync(serviceProvider).ConfigureAwait(false);
+            await _SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
         }
 
         if (options?.TimeSeederAction is not null)
@@ -122,7 +126,15 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         return Task.CompletedTask;
     }
 
-    private static async Task _SeedDefinedCronJobsAsync(IServiceProvider serviceProvider)
+    // Instance method (not static) so the lock + logger come from constructor injection rather than a mid-body
+    // service-locator — resolution happens at DI-build time, inside the construction fault boundary, consistent with
+    // JobsDeadOwnerReclaimer. Internal (not private) is the codebase's standard InternalsVisibleTo test seam: the guard
+    // unit test constructs the service and calls this directly, avoiding a StartAsync run over global JobFunctionProvider
+    // static state.
+    internal async Task _SeedDefinedCronJobsAsync(
+        SchedulerOptionsBuilder schedulerOptions,
+        CancellationToken cancellationToken
+    )
     {
         var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
 
@@ -131,7 +143,53 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
             .Select(x => (x.Key, x.Value.cronExpression))
             .ToArray();
 
-        await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed).ConfigureAwait(false);
+        // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
+        // from the function, so simultaneous first-boot on N nodes converges on a single row (PK dedup) — no duplicate
+        // schedules even without the lock. The optional lock below only removes the redundant N-node scan/write storm;
+        // it is never the correctness boundary — per-row predicates, node@incarnation ownership, and per-job leases are.
+        if (!schedulerOptions.UseStorageLock)
+        {
+            await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        IDistributedLease? lease;
+        try
+        {
+            // Resolve the keyed lock lazily INSIDE the try (not via constructor injection) so a consumer factory that
+            // throws at resolution — e.g. UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>()) when no
+            // provider is registered — is treated as an acquire fault and skipped, rather than crashing host startup
+            // when DI constructs this hosted service.
+            var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
+            lease = await lockProvider
+                .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, JobsKeys.GuardAcquireOptions, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Host-shutdown / caller cancellation (our own token tripped) must propagate — do not swallow it as a skip.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Lock-store hiccup — including a provider that surfaces an internal timeout as a
+            // (Task)OperationCanceledException while our token is NOT cancelled: another node seeds, or the next boot
+            // retries. Skip rather than fail startup instead of letting a provider-internal cancel crash host start.
+            logger.CronSeedMigrationLockAcquireFailed(ex);
+            return;
+        }
+
+        if (lease is null)
+        {
+            // Another node holds the seed lock and is migrating; skip the redundant scan (skip-on-contention).
+            logger.CronSeedMigrationSkipped();
+            return;
+        }
+
+        await using (lease.ConfigureAwait(false))
+        {
+            await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
+        }
     }
 }
 
@@ -151,4 +209,27 @@ internal static partial class JobsInitializationLog
         TimeSpan leaseDuration,
         TimeSpan fallbackInterval
     );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "CronSeedMigrationSkipped",
+        Level = LogLevel.Debug,
+        Message = "Skipped cron-seed migration: another node holds the '"
+            + JobsKeys.CronSeedMigrationResource
+            + "' lock and is seeding."
+    )]
+    public static partial void CronSeedMigrationSkipped(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "CronSeedMigrationLockAcquireFailed",
+        // Warning, not Debug: a contention skip (lease == null) is normal on every rolling deploy, but an acquire
+        // *fault* signals a lock-store problem. If the store is down for all nodes at first boot, every node hits
+        // this path and the seed is skipped until the next restart — that must be operator-visible.
+        Level = LogLevel.Warning,
+        Message = "Skipped cron-seed migration: acquiring the '"
+            + JobsKeys.CronSeedMigrationResource
+            + "' lock failed. Another node will seed or the next boot will retry."
+    )]
+    public static partial void CronSeedMigrationLockAcquireFailed(this ILogger logger, Exception exception);
 }

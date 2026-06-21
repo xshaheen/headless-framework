@@ -20,12 +20,14 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     where TCronJob : CronJobEntity, new()
 {
     private readonly JobsExecutionContext _tickerExecutionContext;
-    private readonly SchedulerOptionsBuilder _schedulerOptions;
+
+    /// <summary>Scheduler options instance, exposed so Core-layer extensions can toggle internal flags.</summary>
+    internal SchedulerOptionsBuilder SchedulerOptions { get; }
 
     internal JobsOptionsBuilder(JobsExecutionContext tickerExecutionContext, SchedulerOptionsBuilder schedulerOptions)
     {
         _tickerExecutionContext = tickerExecutionContext;
-        _schedulerOptions = schedulerOptions;
+        SchedulerOptions = schedulerOptions;
         // Store this instance in the execution context for later retrieval
         tickerExecutionContext.OptionsSeeding = this;
     }
@@ -65,6 +67,14 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     internal Func<IServiceProvider, Task>? CronSeederAction { get; set; }
 
+    /// <summary>
+    /// Deferred keyed-DI registration for the Jobs-scoped lock provider, set by the Core-layer
+    /// <c>UseDistributedLock</c> extensions and replayed by <c>AddHeadlessJobs</c>. Kept as an untyped
+    /// <see cref="Action{T}"/> over <see cref="IServiceCollection"/> so <c>Headless.Jobs.Abstractions</c> carries no
+    /// dependency on any distributed-lock package. Last call wins: a second <c>UseDistributedLock</c> overwrites it.
+    /// </summary>
+    internal Action<IServiceCollection>? LockRegistrationAction { get; set; }
+
     // Explicit interface implementation for IJobsOptionsSeeding
     bool IJobsOptionsSeeding.SeedDefinedCronJobs => SeedDefinedCronJobs;
     Func<IServiceProvider, Task>? IJobsOptionsSeeding.TimeSeederAction => TimeSeederAction;
@@ -84,7 +94,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         Action<SchedulerOptionsBuilder> schedulerOptionsBuilder
     )
     {
-        schedulerOptionsBuilder?.Invoke(_schedulerOptions);
+        schedulerOptionsBuilder?.Invoke(SchedulerOptions);
         return this;
     }
 
@@ -301,6 +311,17 @@ public sealed class SchedulerOptionsBuilder
     /// Controls how job processing starts. Defaults to <see cref="JobsStartMode.Immediate"/>.
     /// </summary>
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
+
+    /// <summary>
+    /// Whether the Jobs-scoped distributed lock coarse-gates startup cron-seed migration. Enabled only via the
+    /// <c>UseDistributedLock(...)</c> builder extension (the setter is internal so the flag can never be
+    /// <see langword="true"/> while the keyed slot still holds the <c>NullDistributedLock</c> fallback — that would
+    /// silently no-op the guard on every node with no diagnostic). Defaults to <see langword="false"/> (no lock —
+    /// every node runs the seed independently; seeded rows carry a deterministic primary key, so simultaneous
+    /// first-boot still converges on a single row without this gate). This is an optimization flag, never the
+    /// job-execution correctness boundary.
+    /// </summary>
+    public bool UseStorageLock { get; internal set; }
 
     /// <summary>
     /// Resolves the effective lease-renewal cadence (#316): an explicit <see cref="LeaseRenewalInterval"/> when

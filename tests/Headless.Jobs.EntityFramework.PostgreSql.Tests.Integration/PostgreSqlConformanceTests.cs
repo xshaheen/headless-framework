@@ -44,6 +44,10 @@ public sealed class PostgreSqlConformanceTests(PostgreSqlJobsCoordinationFixture
         base.running_job_renews_its_own_lease_but_a_lost_lease_renews_zero_rows();
 
     [Fact]
+    public override Task renewal_returns_the_membership_sentinel_when_membership_is_not_established() =>
+        base.renewal_returns_the_membership_sentinel_when_membership_is_not_established();
+
+    [Fact]
     public override Task stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy() =>
         base.stalled_lapsed_lease_inprogress_rows_are_reclaimed_per_policy();
 

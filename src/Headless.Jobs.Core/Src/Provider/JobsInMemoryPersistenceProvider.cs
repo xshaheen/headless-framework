@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -35,6 +36,18 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         _ownerId = optionsBuilder?.NodeId ?? Environment.MachineName;
         _leaseDuration = optionsBuilder?.LeaseDuration ?? TimeSpan.FromMinutes(5);
     }
+
+    // The #5 completion/claim fence (mirror of EF WhereOwnedBy): a row is touchable only when this node owns it and it
+    // is still non-terminal. Extracted (#467) so the predicate that guards every completion/claim path lives in one
+    // place — it was inlined 4× and a single typo would silently let one path clobber a swept/reclaimed row.
+    private bool _IsOwnedNonTerminal(string? ownerId, JobStatus status) =>
+        string.Equals(ownerId, _ownerId, StringComparison.Ordinal)
+        && status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+
+    // Renewal slides a RUNNING lease only (mirror of the EF RenewTimeJobLease InProgress fence): extending an
+    // Idle/Queued row would read as "lease held" and suppress cancel-on-loss. Extracted (#467) — inlined 2×.
+    private bool _IsOwnedRunning(string? ownerId, JobStatus status) =>
+        string.Equals(ownerId, _ownerId, StringComparison.Ordinal) && status is JobStatus.InProgress;
 
     #region Time Job Methods
 
@@ -195,9 +208,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a
             // non-terminal row, so a swept/reclaimed row is not clobbered by a late completion.
-            var ownedNonTerminal =
-                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
-                && job.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+            var ownedNonTerminal = _IsOwnedNonTerminal(job.OwnerId, job.Status);
 
             if (!ownedNonTerminal)
             {
@@ -238,9 +249,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             {
                 // #316/U5 claim→start ownership recheck (mirror EF WhereOwnedBy): only stamp rows still owned by
                 // this node and non-terminal, so a row re-claimed by another owner is not clobbered.
-                var ownedNonTerminal =
-                    string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal)
-                    && job.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+                var ownedNonTerminal = _IsOwnedNonTerminal(job.OwnerId, job.Status);
 
                 if (!ownedNonTerminal)
                 {
@@ -309,8 +318,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             // Renewal slides a RUNNING lease only: extending an Idle/Queued row would return 1 ("lease held") and
             // suppress cancel-on-loss. Mirror the EF RenewTimeJobLease InProgress fence.
-            var ownedRunning =
-                string.Equals(job.OwnerId, _ownerId, StringComparison.Ordinal) && job.Status is JobStatus.InProgress;
+            var ownedRunning = _IsOwnedRunning(job.OwnerId, job.Status);
 
             if (!ownedRunning)
             {
@@ -731,24 +739,34 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
         foreach (var (function, expression) in cronJobs)
         {
-            // Check if already exists (take snapshot for thread safety)
-            var exists = _CronJobs.Values.ToArray().Any(x => x.Function == function && x.Expression == expression);
-            if (!exists)
-            {
-                var id = Guid.NewGuid();
-                var cronJob = new TCronJob
-                {
-                    Id = id,
-                    Function = function,
-                    Expression = expression,
-                    InitIdentifier = $"MemoryTicker_Seeded_{id}",
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                    Request = [],
-                };
+            // Deterministic id keyed by function (matches the durable provider's seed identity): a re-seed — including
+            // a changed expression — updates the same row in place rather than inserting a duplicate. Single-process
+            // provider, so there is no cross-node race here.
+            var id = JobsSeedId.ForCronSeed(function);
 
-                _CronJobs.TryAdd(id, cronJob);
+            if (_CronJobs.TryGetValue(id, out var existing))
+            {
+                if (!string.Equals(existing.Expression, expression, StringComparison.Ordinal))
+                {
+                    existing.Expression = expression;
+                    existing.UpdatedAt = now;
+                }
+
+                continue;
             }
+
+            var cronJob = new TCronJob
+            {
+                Id = id,
+                Function = function,
+                Expression = expression,
+                InitIdentifier = $"MemoryTicker_Seeded_{function}",
+                CreatedAt = now,
+                UpdatedAt = now,
+                Request = [],
+            };
+
+            _CronJobs.TryAdd(id, cronJob);
         }
 
         return Task.CompletedTask;
@@ -888,6 +906,11 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(occurrence!);
     }
 
+    // KTD7: cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
+    // distributed lock. Each occurrence is keyed by a deterministic id and inserted via TryAdd / updated via
+    // TryUpdate (the durable provider does the same with an id-keyed upsert), so concurrent creation converges on a
+    // single row — storage-level dedup is the correctness boundary. A coarse lock would add no correctness and only
+    // serialize independent ids. Revisit only if evidence shows storage dedup is insufficient (plan #267 follow-up).
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
         (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
@@ -997,9 +1020,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         if (_CronOccurrences.TryGetValue(functionContext.JobId, out var occurrence))
         {
             // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a non-terminal occurrence.
-            var ownedNonTerminal =
-                string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
-                && occurrence.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+            var ownedNonTerminal = _IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status);
 
             if (ownedNonTerminal)
             {
@@ -1025,9 +1046,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         if (_CronOccurrences.TryGetValue(occurrenceId, out var occurrence))
         {
             // Renewal slides a RUNNING lease only (see RenewTimeJobLease InProgress fence).
-            var ownedRunning =
-                string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
-                && occurrence.Status is JobStatus.InProgress;
+            var ownedRunning = _IsOwnedRunning(occurrence.OwnerId, occurrence.Status);
 
             if (!ownedRunning)
             {
@@ -1173,9 +1192,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             if (_CronOccurrences.TryGetValue(id, out var occurrence))
             {
                 // #316/U5 — cron mirror of the claim→start ownership recheck.
-                var ownedNonTerminal =
-                    string.Equals(occurrence.OwnerId, _ownerId, StringComparison.Ordinal)
-                    && occurrence.Status is JobStatus.Idle or JobStatus.Queued or JobStatus.InProgress;
+                var ownedNonTerminal = _IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status);
 
                 if (!ownedNonTerminal)
                 {

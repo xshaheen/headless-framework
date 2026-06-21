@@ -452,25 +452,34 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    public async Task UpdateTickerAsync(
+    public async Task<int> UpdateTickerAsync(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     )
     {
+        // #462: propagate the affected-row count so a caller completing a job successfully can detect a fenced-out
+        // write (0 rows — the row was reclaimed/terminalized by a sweep after a stall) and flag the divergence.
+        int affected;
         if (functionContext.Type == JobType.CronJobOccurrence)
         {
-            await persistenceProvider.UpdateCronJobOccurrence(functionContext, cancellationToken).ConfigureAwait(false);
+            affected = await persistenceProvider
+                .UpdateCronJobOccurrence(functionContext, cancellationToken)
+                .ConfigureAwait(false);
             await notificationHubSender
                 .UpdateCronOccurrenceFromInternalFunctionContext<TCronJob>(functionContext)
                 .ConfigureAwait(false);
         }
         else
         {
-            await persistenceProvider.UpdateTimeJob(functionContext, cancellationToken).ConfigureAwait(false);
+            affected = await persistenceProvider
+                .UpdateTimeJob(functionContext, cancellationToken)
+                .ConfigureAwait(false);
             await notificationHubSender
                 .UpdateTimeJobFromInternalFunctionContext<TTimeJob>(functionContext)
                 .ConfigureAwait(false);
         }
+
+        return affected;
     }
 
     public async Task<int> RenewLeaseAsync(

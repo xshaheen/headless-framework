@@ -423,7 +423,7 @@ public sealed class TusAzureMetadataTests : TestBase
     }
 
     [Fact]
-    public void should_return_zero_when_upload_length_not_set()
+    public void should_return_null_when_upload_length_not_set()
     {
         // given
         var metadata = TusAzureMetadata.FromAzure(new Dictionary<string, string>(StringComparer.Ordinal));
@@ -431,8 +431,8 @@ public sealed class TusAzureMetadataTests : TestBase
         // when
         var result = metadata.UploadLength;
 
-        // then
-        result.Should().Be(0L);
+        // then: unknown length must be null (distinct from a zero-byte upload) for the defer-length flow
+        result.Should().BeNull();
     }
 
     [Fact]
@@ -453,7 +453,7 @@ public sealed class TusAzureMetadataTests : TestBase
     }
 
     [Fact]
-    public void should_return_zero_for_invalid_upload_length()
+    public void should_return_null_for_invalid_upload_length()
     {
         // given
         var dict = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -466,7 +466,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var result = metadata.UploadLength;
 
         // then
-        result.Should().Be(0L);
+        result.Should().BeNull();
     }
 
     #endregion

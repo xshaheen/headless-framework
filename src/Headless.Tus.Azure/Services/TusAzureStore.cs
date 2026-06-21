@@ -4,6 +4,8 @@ using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
+using FluentValidation;
+using Headless.Checks;
 using Headless.Tus.Models;
 using Headless.Tus.Options;
 using Microsoft.Extensions.Logging;
@@ -86,6 +88,11 @@ public sealed partial class TusAzureStore
         TimeProvider? timeProvider = null
     )
     {
+        Argument.IsNotNull(options);
+        // The store is factory-constructed (no DI/IOptions pipeline), so validation runs here to fail fast on
+        // invalid options (empty container, out-of-range chunk size/lease) instead of surfacing as Azure errors.
+        new TusAzureStoreOptionsValidator().ValidateAndThrow(options);
+
         _options = options;
         _blobHttpHeadersProvider = blobHttpHeadersProvider ?? new DefaultTusAzureBlobHttpHeadersProvider();
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;

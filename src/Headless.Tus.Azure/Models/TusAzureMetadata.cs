@@ -83,11 +83,13 @@ internal sealed partial class TusAzureMetadata
 
     public long? UploadLength
     {
+        // Missing/unparseable returns null (unknown length) rather than 0; the Creation-Defer-Length flow relies on
+        // "unknown" being distinct from a zero-byte upload, and 0 would otherwise trip the upload-length guard.
         get =>
             _decodedMetadata.TryGetValue(UploadLengthKey, out var value)
             && long.TryParse(value, CultureInfo.InvariantCulture, out var length)
                 ? length
-                : 0;
+                : null;
         set
         {
             if (value.HasValue)

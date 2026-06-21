@@ -5,6 +5,7 @@ using Headless.Caching;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
+using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -494,9 +495,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // completion-fence shape: still owned + non-terminal), so a row the dead-node/stalled sweep already
         // reclaimed, terminalized, or whose owner changed matches 0 rows — the signal the caller turns into
         // cancel-on-loss (U2/KTD3). No separate liveness query: this UPDATE is the loss detector.
+        // #461: a NEGATIVE return means coordination membership is not currently established (registration pending
+        // or a transient blip) — distinct from 0 (genuinely not owned). The caller skips this renewal tick instead of
+        // cancelling, so a momentary membership hiccup doesn't kill a healthy job; if it persists the lease lapses and
+        // the stalled-reclaim sweep recovers the row per OnNodeDeath (same bound as a dead node).
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return 0;
+            return -1;
         }
 
         await using var dbContext = await DbContextFactory
@@ -658,10 +663,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             }
             else
             {
-                // Insert new seeded cron job
+                // Insert new seeded cron job. The id is DETERMINISTIC (derived from the function) so two nodes seeding
+                // the same new function concurrently target the same primary key — the DB dedups to a single row
+                // instead of inserting two distinct-id rows and double-scheduling the function.
                 var entity = new TCronJob
                 {
-                    Id = Guid.NewGuid(),
+                    Id = JobsSeedId.ForCronSeed(function),
                     Function = function,
                     Expression = expression,
                     InitIdentifier = $"MemoryTicker_Seeded_{function}",
@@ -673,7 +680,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             }
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException ex)
+        {
+            // Expected case: a concurrent first-boot lost the deterministic-id primary-key race — the winner's rows
+            // stand, so there is nothing to clean up; discard our now-redundant tracked inserts. Logged at Debug (the
+            // common trigger is the benign race) so a genuine, non-race failure that leaves this node's schedule
+            // unseeded until the next boot is still greppable rather than silently swallowed.
+            Logger.LogCronSeedConflictDiscarded(ex);
+            dbContext.ChangeTracker.Clear();
+        }
     }
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken = default)
@@ -949,9 +968,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     {
         // #316 sliding lease — mirror of RenewTimeJobLease for cron occurrences. WhereOwnedBy fence makes a
         // lost/reclaimed/terminalized occurrence match 0 rows -> cancel-on-loss (U2/KTD3).
+        // #461: a NEGATIVE return means coordination membership is not established (see RenewTimeJobLease) — the
+        // caller skips the renewal tick rather than cancelling.
         if (!OwnerIdentity.TryGetStampOwner(out var owner))
         {
-            return 0;
+            return -1;
         }
 
         await using var dbContext = await DbContextFactory
@@ -1076,6 +1097,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
+    // KTD7: cron-occurrence creation is intentionally NOT guarded by a coarse 'jobs.cron-occurrence-creation'
+    // distributed lock. Each occurrence carries a deterministic id (NextCronOccurrence.Id) and is created via an
+    // upsert keyed on that id, so concurrent creation across nodes converges on a single row — storage-level dedup
+    // is the correctness boundary here. A coarse lock would only serialize independent occurrence ids for no benefit.
+    // Revisit only if evidence shows storage dedup is insufficient (see plan #267 deferred follow-up).
     public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
         (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
@@ -1276,4 +1302,13 @@ internal static partial class BasePersistenceProviderLog
         Exception exception,
         string key
     );
+
+    [LoggerMessage(
+        EventId = 3001,
+        Level = LogLevel.Debug,
+        Message = "Cron-seed migration hit a DbUpdateException and discarded its redundant inserts. The expected cause "
+            + "is a concurrent first-boot losing the deterministic-id primary-key race (benign — the winner's rows "
+            + "stand); any other cause leaves this node's schedule unseeded until the next boot reconciles it."
+    )]
+    public static partial void LogCronSeedConflictDiscarded(this ILogger logger, Exception exception);
 }
