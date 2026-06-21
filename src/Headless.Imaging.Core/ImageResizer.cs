@@ -5,6 +5,19 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Imaging;
 
+/// <summary>
+/// Default <see cref="IImageResizer"/> implementation that delegates to a chain of
+/// <see cref="IImageResizerContributor"/> instances resolved from DI.
+/// </summary>
+/// <remarks>
+/// Contributors are iterated in reverse registration order (last-registered wins). Each
+/// contributor is given the same seekable stream; the stream is rewound to the beginning
+/// after every attempt. If <see cref="ImageResizeArgs.Mode"/> is
+/// <see cref="ImageResizeMode.Default"/>, it is replaced with
+/// <see cref="ImagingOptions.DefaultResizeMode"/> before the first contributor is called.
+/// If all contributors return <see cref="ImageProcessState.Unsupported"/>, the result is
+/// <c>ImageStreamResizeResult.NotSupported()</c>.
+/// </remarks>
 public sealed class ImageResizer(
     IEnumerable<IImageResizerContributor> contributors,
     IOptions<ImagingOptions> optionsAccessor
@@ -13,6 +26,7 @@ public sealed class ImageResizer(
     private readonly IEnumerable<IImageResizerContributor> _contributors = contributors.Reverse();
     private readonly ImagingOptions _imagingOptions = optionsAccessor.Value;
 
+    /// <inheritdoc />
     public async Task<ImageStreamResizeResult> ResizeAsync(
         Stream stream,
         ImageResizeArgs args,
