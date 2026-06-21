@@ -21,9 +21,12 @@ public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
     /// <summary>Unique identifier for this entity.</summary>
     public required TId Id { get; init; }
 
+    /// <inheritdoc/>
     public override IReadOnlyList<object> GetKeys() => [Id];
 
+    /// <inheritdoc/>
     protected override IEnumerable<object?> EqualityComponents() => GetKeys();
 
+    /// <summary>Returns a diagnostic string of the form <c>[ENTITY: TypeName] Id = &lt;id&gt;</c>.</summary>
     public override string ToString() => $"[ENTITY: {GetType().Name}] Id = {Id}";
 }

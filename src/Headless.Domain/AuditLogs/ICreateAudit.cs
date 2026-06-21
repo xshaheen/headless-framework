@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+/// <summary>Marks an entity with creation-time audit fields.</summary>
 [PublicAPI]
 public interface ICreateAudit
 {
@@ -12,6 +13,8 @@ public interface ICreateAudit
     DateTimeOffset DateCreated { get; }
 }
 
+/// <summary>Extends <c>ICreateAudit</c> with the identifier of the account that created the entity.</summary>
+/// <typeparam name="TAccountId">Type of the account identifier.</typeparam>
 [PublicAPI]
 public interface ICreateAudit<out TAccountId> : ICreateAudit
 {
@@ -20,6 +23,9 @@ public interface ICreateAudit<out TAccountId> : ICreateAudit
     TAccountId? CreatedById { get; }
 }
 
+/// <summary>Extends <c>ICreateAudit&lt;TAccountId&gt;</c> with a navigation link to the creating account entity.</summary>
+/// <typeparam name="TAccountId">Type of the account identifier.</typeparam>
+/// <typeparam name="TAccount">Type of the account entity.</typeparam>
 [PublicAPI]
 public interface ICreateAudit<out TAccountId, out TAccount> : ICreateAudit<TAccountId>
 {

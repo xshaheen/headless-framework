@@ -11,6 +11,7 @@ public interface IEntity
     /// <summary>Returns an array of ordered keys for this entity.</summary>
     IReadOnlyList<object> GetKeys();
 
+    /// <summary>Returns a colon-delimited composite key string built from <c>GetKeys()</c>.</summary>
     string GetKey() => string.Join(':', GetKeys());
 }
 
@@ -18,9 +19,12 @@ public interface IEntity
 [PublicAPI]
 public abstract class Entity : EqualityBase<Entity>, IEntity
 {
+    /// <inheritdoc/>
     public abstract IReadOnlyList<object> GetKeys();
 
+    /// <inheritdoc/>
     protected override IEnumerable<object?> EqualityComponents() => GetKeys();
 
+    /// <summary>Returns a diagnostic string of the form <c>[ENTITY: TypeName] Keys = k1, k2, ...</c>.</summary>
     public override string ToString() => $"[ENTITY: {GetType().Name}] Keys = {string.Join(", ", GetKeys())}";
 }

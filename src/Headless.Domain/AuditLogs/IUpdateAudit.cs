@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
+/// <summary>Marks an entity with last-update audit fields.</summary>
 [PublicAPI]
 public interface IUpdateAudit
 {
@@ -12,6 +13,8 @@ public interface IUpdateAudit
     DateTimeOffset? DateUpdated { get; }
 }
 
+/// <summary>Extends <c>IUpdateAudit</c> with the identifier of the account that last updated the entity.</summary>
+/// <typeparam name="TAccountId">Type of the account identifier.</typeparam>
 [PublicAPI]
 public interface IUpdateAudit<out TAccountId> : IUpdateAudit
 {
@@ -20,6 +23,9 @@ public interface IUpdateAudit<out TAccountId> : IUpdateAudit
     TAccountId? UpdatedById { get; }
 }
 
+/// <summary>Extends <c>IUpdateAudit&lt;TAccountId&gt;</c> with a navigation link to the account that last updated the entity.</summary>
+/// <typeparam name="TAccountId">Type of the account identifier.</typeparam>
+/// <typeparam name="TAccount">Type of the account entity.</typeparam>
 [PublicAPI]
 public interface IUpdateAudit<out TAccountId, out TAccount> : IUpdateAudit<TAccountId>
 {
