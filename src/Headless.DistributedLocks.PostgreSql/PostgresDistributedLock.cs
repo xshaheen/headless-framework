@@ -2,7 +2,7 @@
 
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 #pragma warning disable CA2100 // Advisory SQL text is fixed; key values are supplied as parameters.
 /// <summary>

@@ -56,7 +56,7 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
-- [Headless.DistributedLocks.Postgres](#headlessdistributedlockspostgres)
+- [Headless.DistributedLocks.PostgreSql](#headlessdistributedlockspostgres)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
     - [Design Notes](#design-notes-4)
@@ -104,7 +104,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 - Do not use distributed locks (or the semaphore) as rate limiters. A semaphore caps *concurrent holders* (concurrency control); a rate limiter caps *throughput per time window* (rate control). For rate control, delegate to `Microsoft.AspNetCore.RateLimiting` (in-process), `RedisRateLimiting` (distributed), or `Polly.RateLimiting` (composition) — the framework ships no rate-limiting package.
 - Use `IDistributedLease.FencingToken` for stale-write rejection when the backend supplies it. Do not repurpose `LeaseId` as the fence; `LeaseId` remains the opaque ownership token used for renew/release equality. Call `ThrowIfLost()` in hot paths that must fail-stop after observed lease loss.
 - Before choosing a backend, classify the use case as efficiency or correctness. Redis locks are efficiency locks, not transaction-coupled correctness locks.
-- Use `Headless.DistributedLocks.Postgres` when the protected resource is already in PostgreSQL or when transaction-coupled advisory locks are required. Standard session-scoped Postgres locks require direct connections or PgBouncer session pooling.
+- Use `Headless.DistributedLocks.PostgreSql` when the protected resource is already in PostgreSQL or when transaction-coupled advisory locks are required. Standard session-scoped Postgres locks require direct connections or PgBouncer session pooling.
 - For connection-scoped (database) locks there is no TTL and no finalizer reclaim: always dispose the handle (`await using`) or call `ReleaseAsync()`. An abandoned handle leaks its connection and advisory lock until the provider is disposed. Connection death is surfaced through `LostToken` only when monitoring is enabled, so observe that token for monitored handles rather than assuming a lease will expire.
 - Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per call via `DistributedLockAcquireOptions`; `DistributedLockOptions` configures key prefix and waiter/resource limits.
 - If `Headless.Messaging` is registered, lock release wake-ups are push-based. If no `IOutboxBus` is registered, the provider still works and falls back to polling backoff with a one-time warning.
@@ -143,7 +143,7 @@ Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `
 
 ### Connection-Scoped Locks (Database Engine)
 
-Database-backed providers (`Headless.DistributedLocks.Postgres` over PostgreSQL advisory locks, and any provider built on `Headless.DistributedLocks.Core.Database`) do not store a lease record with a TTL. The lock exists for exactly as long as the holding database session does: the engine acquires the native primitive (for example `pg_try_advisory_lock`) on a live connection and releases it by unlocking — or by closing the connection, which drops every advisory lock the session held. Three engine behaviors follow from this and are visible to consumers as semantics, not as new API. The public surface (`AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(...))`, `IDistributedLock.TryAcquireAsync(...)`, the returned `IDistributedLease`) is unchanged.
+Database-backed providers (`Headless.DistributedLocks.PostgreSql` over PostgreSQL advisory locks, and any provider built on `Headless.DistributedLocks.Core.Database`) do not store a lease record with a TTL. The lock exists for exactly as long as the holding database session does: the engine acquires the native primitive (for example `pg_try_advisory_lock`) on a live connection and releases it by unlocking — or by closing the connection, which drops every advisory lock the session held. Three engine behaviors follow from this and are visible to consumers as semantics, not as new API. The public surface (`AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(...))`, `IDistributedLock.TryAcquireAsync(...)`, the returned `IDistributedLease`) is unchanged.
 
 **Disposal contract — there is no TTL and no finalizer reclaim.** A connection-scoped lock is released only when its handle is disposed (or `ReleaseAsync()` is called). There is no lease timeout that eventually frees it and no GC finalizer that reclaims it: the provider holds a strong reference to the backing engine handle for its lifetime, so a handle abandoned without disposal leaks its connection and its advisory lock until the provider itself is disposed. This is the deliberate contract — it mirrors `lock`/`using` discipline, and the reference engine's finalizer queue was intentionally dropped in favor of requiring explicit disposal. Always dispose the handle; `await using` is the intended usage. (`RenewAsync(...)` is a no-op success and `GetExpirationAsync(...)` returns `null`, because there is nothing to renew or expire.)
 
@@ -247,7 +247,7 @@ Use InMemory when all contenders are inside one process. Use Redis when you oper
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
 | `Headless.DistributedLocks.InMemory` | Tests, local development, or single-instance apps need the real lock abstractions without Redis. | More than one process, node, container, or app instance can contend for the same resource. | No infrastructure; coordination and fencing state disappear with the process. |
-| `Headless.DistributedLocks.Postgres` | You want PostgreSQL advisory mutexes or reader-writer locks, durable sequence fencing, or transaction-coupled locks. | You need semaphores, PgBouncer transaction/statement pooling for session-scoped locks, or no PostgreSQL dependency. | No TTL; the lock lives as long as the holding connection, so the handle must be disposed to release it (no finalizer reclaim). Connection death is detected actively (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)). |
+| `Headless.DistributedLocks.PostgreSql` | You want PostgreSQL advisory mutexes or reader-writer locks, durable sequence fencing, or transaction-coupled locks. | You need semaphores, PgBouncer transaction/statement pooling for session-scoped locks, or no PostgreSQL dependency. | No TTL; the lock lives as long as the holding connection, so the handle must be disposed to release it (no finalizer reclaim). Connection death is detected actively (see [Connection-Scoped Locks](#connection-scoped-locks-database-engine)). |
 | `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks, reader-writer locks, or N-holder semaphores. | You need durable transaction-coupled fencing. | Requires `IConnectionMultiplexer`; Redis fencing is best-effort unless the fence key is retained. |
 | `Headless.DistributedLocks.SqlServer` | You want SQL Server application locks, native server-side blocking, durable sequence fencing, or transaction-coupled locks. | You need semaphores, upgradeable reader-writer locks, or no SQL Server dependency. | No TTL; session-scoped locks live as long as the holding connection, and waiters block inside SQL Server. |
 
@@ -470,7 +470,7 @@ dotnet add package Headless.DistributedLocks.Core.Database
 
 ### Quick Start
 
-Use a concrete provider such as `Headless.DistributedLocks.Postgres`; application code normally does not register `Core.Database` directly.
+Use a concrete provider such as `Headless.DistributedLocks.PostgreSql`; application code normally does not register `Core.Database` directly.
 
 ### Configuration
 
@@ -548,7 +548,7 @@ Reader-writer and semaphore TTL checks use the registered `TimeProvider`, so tes
 
 ---
 
-## Headless.DistributedLocks.Postgres
+## Headless.DistributedLocks.PostgreSql
 
 PostgreSQL advisory-lock provider for mutex and reader-writer distributed locks.
 
@@ -579,7 +579,7 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 ### Installation
 
 ```bash
-dotnet add package Headless.DistributedLocks.Postgres
+dotnet add package Headless.DistributedLocks.PostgreSql
 ```
 
 ### Quick Start

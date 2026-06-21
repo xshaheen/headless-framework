@@ -4,7 +4,7 @@ using System.Data;
 using Headless.Checks;
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// <see cref="DatabaseConnection"/> over Npgsql. Commands are prepared (per the Npgsql preparation guidance), the

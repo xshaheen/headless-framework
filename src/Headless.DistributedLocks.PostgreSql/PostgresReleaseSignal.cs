@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 #pragma warning disable VSTHRD003, VSTHRD110, MA0134, ERP022
 // The LISTEN loop is an owned background receiver. Disposal cancels and observes it; notification

@@ -145,12 +145,12 @@
         <Project Path="src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
         <Project Path="src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
         <Project Path="src\Headless.DistributedLocks.Core.Database\Headless.DistributedLocks.Core.Database.csproj" />
-        <Project Path="src\Headless.DistributedLocks.Postgres\Headless.DistributedLocks.Postgres.csproj" />
+        <Project Path="src\Headless.DistributedLocks.PostgreSql\Headless.DistributedLocks.PostgreSql.csproj" />
         <Project Path="src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
         <Project Path="src\Headless.DistributedLocks.SqlServer\Headless.DistributedLocks.SqlServer.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Core.Database.Tests.Unit\Headless.DistributedLocks.Core.Database.Tests.Unit.csproj" />
         <Project Path="tests\Headless.DistributedLocks.InMemory.Tests.Integration\Headless.DistributedLocks.InMemory.Tests.Integration.csproj" />
-        <Project Path="tests\Headless.DistributedLocks.Postgres.Tests.Integration\Headless.DistributedLocks.Postgres.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.DistributedLocks.PostgreSql.Tests.Integration\Headless.DistributedLocks.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Redis.Tests.Integration\Headless.DistributedLocks.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.SqlServer.Tests.Integration\Headless.DistributedLocks.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Tests.Harness\Headless.DistributedLocks.Tests.Harness.csproj" />
@@ -341,6 +341,9 @@
         <Project Path="src\Headless.PushNotifications.Abstractions\Headless.PushNotifications.Abstractions.csproj" />
         <Project Path="src\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
         <Project Path="src\Headless.PushNotifications.Firebase\Headless.PushNotifications.Firebase.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Abstractions.Tests.Unit\Headless.PushNotifications.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Dev.Tests.Unit\Headless.PushNotifications.Dev.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PushNotifications.Firebase.Tests.Unit\Headless.PushNotifications.Firebase.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Seo/">
         <Project Path="src\Headless.Sitemaps\Headless.Sitemaps.csproj" />

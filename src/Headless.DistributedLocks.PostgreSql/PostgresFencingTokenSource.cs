@@ -4,7 +4,7 @@ using System.Data.Common;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// Implements <see cref="IFencingTokenSource"/> over a PostgreSQL database sequence named

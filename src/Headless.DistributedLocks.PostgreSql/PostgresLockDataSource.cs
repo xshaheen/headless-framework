@@ -3,7 +3,7 @@
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// Single shared <see cref="NpgsqlDataSource"/> owner for the Postgres distributed-lock consumers

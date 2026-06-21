@@ -3,7 +3,7 @@
 using FluentValidation;
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// Configuration options for the PostgreSQL advisory-lock distributed-lock provider. Exactly one of

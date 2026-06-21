@@ -9,14 +9,14 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// Provides extension members on <see cref="HeadlessDistributedLocksSetupBuilder"/> to configure the
 /// PostgreSQL advisory-lock distributed-lock provider.
 /// </summary>
 [PublicAPI]
-public static class SetupPostgresDistributedLocks
+public static class SetupPostgreSqlDistributedLocks
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {
@@ -153,11 +153,11 @@ public static class SetupPostgresDistributedLocks
                 );
             }
 
-            _AddPostgresDistributedLocksCore(services);
+            _AddPostgreSqlDistributedLocksCore(services);
         }
     }
 
-    private static IServiceCollection _AddPostgresDistributedLocksCore(IServiceCollection services)
+    private static IServiceCollection _AddPostgreSqlDistributedLocksCore(IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
         services.AddHeadlessGuidGenerator();

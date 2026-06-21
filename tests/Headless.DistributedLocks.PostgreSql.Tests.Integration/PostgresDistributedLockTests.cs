@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Postgres;
+using Headless.DistributedLocks.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;

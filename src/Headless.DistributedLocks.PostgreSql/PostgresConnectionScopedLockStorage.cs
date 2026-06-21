@@ -5,7 +5,7 @@ using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 #pragma warning disable CA2100 // Advisory SQL text is selected from fixed code paths; lock keys and resources use parameters.
 

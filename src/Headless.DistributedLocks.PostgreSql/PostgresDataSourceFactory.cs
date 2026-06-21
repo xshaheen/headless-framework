@@ -2,7 +2,7 @@
 
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// Builds the provider-owned <see cref="NpgsqlDataSource"/> from

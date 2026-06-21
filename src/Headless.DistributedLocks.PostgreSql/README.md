@@ -1,4 +1,4 @@
-# Headless.DistributedLocks.Postgres
+# Headless.DistributedLocks.PostgreSql
 
 ## Problem Solved
 
@@ -27,7 +27,7 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 ## Installation
 
 ```bash
-dotnet add package Headless.DistributedLocks.Postgres
+dotnet add package Headless.DistributedLocks.PostgreSql
 ```
 
 ## Quick Start

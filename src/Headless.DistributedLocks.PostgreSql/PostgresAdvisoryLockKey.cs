@@ -7,7 +7,7 @@ using System.Security.Cryptography;
 using Headless.Checks;
 using Npgsql;
 
-namespace Headless.DistributedLocks.Postgres;
+namespace Headless.DistributedLocks.PostgreSql;
 
 /// <summary>
 /// Represents a PostgreSQL advisory-lock key in either the bigint (<c>int8</c>) or the two-int
