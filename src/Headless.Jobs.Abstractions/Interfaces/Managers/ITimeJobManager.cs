@@ -23,7 +23,11 @@ public interface ITimeJobManager<TTimeJob>
     /// cannot write inside it (a mis-wire).
     /// </exception>
     Task<TTimeJob> AddAsync(TTimeJob entity, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing time job and returns the result.</summary>
     Task<JobResult<TTimeJob>> UpdateAsync(TTimeJob timeJob, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes the time job with the given identifier and returns the result.</summary>
     Task<JobResult<TTimeJob>> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     // Batch operations
@@ -33,9 +37,13 @@ public interface ITimeJobManager<TTimeJob>
     /// One or more jobs failed validation; <see cref="Headless.Jobs.Exceptions.JobValidatorException.Errors" /> lists each.
     /// </exception>
     Task<List<TTimeJob>> AddBatchAsync(List<TTimeJob> entities, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a batch of time jobs and returns the aggregated result.</summary>
     Task<JobResult<List<TTimeJob>>> UpdateBatchAsync(
         List<TTimeJob> timeJobs,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>Deletes the time jobs with the given identifiers and returns the aggregated result.</summary>
     Task<JobResult<TTimeJob>> DeleteBatchAsync(List<Guid> ids, CancellationToken cancellationToken = default);
 }

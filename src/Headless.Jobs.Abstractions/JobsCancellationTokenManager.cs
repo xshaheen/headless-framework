@@ -6,6 +6,15 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs;
 
+/// <summary>
+/// Process-wide registry of per-job <c>CancellationTokenSource</c> instances that allows external
+/// callers to cancel a running job by its identifier without direct access to the executing worker.
+/// </summary>
+/// <remarks>
+/// This class is used internally by the scheduler and by the dashboard cancel endpoint. Direct use
+/// from application code is rarely needed; prefer cooperative cancellation via
+/// <c>JobFunctionContext.RequestCancellation</c> inside the job function itself.
+/// </remarks>
 public static class JobsCancellationTokenManager
 {
     private static readonly ConcurrentDictionary<Guid, JobsCancellationTokenDetails> _TickerCancellationTokens = new();
@@ -126,6 +135,14 @@ public static class JobsCancellationTokenManager
         _ParentIdIndex.Clear();
     }
 
+    /// <summary>
+    /// Cancels the running job with the specified identifier and removes its entry from the registry.
+    /// </summary>
+    /// <param name="jobId">The identifier of the job to cancel.</param>
+    /// <returns>
+    /// <see langword="true"/> when the job was found and its cancellation was requested;
+    /// <see langword="false"/> when no running job with that identifier exists.
+    /// </returns>
     public static bool RequestTickerCancellationById(Guid jobId)
     {
         if (!_TickerCancellationTokens.TryRemove(jobId, out var tickerCancellationToken))
@@ -192,12 +209,28 @@ public static class JobsCancellationTokenManager
     }
 }
 
+/// <summary>
+/// Carries the cancellation token source and scheduling metadata for a running job entry in
+/// <c>JobsCancellationTokenManager</c>.
+/// </summary>
 public class JobsCancellationTokenDetails
 {
+    /// <summary>The registered function name of the running job.</summary>
     public required string FunctionName { get; set; }
+
+    /// <summary>Whether the running entry is a time job or a cron occurrence.</summary>
     public JobType Type { get; set; }
+
+    /// <summary><see langword="true"/> when the job was dispatched from the stale-job backlog.</summary>
     public bool IsDue { get; set; }
+
+    /// <summary>The cancellation token source that can be used to cancel this job's execution.</summary>
     public required CancellationTokenSource CancellationSource { get; set; }
+
+    /// <summary>
+    /// Parent job identifier for chained time jobs, or <see cref="Guid.Empty"/> for root jobs and
+    /// cron occurrences.
+    /// </summary>
     public Guid ParentId { get; set; }
 }
 

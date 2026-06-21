@@ -6,6 +6,11 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 
 namespace Headless.Jobs;
 
+/// <summary>
+/// Configuration builder for the Jobs dashboard registered by <c>AddDashboard</c>. Controls the
+/// base path, CORS policy, backend domain, authentication mode, middleware hooks, and JSON options
+/// for the dashboard SPA and its API endpoints.
+/// </summary>
 public sealed class DashboardOptionsBuilder
 {
     internal string BasePath { get; set; } = "/jobs/dashboard";
@@ -15,9 +20,13 @@ public sealed class DashboardOptionsBuilder
     // Clean authentication system
     internal AuthConfig Auth { get; set; } = new();
 
-    // Custom Middleware Integration
+    /// <summary>Optional custom middleware inserted into the dashboard pipeline.</summary>
     public Action<IApplicationBuilder>? CustomMiddleware { get; set; }
+
+    /// <summary>Middleware executed before the dashboard request handler.</summary>
     public Action<IApplicationBuilder>? PreDashboardMiddleware { get; set; }
+
+    /// <summary>Middleware executed after the dashboard request handler.</summary>
     public Action<IApplicationBuilder>? PostDashboardMiddleware { get; set; }
 
     /// <summary>
@@ -26,32 +35,55 @@ public sealed class DashboardOptionsBuilder
     /// </summary>
     internal JsonSerializerOptions? DashboardJsonOptions { get; set; }
 
+    /// <summary>
+    /// Overrides the CORS policy applied to the dashboard endpoints. The default allows all origins
+    /// with any header and credentials.
+    /// </summary>
+    /// <param name="corsPolicyBuilder">Callback to configure the CORS policy.</param>
     public DashboardOptionsBuilder SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder)
     {
         CorsPolicyBuilder = corsPolicyBuilder;
         return this;
     }
 
+    /// <summary>
+    /// Sets the URL base path at which the dashboard SPA and its API endpoints are served.
+    /// Defaults to <c>/jobs/dashboard</c>.
+    /// </summary>
+    /// <param name="basePath">The base path, e.g. <c>/admin/jobs</c>.</param>
     public DashboardOptionsBuilder SetBasePath(string basePath)
     {
         BasePath = basePath;
         return this;
     }
 
+    /// <summary>
+    /// Sets the backend domain used by the dashboard SPA to construct API URLs when the SPA is
+    /// served from a different origin than the API. Leave unset when the SPA and API share an origin.
+    /// </summary>
+    /// <param name="backendDomain">The API origin, e.g. <c>https://api.example.com</c>.</param>
     public DashboardOptionsBuilder SetBackendDomain(string backendDomain)
     {
         BackendDomain = backendDomain;
         return this;
     }
 
-    /// <summary>Configure no authentication (public dashboard)</summary>
+    /// <summary>
+    /// Disables authentication; the dashboard is publicly accessible without credentials.
+    /// Only suitable for development or trusted internal networks.
+    /// </summary>
     public DashboardOptionsBuilder WithNoAuth()
     {
         Auth.Mode = AuthMode.None;
         return this;
     }
 
-    /// <summary>Enable Basic Authentication with username/password</summary>
+    /// <summary>
+    /// Enables HTTP Basic Authentication for the dashboard using the given credentials.
+    /// Credentials are Base64-encoded and compared on each request.
+    /// </summary>
+    /// <param name="username">The required username.</param>
+    /// <param name="password">The required password.</param>
     public DashboardOptionsBuilder WithBasicAuth(string username, string password)
     {
         Auth.Mode = AuthMode.Basic;
@@ -59,7 +91,11 @@ public sealed class DashboardOptionsBuilder
         return this;
     }
 
-    /// <summary>Enable API Key authentication (sent as Bearer token)</summary>
+    /// <summary>
+    /// Enables API key authentication. The dashboard SPA sends the key as a Bearer token; the
+    /// server validates it on each request.
+    /// </summary>
+    /// <param name="apiKey">The expected API key value.</param>
     public DashboardOptionsBuilder WithApiKey(string apiKey)
     {
         Auth.Mode = AuthMode.ApiKey;
@@ -67,8 +103,15 @@ public sealed class DashboardOptionsBuilder
         return this;
     }
 
-    /// <summary>Use the host application's existing authentication system</summary>
-    /// <param name="policy">Optional authorization policy name to require (e.g., "AdminPolicy"). If null or empty, uses the default policy.</param>
+    /// <summary>
+    /// Delegates authentication to the host application's ASP.NET Core authentication middleware.
+    /// When <paramref name="policy"/> is specified, the named authorization policy is enforced;
+    /// otherwise the default authorization policy applies.
+    /// </summary>
+    /// <param name="policy">
+    /// Optional authorization policy name (e.g., <c>"AdminPolicy"</c>). Pass <see langword="null"/>
+    /// or an empty string to use the default policy.
+    /// </param>
     public DashboardOptionsBuilder WithHostAuthentication(string? policy = null)
     {
         Auth.Mode = AuthMode.Host;
@@ -76,7 +119,12 @@ public sealed class DashboardOptionsBuilder
         return this;
     }
 
-    /// <summary>Configure custom authentication with validation function</summary>
+    /// <summary>
+    /// Enables custom authentication by supplying a validation delegate. The delegate receives the
+    /// raw Bearer token and the current <see cref="IServiceProvider"/>, and returns
+    /// <see langword="true"/> to grant access.
+    /// </summary>
+    /// <param name="validator">Validation function; must be thread-safe.</param>
     public DashboardOptionsBuilder WithCustomAuth(Func<string, IServiceProvider, bool> validator)
     {
         Auth.Mode = AuthMode.Custom;
@@ -84,7 +132,11 @@ public sealed class DashboardOptionsBuilder
         return this;
     }
 
-    /// <summary>Set session timeout in minutes</summary>
+    /// <summary>
+    /// Sets the idle session timeout for the dashboard. After this period of inactivity the session
+    /// cookie is invalidated and the user must re-authenticate.
+    /// </summary>
+    /// <param name="minutes">Timeout in minutes.</param>
     public DashboardOptionsBuilder WithSessionTimeout(int minutes)
     {
         Auth.SessionTimeoutMinutes = minutes;
@@ -92,11 +144,12 @@ public sealed class DashboardOptionsBuilder
     }
 
     /// <summary>
-    /// Configure JSON serialization options for Dashboard API endpoints.
-    /// These are separate from request serialization to maintain dashboard integrity.
+    /// Configures the <see cref="JsonSerializerOptions"/> used exclusively by the dashboard API
+    /// endpoints. These options are intentionally isolated from the job request serialization options
+    /// configured via <c>JobsOptionsBuilder.ConfigureRequestJsonOptions</c> to prevent user
+    /// customizations from breaking dashboard responses.
     /// </summary>
-    /// <param name="configure">Action to configure JsonSerializerOptions for dashboard APIs</param>
-    /// <returns>The DashboardOptionsBuilder for method chaining</returns>
+    /// <param name="configure">Callback to mutate the dashboard <see cref="JsonSerializerOptions"/>.</param>
     public DashboardOptionsBuilder ConfigureDashboardJsonOptions(Action<JsonSerializerOptions> configure)
     {
         DashboardJsonOptions ??= new JsonSerializerOptions();

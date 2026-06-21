@@ -10,6 +10,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
 
+/// <summary>
+/// Delegate type for job function handlers. The source generator emits implementations of this signature
+/// that instantiate the job class from DI and invoke its <c>[JobFunction]</c>-annotated method.
+/// </summary>
+/// <param name="cancellationToken">Token signalled when the job is cancelled or the host is shutting down.</param>
+/// <param name="serviceProvider">The scoped service provider for this execution.</param>
+/// <param name="context">Scheduling metadata and cooperative-cancel hook for this execution.</param>
 public delegate Task JobFunctionDelegate(
     CancellationToken cancellationToken,
     IServiceProvider serviceProvider,
@@ -17,9 +24,16 @@ public delegate Task JobFunctionDelegate(
 );
 
 /// <summary>
-/// Provider for managing job functions and their request types using FrozenDictionary.
-/// Uses a callback-based approach to collect all registrations and create a single optimized FrozenDictionary.
+/// Global registry of job function delegates and their associated request types. Populated at application
+/// startup by the source-generated <c>ModuleInitializer</c> and frozen into read-optimized dictionaries
+/// via <see cref="Build"/> before the first job is dispatched.
 /// </summary>
+/// <remarks>
+/// The registration flow is callback-based: each source-generated assembly calls
+/// <c>RegisterFunctions</c> and <c>RegisterRequestType</c> to enqueue its entries, then
+/// <see cref="Build"/> executes all callbacks in order and freezes the results. After <c>Build</c> is
+/// called, no further registrations take effect.
+/// </remarks>
 public static class JobFunctionProvider
 {
     // Callback actions to collect registrations
@@ -31,13 +45,22 @@ public static class JobFunctionProvider
         >
     >? _functionRegistrations;
 
-    // Final frozen dictionaries
+    /// <summary>
+    /// Frozen lookup of all registered job functions, keyed by function name. Each entry carries the
+    /// cron expression (empty string for time jobs), scheduling priority, execution delegate, and maximum
+    /// concurrency limit. Available after <see cref="Build"/> is called.
+    /// </summary>
     public static FrozenDictionary<
         string,
         (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
     > JobFunctions { get; private set; } =
         FrozenDictionary<string, (string, JobPriority, JobFunctionDelegate, int)>.Empty;
 
+    /// <summary>
+    /// Frozen lookup of request type metadata, keyed by function name. Each entry carries the full type
+    /// name and <see cref="Type"/> object for functions that accept a typed request payload. Available
+    /// after <see cref="Build"/> is called.
+    /// </summary>
     public static FrozenDictionary<string, (string, Type)> JobFunctionRequestTypes { get; private set; } =
         FrozenDictionary<string, (string, Type)>.Empty;
 
@@ -145,10 +168,11 @@ public static class JobFunctionProvider
     }
 
     /// <summary>
-    /// Builds the final FrozenDictionaries by executing all callbacks with optimal capacity.
-    /// Uses a single-pass approach: directly creates optimally-sized dictionaries and populates them.
-    /// This method should be called once after all registration is complete.
-    /// After calling this method, no more registrations should be made.
+    /// Freezes the registered functions and request types into read-optimized
+    /// <see cref="FrozenDictionary{TKey,TValue}"/> instances. Must be called exactly once after all
+    /// assemblies have had their <c>ModuleInitializer</c> executed and before the first job is dispatched.
+    /// After this call, <see cref="JobFunctions"/> and <see cref="JobFunctionRequestTypes"/> are
+    /// populated and subsequent <c>Register*</c> calls have no effect.
     /// </summary>
     public static void Build()
     {
@@ -190,8 +214,19 @@ public static class JobFunctionProvider
     }
 }
 
+/// <summary>
+/// Helper for deserializing a typed request payload from within a job function body.
+/// </summary>
 public static class JobsRequestProvider
 {
+    /// <summary>
+    /// Deserializes the typed request payload stored for the current job execution. Returns
+    /// <see langword="default"/> when deserialization fails, after logging the error.
+    /// </summary>
+    /// <typeparam name="T">The expected request type.</typeparam>
+    /// <param name="context">The current job execution context.</param>
+    /// <param name="cancellationToken">Token that can abort the persistence read.</param>
+    /// <returns>The deserialized request, or <see langword="default"/> on failure.</returns>
     public static async Task<T?> GetRequestAsync<T>(JobFunctionContext context, CancellationToken cancellationToken)
     {
         try

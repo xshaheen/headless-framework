@@ -4,6 +4,10 @@ using System.IO.Compression;
 
 namespace Headless.Jobs;
 
+/// <summary>
+/// Serialization helpers for converting job request payloads to and from the byte array representation
+/// stored in the persistence layer. Supports optional GZip compression.
+/// </summary>
 public static class JobsHelper
 {
     private static readonly byte[] _GZipSignature = [0x1f, 0x8b, 0x08, 0x00];
@@ -20,6 +24,16 @@ public static class JobsHelper
     /// </summary>
     public static bool UseGZipCompression { get; set; }
 
+    /// <summary>
+    /// Serializes <paramref name="data"/> to the byte array format used by the persistence layer,
+    /// applying GZip compression when <see cref="UseGZipCompression"/> is <see langword="true"/>.
+    /// </summary>
+    /// <typeparam name="T">The type of the request payload.</typeparam>
+    /// <param name="data">The value to serialize.</param>
+    /// <returns>
+    /// A UTF-8 JSON byte array when compression is disabled, or a GZip-compressed byte array with a
+    /// four-byte GZip signature appended as a sentinel when compression is enabled.
+    /// </returns>
     public static byte[] CreateJobRequest<T>(T data)
     {
         // If data is already a byte array, short-circuit where possible
@@ -70,6 +84,15 @@ public static class JobsHelper
         return returnVal;
     }
 
+    /// <summary>
+    /// Deserializes a job request payload from its stored byte array form.
+    /// </summary>
+    /// <typeparam name="T">The expected request type.</typeparam>
+    /// <param name="gzipBytes">The raw bytes from the persistence layer.</param>
+    /// <returns>The deserialized value, or <see langword="default"/> when the JSON is null/empty.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="UseGZipCompression"/> is <see langword="true"/> but the bytes lack the expected GZip sentinel.
+    /// </exception>
     public static T? ReadJobRequest<T>(byte[] gzipBytes)
     {
         var serializedObject = ReadJobRequestAsString(gzipBytes);
@@ -77,6 +100,14 @@ public static class JobsHelper
         return JsonSerializer.Deserialize<T>(serializedObject, RequestJsonSerializerOptions);
     }
 
+    /// <summary>
+    /// Reads a job request payload as its raw JSON string without deserializing it.
+    /// </summary>
+    /// <param name="gzipBytes">The raw bytes from the persistence layer.</param>
+    /// <returns>The UTF-8 JSON string representation of the stored payload.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// <see cref="UseGZipCompression"/> is <see langword="true"/> but the bytes lack the expected GZip sentinel.
+    /// </exception>
     public static string ReadJobRequestAsString(byte[] gzipBytes)
     {
         if (!UseGZipCompression)

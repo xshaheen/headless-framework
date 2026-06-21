@@ -6,8 +6,19 @@ using Headless.Jobs.Enums;
 namespace Headless.Jobs.Managers;
 
 /// <summary>
-/// Fluent chain job builder with lambda configuration and duplicate prevention
+/// Fluent builder for constructing a tree of chained time jobs: one root parent with up to five child
+/// jobs, each of which may have up to five grandchild jobs. Each level is configured via a typed
+/// builder callback to prevent duplicate slot registration at compile time.
 /// </summary>
+/// <remarks>
+/// Child and grandchild jobs run when the parent reaches a terminal status determined by their
+/// <see cref="RunCondition"/>. Use <see cref="BeginWith"/> as the entry point, then chain
+/// <c>WithFirstChild</c> … <c>WithFifthChild</c> on the returned builder or on a
+/// <c>*ChildBuilder</c> instance. Call <see cref="Build"/> (or use the implicit conversion to
+/// <typeparamref name="TTimeJob"/>) to obtain the root entity, then pass it to
+/// <c>ITimeJobManager.AddAsync</c>.
+/// </remarks>
+/// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
 public class FluentChainJobBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
@@ -35,8 +46,11 @@ public class FluentChainJobBuilder<TTimeJob>
     }
 
     /// <summary>
-    /// Start building by configuring the parent job
+    /// Creates a new builder and immediately configures the root (parent) job via
+    /// <paramref name="configure"/>.
     /// </summary>
+    /// <param name="configure">Callback that receives a <see cref="ParentBuilder{TTimeJob}"/> for the root job.</param>
+    /// <returns>A builder ready to accept child configuration.</returns>
     public static FluentChainJobBuilder<TTimeJob> BeginWith(Action<ParentBuilder<TTimeJob>> configure)
     {
         var builder = new FluentChainJobBuilder<TTimeJob>();
@@ -46,8 +60,10 @@ public class FluentChainJobBuilder<TTimeJob>
     }
 
     /// <summary>
-    /// Configure the first child (1/5)
+    /// Configures the first child job (slot 1 of 5). Throws if this slot was already configured.
     /// </summary>
+    /// <param name="configure">Callback that receives a <see cref="ChildBuilder{TTimeJob}"/> for this child.</param>
+    /// <exception cref="InvalidOperationException">This child slot has already been configured.</exception>
     public FirstChildBuilder WithFirstChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[0])
@@ -65,8 +81,10 @@ public class FluentChainJobBuilder<TTimeJob>
     }
 
     /// <summary>
-    /// Configure the second child (2/5)
+    /// Configures the second child job (slot 2 of 5). Throws if this slot was already configured.
     /// </summary>
+    /// <param name="configure">Callback that receives a <see cref="ChildBuilder{TTimeJob}"/> for this child.</param>
+    /// <exception cref="InvalidOperationException">This child slot has already been configured.</exception>
     public SecondChildBuilder WithSecondChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[1])
@@ -84,8 +102,10 @@ public class FluentChainJobBuilder<TTimeJob>
     }
 
     /// <summary>
-    /// Configure the third child (3/5)
+    /// Configures the third child job (slot 3 of 5). Throws if this slot was already configured.
     /// </summary>
+    /// <param name="configure">Callback that receives a <see cref="ChildBuilder{TTimeJob}"/> for this child.</param>
+    /// <exception cref="InvalidOperationException">This child slot has already been configured.</exception>
     public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[2])
@@ -103,8 +123,10 @@ public class FluentChainJobBuilder<TTimeJob>
     }
 
     /// <summary>
-    /// Configure the fourth child (4/5)
+    /// Configures the fourth child job (slot 4 of 5). Throws if this slot was already configured.
     /// </summary>
+    /// <param name="configure">Callback that receives a <see cref="ChildBuilder{TTimeJob}"/> for this child.</param>
+    /// <exception cref="InvalidOperationException">This child slot has already been configured.</exception>
     public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[3])
@@ -122,8 +144,10 @@ public class FluentChainJobBuilder<TTimeJob>
     }
 
     /// <summary>
-    /// Configure the fifth child (5/5)
+    /// Configures the fifth child job (slot 5 of 5). Throws if this slot was already configured.
     /// </summary>
+    /// <param name="configure">Callback that receives a <see cref="ChildBuilder{TTimeJob}"/> for this child.</param>
+    /// <exception cref="InvalidOperationException">This child slot has already been configured.</exception>
     public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[4])
@@ -168,14 +192,10 @@ public class FluentChainJobBuilder<TTimeJob>
         };
     }
 
-    /// <summary>
-    /// Build the final job entity
-    /// </summary>
+    /// <summary>Returns the fully configured root <typeparamref name="TTimeJob"/> entity with all child links set.</summary>
     public TTimeJob Build() => _rootTicker;
 
-    /// <summary>
-    /// Implicit conversion to entity
-    /// </summary>
+    /// <summary>Implicit conversion to <typeparamref name="TTimeJob"/>; equivalent to calling <see cref="Build"/>.</summary>
     public static implicit operator TTimeJob(FluentChainJobBuilder<TTimeJob> builder) => builder.Build();
 
     // Individual child builders to prevent duplicate configuration
@@ -688,8 +708,9 @@ public class FluentChainJobBuilder<TTimeJob>
 }
 
 /// <summary>
-/// Parent builder for configuring the root job
+/// Configures the root (parent) job in a <see cref="FluentChainJobBuilder{TTimeJob}"/> tree.
 /// </summary>
+/// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
 public class ParentBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
@@ -700,30 +721,42 @@ public class ParentBuilder<TTimeJob>
         _parent = parent;
     }
 
+    /// <summary>Sets the registered function name for the root job.</summary>
+    /// <param name="functionName">Must match a <c>[JobFunction]</c>-annotated method name.</param>
     public ParentBuilder<TTimeJob> SetFunction(string functionName)
     {
         _parent.Function = functionName;
         return this;
     }
 
+    /// <summary>Sets an optional human-readable description for the root job.</summary>
+    /// <param name="description">Description stored on the job row.</param>
     public ParentBuilder<TTimeJob> SetDescription(string description)
     {
         _parent.Description = description;
         return this;
     }
 
+    /// <summary>Sets the UTC date/time at which the root job should execute.</summary>
+    /// <param name="executionTime">Desired execution time in UTC.</param>
     public ParentBuilder<TTimeJob> SetExecutionTime(DateTime executionTime)
     {
         _parent.ExecutionTime = executionTime;
         return this;
     }
 
+    /// <summary>Serializes <paramref name="request"/> and stores it as the job's request payload.</summary>
+    /// <typeparam name="T">The request type.</typeparam>
+    /// <param name="request">The payload to serialize.</param>
     public ParentBuilder<TTimeJob> SetRequest<T>(T request)
     {
         _parent.Request = JobsHelper.CreateJobRequest(request);
         return this;
     }
 
+    /// <summary>Configures retry behavior for the root job.</summary>
+    /// <param name="retries">Maximum number of retry attempts.</param>
+    /// <param name="intervals">Per-attempt retry delay in seconds.</param>
     public ParentBuilder<TTimeJob> SetRetries(int retries, params int[] intervals)
     {
         _parent.Retries = retries;
@@ -731,6 +764,8 @@ public class ParentBuilder<TTimeJob>
         return this;
     }
 
+    /// <summary>Sets the node-death policy applied when the executing node dies mid-execution.</summary>
+    /// <param name="policy">The policy to apply.</param>
     public ParentBuilder<TTimeJob> SetOnNodeDeath(NodeDeathPolicy policy)
     {
         _parent.OnNodeDeath = policy;
@@ -739,8 +774,10 @@ public class ParentBuilder<TTimeJob>
 }
 
 /// <summary>
-/// Child builder for configuring individual children
+/// Configures an individual child job in a <see cref="FluentChainJobBuilder{TTimeJob}"/> tree.
+/// Received as the argument to the <c>WithFirstChild</c> … <c>WithFifthChild</c> callbacks.
 /// </summary>
+/// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
 public class ChildBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
@@ -751,36 +788,52 @@ public class ChildBuilder<TTimeJob>
         _child = child;
     }
 
+    /// <summary>Sets the registered function name for this child job.</summary>
+    /// <param name="functionName">Must match a <c>[JobFunction]</c>-annotated method name.</param>
     public ChildBuilder<TTimeJob> SetFunction(string functionName)
     {
         _child.Function = functionName;
         return this;
     }
 
+    /// <summary>Sets an optional human-readable description for this child job.</summary>
+    /// <param name="description">Description stored on the job row.</param>
     public ChildBuilder<TTimeJob> SetDescription(string description)
     {
         _child.Description = description;
         return this;
     }
 
+    /// <summary>
+    /// Sets the condition relative to the parent's terminal status that triggers this child job.
+    /// </summary>
+    /// <param name="condition">The run condition.</param>
     public ChildBuilder<TTimeJob> SetRunCondition(RunCondition condition)
     {
         _child.RunCondition = condition;
         return this;
     }
 
+    /// <summary>Sets the UTC date/time at which this child job should execute.</summary>
+    /// <param name="executionTime">Desired execution time in UTC.</param>
     public ChildBuilder<TTimeJob> SetExecutionTime(DateTime executionTime)
     {
         _child.ExecutionTime = executionTime;
         return this;
     }
 
+    /// <summary>Serializes <paramref name="request"/> and stores it as this child job's request payload.</summary>
+    /// <typeparam name="T">The request type.</typeparam>
+    /// <param name="request">The payload to serialize.</param>
     public ChildBuilder<TTimeJob> SetRequest<T>(T request)
     {
         _child.Request = JobsHelper.CreateJobRequest(request);
         return this;
     }
 
+    /// <summary>Configures retry behavior for this child job.</summary>
+    /// <param name="retries">Maximum number of retry attempts.</param>
+    /// <param name="intervals">Per-attempt retry delay in seconds.</param>
     public ChildBuilder<TTimeJob> SetRetries(int retries, params int[] intervals)
     {
         _child.Retries = retries;
@@ -788,6 +841,8 @@ public class ChildBuilder<TTimeJob>
         return this;
     }
 
+    /// <summary>Sets the node-death policy applied when the executing node dies mid-execution.</summary>
+    /// <param name="policy">The policy to apply.</param>
     public ChildBuilder<TTimeJob> SetOnNodeDeath(NodeDeathPolicy policy)
     {
         _child.OnNodeDeath = policy;
@@ -796,8 +851,10 @@ public class ChildBuilder<TTimeJob>
 }
 
 /// <summary>
-/// Grandchild builder for configuring individual grandchildren
+/// Configures an individual grandchild job in a <see cref="FluentChainJobBuilder{TTimeJob}"/> tree.
+/// Received as the argument to the <c>With*GrandChild</c> callbacks on a <c>*ChildBuilder</c>.
 /// </summary>
+/// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
 public class GrandChildBuilder<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
@@ -808,36 +865,52 @@ public class GrandChildBuilder<TTimeJob>
         _grandChild = grandChild;
     }
 
+    /// <summary>Sets the registered function name for this grandchild job.</summary>
+    /// <param name="functionName">Must match a <c>[JobFunction]</c>-annotated method name.</param>
     public GrandChildBuilder<TTimeJob> SetFunction(string functionName)
     {
         _grandChild.Function = functionName;
         return this;
     }
 
+    /// <summary>Sets an optional human-readable description for this grandchild job.</summary>
+    /// <param name="description">Description stored on the job row.</param>
     public GrandChildBuilder<TTimeJob> SetDescription(string description)
     {
         _grandChild.Description = description;
         return this;
     }
 
+    /// <summary>
+    /// Sets the condition relative to the parent child's terminal status that triggers this grandchild.
+    /// </summary>
+    /// <param name="condition">The run condition.</param>
     public GrandChildBuilder<TTimeJob> SetRunCondition(RunCondition condition)
     {
         _grandChild.RunCondition = condition;
         return this;
     }
 
+    /// <summary>Sets the UTC date/time at which this grandchild job should execute.</summary>
+    /// <param name="executionTime">Desired execution time in UTC.</param>
     public GrandChildBuilder<TTimeJob> SetExecutionTime(DateTime executionTime)
     {
         _grandChild.ExecutionTime = executionTime;
         return this;
     }
 
+    /// <summary>Serializes <paramref name="request"/> and stores it as this grandchild's request payload.</summary>
+    /// <typeparam name="T">The request type.</typeparam>
+    /// <param name="request">The payload to serialize.</param>
     public GrandChildBuilder<TTimeJob> SetRequest<T>(T request)
     {
         _grandChild.Request = JobsHelper.CreateJobRequest(request);
         return this;
     }
 
+    /// <summary>Configures retry behavior for this grandchild job.</summary>
+    /// <param name="retries">Maximum number of retry attempts.</param>
+    /// <param name="intervals">Per-attempt retry delay in seconds.</param>
     public GrandChildBuilder<TTimeJob> SetRetries(int retries, params int[] intervals)
     {
         _grandChild.Retries = retries;
@@ -845,6 +918,8 @@ public class GrandChildBuilder<TTimeJob>
         return this;
     }
 
+    /// <summary>Sets the node-death policy applied when the executing node dies mid-execution.</summary>
+    /// <param name="policy">The policy to apply.</param>
     public GrandChildBuilder<TTimeJob> SetOnNodeDeath(NodeDeathPolicy policy)
     {
         _grandChild.OnNodeDeath = policy;
@@ -853,13 +928,18 @@ public class GrandChildBuilder<TTimeJob>
 }
 
 /// <summary>
-/// Extension methods for easier creation
+/// Extension methods providing a generic entry point into <see cref="FluentChainJobBuilder{TTimeJob}"/>
+/// when the type argument can be inferred from the callback.
 /// </summary>
 public static class FluentChainJobBuilderExtensions
 {
     /// <summary>
-    /// Start building a fluent chain job by configuring the parent
+    /// Creates a <see cref="FluentChainJobBuilder{TTimeJob}"/> and configures its root job via
+    /// <paramref name="configure"/>. Equivalent to <c>FluentChainJobBuilder&lt;TTimeJob&gt;.BeginWith(configure)</c>.
     /// </summary>
+    /// <typeparam name="TTimeJob">The concrete time job entity type for this application.</typeparam>
+    /// <param name="configure">Callback that receives a <see cref="ParentBuilder{TTimeJob}"/> for the root job.</param>
+    /// <returns>A builder ready to accept child configuration.</returns>
     public static FluentChainJobBuilder<TTimeJob> BeginWith<TTimeJob>(Action<ParentBuilder<TTimeJob>> configure)
         where TTimeJob : TimeJobEntity<TTimeJob>, new() => FluentChainJobBuilder<TTimeJob>.BeginWith(configure);
 }

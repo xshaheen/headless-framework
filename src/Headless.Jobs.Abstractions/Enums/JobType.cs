@@ -2,8 +2,14 @@
 
 namespace Headless.Jobs.Enums;
 
+/// <summary>
+/// Discriminates the two schedulable row types that flow through the Jobs execution pipeline.
+/// </summary>
 public enum JobType
 {
+    /// <summary>A materialized occurrence row produced by a recurring cron job definition.</summary>
     CronJobOccurrence,
+
+    /// <summary>A one-shot delayed or immediate job scheduled via <c>ITimeJobManager</c>.</summary>
     TimeJob,
 }
