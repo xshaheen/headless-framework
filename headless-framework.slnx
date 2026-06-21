@@ -379,6 +379,10 @@
         <Project Path="src\Headless.Sms.Twilio\Headless.Sms.Twilio.csproj" />
         <Project Path="src\Headless.Sms.VictoryLink\Headless.Sms.VictoryLink.csproj" />
         <Project Path="src\Headless.Sms.Vodafone\Headless.Sms.Vodafone.csproj" />
+        <Project Path="tests\Headless.Sms.Tests.Harness\Headless.Sms.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.Sms.Abstractions.Tests.Unit\Headless.Sms.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.Cequens.Tests.Unit\Headless.Sms.Cequens.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sms.VictoryLink.Tests.Unit\Headless.Sms.VictoryLink.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Solution Items/">
         <File Path=".editorconfig" />
