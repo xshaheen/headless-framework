@@ -10,7 +10,20 @@ using Nito.AsyncEx;
 
 namespace Headless.Caching;
 
-/// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
+/// <summary>
+/// Process-local in-memory cache implementing <see cref="IInMemoryCache"/> (the L1 tier), with capacity-capped
+/// LRU eviction, background expiry maintenance, Family-2 logical tag/clear-generation invalidation, fail-safe
+/// stale serving, and zero-copy buffer reads/writes via <see cref="IBufferCache"/>.
+/// </summary>
+/// <remarks>
+/// Entry lifecycle: <see cref="ICache.ClearAsync"/> bumps a logical clear-generation marker in O(1) while
+/// keeping physical bytes resident so a failing factory can still serve the stale value; <see cref="ICache.FlushAsync"/>
+/// physically wipes every entry including fail-safe reserves. Background maintenance fires at
+/// <see cref="InMemoryCacheOptions.MaintenanceInterval"/> to reap expired entries and enforce
+/// <see cref="InMemoryCacheOptions.MaxItems"/> / <see cref="InMemoryCacheOptions.MaxMemorySize"/> via
+/// approximate LRU eviction sampling. This class is <see cref="IDisposable"/>; dispose it (or rely on DI
+/// disposal) to stop background maintenance.
+/// </remarks>
 public sealed class InMemoryCache
     : IInMemoryCache,
         IFactoryCacheStore,

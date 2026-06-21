@@ -5,21 +5,27 @@ using FluentValidation;
 namespace Headless.Caching;
 
 /// <summary>Options for the Headless <see cref="Microsoft.Extensions.Caching.Distributed.IDistributedCache"/> adapter.</summary>
+/// <remarks>
+/// Configure via <c>setup.UseBclCache(…)</c>. The adapter stores <c>byte[]</c> payloads verbatim (the cache's
+/// native wire format); no serializer is applied. The named cache instance is separate from the default
+/// <see cref="ICache"/> registration so BCL consumers have their own keyspace.
+/// </remarks>
 [PublicAPI]
 public sealed class HeadlessDistributedCacheAdapterOptions
 {
-    /// <summary>The default named cache instance used by the BCL distributed-cache adapter.</summary>
+    /// <summary>The default named cache instance name used by the BCL distributed-cache adapter.</summary>
     public const string DefaultCacheName = "bcl-distributed-cache";
 
     /// <summary>
-    /// Gets or sets the named Headless cache instance resolved by the adapter.
-    /// The name must not be a reserved cache provider key.
+    /// Gets or sets the named Headless cache instance resolved by the adapter. Must not be a reserved cache
+    /// provider key (any key in the <c>Headless.Caching:</c> namespace). Defaults to
+    /// <see cref="DefaultCacheName"/>.
     /// </summary>
     public string CacheName { get; set; } = DefaultCacheName;
 
     /// <summary>
-    /// Gets or sets the absolute lifetime cap used when BCL callers provide only sliding expiration, or no
-    /// expiration options at all.
+    /// Gets or sets the absolute lifetime cap applied when a BCL caller provides only a sliding expiration
+    /// or no expiration at all. Must be a positive, finite value. Defaults to 1 day.
     /// </summary>
     public TimeSpan DefaultAbsoluteExpiration { get; set; } = TimeSpan.FromDays(1);
 }

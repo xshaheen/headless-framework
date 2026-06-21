@@ -14,8 +14,13 @@ namespace Headless.Caching;
 [PublicAPI]
 public static class CacheConstants
 {
+    /// <summary>Keyed-DI service key under which the L2 remote cache (<see cref="IRemoteCache"/>) is registered by <c>UseRedis</c>.</summary>
     public const string RemoteCacheProvider = "Headless.Caching:Remote";
+
+    /// <summary>Keyed-DI service key under which the L1 in-memory cache (<see cref="IInMemoryCache"/>) is registered by <c>UseInMemory</c>.</summary>
     public const string MemoryCacheProvider = "Headless.Caching:Memory";
+
+    /// <summary>Keyed-DI service key under which the hybrid two-tier cache is registered by <c>UseHybrid</c>.</summary>
     public const string HybridCacheProvider = "Headless.Caching:Hybrid";
 
     /// <summary>
