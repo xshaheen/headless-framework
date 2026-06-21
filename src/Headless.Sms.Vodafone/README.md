@@ -29,18 +29,18 @@ dotnet add package Headless.Sms.Vodafone
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddVodafoneSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseVodafone(
     builder.Configuration.GetSection("Sms:Vodafone")
-);
+));
 
 // Or in code:
-builder.Services.AddVodafoneSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseVodafone(options =>
 {
     options.AccountId = "your-account-id";
     options.Password = "your-password";
     options.SecureHash = "your-secure-hash";
     options.Sender = "MyApp";
-});
+}));
 ```
 
 ## Configuration
@@ -69,7 +69,7 @@ builder.Services.AddVodafoneSmsSender(options =>
 | `Password` | `string` | Yes | — | Vodafone Egypt account password. |
 | `SecureHash` | `string` | Yes | — | Shared secret issued at provisioning. |
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
-| `SendSmsEndpoint` | `string` | Yes | `https://e3len.vodafone.com.eg/web2sms/sms/submit/` | Override for non-default environments. |
+| `SendSmsEndpoint` | `string` | No | `https://e3len.vodafone.com.eg/web2sms/sms/submit/` | Override for non-default environments. |
 
 ## Dependencies
 

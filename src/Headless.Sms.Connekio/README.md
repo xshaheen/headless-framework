@@ -29,18 +29,18 @@ dotnet add package Headless.Sms.Connekio
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddConnekioSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseConnekio(
     builder.Configuration.GetSection("Sms:Connekio")
-);
+));
 
 // Or in code:
-builder.Services.AddConnekioSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseConnekio(options =>
 {
     options.UserName = "your-username";
     options.Password = "your-password";
     options.AccountId = "your-account-id";
     options.Sender = "MyApp";
-});
+}));
 ```
 
 ## Configuration
@@ -70,8 +70,8 @@ builder.Services.AddConnekioSmsSender(options =>
 | `Password` | `string` | Yes | — | Connekio account password. |
 | `AccountId` | `string` | Yes | — | Connekio account identifier. |
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
-| `SingleSmsEndpoint` | `string` | Yes | `https://api.connekio.com/sms/single` | Override for non-default environments. |
-| `BatchSmsEndpoint` | `string` | Yes | `https://api.connekio.com/sms/batch` | Override for non-default environments. |
+| `SingleSmsEndpoint` | `string` | No | `https://api.connekio.com/sms/single` | Override for non-default environments. |
+| `BatchSmsEndpoint` | `string` | No | `https://api.connekio.com/sms/batch` | Override for non-default environments. |
 
 ## Dependencies
 

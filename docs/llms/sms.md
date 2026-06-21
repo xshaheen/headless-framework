@@ -94,18 +94,18 @@ Install `Headless.Sms.Abstractions` plus exactly one provider package. Code agai
 - **International**: `Headless.Sms.Twilio` (most popular), `Headless.Sms.Aws` (AWS SNS), `Headless.Sms.Infobip` (global platform).
 - **MENA regional**: `Headless.Sms.Cequens`, `Headless.Sms.Connekio`, `Headless.Sms.VictoryLink`, `Headless.Sms.Vodafone`.
 
-All providers register `ISmsSender` as singleton. Only one provider can be registered at a time.
+Register exactly one provider via `AddHeadlessSms(setup => setup.Use{Provider}(...))`; the call throws if zero or multiple providers are configured. All providers register `ISmsSender` as singleton.
 
 ## Agent Instructions
 
-- Always use `Headless.Sms.Dev` in development/test environments to avoid sending real SMS messages. Use `AddDevSmsSender("sms-log.txt")` for file logging or `AddNoopSmsSender()` for silent discard.
+- Always use `Headless.Sms.Dev` in development/test environments to avoid sending real SMS messages. Use `AddHeadlessSms(setup => setup.UseDev("sms-log.txt"))` for file logging or `AddHeadlessSms(setup => setup.UseNoop())` for silent discard.
 - Code against `ISmsSender` from `Headless.Sms.Abstractions` — never against provider-specific sender types.
-- Each provider has its own `Add*SmsSender()` extension method on `IServiceCollection`.
+- Register exactly one provider with `services.AddHeadlessSms(setup => setup.Use{Provider}(...))` (for example `UseTwilio`, `UseAwsSns`, `UseCequens`, `UseDev`). The registration enforces an exactly-one-provider gate and throws on zero or multiple providers.
 - `SendSingleSmsRequest` uses `Destinations` (a list of `SmsRequestDestination`) and `Text` — not `To`/`Message`. Destination requires a country calling code (`Code`) and the local number (`Number`) as separate fields.
-- `SendSingleSmsResponse` exposes `Success` (bool) and `FailureError` (string? — non-null when `Success` is false). It does NOT have `IsSuccess` or `ErrorMessage`.
+- `SendSingleSmsResponse` exposes `Success` (bool), optional `ProviderMessageId` (string? — the backend's message id on success when it returns one), `FailureError` (string? — non-null when `Success` is false), and `FailureKind` (the `SmsFailureKind` enum classifying failures). It does NOT have `IsSuccess` or `ErrorMessage`.
 - `ISmsSender.SendAsync` returns `ValueTask<SendSingleSmsResponse>` and never throws for provider/transport failures — only `OperationCanceledException` propagates. Always check `response.Success`.
 - HTTP-backed providers (Cequens, Connekio, Infobip, Twilio, VictoryLink, Vodafone) disable auto-retry by default to prevent duplicate SMS delivery. Opt back in via the `configureResilience` parameter if the provider supports idempotency keys.
-- Only one provider can be the default `ISmsSender` registration — all providers register to the same interface.
+- Exactly one provider is allowed: `AddHeadlessSms` throws an `InvalidOperationException` if zero or multiple providers are selected, or if it is called more than once on the same service collection.
 - For Twilio, the option property for the sender number is `PhoneNumber` (not `From`) and the account identifier is `Sid` (not `AccountSid`). There is no `MessagingServiceSid` option in the current API.
 - For Infobip, the base URL option is `BasePath` (not `BaseUrl`) and the sender name option is `Sender` (not `SenderName`).
 - For Vodafone, authentication uses `AccountId` + `Password` + `SecureHash` — not OAuth2/ClientId/ClientSecret.
@@ -136,11 +136,13 @@ new SendSingleSmsRequest
 `SendSingleSmsResponse` is returned by every provider. It is a closed type constructed only via factory methods:
 
 ```csharp
-SendSingleSmsResponse.Succeeded()           // Success = true, FailureError = null
-SendSingleSmsResponse.Failed("reason")      // Success = false, FailureError = "reason"
+SendSingleSmsResponse.Succeeded()                                 // Success = true, FailureKind = None
+SendSingleSmsResponse.Succeeded("provider-message-id")            // carries the backend's message id
+SendSingleSmsResponse.Failed("reason")                            // Success = false, FailureKind = Unknown
+SendSingleSmsResponse.Failed("reason", SmsFailureKind.Transient)  // classified failure
 ```
 
-Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`).
+Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`) classifies failures so callers can decide whether to retry or switch providers — transport/network faults are reported as `Transient`.
 
 ### Retry safety
 
@@ -176,7 +178,8 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 - `ISmsSender` — single method `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
 - `SendSingleSmsRequest` — message contract with `Destinations` (list of `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
-- `SendSingleSmsResponse` — closed result type; `Success` (bool) and `FailureError` (string? non-null on failure).
+- `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`).
+- `AddHeadlessSms(setup => setup.Use{Provider}(...))` — root registration entry with an exactly-one-provider gate; each provider package contributes a `Use{Provider}` builder member.
 - Never throws for provider errors — only `OperationCanceledException` propagates.
 
 ## Installation
@@ -250,17 +253,17 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: bind from appsettings (recommended)
 var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddAwsSnsSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(
     builder.Configuration.GetSection("Sms:Aws"),
     awsOptions
-);
+));
 
 // Option 2: configure in code
-builder.Services.AddAwsSnsSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(options =>
 {
     options.SenderId = "MyApp";
     // options.MaxPrice = 0.05m; // optional per-message USD cap
-}, awsOptions);
+}, awsOptions));
 ```
 
 ## Configuration
@@ -335,17 +338,17 @@ dotnet add package Headless.Sms.Cequens
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddCequensSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseCequens(
     builder.Configuration.GetSection("Sms:Cequens")
-);
+));
 
 // Or in code:
-builder.Services.AddCequensSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseCequens(options =>
 {
     options.ApiKey = "your-api-key";
     options.UserName = "your-username";
     options.SenderName = "MyApp";
-});
+}));
 ```
 
 ## Configuration
@@ -373,8 +376,8 @@ builder.Services.AddCequensSmsSender(options =>
 | `ApiKey` | `string` | Yes | — | Cequens API key for token acquisition. |
 | `UserName` | `string` | Yes | — | Cequens account username. |
 | `SenderName` | `string` | Yes | — | Sender name shown to recipients. |
-| `SingleSmsEndpoint` | `string` | Yes | `https://apis.cequens.com/sms/v1/messages` | Override for non-default environments. |
-| `TokenEndpoint` | `string` | Yes | `https://apis.cequens.com/auth/v1/tokens` | Override for non-default environments. |
+| `SingleSmsEndpoint` | `string` | No | `https://apis.cequens.com/sms/v1/messages` | Override for non-default environments. |
+| `TokenEndpoint` | `string` | No | `https://apis.cequens.com/auth/v1/tokens` | Override for non-default environments. |
 | `Token` | `string?` | No | `null` | Pre-issued JWT; skips sign-in if set. |
 
 ## Dependencies
@@ -420,18 +423,18 @@ dotnet add package Headless.Sms.Connekio
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddConnekioSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseConnekio(
     builder.Configuration.GetSection("Sms:Connekio")
-);
+));
 
 // Or in code:
-builder.Services.AddConnekioSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseConnekio(options =>
 {
     options.UserName = "your-username";
     options.Password = "your-password";
     options.AccountId = "your-account-id";
     options.Sender = "MyApp";
-});
+}));
 ```
 
 ## Configuration
@@ -461,8 +464,8 @@ builder.Services.AddConnekioSmsSender(options =>
 | `Password` | `string` | Yes | — | Connekio account password. |
 | `AccountId` | `string` | Yes | — | Connekio account identifier. |
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
-| `SingleSmsEndpoint` | `string` | Yes | `https://api.connekio.com/sms/single` | Override for non-default environments. |
-| `BatchSmsEndpoint` | `string` | Yes | `https://api.connekio.com/sms/batch` | Override for non-default environments. |
+| `SingleSmsEndpoint` | `string` | No | `https://api.connekio.com/sms/single` | Override for non-default environments. |
+| `BatchSmsEndpoint` | `string` | No | `https://api.connekio.com/sms/batch` | Override for non-default environments. |
 
 ## Dependencies
 
@@ -505,7 +508,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddDevSmsSender("sms-log.txt");
+    builder.Services.AddHeadlessSms(setup => setup.UseDev("sms-log.txt"));
 }
 ```
 
@@ -516,13 +519,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddNoopSmsSender();
+    builder.Services.AddHeadlessSms(setup => setup.UseNoop());
 }
 ```
 
 ## Configuration
 
-No configuration required. The file path is passed directly to `AddDevSmsSender`.
+No configuration required. The file path is passed directly to `UseDev`.
 
 ## Dependencies
 
@@ -563,17 +566,17 @@ dotnet add package Headless.Sms.Infobip
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddInfobipSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseInfobip(
     builder.Configuration.GetSection("Sms:Infobip")
-);
+));
 
 // Or in code:
-builder.Services.AddInfobipSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseInfobip(options =>
 {
     options.ApiKey = "your-api-key";
     options.BasePath = "https://XXXXXXXX.api.infobip.com"; // account-specific URL
     options.Sender = "MyApp";
-});
+}));
 ```
 
 ## Configuration
@@ -641,17 +644,17 @@ dotnet add package Headless.Sms.Twilio
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddTwilioSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseTwilio(
     builder.Configuration.GetSection("Sms:Twilio")
-);
+));
 
 // Or in code:
-builder.Services.AddTwilioSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseTwilio(options =>
 {
     options.Sid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     options.AuthToken = "your-auth-token";
     options.PhoneNumber = "+12025551234";
-});
+}));
 ```
 
 ## Configuration
@@ -726,17 +729,17 @@ dotnet add package Headless.Sms.VictoryLink
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddVictoryLinkSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(
     builder.Configuration.GetSection("Sms:VictoryLink")
-);
+));
 
 // Or in code:
-builder.Services.AddVictoryLinkSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(options =>
 {
     options.UserName = "your-username";
     options.Password = "your-password";
     options.Sender = "MyApp";
-});
+}));
 ```
 
 ## Configuration
@@ -763,7 +766,7 @@ builder.Services.AddVictoryLinkSmsSender(options =>
 | `UserName` | `string` | Yes | — | VictoryLink account username. |
 | `Password` | `string` | Yes | — | VictoryLink account password. |
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
-| `Endpoint` | `string` | Yes | VictoryLink production URL | Override for non-default environments. |
+| `Endpoint` | `string` | No | VictoryLink production URL | Override for non-default environments. |
 
 ## Dependencies
 
@@ -808,18 +811,18 @@ dotnet add package Headless.Sms.Vodafone
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddVodafoneSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseVodafone(
     builder.Configuration.GetSection("Sms:Vodafone")
-);
+));
 
 // Or in code:
-builder.Services.AddVodafoneSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseVodafone(options =>
 {
     options.AccountId = "your-account-id";
     options.Password = "your-password";
     options.SecureHash = "your-secure-hash";
     options.Sender = "MyApp";
-});
+}));
 ```
 
 ## Configuration
@@ -848,7 +851,7 @@ builder.Services.AddVodafoneSmsSender(options =>
 | `Password` | `string` | Yes | — | Vodafone Egypt account password. |
 | `SecureHash` | `string` | Yes | — | Shared secret issued at provisioning. |
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
-| `SendSmsEndpoint` | `string` | Yes | `https://e3len.vodafone.com.eg/web2sms/sms/submit/` | Override for non-default environments. |
+| `SendSmsEndpoint` | `string` | No | `https://e3len.vodafone.com.eg/web2sms/sms/submit/` | Override for non-default environments. |
 
 ## Dependencies
 

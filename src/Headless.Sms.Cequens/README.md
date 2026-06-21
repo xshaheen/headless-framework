@@ -30,17 +30,17 @@ dotnet add package Headless.Sms.Cequens
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddCequensSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseCequens(
     builder.Configuration.GetSection("Sms:Cequens")
-);
+));
 
 // Or in code:
-builder.Services.AddCequensSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseCequens(options =>
 {
     options.ApiKey = "your-api-key";
     options.UserName = "your-username";
     options.SenderName = "MyApp";
-});
+}));
 ```
 
 ## Configuration
@@ -68,8 +68,8 @@ builder.Services.AddCequensSmsSender(options =>
 | `ApiKey` | `string` | Yes | — | Cequens API key for token acquisition. |
 | `UserName` | `string` | Yes | — | Cequens account username. |
 | `SenderName` | `string` | Yes | — | Sender name shown to recipients. |
-| `SingleSmsEndpoint` | `string` | Yes | `https://apis.cequens.com/sms/v1/messages` | Override for non-default environments. |
-| `TokenEndpoint` | `string` | Yes | `https://apis.cequens.com/auth/v1/tokens` | Override for non-default environments. |
+| `SingleSmsEndpoint` | `string` | No | `https://apis.cequens.com/sms/v1/messages` | Override for non-default environments. |
+| `TokenEndpoint` | `string` | No | `https://apis.cequens.com/auth/v1/tokens` | Override for non-default environments. |
 | `Token` | `string?` | No | `null` | Pre-issued JWT; skips sign-in if set. |
 
 ## Dependencies

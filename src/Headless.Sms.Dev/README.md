@@ -27,7 +27,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddDevSmsSender("sms-log.txt");
+    builder.Services.AddHeadlessSms(setup => setup.UseDev("sms-log.txt"));
 }
 ```
 
@@ -38,7 +38,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddNoopSmsSender();
+    builder.Services.AddHeadlessSms(setup => setup.UseNoop());
 }
 ```
 

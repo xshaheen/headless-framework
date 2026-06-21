@@ -27,17 +27,17 @@ dotnet add package Headless.Sms.Twilio
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddTwilioSmsSender(
+builder.Services.AddHeadlessSms(setup => setup.UseTwilio(
     builder.Configuration.GetSection("Sms:Twilio")
-);
+));
 
 // Or in code:
-builder.Services.AddTwilioSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseTwilio(options =>
 {
     options.Sid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     options.AuthToken = "your-auth-token";
     options.PhoneNumber = "+12025551234";
-});
+}));
 ```
 
 ## Configuration
