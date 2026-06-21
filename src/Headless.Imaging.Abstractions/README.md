@@ -1,19 +1,22 @@
 # Headless.Imaging.Abstractions
 
-Defines the unified interface for image processing operations.
+Defines the provider-agnostic contracts for image processing operations.
 
 ## Problem Solved
 
-Provides a provider-agnostic API for image resizing and compression, enabling seamless switching between image processing libraries without changing application code.
+Decouples application code from any specific image-processing library. Services that inject `IImageResizer` or `IImageCompressor` have no compile-time dependency on SixLabors.ImageSharp or any other backend.
 
 ## Key Features
 
-- `IImageResizer` - Interface for image resizing operations
-- `IImageCompressor` - Interface for image compression operations
-- `ImageResizeArgs` - Configuration for resize operations (dimensions, mode)
-- `ImageCompressArgs` - Configuration for compression (quality, format)
-- `ImageResizeMode` - Resize modes (Crop, Pad, Stretch, etc.)
-- Result models with processing state information
+- `IImageResizer` — resize interface: `ResizeAsync(Stream, ImageResizeArgs, CancellationToken)`
+- `IImageCompressor` — compression interface: `CompressAsync(Stream, ImageCompressArgs, CancellationToken)`
+- `ImageResizeArgs` — resize parameters: mode, width, height, optional MIME type override
+- `ImageCompressArgs` — compression parameters: optional MIME type override
+- `ImageResizeMode` — enum of resize strategies (`None`, `Default`, `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, `Stretch`)
+- `ImageStreamResizeResult` / `ImageStreamCompressResult` — typed result wrappers
+- `ImageProcessResult<T>` — base result with `IsDone`, `State`, `Result`, `Error`
+- `ImageProcessState` — `Done`, `Unsupported`, `Failed`
+- `ImageResizeContent<TContent>` — carries `Content`, `MimeType`, `Width`, `Height` for resize results
 
 ## Installation
 
@@ -21,28 +24,41 @@ Provides a provider-agnostic API for image resizing and compression, enabling se
 dotnet add package Headless.Imaging.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class ImageService(IImageResizer resizer, IImageCompressor compressor)
 {
-    public async Task<Stream> ProcessAsync(Stream input, CancellationToken ct)
+    public async Task<Stream?> ResizeAsync(Stream input, CancellationToken ct)
     {
-        var resized = await resizer.ResizeAsync(input, new ImageResizeArgs
-        {
-            Width = 800,
-            Height = 600,
-            Mode = ImageResizeMode.Max
-        }, ct).ConfigureAwait(false);
+        var result = await resizer.ResizeAsync(
+            input,
+            new ImageResizeArgs(ImageResizeMode.Max, width: 800, height: 600),
+            ct
+        );
 
-        return resized.Stream;
+        if (!result.IsDone)
+        {
+            // result.Error is non-null here (Unsupported or Failed)
+            return null;
+        }
+
+        // result.Result.Content is the resized stream (caller must dispose)
+        return result.Result.Content;
+    }
+
+    public async Task<Stream?> CompressAsync(Stream input, CancellationToken ct)
+    {
+        var result = await compressor.CompressAsync(input, new ImageCompressArgs(), ct);
+
+        return result.IsDone ? result.Result : null;
     }
 }
 ```
 
 ## Configuration
 
-No configuration required. This is an abstractions-only package.
+None. This package defines only interfaces and data types — no DI registration, no options.
 
 ## Dependencies
 
