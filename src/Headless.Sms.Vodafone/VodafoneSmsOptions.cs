@@ -6,7 +6,7 @@ namespace Headless.Sms.Vodafone;
 
 public sealed class VodafoneSmsOptions
 {
-    public required string SendSmsEndpoint { get; init; } = "https://e3len.vodafone.com.eg/web2sms/sms/submit/";
+    public string SendSmsEndpoint { get; init; } = "https://e3len.vodafone.com.eg/web2sms/sms/submit/";
 
     public required string Sender { get; init; }
 

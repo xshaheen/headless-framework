@@ -7,25 +7,28 @@ using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using WireMock.RequestBuilders;
+using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public sealed class CequensSmsSenderTests
+public sealed class CequensSmsSenderTests : IClassFixture<SmsWireMockFixture>
 {
-    private const string _TokenEndpoint = "https://apis.cequens.com/auth/v1/tokens";
-    private const string _SendEndpoint = "https://apis.cequens.com/sms/v1/messages";
+    private readonly SmsWireMockFixture _fixture;
 
-    private static CequensSmsSender CreateSender(
-        TestHttpMessageHandler handler,
-        FakeTimeProvider time,
-        string? staticToken = null
-    )
+    public CequensSmsSenderTests(SmsWireMockFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.Reset();
+    }
+
+    private CequensSmsSender CreateSender(FakeTimeProvider time, string? staticToken = null)
     {
         var options = Options.Create(
             new CequensSmsOptions
             {
-                SingleSmsEndpoint = _SendEndpoint,
-                TokenEndpoint = _TokenEndpoint,
+                SingleSmsEndpoint = $"{_fixture.BaseUrl}/sms",
+                TokenEndpoint = $"{_fixture.BaseUrl}/auth",
                 ApiKey = "api-key",
                 UserName = "user",
                 SenderName = "SENDER",
@@ -33,93 +36,96 @@ public sealed class CequensSmsSenderTests
             }
         );
 
-        return new CequensSmsSender(
-            new TestHttpClientFactory(handler),
-            time,
-            options,
-            NullLogger<CequensSmsSender>.Instance
-        );
+        return new CequensSmsSender(_fixture.HttpClientFactory, time, options, NullLogger<CequensSmsSender>.Instance);
     }
 
-    private static bool IsTokenEndpoint(HttpRequestMessage request)
+    private void StubTokenOk(string token)
     {
-        return request.RequestUri!.AbsoluteUri == _TokenEndpoint;
+        _fixture
+            .Server.Given(Request.Create().WithPath("/auth").UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithBody($"{{\"data\":{{\"access_token\":\"{token}\"}}}}")
+            );
     }
 
-    private static HttpResponseMessage TokenResponse(string token)
+    private void StubTokenError()
     {
-        return TestHttpMessageHandler.CreateResponse(
-            HttpStatusCode.OK,
-            "{\"data\":{\"access_token\":\"" + token + "\"}}"
-        );
+        _fixture
+            .Server.Given(Request.Create().WithPath("/auth").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody("down"));
+    }
+
+    private void StubSendOk()
+    {
+        _fixture
+            .Server.Given(Request.Create().WithPath("/sms").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.OK).WithBody("{}"));
+    }
+
+    private int TokenCalls()
+    {
+        return _fixture.Server.FindLogEntries(Request.Create().WithPath("/auth").UsingPost()).Count();
+    }
+
+    private int SendCalls()
+    {
+        return _fixture.Server.FindLogEntries(Request.Create().WithPath("/sms").UsingPost()).Count();
     }
 
     [Fact]
     public async Task should_send_successfully_and_cache_the_token_across_sends()
     {
         var time = new FakeTimeProvider();
-        var tokenCalls = 0;
-        var handler = new TestHttpMessageHandler(request =>
-        {
-            if (IsTokenEndpoint(request))
-            {
-                tokenCalls++;
-
-                return TokenResponse("tok-1");
-            }
-
-            return TestHttpMessageHandler.CreateResponse(HttpStatusCode.OK, "{}");
-        });
-        var sender = CreateSender(handler, time);
+        StubTokenOk("tok-1");
+        StubSendOk();
+        var sender = CreateSender(time);
 
         var first = await sender.SendAsync(SmsRequests.Single());
         var second = await sender.SendAsync(SmsRequests.Single());
 
         first.Success.Should().BeTrue();
         second.Success.Should().BeTrue();
-        tokenCalls.Should().Be(1); // fetched once, reused for the second send
+        TokenCalls().Should().Be(1); // fetched once, reused for the second send
+        SendCalls().Should().Be(2);
     }
 
     [Fact]
     public async Task should_invalidate_the_token_and_retry_on_unauthorized()
     {
         var time = new FakeTimeProvider();
-        var tokenCalls = 0;
-        var sendCalls = 0;
-        var handler = new TestHttpMessageHandler(request =>
-        {
-            if (IsTokenEndpoint(request))
-            {
-                tokenCalls++;
+        StubTokenOk("tok");
 
-                return TokenResponse($"tok-{tokenCalls}");
-            }
+        const string scenario = "auth-retry";
+        _fixture
+            .Server.Given(Request.Create().WithPath("/sms").UsingPost())
+            .InScenario(scenario)
+            .WillSetStateTo("retried")
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.Unauthorized).WithBody("unauthorized"));
+        _fixture
+            .Server.Given(Request.Create().WithPath("/sms").UsingPost())
+            .InScenario(scenario)
+            .WhenStateIs("retried")
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.OK).WithBody("{}"));
 
-            sendCalls++;
-
-            return sendCalls == 1
-                ? TestHttpMessageHandler.CreateResponse(HttpStatusCode.Unauthorized, "unauthorized")
-                : TestHttpMessageHandler.CreateResponse(HttpStatusCode.OK, "{}");
-        });
-        var sender = CreateSender(handler, time);
+        var sender = CreateSender(time);
 
         var result = await sender.SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeTrue();
-        tokenCalls.Should().Be(2); // initial fetch + re-auth after the 401
-        sendCalls.Should().Be(2); // 401, then the retry succeeds
+        TokenCalls().Should().Be(2); // initial fetch + re-auth after the 401
+        SendCalls().Should().Be(2); // 401, then the retry succeeds
     }
 
     [Fact]
     public async Task should_fall_back_to_the_static_token_when_sign_in_fails()
     {
         var time = new FakeTimeProvider();
-        var handler = new TestHttpMessageHandler(request =>
-            IsTokenEndpoint(request)
-                ? TestHttpMessageHandler.CreateResponse(HttpStatusCode.InternalServerError, "down")
-                : TestHttpMessageHandler.CreateResponse(HttpStatusCode.OK, "{}")
-        );
-        var sender = CreateSender(handler, time, staticToken: "static-fallback");
+        StubTokenError();
+        StubSendOk();
+        var sender = CreateSender(time, staticToken: "static-fallback");
 
         var result = await sender.SendAsync(SmsRequests.Single());
 
@@ -130,10 +136,8 @@ public sealed class CequensSmsSenderTests
     public async Task should_fail_with_auth_failure_when_no_token_is_available()
     {
         var time = new FakeTimeProvider();
-        var handler = new TestHttpMessageHandler(_ =>
-            TestHttpMessageHandler.CreateResponse(HttpStatusCode.InternalServerError, "down")
-        );
-        var sender = CreateSender(handler, time);
+        StubTokenError();
+        var sender = CreateSender(time);
 
         var result = await sender.SendAsync(SmsRequests.Single());
 

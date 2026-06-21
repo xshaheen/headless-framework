@@ -6,7 +6,7 @@ namespace Headless.Sms.VictoryLink;
 
 public sealed class VictoryLinkSmsOptions
 {
-    public required string Endpoint { get; init; } =
+    public string Endpoint { get; init; } =
         "https://smsvas.vlserv.com/VLSMSPlatformResellerAPI/NewSendingAPI/api/SMSSender/SendSMS";
 
     public required string Sender { get; init; }

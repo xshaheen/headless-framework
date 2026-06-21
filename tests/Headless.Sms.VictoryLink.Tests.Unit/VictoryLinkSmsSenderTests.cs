@@ -6,28 +6,41 @@ using Headless.Sms.Testing;
 using Headless.Sms.VictoryLink;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using WireMock.RequestBuilders;
+using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public sealed class VictoryLinkSmsSenderTests
+public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture>
 {
-    private static VictoryLinkSmsSender CreateSender(TestHttpMessageHandler handler)
+    private readonly SmsWireMockFixture _fixture;
+
+    public VictoryLinkSmsSenderTests(SmsWireMockFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.Reset();
+    }
+
+    private VictoryLinkSmsSender CreateSender()
     {
         var options = Options.Create(
             new VictoryLinkSmsOptions
             {
-                Endpoint = "https://victorylink.test/send",
+                Endpoint = $"{_fixture.BaseUrl}/send",
                 Sender = "SENDER",
                 UserName = "user",
                 Password = "pass",
             }
         );
 
-        return new VictoryLinkSmsSender(
-            new TestHttpClientFactory(handler),
-            options,
-            NullLogger<VictoryLinkSmsSender>.Instance
-        );
+        return new VictoryLinkSmsSender(_fixture.HttpClientFactory, options, NullLogger<VictoryLinkSmsSender>.Instance);
+    }
+
+    private void StubSend(HttpStatusCode statusCode, string body)
+    {
+        _fixture
+            .Server.Given(Request.Create().WithPath("/send").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(statusCode).WithBody(body));
     }
 
     [Theory]
@@ -37,10 +50,9 @@ public sealed class VictoryLinkSmsSenderTests
     [InlineData("\"0\"")] // JSON-quoted body
     public async Task should_succeed_for_success_codes_with_noisy_bodies(string body)
     {
-        var handler = TestHttpMessageHandler.Respond(HttpStatusCode.OK, body);
-        var sender = CreateSender(handler);
+        StubSend(HttpStatusCode.OK, body);
 
-        var result = await sender.SendAsync(SmsRequests.Single());
+        var result = await CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeTrue();
     }
@@ -48,10 +60,9 @@ public sealed class VictoryLinkSmsSenderTests
     [Fact]
     public async Task should_fail_and_map_out_of_credit()
     {
-        var handler = TestHttpMessageHandler.Respond(HttpStatusCode.OK, "-5");
-        var sender = CreateSender(handler);
+        StubSend(HttpStatusCode.OK, "-5");
 
-        var result = await sender.SendAsync(SmsRequests.Single());
+        var result = await CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.OutOfCredit);
@@ -60,10 +71,9 @@ public sealed class VictoryLinkSmsSenderTests
     [Fact]
     public async Task should_fail_on_empty_body()
     {
-        var handler = TestHttpMessageHandler.Respond(HttpStatusCode.OK, "");
-        var sender = CreateSender(handler);
+        StubSend(HttpStatusCode.OK, string.Empty);
 
-        var result = await sender.SendAsync(SmsRequests.Single());
+        var result = await CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
     }
@@ -71,8 +81,21 @@ public sealed class VictoryLinkSmsSenderTests
     [Fact]
     public async Task should_return_transient_failure_on_transport_fault()
     {
-        var handler = TestHttpMessageHandler.Throws(new HttpRequestException("connection reset"));
-        var sender = CreateSender(handler);
+        // Point at a closed port so the HTTP call faults at the transport layer (connection refused).
+        var options = Options.Create(
+            new VictoryLinkSmsOptions
+            {
+                Endpoint = "http://localhost:1/send",
+                Sender = "SENDER",
+                UserName = "user",
+                Password = "pass",
+            }
+        );
+        var sender = new VictoryLinkSmsSender(
+            _fixture.HttpClientFactory,
+            options,
+            NullLogger<VictoryLinkSmsSender>.Instance
+        );
 
         var result = await sender.SendAsync(SmsRequests.Single());
 
@@ -83,12 +106,11 @@ public sealed class VictoryLinkSmsSenderTests
     [Fact]
     public async Task should_propagate_cancellation()
     {
-        var handler = TestHttpMessageHandler.Respond(HttpStatusCode.OK, "0");
-        var sender = CreateSender(handler);
+        StubSend(HttpStatusCode.OK, "0");
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        var act = async () => await sender.SendAsync(SmsRequests.Single(), cts.Token);
+        var act = async () => await CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -96,11 +118,11 @@ public sealed class VictoryLinkSmsSenderTests
     [Fact]
     public async Task should_include_the_country_code_in_the_recipient()
     {
-        var handler = TestHttpMessageHandler.Respond(HttpStatusCode.OK, "0");
-        var sender = CreateSender(handler);
+        StubSend(HttpStatusCode.OK, "0");
 
-        await sender.SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
+        await CreateSender().SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
 
-        handler.RequestBodies[0].Should().Contain("201001234567");
+        var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
+        body.Should().Contain("201001234567");
     }
 }

@@ -6,9 +6,9 @@ namespace Headless.Sms.Connekio;
 
 public sealed class ConnekioSmsOptions
 {
-    public required string SingleSmsEndpoint { get; init; } = "https://api.connekio.com/sms/single";
+    public string SingleSmsEndpoint { get; init; } = "https://api.connekio.com/sms/single";
 
-    public required string BatchSmsEndpoint { get; init; } = "https://api.connekio.com/sms/batch";
+    public string BatchSmsEndpoint { get; init; } = "https://api.connekio.com/sms/batch";
 
     public required string Sender { get; init; }
 

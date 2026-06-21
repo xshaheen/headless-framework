@@ -6,9 +6,9 @@ namespace Headless.Sms.Cequens;
 
 public sealed class CequensSmsOptions
 {
-    public required string SingleSmsEndpoint { get; init; } = "https://apis.cequens.com/sms/v1/messages";
+    public string SingleSmsEndpoint { get; init; } = "https://apis.cequens.com/sms/v1/messages";
 
-    public required string TokenEndpoint { get; init; } = "https://apis.cequens.com/auth/v1/tokens";
+    public string TokenEndpoint { get; init; } = "https://apis.cequens.com/auth/v1/tokens";
 
     public required string ApiKey { get; init; }
 
