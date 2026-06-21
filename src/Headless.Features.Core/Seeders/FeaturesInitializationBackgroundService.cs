@@ -16,6 +16,14 @@ namespace Headless.Features.Seeders;
 /// Hosted service that seeds static feature definitions into the database and pre-caches dynamic
 /// feature values on application startup.
 /// </summary>
+/// <remarks>
+/// On startup, this service:
+/// <list type="number">
+///   <item><description>Saves static definitions to the database (retried up to 10 times with exponential back-off when <see cref="FeatureManagementOptions.SaveStaticFeaturesToDatabase"/> is <see langword="true"/>).</description></item>
+///   <item><description>Pre-caches the dynamic feature catalog so the first request does not incur a cold-cache database round-trip (when <see cref="FeatureManagementOptions.IsDynamicFeatureStoreEnabled"/> is <see langword="true"/>).</description></item>
+/// </list>
+/// Both steps are skipped (and the initializer signals completion immediately) when both options are disabled.
+/// </remarks>
 public sealed class FeaturesInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,

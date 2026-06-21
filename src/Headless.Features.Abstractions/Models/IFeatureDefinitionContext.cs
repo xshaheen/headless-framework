@@ -17,15 +17,21 @@ public interface IFeatureDefinitionContext
     /// <summary>Registers an already-constructed feature group definition.</summary>
     /// <param name="definition">The group to add.</param>
     /// <returns>The same <paramref name="definition"/> that was added.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="definition"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">A group with the same name is already registered in this context.</exception>
     FeatureGroupDefinition AddGroup(FeatureGroupDefinition definition);
 
     /// <summary>Creates and registers a feature group with the given name.</summary>
     /// <param name="name">Unique name of the group.</param>
     /// <param name="displayName">Human-readable display name. Defaults to <paramref name="name"/> when <see langword="null"/>.</param>
     /// <returns>The newly created <see cref="FeatureGroupDefinition"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">A group with the same name is already registered in this context.</exception>
     FeatureGroupDefinition AddGroup(string name, string? displayName = null);
 
     /// <summary>Removes the feature group with the given name from the context.</summary>
     /// <param name="name">The unique name of the group to remove.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">No group with the given <paramref name="name"/> exists in this context.</exception>
     void RemoveGroup(string name);
 }

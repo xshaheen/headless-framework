@@ -19,10 +19,11 @@ public sealed class FeaturesStorageOptions
     public string FeatureGroupDefinitionsTableName { get; set; } = "FeatureGroupDefinitions";
 
     /// <summary>
-    /// When false, the startup storage initializer is skipped (no-op) — use when the schema is
-    /// provisioned out-of-band (migrations job / DBA). The initializer still reports
-    /// IsInitialized=true so dependents that await WaitForInitializationAsync do not block. Only
-    /// affects raw-DDL self-initializing providers; EF-mode storage uses migrations.
+    /// When <see langword="true"/> (default), the startup storage initializer creates the schema, tables, and indexes
+    /// on first run. Set to <see langword="false"/> when the schema is provisioned out-of-band (e.g., by a DBA or
+    /// a migrations job); the initializer becomes a no-op but still signals completion so callers that await
+    /// <c>WaitForInitializationAsync</c> do not block. Applies only to raw-DDL self-initializing providers
+    /// (PostgreSQL, SQL Server); EF Core storage is always schema-managed by migrations.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
 

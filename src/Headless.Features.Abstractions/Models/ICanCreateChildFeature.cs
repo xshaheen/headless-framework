@@ -13,6 +13,8 @@ public interface ICanCreateChildFeature
     /// <param name="isVisibleToClients">Whether clients can see this feature and its value. Default: <see langword="true"/>.</param>
     /// <param name="isAvailableToHost">Whether the host can use this feature. Default: <see langword="true"/>.</param>
     /// <returns>The newly created child <see cref="FeatureDefinition"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or white space.</exception>
     FeatureDefinition AddChild(
         string name,
         string? defaultValue = null,

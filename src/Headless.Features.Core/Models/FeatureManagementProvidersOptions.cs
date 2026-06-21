@@ -6,7 +6,16 @@ using Headless.Features.ValueProviders;
 
 namespace Headless.Features.Models;
 
-/// <summary>Registers the provider types and tombstone lists used by the feature management pipeline.</summary>
+/// <summary>
+/// Registers the ordered provider type lists and deletion tombstone sets used by the feature management pipeline.
+/// </summary>
+/// <remarks>
+/// Consumers do not typically interact with this class directly; use
+/// <c>IServiceCollection.AddFeatureDefinitionProvider&lt;T&gt;</c> and
+/// <c>IServiceCollection.AddFeatureValueProvider&lt;T&gt;</c> instead.
+/// The <see cref="DeletedFeatures"/> and <see cref="DeletedFeatureGroups"/> sets let the startup
+/// initializer purge dynamic records for features that have been removed from code.
+/// </remarks>
 public sealed class FeatureManagementProvidersOptions
 {
     /// <summary>

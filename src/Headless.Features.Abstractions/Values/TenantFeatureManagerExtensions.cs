@@ -29,7 +29,11 @@ public static class TenantFeatureManagerExtensions
             return featureManager.GetAllAsync(FeatureValueProviderNames.Tenant, tenantId, fallback);
         }
 
-        /// <inheritdoc cref="IFeatureManager.SetAsync"/>
+        /// <summary>Sets the value of a feature for the given tenant.</summary>
+        /// <param name="name">The feature name.</param>
+        /// <param name="value">The value to store, or <see langword="null"/> to clear it.</param>
+        /// <param name="tenantId">The tenant identifier used as the provider key.</param>
+        /// <param name="forceToSet">When <see langword="false"/> and <paramref name="value"/> matches the fallback value, the write is skipped.</param>
         public Task SetForTenantAsync(string name, string? value, string tenantId, bool forceToSet = false)
         {
             return featureManager.SetAsync(name, value, FeatureValueProviderNames.Tenant, tenantId, forceToSet);
@@ -46,6 +50,8 @@ public static class TenantFeatureManagerExtensions
         /// <summary>Grants a feature to a tenant by setting its value to <see langword="true"/>.</summary>
         /// <param name="name">The feature name.</param>
         /// <param name="tenantId">The tenant identifier to grant the feature to.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined or the Tenant provider is read-only.</exception>
         public Task GrantToTenantAsync(string name, string tenantId)
         {
             return featureManager.GrantAsync(name, FeatureValueProviderNames.Tenant, tenantId);
@@ -54,6 +60,8 @@ public static class TenantFeatureManagerExtensions
         /// <summary>Revokes a feature from a tenant by setting its value to <see langword="false"/>.</summary>
         /// <param name="name">The feature name.</param>
         /// <param name="tenantId">The tenant identifier to revoke the feature from.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined or the Tenant provider is read-only.</exception>
         public Task RevokeFromTenantAsync(string name, string tenantId)
         {
             return featureManager.RevokeAsync(name, FeatureValueProviderNames.Tenant, tenantId);

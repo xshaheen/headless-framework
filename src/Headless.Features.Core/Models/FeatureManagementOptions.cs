@@ -6,18 +6,32 @@ using Humanizer;
 namespace Headless.Features.Models;
 
 /// <summary>Configuration options for the feature management system.</summary>
+/// <remarks>
+/// Configure via <c>HeadlessFeaturesSetupBuilder.ConfigureManagement</c>. All properties are validated
+/// on startup; an invalid value (for example a zero-length lock expiration) prevents the application from starting.
+/// </remarks>
 public sealed class FeatureManagementOptions
 {
     /// <summary>
     /// When <see langword="true"/>, static feature definitions are persisted to the database on startup so they are
     /// available to all application instances via the dynamic store. Default: <see langword="true"/>.
     /// </summary>
+    /// <remarks>
+    /// The startup initializer retries the save up to 10 times with exponential back-off. Set to
+    /// <see langword="false"/> when feature definitions are managed exclusively in code and do not need to be
+    /// stored in the dynamic store.
+    /// </remarks>
     public bool SaveStaticFeaturesToDatabase { get; set; } = true;
 
     /// <summary>
-    /// When <see langword="true"/>, the <see cref="Headless.Features.Definitions.IDynamicFeatureDefinitionStore"/> is consulted for feature definitions
-    /// in addition to the static store. Default: <see langword="false"/>.
+    /// When <see langword="true"/>, the dynamic store is consulted for feature definitions in addition to the static store,
+    /// enabling runtime changes to feature definitions persisted in the database. Default: <see langword="false"/>.
     /// </summary>
+    /// <remarks>
+    /// Requires a configured storage provider. Dynamic definitions are cached in-process for
+    /// <see cref="DynamicDefinitionsMemoryCacheExpiration"/> before the distributed cache stamp is re-checked.
+    /// Static definitions always take precedence over dynamic ones with the same name.
+    /// </remarks>
     public bool IsDynamicFeatureStoreEnabled { get; set; }
 
     /// <summary>Distributed lock resource key used to coordinate feature definition updates across all application instances. Default: <c>features:common_update_lock</c>.</summary>

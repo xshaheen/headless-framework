@@ -7,6 +7,13 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Features;
 
 /// <summary>Builder passed to the <c>AddHeadlessFeatures</c> configure delegate; used to select a storage provider and tune management options.</summary>
+/// <remarks>
+/// Exactly one storage provider must be selected per registration (for example <c>UseEntityFramework</c>,
+/// <c>UsePostgreSql</c>, or <c>UseSqlServer</c>). Call <c>ConfigureStorage</c> to override table
+/// and schema names, and <c>ConfigureManagement</c> to tune caching, lock timeouts, or the dynamic
+/// store toggle. Calling <c>AddHeadlessFeatures</c> a second time on the same <c>IServiceCollection</c>
+/// is safe — the core services are registered only once.
+/// </remarks>
 [PublicAPI]
 public sealed class HeadlessFeaturesSetupBuilder
 {

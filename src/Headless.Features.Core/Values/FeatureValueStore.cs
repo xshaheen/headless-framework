@@ -10,6 +10,12 @@ using Humanizer;
 namespace Headless.Features.Values;
 
 /// <summary>Persistent store for per-provider feature values.</summary>
+/// <remarks>
+/// The default implementation caches values per provider/key in a distributed cache. On the first
+/// read for a given provider scope all values are fetched from the database and cached together,
+/// so subsequent reads for the same scope are served from cache. Mutations (<see cref="SetAsync"/>,
+/// <see cref="DeleteAsync"/>) update both the database and the cache immediately.
+/// </remarks>
 public interface IFeatureValueStore
 {
     /// <summary>Returns the stored value for feature <paramref name="name"/> under <paramref name="providerName"/>/<paramref name="providerKey"/>, or <see langword="null"/> if not set.</summary>

@@ -46,6 +46,11 @@ public static class SetupCore
         /// <summary>Registers a custom <see cref="IFeatureDefinitionProvider"/> that contributes in-code feature definitions.</summary>
         /// <typeparam name="T">The provider type to register.</typeparam>
         /// <returns>The <see cref="IServiceCollection"/> to allow chaining.</returns>
+        /// <remarks>
+        /// Providers are invoked in registration order during the static-store build.
+        /// If two providers declare a feature with the same name, the static store throws
+        /// <see cref="InvalidOperationException"/> at startup.
+        /// </remarks>
         public IServiceCollection AddFeatureDefinitionProvider<T>()
             where T : class, IFeatureDefinitionProvider
         {
@@ -62,6 +67,12 @@ public static class SetupCore
         /// <summary>Registers a custom <see cref="IFeatureValueReadProvider"/> into the provider chain (idempotent by provider type).</summary>
         /// <typeparam name="T">The provider type to register.</typeparam>
         /// <returns>The <see cref="IServiceCollection"/> to allow chaining.</returns>
+        /// <remarks>
+        /// Providers are consulted in reverse registration order (last-registered = highest priority).
+        /// The built-in chain is <c>DefaultValue</c> → <c>Edition</c> → <c>Tenant</c>, so
+        /// <c>Tenant</c> wins when multiple providers supply a value for the same feature.
+        /// Calling this method more than once for the same <typeparamref name="T"/> is a no-op.
+        /// </remarks>
         public IServiceCollection AddFeatureValueProvider<T>()
             where T : class, IFeatureValueReadProvider
         {

@@ -195,6 +195,8 @@ public static class FeatureManagerExtensions
         /// <param name="name">The feature name.</param>
         /// <param name="providerName">The provider to write the value to.</param>
         /// <param name="providerKey">The provider-specific key (e.g., tenant ID or edition ID).</param>
+        /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined, the provider is not registered, or the provider is read-only.</exception>
         public Task GrantAsync(string name, string providerName, string providerKey)
         {
             return featureManager.SetAsync(name, "true", providerName, providerKey, forceToSet: true);
@@ -204,6 +206,8 @@ public static class FeatureManagerExtensions
         /// <param name="name">The feature name.</param>
         /// <param name="providerName">The provider to write the value to.</param>
         /// <param name="providerKey">The provider-specific key (e.g., tenant ID or edition ID).</param>
+        /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined, the provider is not registered, or the provider is read-only.</exception>
         public Task RevokeAsync(string name, string providerName, string providerKey)
         {
             return featureManager.SetAsync(name, "false", providerName, providerKey, forceToSet: true);

@@ -34,7 +34,7 @@ public sealed class FeatureGroupDefinition : ICanCreateChildFeature
     /// <summary>List of features in this group.</summary>
     public IReadOnlyList<FeatureDefinition> Features => _features;
 
-    /// <summary>Can be used to get/set custom properties for this feature.</summary>
+    /// <summary>Can be used to get/set custom properties for this group.</summary>
     public Dictionary<string, object?> Properties { get; }
 
     /// <summary>Gets/sets a key-value on the <see cref="Properties"/>.</summary>

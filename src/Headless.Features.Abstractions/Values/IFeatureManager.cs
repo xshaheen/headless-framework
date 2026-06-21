@@ -5,6 +5,20 @@ using Headless.Features.Models;
 namespace Headless.Features.Values;
 
 /// <summary>Reads and writes feature values across one or more value providers.</summary>
+/// <remarks>
+/// <para>
+/// The value system uses an ordered provider chain: each provider is registered with a priority determined by the
+/// order in which it was added. The built-in providers register in the order
+/// <c>DefaultValue</c> → <c>Edition</c> → <c>Tenant</c>, so the effective lookup order is reversed:
+/// <c>Tenant</c> (highest priority) → <c>Edition</c> → <c>DefaultValue</c> (lowest priority / fallback).
+/// A later-registered provider always wins when multiple providers supply a value for the same feature.
+/// </para>
+/// <para>
+/// Feature values are strings internally. Boolean features use the string literals <c>"true"</c> and
+/// <c>"false"</c>; use the <c>IsEnabledAsync</c> / <c>GrantAsync</c> / <c>RevokeAsync</c> helpers on the
+/// extension class to avoid manual string conversion.
+/// </para>
+/// </remarks>
 public interface IFeatureManager
 {
     /// <summary>Gets the value of a feature by name.</summary>

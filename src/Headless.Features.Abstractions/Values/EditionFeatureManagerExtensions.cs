@@ -37,7 +37,11 @@ public static class EditionFeatureManagerExtensions
             return featureManager.DeleteAsync(FeatureValueProviderNames.Edition, editionId, cancellationToken);
         }
 
-        /// <inheritdoc cref="IFeatureManager.SetAsync"/>
+        /// <summary>Sets the value of a feature for the given edition.</summary>
+        /// <param name="name">The feature name.</param>
+        /// <param name="value">The value to store, or <see langword="null"/> to clear it.</param>
+        /// <param name="editionId">The edition identifier used as the provider key.</param>
+        /// <param name="forceToSet">When <see langword="false"/> and <paramref name="value"/> matches the fallback value, the write is skipped.</param>
         public Task SetForEditionAsync(string name, string? value, string editionId, bool forceToSet = false)
         {
             return featureManager.SetAsync(name, value, FeatureValueProviderNames.Edition, editionId, forceToSet);
@@ -46,6 +50,8 @@ public static class EditionFeatureManagerExtensions
         /// <summary>Grants a feature to an edition by setting its value to <see langword="true"/>.</summary>
         /// <param name="name">The feature name.</param>
         /// <param name="editionId">The edition identifier to grant the feature to.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined or the Edition provider is read-only.</exception>
         public Task GrantToEditionAsync(string name, string editionId)
         {
             return featureManager.GrantAsync(name, FeatureValueProviderNames.Edition, editionId);
@@ -54,6 +60,8 @@ public static class EditionFeatureManagerExtensions
         /// <summary>Revokes a feature from an edition by setting its value to <see langword="false"/>.</summary>
         /// <param name="name">The feature name.</param>
         /// <param name="editionId">The edition identifier to revoke the feature from.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined or the Edition provider is read-only.</exception>
         public Task RevokeFromEditionAsync(string name, string editionId)
         {
             return featureManager.RevokeAsync(name, FeatureValueProviderNames.Edition, editionId);
