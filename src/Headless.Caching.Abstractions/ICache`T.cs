@@ -281,7 +281,7 @@ public interface ICache<T>
 /// <typeparam name="T">The type of every value stored and retrieved through this wrapper.</typeparam>
 /// <param name="cache">The underlying untyped cache to delegate all operations to.</param>
 [PublicAPI]
-public class Cache<T>(ICache cache) : ICache<T>
+public sealed class Cache<T>(ICache cache) : ICache<T>
 {
     /// <inheritdoc />
     public CacheEntryOptions? DefaultEntryOptions => cache.DefaultEntryOptions;

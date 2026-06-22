@@ -2040,6 +2040,63 @@ public sealed class InMemoryCacheTests : TestBase
         key1Exists.Should().BeTrue();
     }
 
+    // #31 — Concurrent LRU eviction stress: 50+ parallel tasks inserting random entries into a capacity-capped
+    // InMemoryCache (small MaxItems). After Task.WhenAll, CurrentMemorySize must be >= 0 and must equal the
+    // sum of sizes of surviving (live, non-expired) entries. Verifies that Interlocked.Add across 10+ call
+    // sites never leaves _currentMemorySize negative or inconsistent under contention.
+    [Fact]
+    public async Task should_keep_current_memory_size_non_negative_and_consistent_under_concurrent_lru_eviction()
+    {
+        // given — small MaxItems cap (10) to provoke heavy eviction under concurrent writes
+        const int maxItems = 10;
+        const long entrySize = 100;
+        const int parallelTasks = 60;
+        var options = new InMemoryCacheOptions
+        {
+            MaxItems = maxItems,
+            MaxMemorySize = maxItems * entrySize,
+            SizeCalculator = _ => entrySize,
+        };
+        using var cache = _CreateCache(options);
+
+        // when — 60 tasks each insert a unique random-key entry concurrently
+        var tasks = Enumerable
+            .Range(0, parallelTasks)
+            .Select(i =>
+                Task.Run(async () =>
+                {
+                    var key = Faker.Random.AlphaNumeric(20) + i;
+                    await cache.UpsertAsync(key, Faker.Random.AlphaNumeric(5), TimeSpan.FromMinutes(5));
+                })
+            )
+            .ToArray();
+
+        await Task.WhenAll(tasks);
+
+        // Allow LRU background eviction to settle (eviction is async maintenance)
+        await Task.Delay(200, AbortToken);
+
+        // then — CurrentMemorySize must be non-negative
+        var reportedSize = cache.CurrentMemorySize;
+        reportedSize
+            .Should()
+            .BeGreaterThanOrEqualTo(0, "Interlocked.Add across concurrent evictions must never go negative");
+
+        // CurrentMemorySize must equal the sum of live surviving entries' sizes
+        // (surviving = not yet evicted; each entry has size = entrySize)
+        var survivingCount = await cache.GetCountAsync(cancellationToken: AbortToken);
+        var expectedSize = survivingCount * entrySize;
+        reportedSize
+            .Should()
+            .Be(
+                expectedSize,
+                $"CurrentMemorySize ({reportedSize}) must equal surviving entries ({survivingCount}) × entry size ({entrySize})"
+            );
+
+        // surviving count must not exceed the cap
+        survivingCount.Should().BeLessThanOrEqualTo(maxItems);
+    }
+
     #endregion
 
     #region CloneValues Option

@@ -149,6 +149,30 @@ public sealed partial class HybridCache
             removeTimestamp + queue.DefaultRetention,
             async ct =>
             {
+                // Guard against replaying a remove that would delete a value written during the outage. If L1
+                // still has an entry for this key then a newer write landed after the remove was queued; replaying
+                // the remove would silently clobber that write. Mirrors the stamp-aware guard in
+                // _QueueScalarUpsertRecovery / _QueueSetEntryRecovery (but uses presence-only because removes do
+                // not produce a physical stamp to compare against).
+                if (LocalCache is IFactoryCacheStore l1Store)
+                {
+                    var current = await l1Store.TryGetEntryAsync<object>(key, ct).ConfigureAwait(false);
+
+                    if (current.Found && current.PhysicalExpiresAt > removeTimestamp)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
+                }
+                else
+                {
+                    var current = await LocalCache.GetAsync<object>(key, ct).ConfigureAwait(false);
+
+                    if (current.HasValue)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
+                }
+
                 await l2Cache.RemoveAsync(key, ct).ConfigureAwait(false);
                 await _PublishReplayedInvalidationAsync(key, removeTimestamp, ct).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;
@@ -167,6 +191,28 @@ public sealed partial class HybridCache
             expireTimestamp + queue.DefaultRetention,
             async ct =>
             {
+                // Guard: if L1 has a newer entry (physical stamp after the expire timestamp), a write landed
+                // during the outage and replaying the expire would evict it on L2. Return Obsolete to preserve
+                // the newer write — mirrors the remove guard above.
+                if (LocalCache is IFactoryCacheStore l1Store)
+                {
+                    var current = await l1Store.TryGetEntryAsync<object>(key, ct).ConfigureAwait(false);
+
+                    if (current.Found && current.PhysicalExpiresAt > expireTimestamp)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
+                }
+                else
+                {
+                    var current = await LocalCache.GetAsync<object>(key, ct).ConfigureAwait(false);
+
+                    if (current.HasValue)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
+                }
+
                 await l2Cache.ExpireAsync(key, ct).ConfigureAwait(false);
                 await _PublishReplayedInvalidationAsync(key, expireTimestamp, ct, expire: true).ConfigureAwait(false);
                 return HybridCacheRecoveryReplayOutcome.Replayed;

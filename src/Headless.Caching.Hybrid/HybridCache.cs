@@ -546,13 +546,13 @@ public sealed partial class HybridCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Check if key exists in local cache first
-        var localExists = await LocalCache.ExistsAsync(key, cancellationToken).ConfigureAwait(false);
-        if (localExists)
+        // Single L1 lookup: a null return means the key is absent, avoiding a separate ExistsAsync round-trip.
+        var localExpiration = await LocalCache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+        if (localExpiration is not null)
         {
             _logger.LogLocalCacheHit(key);
             Interlocked.Increment(ref _localCacheHits);
-            return await LocalCache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+            return localExpiration;
         }
 
         _logger.LogLocalCacheMiss(key);
@@ -786,16 +786,21 @@ public sealed partial class HybridCache(
     #region IAsyncDisposable
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _coordinator.Dispose();
-        RecoveryQueue?.Dispose();
-        return ValueTask.CompletedTask;
+
+        if (RecoveryQueue is not null)
+        {
+            // Cancel the timer before draining so no new ProcessAsync pass starts after we await the active one.
+            RecoveryQueue.Dispose();
+            await RecoveryQueue.DrainAsync(CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     #endregion

@@ -1,7 +1,7 @@
 ---
 title: Unified Provider Setup Builder Pattern
 date: 2026-05-25
-last_updated: 2026-06-11
+last_updated: 2026-06-21
 category: architecture-patterns
 module: headless-provider-setup
 problem_type: architecture_pattern
@@ -196,6 +196,8 @@ Caching (`AddHeadlessCaching`, `src/Headless.Caching.Core/Setup.cs`) follows the
 
 Application order is tiers → default → named → cross-cutting, all deferred until the gates pass so a throwing setup leaves the service collection unchanged, and the repeated-`AddHeadlessCaching` sentinel matches coordination. The deviation pays for a real failure mode the global gate cannot express: the predecessor per-provider `Add*Cache(isDefault:)` extensions let two `isDefault: true` registrations silently race for the default `ICache` (first-wins `TryAddSingleton` plus role-key aliasing); the per-slot gate turns that into a hard registration-time error. The focused regression suite is `tests/Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.cs`.
 
+**Captcha is the second per-slot instance** (`AddHeadlessCaptcha`, `src/Headless.Captcha.Abstractions/Setup.cs`) and adds two wrinkles Caching does not have. It keeps a **default slot** — at most one `UseTurnstile` / `UseReCaptchaV2` / `UseReCaptchaV3`, resolving unkeyed *and* aliased under its canonical `CaptchaConstants` key — plus an unlimited **named slot** (`Use{Provider}("name", …)`, keyed-only); both are deferred behind an "at least one provider" gate and the repeated-`AddHeadlessCaptcha` sentinel. The wrinkles: (1) **provider sub-interfaces** — the base `ICaptchaVerifier` stays strictly pass/fail, while `IReCaptchaV3Verifier` (Score) and `ITurnstileVerifier` (CData) carry provider-only data on derived result types, so a consumer that needs vendor data injects the concrete interface rather than leaking it onto the shared contract; and (2) a **public by-name resolver**, `ICaptchaProvider.GetVerifier(name)` over `GetKeyedService<ICaptchaVerifier>(name)`, shipped as package surface (Caching's `KeyedServiceCacheProvider` is the same mechanism, kept internal). Per-provider internal singletons — the named `HttpClient` and the language-code provider — are keyed by the slot name so reCAPTCHA and Turnstile cannot collide on a first-wins `TryAdd` (the shadowing trap in the linked keyed-DI doc). Conformance is verified by an HTTP-stub harness rather than Testcontainers (the providers' happy path needs a human-solved token); see the linked harness doc. The focused suites are `tests/Headless.Captcha.{Turnstile,ReCaptcha}.Tests.Unit` over the shared `tests/Headless.Captcha.Tests.Harness`.
+
 ### 6. Shared `HeadlessDbContext` + `*EntityValidationStartupGate<TContext>`
 
 When the EF provider is selected, the feature no longer owns a `DbContext`. The consumer's own `HeadlessDbContext` subclass is registered once via `AddHeadlessDbContext<TContext>` and opts into each feature's entities by calling `modelBuilder.AddHeadless{Feature}(storageOptions)` from `OnModelCreating`. A `*EntityValidationStartupGate<TContext>` hosted service (registered automatically by the EF extension) hard-fails at host start if the consumer forgot, with a precise error naming the missing `modelBuilder.AddHeadless{Feature}` call.
@@ -266,6 +268,7 @@ Skip this shape when the feature has exactly one possible backend and zero confi
 | Identity | `src/Headless.Identity.Storage.EntityFramework/Setup.cs` | `HeadlessIdentitySetupBuilder.cs` | package-local identity storage extension | EF |
 | Coordination | `src/Headless.Coordination.Core/Setup.cs` | `HeadlessCoordinationSetupBuilder.cs` | `ICoordinationProviderOptionsExtension` | PostgreSql, SqlServer, Redis |
 | Caching | `src/Headless.Caching.Core/Setup.cs` (`SetupCachingCore`) | `HeadlessCachingSetupBuilder.cs` | `ICacheProviderOptionsExtension` | InMemory, Redis, Hybrid (+ DistributedLocks as cross-cutting) |
+| Captcha | `src/Headless.Captcha.Abstractions/Setup.cs` (`SetupCaptcha`) | `HeadlessCaptchaSetupBuilder.cs` | per-slot deferred actions + `ICaptchaProvider` by-name resolver | ReCaptcha (v2/v3), Turnstile |
 
 Consumer call site, audit-log:
 
@@ -284,7 +287,8 @@ To swap providers, change one line (`setup.UseSqlServer(...)`); nothing else mov
 
 - [Storage Initializer Lifecycle & Concurrent-Startup Safety](../best-practices/storage-initializer-lifecycle-correctness.md) — sibling doc covering runtime correctness of the `*StorageInitializer` and `HeadlessDbContext` dispose paths
 - [Writing a Headless Messaging Transport Provider](../guides/messaging-transport-provider-guide.md) — the original `IXOptionsExtension` + `Setup{Provider}` template this pattern generalizes
-- [Messaging keyed-DI lock isolation](messaging-keyed-di-lock-isolation-2026-05-19.md) — `TryAdd*` shadowing trap applies to multi-feature storage hosts
+- [Messaging keyed-DI lock isolation](messaging-keyed-di-lock-isolation.md) — `TryAdd*` shadowing trap applies to multi-feature storage hosts and to captcha's per-provider HttpClient/language-provider keying
+- [HTTP-stub cross-provider conformance harness](../best-practices/http-stub-conformance-harness.md) — how the per-slot captcha providers are conformance-tested without a reachable backend
 - [Transport wrapper drift and doc sync](../messaging/transport-wrapper-drift-and-doc-sync.md) — greenfield rename rationale and the per-package README sync chore that follows refactors of this shape
 - Source-of-truth brainstorm and plan (on branch `xshaheen/refactor-storage-initialization-unification`):
   - `docs/brainstorms/2026-05-24-storage-initialization-unification-requirements.md`

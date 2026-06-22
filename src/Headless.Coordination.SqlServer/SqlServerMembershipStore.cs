@@ -23,6 +23,15 @@ internal sealed class SqlServerMembershipStore(
     private const int _MaxDeadlockRetryAttempts = 2;
     private readonly ResiliencePipeline _deadlockRetryPipeline = _BuildDeadlockRetryPipeline(timeProvider, logger);
 
+    // Membership SQL is invariant after construction (the schema is fixed in IOptions and the store is a DI
+    // singleton), so the per-tick paths (heartbeat, liveness reads, retention prune) precompute their command
+    // text once instead of rebuilding ~40-line strings every beat. The lifecycle paths (allocate/upsert/leave)
+    // run once per node and keep building inline.
+    private readonly string _heartbeatSql = _BuildHeartbeatSql(providerOptions.Value.Schema);
+    private readonly string _readLivenessSql = _BuildReadLivenessSql(providerOptions.Value.Schema);
+    private readonly string _readNodeLivenessSql = _BuildReadNodeLivenessSql(providerOptions.Value.Schema);
+    private readonly string _pruneExpiredRowsSql = _BuildPruneExpiredRowsSql(providerOptions.Value.Schema);
+
     protected override async ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
         NodeId nodeId,
@@ -205,51 +214,6 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var generationTable = _Qualified(SqlServerMembershipSchema.Generation.Table);
-        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
-        var sql = $$"""
-            DECLARE @currentIncarnation bigint;
-
-            SELECT @currentIncarnation = [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}]
-            FROM {{generationTable}} WITH (UPDLOCK, HOLDLOCK)
-            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId;
-
-            IF @currentIncarnation IS NULL OR @currentIncarnation <> @Incarnation
-            BEGIN
-                SELECT CAST(0 AS bit);
-                RETURN;
-            END;
-
-            UPDATE {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
-            SET [{{SqlServerMembershipSchema.Liveness.LastBeat}}] = SYSUTCDATETIME(),
-                [{{SqlServerMembershipSchema.Liveness.LeftAt}}] = NULL
-            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
-              AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation;
-
-            IF @@ROWCOUNT = 0
-            BEGIN
-                INSERT INTO {{livenessTable}} (
-                    [{{SqlServerMembershipSchema.ClusterName}}],
-                    [{{SqlServerMembershipSchema.NodeId}}],
-                    [{{SqlServerMembershipSchema.Incarnation}}],
-                    [{{SqlServerMembershipSchema.Liveness.LastBeat}}],
-                    [{{SqlServerMembershipSchema.Liveness.LeftAt}}]
-                )
-                SELECT @ClusterName, @NodeId, @Incarnation, SYSUTCDATETIME(), NULL
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
-                    WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-                      AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
-                      AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
-                );
-            END;
-
-            SELECT CAST(1 AS bit);
-            """;
-
         return await _ExecuteWithDeadlockRetryAsync(
                 "Heartbeat",
                 async ct =>
@@ -258,7 +222,7 @@ internal sealed class SqlServerMembershipStore(
                     await connection.OpenAsync(ct).ConfigureAwait(false);
                     await using var transaction = (SqlTransaction)
                         await connection.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
-                    await using var command = _CreateCommand(connection, sql, transaction);
+                    await using var command = _CreateCommand(connection, _heartbeatSql, transaction);
                     command.Parameters.AddWithValue("ClusterName", clusterName);
                     command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
                     command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
@@ -304,39 +268,11 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var generationTable = _Qualified(SqlServerMembershipSchema.Generation.Table);
-        var descriptorTable = _Qualified(SqlServerMembershipSchema.Descriptor.Table);
-        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
-        var sql = $$"""
-            SELECT
-                l.[{{SqlServerMembershipSchema.NodeId}}],
-                l.[{{SqlServerMembershipSchema.Incarnation}}],
-                d.[{{SqlServerMembershipSchema.Descriptor.Role}}],
-                d.[{{SqlServerMembershipSchema.Descriptor.Metadata}}],
-                CASE
-                    WHEN l.[{{SqlServerMembershipSchema.Liveness.LeftAt}}] IS NOT NULL THEN @DeadState
-                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @DeadThresholdMs THEN @DeadState
-                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @SuspicionThresholdMs THEN @SuspectedState
-                    ELSE @AliveState
-                END AS [state]
-            FROM {{livenessTable}} l
-            JOIN {{generationTable}} g
-              ON g.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
-             AND g.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
-             AND g.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
-            LEFT JOIN {{descriptorTable}} d
-              ON d.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
-             AND d.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
-             AND d.[{{SqlServerMembershipSchema.Incarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
-            WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-            ORDER BY l.[{{SqlServerMembershipSchema.NodeId}}], l.[{{SqlServerMembershipSchema.Incarnation}}];
-            """;
-
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         // Pruning is best-effort cleanup; do not abort it on the caller's read cancellation.
         await _PruneExpiredRowsAsync(connection, clusterName, CancellationToken.None).ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, sql);
+        await using var command = _CreateCommand(connection, _readLivenessSql);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("DeadThresholdMs", _ToMilliseconds(DeadThreshold));
         command.Parameters.AddWithValue("SuspicionThresholdMs", _ToMilliseconds(SuspicionThreshold));
@@ -361,35 +297,9 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var generationTable = _Qualified(SqlServerMembershipSchema.Generation.Table);
-        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
-
-        // Targeted single-row read: join to the generation authority so a non-current incarnation yields no
-        // row (absent -> null), classify with the store clock identically to ReadCurrentLivenessCoreAsync, and
-        // exclude retention-expired rows in the WHERE so they read as absent (null) exactly as the snapshot's
-        // prune would remove them. Plain read: no SERIALIZABLE transaction, no deadlock retry, no prune.
-        var sql = $$"""
-            SELECT
-                CASE
-                    WHEN l.[{{SqlServerMembershipSchema.Liveness.LeftAt}}] IS NOT NULL THEN @DeadState
-                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @DeadThresholdMs THEN @DeadState
-                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @SuspicionThresholdMs THEN @SuspectedState
-                    ELSE @AliveState
-                END AS [state]
-            FROM {{livenessTable}} l
-            JOIN {{generationTable}} g
-              ON g.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
-             AND g.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
-             AND g.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
-            WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-              AND l.[{{SqlServerMembershipSchema.NodeId}}] = @NodeId
-              AND l.[{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
-              AND DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) < @RetentionThresholdMs;
-            """;
-
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, sql);
+        await using var command = _CreateCommand(connection, _readNodeLivenessSql);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);
         command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
@@ -411,27 +321,7 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var descriptorTable = _Qualified(SqlServerMembershipSchema.Descriptor.Table);
-        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
-        var sql = $$"""
-            DELETE FROM {{livenessTable}}
-            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-              AND DATEDIFF_BIG(millisecond, [{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @RetentionThresholdMs;
-
-            DELETE d
-            FROM {{descriptorTable}} d
-            WHERE d.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-              AND DATEDIFF_BIG(millisecond, d.[{{SqlServerMembershipSchema.DateCreated}}], SYSUTCDATETIME()) >= @RetentionThresholdMs
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM {{livenessTable}} l
-                  WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = d.[{{SqlServerMembershipSchema.ClusterName}}]
-                    AND l.[{{SqlServerMembershipSchema.NodeId}}] = d.[{{SqlServerMembershipSchema.NodeId}}]
-                    AND l.[{{SqlServerMembershipSchema.Incarnation}}] = d.[{{SqlServerMembershipSchema.Incarnation}}]
-              );
-            """;
-
-        await using var command = _CreateCommand(connection, sql);
+        await using var command = _CreateCommand(connection, _pruneExpiredRowsSql);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("RetentionThresholdMs", _ToMilliseconds(DeadThreshold + DeadRetentionWindow));
 
@@ -450,6 +340,155 @@ internal sealed class SqlServerMembershipStore(
     private string _Qualified(string table)
     {
         return SqlServerCoordinationIdentifier.Qualified(providerOptions.Value.Schema, table);
+    }
+
+    private static string _BuildHeartbeatSql(string schema)
+    {
+        var generationTable = SqlServerCoordinationIdentifier.Qualified(
+            schema,
+            SqlServerMembershipSchema.Generation.Table
+        );
+        var livenessTable = SqlServerCoordinationIdentifier.Qualified(schema, SqlServerMembershipSchema.Liveness.Table);
+
+        return $$"""
+            DECLARE @currentIncarnation bigint;
+
+            SELECT @currentIncarnation = [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}]
+            FROM {{generationTable}} WITH (UPDLOCK, HOLDLOCK)
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId;
+
+            IF @currentIncarnation IS NULL OR @currentIncarnation <> @Incarnation
+            BEGIN
+                SELECT CAST(0 AS bit);
+                RETURN;
+            END;
+
+            UPDATE {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
+            SET [{{SqlServerMembershipSchema.Liveness.LastBeat}}] = SYSUTCDATETIME(),
+                [{{SqlServerMembershipSchema.Liveness.LeftAt}}] = NULL
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+              AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation;
+
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO {{livenessTable}} (
+                    [{{SqlServerMembershipSchema.ClusterName}}],
+                    [{{SqlServerMembershipSchema.NodeId}}],
+                    [{{SqlServerMembershipSchema.Incarnation}}],
+                    [{{SqlServerMembershipSchema.Liveness.LastBeat}}],
+                    [{{SqlServerMembershipSchema.Liveness.LeftAt}}]
+                )
+                SELECT @ClusterName, @NodeId, @Incarnation, SYSUTCDATETIME(), NULL
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
+                    WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+                      AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+                      AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
+                );
+            END;
+
+            SELECT CAST(1 AS bit);
+            """;
+    }
+
+    private static string _BuildReadLivenessSql(string schema)
+    {
+        var generationTable = SqlServerCoordinationIdentifier.Qualified(
+            schema,
+            SqlServerMembershipSchema.Generation.Table
+        );
+        var descriptorTable = SqlServerCoordinationIdentifier.Qualified(
+            schema,
+            SqlServerMembershipSchema.Descriptor.Table
+        );
+        var livenessTable = SqlServerCoordinationIdentifier.Qualified(schema, SqlServerMembershipSchema.Liveness.Table);
+
+        return $$"""
+            SELECT
+                l.[{{SqlServerMembershipSchema.NodeId}}],
+                l.[{{SqlServerMembershipSchema.Incarnation}}],
+                d.[{{SqlServerMembershipSchema.Descriptor.Role}}],
+                d.[{{SqlServerMembershipSchema.Descriptor.Metadata}}],
+                CASE
+                    WHEN l.[{{SqlServerMembershipSchema.Liveness.LeftAt}}] IS NOT NULL THEN @DeadState
+                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @DeadThresholdMs THEN @DeadState
+                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @SuspicionThresholdMs THEN @SuspectedState
+                    ELSE @AliveState
+                END AS [state]
+            FROM {{livenessTable}} l
+            JOIN {{generationTable}} g
+              ON g.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
+             AND g.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
+             AND g.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
+            LEFT JOIN {{descriptorTable}} d
+              ON d.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
+             AND d.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
+             AND d.[{{SqlServerMembershipSchema.Incarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
+            WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+            ORDER BY l.[{{SqlServerMembershipSchema.NodeId}}], l.[{{SqlServerMembershipSchema.Incarnation}}];
+            """;
+    }
+
+    private static string _BuildReadNodeLivenessSql(string schema)
+    {
+        var generationTable = SqlServerCoordinationIdentifier.Qualified(
+            schema,
+            SqlServerMembershipSchema.Generation.Table
+        );
+        var livenessTable = SqlServerCoordinationIdentifier.Qualified(schema, SqlServerMembershipSchema.Liveness.Table);
+
+        // Targeted single-row read: join to the generation authority so a non-current incarnation yields no
+        // row (absent -> null), classify with the store clock identically to ReadCurrentLivenessCoreAsync, and
+        // exclude retention-expired rows in the WHERE so they read as absent (null) exactly as the snapshot's
+        // prune would remove them. Plain read: no SERIALIZABLE transaction, no deadlock retry, no prune.
+        return $$"""
+            SELECT
+                CASE
+                    WHEN l.[{{SqlServerMembershipSchema.Liveness.LeftAt}}] IS NOT NULL THEN @DeadState
+                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @DeadThresholdMs THEN @DeadState
+                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @SuspicionThresholdMs THEN @SuspectedState
+                    ELSE @AliveState
+                END AS [state]
+            FROM {{livenessTable}} l
+            JOIN {{generationTable}} g
+              ON g.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
+             AND g.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
+             AND g.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
+            WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND l.[{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+              AND l.[{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
+              AND DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) < @RetentionThresholdMs;
+            """;
+    }
+
+    private static string _BuildPruneExpiredRowsSql(string schema)
+    {
+        var descriptorTable = SqlServerCoordinationIdentifier.Qualified(
+            schema,
+            SqlServerMembershipSchema.Descriptor.Table
+        );
+        var livenessTable = SqlServerCoordinationIdentifier.Qualified(schema, SqlServerMembershipSchema.Liveness.Table);
+
+        return $$"""
+            DELETE FROM {{livenessTable}}
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND DATEDIFF_BIG(millisecond, [{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @RetentionThresholdMs;
+
+            DELETE d
+            FROM {{descriptorTable}} d
+            WHERE d.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND DATEDIFF_BIG(millisecond, d.[{{SqlServerMembershipSchema.DateCreated}}], SYSUTCDATETIME()) >= @RetentionThresholdMs
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM {{livenessTable}} l
+                  WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = d.[{{SqlServerMembershipSchema.ClusterName}}]
+                    AND l.[{{SqlServerMembershipSchema.NodeId}}] = d.[{{SqlServerMembershipSchema.NodeId}}]
+                    AND l.[{{SqlServerMembershipSchema.Incarnation}}] = d.[{{SqlServerMembershipSchema.Incarnation}}]
+              );
+            """;
     }
 
     private static long _ToMilliseconds(TimeSpan value)

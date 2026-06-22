@@ -128,6 +128,16 @@ Multi-tier caching with a clean abstraction layer. Supports in-memory, Redis, an
 | [Headless.Caching.InMemory](src/Headless.Caching.InMemory/README.md) | In-memory caching |
 | [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Redis caching |
 
+### Captcha
+
+Verify CAPTCHA tokens behind one pass/fail abstraction. Compose Google reCAPTCHA v2/v3 and Cloudflare Turnstile through a single builder — swap or combine providers without touching call sites.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Captcha.Abstractions](src/Headless.Captcha.Abstractions/README.md) | CAPTCHA verification interfaces and builder |
+| [Headless.Captcha.ReCaptcha](src/Headless.Captcha.ReCaptcha/README.md) | Google reCAPTCHA v2/v3 provider |
+| [Headless.Captcha.Turnstile](src/Headless.Captcha.Turnstile/README.md) | Cloudflare Turnstile provider |
+
 ### Email
 
 Send transactional and marketing emails through a unified interface. Plug in AWS SES, SMTP via MailKit, or a no-op dev provider for local testing.
@@ -368,7 +378,6 @@ Cross-cutting utilities that don't belong to a specific domain — validation ex
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
-| [Headless.ReCaptcha](src/Headless.ReCaptcha/README.md) | Google reCAPTCHA integration |
 | [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |
 | [Headless.Sitemaps](src/Headless.Sitemaps/README.md) | XML sitemap generation |
 | [Headless.Slugs](src/Headless.Slugs/README.md) | URL slug generation |

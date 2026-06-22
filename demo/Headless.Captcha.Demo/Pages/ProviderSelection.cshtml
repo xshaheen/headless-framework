@@ -1,0 +1,38 @@
+@page
+@using Headless.Captcha
+@model ProviderSelectionModel
+@{
+    ViewData["Title"] = "Provider selection";
+}
+
+<h1>Provider selection via ICaptchaProvider</h1>
+
+<p>
+    Solve the Turnstile challenge, pick which registered provider to verify the token against, and submit.
+    A Turnstile token only validates against the Turnstile backend, so selecting reCAPTCHA shows a routed
+    failure — both flow through the same <code>ICaptchaProvider.GetVerifier(name)</code> call.
+</p>
+
+<pre>Provider: @Model.SelectedProvider
+@Model.Result</pre>
+
+<form method="POST">
+    <input id="token" name="token" type="hidden"/>
+    <turnstile-widget callback="onToken"/>
+    <p>
+        <select name="provider">
+            <option value="@CaptchaConstants.TurnstileProvider">Turnstile (default)</option>
+            <option value="recaptcha">reCAPTCHA v3 (named)</option>
+        </select>
+    </p>
+    <button id="submit" type="submit" disabled="disabled">Verify</button>
+</form>
+
+<turnstile-script/>
+
+<script>
+    function onToken(token) {
+        document.getElementById("token").value = token;
+        document.getElementById("submit").disabled = false;
+    }
+</script>

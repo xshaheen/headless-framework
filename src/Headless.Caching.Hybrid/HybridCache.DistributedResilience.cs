@@ -65,15 +65,20 @@ public sealed partial class HybridCache
             }
         }
 
-        // Only link to the caller token when it can actually fire; otherwise a plain source avoids the
-        // linked-registration allocation while still supporting the timeout-path CancelAsync below.
-        CancellationTokenSource? operationCts = cancellationToken.CanBeCanceled
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : new CancellationTokenSource();
-        var operationTask = operation(operationCts.Token).AsTask();
+        // Declare before the try so the finally can always dispose them. Both are assigned inside the try so a
+        // synchronous throw from operation() is covered by the finally (no CTS leak).
+        CancellationTokenSource? operationCts = null;
+        Task<T>? operationTask = null;
 
         try
         {
+            // Only link to the caller token when it can actually fire; otherwise a plain source avoids the
+            // linked-registration allocation while still supporting the timeout-path CancelAsync below.
+            operationCts = cancellationToken.CanBeCanceled
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : new CancellationTokenSource();
+            operationTask = operation(operationCts.Token).AsTask();
+
             using var delayCts = new CancellationTokenSource();
             var delayTask = Task.Delay(timeout, _timeProvider, delayCts.Token);
 

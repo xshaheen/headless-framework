@@ -2,49 +2,66 @@
 
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Emails.Dev;
 
 /// <summary>
-/// Registers development and no-op email senders with the DI container.
+/// Extension members on <see cref="HeadlessEmailsSetupBuilder"/> for selecting the development
+/// (file-writing) or no-op email providers.
 /// </summary>
 [PublicAPI]
 public static class SetupDevEmail
 {
-    extension(IServiceCollection services)
+    extension(HeadlessEmailsSetupBuilder setup)
     {
         /// <summary>
-        /// Registers <see cref="DevEmailSender"/> as the <see cref="IEmailSender"/> singleton,
-        /// which appends email content to a local file instead of sending to real recipients.
+        /// Selects <see cref="DevEmailSender"/> as the email provider, which appends email content to a
+        /// local file instead of sending to real recipients.
         /// </summary>
         /// <param name="filePath">
         /// Absolute or relative path to the file where outgoing emails are recorded.
         /// The file is created if it does not exist; existing content is preserved and
         /// new entries are appended.
         /// </param>
-        /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+        /// <returns>The same builder for chaining.</returns>
         /// <exception cref="System.ArgumentException">
         /// Thrown when <paramref name="filePath"/> is <see langword="null"/> or empty.
         /// </exception>
-        public IServiceCollection AddDevEmailSender(string filePath)
+        public HeadlessEmailsSetupBuilder UseDevelopment(string filePath)
         {
             Argument.IsNotNullOrEmpty(filePath);
-            services.TryAddSingleton<IEmailSender>(_ => new DevEmailSender(filePath));
 
-            return services;
+            setup.RegisterExtension(new DevEmailOptionsExtension(filePath));
+
+            return setup;
         }
 
         /// <summary>
-        /// Registers <see cref="NoopEmailSender"/> as the <see cref="IEmailSender"/> singleton,
-        /// which silently discards every email without sending or logging it.
+        /// Selects <see cref="NoopEmailSender"/> as the email provider, which silently discards every
+        /// email without sending or logging it.
         /// </summary>
-        /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
-        public IServiceCollection AddNoopEmailSender()
+        /// <returns>The same builder for chaining.</returns>
+        public HeadlessEmailsSetupBuilder UseNoop()
         {
-            services.TryAddSingleton<IEmailSender, NoopEmailSender>();
+            setup.RegisterExtension(new NoopEmailOptionsExtension());
 
-            return services;
+            return setup;
+        }
+    }
+
+    private sealed class DevEmailOptionsExtension(string filePath) : IEmailProviderOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddSingleton<IEmailSender>(_ => new DevEmailSender(filePath));
+        }
+    }
+
+    private sealed class NoopEmailOptionsExtension : IEmailProviderOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddSingleton<IEmailSender, NoopEmailSender>();
         }
     }
 }

@@ -29,17 +29,17 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: from configuration (reads AWS:Region, credentials from environment/profile)
 var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddAwsSesEmailSender(awsOptions);
+builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(awsOptions));
 
 // Option 2: explicit credentials
-builder.Services.AddAwsSesEmailSender(new AWSOptions
+builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(new AWSOptions
 {
     Region = RegionEndpoint.USEast1,
     Credentials = new BasicAWSCredentials("accessKey", "secretKey"),
-});
+}));
 
 // Option 3: use default AWSOptions already registered in DI (pass null)
-builder.Services.AddAwsSesEmailSender(null);
+builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(null));
 ```
 
 ## Configuration
@@ -64,4 +64,4 @@ Credentials are resolved from the standard AWS credential chain (environment var
 ## Side Effects
 
 - Registers `IAmazonSimpleEmailServiceV2` via `TryAddAWSService` (no-op if already registered)
-- Registers `IEmailSender` via `TryAddSingleton` (no-op if a provider is already registered)
+- Registers `IEmailSender` as singleton

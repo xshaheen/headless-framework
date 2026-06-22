@@ -123,9 +123,13 @@
         <Project Path="tests/Headless.CommitCoordination.Tests.Harness/Headless.CommitCoordination.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Captcha/">
-        <Project Path="demo/Headless.ReCaptcha.Demo/Headless.ReCaptcha.Demo.csproj" />
-        <Project Path="src/Headless.ReCaptcha/Headless.ReCaptcha.csproj" />
-        <Project Path="tests/Headless.ReCaptcha.Tests.Unit/Headless.ReCaptcha.Tests.Unit.csproj" />
+        <Project Path="src/Headless.Captcha.Abstractions/Headless.Captcha.Abstractions.csproj" />
+        <Project Path="src/Headless.Captcha.ReCaptcha/Headless.Captcha.ReCaptcha.csproj" />
+        <Project Path="src/Headless.Captcha.Turnstile/Headless.Captcha.Turnstile.csproj" />
+        <Project Path="tests/Headless.Captcha.Tests.Harness/Headless.Captcha.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.Captcha.ReCaptcha.Tests.Unit/Headless.Captcha.ReCaptcha.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Captcha.Turnstile.Tests.Unit/Headless.Captcha.Turnstile.Tests.Unit.csproj" />
+        <Project Path="demo/Headless.Captcha.Demo/Headless.Captcha.Demo.csproj" />
     </Folder>
     <Folder Name="/Database/">
         <Project Path="src\Headless.Redis\Headless.Redis.csproj" />
@@ -160,10 +164,15 @@
     <Folder Name="/Emails/">
         <Project Path="src\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
         <Project Path="src\Headless.Emails.Aws\Headless.Emails.Aws.csproj" />
+        <Project Path="src\Headless.Emails.Azure\Headless.Emails.Azure.csproj" />
         <Project Path="src\Headless.Emails.Core\Headless.Emails.Core.csproj" />
         <Project Path="src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
         <Project Path="src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
         <Project Path="tests\Headless.Emails.Tests.Unit\Headless.Emails.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Emails/Tests/">
+        <Project Path="tests/Headless.Emails.Core.Tests.Unit/Headless.Emails.Core.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Emails.Azure.Tests.Unit/Headless.Emails.Azure.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Features/">
         <Project Path="src\Headless.Features.Abstractions\Headless.Features.Abstractions.csproj" />
@@ -247,7 +256,9 @@
         <Project Path="src\Headless.Mediator\Headless.Mediator.csproj" />
         <Project Path="tests\Headless.Mediator.Tests.Unit\Headless.Mediator.Tests.Unit.csproj" />
     </Folder>
-    <Folder Name="/Messaging/" />
+    <Folder Name="/Messaging/">
+        <Project Path="benchmarks/Headless.Messaging.Benchmarks/Headless.Messaging.Benchmarks.csproj" />
+    </Folder>
     <Folder Name="/Messaging/Demo/">
         <Project Path="demo/Headless.Messaging.Aws.InMemory.Demo/Headless.Messaging.Aws.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.AzureServiceBus.InMemory.Demo/Headless.Messaging.AzureServiceBus.InMemory.Demo.csproj" />

@@ -13,6 +13,13 @@ namespace Headless.Caching;
 /// <see cref="IBufferCache"/> (Redis/InMemory/Hybrid) when the named cache supports it and fall back to the
 /// generic <c>byte[]</c> path otherwise.
 /// </summary>
+/// <remarks>
+/// The synchronous BCL members (<c>Get</c>, <c>Set</c>, <c>Refresh</c>, <c>Remove</c>, <c>TryGet</c>) block
+/// on their async counterparts via <c>GetAwaiter().GetResult()</c>. This is safe for all current
+/// <see cref="ICache"/> implementations because they use <c>ConfigureAwait(false)</c> throughout and do not
+/// capture a synchronization context. A future <see cref="ICache"/> implementation that captures the ambient
+/// context could deadlock these synchronous members; prefer the async overloads when possible.
+/// </remarks>
 internal sealed class HeadlessDistributedCacheAdapter(
     ICache cache,
     IOptions<HeadlessDistributedCacheAdapterOptions> options,
