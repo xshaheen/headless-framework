@@ -86,6 +86,14 @@ internal sealed class TusAzureStoreOptionsValidator : AbstractValidator<TusAzure
             .InclusiveBetween(1, 100 * 1024 * 1024) // 100MB
             .WithMessage("BlockBlobMaxChunkSize must be between 1 byte and 100MB");
 
+        // BlobDefaultChunkSize feeds _CalculateOptimalChunkSize/_SplitStreamAsync directly; an out-of-range value
+        // (<= 0 or > 100MB) either trips the Azure 100MB block guard or stalls staging, so validate it like the max.
+        RuleFor(x => x.BlobDefaultChunkSize)
+            .InclusiveBetween(1, 100 * 1024 * 1024) // 100MB
+            .WithMessage("BlobDefaultChunkSize must be between 1 byte and 100MB")
+            .LessThanOrEqualTo(x => x.BlobMaxChunkSize)
+            .WithMessage("BlobDefaultChunkSize must not exceed BlobMaxChunkSize");
+
         RuleFor(x => x.LeaseDuration)
             .InclusiveBetween(TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(60)) // 15 seconds to 60 minutes
             .When(x => x.LeaseDuration != Timeout.InfiniteTimeSpan)

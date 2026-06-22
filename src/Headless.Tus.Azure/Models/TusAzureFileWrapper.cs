@@ -36,7 +36,7 @@ internal sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blo
 internal static partial class TusAzureFileWrapperLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 3244,
         EventName = "FailedToGetContent",
         Level = LogLevel.Error,
         Message = "Failed to get content for file {FileId}"

@@ -7,7 +7,7 @@ namespace Headless.Tus.Services;
 internal static partial class TusAzureLoggerExtensions
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 3204,
         EventName = "CreatedPartialFile",
         Level = LogLevel.Debug,
         Message = "Created partial file {FileId} with upload length {UploadLength}"
@@ -15,7 +15,7 @@ internal static partial class TusAzureLoggerExtensions
     public static partial void LogCreatedPartialFile(this ILogger logger, string fileId, long uploadLength);
 
     [LoggerMessage(
-        EventId = 2,
+        EventId = 3205,
         EventName = "FailedToCreatePartialFile",
         Level = LogLevel.Error,
         Message = "Failed to create partial file with upload length {UploadLength}"
@@ -27,7 +27,7 @@ internal static partial class TusAzureLoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 3,
+        EventId = 3241,
         EventName = "StageBlockFromUriNotSupported",
         Level = LogLevel.Warning,
         Message = "StageBlockFromUri not supported, falling back to streaming"
@@ -35,7 +35,7 @@ internal static partial class TusAzureLoggerExtensions
     public static partial void LogStageBlockFromUriNotSupported(this ILogger logger);
 
     [LoggerMessage(
-        EventId = 4,
+        EventId = 3242,
         EventName = "CreatedFinalFile",
         Level = LogLevel.Debug,
         Message = "Created final file {FileId} from {PartCount} partial file(s), total size: {TotalSize}"
@@ -43,7 +43,7 @@ internal static partial class TusAzureLoggerExtensions
     public static partial void LogCreatedFinalFile(this ILogger logger, string fileId, int partCount, long totalSize);
 
     [LoggerMessage(
-        EventId = 5,
+        EventId = 3243,
         EventName = "FailedToCreateFinalFile",
         Level = LogLevel.Error,
         Message = "Failed to create final file from partial files: {PartialFiles}"

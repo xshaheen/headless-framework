@@ -150,28 +150,6 @@ public sealed partial class TusAzureStore
         }
     }
 
-    private static async Task<(List<BlobBlock> Committed, List<BlobBlock> Uncommitted)> _GetBlocksAsync(
-        BlockBlobClient client,
-        CancellationToken token
-    )
-    {
-        try
-        {
-            var blockListResponse = await client
-                .GetBlockListAsync(BlockListTypes.Committed, cancellationToken: token)
-                .ConfigureAwait(false);
-
-            return (
-                blockListResponse.Value.CommittedBlocks.AsList(),
-                blockListResponse.Value.UncommittedBlocks.AsList()
-            );
-        }
-        catch (RequestFailedException e) when (e.Status == 404)
-        {
-            return ([], []);
-        }
-    }
-
     private async Task<TusAzureFile?> _GetTusFileInfoAsync(string fileId, CancellationToken token)
     {
         var blobClient = _GetBlobClient(fileId);
