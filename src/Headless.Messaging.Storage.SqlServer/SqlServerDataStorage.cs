@@ -403,7 +403,8 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
-        return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        return rowId is not null;
     }
 
     /// <summary>
@@ -465,7 +466,14 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        // #5 — adopt the authoritative persisted row id (see _StoreReceivedMessage); on the MERGE UPDATE
+        // branch the row keeps its original [Id], so the freshly-generated StorageId would be stale and the
+        // caller's later ChangeReceiveStateAsync (WHERE Id=@Id) would silently no-op.
+        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        if (rowId is { } id)
+        {
+            mediumMessage.StorageId = id;
+        }
 
         return mediumMessage;
     }
@@ -856,7 +864,7 @@ public sealed class SqlServerDataStorage(
         return affectedRows > 0;
     }
 
-    private async ValueTask<bool> _StoreReceivedMessage(
+    private async ValueTask<Guid?> _StoreReceivedMessage(
         object[] sqlParams,
         CancellationToken cancellationToken = default
     )
@@ -871,6 +879,10 @@ public sealed class SqlServerDataStorage(
         // is being dispatched would otherwise overwrite LockedUntil = NULL and Retries = 0,
         // releasing the active pickup lease mid-attempt and causing the retry processor to
         // re-pick the row while the inline retry loop is still in flight.
+        //
+        // #5 — OUTPUT inserted.[Id] returns the authoritative persisted row id (insert or update branch).
+        // On the UPDATE branch the existing row keeps its original [Id], which differs from the freshly
+        // generated @Id, so the caller adopts the returned value; a guard-blocked no-op returns no row.
         var sql = $"""
             MERGE {_receivedTable} WITH (HOLDLOCK) AS target
             USING (SELECT @Version AS Version, @MessageId AS MessageId, @Group AS [Group], @IntentType AS IntentType) AS source
@@ -884,20 +896,22 @@ public sealed class SqlServerDataStorage(
                 UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Owner = @Owner, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
                 INSERT ([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo])
-                VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo);
+                VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
+            OUTPUT inserted.[Id];
             """;
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var affectedRows = await connection
-            .ExecuteNonQueryAsync(
+
+        return await connection
+            .ExecuteReaderAsync<Guid?>(
                 sql,
+                static async (reader, token) =>
+                    await reader.ReadAsync(token).ConfigureAwait(false) ? reader.GetGuid(0) : null,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-
-        return affectedRows > 0;
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(

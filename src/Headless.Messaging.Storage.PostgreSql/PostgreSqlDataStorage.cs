@@ -417,7 +417,8 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
-        return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        return rowId is not null;
     }
 
     /// <summary>
@@ -473,7 +474,14 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        // #5 — adopt the authoritative persisted row id. On a concurrent redelivery that takes the ON
+        // CONFLICT UPDATE branch the row keeps its original "Id", so the freshly-generated StorageId would
+        // be stale and the caller's later ChangeReceiveStateAsync (WHERE "Id"=@Id) would silently no-op.
+        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        if (rowId is { } id)
+        {
+            mediumMessage.StorageId = id;
+        }
 
         return mediumMessage;
     }
@@ -833,7 +841,7 @@ internal sealed class PostgreSqlDataStorage(
         return affectedRows > 0;
     }
 
-    private async ValueTask<bool> _StoreReceivedMessage(
+    private async ValueTask<Guid?> _StoreReceivedMessage(
         object[] sqlParams,
         CancellationToken cancellationToken = default
     )
@@ -850,12 +858,13 @@ internal sealed class PostgreSqlDataStorage(
         // already-exhausted message cannot overwrite a previously-Succeeded row's status back to
         // Failed (which would re-fire OnExhausted spuriously).
         //
-        // Discrimination is by affected-row count from ExecuteNonQuery (there is no RETURNING clause):
-        //   affectedRows > 0 → a row was written: a fresh INSERT, OR an ON CONFLICT DO UPDATE whose
-        //                      WHERE guard passed.
-        //   affectedRows = 0 → ON CONFLICT matched but the DO UPDATE WHERE guard blocked the update
-        //                      (terminal-row guard or active-lease guard). Treated as "not modified" → false.
-        // The return value does not distinguish a fresh insert from a conflict-update.
+        // RETURNING "Id" surfaces the authoritative persisted row id and discriminates written vs no-op:
+        //   one row returned → a fresh INSERT, OR an ON CONFLICT DO UPDATE whose WHERE guard passed; its
+        //                      "Id" is the canonical row id. On the UPDATE branch the existing row keeps
+        //                      its original "Id" (EXCLUDED."Id" is intentionally not in the SET list), which
+        //                      differs from the freshly-generated @Id — so callers must adopt this value.
+        //   no row returned  → ON CONFLICT matched but the DO UPDATE WHERE guard blocked the update
+        //                      (terminal-row guard or active-lease guard) → returns null ("not modified").
         // Use the inference form `ON CONFLICT (col, expression)` so the planner matches the
         // unique expression index by structure rather than
         // requiring a named constraint (a `CREATE UNIQUE INDEX` is an index, not a constraint;
@@ -881,19 +890,21 @@ internal sealed class PostgreSqlDataStorage(
                 StatusName.Failed
             )}') AND {_receivedTable}."NextRetryAt" IS NULL)
               AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= @Now)
+            RETURNING "Id"
             """;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var affectedRows = await connection
-            .ExecuteNonQueryAsync(
+
+        return await connection
+            .ExecuteReaderAsync<Guid?>(
                 sql,
+                static async (reader, token) =>
+                    await reader.ReadAsync(token).ConfigureAwait(false) ? reader.GetGuid(0) : null,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-
-        return affectedRows > 0;
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
