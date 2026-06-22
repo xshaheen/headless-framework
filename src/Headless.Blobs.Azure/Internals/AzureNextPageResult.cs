@@ -2,7 +2,7 @@
 
 namespace Headless.Blobs.Azure.Internals;
 
-public sealed class AzureNextPageResult : INextPageResult
+internal sealed class AzureNextPageResult : INextPageResult
 {
     public required bool Success { get; init; }
 

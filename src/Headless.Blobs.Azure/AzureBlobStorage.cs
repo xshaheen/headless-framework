@@ -107,9 +107,13 @@ public sealed class AzureBlobStorage(
             CacheControl = _option.CacheControl,
         };
 
-        metadata ??= new Dictionary<string, string?>(StringComparer.Ordinal);
-        metadata[BlobStorageHelpers.UploadDateMetadataKey] = clock.UtcNow.ToString("O");
-        metadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(blobName);
+        // Copy caller metadata before adding framework keys so we never mutate the caller's dictionary
+        // (which may be shared across BulkUploadAsync requests).
+        var effectiveMetadata = metadata is null
+            ? new Dictionary<string, string?>(StringComparer.Ordinal)
+            : new Dictionary<string, string?>(metadata, StringComparer.Ordinal);
+        effectiveMetadata[BlobStorageHelpers.UploadDateMetadataKey] = clock.UtcNow.ToString("O");
+        effectiveMetadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(blobName);
 
         if (stream.CanSeek && stream.Position != 0)
         {
@@ -118,7 +122,7 @@ public sealed class AzureBlobStorage(
         }
 
         await blobClient
-            .UploadAsync(stream, httpHeader, metadata, cancellationToken: cancellationToken)
+            .UploadAsync(stream, httpHeader, effectiveMetadata, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -135,8 +139,11 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var results = new Result<Exception>[blobs.Count];
-        var index = 0;
+        // Materialize to an indexed list so each result lands in the slot matching its input position.
+        // Parallel.ForEachAsync does not run bodies in enumeration order, so deriving the index from execution
+        // order (e.g. via Interlocked) would misalign results with their inputs whenever parallelism > 1.
+        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? blobs.ToList();
+        var results = new Result<Exception>[items.Count];
 
         var options = new ParallelOptions
         {
@@ -146,11 +153,11 @@ public sealed class AzureBlobStorage(
 
         await Parallel
             .ForEachAsync(
-                blobs,
+                Enumerable.Range(0, items.Count),
                 options,
-                async (blob, ct) =>
+                async (i, ct) =>
                 {
-                    var i = Interlocked.Increment(ref index) - 1;
+                    var blob = items[i];
 
                     try
                     {
@@ -179,6 +186,9 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrEmpty(blobName);
+
         var blobClient = _GetBlobClient(container, blobName);
 
         var response = await blobClient
@@ -209,21 +219,64 @@ public sealed class AzureBlobStorage(
 
         var blobUrls = _NormalizeBlobUrls(container, blobNames);
 
+        // The Azure Blob Batch API caps a single batch at 256 sub-requests, so chunk to stay within the limit.
+        // Results are appended in chunk + submission order, preserving the per-input-name ordering contract.
+        var results = new List<Result<bool, Exception>>(blobNames.Count);
+
         try
         {
-            var results = await batch
-                .DeleteBlobsAsync(blobUrls, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken)
-                .ConfigureAwait(false);
+            foreach (var chunk in blobUrls.Chunk(_MaxBlobBatchSize))
+            {
+                var responses = await batch
+                    .DeleteBlobsAsync(chunk, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken)
+                    .ConfigureAwait(false);
 
-            return results.ConvertAll(result => Result<bool, Exception>.Ok(!result.IsError));
+                foreach (var response in responses)
+                {
+                    results.Add(_MapDeleteResponse(response));
+                }
+            }
+
+            return results;
         }
         catch (AggregateException e)
-            when (e.InnerException is RequestFailedException { Status: 404 } inner
-                && string.Equals(inner.ErrorCode, "ContainerNotFound", StringComparison.Ordinal)
+            when (e
+                    .InnerExceptions.OfType<RequestFailedException>()
+                    .Any(static inner =>
+                        inner.Status == 404
+                        && string.Equals(inner.ErrorCode, "ContainerNotFound", StringComparison.Ordinal)
+                    )
             )
         {
+            // The whole container is missing, so no blob could be deleted; surface the cause for every entry.
+            var inner = e
+                .InnerExceptions.OfType<RequestFailedException>()
+                .First(static x =>
+                    x.Status == 404 && string.Equals(x.ErrorCode, "ContainerNotFound", StringComparison.Ordinal)
+                );
+
             return blobNames.Select(_ => Result<bool, Exception>.Fail(inner)).ToList();
         }
+    }
+
+    private const int _MaxBlobBatchSize = 256;
+
+    // Maps a single Azure batch sub-response to a per-blob result: success -> Ok(true); a 404 means the blob was
+    // already gone -> Ok(false) ("not found"); any other error (403/429/5xx) -> Fail so callers see the real cause
+    // rather than a misleading "not found", per the IBlobStorage.BulkDeleteAsync contract.
+    private static Result<bool, Exception> _MapDeleteResponse(Response response)
+    {
+        if (!response.IsError)
+        {
+            return Result<bool, Exception>.Ok(true);
+        }
+
+        if (response.Status == 404)
+        {
+            return Result<bool, Exception>.Ok(false);
+        }
+
+        return Result<bool, Exception>.Fail(new RequestFailedException(response.Status, response.ReasonPhrase));
     }
 
     public ValueTask<int> DeleteAllAsync(
@@ -247,13 +300,18 @@ public sealed class AzureBlobStorage(
             .ConfigureAwait(false);
         var count = 0;
 
+        // Listed BlobKeys are already container-relative paths (e.g. "subdir/file.txt"). Delete against only the
+        // Azure container (container[0]); passing the full multi-segment container would re-apply the sub-path
+        // prefix and target non-existent blobs (".../subdir/subdir/file.txt"), deleting nothing.
+        var azureContainer = new[] { container[0] };
+
         // Delete the currently-loaded page first, then advance. Advancing before deleting would drop the final
         // page (the last NextPageAsync sets HasMore=false, exiting the loop with that page still undeleted).
         while (true)
         {
             var names = files.Blobs.Select(file => file.BlobKey).ToArray();
-            var results = await BulkDeleteAsync(container, names, cancellationToken).ConfigureAwait(false);
-            count += results.Count(x => x.IsSuccess);
+            var results = await BulkDeleteAsync(azureContainer, names, cancellationToken).ConfigureAwait(false);
+            count += results.Count(x => x.IsSuccess && x.Value);
 
             if (!files.HasMore)
             {
@@ -336,18 +394,45 @@ public sealed class AzureBlobStorage(
             return false;
         }
 
-        var deleteResult = await DeleteAsync(blobContainer, blobName, cancellationToken).ConfigureAwait(false);
+        bool deleteResult;
+
+        try
+        {
+            deleteResult = await DeleteAsync(blobContainer, blobName, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The copy already succeeded but deleting the source threw (e.g. cancellation or a transient error);
+            // roll back the copy so we never leave both source and destination behind.
+            await _RollbackRenameCopyAsync(newBlobContainer, newBlobName, blobName).ConfigureAwait(false);
+
+            throw;
+        }
 
         if (!deleteResult)
         {
-            // Rollback: delete the copy to avoid data duplication
-            await DeleteAsync(newBlobContainer, newBlobName, cancellationToken).ConfigureAwait(false);
-            logger.LogRenameFailedRolledBack(blobName);
+            await _RollbackRenameCopyAsync(newBlobContainer, newBlobName, blobName).ConfigureAwait(false);
 
             return false;
         }
 
         return true;
+    }
+
+    // Best-effort rollback of a rename's copy. Uses CancellationToken.None so cleanup still runs even when the
+    // rename was cancelled, and swallows (logs) failures so the caller still observes the original outcome/exception
+    // rather than a rollback error.
+    private async Task _RollbackRenameCopyAsync(string[] newBlobContainer, string newBlobName, string blobName)
+    {
+        try
+        {
+            await DeleteAsync(newBlobContainer, newBlobName, CancellationToken.None).ConfigureAwait(false);
+            logger.LogRenameFailedRolledBack(blobName);
+        }
+        catch (Exception e)
+        {
+            logger.LogRenameRollbackFailed(e, blobName, newBlobName);
+        }
     }
 
     #endregion
@@ -360,6 +445,9 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrEmpty(blobName);
+
         var blobClient = _GetBlobClient(container, blobName);
         var response = await blobClient.ExistsAsync(cancellationToken).ConfigureAwait(false);
 
@@ -376,35 +464,25 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var blobClient = _GetBlobClient(container, blobName);
+        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrEmpty(blobName);
 
-        MemoryStream? memoryStream = null;
+        var blobClient = _GetBlobClient(container, blobName);
 
         try
         {
-            memoryStream = new MemoryStream();
-            await blobClient.DownloadToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
-            memoryStream.Seek(0, SeekOrigin.Begin);
+            // Stream lazily from the network instead of buffering the whole blob into a MemoryStream (which OOMs on
+            // large blobs). The caller owns the returned BlobDownloadResult and disposes the stream
+            // (see IBlobStorage.OpenReadStreamAsync). OpenReadAsync issues the initial request eagerly, so a missing
+            // blob/container still surfaces as RequestFailedException here and maps to null.
+            var stream = await blobClient.OpenReadAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            return new(memoryStream, blobName);
+            return new(stream, blobName);
         }
         catch (RequestFailedException e)
             when (e.ErrorCode == BlobErrorCode.BlobNotFound || e.ErrorCode == BlobErrorCode.ContainerNotFound)
         {
-            if (memoryStream is not null)
-            {
-                await memoryStream.DisposeAsync().ConfigureAwait(false);
-            }
-
             return null;
-        }
-        catch
-        {
-            if (memoryStream is not null)
-            {
-                await memoryStream.DisposeAsync().ConfigureAwait(false);
-            }
-            throw;
         }
     }
 
@@ -414,8 +492,8 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         // Resolve the stored, normalized blob path so BlobKey matches what GetBlobsAsync/GetPagedListAsync return
         // (the container-relative path, excluding the container name) rather than the raw caller-supplied input.
@@ -935,6 +1013,19 @@ internal static partial class AzureBlobStorageLog
         Message = "Rename failed for {BlobName}, rolled back copy"
     )]
     public static partial void LogRenameFailedRolledBack(this ILogger logger, string blobName);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "RenameRollbackFailed",
+        Level = LogLevel.Error,
+        Message = "Rename rollback failed for {BlobName}: could not delete the copied blob {NewBlobName}; a duplicate may remain"
+    )]
+    public static partial void LogRenameRollbackFailed(
+        this ILogger logger,
+        Exception exception,
+        string blobName,
+        string newBlobName
+    );
 
     [LoggerMessage(
         EventId = 5,

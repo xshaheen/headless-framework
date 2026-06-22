@@ -28,11 +28,11 @@ namespace Headless.Blobs.Azure;
 /// </example>
 /// </summary>
 [PublicAPI]
-public static class AddAzureBlobExtensions
+public static class SetupAzureBlob
 {
     extension(IServiceCollection services)
     {
-        /// <inheritdoc cref="AddAzureBlobExtensions"/>
+        /// <inheritdoc cref="SetupAzureBlob"/>
         public IServiceCollection AddAzureBlobStorage(Action<AzureStorageOptions, IServiceProvider> setupAction)
         {
             services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
@@ -40,7 +40,7 @@ public static class AddAzureBlobExtensions
             return services._AddCore();
         }
 
-        /// <inheritdoc cref="AddAzureBlobExtensions"/>
+        /// <inheritdoc cref="SetupAzureBlob"/>
         public IServiceCollection AddAzureBlobStorage(Action<AzureStorageOptions> setupAction)
         {
             services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
@@ -48,7 +48,7 @@ public static class AddAzureBlobExtensions
             return services._AddCore();
         }
 
-        /// <inheritdoc cref="AddAzureBlobExtensions"/>
+        /// <inheritdoc cref="SetupAzureBlob"/>
         public IServiceCollection AddAzureBlobStorage(IConfiguration config)
         {
             services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(config);
