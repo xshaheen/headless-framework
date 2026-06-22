@@ -26,6 +26,7 @@ namespace Headless.Emails.Mailkit;
 public sealed class MailkitEmailSender(
     ObjectPool<SmtpClient> pool,
     IOptionsMonitor<MailkitSmtpOptions> options,
+    string? optionsName,
     ILogger<MailkitEmailSender> logger
 ) : IEmailSender
 {
@@ -55,7 +56,9 @@ public sealed class MailkitEmailSender(
             throw new InvalidOperationException("At least one of plainMessage or htmlMessage must be provided.");
         }
 
-        var settings = options.CurrentValue;
+        // Read the snapshot for this instance's options name (null = the default/unkeyed sender). Keyed senders
+        // must not read CurrentValue, which always binds the default options.
+        var settings = options.Get(optionsName);
         using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).ConfigureAwait(false);
 
         var client = pool.Get();
