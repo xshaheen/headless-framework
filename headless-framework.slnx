@@ -255,7 +255,9 @@
         <Project Path="src\Headless.Mediator\Headless.Mediator.csproj" />
         <Project Path="tests\Headless.Mediator.Tests.Unit\Headless.Mediator.Tests.Unit.csproj" />
     </Folder>
-    <Folder Name="/Messaging/" />
+    <Folder Name="/Messaging/">
+        <Project Path="benchmarks/Headless.Messaging.Benchmarks/Headless.Messaging.Benchmarks.csproj" />
+    </Folder>
     <Folder Name="/Messaging/Demo/">
         <Project Path="demo/Headless.Messaging.Aws.InMemory.Demo/Headless.Messaging.Aws.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.AzureServiceBus.InMemory.Demo/Headless.Messaging.AzureServiceBus.InMemory.Demo.csproj" />

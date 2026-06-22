@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Runtime.ExceptionServices;
 using FastExpressionCompiler;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
@@ -32,6 +31,15 @@ internal sealed class ConsumeMiddlewarePipeline(
 {
     private static readonly ConcurrentDictionary<MiddlewareDispatchKey, ConsumeMiddlewareInvoker> _TypedInvokers =
         new();
+
+    // Caches a compiled delegate per message type that calls the strongly-typed
+    // IMessageDispatcher.DispatchInScopeAsync<TMessage>(...) overload, so the per-dispatch path avoids the
+    // reflective GetMethods().Single(...).MakeGenericMethod(...).Invoke(...) the fallback used to run per message.
+    private static readonly ConcurrentDictionary<Type, DispatchInvoker> _DispatchInvokers = new();
+
+    // Caches the IConsumeMiddleware<TContext> closed service type per concrete ConsumeContext type, so the
+    // resolution path avoids running MakeGenericType on every dispatch.
+    private static readonly ConcurrentDictionary<Type, Type> _TypedMiddlewareServiceTypes = new();
 
     private readonly ConcurrentDictionary<
         Type,
@@ -188,7 +196,8 @@ internal sealed class ConsumeMiddlewarePipeline(
 
     private object[] _ResolveMiddleware(IServiceProvider provider, ConsumeContext context, string? groupName)
     {
-        var directMiddleware = _ResolveDirectMiddleware(provider, context).ToArray();
+        // _ResolveDirectMiddleware already materializes a fresh array; reuse it directly instead of copying again.
+        var directMiddleware = _ResolveDirectMiddleware(provider, context);
 
         if (
             descriptorRegistry is not null
@@ -208,7 +217,10 @@ internal sealed class ConsumeMiddlewarePipeline(
 
     private static object[] _ResolveDirectMiddleware(IServiceProvider provider, ConsumeContext context)
     {
-        var typedServiceType = typeof(IConsumeMiddleware<>).MakeGenericType(context.GetType());
+        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
+            context.GetType(),
+            static contextType => typeof(IConsumeMiddleware<>).MakeGenericType(contextType)
+        );
         var busMiddleware = provider.GetServices<IConsumeMiddleware<ConsumeContext>>().Cast<object>();
         var typedMiddleware = provider
             .GetServices(typedServiceType)
@@ -402,7 +414,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         return new DateTimeOffset(DateTime.SpecifyKind(added, DateTimeKind.Utc), TimeSpan.Zero);
     }
 
-    private static async Task _DispatchAsync(
+    private static Task _DispatchAsync(
         IMessageDispatcher dispatcher,
         IServiceProvider serviceProvider,
         ConsumerExecutorDescriptor descriptor,
@@ -411,6 +423,17 @@ internal sealed class ConsumeMiddlewarePipeline(
         CancellationToken cancellationToken
     )
     {
+        var invoker = _DispatchInvokers.GetOrAdd(messageType, _CompileDispatchInvoker);
+
+        // Calling the compiled delegate invokes the generic overload directly, so handler exceptions propagate
+        // unwrapped (no TargetInvocationException) — the same observable result the old reflective unwrap produced.
+        return invoker(dispatcher, serviceProvider, descriptor, consumeContext, cancellationToken);
+    }
+
+    private static DispatchInvoker _CompileDispatchInvoker(Type messageType)
+    {
+        var consumeContextType = typeof(ConsumeContext<>).MakeGenericType(messageType);
+
         var dispatchMethod = typeof(IMessageDispatcher)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Single(method =>
@@ -420,19 +443,31 @@ internal sealed class ConsumeMiddlewarePipeline(
             )
             .MakeGenericMethod(messageType);
 
-        Task task;
-        try
-        {
-            task = (Task)
-                dispatchMethod.Invoke(dispatcher, [serviceProvider, descriptor, consumeContext, cancellationToken])!;
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-            throw;
-        }
+        var dispatcherParam = Expression.Parameter(typeof(IMessageDispatcher), "dispatcher");
+        var serviceProviderParam = Expression.Parameter(typeof(IServiceProvider), "serviceProvider");
+        var descriptorParam = Expression.Parameter(typeof(ConsumerExecutorDescriptor), "descriptor");
+        var consumeContextParam = Expression.Parameter(typeof(object), "consumeContext");
+        var cancellationTokenParam = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
 
-        await task.ConfigureAwait(false);
+        var body = Expression.Call(
+            dispatcherParam,
+            dispatchMethod,
+            serviceProviderParam,
+            descriptorParam,
+            Expression.Convert(consumeContextParam, consumeContextType),
+            cancellationTokenParam
+        );
+
+        return Expression
+            .Lambda<DispatchInvoker>(
+                body,
+                dispatcherParam,
+                serviceProviderParam,
+                descriptorParam,
+                consumeContextParam,
+                cancellationTokenParam
+            )
+            .CompileFast();
     }
 
     private static void _ValidateIntentHeader(
@@ -479,5 +514,13 @@ internal sealed class ConsumeMiddlewarePipeline(
         object middleware,
         ConsumeContext context,
         Func<ValueTask> next
+    );
+
+    private delegate Task DispatchInvoker(
+        IMessageDispatcher dispatcher,
+        IServiceProvider serviceProvider,
+        ConsumerExecutorDescriptor descriptor,
+        object consumeContext,
+        CancellationToken cancellationToken
     );
 }
