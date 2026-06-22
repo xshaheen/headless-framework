@@ -62,6 +62,9 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     private int _isDisposed;
     private RecoveryItem? _replaying;
 
+    // Tracks the most-recently-started ProcessAsync task so DrainAsync can await it on disposal.
+    private volatile Task? _activeProcessTask;
+
     // Tracks the item with the earliest ExpiresAt so the queue-full eviction path avoids an O(N) scan.
     // Maintained incrementally on every add inside _admissionLock; invalidated (set to null) when that tracked item
     // is removed so the next queue-full add triggers a one-time O(N) re-scan to find the new minimum.
@@ -450,12 +453,43 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         // Attach a fault observer so an unexpected exception (e.g. from logger or TimeProvider) is logged
         // rather than silently lost as an unobserved task fault.
         var task = ProcessAsync(_disposeCts.Token);
+        _activeProcessTask = task;
         _ = task.ContinueWith(
             faulted => _logger.LogAutoRecoveryProcessUnexpectedFault(faulted.Exception!),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
         );
+    }
+
+    /// <summary>
+    /// Awaits any in-flight <see cref="ProcessAsync"/> task so that <see cref="HybridCache.DisposeAsync"/>
+    /// does not return while recovery work is still outstanding. The active task runs with the internal
+    /// dispose token which is cancelled before this is called, so it will complete promptly.
+    /// </summary>
+    internal async Task DrainAsync(CancellationToken cancellationToken)
+    {
+        var active = _activeProcessTask;
+
+        if (active is null || active.IsCompleted)
+        {
+            return;
+        }
+
+        try
+        {
+            await active.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Drain timed out or was cancelled — acceptable during shutdown.
+        }
+        catch (Exception ex)
+        {
+            // ProcessAsync is documented not to throw; fault observers are wired up in _OnTimerTick.
+            // Log and continue so disposal always completes.
+            _logger.LogAutoRecoveryProcessUnexpectedFault(ex);
+        }
     }
 
     private RecoveryItem? _FindEarliestExpiry()
@@ -604,7 +638,7 @@ internal static partial class HybridCacheRecoveryQueueLoggerExtensions
     [LoggerMessage(
         EventId = 8,
         EventName = "AutoRecoveryReplayFailed",
-        Level = LogLevel.Debug,
+        Level = LogLevel.Warning,
         Message = "Auto-recovery replay of the pending {Kind} for key {Key} failed (attempt {RetryCount}); barrier armed before the next pass"
     )]
     public static partial void LogAutoRecoveryReplayFailed(

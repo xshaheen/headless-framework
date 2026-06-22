@@ -71,7 +71,7 @@ internal static partial class HybridCacheLoggerExtensions
     [LoggerMessage(
         EventId = 8,
         EventName = "FailedToReadFromL2Cache",
-        Level = LogLevel.Debug,
+        Level = LogLevel.Warning,
         Message = "Failed to read from L2 cache for key {Key}, treating it as a miss"
     )]
     public static partial void LogFailedToReadFromL2Cache(this ILogger logger, Exception exception, string key);

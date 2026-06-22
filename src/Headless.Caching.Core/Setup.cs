@@ -26,7 +26,7 @@ public static class SetupCachingCore
             var setup = new HeadlessCachingSetupBuilder(services);
             configure(setup);
 
-            return _AddCachingProviderCore(services, setup);
+            return _AddCachingCore(services, setup);
         }
 
         /// <summary>
@@ -43,10 +43,7 @@ public static class SetupCachingCore
         }
     }
 
-    private static IServiceCollection _AddCachingProviderCore(
-        IServiceCollection services,
-        HeadlessCachingSetupBuilder setup
-    )
+    private static IServiceCollection _AddCachingCore(IServiceCollection services, HeadlessCachingSetupBuilder setup)
     {
         if (setup.DefaultExtensions.Count != 1)
         {
