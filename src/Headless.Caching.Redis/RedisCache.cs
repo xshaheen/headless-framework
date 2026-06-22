@@ -685,8 +685,9 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
-        return await _RedisValueToCacheValueAsync<T>(_GetKey(key), redisValue).ConfigureAwait(false);
+        var redisKey = _GetKey(key);
+        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+        return await _RedisValueToCacheValueAsync<T>(redisKey, redisValue).ConfigureAwait(false);
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(

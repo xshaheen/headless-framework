@@ -38,7 +38,12 @@ internal sealed class ServerTimingMiddleware : IMiddleware
         await next(context).ConfigureAwait(false);
         var elapsedTime = Stopwatch.GetElapsedTime(timestamp);
 
-        FormattableString serverTiming = $"app;dur={(long)elapsedTime.TotalMicroseconds}.0";
-        context.Response.AppendTrailer(_ServerTimingHttpHeader, serverTiming.ToString(CultureInfo.InvariantCulture));
+        // string.Create with the interpolated-string handler formats directly into a pooled buffer with
+        // invariant culture, avoiding the FormattableString object + boxed object[] args allocation.
+        var serverTiming = string.Create(
+            CultureInfo.InvariantCulture,
+            $"app;dur={(long)elapsedTime.TotalMicroseconds}.0"
+        );
+        context.Response.AppendTrailer(_ServerTimingHttpHeader, serverTiming);
     }
 }
