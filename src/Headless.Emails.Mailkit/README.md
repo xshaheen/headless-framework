@@ -12,7 +12,7 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 - SMTP connection pool (`ObjectPool<SmtpClient>`) — connections are retained and reused across sends
 - SSL/TLS support: `SecureSocketOptions.StartTls` (default), `SslOnConnect`, `None`, `Auto`
 - Optional authentication (username + password); anonymous SMTP when credentials are omitted
-- Three registration overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
+- Three `UseMailkit` overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
 - `SmtpCommandException` and `SmtpProtocolException` are caught and returned as `Failed()` responses; `AuthenticationException` propagates
 
 ## Design Notes
@@ -31,25 +31,25 @@ dotnet add package Headless.Emails.Mailkit
 var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: from configuration section
-builder.Services.AddMailKitEmailSender(builder.Configuration.GetSection("Smtp"));
+builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(builder.Configuration.GetSection("Smtp")));
 
 // Option 2: action
-builder.Services.AddMailKitEmailSender(options =>
+builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(options =>
 {
     options.Server = "smtp.example.com";
     options.Port = 587;
     options.User = "user@example.com";
     options.Password = "securepassword";
     options.SocketOptions = SecureSocketOptions.StartTls;
-});
+}));
 
 // Option 3: action with IServiceProvider
-builder.Services.AddMailKitEmailSender((options, sp) =>
+builder.Services.AddHeadlessEmails(setup => setup.UseMailkit((options, sp) =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
     options.Server = cfg["Smtp:Server"]!;
     options.Port = int.Parse(cfg["Smtp:Port"]!);
-});
+}));
 ```
 
 ## Configuration

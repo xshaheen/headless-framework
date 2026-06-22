@@ -1,20 +1,22 @@
 # Headless.Emails.Core
 
-Core utilities and MimeKit integration for email implementations.
+Setup builder, MimeKit integration, and shared utilities for email implementations.
 
 ## Problem Solved
 
-Provides shared conversion logic to bridge the framework email contracts with MimeKit, eliminating duplication across the Aws and Mailkit provider implementations.
+Owns the unified email setup builder (`AddHeadlessEmails`) plus shared conversion logic that bridges the framework email contracts with MimeKit, eliminating duplication across the provider implementations.
 
 ## Key Features
 
+- `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` — the single provider-agnostic registration entry point, with an exactly-one-provider gate
+- `HeadlessEmailsSetupBuilder` — receives `Use*` provider selections; `IEmailProviderOptionsExtension` — the hook each provider implements
+- `EmailAttachmentContentType.Resolve(fileName)` — derives an attachment MIME type from its file name (MimeKit lookup, `application/octet-stream` fallback)
 - `EmailToMimMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (extension method on `SendSingleEmailRequest`)
 - `EmailRequestAddress.MapToMailboxAddress()` — maps to MimeKit `MailboxAddress`
-- Full address mapping (From, To, Cc, Bcc), body building (text + HTML via `BodyBuilder`), and attachment streaming
 
 ## Design Notes
 
-This package is consumed transitively by `Headless.Emails.Aws` and `Headless.Emails.Mailkit` — application code does not reference it directly. The converter returns a `MimeMessage` that callers are responsible for disposing; the implementation disposes the message if an exception occurs during construction, preventing a resource leak.
+The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate counts registered extensions and rejects zero, multiple, or a repeated `AddHeadlessEmails` on the same `IServiceCollection` (a host resolves a single `IEmailSender`). The MimeKit converter returns a `MimeMessage` that callers dispose; the implementation disposes the message if an exception occurs during construction, preventing a resource leak.
 
 ## Installation
 
@@ -25,8 +27,11 @@ dotnet add package Headless.Emails.Core
 ## Quick Start
 
 ```csharp
-// Used internally by providers — not called from application code.
-// Shown for provider implementors:
+// Provider-agnostic registration entry point (a provider package supplies the Use* member):
+builder.Services.AddHeadlessEmails(setup => setup.UseNoop());
+
+// Shared helpers used internally by providers — not called from application code:
+var contentType = EmailAttachmentContentType.Resolve("invoice.pdf"); // "application/pdf"
 using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken);
 ```
 
@@ -37,8 +42,9 @@ No configuration required.
 ## Dependencies
 
 - `Headless.Emails.Abstractions`
-- `MimeKit`
+- `Headless.Hosting`
+- `MailKit`
 
 ## Side Effects
 
-None. This is a utility package with no DI registrations.
+None directly. `AddHeadlessEmails` registers a provider-registration marker and delegates all `IEmailSender` wiring to the selected provider's extension.

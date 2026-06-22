@@ -10,7 +10,7 @@ Provides safe email implementations for development and testing that do not send
 
 - `DevEmailSender` — writes full email content to a local file; appends with a `--------------------` separator per message; prefers `MessageText` over `MessageHtml` for readability
 - `NoopEmailSender` — silently discards all emails, always returns `Succeeded()`
-- No network calls, no external dependencies beyond the abstractions package
+- No network calls, no external dependencies beyond the abstractions and core packages
 
 ## Installation
 
@@ -26,10 +26,10 @@ var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsDevelopment())
 {
     // Write emails to a local file for inspection
-    builder.Services.AddDevEmailSender("path/to/emails.txt");
+    builder.Services.AddHeadlessEmails(setup => setup.UseDevelopment("path/to/emails.txt"));
 
     // Or discard silently (useful in automated tests)
-    // builder.Services.AddNoopEmailSender();
+    // builder.Services.AddHeadlessEmails(setup => setup.UseNoop());
 }
 ```
 
@@ -47,15 +47,16 @@ Hello World!
 
 ## Configuration
 
-`AddDevEmailSender(string filePath)` — the file path is the only parameter. The file is created if it does not exist; emails are appended.
+`UseDevelopment(string filePath)` — the file path is the only parameter. The file is created if it does not exist; emails are appended.
 
-`AddNoopEmailSender()` — no parameters. Useful in test projects where you want `IEmailSender` resolved but do not want file I/O.
+`UseNoop()` — no parameters. Useful in test projects where you want `IEmailSender` resolved but do not want file I/O.
 
 ## Dependencies
 
 - `Headless.Emails.Abstractions`
+- `Headless.Emails.Core`
 
 ## Side Effects
 
-- `AddDevEmailSender` registers `IEmailSender` as singleton (instance of `DevEmailSender`); appends to the specified file on each `SendAsync` call
-- `AddNoopEmailSender` registers `IEmailSender` as singleton (instance of `NoopEmailSender`); no I/O
+- `UseDevelopment` registers `IEmailSender` as singleton (instance of `DevEmailSender`); appends to the specified file on each `SendAsync` call
+- `UseNoop` registers `IEmailSender` as singleton (instance of `NoopEmailSender`); no I/O
