@@ -77,6 +77,24 @@ public sealed class EmailsSetupBuilderTests
     }
 
     [Fact]
+    public void should_reject_repeated_registration_even_when_first_call_registered_named_instances()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessEmails(static setup =>
+        {
+            setup.UseNoop();
+            setup.AddNamed("sink", static instance => instance.UseDevelopment("out.txt"));
+        });
+
+        // when
+        var action = () => services.AddHeadlessEmails(static setup => setup.UseNoop());
+
+        // then
+        action.Should().Throw<InvalidOperationException>().WithMessage("*already called on this service collection*");
+    }
+
+    [Fact]
     public void should_register_email_sender_provider_as_singleton_when_default_is_configured()
     {
         // given
