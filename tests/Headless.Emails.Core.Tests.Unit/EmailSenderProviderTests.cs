@@ -66,10 +66,12 @@ public sealed class EmailSenderProviderTests
         var getNull = () => senderProvider.GetSender(null!);
         var getEmpty = () => senderProvider.GetSender("");
         var getOrNullNull = () => senderProvider.GetSenderOrNull(null!);
+        var getOrNullEmpty = () => senderProvider.GetSenderOrNull("");
 
         getNull.Should().Throw<ArgumentException>();
         getEmpty.Should().Throw<ArgumentException>();
         getOrNullNull.Should().Throw<ArgumentException>();
+        getOrNullEmpty.Should().Throw<ArgumentException>();
     }
 
     [Fact]

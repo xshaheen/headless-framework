@@ -47,16 +47,27 @@ public sealed class SetupAwsSesNamedEmailTests
     [Fact]
     public void should_isolate_ses_clients_across_two_named_instances()
     {
-        // given
+        // given - distinct regions per instance so the test proves each keyed client is built from its own
+        // options, not merely that the two client instances differ.
         var services = new ServiceCollection();
         services.AddLogging();
+        var east = new AWSOptions
+        {
+            Region = RegionEndpoint.USEast1,
+            Credentials = new BasicAWSCredentials("fake-access-key", "fake-secret-key"),
+        };
+        var west = new AWSOptions
+        {
+            Region = RegionEndpoint.EUWest1,
+            Credentials = new BasicAWSCredentials("fake-access-key", "fake-secret-key"),
+        };
 
         // when
         services.AddHeadlessEmails(setup =>
         {
             setup.UseNoop();
-            setup.AddNamed("ses1", instance => instance.UseAwsSes(_AwsOptions()));
-            setup.AddNamed("ses2", instance => instance.UseAwsSes(_AwsOptions()));
+            setup.AddNamed("ses1", instance => instance.UseAwsSes(east));
+            setup.AddNamed("ses2", instance => instance.UseAwsSes(west));
         });
         using var provider = services.BuildServiceProvider();
 
@@ -64,6 +75,8 @@ public sealed class SetupAwsSesNamedEmailTests
         var client1 = provider.GetRequiredKeyedService<IAmazonSimpleEmailServiceV2>("ses1");
         var client2 = provider.GetRequiredKeyedService<IAmazonSimpleEmailServiceV2>("ses2");
         client1.Should().NotBeSameAs(client2);
+        client1.Config.RegionEndpoint.SystemName.Should().Be("us-east-1");
+        client2.Config.RegionEndpoint.SystemName.Should().Be("eu-west-1");
     }
 
     [Fact]

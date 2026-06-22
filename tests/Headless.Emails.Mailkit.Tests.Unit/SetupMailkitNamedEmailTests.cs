@@ -14,8 +14,7 @@ namespace Tests;
 
 public sealed class SetupMailkitNamedEmailTests
 {
-    // MailkitSmtpOptions properties are init-only, so they can only be populated via configuration binding,
-    // not the Action<T> overloads. Bind each instance from its own in-memory configuration.
+    // Build each named instance from its own in-memory configuration so each gets isolated settings.
     private static IConfiguration _SmtpConfig(
         string server,
         int port,
