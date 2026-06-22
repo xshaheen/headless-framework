@@ -5,9 +5,15 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Jobs.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Jobs.Dashboard" />
+    <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Jobs.OpenTelemetry" />
+    <!-- Lets NSubstitute proxy internal types. -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
   </ItemGroup>

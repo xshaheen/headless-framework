@@ -12,6 +12,9 @@ internal sealed class ReadOnlySequenceStream(ReadOnlySequence<byte> sequence) : 
 {
     private SequencePosition _position = sequence.Start;
 
+    // Tracks the absolute byte offset so Position is O(1); slicing from Start each get would be O(segments).
+    private long _consumed;
+
     public override bool CanRead => true;
     public override bool CanSeek => true;
     public override bool CanWrite => false;
@@ -20,7 +23,7 @@ internal sealed class ReadOnlySequenceStream(ReadOnlySequence<byte> sequence) : 
 
     public override long Position
     {
-        get => sequence.Slice(sequence.Start, _position).Length;
+        get => _consumed;
         set
         {
             if (value < 0 || value > sequence.Length)
@@ -29,6 +32,7 @@ internal sealed class ReadOnlySequenceStream(ReadOnlySequence<byte> sequence) : 
             }
 
             _position = sequence.GetPosition(value);
+            _consumed = value;
         }
     }
 
@@ -45,6 +49,7 @@ internal sealed class ReadOnlySequenceStream(ReadOnlySequence<byte> sequence) : 
         var slice = remaining.Slice(0, bytesToRead);
         slice.CopyTo(buffer.AsSpan(offset, bytesToRead));
         _position = sequence.GetPosition(bytesToRead, _position);
+        _consumed += bytesToRead;
 
         return bytesToRead;
     }
@@ -62,6 +67,7 @@ internal sealed class ReadOnlySequenceStream(ReadOnlySequence<byte> sequence) : 
         var slice = remaining.Slice(0, bytesToRead);
         slice.CopyTo(buffer[..bytesToRead]);
         _position = sequence.GetPosition(bytesToRead, _position);
+        _consumed += bytesToRead;
 
         return bytesToRead;
     }

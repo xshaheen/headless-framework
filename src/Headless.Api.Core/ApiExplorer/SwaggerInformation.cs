@@ -2,8 +2,19 @@
 
 namespace Headless.Api.ApiExplorer;
 
+/// <summary>
+/// Pre-built Markdown strings for annotating Swagger/OpenAPI operation descriptions with the
+/// framework's standard HTTP response shape documentation. Assign
+/// <see cref="ResponsesDescription"/> to an <c>[EndpointDescription]</c> or Swashbuckle
+/// operation filter to give all endpoints a consistent response reference section.
+/// </summary>
 public static class SwaggerInformation
 {
+    /// <summary>
+    /// A Markdown block documenting all HTTP response codes used by the framework (2xx, 4xx, 5xx)
+    /// with example JSON bodies for each status. Suitable for use as an OpenAPI operation
+    /// description or appended to individual endpoint descriptions.
+    /// </summary>
     [StringSyntax("markdown")]
     public const string ResponsesDescription = """
         ## Success Response `2xx`

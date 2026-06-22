@@ -26,13 +26,36 @@ internal sealed class MultiplexedConnectionLockPool
     // Number of MultiplexedConnectionLock instances currently stored across all pools.
     private uint _pooledLockCount;
 
+    /// <summary>
+    /// Initializes the pool with the given connection factory.
+    /// </summary>
+    /// <param name="connectionFactory">
+    /// Factory that creates a <see cref="DatabaseConnection"/> for a given connection string. Called
+    /// when the pool has no idle lock to reuse for that connection string.
+    /// </param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="connectionFactory"/> is <see langword="null"/>.</exception>
     public MultiplexedConnectionLockPool(Func<string, DatabaseConnection> connectionFactory)
     {
         ConnectionFactory = Argument.IsNotNull(connectionFactory);
     }
 
+    /// <summary>The factory used to create new connections for a given connection string.</summary>
     internal Func<string, DatabaseConnection> ConnectionFactory { get; }
 
+    /// <summary>
+    /// Attempts to acquire an advisory lock for <paramref name="name"/> on a pooled connection for
+    /// <paramref name="connectionString"/>. First tries an opportunistic acquire on an existing pooled lock;
+    /// on failure or absence of a pooled lock, opens a fresh connection.
+    /// </summary>
+    /// <typeparam name="TLockCookie">The strategy's opaque acquire/release state.</typeparam>
+    /// <param name="connectionString">The connection string that keys the pool bucket.</param>
+    /// <param name="name">The advisory lock resource name.</param>
+    /// <param name="timeout">The full acquire timeout for non-opportunistic attempts.</param>
+    /// <param name="strategy">The SQL synchronization strategy.</param>
+    /// <param name="keepaliveCadence">Keepalive interval for the held connection.</param>
+    /// <param name="cancellationToken">Token used to cancel connection open and strategy acquire.</param>
+    /// <returns>A live <see cref="IDistributedLease"/> on success, or <see langword="null"/> on failure.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public async ValueTask<IDistributedLease?> TryAcquireAsync<TLockCookie>(
         string connectionString,
         string name,

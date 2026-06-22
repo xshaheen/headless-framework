@@ -6,17 +6,38 @@ using System.Runtime.CompilerServices;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Primitives;
 
+/// <summary>
+/// Thrown when a sort property name passed to a string-based ordering extension does not correspond
+/// to a valid property path on the entity type.
+/// </summary>
 public sealed class InvalidOrderPropertyException(string message, Exception? inner) : Exception(message, inner);
 
+/// <summary>
+/// Extension members for applying dynamic, string-based or <c>OrderBy</c>-descriptor ordering to an
+/// <see cref="IQueryable{T}"/>.
+/// </summary>
 public static class OrderExtensions
 {
     extension<T>(IQueryable<T> source)
     {
+        /// <summary>
+        /// Applies the ordering descriptors from a list, chaining each after the previous using the
+        /// appropriate <c>OrderBy</c> / <c>ThenBy</c> variant.
+        /// </summary>
+        /// <param name="orders">Ordered list of sort descriptors to apply.</param>
+        /// <returns>An ordered queryable.</returns>
         public IOrderedQueryable<T> OrderBy(List<OrderBy> orders)
         {
             return source.OrderBy(orders.AsReadOnlySpan());
         }
 
+        /// <summary>
+        /// Applies the ordering descriptors from a span, chaining each after the previous using the
+        /// appropriate <c>OrderBy</c> / <c>ThenBy</c> variant. An empty span returns the source ordered
+        /// by its natural order.
+        /// </summary>
+        /// <param name="orders">Span of sort descriptors to apply.</param>
+        /// <returns>An ordered queryable.</returns>
         [OverloadResolutionPriority(1)]
         public IOrderedQueryable<T> OrderBy(params ReadOnlySpan<OrderBy> orders)
         {

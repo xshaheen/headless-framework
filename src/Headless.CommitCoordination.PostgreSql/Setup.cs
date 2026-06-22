@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -15,9 +14,16 @@ public static class SetupPostgreSqlCommitCoordination
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Adds PostgreSQL commit coordination services.
+        /// Adds the PostgreSQL (Npgsql) commit signal source and the core commit coordination services.
         /// </summary>
-        /// <returns>The service collection.</returns>
+        /// <remarks>
+        /// PostgreSQL uses an inline (caller-driven) signal model: after committing the transaction the caller
+        /// must call <see cref="ICommitScope.SignalAsync" /> on the scope returned by
+        /// <c>NpgsqlConnection.EnlistCommitCoordination</c>. Use
+        /// <c>NpgsqlConnection.ExecuteCoordinatedTransactionAsync</c> to handle this automatically.
+        /// Idempotent: repeated calls register each service at most once.
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         public IServiceCollection AddPostgreSqlCommitCoordination()
         {
             services.AddCommitCoordination();

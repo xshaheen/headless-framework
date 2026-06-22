@@ -47,7 +47,7 @@ public partial class SqlServerEntityFrameworkMessagingOptions
     /// Must start with a letter, underscore, @ or #, contain only letters, digits, underscores, @, # or $.
     /// Max 128 chars per SQL Server identifier rules.
     /// </summary>
-    [GeneratedRegex(@"^[a-zA-Z_@#][a-zA-Z0-9_@#$]{0,127}$", RegexOptions.None, 100)]
+    [GeneratedRegex("^[a-zA-Z_@#][a-zA-Z0-9_@#$]{0,127}$", RegexOptions.None, 100)]
     private static partial Regex _ValidIdentifier();
 
     /// <summary>

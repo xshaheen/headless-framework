@@ -143,6 +143,37 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
+    public async Task should_set_content_length_header_on_replay()
+    {
+        // Replay must set Content-Length = Body.Length so HTTP/1.1 clients that buffer on it
+        // do not hang waiting for the content boundary.
+        byte[] body = [1, 2, 3];
+        var fingerprint = SHA256.HashData(body);
+        byte[] storedBody = [10, 20, 30];
+
+        var record = new IdempotencyRecord
+        {
+            Kind = RecordKind.Complete,
+            StatusCode = 200,
+            Body = storedBody,
+            Fingerprint = fingerprint,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var cache = Substitute.For<ICache>();
+        cache
+            .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CacheValue<IdempotencyRecord>(record, hasValue: true));
+
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        context.Response.ContentLength.Should().Be(storedBody.Length);
+    }
+
+    [Fact]
     public async Task should_not_call_next_on_replay()
     {
         byte[] body = [1, 2, 3];
@@ -274,8 +305,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         // With RequireUserIdentity=false the middleware permits tenant-only anonymous traffic.
         // The user segment in the cache key is empty (rather than a literal "anon") so a real
         // UserId equal to "anon" cannot collide with the anonymous bucket.
-        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-        opts.Value.Returns(new IdempotencyOptions { RequireUserIdentity = false });
+        var opts = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        opts.CurrentValue.Returns(new IdempotencyOptions { RequireUserIdentity = false });
 
         var cache = Substitute.For<ICache>();
         cache
@@ -510,8 +541,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Conflict(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
             .Returns(new ProblemDetails { Status = 409 });
 
-        var options = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-        options.Value.Returns(new IdempotencyOptions { MismatchStatusCode = 409 });
+        var options = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        options.CurrentValue.Returns(new IdempotencyOptions { MismatchStatusCode = 409 });
 
         var middleware = CreateMiddleware(options: options, cache: cache, problemDetailsCreator: problemDetailsCreator);
         var context = CreateContext(idempotencyKey: "k1", body: body);
@@ -680,8 +711,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     {
         var sp = new ServiceCollection().AddLogging().AddSingleton(lockProvider).BuildServiceProvider();
 
-        var options = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-        options.Value.Returns(new IdempotencyOptions { InFlightStrategy = InFlightStrategy.WaitAndReplay });
+        var options = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        options.CurrentValue.Returns(new IdempotencyOptions { InFlightStrategy = InFlightStrategy.WaitAndReplay });
 
         return CreateMiddleware(
             options: options,
@@ -982,13 +1013,13 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
     // ── U8: oversize body (AE6) ───────────────────────────────────────────────
 
-    private static IOptionsSnapshot<IdempotencyOptions> _OptionsWithCap(
+    private static IOptionsMonitor<IdempotencyOptions> _OptionsWithCap(
         int cap,
         OversizeBehavior behavior = OversizeBehavior.Reject
     )
     {
-        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-        opts.Value.Returns(new IdempotencyOptions { MaxBodySizeForHashing = cap, OversizeBehavior = behavior });
+        var opts = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        opts.CurrentValue.Returns(new IdempotencyOptions { MaxBodySizeForHashing = cap, OversizeBehavior = behavior });
         return opts;
     }
 
@@ -1224,8 +1255,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     public async Task should_honor_consumer_overridden_cache_predicate()
     {
         // given — consumer says _ => true (cache everything), response is 503
-        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-        opts.Value.Returns(new IdempotencyOptions { ShouldCacheResponse = _ => true });
+        var opts = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        opts.CurrentValue.Returns(new IdempotencyOptions { ShouldCacheResponse = _ => true });
 
         byte[] body = [1, 2, 3];
         var cache = Substitute.For<ICache>();
@@ -1536,8 +1567,10 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         byte[] body = [1, 2, 3];
         byte[] fakeFingerprint = [0xDE, 0xAD, 0xBE, 0xEF];
 
-        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-        opts.Value.Returns(new IdempotencyOptions { RequestFingerprint = _ => new ValueTask<byte[]>(fakeFingerprint) });
+        var opts = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        opts.CurrentValue.Returns(
+            new IdempotencyOptions { RequestFingerprint = _ => new ValueTask<byte[]>(fakeFingerprint) }
+        );
 
         var cache = Substitute.For<ICache>();
         cache
@@ -1589,8 +1622,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     [Fact]
     public async Task should_pass_inflight_marker_ttl_equal_to_key_expiration()
     {
-        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-        opts.Value.Returns(new IdempotencyOptions { IdempotencyKeyExpiration = TimeSpan.FromHours(7) });
+        var opts = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        opts.CurrentValue.Returns(new IdempotencyOptions { IdempotencyKeyExpiration = TimeSpan.FromHours(7) });
 
         TimeSpan? capturedMarkerTtl = null;
         var cache = Substitute.For<ICache>();

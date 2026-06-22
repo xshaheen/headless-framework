@@ -30,7 +30,8 @@ public sealed class HeadlessApiDefaultEndpointOptions
     /// <summary>The liveness endpoint path.</summary>
     public string AlivePath { get; set; } = DefaultAlivePath;
 
-    /// <summary>The health-check tag included in the liveness endpoint.</summary>
+    /// <summary>The health-check tag used to filter which checks appear on the liveness endpoint.</summary>
+    /// <remarks>Only health checks registered with this tag are included in the <see cref="AlivePath"/> response. All checks appear on <see cref="HealthPath"/>.</remarks>
     public string AliveTag { get; set; } = "live";
 
     /// <summary>The health endpoint route name.</summary>
@@ -46,5 +47,9 @@ public sealed class HeadlessApiDefaultEndpointOptions
     public bool ExcludeFromDescription { get; set; } = true;
 
     /// <summary>The response writer used by the aggregate health endpoint.</summary>
+    /// <remarks>
+    /// The default implementation (<see cref="SetupApi.WriteHealthReportAsync"/>) buffers the JSON body
+    /// before writing to the response, so a serialization failure returns 500 rather than a partial body.
+    /// </remarks>
     public Func<HttpContext, HealthReport, Task> HealthResponseWriter { get; set; } = SetupApi.WriteHealthReportAsync;
 }

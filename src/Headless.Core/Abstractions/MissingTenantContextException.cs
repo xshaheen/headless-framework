@@ -13,14 +13,30 @@ namespace Headless.Abstractions;
 /// retry suppression) can catch this single type without sweeping unrelated
 /// <see cref="InvalidOperationException"/>s.
 /// </remarks>
+[PublicAPI]
 public sealed class MissingTenantContextException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of <see cref="MissingTenantContextException"/> with the
+    /// default diagnostic message that explains how to resolve the missing context.
+    /// </summary>
     public MissingTenantContextException()
         : base(_DefaultMessage) { }
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="MissingTenantContextException"/> with a
+    /// custom message.
+    /// </summary>
+    /// <param name="message">A message that describes the missing tenant context condition.</param>
     public MissingTenantContextException(string message)
         : base(message) { }
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="MissingTenantContextException"/> with a
+    /// custom message and an inner exception that is the cause of this exception.
+    /// </summary>
+    /// <param name="message">A message that describes the missing tenant context condition.</param>
+    /// <param name="innerException">The exception that caused this exception, or <c>null</c>.</param>
     public MissingTenantContextException(string message, Exception? innerException)
         : base(message, innerException) { }
 

@@ -12,11 +12,19 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>
+/// Registers the SQL Server raw-DDL storage provider for Headless Permissions.
+/// </summary>
 [PublicAPI]
 public static class SetupPermissionsSqlServer
 {
     extension(HeadlessPermissionsSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures the permissions system to use SQL Server for raw-DDL storage, setting the connection
+        /// string directly.
+        /// </summary>
+        /// <param name="connectionString">The SQL Server connection string.</param>
         public HeadlessPermissionsSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -27,6 +35,13 @@ public static class SetupPermissionsSqlServer
             });
         }
 
+        /// <summary>
+        /// Configures the permissions system to use SQL Server for raw-DDL storage, binding
+        /// <see cref="SqlServerPermissionsOptions"/> from <paramref name="configuration"/>.
+        /// </summary>
+        /// <param name="configuration">
+        /// The configuration section to bind into <see cref="SqlServerPermissionsOptions"/>.
+        /// </param>
         public HeadlessPermissionsSetupBuilder UseSqlServer(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -36,6 +51,11 @@ public static class SetupPermissionsSqlServer
             return setup;
         }
 
+        /// <summary>
+        /// Configures the permissions system to use SQL Server for raw-DDL storage, applying
+        /// <paramref name="configure"/> to <see cref="SqlServerPermissionsOptions"/>.
+        /// </summary>
+        /// <param name="configure">Delegate that configures the SQL Server provider options.</param>
         public HeadlessPermissionsSetupBuilder UseSqlServer(Action<SqlServerPermissionsOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -45,6 +65,14 @@ public static class SetupPermissionsSqlServer
             return setup;
         }
 
+        /// <summary>
+        /// Configures the permissions system to use SQL Server for raw-DDL storage, applying
+        /// <paramref name="configure"/> to <see cref="SqlServerPermissionsOptions"/> with access to
+        /// resolved services.
+        /// </summary>
+        /// <param name="configure">
+        /// Delegate that configures the SQL Server provider options with access to <see cref="IServiceProvider"/>.
+        /// </param>
         public HeadlessPermissionsSetupBuilder UseSqlServer(
             Action<SqlServerPermissionsOptions, IServiceProvider> configure
         )

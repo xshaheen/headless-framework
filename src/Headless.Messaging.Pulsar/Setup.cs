@@ -9,15 +9,27 @@ using Headless.Messaging.Transport;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>
+/// Extension members that register Apache Pulsar as the message transport.
+/// </summary>
+/// <remarks>
+/// Both a bus (topic fan-out) and a queue (point-to-point) transport are registered. A single
+/// shared <c>PulsarClient</c> is created lazily on first use. Producers are cached per topic and
+/// created once; the cache is flushed on failure to allow recovery on the next publish attempt.
+/// </remarks>
 [PublicAPI]
 public static class SetupPulsarMessaging
 {
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>
-        /// Configuration for messaging.
+        /// Registers Apache Pulsar as the message transport, connecting to the given service URL.
         /// </summary>
-        /// <param name="serverUrl">Pulsar bootstrap server urls.</param>
+        /// <param name="serverUrl">
+        /// The Pulsar service URL (for example <c>"pulsar://localhost:6650"</c> or
+        /// <c>"pulsar+ssl://broker:6651"</c> for TLS).
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
         public MessagingSetupBuilder UsePulsar(string serverUrl)
         {
             return setup.UsePulsar(opt =>
@@ -27,10 +39,11 @@ public static class SetupPulsarMessaging
         }
 
         /// <summary>
-        /// Configuration for messaging.
+        /// Registers Apache Pulsar as the message transport with full programmatic configuration.
         /// </summary>
-        /// <param name="configure">Provides programmatic configuration for the pulsar .</param>
-        /// <returns></returns>
+        /// <param name="configure">A delegate that configures <see cref="MessagingPulsarOptions"/>.</param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UsePulsar(Action<MessagingPulsarOptions> configure)
         {
             Argument.IsNotNull(configure);

@@ -3,7 +3,6 @@
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -13,22 +12,36 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// SQL Server implementation of <see cref="IStorageInitializer"/> for database schema setup.
 /// Creates required tables (published, received) and indexes on first run.
 /// </summary>
-public sealed class SqlServerStorageInitializer(
+internal sealed class SqlServerStorageInitializer(
     ILogger<SqlServerStorageInitializer> logger,
     IOptions<SqlServerOptions> options,
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
+    /// <summary>
+    /// Returns the fully-qualified SQL Server table name for published outbox messages,
+    /// in the form <c>schema.Published</c>.
+    /// </summary>
     public string GetPublishedTableName()
     {
         return $"{options.Value.Schema}.Published";
     }
 
+    /// <summary>
+    /// Returns the fully-qualified SQL Server table name for received outbox messages,
+    /// in the form <c>schema.Received</c>.
+    /// </summary>
     public string GetReceivedTableName()
     {
         return $"{options.Value.Schema}.Received";
     }
 
+    /// <summary>
+    /// Creates the messaging schema, tables, indexes, and the <c>HeadlessMessagingIdList</c>
+    /// table-valued parameter type if they do not already exist. Each DDL block is guarded by
+    /// an <c>IF NOT EXISTS</c> check inside a <c>TRY/CATCH</c> that swallows only duplicate-object
+    /// (2714) and PK-violation (2627) errors so concurrent multi-replica startups converge safely.
+    /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -109,6 +122,10 @@ public sealed class SqlServerStorageInitializer(
                         [Version] [nvarchar](20) NOT NULL,
                         [Name] [nvarchar](200) NOT NULL,
                         [Group] [nvarchar](200) NULL,
+                        -- #19 — PERSISTED ISNULL collapses a NULL [Group] to '' so the unique index below
+                        -- converges NULL-group redeliveries to one row, matching the PostgreSQL
+                        -- COALESCE("Group", '') index (a plain nullable [Group] treats each NULL as distinct).
+                        [GroupCoalesced] AS ISNULL([Group], N'') PERSISTED,
                         [Content] [nvarchar](max) NULL,
                         [IntentType] [smallint] NOT NULL,
                         [Retries] [int] NOT NULL,
@@ -129,9 +146,12 @@ public sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() <> 2714 THROW;
             END CATCH;
 
+            -- #19 — unique index on the GroupCoalesced computed column (not the nullable [Group]) so the
+            -- schema-level uniqueness guarantee for NULL groups matches PostgreSQL; raw INSERTs that bypass
+            -- the MERGE can no longer accumulate duplicate NULL-group rows.
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_MessageId_Group_IntentType' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_MessageId_Group_IntentType] ON {GetReceivedTableName()} ([Version] ASC, [MessageId] ASC, [Group] ASC, [IntentType] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_MessageId_GroupCoalesced_IntentType' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_MessageId_GroupCoalesced_IntentType] ON {GetReceivedTableName()} ([Version] ASC, [MessageId] ASC, [GroupCoalesced] ASC, [IntentType] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -148,6 +168,16 @@ public sealed class SqlServerStorageInitializer(
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_ExpiresAt_StatusName' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            -- #8 — standalone StatusName index so GetStatisticsAsync per-status COUNT_BIGs do an index
+            -- scan instead of a full scan on large tables (composite indexes lead with ExpiresAt/Version).
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName] ON {GetReceivedTableName()} ([StatusName] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
@@ -214,6 +244,15 @@ public sealed class SqlServerStorageInitializer(
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_ExpiresAt_StatusName' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
                     CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            -- #8 — see the received-table note above; standalone StatusName index for dashboard statistics.
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName] ON {GetPublishedTableName()} ([StatusName] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;

@@ -24,6 +24,16 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLease
     private int _released;
     private int _disposed;
 
+    /// <summary>
+    /// Initializes a new handle for an acquired connection-scoped lock.
+    /// </summary>
+    /// <param name="handle">The underlying storage handle returned by <see cref="IConnectionScopedLockStorage"/>.</param>
+    /// <param name="fencingToken">Optional monotonic fencing token issued for this exclusive acquisition; <see langword="null"/> for shared locks or when no <see cref="IFencingTokenSource"/> is registered.</param>
+    /// <param name="timeWaitedForLock">How long the acquire loop waited before succeeding.</param>
+    /// <param name="releaseOnDispose">When <see langword="true"/>, <see cref="DisposeAsync"/> calls <see cref="ReleaseAsync"/> automatically.</param>
+    /// <param name="timeProvider">Clock used to stamp <see cref="DateAcquired"/>.</param>
+    /// <param name="release">Callback invoked by <see cref="ReleaseAsync"/> to release the lock in the backing store.</param>
+    /// <param name="logger">Logger used to emit release-failure diagnostics.</param>
     public ConnectionScopedDistributedLockHandle(
         ConnectionScopedLockHandle handle,
         long? fencingToken,
@@ -45,22 +55,43 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLease
 
     private ILogger Logger { get; }
 
+    /// <inheritdoc/>
     public string LeaseId => _handle.LeaseId;
 
+    /// <inheritdoc/>
     public long? FencingToken { get; }
 
+    /// <inheritdoc/>
     public string Resource => _handle.Resource;
 
+    /// <summary>
+    /// Always zero for connection-scoped locks because <see cref="RenewAsync"/> is a no-op (the advisory
+    /// lock is held for the connection's lifetime and has no TTL to extend).
+    /// </summary>
     public int RenewalCount { get; private set; }
 
+    /// <inheritdoc/>
     public DateTimeOffset DateAcquired { get; }
 
+    /// <inheritdoc/>
     public TimeSpan TimeWaitedForLock { get; }
 
+    /// <summary>
+    /// Cancelled when the underlying connection is observed to be lost, signalling that the advisory lock
+    /// is no longer held. Returns <see cref="CancellationToken.None"/> when acquire-time monitoring was not enabled.
+    /// </summary>
     public CancellationToken LostToken => _handle.ConnectionLostToken;
 
+    /// <summary>
+    /// <see langword="true"/> when the handle was acquired with connection monitoring enabled
+    /// and <see cref="LostToken"/> carries a live cancellable signal.
+    /// </summary>
     public bool CanObserveLoss => _handle.ConnectionLostToken.CanBeCanceled;
 
+    /// <summary>
+    /// Releases the lock. Idempotent — only the first call invokes the release callback; subsequent calls
+    /// return immediately. Thread-safe: concurrent callers are serialized by an internal <c>AsyncLock</c>.
+    /// </summary>
     public async Task ReleaseAsync()
     {
         if (Volatile.Read(ref _released) != 0)
@@ -88,6 +119,15 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLease
         }
     }
 
+    /// <summary>
+    /// No-op for connection-scoped locks: the advisory lock is held for the connection's lifetime and has no
+    /// TTL to extend. <see cref="RenewalCount"/> stays at zero so monitoring sees no renewal activity.
+    /// Always returns <see langword="true"/>.
+    /// </summary>
+    /// <param name="timeUntilExpires">Ignored.</param>
+    /// <param name="cancellationToken">Token observed before returning.</param>
+    /// <returns><see langword="true"/> unconditionally.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
         // No-op for session-scoped locks: the advisory lock is held for the connection's lifetime,
@@ -98,6 +138,10 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLease
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// Disposes this handle. When <c>releaseOnDispose</c> was set at construction, calls <see cref="ReleaseAsync"/>.
+    /// Idempotent — only the first call acts; subsequent calls return immediately.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

@@ -29,13 +29,22 @@ internal sealed class ConsulDiscoveryOptionsExtension(Action<ConsulDiscoveryOpti
 public static class MessagingDiscoveryOptionsExtensions
 {
     /// <summary>
-    /// Default use kubernetes as service discovery.
+    /// Enables Consul-based node discovery for the Messaging Dashboard using default options.
+    /// Peer nodes tagged <c>messaging</c> in Consul will appear in the dashboard node list.
     /// </summary>
+    /// <returns>The builder for chaining.</returns>
     public static MessagingSetupBuilder UseConsulDiscovery(this MessagingSetupBuilder setup)
     {
         return setup.UseConsulDiscovery(_ => { });
     }
 
+    /// <summary>
+    /// Enables Consul-based node discovery for the Messaging Dashboard with custom options.
+    /// </summary>
+    /// <param name="setup">The messaging setup builder.</param>
+    /// <param name="options">An action to configure <see cref="ConsulDiscoveryOptions"/>.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is <see langword="null"/>.</exception>
     public static MessagingSetupBuilder UseConsulDiscovery(
         this MessagingSetupBuilder setup,
         Action<ConsulDiscoveryOptions> options

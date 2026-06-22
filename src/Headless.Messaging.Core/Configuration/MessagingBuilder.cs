@@ -106,7 +106,12 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
 
     private readonly MessagingOptions? _options = options;
 
-    /// <summary>Registers object-typed publish middleware that runs around every publish operation.</summary>
+    /// <summary>Registers publish middleware that intercepts every publish operation on the bus lane.</summary>
+    /// <typeparam name="T">
+    /// The middleware implementation type. Must implement <see cref="IPublishMiddleware{TContext}"/> with a
+    /// context type that derives from <see cref="PublishContext"/>.
+    /// </typeparam>
+    /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
     public MiddlewareRegistration AddBusPublishMiddleware<T>()
         where T : class
     {
@@ -123,7 +128,12 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         );
     }
 
-    /// <summary>Registers object-typed consume middleware that runs around every consume operation.</summary>
+    /// <summary>Registers consume middleware that intercepts every consume operation on the bus lane.</summary>
+    /// <typeparam name="T">
+    /// The middleware implementation type. Must implement <see cref="IConsumeMiddleware{TContext}"/> with a
+    /// context type that derives from <see cref="ConsumeContext"/>.
+    /// </typeparam>
+    /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
     public MiddlewareRegistration AddBusConsumeMiddleware<T>()
         where T : class
     {
@@ -140,7 +150,10 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         );
     }
 
-    /// <summary>Registers publish middleware for a specific message type.</summary>
+    /// <summary>Registers publish middleware that intercepts publish operations for a specific message type.</summary>
+    /// <typeparam name="TMiddleware">The middleware implementation type.</typeparam>
+    /// <typeparam name="TMessage">The message type whose publish pipeline this middleware targets.</typeparam>
+    /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
     public MiddlewareRegistration AddPublishMiddlewareFor<TMiddleware, TMessage>()
         where TMiddleware : class, IPublishMiddleware<PublishingContext<TMessage>>
     {
@@ -157,7 +170,12 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         );
     }
 
-    /// <summary>Registers consume middleware for a specific message type and consumer group.</summary>
+    /// <summary>Registers consume middleware that intercepts consume operations for a specific message type and consumer group.</summary>
+    /// <typeparam name="TMiddleware">The middleware implementation type.</typeparam>
+    /// <typeparam name="TMessage">The message type whose consume pipeline this middleware targets.</typeparam>
+    /// <param name="groupName">The consumer group name this middleware is scoped to. Must not be null or whitespace.</param>
+    /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="groupName"/> is null or whitespace.</exception>
     public MiddlewareRegistration AddConsumeMiddlewareFor<TMiddleware, TMessage>(string groupName)
         where TMiddleware : class, IConsumeMiddleware<ConsumeContext<TMessage>>
         where TMessage : class

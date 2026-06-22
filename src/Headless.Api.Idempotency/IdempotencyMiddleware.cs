@@ -19,7 +19,7 @@ using Microsoft.Extensions.Primitives;
 namespace Headless.Api;
 
 internal sealed partial class IdempotencyMiddleware(
-    IOptionsSnapshot<IdempotencyOptions> optionsSnapshot,
+    IOptionsMonitor<IdempotencyOptions> optionsMonitor,
     ICache cache,
     ICurrentTenant currentTenant,
     ICurrentUser currentUser,
@@ -31,13 +31,37 @@ internal sealed partial class IdempotencyMiddleware(
 ) : IMiddleware
 {
     private readonly IProblemDetailsCreator _problemDetailsCreator = problemDetailsCreator;
+
+    // IDistributedLock is an OPTIONAL dependency: only the WaitAndReplay in-flight strategy needs it
+    // (the default Reject strategy does not). It is validated at startup only when WaitAndReplay is
+    // configured (see IdempotencyOptions), so it is resolved lazily here rather than constructor-injected.
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly ILogger<IdempotencyMiddleware> _logger = logger;
 
+    /// <summary>
+    /// Processes the incoming request through the idempotency pipeline: key validation,
+    /// fingerprinting, cache lookup, in-flight coordination, handler execution, and response
+    /// capture/finalization.
+    /// </summary>
+    /// <param name="context">The current HTTP context.</param>
+    /// <param name="next">The next middleware delegate.</param>
+    /// <exception cref="Exception">
+    /// Re-throws any exception from the downstream handler after removing the in-flight cache
+    /// marker. Cache cleanup failures are logged and swallowed so the original exception
+    /// propagates cleanly.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <see cref="IdempotencyOptions.RequestFingerprint"/> returns
+    /// <see langword="null"/> or an empty array. Also propagated from <c>_ReplayAsync</c>
+    /// when the response has already started before the replay path is reached (indicates
+    /// incorrect middleware ordering).
+    /// </exception>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
         var ct = cancellationTokenProvider.Token;
-        var appOptions = optionsSnapshot.Value;
+        // IOptionsMonitor.CurrentValue is a cached singleton read that still observes reloads, avoiding the
+        // per-request options rebuild + FluentValidation pass that IOptionsSnapshot.Value forces per scope.
+        var appOptions = optionsMonitor.CurrentValue;
 
         // Read the idempotency-key header using the app-level HeaderName *before* resolving
         // endpoint metadata. HeaderName overrides via WithIdempotency are deliberately ignored —
@@ -281,6 +305,15 @@ internal sealed partial class IdempotencyMiddleware(
         }
     }
 
+    /// <summary>
+    /// Writes the cached <paramref name="record"/> to the current response, replaying status
+    /// code, allowlisted headers, and body exactly as originally captured.
+    /// Sets the <c>Idempotent-Replayed: true</c> response header.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The response has already started. Indicates <c>UseIdempotency()</c> is ordered after
+    /// middleware that already wrote to the response body.
+    /// </exception>
     private async Task _ReplayAsync(
         HttpContext context,
         IdempotencyRecord record,
@@ -321,6 +354,7 @@ internal sealed partial class IdempotencyMiddleware(
 
         if (record.Body.Length > 0)
         {
+            context.Response.ContentLength = record.Body.Length;
             await context.Response.Body.WriteAsync(record.Body, ct).ConfigureAwait(false);
         }
 
@@ -650,7 +684,7 @@ internal sealed partial class IdempotencyMiddleware(
         }
 
         // Clone + merge per request. A static cache keyed by metadata captured `appOptions` from
-        // the first observation, which silently ignored subsequent IOptionsSnapshot reloads for
+        // the first observation, which silently ignored subsequent IOptionsMonitor reloads for
         // endpoints with WithIdempotency(...) while plain endpoints honored reloads — an
         // asymmetric drift that was very hard to debug. Cloning per request costs a struct copy
         // plus two HashSet allocations (Methods, ReplayHeaderAllowlist), well below request-flow

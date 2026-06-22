@@ -1,20 +1,31 @@
 # Headless.Jobs.Core
 
-Core implementation of Jobs, a high-performance background job scheduler for .NET with cron expressions and time-based scheduling.
+Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, custom thread pool, and the `AddHeadlessJobs` DI extension.
 
 ## Problem Solved
 
-Provides reliable, distributed background job scheduling with cron expressions, delayed execution, custom task scheduling, and real-time monitoring without external dependencies like Hangfire or Quartz.
+Provides reliable background job scheduling with cron expressions, delayed execution, custom task scheduling, retry logic, and an in-process thread pool without any external job scheduler dependencies (Hangfire, Quartz, etc.). The in-memory path works standalone; the durable path composes with `Headless.Jobs.EntityFramework`.
 
 ## Key Features
 
-- **Cron Scheduling**: Full cron expression support with timezone handling
-- **Time-Based Jobs**: Schedule jobs at specific times or intervals
-- **Custom Thread Pool**: Optimized task scheduler for background jobs
-- **Persistence**: In-memory or database-backed job storage
-- **Fallback**: Automatic recovery and retry for failed jobs
-- **Zero Allocations**: High-performance execution with minimal GC pressure
-- **Hot Reload**: Dynamic job registration and configuration updates
+- **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
+- **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
+- **Custom thread pool** (`JobsTaskScheduler`): bounded by `MaxConcurrency` (default `Environment.ProcessorCount`), with idle-worker timeout.
+- **Sliding lease renewal** (#316): running jobs extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if the renewal affects zero rows or errors.
+- **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for enqueue-only nodes and test projects).
+- **Seeder API**: `UseJobsSeeder(...)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
+- **GZip request payloads**: `UseGZipCompression()` compresses serialized request bytes.
+- **Exception handler**: `SetExceptionHandler<THandler>()` registers an `IJobExceptionHandler` singleton.
+- **Node-death policy enforcement**: claim predicate gates lease-expiry re-claim on `OnNodeDeath == Retry`; clock skew cannot re-run `Skip` or `MarkFailed` jobs.
+- **Startup mode**: `SchedulerOptionsBuilder.StartMode` (`JobsStartMode.Immediate` default / `JobsStartMode.Manual`).
+
+## Design Notes
+
+The pickup lease uses the injected `TimeProvider` (application clock) for the claim predicate, matching `Headless.Messaging`'s in-memory/SQL parity so fake clocks in tests stay honest. The EF operational store separately anchors lease comparisons to the **database clock** for renewals — an intentional divergence: in-memory has no DB, so it must use the application clock; EF uses the DB clock to defeat cross-node skew on real clusters.
+
+`SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path. On the durable path it is overridden by `JobsOwnerIdentityAdapter` (reads `node@incarnation` from `Headless.Coordination`); `NodeId` becomes a pre-registration display fallback only.
+
+There is no `app.UseJobs()` call — the scheduler starts automatically through the `IHostedService` registrations added by `AddHeadlessJobs`.
 
 ## Installation
 
@@ -25,43 +36,37 @@ dotnet add package Headless.Jobs.Core
 ## Quick Start
 
 ```csharp
-// Register Jobs
+using Headless.Jobs.Base;
+using Headless.Jobs.Entities;
+
+// 1. Register Jobs
 builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
     {
         scheduler.MaxConcurrency = 10;
-        scheduler.SchedulerTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;
     });
+    options.SetExceptionHandler<MyJobExceptionHandler>();
 });
 
-// Define cron job
-[Jobs("*/5 * * * *")] // Every 5 minutes
-public static class CleanupJob
+// 2. Define a cron job (requires Headless.Jobs.SourceGenerator)
+[JobFunction("Cleanup", cronExpression: "*/5 * * * *")]
+public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
 {
-    public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
-    {
-        var logger = sp.GetRequiredService<ILogger<CleanupJob>>();
-        logger.LogInformation("Running cleanup job");
-
-        await Task.CompletedTask;
-    }
+    sp.GetRequiredService<ILogger<Program>>().LogInformation("Running cleanup");
+    await Task.CompletedTask;
 }
 
-// Schedule time-based job programmatically
-public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
+// 3. Define a time job with DI
+[JobFunction("ProcessOrder")]
+public sealed class OrderProcessor(IOrderService orders)
 {
-    public async Task SendReminderAsync(string orderId, CancellationToken ct)
-    {
-        await job.AddAsync(new TimeJobEntity
-        {
-            Function = "SendOrderReminder",
-            Description = $"order-reminder-{orderId}",
-            ExecutionTime = DateTime.UtcNow.AddHours(24),
-            Request = JobsHelper.SerializeRequest(new { OrderId = orderId })
-        }, ct);
-    }
+    public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct)
+        => await orders.ProcessAsync(context.Request, ct);
 }
+
+// The scheduler starts via IHostedService — no app.UseJobs() call needed.
 ```
 
 ## Configuration
@@ -71,120 +76,31 @@ builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
     {
-        scheduler.MaxConcurrency = 10;
-        scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(5);
-        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;
+        scheduler.NodeId = "my-node";                               // in-memory path only
+        scheduler.MaxConcurrency = 10;                              // default: processor count
+        scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(1);      // default: 1 min
+        scheduler.LeaseDuration = TimeSpan.FromMinutes(5);          // default: 5 min
+        scheduler.LeaseRenewalInterval = null;                      // null → LeaseDuration / 3
+        scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
+        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;             // default: local
+        scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
+        scheduler.StartMode = JobsStartMode.Immediate;              // or Manual
     });
 
-    // Exception handling
-    options.SetExceptionHandler<CustomJobExceptionHandler>();
-
-    // Disable background services (for testing)
-    options.DisableBackgroundServices();
-
-    // Start modes
-    options.ConfigureScheduler(scheduler =>
+    options.SetExceptionHandler<MyJobExceptionHandler>();
+    options.DisableBackgroundServices();        // test / enqueue-only nodes
+    options.UseGZipCompression();               // compress request payloads
+    options.IgnoreSeedDefinedCronJobs();        // skip auto-seeding of attribute cron jobs
+    options.UseJobsSeeder(async manager =>      // startup time-job seeder
     {
-        scheduler.StartMode = JobsStartMode.Immediate; // default
-        scheduler.StartMode = JobsStartMode.Manual;    // wait for manual trigger
+        await manager.AddAsync(new TimeJobEntity { Function = "Init", ExecutionTime = DateTime.UtcNow });
+    });
+    options.ConfigureRequestJsonOptions(json =>
+    {
+        json.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
     });
 });
 ```
-
-### Node Identity (durable path)
-
-On the in-memory single-process path, the scheduler uses `SchedulerOptionsBuilder.NodeId` (defaults to the machine name) as the row owner. On the durable operational-store path (`Headless.Jobs.EntityFramework` + `AddHeadlessCoordination`), `SchedulerOptionsBuilder.NodeId` is **not** the owner: node identity is `node@incarnation` (store-allocated by Coordination) and durable job rows are stamped with it. Node identity for that path — including K8s pod-collision handling (via `POD_NAME`/`POD_NAMESPACE`) — is configured on `Headless.Coordination`, not on this option; `SchedulerOptionsBuilder.NodeId` only acts as a display fallback before membership registration completes. If the local node loses membership, the durable scheduler fail-stops (stops processing) rather than stamping a stale owner. See `Headless.Jobs.EntityFramework` for setup.
-
-### Pickup Lease and Node-Death Policy
-
-Every claim of a time-job or cron-occurrence row stamps a pickup lease: `LockedUntil = now + SchedulerOptionsBuilder.LeaseDuration` (default 5 minutes). The lease deadline is written and compared using the injected application `TimeProvider`, never the database server clock — this mirrors `Headless.Messaging` so the InMemory and SQL providers share identical pickup semantics and a fake clock in tests stays honest.
-
-The lease is a **duplicate-suppression / self-heal floor, not the liveness authority.** A dead node's rows are recovered by Coordination's incarnation + heartbeat sweep (see `Headless.Jobs.EntityFramework`); lease expiry lets a *stalled but not-yet-declared-dead* row be re-claimed.
-
-**Sliding lease for running jobs (#316).** A running job renews its own lease on the `SchedulerOptionsBuilder.LeaseRenewalInterval` cadence (defaults to ≈ `LeaseDuration / 3`, so one missed renewal never lapses the lease; an explicit value must be positive and `< LeaseDuration`). Each renewal slides `LockedUntil` forward, fenced on still-owned + **running** (`InProgress`) status; a renewal that affects **zero rows** means the lease was lost (reclaimed, owner changed, or terminalized), and a renewal that errors or cannot complete within the renewal cadence (a hung or unreachable store, #463) is treated the same — in either case the worker can no longer vouch for the lease and cancels that job's `CancellationToken` (cancel-on-loss). On EF storage the lease deadline is anchored to the **database clock** (`now()`/`GETUTCDATE()`), not any single node's clock, so cross-node skew cannot reclaim a healthy renewing job. Because healthy long jobs keep renewing, **`LeaseDuration` no longer needs to exceed the longest job runtime.** It now sizes only (a) the `Idle`/`Queued` claim→start window — keep it ≥ `FallbackIntervalChecker` — and (b) the recovery latency for a *stalled* running job, which is reclaimed within ≈ one `LeaseDuration` after it stops renewing. A job stuck `InProgress` whose lease lapses is reclaimed per its `OnNodeDeath` policy on the fallback cadence, independent of node death — closing the gap where a job wedged on a still-heartbeating node was recovered by neither the claim predicate nor the dead-node sweep.
-
-`NodeDeathPolicy` decides what happens to a row whose owning node dies mid-execution. Select it with `SetOnNodeDeath(policy)` on the fluent job builder (parent/child/grandchild), by setting `OnNodeDeath` on the `TimeJobEntity` passed to `ITimeJobManager.AddAsync`, or by setting it on the `CronJobEntity` registered with `ICronJobManager.AddAsync` (cron policy propagates to every generated occurrence). Default `Retry`:
-
-| Policy | On node death | Use when |
-|--------|---------------|----------|
-| `Retry` (default) | Row is released for re-claim; the attempt counts toward the retry budget. | Job is idempotent — safe to run again. |
-| `MarkFailed` | Row transitions to terminal `Failed`; never re-run. | A second run is wrong; surface the failure. |
-| `Skip` | Row transitions to terminal `Skipped`; never re-run. | Idempotency-critical jobs that must run at most once. |
-
-Safety interaction: the claim predicate's lease-expiry arm is gated on `OnNodeDeath == Retry`. Clock skew can therefore never speculatively re-run a `Skip` or `MarkFailed` job — #315's per-job policy and the #268 lease deadline are the same safety mechanism viewed from two angles. The unowned arm (never leased) and the self-owned arm (crash-recovery re-pickup of your own row) are unaffected by the policy.
-
-### Cron-Expression Caching (durable path)
-
-Jobs does not ship a Jobs-specific Redis cache package. The durable EF path uses the host application's optional default `Headless.Caching.ICache` for cron-expression caching. Register `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` when caching is desired; without an `ICache`, Jobs reads cron expressions from the database and cache invalidation is skipped.
-
-### Retry Configuration
-
-```csharp
-await timeJobs.AddAsync(new TimeJobEntity
-{
-    Function = "ProcessPayment",
-    Description = "payment-processing",
-    ExecutionTime = DateTime.UtcNow,
-    Request = JobsHelper.SerializeRequest(new { PaymentId = "pay_123" }),
-    Retries = 3,
-    RetryIntervals = [30, 60, 120],
-}, cancellationToken);
-```
-
-- Retries are automatic when job execution throws.
-- Status remains `InProgress` during retries.
-- After retries are exhausted, final status becomes `Failed`.
-- If `RetryIntervals` is null/empty, default interval is 30 seconds.
-- If fewer intervals are provided than retries, the last interval is reused.
-
-### Global Exception Handler
-
-```csharp
-public sealed class CustomJobExceptionHandler(ILogger<CustomJobExceptionHandler> logger)
-    : IJobExceptionHandler
-{
-    public Task HandleExceptionAsync(Exception exception, Guid jobId, JobType jobType)
-    {
-        logger.LogError(exception, "Job {JobId} ({JobType}) failed", jobId, jobType);
-        return Task.CompletedTask;
-    }
-
-    public Task HandleCanceledExceptionAsync(Exception exception, Guid jobId, JobType jobType)
-    {
-        logger.LogWarning("Job {JobId} ({JobType}) cancelled", jobId, jobType);
-        return Task.CompletedTask;
-    }
-}
-```
-
-Register it with:
-
-```csharp
-builder.Services.AddHeadlessJobs(options =>
-{
-    options.SetExceptionHandler<CustomJobExceptionHandler>();
-});
-```
-
-### Job-Level Controls
-
-- Throw to trigger retry.
-- Catch and return to stop retry for permanent failures.
-- Use `context.RetryCount` from `JobFunctionContext` for attempt-aware behavior.
-- Call `context.RequestCancellation()` to mark as `Cancelled`.
-- Call `context.CronOccurrenceOperations.SkipIfAlreadyRunning()` for overlap-safe cron jobs.
-
-### TerminateExecutionException
-
-Use `TerminateExecutionException` to stop execution without retries and optionally set final status:
-
-```csharp
-throw new TerminateExecutionException(JobStatus.Failed, "Configuration is invalid for this job");
-```
-
-- `TerminateExecutionException("message")` -> `Skipped`
-- `TerminateExecutionException(JobStatus status, "message")` -> explicit status
-- Overloads with `innerException` keep details for diagnostics
 
 ## Dependencies
 
@@ -193,7 +109,7 @@ throw new TerminateExecutionException(JobStatus.Failed, "Configuration is invali
 
 ## Side Effects
 
-- Starts background hosted services for job scheduling and execution
-- Creates in-memory job storage (or database tables with persistence providers)
-- Runs custom thread pool for job execution
-- Periodically scans for due jobs and executes them
+- Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
+- Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
+- Registers `JobsTaskScheduler` (custom thread pool bounded by `MaxConcurrency`).
+- Sets global `CronScheduleCache.TimeZoneInfo` and `JobsHelper` JSON/compression settings.

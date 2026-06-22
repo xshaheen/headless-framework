@@ -10,6 +10,7 @@ namespace Headless.Hosting.Initialization;
 /// passive wait semantics — the service starts automatically via <see cref="Microsoft.Extensions.Hosting.IHostedService"/>
 /// and callers simply wait for it to finish. Concurrent callers share the same in-flight wait operation.
 /// </remarks>
+[PublicAPI]
 public interface IInitializer
 {
     /// <summary>

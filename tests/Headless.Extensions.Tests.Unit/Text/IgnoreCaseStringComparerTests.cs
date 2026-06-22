@@ -124,7 +124,7 @@ public sealed class IgnoreCaseStringComparerTests
     }
 
     [Fact]
-    public void equals_should_return_false_when_both_null()
+    public void equals_should_return_true_when_both_null()
     {
         // given
         const string? x = null;
@@ -134,7 +134,8 @@ public sealed class IgnoreCaseStringComparerTests
         var result = IgnoreCaseStringComparer.Instance.Equals(x, y);
 
         // then
-        result.Should().BeFalse();
+        // IEqualityComparer<string> contract: Equals(null, null) must be true.
+        result.Should().BeTrue();
     }
 
     [Theory]
@@ -247,6 +248,16 @@ public sealed class IgnoreCaseStringComparerTests
 
         // when
         var hash = IgnoreCaseStringComparer.Instance.GetHashCode(x);
+
+        // then
+        hash.Should().Be(0);
+    }
+
+    [Fact]
+    public void get_hash_code_should_return_zero_for_null()
+    {
+        // when
+        var hash = IgnoreCaseStringComparer.Instance.GetHashCode(null!);
 
         // then
         hash.Should().Be(0);

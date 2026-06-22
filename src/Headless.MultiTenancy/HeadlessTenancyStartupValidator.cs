@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -25,46 +24,68 @@ internal sealed partial class HeadlessTenancyStartupValidator(
     ILogger<HeadlessTenancyStartupValidator> logger
 ) : IHostedLifecycleService
 {
-    private const string _DiagnosticsExceptionDataKey = "HeadlessTenancyDiagnostics";
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Runs all registered validators synchronously before any other hosted service starts. The work is
+    /// synchronous, so a failure throws directly (the returned task is never observed in the failure case).
+    /// </remarks>
+    /// <exception cref="HeadlessTenancyValidationException">
+    /// One or more validators produced an <see cref="HeadlessTenancyDiagnosticSeverity.Error"/> diagnostic;
+    /// the host is prevented from starting.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public Task StartingAsync(CancellationToken cancellationToken)
+    {
+        // Validation is synchronous and must complete (or fail the host) before any other hosted
+        // service starts. A synchronous throw here surfaces to the host the same way a faulted task
+        // would; it carries the typed HeadlessTenancyValidationException with the failing diagnostics.
+        _Validate(cancellationToken);
+        return Task.CompletedTask;
+    }
 
-    public Task StartingAsync(CancellationToken cancellationToken) => _ValidateAsync();
-
+    /// <inheritdoc/>
     public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+    /// <inheritdoc/>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private Task _ValidateAsync()
+    private void _Validate(CancellationToken cancellationToken)
     {
-        var context = new HeadlessTenancyValidationContext(
-            Argument.IsNotNull(serviceProvider),
-            Argument.IsNotNull(manifest)
-        );
+        var context = new HeadlessTenancyValidationContext(serviceProvider, manifest);
 
         var collected = new List<HeadlessTenancyDiagnostic>();
 
         foreach (var validator in validators)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             try
             {
                 collected.AddRange(validator.Validate(context));
             }
-#pragma warning disable CA1031, EPC12 // Last-resort fallback path: a single misbehaving validator must not abort the iteration; full exception detail flows through the synthetic diagnostic message and the validator-error log on the failure path.
-            catch (Exception validatorError)
+#pragma warning disable CA1031, EPC12 // Last-resort fallback path: a single misbehaving validator must not abort the iteration; full exception detail flows through the synthetic diagnostic message and the validator-error log on the failure path. Host-shutdown cancellation (OperationCanceledException) is excluded by the filter so it propagates instead of being masked as a validator error.
+            catch (Exception validatorError) when (validatorError is not OperationCanceledException)
 #pragma warning restore CA1031, EPC12
             {
                 logger.LogTenancyValidatorThrew(validatorError, validator.GetType().Name);
 
+                // Keep the synthetic diagnostic non-PII: the exception message could carry tenant
+                // identifiers, and this text flows into the manifest-facing diagnostic and the thrown
+                // exception. Full exception detail is preserved in the LogTenancyValidatorThrew call above.
                 collected.Add(
                     HeadlessTenancyDiagnostic.Error(
                         seam: "Validator",
                         code: "VALIDATOR_THREW",
-                        message: $"{validator.GetType().Name}: {validatorError.Message}"
+                        message: $"{validator.GetType().Name} threw during validation; see logs for detail."
                     )
                 );
             }
@@ -80,32 +101,13 @@ internal sealed partial class HeadlessTenancyStartupValidator(
             .Where(diagnostic => diagnostic.Severity == HeadlessTenancyDiagnosticSeverity.Information)
             .ToArray();
 
-        if (failures.Length > 0)
+        // Log every collected diagnostic exactly once — errors first so operators see the blocking
+        // diagnostics ahead of non-blocking noise — on both the success and failure paths. Logging
+        // infos before the throw keeps the informational context that is most useful for diagnosing
+        // a startup failure.
+        foreach (var error in failures)
         {
-            // Errors first so operators see the blocking diagnostics ahead of any non-blocking noise.
-            foreach (var error in failures)
-            {
-                logger.LogTenancyDiagnosticError(error.Code, error.Seam, error.Message);
-            }
-
-            foreach (var warning in warnings)
-            {
-                logger.LogTenancyDiagnosticWarning(warning.Code, warning.Seam, warning.Message);
-            }
-
-            var errorText = string.Join("; ", failures.Select(failure => $"{failure.Code}: {failure.Message}"));
-
-            var exception = new InvalidOperationException($"Headless tenancy validation failed: {errorText}")
-            {
-                Data = { [_DiagnosticsExceptionDataKey] = failures },
-            };
-
-            throw exception;
-        }
-
-        foreach (var info in infos)
-        {
-            logger.LogTenancyDiagnosticInformation(info.Code, info.Seam, info.Message);
+            logger.LogTenancyDiagnosticError(error.Code, error.Seam, error.Message);
         }
 
         foreach (var warning in warnings)
@@ -113,7 +115,17 @@ internal sealed partial class HeadlessTenancyStartupValidator(
             logger.LogTenancyDiagnosticWarning(warning.Code, warning.Seam, warning.Message);
         }
 
-        return Task.CompletedTask;
+        foreach (var info in infos)
+        {
+            logger.LogTenancyDiagnosticInformation(info.Code, info.Seam, info.Message);
+        }
+
+        if (failures.Length > 0)
+        {
+            var errorText = string.Join("; ", failures.Select(failure => $"{failure.Code}: {failure.Message}"));
+
+            throw new HeadlessTenancyValidationException($"Headless tenancy validation failed: {errorText}", failures);
+        }
     }
 }
 

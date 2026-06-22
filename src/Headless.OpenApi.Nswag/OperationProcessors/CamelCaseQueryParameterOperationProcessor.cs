@@ -12,6 +12,11 @@ namespace Headless.Api.OperationProcessors;
 /// </summary>
 public sealed class CamelCaseQueryParameterOperationProcessor : IOperationProcessor
 {
+    /// <summary>
+    /// Applies camelCase conversion to all query parameter names in the operation.
+    /// </summary>
+    /// <param name="context">The NSwag operation processor context for the current operation.</param>
+    /// <returns>Always <see langword="true"/> so that subsequent processors continue to run.</returns>
     public bool Process(OperationProcessorContext context)
     {
         var parameters = context.OperationDescription.Operation.Parameters;

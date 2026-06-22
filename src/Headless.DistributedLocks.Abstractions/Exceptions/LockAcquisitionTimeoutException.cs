@@ -20,18 +20,34 @@ public sealed class LockAcquisitionTimeoutException : DistributedLockException
     // Validation runs as part of the chained-ctor argument evaluation (left-to-right) so an
     // invalid `resource` throws before the message is interpolated and before the base ctor
     // runs — avoids constructing a misleading "for resource ''" string just to discard it.
+
+    /// <summary>Initializes the exception with the default timeout message for <paramref name="resource"/>.</summary>
+    /// <param name="resource">The resource whose lock acquisition timed out.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
     public LockAcquisitionTimeoutException(string resource)
         : this(
             Argument.IsNotNullOrWhiteSpace(resource),
             $"Unable to acquire distributed lock for resource '{resource}' before the timeout elapsed."
         ) { }
 
+    /// <summary>Initializes the exception with a custom <paramref name="message"/>.</summary>
+    /// <param name="resource">The resource whose lock acquisition timed out.</param>
+    /// <param name="message">The error message, or <see langword="null"/> for the default.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
     public LockAcquisitionTimeoutException(string resource, string? message)
         : base(message)
     {
         Resource = Argument.IsNotNullOrWhiteSpace(resource);
     }
 
+    /// <summary>Initializes the exception with a custom <paramref name="message"/> and inner cause.</summary>
+    /// <param name="resource">The resource whose lock acquisition timed out.</param>
+    /// <param name="message">The error message, or <see langword="null"/> for the default.</param>
+    /// <param name="innerException">The underlying cause, or <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
     public LockAcquisitionTimeoutException(string resource, string? message, Exception? innerException)
         : base(message, innerException)
     {
@@ -47,6 +63,9 @@ public sealed class LockAcquisitionTimeoutException : DistributedLockException
     /// retry loop to surface as a "timeout elapsed" message.
     /// </summary>
     /// <param name="resource">The resource whose lock acquisition was attempted once and failed.</param>
+    /// <returns>A <see cref="LockAcquisitionTimeoutException"/> describing the try-once contention failure.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="resource"/> is empty or whitespace.</exception>
     public static LockAcquisitionTimeoutException ForTryOnceContention(string resource)
     {
         return new LockAcquisitionTimeoutException(

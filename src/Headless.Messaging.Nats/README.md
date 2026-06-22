@@ -78,7 +78,7 @@ nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 - Delay stays in the core pipeline. This provider does not add broker-native scheduling.
 - Commit sends `ACK`.
 - Reject sends `NAK` so JetStream can redeliver.
-- `FetchTopicsAsync(...)` groups subjects into streams and creates them when auto-creation is enabled.
+- `FetchMessageNamesAsync(...)` groups subjects into streams and creates them when auto-creation is enabled.
 - Consumer startup creates filtered durable consumers for each subscribed subject.
 - Message-level `SubjectShard(...)` publishes to `{messageName}.{shard}`. Stream auto-creation and durable consumer filters add wildcard coverage only for consumers that declared `.UseNats(c => c.Sharded())`. Shard symmetry is enforced at startup.
 - Sequential handling preserves per-subject delivery order best. Parallel handlers and redeliveries can reorder work.

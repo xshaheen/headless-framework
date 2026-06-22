@@ -42,9 +42,15 @@ internal sealed class ReadOnlySequenceStream : Stream
 
     public override long Position
     {
-        get => _readOnlySequence.Slice(0, _position).Length;
+        get
+        {
+            Ensure.NotDisposed(IsDisposed, this);
+
+            return _readOnlySequence.Slice(0, _position).Length;
+        }
         set
         {
+            Ensure.NotDisposed(IsDisposed, this);
             Argument.IsPositiveOrZero(value, "Position must be >= 0");
             _position = _readOnlySequence.GetPosition(value, _readOnlySequence.Start);
         }
@@ -54,6 +60,7 @@ internal sealed class ReadOnlySequenceStream : Stream
 
     public override int Read(byte[] buffer, int offset, int count)
     {
+        Ensure.NotDisposed(IsDisposed, this);
         var remaining = _readOnlySequence.Slice(_position);
         var toCopy = remaining.Slice(0, Math.Min(count, remaining.Length));
         _position = toCopy.End;
@@ -86,6 +93,7 @@ internal sealed class ReadOnlySequenceStream : Stream
 
     public override int ReadByte()
     {
+        Ensure.NotDisposed(IsDisposed, this);
         var remaining = _readOnlySequence.Slice(_position);
 
         if (remaining.Length > 0)
@@ -145,6 +153,8 @@ internal sealed class ReadOnlySequenceStream : Stream
 
     public override async Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
     {
+        Ensure.NotDisposed(IsDisposed, this);
+
         foreach (var segment in _readOnlySequence)
         {
             await destination.WriteAsync(segment, cancellationToken).ConfigureAwait(false);
@@ -153,6 +163,7 @@ internal sealed class ReadOnlySequenceStream : Stream
 
     public override int Read(Span<byte> buffer)
     {
+        Ensure.NotDisposed(IsDisposed, this);
         var remaining = _readOnlySequence.Slice(_position);
         var toCopy = remaining.Slice(0, Math.Min(buffer.Length, remaining.Length));
         _position = toCopy.End;

@@ -10,8 +10,14 @@ namespace Headless.Testing.Testcontainers;
 
 /// <summary>
 /// SQL Server test fixture that automatically selects the correct container image based on CPU architecture.
-/// Uses Azure SQL Edge for ARM64 (Apple Silicon) and SQL Server 2022 for x86_64.
+/// Uses <see cref="TestImages.AzureSqlEdge"/> on ARM64 (Apple Silicon) and
+/// <see cref="TestImages.MsSqlServer"/> on x86_64.
 /// </summary>
+/// <remarks>
+/// Startup polls the TCP port and attempts a login for up to 60 seconds after the container
+/// log reports readiness, to guard against race conditions in slow CI environments.
+/// </remarks>
+[PublicAPI]
 public class HeadlessSqlServerFixture : IAsyncLifetime
 {
     private const string _Password = "YourStrong@Passw0rd";
@@ -47,16 +53,24 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Starts the SQL Server container and polls until a login attempt succeeds or the
+    /// startup timeout (60 seconds) elapses.
+    /// </summary>
+    /// <exception cref="TimeoutException">
+    /// Thrown when no login succeeds within the startup timeout.
+    /// </exception>
     public async ValueTask InitializeAsync()
     {
-        await _container.StartAsync();
-        await _WaitUntilLoginSucceedsAsync();
+        await _container.StartAsync().ConfigureAwait(false);
+        await _WaitUntilLoginSucceedsAsync().ConfigureAwait(false);
     }
 
+    /// <summary>Stops and disposes the SQL Server container.</summary>
     public async ValueTask DisposeAsync()
     {
-        await _container.StopAsync();
-        await _container.DisposeAsync();
+        await _container.StopAsync().ConfigureAwait(false);
+        await _container.DisposeAsync().ConfigureAwait(false);
         GC.SuppressFinalize(this);
     }
 
@@ -70,19 +84,19 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
             try
             {
                 await using var connection = new SqlConnection(ConnectionString);
-                await connection.OpenAsync(CancellationToken.None);
+                await connection.OpenAsync(CancellationToken.None).ConfigureAwait(false);
 
                 return;
             }
             catch (SqlException ex)
             {
                 lastException = ex;
-                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None);
+                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None).ConfigureAwait(false);
             }
             catch (InvalidOperationException ex)
             {
                 lastException = ex;
-                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None);
+                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None).ConfigureAwait(false);
             }
         }
 

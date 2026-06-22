@@ -7,6 +7,11 @@ using Headless.Permissions.Entities;
 
 namespace Headless.Permissions.Grants;
 
+/// <summary>
+/// Domain event handler that removes the cached grant status entry whenever a
+/// <see cref="PermissionGrantRecord"/> is created, updated, or deleted. Switches to the record's
+/// tenant context before evicting so the scoped cache key matches the one used during reads.
+/// </summary>
 public sealed class PermissionGrantCacheItemInvalidator(
     ICache<PermissionGrantCacheItem> cache,
     ICurrentTenant currentTenant
@@ -25,7 +30,7 @@ public sealed class PermissionGrantCacheItemInvalidator(
 
         using (currentTenant.Change(message.Entity.TenantId))
         {
-            await cache.RemoveAsync(cacheKey, cancellationToken);
+            await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
         }
     }
 }

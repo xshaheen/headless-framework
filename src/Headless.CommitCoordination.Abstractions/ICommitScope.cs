@@ -3,22 +3,42 @@
 namespace Headless.CommitCoordination;
 
 /// <summary>
-/// Owner-side lifecycle handle for a commit coordinator.
+/// Owner-side lifecycle handle for a commit coordination scope, returned by provider enlistment helpers and
+/// <see cref="ICommitSignalSource.Attach" />.
 /// </summary>
+/// <remarks>
+/// The scope is owned by the enlistment caller, not by the infrastructure. The caller must dispose it after the
+/// physical transaction completes. Disposing without first calling <see cref="SignalAsync" /> is treated as an
+/// implicit rollback: any registered work is discarded.
+/// <para>
+/// The scope pushes the enclosing coordinator onto the ambient stack (<see cref="ICurrentCommitCoordinator" />)
+/// at creation and pops it on disposal. The pop is <b>synchronous</b> and happens in the disposal frame —
+/// after disposal, <see cref="ICurrentCommitCoordinator.Current" /> no longer returns this scope's coordinator.
+/// </para>
+/// </remarks>
 [PublicAPI]
 public interface ICommitScope : IDisposable, IAsyncDisposable
 {
     /// <summary>
-    /// Gets the register-only coordinator visible to consumers.
+    /// Gets the register-only coordinator visible to consumers that enlist post-commit or post-rollback work.
     /// </summary>
     ICommitCoordinator Coordinator { get; }
 
     /// <summary>
-    /// Signals the physical unit-of-work outcome. There is intentionally no cancellation token: once a terminal
-    /// outcome is claimed the drain runs to completion so already-committed work is never abandoned (design
-    /// decision D9). Cancellation would risk discarding committed work, so the signal does not accept a token.
+    /// Signals the terminal outcome of the physical unit of work and drains all registered callbacks.
     /// </summary>
-    /// <param name="outcome">The terminal outcome.</param>
-    /// <returns>A task representing signal completion.</returns>
+    /// <remarks>
+    /// There is intentionally no cancellation token: once a terminal outcome is claimed, the drain always runs
+    /// to completion so already-committed work is never abandoned (design decision D9). Cancelling the drain
+    /// would risk discarding committed durable rows.
+    /// <para>
+    /// The first call claims the terminal state synchronously; subsequent calls (e.g. a racing disposal) observe
+    /// the already-claimed state and return a completed task. Registered callbacks are invoked in registration
+    /// order; each callback fault is captured and the drain continues. If one or more callbacks fault, the
+    /// signal task faults with an <see cref="AggregateException" /> after all callbacks have run.
+    /// </para>
+    /// </remarks>
+    /// <param name="outcome">The terminal outcome: <see cref="CommitOutcome.Committed" /> or <see cref="CommitOutcome.RolledBack" />.</param>
+    /// <returns>A task that completes when all registered callbacks have been drained.</returns>
     ValueTask SignalAsync(CommitOutcome outcome);
 }

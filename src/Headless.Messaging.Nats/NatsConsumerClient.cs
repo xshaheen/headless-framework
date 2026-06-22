@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -26,6 +26,15 @@ internal sealed class NatsConsumerClient(
     private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
+
+    // Tracks in-flight fire-and-forget handler tasks on the concurrent (groupConcurrent > 0) path so
+    // DisposeAsync can drain them before disposing the semaphore and connection.
+    private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+
+    // Bounded drain budget on shutdown. Aligned with the default AckWait (30s): a handler still
+    // running past this would have its message redelivered by JetStream anyway (at-least-once).
+    private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
+
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -57,14 +66,18 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
+        // Materialize once: the source is consumed by GroupBy and the return value, so a lazy
+        // input would otherwise be enumerated twice.
+        var names = messageNames as IReadOnlyList<string> ?? messageNames.ToList();
+
         if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {
-            return messageNames.ToList();
+            return [.. names];
         }
 
         // Preserve wildcard coverage for hierarchical subjects, but add exact
         // subjects for bare/non-prefix messageNames that the wildcard cannot match.
-        var streamGroups = messageNames.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
+        var streamGroups = names.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
 
         foreach (var streamGroup in streamGroups)
         {
@@ -80,45 +93,17 @@ internal sealed class NatsConsumerClient(
 
             _natsOptions.StreamOptions?.Invoke(config);
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var cts = new CancellationTokenSource(_natsOptions.StreamCreateTimeout);
             await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
 
-        return messageNames.ToList();
+        return [.. names];
     }
 
     internal static IReadOnlyList<string> BuildStreamSubjects(
         IEnumerable<string> messageNames,
         ISet<string> shardedMessageNames
-    )
-    {
-        Argument.IsNotNull(messageNames);
-        Argument.IsNotNull(shardedMessageNames);
-
-        var subjects = new List<string>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var topicName in messageNames)
-        {
-            if (!seen.Add(topicName))
-            {
-                continue;
-            }
-
-            subjects.Add(topicName);
-
-            if (shardedMessageNames.Contains(topicName))
-            {
-                var shardedSubject = $"{topicName}.>";
-                if (seen.Add(shardedSubject))
-                {
-                    subjects.Add(shardedSubject);
-                }
-            }
-        }
-
-        return subjects;
-    }
+    ) => _BuildSubjects(messageNames, shardedMessageNames);
 
     internal static string BuildDurableName(string groupName, string subject, IntentType intentType)
     {
@@ -128,6 +113,14 @@ internal sealed class NatsConsumerClient(
     }
 
     internal static IReadOnlyList<string> BuildConsumerSubjects(
+        IEnumerable<string> messageNames,
+        ISet<string> shardedMessageNames
+    ) => _BuildSubjects(messageNames, shardedMessageNames);
+
+    // The JetStream stream config and the consumer FilterSubjects must cover exactly the same subject
+    // set, so both derive from one method: the base subject plus, for sharded names, the 'base.>'
+    // wildcard, de-duplicated. (Verified output-equivalent to the prior two near-duplicate methods.)
+    private static IReadOnlyList<string> _BuildSubjects(
         IEnumerable<string> messageNames,
         ISet<string> shardedMessageNames
     )
@@ -300,7 +293,7 @@ internal sealed class NatsConsumerClient(
                             }
                         );
 
-                        retryDelay = _NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
+                        retryDelay = NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
@@ -314,7 +307,7 @@ internal sealed class NatsConsumerClient(
                             }
                         );
 
-                        retryDelay = _NextBackoff(retryDelay);
+                        retryDelay = NextBackoff(retryDelay);
                         await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
@@ -343,7 +336,7 @@ internal sealed class NatsConsumerClient(
                     }
                 );
 
-                retryDelay = _NextBackoff(retryDelay);
+                retryDelay = NextBackoff(retryDelay);
                 await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -358,27 +351,40 @@ internal sealed class NatsConsumerClient(
         {
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-            _ObserveBackgroundHandler(
-                Task.Run(
-                    async () =>
+            var handlerTask = Task.Run(
+                async () =>
+                {
+                    try
                     {
-                        try
-                        {
-                            await _ProcessMessageAsync(msg).ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            _ReleaseSemaphore();
-                        }
-                    },
-                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                )
+                        await _ProcessMessageAsync(msg).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _ReleaseSemaphore();
+                    }
+                },
+                CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
             );
+
+            _TrackBackgroundHandler(handlerTask);
+            _ObserveBackgroundHandler(handlerTask);
         }
         else
         {
             await _ProcessMessageAsync(msg).ConfigureAwait(false);
         }
+    }
+
+    private void _TrackBackgroundHandler(Task task)
+    {
+        _inFlightHandlers[task] = 0;
+        _ = task.ContinueWith(
+            static (completed, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completed, out _),
+            _inFlightHandlers,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     private void _ObserveBackgroundHandler(Task task)
@@ -404,7 +410,7 @@ internal sealed class NatsConsumerClient(
         );
     }
 
-    internal static TimeSpan _NextBackoff(TimeSpan current, TimeSpan floor = default)
+    internal static TimeSpan NextBackoff(TimeSpan current, TimeSpan floor = default)
     {
         var ceiling = TimeSpan.FromSeconds(30);
         var next = TimeSpan.FromTicks(Math.Min(current.Ticks * 2, ceiling.Ticks));
@@ -456,7 +462,13 @@ internal sealed class NatsConsumerClient(
 
         // Let exceptions propagate. The framework's OnMessageCallback handler
         // calls CommitAsync on success and RejectAsync on failure.
-        await OnMessageCallback!(message, msg).ConfigureAwait(false);
+        var onMessage =
+            OnMessageCallback
+            ?? throw new InvalidOperationException(
+                "OnMessageCallback must be set before the NATS consumer client starts listening."
+            );
+
+        await onMessage(message, msg).ConfigureAwait(false);
     }
 
     public async ValueTask CommitAsync(object? sender)
@@ -529,7 +541,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        if (!await _pauseGate.PauseAsync())
+        if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -551,7 +563,7 @@ internal sealed class NatsConsumerClient(
 
         _ResetReceiveToken();
 
-        if (!await _pauseGate.ResumeAsync())
+        if (!await _pauseGate.ResumeAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -567,6 +579,31 @@ internal sealed class NatsConsumerClient(
         _pauseGate.Release();
         _ready.TrySetCanceled();
         _CancelReceives();
+
+        // Drain in-flight concurrent handlers before disposing the semaphore and connection, so a
+        // running handler does not Ack/Nak on a disposed connection. Bounded so a stuck handler cannot
+        // block shutdown indefinitely; any handler still running past the budget has its Ack/Nak
+        // swallowed and the message is redelivered (at-least-once).
+        var inFlight = _inFlightHandlers.Keys.ToArray();
+        if (inFlight.Length > 0)
+        {
+            try
+            {
+                await Task.WhenAll(inFlight).WaitAsync(_ShutdownDrainTimeout).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Handler faults are already surfaced via _ObserveBackgroundHandler; on a drain timeout
+                // or fault, log and proceed — disposal must never block or throw.
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ExceptionReceived,
+                        Reason = $"Timed out or faulted draining in-flight handlers during shutdown: {ex}",
+                    }
+                );
+            }
+        }
 
         ReceiveTokenState? receiveTokenStateToDispose = null;
         lock (_receiveLock)

@@ -6,25 +6,35 @@ using Microsoft.Data.SqlClient;
 namespace Headless.CommitCoordination.SqlServer;
 
 /// <summary>
-/// SQL Server commit coordination options.
+/// Configuration options for the SQL Server commit coordination diagnostic self-probe.
 /// </summary>
+/// <remarks>
+/// SQL Server out-of-band commit detection relies on SqlClient's diagnostic listener
+/// (<c>Microsoft.Data.SqlClient</c>) emitting commit/rollback events. The startup self-probe verifies this
+/// behavior at host start by opening a temporary transaction, committing it, and checking whether the diagnostic
+/// event was received. Configure <see cref="DiagnosticProbeMode" /> to control how a mis-wire is handled.
+/// </remarks>
 [PublicAPI]
 public sealed class SqlServerCommitCoordinationOptions
 {
     /// <summary>
-    /// Controls how startup handles the SQL Server diagnostic self-probe.
+    /// Gets or sets how the startup diagnostic self-probe reacts when it cannot verify that SqlClient emits the
+    /// required diagnostic payloads. Defaults to <see cref="SqlServerCommitDiagnosticProbeMode.Warn" />.
     /// </summary>
     public SqlServerCommitDiagnosticProbeMode DiagnosticProbeMode { get; set; } =
         SqlServerCommitDiagnosticProbeMode.Warn;
 
     /// <summary>
-    /// Creates a connection used by the startup probe to verify that SqlClient still emits the diagnostic payloads
-    /// required by out-of-band commit detection. Leave unset to skip the live transaction probe in warn mode.
+    /// Gets or sets a factory that creates the <see cref="SqlConnection" /> used by the startup probe to run a
+    /// live transaction commit and verify that SqlClient emits the required diagnostic payloads. When
+    /// <see langword="null" /> and the mode is <see cref="SqlServerCommitDiagnosticProbeMode.Warn" />, the
+    /// live transaction check is skipped and the probe records a <see cref="SqlServerCommitDiagnosticProbeStatus.Skipped" /> result.
     /// </summary>
     public Func<CancellationToken, ValueTask<SqlConnection>>? DiagnosticProbeConnectionFactory { get; set; }
 
     /// <summary>
-    /// Bounds the startup diagnostic self-probe.
+    /// Gets or sets the maximum duration allowed for the startup diagnostic self-probe. Must be positive.
+    /// Defaults to 5 seconds.
     /// </summary>
     public TimeSpan DiagnosticProbeTimeout { get; set; } = TimeSpan.FromSeconds(5);
 }

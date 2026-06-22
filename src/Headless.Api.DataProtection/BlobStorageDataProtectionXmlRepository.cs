@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Xml;
 using System.Xml.Linq;
 using Headless.Blobs;
 using Headless.Checks;
@@ -12,9 +13,23 @@ using Polly;
 
 namespace Headless.Api;
 
-/// <summary>An <see cref="IXmlRepository"/> which is backed by BlobStorage.</summary>
-/// <remarks>Instances of this type are thread-safe.</remarks>
-public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
+/// <summary>An <see cref="IXmlRepository"/> implementation that persists ASP.NET Core Data Protection keys as XML blobs in an <see cref="IBlobStorage"/> backend.</summary>
+/// <remarks>
+/// <para>
+/// Keys are stored under a <c>DataProtection</c> container as individual <c>*.xml</c> files.
+/// On <see cref="GetAllElements"/>, every blob in that container is enumerated; blobs that cannot be
+/// downloaded (e.g. deleted between the listing and the read) are silently skipped.
+/// Blobs whose content is not well-formed XML (<see cref="System.Xml.XmlException"/>) or cannot be
+/// read due to I/O failures are also skipped and logged at <c>Warning</c> level — they do not abort
+/// the load of the remaining keys.
+/// </para>
+/// <para>
+/// <see cref="StoreElement"/> retries transient I/O and HTTP failures up to 4 times with exponential
+/// back-off and jitter before propagating the exception.
+/// </para>
+/// <para>Instances of this type are thread-safe.</para>
+/// </remarks>
+internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 {
     private static readonly string[] _Containers = ["DataProtection"];
     private readonly IBlobStorage _storage;
@@ -27,13 +42,17 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 Name = "BlobStorageDataProtectionXmlRepositoryRetryPolicy",
                 MaxRetryAttempts = 4,
                 BackoffType = DelayBackoffType.Exponential,
-                UseJitter = false,
+                UseJitter = true,
                 Delay = 200.Milliseconds(),
-                ShouldHandle = new PredicateBuilder().Handle<IOException>(),
+                ShouldHandle = new PredicateBuilder().Handle<IOException>().Handle<HttpRequestException>(),
             }
         )
         .Build();
 
+    /// <summary>Initializes a new instance that reads and writes data-protection key XML to the given blob storage.</summary>
+    /// <param name="storage">The blob storage backend to read and write key XML files.</param>
+    /// <param name="loggerFactory">Optional logger factory; when <see langword="null"/>, a no-op logger is used.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="storage"/> is <see langword="null"/>.</exception>
     public BlobStorageDataProtectionXmlRepository(IBlobStorage storage, ILoggerFactory? loggerFactory = null)
     {
         Argument.IsNotNull(storage);
@@ -41,6 +60,8 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         _logger = loggerFactory?.CreateLogger(typeof(BlobStorageDataProtectionXmlRepository)) ?? NullLogger.Instance;
     }
 
+    /// <inheritdoc />
+    /// <remarks>Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.</remarks>
     public IReadOnlyCollection<XElement> GetAllElements()
     {
         return Async.RunSync(_GetAllElementsAsync);
@@ -50,7 +71,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     {
         _logger.LogLoadingElements();
 
-        var files = (await _storage.GetBlobsListAsync(_Containers, "*.xml")).ToList();
+        var files = (await _storage.GetBlobsListAsync(_Containers, "*.xml").ConfigureAwait(false)).ToList();
 
         if (files.Count == 0)
         {
@@ -66,7 +87,9 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         foreach (var file in files)
         {
             _logger.LogLoadingElement(file.BlobKey);
-            await using var downloadResult = await _storage.OpenReadStreamAsync(_Containers, file.BlobKey);
+            await using var downloadResult = await _storage
+                .OpenReadStreamAsync(_Containers, file.BlobKey)
+                .ConfigureAwait(false);
 
             if (downloadResult is null)
             {
@@ -75,15 +98,31 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 continue;
             }
 
-            elements.Add(XElement.Load(downloadResult.Stream));
-
-            _logger.LogLoadedElement(file.BlobKey);
+            try
+            {
+                var element = await XElement
+                    .LoadAsync(downloadResult.Stream, LoadOptions.None, CancellationToken.None)
+                    .ConfigureAwait(false);
+                elements.Add(element);
+                _logger.LogLoadedElement(file.BlobKey);
+            }
+            catch (Exception ex) when (ex is XmlException or IOException)
+            {
+                _logger.LogMalformedElement(file.BlobKey, ex);
+            }
         }
 
         return elements.AsReadOnly();
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Sync-over-async: <see cref="IXmlRepository"/> is a synchronous interface; <see cref="Async.RunSync"/> bridges to the async implementation.
+    /// The upload is retried up to 4 times on transient <see cref="IOException"/> or <see cref="HttpRequestException"/> failures.
+    /// If all retries are exhausted, the underlying exception propagates.
+    /// When <paramref name="friendlyName"/> is <see langword="null"/> or empty, a random GUID-based file name is used.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="element"/> is <see langword="null"/>.</exception>
     public void StoreElement(XElement element, string? friendlyName)
     {
         Argument.IsNotNull(element);
@@ -95,7 +134,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     private async Task _StoreElementAsync(XElement element, string fileName)
     {
         _logger.LogSavingElement(fileName);
-        await _RetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName));
+        await _RetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName)).ConfigureAwait(false);
         _logger.LogSavedElement(fileName);
 
         return;
@@ -108,10 +147,14 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
             var (storage, element, fileName) = state;
 
             await using var memoryStream = new MemoryStream();
-            await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, cancellationToken);
+            await element
+                .SaveAsync(memoryStream, SaveOptions.DisableFormatting, cancellationToken)
+                .ConfigureAwait(false);
             memoryStream.Seek(0, SeekOrigin.Begin);
 
-            await storage.UploadAsync(_Containers, new(memoryStream, fileName), cancellationToken);
+            await storage
+                .UploadAsync(_Containers, new(memoryStream, fileName), cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 }

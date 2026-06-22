@@ -283,6 +283,10 @@ Each `MessagingTestHarness` instance owns its own `MessageObservationStore`. Tes
 - **Standalone** (`CreateAsync`): owns its own `ServiceProvider` — always dispose after each test via `await using`.
 - **Hosted** (`AddMessagingTestHarness()`): the host owns the `ServiceProvider` — the harness does not dispose the container.
 
+## Configuration
+
+None. `MessagingTestHarness` has no configuration class or options object. The only tuneable is the per-call `timeout` parameter on `WaitFor*` methods; when omitted it defaults to `MessagingTestHarness.DefaultTimeout` (5 seconds). Transport parallelism is intentionally disabled by the harness to guarantee deterministic single-threaded test execution — this is a fixed internal choice and cannot be overridden.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

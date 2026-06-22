@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="ClassAccessibilityTitle" xml:space="preserve">
+    <value>Class accessibility issue</value>
+  </data>
+  <data name="ClassAccessibilityMessage" xml:space="preserve">
+    <value>The class '{0}' should be public or internal to be used with [JobFunction]</value>
+  </data>
+  <data name="MethodAccessibilityTitle" xml:space="preserve">
+    <value>Method accessibility issue</value>
+  </data>
+  <data name="MethodAccessibilityMessage" xml:space="preserve">
+    <value>The method '{0}' should be public or internal to be used with [JobFunction]</value>
+  </data>
+  <data name="InvalidCronExpressionTitle" xml:space="preserve">
+    <value>Invalid cron expression</value>
+  </data>
+  <data name="InvalidCronExpressionMessage" xml:space="preserve">
+    <value>The cron expression '{0}' in function '{1}' is invalid</value>
+  </data>
+  <data name="MissingFunctionNameTitle" xml:space="preserve">
+    <value>Missing function name</value>
+  </data>
+  <data name="MissingFunctionNameMessage" xml:space="preserve">
+    <value>The [JobFunction] attribute on method '{0}' in class '{1}' must specify a function name</value>
+  </data>
+  <data name="DuplicateFunctionNameTitle" xml:space="preserve">
+    <value>Duplicate function name</value>
+  </data>
+  <data name="DuplicateFunctionNameMessage" xml:space="preserve">
+    <value>The function name '{0}' is already used by another [JobFunction] method</value>
+  </data>
+  <data name="MultipleConstructorsTitle" xml:space="preserve">
+    <value>Multiple constructors detected</value>
+  </data>
+  <data name="MultipleConstructorsMessage" xml:space="preserve">
+    <value>The class '{0}' has multiple constructors. Only the first constructor will be used for dependency injection. Consider using [JobsConstructor] attribute to explicitly mark the preferred constructor.</value>
+  </data>
+  <data name="AbstractClassTitle" xml:space="preserve">
+    <value>Abstract class with JobFunction</value>
+  </data>
+  <data name="AbstractClassMessage" xml:space="preserve">
+    <value>The abstract class '{0}' contains [JobFunction] methods</value>
+  </data>
+  <data name="NestedClassTitle" xml:space="preserve">
+    <value>Nested class with JobFunction</value>
+  </data>
+  <data name="NestedClassMessage" xml:space="preserve">
+    <value>The nested class '{0}' contains [JobFunction] methods. JobFunction methods are only allowed in top-level classes.</value>
+  </data>
+  <data name="InvalidMethodParameterTitle" xml:space="preserve">
+    <value>Invalid JobFunction parameter</value>
+  </data>
+  <data name="InvalidMethodParameterMessage" xml:space="preserve">
+    <value>The method '{0}' has invalid parameter '{1}' of type '{2}'. JobFunction methods can only have JobFunctionContext, JobFunctionContext&lt;T&gt;, CancellationToken parameters, or no parameters.</value>
+  </data>
+  <data name="MultipleJobsConstructorAttributesTitle" xml:space="preserve">
+    <value>Multiple JobsConstructor attributes</value>
+  </data>
+  <data name="MultipleJobsConstructorAttributesMessage" xml:space="preserve">
+    <value>The class '{0}' has multiple constructors with [JobsConstructor] attribute. Only one constructor can be marked with [JobsConstructor].</value>
+  </data>
+</root>

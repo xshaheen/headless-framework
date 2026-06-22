@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
 
@@ -10,12 +12,20 @@ internal interface IInternalJobManager
     );
     Task ReleaseAcquiredResources(InternalFunctionContext[] context, CancellationToken cancellationToken = default);
     Task SetTickersInProgress(InternalFunctionContext[] context, CancellationToken cancellationToken = default);
-    Task UpdateTickerAsync(InternalFunctionContext context, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Writes the job's current status to the durable store, fenced on ownership + non-terminal status. Returns the
+    /// affected row count: <c>0</c> means the write was fenced out (the row was reclaimed/terminalized by a sweep, e.g.
+    /// after a stall) and the recorded status may not reflect the actual outcome — callers completing a job
+    /// successfully use this to flag the divergence (#462).
+    /// </summary>
+    Task<int> UpdateTickerAsync(InternalFunctionContext context, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Renews the running job's lease (#316), dispatching to the time or cron occurrence renew by
     /// <see cref="InternalFunctionContext.Type"/>. Returns the affected row count: <c>0</c> means the lease was
-    /// lost and the caller should cancel the job (cancel-on-loss, U2).
+    /// lost and the caller should cancel the job (cancel-on-loss, U2); a <b>negative</b> value means coordination
+    /// membership is not currently established (#461) and the caller should skip the tick rather than cancel.
     /// </summary>
     Task<int> RenewLeaseAsync(InternalFunctionContext context, CancellationToken cancellationToken = default);
     Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Blobs.SshNet;
 
+/// <summary>Extension methods to register the SFTP/SSH blob storage provider.</summary>
 [PublicAPI]
 public static class SetupSsh
 {

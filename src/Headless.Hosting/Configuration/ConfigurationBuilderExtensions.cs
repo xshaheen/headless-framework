@@ -18,6 +18,7 @@ public static class ConfigurationBuilderExtensions
         /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
         /// <param name="action">The action used to add to the request execution pipeline.</param>
         /// <returns>The same configuration builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IConfigurationBuilder AddIf(bool condition, Func<IConfigurationBuilder, IConfigurationBuilder> action)
         {
             Argument.IsNotNull(configurationBuilder);
@@ -38,6 +39,7 @@ public static class ConfigurationBuilderExtensions
         /// <param name="condition">If <see langword="true"/> is returned the action is executed.</param>
         /// <param name="action">The action used to add to the request execution pipeline.</param>
         /// <returns>The same configuration builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IConfigurationBuilder AddIf(
             Func<IConfigurationBuilder, bool> condition,
             Func<IConfigurationBuilder, IConfigurationBuilder> action
@@ -67,6 +69,7 @@ public static class ConfigurationBuilderExtensions
         /// <param name="elseAction">The action used to add to the configuration pipeline if the condition is
         /// <see langword="false"/>.</param>
         /// <returns>The same configuration builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IConfigurationBuilder AddIfElse(
             bool condition,
             Func<IConfigurationBuilder, IConfigurationBuilder> ifAction,
@@ -92,6 +95,7 @@ public static class ConfigurationBuilderExtensions
         /// <param name="elseAction">The action used to add to the configuration pipeline if the condition is
         /// <see langword="false"/>.</param>
         /// <returns>The same configuration builder.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when a required argument is <see langword="null"/>.</exception>
         public IConfigurationBuilder AddIfElse(
             Func<IConfigurationBuilder, bool> condition,
             Func<IConfigurationBuilder, IConfigurationBuilder> ifAction,

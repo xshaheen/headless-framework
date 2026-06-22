@@ -5,6 +5,7 @@ using FluentValidation;
 
 namespace Headless.Blobs.Azure;
 
+/// <summary>Configuration for the Azure Blob Storage provider.</summary>
 public sealed class AzureStorageOptions
 {
     /// <summary>
@@ -26,7 +27,7 @@ public sealed class AzureStorageOptions
     public string CacheControl { get; set; } = "max-age=7776000, must-revalidate";
 }
 
-public sealed class AzureStorageOptionsValidator : AbstractValidator<AzureStorageOptions>
+internal sealed class AzureStorageOptionsValidator : AbstractValidator<AzureStorageOptions>
 {
     public AzureStorageOptionsValidator()
     {

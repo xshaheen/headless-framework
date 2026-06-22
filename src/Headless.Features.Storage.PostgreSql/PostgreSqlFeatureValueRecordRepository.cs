@@ -10,12 +10,18 @@ using Npgsql;
 #pragma warning disable CA2100 // SQL text only interpolates validated schema/table identifiers; values remain parameterized.
 namespace Headless.Features.PostgreSql;
 
+/// <summary>
+/// PostgreSQL implementation of <see cref="IFeatureValueRecordRepository"/> that reads and
+/// writes feature value records using raw ADO.NET. After each mutation the record is published
+/// via <see cref="ILocalEventBus"/> in a transient scope to notify in-process subscribers.
+/// </summary>
 internal sealed class PostgreSqlFeatureValueRecordRepository(
     IOptions<PostgreSqlFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions,
     IServiceProvider services
 ) : IFeatureValueRecordRepository
 {
+    /// <inheritdoc/>
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
         string? providerName,
@@ -40,6 +46,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
             : null;
     }
 
+    /// <inheritdoc/>
     public Task<List<FeatureValueRecord>> FindAllAsync(
         string name,
         string? providerName,
@@ -73,6 +80,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
     }
 
+    /// <inheritdoc/>
     public Task<List<FeatureValueRecord>> GetListAsync(
         string providerName,
         string? providerKey,
@@ -90,6 +98,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         );
     }
 
+    /// <inheritdoc/>
     public async Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
@@ -108,6 +117,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
     public async Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
@@ -118,6 +128,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         IReadOnlyCollection<FeatureValueRecord> features,
         CancellationToken cancellationToken = default

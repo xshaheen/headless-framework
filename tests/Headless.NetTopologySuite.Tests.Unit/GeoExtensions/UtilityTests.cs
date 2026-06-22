@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 
@@ -7,7 +8,7 @@ namespace Tests.GeoExtensions;
 
 public sealed class UtilityTests
 {
-    private static GeometryFactory Factory => GeoConstants.GeometryFactory;
+    private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     private static Polygon _CreateSquare()
     {
@@ -22,77 +23,77 @@ public sealed class UtilityTests
         return Factory.CreatePolygon(coords);
     }
 
-    #region ContainEmpties
+    #region ContainsEmpties
 
     [Fact]
-    public void ContainEmpties_should_return_true_for_empty_geometry()
+    public void ContainsEmpties_should_return_true_for_empty_geometry()
     {
         var empty = Factory.CreatePolygon();
 
-        var result = empty.ContainEmpties();
+        var result = empty.ContainsEmpties();
 
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void ContainEmpties_should_return_true_for_linestring()
+    public void ContainsEmpties_should_return_true_for_linestring()
     {
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
 
-        var result = lineString.ContainEmpties();
+        var result = lineString.ContainsEmpties();
 
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void ContainEmpties_should_return_true_for_point()
+    public void ContainsEmpties_should_return_true_for_point()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
 
-        var result = point.ContainEmpties();
+        var result = point.ContainsEmpties();
 
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void ContainEmpties_should_return_true_for_collection_with_empty()
+    public void ContainsEmpties_should_return_true_for_collection_with_empty()
     {
         var emptyPolygon = Factory.CreatePolygon();
         var collection = Factory.CreateGeometryCollection([emptyPolygon]);
 
-        var result = collection.ContainEmpties();
+        var result = collection.ContainsEmpties();
 
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void ContainEmpties_should_return_true_for_collection_with_point()
+    public void ContainsEmpties_should_return_true_for_collection_with_point()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
         var collection = Factory.CreateGeometryCollection([point]);
 
-        var result = collection.ContainEmpties();
+        var result = collection.ContainsEmpties();
 
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void ContainEmpties_should_return_true_for_collection_with_linestring()
+    public void ContainsEmpties_should_return_true_for_collection_with_linestring()
     {
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
         var collection = Factory.CreateGeometryCollection([lineString]);
 
-        var result = collection.ContainEmpties();
+        var result = collection.ContainsEmpties();
 
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void ContainEmpties_should_return_false_for_valid_polygon()
+    public void ContainsEmpties_should_return_false_for_valid_polygon()
     {
         var polygon = _CreateSquare();
 
-        var result = polygon.ContainEmpties();
+        var result = polygon.ContainsEmpties();
 
         result.Should().BeFalse();
     }
@@ -130,17 +131,17 @@ public sealed class UtilityTests
 
     #endregion
 
-    #region Flat
+    #region Flatten
 
     [Fact]
-    public void Flat_should_flatten_geometry_collection()
+    public void Flatten_should_flatten_geometry_collection()
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
         var innerCollection = Factory.CreateGeometryCollection([point]);
         var outerCollection = Factory.CreateGeometryCollection([innerCollection, lineString]);
 
-        var result = outerCollection.Flat();
+        var result = outerCollection.Flatten();
 
         result.Should().HaveCount(2);
         result.Should().Contain(point);
@@ -148,11 +149,11 @@ public sealed class UtilityTests
     }
 
     [Fact]
-    public void Flat_should_return_single_geometry_as_array()
+    public void Flatten_should_return_single_geometry_as_array()
     {
         var polygon = _CreateSquare();
 
-        var result = polygon.Flat();
+        var result = polygon.Flatten();
 
         result.Should().HaveCount(1);
         result[0].Should().Be(polygon);

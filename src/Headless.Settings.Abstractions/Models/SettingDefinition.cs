@@ -2,6 +2,22 @@
 
 namespace Headless.Settings.Models;
 
+/// <summary>Describes a named application setting, including its defaults, visibility, and storage options.</summary>
+/// <param name="name">Unique name that identifies this setting.</param>
+/// <param name="defaultValue">Optional default value used when no provider supplies a value.</param>
+/// <param name="displayName">Human-readable name for UI surfaces; defaults to <c>name</c> when not specified.</param>
+/// <param name="description">Optional descriptive text for the setting.</param>
+/// <param name="isVisibleToClients">
+/// Whether clients may read this setting's value. Defaults to <see langword="false"/> to prevent
+/// accidental exposure of sensitive values such as passwords.
+/// </param>
+/// <param name="isInherited">
+/// Whether the setting falls back to the next provider in the chain when no value is set.
+/// Defaults to <see langword="true"/>.
+/// </param>
+/// <param name="isEncrypted">
+/// Whether the value is stored encrypted in the data source. Defaults to <see langword="false"/>.
+/// </param>
 [PublicAPI]
 public sealed class SettingDefinition(
     string name,
@@ -49,11 +65,11 @@ public sealed class SettingDefinition(
     /// <summary>Can be used to get/set custom properties for this setting definition.</summary>
     public Dictionary<string, object?> Properties { get; } = [];
 
-    /// <summary>Gets/sets a key-value on the <see cref="Properties"/>.</summary>
-    /// <param name="name">Name of the property</param>
+    /// <summary>Gets or sets a custom property value by name on <see cref="Properties"/>.</summary>
+    /// <param name="name">Key of the property to get or set.</param>
     /// <returns>
-    /// Returns the value in the <see cref="Properties"/> dictionary by given <paramref name="name"/>.
-    /// Returns null if given <paramref name="name"/> is not present in the <see cref="Properties"/> dictionary.
+    /// The value stored under <paramref name="name"/> in <see cref="Properties"/>,
+    /// or <see langword="null"/> if <paramref name="name"/> is not present.
     /// </returns>
     public object? this[string name]
     {

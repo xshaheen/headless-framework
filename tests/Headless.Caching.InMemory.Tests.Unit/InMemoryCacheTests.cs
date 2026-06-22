@@ -94,7 +94,7 @@ public sealed class InMemoryCacheTests : TestBase
             physicalExpiresAt,
             null,
             typeof(InMemoryCache)
-                .GetField("_timeProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetField("_timeProvider", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
                 .GetValue(cache),
             false,
             true,
@@ -112,7 +112,10 @@ public sealed class InMemoryCacheTests : TestBase
 
     private static object _GetMemory(InMemoryCache cache)
     {
-        var field = typeof(InMemoryCache).GetField("_memory", BindingFlags.Instance | BindingFlags.NonPublic);
+        var field = typeof(InMemoryCache).GetField(
+            "_memory",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
         field.Should().NotBeNull();
 
         return field!.GetValue(cache)!;
@@ -122,7 +125,10 @@ public sealed class InMemoryCacheTests : TestBase
     {
         var method = typeof(InMemoryCache).GetMethod(
             "_StartMaintenanceAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(bool)],
+            null
         );
         method.Should().NotBeNull();
 
@@ -1872,12 +1878,7 @@ public sealed class InMemoryCacheTests : TestBase
             .BeFalse();
         (await cache.GetCountAsync(cancellationToken: AbortToken)).Should().Be(0);
 
-        var afterFlush = await cache.GetOrAddAsync<int>(
-            key,
-            _ => ValueTask.FromResult<int>(2),
-            failSafeOptions,
-            AbortToken
-        );
+        var afterFlush = await cache.GetOrAddAsync(key, _ => ValueTask.FromResult(2), failSafeOptions, AbortToken);
         afterFlush.IsStale.Should().BeFalse("flush wiped the stale reserve, so the factory runs fresh");
         afterFlush.Value.Should().Be(2);
     }
@@ -2037,6 +2038,63 @@ public sealed class InMemoryCacheTests : TestBase
         // then - key1 should still exist (was recently accessed)
         var key1Exists = await cache.ExistsAsync("key1", AbortToken);
         key1Exists.Should().BeTrue();
+    }
+
+    // #31 — Concurrent LRU eviction stress: 50+ parallel tasks inserting random entries into a capacity-capped
+    // InMemoryCache (small MaxItems). After Task.WhenAll, CurrentMemorySize must be >= 0 and must equal the
+    // sum of sizes of surviving (live, non-expired) entries. Verifies that Interlocked.Add across 10+ call
+    // sites never leaves _currentMemorySize negative or inconsistent under contention.
+    [Fact]
+    public async Task should_keep_current_memory_size_non_negative_and_consistent_under_concurrent_lru_eviction()
+    {
+        // given — small MaxItems cap (10) to provoke heavy eviction under concurrent writes
+        const int maxItems = 10;
+        const long entrySize = 100;
+        const int parallelTasks = 60;
+        var options = new InMemoryCacheOptions
+        {
+            MaxItems = maxItems,
+            MaxMemorySize = maxItems * entrySize,
+            SizeCalculator = _ => entrySize,
+        };
+        using var cache = _CreateCache(options);
+
+        // when — 60 tasks each insert a unique random-key entry concurrently
+        var tasks = Enumerable
+            .Range(0, parallelTasks)
+            .Select(i =>
+                Task.Run(async () =>
+                {
+                    var key = Faker.Random.AlphaNumeric(20) + i;
+                    await cache.UpsertAsync(key, Faker.Random.AlphaNumeric(5), TimeSpan.FromMinutes(5));
+                })
+            )
+            .ToArray();
+
+        await Task.WhenAll(tasks);
+
+        // Allow LRU background eviction to settle (eviction is async maintenance)
+        await Task.Delay(200, AbortToken);
+
+        // then — CurrentMemorySize must be non-negative
+        var reportedSize = cache.CurrentMemorySize;
+        reportedSize
+            .Should()
+            .BeGreaterThanOrEqualTo(0, "Interlocked.Add across concurrent evictions must never go negative");
+
+        // CurrentMemorySize must equal the sum of live surviving entries' sizes
+        // (surviving = not yet evicted; each entry has size = entrySize)
+        var survivingCount = await cache.GetCountAsync(cancellationToken: AbortToken);
+        var expectedSize = survivingCount * entrySize;
+        reportedSize
+            .Should()
+            .Be(
+                expectedSize,
+                $"CurrentMemorySize ({reportedSize}) must equal surviving entries ({survivingCount}) × entry size ({entrySize})"
+            );
+
+        // surviving count must not exceed the cap
+        survivingCount.Should().BeLessThanOrEqualTo(maxItems);
     }
 
     #endregion
@@ -2322,7 +2380,7 @@ public sealed class InMemoryCacheTests : TestBase
         object boxed = boxedInt;
 
         // when
-        await cache.UpsertAsync<object>(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
         var result = await cache.GetAsync<int>(key, AbortToken);
 
         // then
@@ -2365,7 +2423,7 @@ public sealed class InMemoryCacheTests : TestBase
         object boxed = new TestClass { Value = 1234 };
 
         // when
-        await cache.UpsertAsync<object>(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync(key, boxed, TimeSpan.FromMinutes(5), AbortToken);
         var result = await cache.GetAsync<TestClass>(key, AbortToken);
 
         // then

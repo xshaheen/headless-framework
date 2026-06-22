@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.CommitCoordination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -15,9 +14,14 @@ public static class SetupInMemoryCommitCoordination
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Adds the in-memory commit signal source.
+        /// Adds the in-memory commit signal source and the core commit coordination services.
         /// </summary>
-        /// <returns>The service collection.</returns>
+        /// <remarks>
+        /// Use for tests or non-relational flows where the caller explicitly signals the commit or rollback
+        /// outcome via <see cref="ICommitScope.SignalAsync" /> on the scope returned by
+        /// <c>InMemoryCommitSignalSource.Attach</c>. Idempotent: repeated calls register each service at most once.
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         public IServiceCollection AddInMemoryCommitCoordination()
         {
             services.AddCommitCoordination();

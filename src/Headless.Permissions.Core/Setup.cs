@@ -20,11 +20,31 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Permissions;
 
+/// <summary>
+/// Extension methods for registering the Headless Permissions management core and its storage provider.
+/// </summary>
 [PublicAPI]
 public static class SetupPermissions
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers the full Headless Permissions runtime — grant resolution, caching, authorization handlers, and the
+        /// background initializer — together with the storage provider chosen inside <paramref name="configure"/>.
+        /// </summary>
+        /// <param name="configure">
+        /// Callback that receives a <see cref="HeadlessPermissionsSetupBuilder"/>. Exactly one storage provider must
+        /// be registered (e.g. <c>setup.UseEntityFramework&lt;TContext&gt;()</c>); zero or more than one throws
+        /// <see cref="InvalidOperationException"/> when the host starts.
+        /// </param>
+        /// <returns>
+        /// A <see cref="HeadlessPermissionsBuilder"/> that exposes the underlying <see cref="IServiceCollection"/>
+        /// for further configuration.
+        /// </returns>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown if <paramref name="configure"/> registers zero or more than one storage provider extension, or if
+        /// <c>AddHeadlessPermissions</c> has already been called on this <see cref="IServiceCollection"/>.
+        /// </exception>
         public HeadlessPermissionsBuilder AddHeadlessPermissions(Action<HeadlessPermissionsSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -35,6 +55,11 @@ public static class SetupPermissions
             return _AddPermissionsStorageCore(services, setup);
         }
 
+        /// <summary>
+        /// Registers <typeparamref name="T"/> as a permission definition provider. The provider is resolved as a
+        /// singleton and its <c>Define</c> method is called during the permissions initialization phase to populate
+        /// the static permission store.
+        /// </summary>
         public IServiceCollection AddPermissionDefinitionProvider<T>()
             where T : class, IPermissionDefinitionProvider
         {
@@ -48,6 +73,11 @@ public static class SetupPermissions
             return services;
         }
 
+        /// <summary>
+        /// Registers <typeparamref name="T"/> as an additional grant provider. The provider participates in
+        /// AWS IAM-style resolution: an explicit <c>Prohibited</c> from any provider overrides all grants;
+        /// registration order determines priority (last-registered = highest priority).
+        /// </summary>
         public IServiceCollection AddPermissionGrantProvider<T>()
             where T : class, IPermissionGrantProvider
         {
@@ -64,6 +94,11 @@ public static class SetupPermissions
             return services;
         }
 
+        /// <summary>
+        /// Replaces <see cref="IPermissionManager"/> with <see cref="AlwaysAllowPermissionManager"/> and
+        /// <see cref="IAuthorizationService"/> with <see cref="AlwaysAllowAuthorizationService"/>, bypassing all
+        /// permission and authorization checks. Intended for integration tests only; do not call in production.
+        /// </summary>
         public IServiceCollection AddAlwaysAllowAuthorization()
         {
             services.AddOrReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
@@ -105,6 +140,7 @@ public static class SetupPermissions
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
             "Headless.Permissions",
+            ["UseEntityFramework", "UsePostgreSql", "UseSqlServer"],
             static name => new PermissionsStorageProviderRegistration(name)
         );
 

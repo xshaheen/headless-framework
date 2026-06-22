@@ -5,6 +5,15 @@ using Humanizer;
 
 namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 
+/// <summary>
+/// Represents a saved-card token issued by Paymob after a successful card payment when the
+/// customer consents to saving their card for future use.
+/// </summary>
+/// <remarks>
+/// Paymob delivers this object inside a <c>CashInCallback</c> envelope whose <c>Type</c> is
+/// <c>CashInCallbackTypes.Token</c>. Verify authenticity with
+/// <c>IPaymobCashInBroker.Validate(CashInCallbackToken, string)</c> before persisting the token.
+/// </remarks>
 [PublicAPI]
 public sealed class CashInCallbackToken
 {
@@ -38,7 +47,11 @@ public sealed class CashInCallbackToken
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; set; }
 
-    /// <summary>Return the concatenated string of transaction.</summary>
+    /// <summary>
+    /// Produces the HMAC input string for this token by concatenating the required fields in
+    /// Paymob's defined order.
+    /// </summary>
+    /// <remarks>Pass the result directly to <c>IPaymobCashInBroker.Validate(string, string)</c>.</remarks>
     public string ToConcatenatedString()
     {
         return CardSubtype
@@ -51,6 +64,10 @@ public sealed class CashInCallbackToken
             + Token;
     }
 
+    /// <summary>
+    /// Parses <c>CreatedAt</c> into a <see cref="DateTimeOffset"/>, applying the Egypt/Cairo UTC+2
+    /// offset when the raw string carries no timezone information.
+    /// </summary>
     public DateTimeOffset CreatedAtDateTimeOffset()
     {
         var dateTime = DateTime.Parse(CreatedAt, CultureInfo.InvariantCulture);
@@ -64,6 +81,9 @@ public sealed class CashInCallbackToken
             : DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// Returns normalised card information derived from the token's masked PAN and card subtype.
+    /// </summary>
     public CashInCardInfo Card()
     {
         var type = CardSubtype?.ToUpperInvariant() switch

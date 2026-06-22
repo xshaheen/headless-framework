@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -8,7 +9,7 @@ namespace Tests.GeoExtensions;
 
 public sealed class OrientationTests
 {
-    private static GeometryFactory Factory => GeoConstants.GeometryFactory;
+    private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     #region EnsureIsOrientedCounterClockwise - Polygon
 

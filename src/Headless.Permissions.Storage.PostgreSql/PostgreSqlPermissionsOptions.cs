@@ -5,9 +5,13 @@ using Npgsql;
 
 namespace Headless.Permissions.PostgreSql;
 
+/// <summary>
+/// Connection and command options for the PostgreSQL permissions storage provider.
+/// </summary>
 [PublicAPI]
 public sealed class PostgreSqlPermissionsOptions
 {
+    /// <summary>The Npgsql connection string used to connect to the PostgreSQL database.</summary>
     public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>Timeout applied to DDL/DML commands issued by this provider. Defaults to 30 seconds.</summary>

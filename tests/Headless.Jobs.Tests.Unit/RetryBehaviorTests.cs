@@ -6,6 +6,7 @@ using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
@@ -179,6 +180,205 @@ public sealed class RetryBehaviorTests
         await internalManager
             .DidNotReceive()
             .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteTaskAsync_skips_the_tick_without_cancelling_when_renewal_reports_membership_unknown()
+    {
+        // #461: a negative RenewLeaseAsync result means coordination membership is momentarily unestablished, NOT a
+        // lost lease. The renewal loop must skip the tick and let the healthy job keep running, not cancel it.
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Every renewal reports membership-unknown (sentinel < 0); the loop must skip, not cancel. The delegate blocks
+        // until the SECOND renewal tick so the test is deterministic (no real-clock margins): by the 2nd call the 1st
+        // tick's skip has already been logged, and we know the loop chose to keep running rather than cancel.
+        var secondRenewalReached = new TaskCompletionSource();
+        var renewalCalls = 0;
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref renewalCalls) >= 2)
+                {
+                    secondRenewalReached.TrySetResult();
+                }
+
+                return Task.FromResult(-1);
+            });
+        // Completion write applies (1) so the #462 reconciliation path is not triggered here.
+        internalManager
+            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+
+        var logger = new CapturingLogger<JobsExecutionTaskHandler>();
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder
+            {
+                LeaseDuration = TimeSpan.FromMinutes(5),
+                LeaseRenewalInterval = TimeSpan.FromMilliseconds(20),
+            },
+            logger
+        );
+
+        var context = new InternalFunctionContext
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LongJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            // Completes only after the renewal loop has ticked twice — deterministic, not timing-dependent.
+            CachedDelegate = async (ct, _, _) =>
+                await secondRenewalReached.Task.WaitAsync(TimeSpan.FromSeconds(10), ct),
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true);
+
+        context.LeaseLost.Should().BeFalse(); // membership-unknown must NOT trip cancel-on-loss
+        context.Status.Should().Be(JobStatus.DueDone);
+        logger.Entries.Should().Contain(e => e.EventId == 3103); // membership-unknown skip was logged
+    }
+
+    [Fact]
+    public async Task ExecuteTaskAsync_cancels_on_loss_when_membership_stays_unknown_past_the_lease_window()
+    {
+        // #461 bound: a membership blip is tolerated only within the lease window. If membership stays unestablished
+        // for the whole LeaseDuration (e.g. a permanent partition), the lease has lapsed and the row is being
+        // reclaimed elsewhere — the loop must stop the local zombie via cancel-on-loss (leaving the row for the sweep).
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        // Membership never re-establishes — every renewal reports membership-unknown.
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(-1));
+
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder
+            {
+                LeaseDuration = TimeSpan.FromMilliseconds(250),
+                LeaseRenewalInterval = TimeSpan.FromMilliseconds(40),
+            },
+            NullLogger<JobsExecutionTaskHandler>.Instance
+        );
+
+        var context = new InternalFunctionContext
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "LongJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            // Runs until cancel-on-loss fires — deterministic: the lease-window bound WILL trip once membership has
+            // been unknown for LeaseDuration (load only delays the moment, never changes the outcome).
+            CachedDelegate = async (ct, _, _) => await Task.Delay(Timeout.Infinite, ct),
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true);
+
+        context.LeaseLost.Should().BeTrue(); // bound tripped -> cancel-on-loss, no terminal write
+        await internalManager
+            .DidNotReceive()
+            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteTaskAsync_logs_reconciliation_when_a_successful_completion_write_is_fenced()
+    {
+        // #462: a job that completes successfully but whose completion write matches 0 rows (the row was reclaimed/
+        // terminalized by a sweep after a stall) must log a reconciliation warning so operators don't treat the
+        // recorded failure as real and re-trigger.
+        var services = new ServiceCollection();
+        var internalManager = Substitute.For<IInternalJobManager>();
+        var instrumentation = Substitute.For<IJobsInstrumentation>();
+        services.AddSingleton(internalManager);
+        services.AddSingleton(instrumentation);
+        var serviceProvider = services.BuildServiceProvider();
+
+        internalManager
+            .RenewLeaseAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(1));
+        // The completion write is fenced out (0 rows) — the row was already terminalized by a sweep.
+        internalManager
+            .UpdateTickerAsync(Arg.Any<InternalFunctionContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(0));
+
+        var logger = new CapturingLogger<JobsExecutionTaskHandler>();
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager,
+            new SchedulerOptionsBuilder(),
+            logger
+        );
+
+        var context = new InternalFunctionContext
+        {
+            JobId = Guid.NewGuid(),
+            FunctionName = "QuickJob",
+            Type = JobType.CronJobOccurrence,
+            ExecutionTime = DateTime.UtcNow,
+            RetryIntervals = [0],
+            Retries = 0,
+            RetryCount = 0,
+            Status = JobStatus.Idle,
+            CachedDelegate = (_, _, _) => Task.CompletedTask, // succeeds immediately
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true);
+
+        context.Status.Should().Be(JobStatus.DueDone); // local outcome is success...
+        logger.Entries.Should().Contain(e => e.EventId == 3104); // ...but the fenced write is flagged for reconcile
+    }
+
+    // Minimal in-memory ILogger that records emitted entries so tests can assert a specific [LoggerMessage] fired.
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, int EventId, string Message)> Entries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state)
+            where TState : notnull => _NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        ) => Entries.Add((logLevel, eventId.Id, formatter(state, exception)));
+
+        private sealed class _NullScope : IDisposable
+        {
+            public static readonly _NullScope Instance = new();
+
+            public void Dispose() { }
+        }
     }
 
     private sealed record Attempt(DateTime Timestamp, int RetryCount);

@@ -9,6 +9,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Headless.EntityFramework.Configurations;
 
+/// <summary>
+/// EF Core value converter that serializes <c>ExtraProperties</c> to a JSON string for storage and
+/// deserializes it back on read. An empty or <c>{}</c> JSON value round-trips to an empty
+/// <c>ExtraProperties</c> instance.
+/// </summary>
 [PublicAPI]
 public sealed class ExtraPropertiesValueConverter()
     : ValueConverter<ExtraProperties, string>(x => _Serialize(x), x => _Deserialize(x))
@@ -38,6 +43,11 @@ public sealed class ExtraPropertiesValueConverter()
     }
 }
 
+/// <summary>
+/// EF Core value comparer for <c>ExtraProperties</c> that performs entry-by-entry key and value
+/// equality so EF Core can detect which dictionary instances actually changed and avoid spurious
+/// updates.
+/// </summary>
 [PublicAPI]
 public sealed class ExtraPropertiesValueComparer()
     : ValueComparer<ExtraProperties>(

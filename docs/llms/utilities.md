@@ -1,6 +1,6 @@
 ---
 domain: Utilities
-packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, ReCaptcha, Redis, Sitemaps, Slugs
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -64,52 +64,40 @@ packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstracti
   - [Configuration](#configuration-4)
   - [Dependencies](#dependencies-4)
   - [Side Effects](#side-effects-4)
-- [Headless.ReCaptcha](#headlessrecaptcha)
+- [Headless.Redis](#headlessredis)
   - [Problem Solved](#problem-solved-5)
   - [Key Features](#key-features-5)
   - [Installation](#installation-5)
   - [Quick Start](#quick-start-5)
   - [Usage](#usage-3)
-    - [Server-Side Verification](#server-side-verification)
-    - [Razor Tag Helpers](#razor-tag-helpers)
+    - [Script Execution](#script-execution)
   - [Configuration](#configuration-5)
-    - [appsettings.json](#appsettingsjson)
   - [Dependencies](#dependencies-5)
   - [Side Effects](#side-effects-5)
-- [Headless.Redis](#headlessredis)
+- [Headless.Sitemaps](#headlesssitemaps)
   - [Problem Solved](#problem-solved-6)
   - [Key Features](#key-features-6)
   - [Installation](#installation-6)
-  - [Quick Start](#quick-start-6)
   - [Usage](#usage-4)
-    - [Script Execution](#script-execution)
+    - [Basic Sitemap](#basic-sitemap)
+    - [Localized URLs](#localized-urls)
+    - [Sitemap Index](#sitemap-index)
   - [Configuration](#configuration-6)
   - [Dependencies](#dependencies-6)
   - [Side Effects](#side-effects-6)
-- [Headless.Sitemaps](#headlesssitemaps)
+- [Headless.Slugs](#headlessslugs)
   - [Problem Solved](#problem-solved-7)
   - [Key Features](#key-features-7)
   - [Installation](#installation-7)
   - [Usage](#usage-5)
-    - [Basic Sitemap](#basic-sitemap)
-    - [Localized URLs](#localized-urls)
-    - [Sitemap Index](#sitemap-index)
-  - [Configuration](#configuration-7)
-  - [Dependencies](#dependencies-7)
-  - [Side Effects](#side-effects-7)
-- [Headless.Slugs](#headlessslugs)
-  - [Problem Solved](#problem-solved-8)
-  - [Key Features](#key-features-8)
-  - [Installation](#installation-8)
-  - [Usage](#usage-6)
     - [Basic Usage](#basic-usage)
     - [Custom Options](#custom-options)
     - [Character Replacements](#character-replacements)
-  - [Configuration](#configuration-8)
-  - [Dependencies](#dependencies-8)
-  - [Side Effects](#side-effects-8)
+  - [Configuration](#configuration-7)
+  - [Dependencies](#dependencies-7)
+  - [Side Effects](#side-effects-7)
 
-> Standalone utility packages for validation, strongly-typed IDs, hosting helpers, geospatial ops, reCAPTCHA, Redis scripts, sitemaps, and slug generation.
+> Standalone utility packages for validation, strongly-typed IDs, hosting helpers, geospatial ops, Redis scripts, sitemaps, and slug generation.
 
 ## Quick Orientation
 
@@ -119,20 +107,20 @@ Install individually as needed -- these packages are independent of each other:
 - **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`), national IDs, collections, geo, pagination, URLs. Use `ErrorDescriptor` for structured API errors.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
-- **ReCaptcha** -- Google reCAPTCHA v2/v3 server-side verification (`IReCaptchaSiteVerifyV2`/`V3`) plus Razor tag helpers.
 - **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
 - **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
 - **Slugs** -- URL-friendly slug generation (`Slug.Create()`) with Unicode normalization and configurable options.
+
+CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of this domain — see [captcha.md](captcha.md).
 
 ## Agent Instructions
 
 - Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
 - Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `InternationalPhoneNumber()`, `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
 - Use `ErrorDescriptor` with `.WithErrorDescriptor()` for structured API error responses. Convert results via `result.Errors.ToErrorDescriptors()`.
-- Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `AddOptionsWithFluentValidation<TOptions, TValidator>(sectionName)`.
+- Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `Configure<TOptions, TValidator>(configuration, name)`.
 - Use `ISeeder` from Hosting for database seeding; register with `services.AddSeeder<T>()`. Run all seeders with `await app.Services.SeedAsync()` at startup. Use `[SeederPriority(n)]` to control order (lower runs first, default `0`); EF migrations seed first via `AddDbMigrationSeeder<TContext>()` (`SeederPriority` `int.MinValue`).
 - Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID.
-- Use `Headless.ReCaptcha` (note capital C in directory name) for Google reCAPTCHA. Register with `AddReCaptchaV3(options => ...)`. Verify with `IReCaptchaSiteVerifyV3.VerifyAsync()`. Check `result.Success` and `result.Score`.
 - Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` for on-demand loading. Provider packages own hosted warmup for their own script bundles.
 - Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)`. Auto-splits at 50,000 URLs via `urls.WriteAsync()`. Use `SitemapAlternateUrl` for hreflang/localized URLs.
 - Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
@@ -166,7 +154,7 @@ dotnet add package Headless.FluentValidation
 ## Quick Start
 
 ```csharp
-using Headless.FluentValidation;
+using FluentValidation;
 
 public sealed class UserValidator : AbstractValidator<User>
 {
@@ -292,9 +280,13 @@ modelBuilder.Entity<User>()
 
 ```xml
 <PropertyGroup>
-  <PrimitiveGenerator_GenerateDapper>true</PrimitiveGenerator_GenerateDapper>
-  <PrimitiveGenerator_GenerateEfCore>true</PrimitiveGenerator_GenerateEfCore>
-  <PrimitiveGenerator_GenerateSwashbuckle>false</PrimitiveGenerator_GenerateSwashbuckle>
+  <PrimitiveDapperConverters>true</PrimitiveDapperConverters>
+  <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
+  <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
+  <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
+  <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
+  <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
+  <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
 </PropertyGroup>
 ```
 
@@ -411,11 +403,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Conditional registration
 builder.Services.AddIf(
     builder.Environment.IsDevelopment(),
-    s => s.AddDevEmailSender("emails.txt")
+    s => s.AddHeadlessEmails(setup => setup.UseDevelopment("emails.txt"))
 );
 
 // Options with FluentValidation
-builder.Services.AddOptionsWithFluentValidation<MyOptions, MyOptionsValidator>("MySection");
+builder.Services.Configure<MyOptions, MyOptionsValidator>(builder.Configuration.GetSection("MySection"));
 
 // Replace existing service
 builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
@@ -433,7 +425,7 @@ services.AddIfElse(condition, ifAction, elseAction);
 ### Options with Validation
 
 ```csharp
-services.AddOptionsWithFluentValidation<AppOptions, AppOptionsValidator>("App");
+services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("App"));
 ```
 
 ### Database Seeders
@@ -475,7 +467,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Headless.Checks`
+- `Headless.FluentValidation`
 - `Microsoft.Extensions.Hosting`
 - `Microsoft.Extensions.Options`
 
@@ -510,6 +502,7 @@ dotnet add package Headless.NetTopologySuite
 ## Quick Start
 
 ```csharp
+using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 
 var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);
@@ -554,103 +547,12 @@ No configuration required.
 ## Dependencies
 
 - `NetTopologySuite`
-- `NetTopologySuite.Features`
-- `Headless.Checks`
+- `NetTopologySuite.IO.GeoJSON4STJ`
+- `Headless.Extensions`
 
 ## Side Effects
 
 None.
----
-# Headless.ReCaptcha
-
-Google reCAPTCHA v2 and v3 integration with verification services and tag helpers.
-
-## Problem Solved
-
-Provides complete Google reCAPTCHA integration including server-side verification for both v2 (checkbox) and v3 (invisible score-based), plus Razor tag helpers for easy frontend integration.
-
-## Key Features
-
-- `IReCaptchaSiteVerifyV2` - reCAPTCHA v2 verification
-- `IReCaptchaSiteVerifyV3` - reCAPTCHA v3 verification with score
-- Razor tag helpers for script and widget rendering
-- Language code provider for localization
-- Source-generated JSON serialization
-
-## Installation
-
-```bash
-dotnet add package Headless.ReCaptcha
-```
-
-## Quick Start
-
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddReCaptchaV3(options =>
-{
-    options.SiteKey = builder.Configuration["ReCaptcha:SiteKey"];
-    options.SiteSecret = builder.Configuration["ReCaptcha:SiteSecret"];
-});
-```
-
-## Usage
-
-### Server-Side Verification
-
-```csharp
-public class LoginController(IReCaptchaSiteVerifyV3 recaptcha)
-{
-    [HttpPost]
-    public async Task<IActionResult> Login(LoginRequest request)
-    {
-        var result = await recaptcha.VerifyAsync(new ReCaptchaSiteVerifyRequest
-        {
-            Response = request.RecaptchaToken
-        });
-
-        if (!result.Success || result.Score < 0.5f)
-            return BadRequest("reCAPTCHA validation failed");
-
-        // Continue with login...
-    }
-}
-```
-
-### Razor Tag Helpers
-
-```html
-<!-- reCAPTCHA v3 -->
-<recaptcha-script-v3 hide-badge="true" />
-<recaptcha-script-v3-js action="login" callback="onRecaptchaVerified" />
-
-<!-- reCAPTCHA v2 -->
-<recaptcha-script-v2 />
-<recaptcha-div-v2 />
-```
-
-## Configuration
-
-### appsettings.json
-
-```json
-{
-  "ReCaptcha": {
-    "SiteKey": "your-site-key",
-    "SiteSecret": "your-secret-key"
-  }
-}
-```
-
-## Dependencies
-
-- `Microsoft.AspNetCore.Razor`
-
-## Side Effects
-
-- Registers `IReCaptchaSiteVerifyV2` and/or `IReCaptchaSiteVerifyV3` as scoped
-- Configures HttpClient for reCAPTCHA API
 ---
 # Headless.Redis
 
@@ -742,7 +644,7 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 dotnet add package Headless.Sitemaps
 ```
 
-## Usage
+## Quick Start
 
 ### Basic Sitemap
 
@@ -857,7 +759,7 @@ var options = new SlugOptions
 {
     Separator = "_",
     MaximumLength = 50,
-    CasingTransformation = CasingTransformation.LowerCase,
+    CasingTransformation = CasingTransformation.ToLowerCase,
     CanEndWithSeparator = false
 };
 
@@ -887,9 +789,9 @@ var slug = Slug.Create("Tom & Jerry @ Home", options);
 var options = new SlugOptions
 {
     Separator = "-",              // Default: "-"
-    MaximumLength = 100,          // Default: 0 (unlimited)
+    MaximumLength = 100,          // Default: 80
     CanEndWithSeparator = false,  // Default: false
-    CasingTransformation = CasingTransformation.LowerCase
+    CasingTransformation = CasingTransformation.ToLowerCase
 };
 ```
 

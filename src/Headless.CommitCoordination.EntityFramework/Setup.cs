@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.CommitCoordination;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -20,9 +19,23 @@ public static class SetupEntityFrameworkCommitCoordination
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Adds EF Core commit coordination services.
+        /// Adds EF Core commit coordination services: the core infrastructure, the
+        /// <see cref="EntityFrameworkCommitSignalSource" />, and the
+        /// <see cref="CommitCoordinationTransactionInterceptor" /> (registered as an <c>IInterceptor</c>
+        /// singleton).
         /// </summary>
-        /// <returns>The service collection.</returns>
+        /// <remarks>
+        /// EF Core does <b>not</b> auto-discover <c>IInterceptor</c> registrations from the application service
+        /// provider — the interceptor must be added to the context options explicitly. The Headless ORM path
+        /// (<c>AddHeadlessDbContext</c> / <c>AddHeadlessIdentityDbContext</c>) applies DI-registered interceptors
+        /// automatically. Plain <c>AddDbContext</c> consumers must opt in:
+        /// <code>
+        /// services.AddDbContext&lt;MyDbContext&gt;((sp, options) =>
+        ///     options.UseNpgsql(...).AddInterceptors(sp.GetServices&lt;IInterceptor&gt;()));
+        /// </code>
+        /// Idempotent: repeated calls register each service at most once.
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
         public IServiceCollection AddEntityFrameworkCommitCoordination()
         {
             services.AddCommitCoordination();

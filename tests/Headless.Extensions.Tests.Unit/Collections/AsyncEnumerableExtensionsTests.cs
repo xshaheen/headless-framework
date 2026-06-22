@@ -300,33 +300,31 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     // SkipWhileAsync tests
-    // Note: The implementation acts as a filter (WhereNot), not standard SkipWhile.
-    // It skips ALL items matching the predicate, not just leading ones.
 
     [Fact]
-    public async Task skip_while_async_should_filter_all_matching_items()
+    public async Task skip_while_async_should_skip_leading_matching_items()
     {
         // given
-        var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3, 2, 4], AbortToken);
 
-        // when - skips all items where x < 3 (1 and 2)
+        // when - skips the leading run where x < 3 (1, 2), then yields the rest including the later 2
         var result = await source.SkipWhileAsync(x => x < 3, AbortToken).ToListAsync(AbortToken);
 
         // then
-        result.Should().Equal(3, 4, 5);
+        result.Should().Equal(3, 2, 4);
     }
 
     [Fact]
-    public async Task skip_while_async_should_filter_matching_items_throughout_sequence()
+    public async Task skip_while_async_should_yield_all_when_first_item_fails_predicate()
     {
         // given
         var source = _CreateAsyncEnumerable([5, 4, 3, 2, 1], AbortToken);
 
-        // when - skips all items where x < 3 (2 and 1), keeps 5, 4, 3
+        // when - 5 fails the predicate immediately so nothing is skipped
         var result = await source.SkipWhileAsync(x => x < 3, AbortToken).ToListAsync(AbortToken);
 
         // then
-        result.Should().Equal(5, 4, 3);
+        result.Should().Equal(5, 4, 3, 2, 1);
     }
 
     // WhereAsync tests

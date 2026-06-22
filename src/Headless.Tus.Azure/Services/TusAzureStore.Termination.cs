@@ -8,6 +8,17 @@ namespace Headless.Tus.Services;
 
 public sealed partial class TusAzureStore : ITusTerminationStore
 {
+    /// <summary>
+    /// Deletes the blob associated with the given TUS file identifier, including any snapshots.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier to delete</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <remarks>
+    /// Succeeds silently if the blob does not exist (<c>DeleteIfExists</c> returns <c>false</c>).
+    /// A genuine Azure failure (anything other than not-found) is logged and <em>rethrown</em> so the
+    /// caller does not mistake a failed deletion for success — a TUS <c>DELETE</c> must not report 204
+    /// while the blob persists, and <c>RemoveExpiredFilesAsync</c> must not count an undeleted file.
+    /// </remarks>
     public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
     {
         var blobClient = _GetBlobClient(fileId);
@@ -16,17 +27,17 @@ public sealed partial class TusAzureStore : ITusTerminationStore
 
         try
         {
-            var response = await blobClient.DeleteIfExistsAsync(
-                DeleteSnapshotsOption.IncludeSnapshots,
-                cancellationToken: cancellationToken
-            );
+            var response = await blobClient
+                .DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
 
             deleted = response.Value;
         }
         catch (Exception e)
         {
             _logger.BlobDeleteFailed(e, blobClient.Name);
-            deleted = false;
+
+            throw;
         }
 
         if (deleted)

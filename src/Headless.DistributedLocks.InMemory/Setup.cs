@@ -14,11 +14,18 @@ namespace Headless.DistributedLocks.InMemory;
 /// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
 /// </remarks>
 [PublicAPI]
-public static class SetupInMemoryDistributedLock
+public static class SetupInMemoryDistributedLocks
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {
-        /// <summary>Adds in-process distributed-lock primitives.</summary>
+        /// <summary>Registers in-process distributed-lock primitives (regular locks, reader-writer locks, and semaphores).</summary>
+        /// <remarks>
+        /// Suitable for tests, local development, and single-instance deployments only.
+        /// All three storage implementations — <see cref="InMemoryDistributedLockStorage"/>,
+        /// <see cref="InMemoryDistributedReadWriteLockStorage"/>, and
+        /// <see cref="InMemoryDistributedSemaphoreStorage"/> — are registered as singletons.
+        /// </remarks>
+        /// <returns>The same <see cref="HeadlessDistributedLocksSetupBuilder"/> instance for fluent chaining.</returns>
         public HeadlessDistributedLocksSetupBuilder UseInMemory()
         {
             setup.RegisterExtension(new InMemoryDistributedLocksOptionsExtension());

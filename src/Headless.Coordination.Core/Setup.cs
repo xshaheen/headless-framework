@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Core;
 using Headless.Serializer;
@@ -11,11 +10,27 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Coordination;
 
+/// <summary>
+/// Extension methods on <see cref="IServiceCollection"/> for registering Headless coordination services.
+/// </summary>
 [PublicAPI]
 public static class SetupCoordinationCore
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers Headless coordination with the provider configured inside <paramref name="configure"/>.
+        /// Exactly one <c>Use*</c> call (for example <c>UsePostgreSql</c>, <c>UseRedis</c>,
+        /// <c>UseSqlServer</c>) must be made inside the delegate; zero or multiple providers throw
+        /// <see cref="InvalidOperationException"/> at startup.
+        /// </summary>
+        /// <param name="configure">Delegate that selects the provider and optionally adjusts <see cref="CoordinationOptions"/>.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when the delegate registers zero or more than one provider, or when coordination has
+        /// already been registered with a different provider.
+        /// </exception>
         public IServiceCollection AddHeadlessCoordination(Action<HeadlessCoordinationSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -34,6 +49,14 @@ public static class SetupCoordinationCore
             return services._AddCoordinationCore<TStore>();
         }
 
+        /// <summary>
+        /// Registers coordination core services with <typeparamref name="TStore"/> as the membership store,
+        /// binding <see cref="CoordinationOptions"/> from the supplied delegate with service-provider access.
+        /// Prefer <see cref="AddHeadlessCoordination"/> unless you are implementing a custom provider package.
+        /// </summary>
+        /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
+        /// <param name="optionSetupAction">Delegate that configures <see cref="CoordinationOptions"/>.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
         public IServiceCollection AddCoordinationCore<TStore>(
             Action<CoordinationOptions, IServiceProvider> optionSetupAction
         )
@@ -44,6 +67,14 @@ public static class SetupCoordinationCore
             return services._AddCoordinationCore<TStore>();
         }
 
+        /// <summary>
+        /// Registers coordination core services with <typeparamref name="TStore"/> as the membership store,
+        /// binding <see cref="CoordinationOptions"/> from the supplied delegate.
+        /// Prefer <see cref="AddHeadlessCoordination"/> unless you are implementing a custom provider package.
+        /// </summary>
+        /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
+        /// <param name="optionSetupAction">Delegate that configures <see cref="CoordinationOptions"/>.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
         public IServiceCollection AddCoordinationCore<TStore>(Action<CoordinationOptions> optionSetupAction)
             where TStore : class, IMembershipStore
         {
@@ -52,6 +83,14 @@ public static class SetupCoordinationCore
             return services._AddCoordinationCore<TStore>();
         }
 
+        /// <summary>
+        /// Registers coordination core services with <typeparamref name="TStore"/> as the membership store,
+        /// binding <see cref="CoordinationOptions"/> from the supplied <see cref="IConfiguration"/> section.
+        /// Prefer <see cref="AddHeadlessCoordination"/> unless you are implementing a custom provider package.
+        /// </summary>
+        /// <typeparam name="TStore">The concrete membership store implementation to register.</typeparam>
+        /// <param name="configuration">The configuration section to bind <see cref="CoordinationOptions"/> from.</param>
+        /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
         public IServiceCollection AddCoordinationCore<TStore>(IConfiguration configuration)
             where TStore : class, IMembershipStore
         {

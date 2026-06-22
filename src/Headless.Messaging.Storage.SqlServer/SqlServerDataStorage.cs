@@ -13,6 +13,7 @@ using Headless.Messaging.Serialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.SqlServer;
@@ -21,22 +22,17 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// SQL Server implementation of <see cref="IDataStorage"/> for message persistence.
 /// Handles storage, retrieval, and state transitions for published and received messages.
 /// </summary>
-public sealed class SqlServerDataStorage(
+internal sealed class SqlServerDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
     ISerializer serializer,
     [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
-    INodeMembership nodeMembership
+    INodeMembership nodeMembership,
+    ILogger<SqlServerDataStorage> logger
 ) : IDataStorage
 {
-    /// <summary>
-    /// Maximum messages to fetch in a single retry batch.
-    /// Higher values process more but increase memory and lock contention.
-    /// </summary>
-    private const int _RetryBatchSize = 200;
-
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
     /// (<c>Succeeded</c> / <c>Failed</c>) with no scheduled retry, while still respecting an
@@ -69,6 +65,10 @@ public sealed class SqlServerDataStorage(
     private readonly string _receivedTable = initializer.GetReceivedTableName();
     private readonly INodeMembership _nodeMembership = nodeMembership;
 
+    /// <summary>
+    /// Bulk-transitions the specified published messages to <c>Delayed</c> status.
+    /// No-op when <paramref name="storageIds"/> is empty.
+    /// </summary>
     public async ValueTask ChangePublishStateToDelayedAsync(
         Guid[] storageIds,
         CancellationToken cancellationToken = default
@@ -96,6 +96,11 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Updates the status of a published message. Respects the terminal-row guard — rows already
+    /// in a permanent <c>Succeeded</c> or <c>Failed</c> state with no pending retry are not mutated.
+    /// </summary>
+    /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
     public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
@@ -118,12 +123,22 @@ public sealed class SqlServerDataStorage(
         );
     }
 
+    /// <summary>
+    /// Acquires a dispatch lease on a published message by setting <c>LockedUntil</c> and <c>Owner</c>.
+    /// Only succeeds if the row is currently unleased or its existing lease has expired.
+    /// </summary>
+    /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
     ) => _LeaseMessageAsync(_publishedTable, message, lockedUntil, cancellationToken);
 
+    /// <summary>
+    /// Updates the status of a received message, including writing <c>ExceptionInfo</c> when the
+    /// message faulted. Respects the terminal-row guard — permanently completed rows are not mutated.
+    /// </summary>
+    /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
     public async ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
@@ -173,12 +188,26 @@ public sealed class SqlServerDataStorage(
         return affectedRows > 0;
     }
 
+    /// <summary>
+    /// Acquires a dispatch lease on a received message by setting <c>LockedUntil</c> and <c>Owner</c>.
+    /// Only succeeds if the row is currently unleased or its existing lease has expired.
+    /// </summary>
+    /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
     ) => _LeaseMessageAsync(_receivedTable, message, lockedUntil, cancellationToken);
 
+    /// <summary>
+    /// Persists a published outbox message to the <c>Published</c> table. When <paramref name="transaction"/>
+    /// is supplied the INSERT participates in the caller's database transaction (transactional outbox).
+    /// </summary>
+    /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="transaction"/> is a non-null type that is neither
+    /// <c>DbTransaction</c> nor <c>IDbContextTransaction</c>.
+    /// </exception>
     public async ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         MediumMessage message,
@@ -251,8 +280,14 @@ public sealed class SqlServerDataStorage(
                 );
             }
 
-            await dbTrans
-                .Connection!.ExecuteNonQueryAsync(
+            var connection =
+                dbTrans.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
+
+            await connection
+                .ExecuteNonQueryAsync(
                     sql,
                     transaction: dbTrans,
                     commandTimeout: messagingOptions.Value.CommandTimeout,
@@ -265,6 +300,11 @@ public sealed class SqlServerDataStorage(
         return stored;
     }
 
+    /// <summary>
+    /// Persists a published outbox message built from a raw <c>Message</c> payload to the <c>Published</c> table.
+    /// Convenience overload that wraps <paramref name="content"/> in a <c>MediumMessage</c> before storing.
+    /// </summary>
+    /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         Message content,
@@ -284,6 +324,12 @@ public sealed class SqlServerDataStorage(
             cancellationToken
         );
 
+    /// <summary>
+    /// Stores a received message that failed before it could be dispatched, using its raw serialized
+    /// <paramref name="content"/> string. The row is written directly into the <c>Failed</c> state with
+    /// the maximum retry count so it will not be re-picked up by the normal retry path.
+    /// </summary>
+    /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
@@ -309,6 +355,12 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Stores a received message that failed before it could be dispatched, using a pre-built
+    /// <c>MediumMessage</c>. The row is written directly into the <c>Failed</c> state with the maximum
+    /// retry count so it will not be re-picked up by the normal retry path.
+    /// </summary>
+    /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
@@ -342,11 +394,21 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@MessageId", message.Origin.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
+            // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
+            // math shares one clock domain; keeps the guard testable with a fake clock.
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
-        return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        return rowId is not null;
     }
 
+    /// <summary>
+    /// Persists an inbound message to the <c>Received</c> table using an atomic MERGE statement.
+    /// Concurrent broker redeliveries of the same message are collapsed to a single row; the
+    /// terminal-row guard ensures already-succeeded rows are never overwritten.
+    /// </summary>
+    /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
@@ -395,13 +457,28 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@MessageId", message.Origin.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", DBNull.Value),
+            // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
+            // math shares one clock domain; keeps the guard testable with a fake clock.
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        // #5 — adopt the authoritative persisted row id (see _StoreReceivedMessage); on the MERGE UPDATE
+        // branch the row keeps its original [Id], so the freshly-generated StorageId would be stale and the
+        // caller's later ChangeReceiveStateAsync (WHERE Id=@Id) would silently no-op.
+        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        if (rowId is { } id)
+        {
+            mediumMessage.StorageId = id;
+        }
 
         return mediumMessage;
     }
 
+    /// <summary>
+    /// Persists an inbound message built from a raw <c>Message</c> payload to the <c>Received</c> table.
+    /// Convenience overload that wraps <paramref name="message"/> in a <c>MediumMessage</c> before storing.
+    /// </summary>
+    /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
@@ -421,6 +498,12 @@ public sealed class SqlServerDataStorage(
             cancellationToken
         );
 
+    /// <summary>
+    /// Deletes expired terminal messages from the specified table in batches.
+    /// Only rows in <c>Succeeded</c> or <c>Failed</c> state with <c>ExpiresAt</c> before
+    /// <paramref name="timeout"/> and no pending retry (<c>NextRetryAt IS NULL</c>) are removed.
+    /// </summary>
+    /// <returns>The number of rows deleted.</returns>
     public async ValueTask<int> DeleteExpiresAsync(
         string table,
         DateTime timeout,
@@ -450,6 +533,11 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Fetches published messages eligible for retry dispatch. Uses an atomic UPDATE with
+    /// <c>OUTPUT INSERTED</c> to lease and return rows in a single round-trip, preventing
+    /// double-dispatch across replicas.
+    /// </summary>
     public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
@@ -457,6 +545,11 @@ public sealed class SqlServerDataStorage(
         return _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken);
     }
 
+    /// <summary>
+    /// Shortens the remaining lease on published messages owned by nodes in <paramref name="deadOwners"/>
+    /// by setting <c>LockedUntil</c> to the current time, allowing live replicas to re-claim them.
+    /// </summary>
+    /// <returns>The number of rows whose leases were reclaimed.</returns>
     public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
         IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
@@ -465,6 +558,11 @@ public sealed class SqlServerDataStorage(
         return _ReclaimDeadOwnersAsync(_publishedTable, deadOwners, cancellationToken);
     }
 
+    /// <summary>
+    /// Fetches received messages eligible for retry dispatch. Uses an atomic UPDATE with
+    /// <c>OUTPUT INSERTED</c> to lease and return rows in a single round-trip, preventing
+    /// double-dispatch across replicas.
+    /// </summary>
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
@@ -472,6 +570,11 @@ public sealed class SqlServerDataStorage(
         return _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken);
     }
 
+    /// <summary>
+    /// Shortens the remaining lease on received messages owned by nodes in <paramref name="deadOwners"/>
+    /// by setting <c>LockedUntil</c> to the current time, allowing live replicas to re-claim them.
+    /// </summary>
+    /// <returns>The number of rows whose leases were reclaimed.</returns>
     public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
         IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
@@ -480,6 +583,8 @@ public sealed class SqlServerDataStorage(
         return _ReclaimDeadOwnersAsync(_receivedTable, deadOwners, cancellationToken);
     }
 
+    /// <summary>Deletes a single received message by its storage identifier.</summary>
+    /// <returns>1 if the row was deleted; 0 if not found.</returns>
     public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_receivedTable} WHERE Id=@Id";
@@ -498,6 +603,8 @@ public sealed class SqlServerDataStorage(
         return affectedRowCount;
     }
 
+    /// <summary>Deletes a single published message by its storage identifier.</summary>
+    /// <returns>1 if the row was deleted; 0 if not found.</returns>
     public async ValueTask<int> DeletePublishedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_publishedTable} WHERE Id=@Id";
@@ -516,6 +623,8 @@ public sealed class SqlServerDataStorage(
         return affectedRowCount;
     }
 
+    /// <summary>Deletes a batch of received messages by their storage identifiers.</summary>
+    /// <returns>The number of rows deleted.</returns>
     public async ValueTask<int> DeleteReceivedMessagesAsync(
         IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
@@ -541,6 +650,8 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>Deletes a batch of published messages by their storage identifiers.</summary>
+    /// <returns>The number of rows deleted.</returns>
     public async ValueTask<int> DeletePublishedMessagesAsync(
         IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
@@ -588,6 +699,12 @@ public sealed class SqlServerDataStorage(
         };
     }
 
+    /// <summary>
+    /// Atomically selects delayed and stale-queued messages within a database transaction and
+    /// invokes <paramref name="scheduleTask"/> to re-enqueue them. Uses <c>UPDLOCK, READPAST</c>
+    /// so concurrent replicas skip rows another node is scheduling.
+    /// The transaction is committed after <paramref name="scheduleTask"/> completes.
+    /// </summary>
     public async ValueTask ScheduleMessagesOfDelayedAsync(
         Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
@@ -610,8 +727,8 @@ public sealed class SqlServerDataStorage(
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var messageList = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -620,20 +737,32 @@ public sealed class SqlServerDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
+                        var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
 
-                        messages.Add(
-                            new MediumMessage
+                        MediumMessage mediumMessage;
+                        try
+                        {
+                            mediumMessage = new MediumMessage
                             {
-                                StorageId = reader.GetGuid(0),
+                                StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
                                 IntentType = (IntentType)reader.GetInt16(2),
                                 Retries = reader.GetInt32(3),
                                 Added = reader.GetDateTime(4),
                                 ExpiresAt = reader.GetDateTime(5),
-                            }
-                        );
+                            };
+                        }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
+                        catch (Exception ex)
+#pragma warning restore CA1031
+                        {
+                            logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                            continue;
+                        }
+
+                        messages.Add(mediumMessage);
                     }
 
                     return messages;
@@ -645,11 +774,16 @@ public sealed class SqlServerDataStorage(
             )
             .ConfigureAwait(false);
 
-        await scheduleTask(transaction, messageList);
+        logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
 
-        await transaction.CommitAsync(cancellationToken);
+        await scheduleTask(transaction, messageList).ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns the monitoring API for querying message statistics and dashboard data against this SQL Server storage.
+    /// </summary>
     public IMonitoringApi GetMonitoringApi()
     {
         return new SqlServerMonitoringApi(options, messagingOptions, initializer, serializer, timeProvider);
@@ -691,7 +825,11 @@ public sealed class SqlServerDataStorage(
         int affectedRows;
         if (transaction is DbTransaction dbTransaction)
         {
-            var connection = dbTransaction.Connection!;
+            var connection =
+                dbTransaction.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -705,7 +843,11 @@ public sealed class SqlServerDataStorage(
         else if (transaction is IDbContextTransaction efTransaction)
         {
             var dbTrans = efTransaction.GetDbTransaction();
-            var connection = dbTrans.Connection!;
+            var connection =
+                dbTrans.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -732,7 +874,7 @@ public sealed class SqlServerDataStorage(
         return affectedRows > 0;
     }
 
-    private async ValueTask<bool> _StoreReceivedMessage(
+    private async ValueTask<Guid?> _StoreReceivedMessage(
         object[] sqlParams,
         CancellationToken cancellationToken = default
     )
@@ -747,6 +889,10 @@ public sealed class SqlServerDataStorage(
         // is being dispatched would otherwise overwrite LockedUntil = NULL and Retries = 0,
         // releasing the active pickup lease mid-attempt and causing the retry processor to
         // re-pick the row while the inline retry loop is still in flight.
+        //
+        // #5 — OUTPUT inserted.[Id] returns the authoritative persisted row id (insert or update branch).
+        // On the UPDATE branch the existing row keeps its original [Id], which differs from the freshly
+        // generated @Id, so the caller adopts the returned value; a guard-blocked no-op returns no row.
         var sql = $"""
             MERGE {_receivedTable} WITH (HOLDLOCK) AS target
             USING (SELECT @Version AS Version, @MessageId AS MessageId, @Group AS [Group], @IntentType AS IntentType) AS source
@@ -755,25 +901,27 @@ public sealed class SqlServerDataStorage(
                 AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
                     StatusName.Failed
                 )}') AND target.NextRetryAt IS NULL)
-                AND (target.LockedUntil IS NULL OR target.LockedUntil <= GETUTCDATE())
+                AND (target.LockedUntil IS NULL OR target.LockedUntil <= @Now)
             THEN
                 UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Owner = @Owner, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
                 INSERT ([Id],[Version],[Name],[Group],[Content],[IntentType],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[Owner],[StatusName],[MessageId],[ExceptionInfo])
-                VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo);
+                VALUES (@Id,@Version,@Name,@Group,@Content,@IntentType,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@Owner,@StatusName,@MessageId,@ExceptionInfo)
+            OUTPUT inserted.[Id];
             """;
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var affectedRows = await connection
-            .ExecuteNonQueryAsync(
+
+        return await connection
+            .ExecuteReaderAsync<Guid?>(
                 sql,
+                static async (reader, token) =>
+                    await reader.ReadAsync(token).ConfigureAwait(false) ? reader.GetGuid(0) : null,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-
-        return affectedRows > 0;
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -863,7 +1011,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@BatchSize", _RetryBatchSize),
+            new SqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@Now", SqlDbType.DateTime2) { Value = now },
@@ -881,12 +1029,15 @@ public sealed class SqlServerDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
+                        var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
 
-                        messages.Add(
-                            new MediumMessage
+                        MediumMessage mediumMessage;
+                        try
+                        {
+                            mediumMessage = new MediumMessage
                             {
-                                StorageId = reader.GetGuid(0),
+                                StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
                                 IntentType = (IntentType)reader.GetInt16(2),
@@ -901,8 +1052,17 @@ public sealed class SqlServerDataStorage(
                                 Owner = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetString(7),
-                            }
-                        );
+                            };
+                        }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
+                        catch (Exception ex)
+#pragma warning restore CA1031
+                        {
+                            logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                            continue;
+                        }
+
+                        messages.Add(mediumMessage);
                     }
 
                     return messages;

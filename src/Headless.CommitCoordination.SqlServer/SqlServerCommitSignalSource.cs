@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.CommitCoordination;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -58,15 +55,22 @@ public sealed partial class SqlServerCommitSignalSource(
         );
 
     /// <summary>
-    /// Signals a commit for a previously attached provider transaction key.
+    /// Signals a commit for a previously attached scope, draining its registered
+    /// <see cref="ICommitCoordinator.OnCommit" /> callbacks.
     /// </summary>
     /// <remarks>
     /// The diagnostic observer fires for every SqlClient transaction edge, most of which are not coordinated; an
-    /// absent key is the normal case and is silently ignored (never a warning).
+    /// absent key is the normal case and is silently ignored (never a warning). The terminal claim is made
+    /// synchronously before returning so a racing disposal cannot observe the scope as un-signalled and drain it
+    /// as a rollback.
     /// </remarks>
-    /// <param name="providerTransactionKey">The provider transaction key (the connection's <c>ClientConnectionId</c>).</param>
+    /// <param name="providerTransactionKey">
+    /// The provider transaction key — the <c>ClientConnectionId</c> of the connection passed to
+    /// <c>SqlConnection.EnlistCommitCoordination</c>.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The signal task.</returns>
+    /// <returns>A task that completes when the drain has finished.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
@@ -91,11 +95,16 @@ public sealed partial class SqlServerCommitSignalSource(
     }
 
     /// <summary>
-    /// Signals a rollback for a previously attached provider transaction key.
+    /// Signals a rollback for a previously attached scope, draining its registered
+    /// <see cref="ICommitCoordinator.OnRollback" /> callbacks.
     /// </summary>
-    /// <param name="providerTransactionKey">The provider transaction key (the connection's <c>ClientConnectionId</c>).</param>
+    /// <param name="providerTransactionKey">
+    /// The provider transaction key — the <c>ClientConnectionId</c> of the connection passed to
+    /// <c>SqlConnection.EnlistCommitCoordination</c>.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The signal task.</returns>
+    /// <returns>A task that completes when the drain has finished.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="providerTransactionKey" /> is <see langword="null" />.</exception>
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",

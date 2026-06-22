@@ -5,7 +5,13 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
+/// <summary>
+/// xUnit v3 test case that re-runs a fact or a single pre-enumerated theory data row up to
+/// <see cref="MaxRetries"/> times before accepting a failure. Intermediate failures are suppressed
+/// via <see cref="DelayedMessageBus"/>; only the final attempt's result is forwarded.
+/// </summary>
 // This class is used for facts, and for serializable pre-enumerated individual data rows in theories.
+[PublicAPI]
 public sealed class RetryTestCase(
     int maxRetries,
     IXunitTestMethod testMethod,
@@ -41,6 +47,7 @@ public sealed class RetryTestCase(
     ),
         ISelfExecutingXunitTestCase
 {
+    /// <summary>Maximum number of total execution attempts (including the first run).</summary>
     public int MaxRetries { get; private set; } = maxRetries;
 
     protected override void Deserialize(IXunitSerializationInfo info)
@@ -50,6 +57,10 @@ public sealed class RetryTestCase(
         MaxRetries = info.GetValue<int>(nameof(MaxRetries));
     }
 
+    /// <summary>
+    /// Executes the test via <see cref="RetryTestCaseRunner"/>, retrying up to
+    /// <see cref="MaxRetries"/> times on failure.
+    /// </summary>
     public async ValueTask<RunSummary> Run(
         ExplicitOption explicitOption,
         IMessageBus messageBus,
@@ -58,17 +69,19 @@ public sealed class RetryTestCase(
         CancellationTokenSource cancellationTokenSource
     )
     {
-        return await RetryTestCaseRunner.Instance.Run(
-            MaxRetries,
-            this,
-            messageBus,
-            aggregator.Clone(),
-            cancellationTokenSource,
-            TestCaseDisplayName,
-            SkipReason,
-            explicitOption,
-            constructorArguments
-        );
+        return await RetryTestCaseRunner
+            .Instance.Run(
+                MaxRetries,
+                this,
+                messageBus,
+                aggregator.Clone(),
+                cancellationTokenSource,
+                TestCaseDisplayName,
+                SkipReason,
+                explicitOption,
+                constructorArguments
+            )
+            .ConfigureAwait(false);
     }
 
     protected override void Serialize(IXunitSerializationInfo info)

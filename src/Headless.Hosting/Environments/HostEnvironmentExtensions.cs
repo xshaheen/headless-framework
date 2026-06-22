@@ -14,6 +14,7 @@ public static class HostEnvironmentExtensions
     {
         /// <summary>Checks if the current host environment name is "Test".</summary>
         /// <returns>True if the environment name is Test, otherwise false.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when the host environment is <see langword="null"/>.</exception>
         public bool IsTest()
         {
             Argument.IsNotNull(hostEnvironment);
@@ -23,6 +24,7 @@ public static class HostEnvironmentExtensions
 
         /// <summary>Checks if the current host environment name is "Development" or "Test".</summary>
         /// <returns>True if the environment name is Development or Test, otherwise false.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when the host environment is <see langword="null"/>.</exception>
         public bool IsDevelopmentOrTest()
         {
             Argument.IsNotNull(hostEnvironment);

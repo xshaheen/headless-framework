@@ -31,7 +31,7 @@
   <data name="g:obsolete_api" xml:space="preserve">
     <value>Obsolete API. This request is not available for this account.</value>
   </data>
-  <data name="g:user_not_founded" xml:space="preserve">
+  <data name="g:user_not_found" xml:space="preserve">
     <value>Something went wrong. Try to log in again.</value>
   </data>
   <data name="g:invalid_recaptcha" xml:space="preserve">
@@ -176,5 +176,11 @@
   </data>
   <data name="g:duplicated_request" xml:space="preserve">
     <value>Duplicated request detected.</value>
+  </data>
+  <data name="auth:used_before_password" xml:space="preserve">
+    <value>You can't use a password that you have used before.</value>
+  </data>
+  <data name="user:phone_number_already_linked" xml:space="preserve">
+    <value>Phone number is already linked to the user.</value>
   </data>
 </root>

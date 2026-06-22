@@ -9,6 +9,11 @@ using Npgsql;
 
 namespace Headless.Features.PostgreSql;
 
+/// <summary>
+/// Hosted initializer that creates or ensures the PostgreSQL schema, tables, and indexes
+/// required by the features storage provider. Runs on startup when
+/// <see cref="FeaturesStorageOptions.InitializeOnStartup"/> is <see langword="true"/>.
+/// </summary>
 internal sealed partial class PostgreSqlFeaturesStorageInitializer(
     IOptions<PostgreSqlFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions,
@@ -18,8 +23,16 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
     private readonly ILogger<PostgreSqlFeaturesStorageInitializer> _logger =
         logger ?? NullLogger<PostgreSqlFeaturesStorageInitializer>.Instance;
 
+    /// <inheritdoc/>
     protected override bool RunOnStartup => storageOptions.Value.InitializeOnStartup;
 
+    /// <summary>
+    /// Creates or ensures the PostgreSQL schema, tables, and indexes required by the features
+    /// storage provider. DDL is split into two transactions — one for schema/tables and one for
+    /// indexes — so that a concurrent-DDL race on either side does not prevent the other from
+    /// completing.
+    /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var options = storageOptions.Value;
@@ -151,6 +164,10 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
             """;
     }
 
+    /// <summary>Returns the fully-qualified <c>"schema"."table"</c> identifier for <paramref name="tableName"/>.</summary>
+    /// <param name="options">Storage options supplying the schema name.</param>
+    /// <param name="tableName">Unqualified table name.</param>
+    /// <returns>A double-quoted, schema-qualified table identifier safe for PostgreSQL DDL/DML.</returns>
     internal static string Qualified(FeaturesStorageOptions options, string tableName) =>
         _Qualified(options.Schema, tableName);
 

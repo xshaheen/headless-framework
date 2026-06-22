@@ -8,9 +8,20 @@ namespace Headless.Tus.Services;
 
 public sealed partial class TusAzureStore : ITusCreationStore
 {
+    /// <summary>
+    /// Creates a new TUS upload by writing an empty block blob with upload metadata and returns
+    /// the generated file identifier.
+    /// </summary>
+    /// <param name="uploadLength">total number of bytes that the client will upload</param>
+    /// <param name="metadata">
+    /// raw TUS metadata string from the Upload-Metadata header, or <see langword="null"/> if
+    /// the client did not supply metadata
+    /// </param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>the unique file identifier assigned to the new upload</returns>
     public async Task<string> CreateFileAsync(long uploadLength, string? metadata, CancellationToken cancellationToken)
     {
-        var fileId = await _fileIdProvider.CreateId(metadata);
+        var fileId = await _fileIdProvider.CreateId(metadata).ConfigureAwait(false);
 
         try
         {
@@ -24,12 +35,16 @@ public sealed partial class TusAzureStore : ITusCreationStore
             // This ensures the blob exists and has the correct metadata from the start
             // The actual data (blocks) will be uploaded in subsequent requests
             var blockBlobClient = _GetBlockBlobClient(fileId);
-            await blockBlobClient.UploadAsync(
-                content: Stream.Null,
-                httpHeaders: await _blobHttpHeadersProvider.GetBlobHttpHeadersAsync(blobMetadata.ToUser()),
-                metadata: blobMetadata.ToAzure(),
-                cancellationToken: cancellationToken
-            );
+            await blockBlobClient
+                .UploadAsync(
+                    content: Stream.Null,
+                    httpHeaders: await _blobHttpHeadersProvider
+                        .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
+                        .ConfigureAwait(false),
+                    metadata: blobMetadata.ToAzure(),
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
 
             _logger.FileCreated(fileId, uploadLength);
 
@@ -43,9 +58,23 @@ public sealed partial class TusAzureStore : ITusCreationStore
         }
     }
 
+    /// <summary>
+    /// Returns the TUS-formatted metadata string for the given file as originally supplied by the
+    /// client.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>
+    /// the base64-encoded TUS metadata string, or <see langword="null"/> if the file does not
+    /// exist or has no user metadata
+    /// </returns>
+    /// <remarks>
+    /// Internal system keys (upload length, expiration, concatenation type, etc.) are excluded
+    /// from the returned string; only the original user-supplied key/value pairs are included.
+    /// </remarks>
     public async Task<string?> GetUploadMetadataAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         return blobInfo?.Metadata.ToTusString();
     }

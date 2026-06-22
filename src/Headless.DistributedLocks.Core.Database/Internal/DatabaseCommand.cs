@@ -20,10 +20,16 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
     private readonly DatabaseConnection _connection = connection;
 #pragma warning restore CA2213
 
+    /// <summary>The underlying command's parameter collection.</summary>
     public IDataParameterCollection Parameters => _command.Parameters;
 
     // SQL here is always a constant emitted by the lock strategies / monitor, never user input.
 #pragma warning disable CA2100
+    /// <summary>
+    /// Sets the SQL text of the command. Only accepts static, trusted strings emitted by lock strategies
+    /// or the connection monitor — never user input.
+    /// </summary>
+    /// <param name="sql">The SQL command text to execute.</param>
     public void SetCommandText(string sql)
     {
         _command.CommandText = sql;
@@ -52,11 +58,21 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
         _command.CommandTimeout = seconds;
     }
 
+    /// <summary>Sets the <see cref="CommandType"/> of the command (text, stored procedure, etc.).</summary>
+    /// <param name="type">The command type to apply.</param>
     public void SetCommandType(CommandType type)
     {
         _command.CommandType = type;
     }
 
+    /// <summary>
+    /// Creates and adds a parameter to the command, optionally setting its name, value, type, and direction.
+    /// </summary>
+    /// <param name="name">Optional parameter name.</param>
+    /// <param name="value">Optional parameter value.</param>
+    /// <param name="type">Optional database type.</param>
+    /// <param name="direction">Optional parameter direction (input, output, etc.).</param>
+    /// <returns>The newly added <see cref="DbParameter"/>.</returns>
     public DbParameter AddParameter(
         string? name = null,
         object? value = null,
@@ -91,6 +107,17 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
         return parameter;
     }
 
+    /// <summary>
+    /// Executes the command as a non-query, acquiring the connection lock to serialise against monitor probes.
+    /// Wraps provider-specific cancellation exceptions in <see cref="OperationCanceledException"/> for uniform
+    /// cancellation propagation.
+    /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the command.</param>
+    /// <returns>The number of rows affected.</returns>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> fires or when the provider throws a
+    /// provider-specific cancellation exception while the token is cancelled.
+    /// </exception>
     public ValueTask<int> ExecuteNonQueryAsync(CancellationToken cancellationToken) =>
         ExecuteNonQueryAsync(isConnectionMonitoringQuery: false, cancellationToken);
 
@@ -105,6 +132,17 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
             cancellationToken
         );
 
+    /// <summary>
+    /// Executes the command as a scalar query, acquiring the connection lock to serialise against monitor probes.
+    /// Wraps provider-specific cancellation exceptions in <see cref="OperationCanceledException"/> for uniform
+    /// cancellation propagation.
+    /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the command.</param>
+    /// <returns>The first column of the first row, or <see langword="null"/> if the result set is empty.</returns>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> fires or when the provider throws a
+    /// provider-specific cancellation exception while the token is cancelled.
+    /// </exception>
     public ValueTask<object?> ExecuteScalarAsync(CancellationToken cancellationToken) =>
         _ExecuteAsync(
             static (command, token) => command.ExecuteScalarAsync(token),
@@ -142,6 +180,7 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
         return _connection.ShouldPrepareCommands ? new ValueTask(_command.PrepareAsync(cancellationToken)) : default;
     }
 
+    /// <summary>Disposes the underlying <see cref="DbCommand"/>.</summary>
     public void Dispose()
     {
         _command.Dispose();

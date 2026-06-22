@@ -2,6 +2,12 @@
 
 namespace Headless.Constants;
 
+/// <summary>
+/// Standard JWT / OpenID Connect claim type names (the short registered claim keys such as
+/// <c>sub</c>, <c>iss</c>, and <c>exp</c>) as defined by RFC 7519 and the OpenID Connect Core
+/// specification. Use these when reading or constructing tokens instead of hard-coded strings.
+/// For framework-specific user/profile claims see <see cref="UserClaimTypes"/>.
+/// </summary>
 [PublicAPI]
 public static class JwtClaimTypes
 {

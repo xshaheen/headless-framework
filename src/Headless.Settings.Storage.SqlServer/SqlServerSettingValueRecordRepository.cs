@@ -10,14 +10,21 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Settings.SqlServer;
 
+/// <summary>
+/// SQL Server implementation of <see cref="ISettingValueRecordRepository"/> that stores
+/// setting value records directly via <c>Microsoft.Data.SqlClient</c> without an ORM.
+/// Uses table-valued parameters (TVPs) for batched operations to avoid the 2100-parameter limit.
+/// </summary>
 internal sealed class SqlServerSettingValueRecordRepository(
     IOptions<SqlServerSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions,
     IServiceProvider services
 ) : ISettingValueRecordRepository
 {
+    /// <summary>Comma-separated column list used in SELECT queries for setting value records.</summary>
     private const string _ValueColumns = "[Id],[Name],[Value],[ProviderName],[ProviderKey],[DateCreated],[DateUpdated]";
 
+    /// <inheritdoc/>
     public async Task<SettingValueRecord?> FindAsync(
         string name,
         string providerName,
@@ -42,6 +49,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
             : null;
     }
 
+    /// <inheritdoc/>
     public Task<List<SettingValueRecord>> FindAllAsync(
         string name,
         string? providerName,
@@ -70,6 +78,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
     }
 
+    /// <inheritdoc/>
     public Task<List<SettingValueRecord>> GetListAsync(
         HashSet<string> names,
         string providerName,
@@ -96,6 +105,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         );
     }
 
+    /// <inheritdoc/>
     public Task<List<SettingValueRecord>> GetListAsync(
         string providerName,
         string? providerKey,
@@ -113,6 +123,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         );
     }
 
+    /// <inheritdoc/>
     public Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
         var sql =
@@ -134,6 +145,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         );
     }
 
+    /// <inheritdoc/>
     public async Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
         var sql =
@@ -157,6 +169,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         await _PublishAsync(setting, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
     public async Task DeleteAsync(
         IReadOnlyCollection<SettingValueRecord> settings,
         CancellationToken cancellationToken = default
@@ -181,6 +194,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         }
     }
 
+    /// <summary>Opens a new connection, executes <paramref name="sql"/> with <paramref name="parameters"/>, and maps each row to a <see cref="SettingValueRecord"/>.</summary>
     private async Task<List<SettingValueRecord>> _ReadValuesAsync(
         string sql,
         CancellationToken cancellationToken,
@@ -216,6 +230,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         return result;
     }
 
+    /// <summary>Opens a new connection and executes a non-query <paramref name="sql"/> statement with <paramref name="parameters"/>.</summary>
     private async Task _ExecuteAsync(string sql, CancellationToken cancellationToken, params SqlParameter[] parameters)
     {
         await using var connection = providerOptions.Value.CreateConnection();
@@ -226,6 +241,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Publishes an <see cref="Headless.Domain.EntityChangedEventData{T}"/> event for <paramref name="setting"/> when an <see cref="Headless.Domain.ILocalEventBus"/> is registered in the container.</summary>
     private async ValueTask _PublishAsync(SettingValueRecord setting, CancellationToken cancellationToken)
     {
         await using var scope = services.CreateAsyncScope();
@@ -239,10 +255,13 @@ internal sealed class SqlServerSettingValueRecordRepository(
         }
     }
 
+    /// <summary>Returns <see cref="SqlServerSettingsOptions.CommandTimeout"/> expressed in whole seconds for use as <c>CommandTimeout</c>.</summary>
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
+    /// <summary>Resolves the registered <see cref="TimeProvider"/>, falling back to <see cref="TimeProvider.System"/> when not registered.</summary>
     private TimeProvider _TimeProvider() => services.GetService<TimeProvider>() ?? TimeProvider.System;
 
+    /// <summary>Builds a structured <c>@Ids</c> TVP parameter containing the supplied <paramref name="ids"/>, typed as <c>HeadlessSettingsIdList</c>.</summary>
     private SqlParameter _BuildIdListTvpParameter(IEnumerable<Guid> ids)
     {
         var idsTable = new DataTable();
@@ -259,6 +278,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
         };
     }
 
+    /// <summary>Builds a structured <c>@Names</c> TVP parameter containing the supplied <paramref name="names"/>, typed as <c>HeadlessSettingsNameList</c>.</summary>
     private SqlParameter _BuildNameListTvpParameter(IEnumerable<string> names)
     {
         var namesTable = new DataTable();
@@ -275,5 +295,6 @@ internal sealed class SqlServerSettingValueRecordRepository(
         };
     }
 
+    /// <summary>Creates a <see cref="SqlParameter"/> prefixed with <c>@</c> named <paramref name="name"/> with <paramref name="value"/>, substituting <see cref="DBNull.Value"/> for <see langword="null"/>.</summary>
     private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
 }

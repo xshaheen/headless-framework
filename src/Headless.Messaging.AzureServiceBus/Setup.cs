@@ -9,14 +9,29 @@ using Headless.Messaging.Transport;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>
+/// Extension members that register Azure Service Bus as the message transport.
+/// </summary>
+/// <remarks>
+/// Both a bus (topic/subscription fan-out) and a queue (point-to-point) transport are registered.
+/// Topics, subscriptions, and subscription filter rules are auto-provisioned by default using the
+/// Azure Service Bus administration API; set <see cref="AzureServiceBusOptions.AutoProvision"/>
+/// to <see langword="false"/> to skip auto-provisioning when entities are managed externally.
+/// </remarks>
 public static class SetupAzureServiceBusMessaging
 {
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>
-        /// Configuration for messaging.
+        /// Registers Azure Service Bus as the message transport using a shared-access-signature
+        /// namespace connection string.
         /// </summary>
-        /// <param name="connectionString">Connection string for namespace or the entity.</param>
+        /// <param name="connectionString">
+        /// The Service Bus namespace connection string. Must not contain entity-specific path
+        /// information (use <see cref="AzureServiceBusOptions.TopicPath"/> instead).
+        /// </param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="connectionString"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UseAzureServiceBus(string connectionString)
         {
             Argument.IsNotNull(connectionString);
@@ -28,9 +43,11 @@ public static class SetupAzureServiceBusMessaging
         }
 
         /// <summary>
-        /// Configuration for messaging.
+        /// Registers Azure Service Bus as the message transport with full programmatic configuration.
         /// </summary>
-        /// <param name="configure">Provides programmatic configuration for the Azure Service Bus.</param>
+        /// <param name="configure">A delegate that configures <see cref="AzureServiceBusOptions"/>.</param>
+        /// <returns>The same <paramref name="setup"/> builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public MessagingSetupBuilder UseAzureServiceBus(Action<AzureServiceBusOptions> configure)
         {
             Argument.IsNotNull(configure);

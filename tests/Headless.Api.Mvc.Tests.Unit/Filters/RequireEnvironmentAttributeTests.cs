@@ -136,7 +136,7 @@ public sealed class RequireEnvironmentAttributeTests : TestBase
         var timeProvider = new FakeTimeProvider(now);
 
         var buildInformationAccessor = Substitute.For<IBuildInformationAccessor>();
-        buildInformationAccessor.GetBuildNumber().Returns("test-build");
+        buildInformationAccessor.GetVersion().Returns("test-build");
         buildInformationAccessor.GetCommitNumber().Returns("test-commit");
 
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();

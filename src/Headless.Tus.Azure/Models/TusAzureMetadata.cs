@@ -83,11 +83,13 @@ internal sealed partial class TusAzureMetadata
 
     public long? UploadLength
     {
+        // Missing/unparseable returns null (unknown length) rather than 0; the Creation-Defer-Length flow relies on
+        // "unknown" being distinct from a zero-byte upload, and 0 would otherwise trip the upload-length guard.
         get =>
             _decodedMetadata.TryGetValue(UploadLengthKey, out var value)
             && long.TryParse(value, CultureInfo.InvariantCulture, out var length)
                 ? length
-                : 0;
+                : null;
         set
         {
             if (value.HasValue)
@@ -242,7 +244,25 @@ internal sealed partial class TusAzureMetadata
 
         foreach (var (key, value) in parseResult.Metadata)
         {
-            result[_SanitizeAzureMetadataKey(key)] = value.GetString(Encoding.UTF8);
+            var azureKey = _SanitizeAzureMetadataKey(key);
+
+            // User metadata shares the blob's metadata dictionary with the store's own tus_* tracking keys.
+            // Reject any user key that sanitizes onto a reserved key so a client cannot overwrite internal
+            // state (expiration, concat type, staged-chunk checksum, ...) via the Upload-Metadata header.
+            if (_IsSystemMetadataKey(azureKey))
+            {
+                throw new TusStoreException($"Metadata key '{key}' is reserved for internal use.");
+            }
+
+            // Azure metadata keys are restricted to letters/digits/underscore, so distinct TUS keys can
+            // sanitize to the same Azure key (e.g. "a-b" and "a_b"). Reject the collision loudly rather than
+            // silently overwriting one value with another.
+            if (!result.TryAdd(azureKey, value.GetString(Encoding.UTF8)))
+            {
+                throw new TusStoreException(
+                    $"Metadata key '{key}' collides with another key after Azure key sanitization ('{azureKey}')."
+                );
+            }
         }
 
         return new TusAzureMetadata(result);
@@ -257,6 +277,13 @@ internal sealed partial class TusAzureMetadata
         // Azure metadata keys: must start with letter or underscore, alphanumeric and underscore only
         var sanitized = _AzureMetadataKey().Replace(key, "_").ToLowerInvariant();
 
+        // An empty or all-invalid key sanitizes to nothing; fall back to "_" instead of indexing into an
+        // empty string below.
+        if (sanitized.Length == 0)
+        {
+            return "_";
+        }
+
         // Ensure it starts with a letter or underscore
         if (!char.IsLetter(sanitized[0]) && sanitized[0] != '_')
         {
@@ -266,7 +293,7 @@ internal sealed partial class TusAzureMetadata
         return sanitized;
     }
 
-    [GeneratedRegex(@"[^a-zA-Z0-9_]", RegexOptions.None, 100)]
+    [GeneratedRegex("[^a-zA-Z0-9_]", RegexOptions.None, 100)]
     private static partial Regex _AzureMetadataKey();
 
     #endregion

@@ -12,11 +12,17 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>Extension members that configure the PostgreSQL storage backend for the Headless settings feature.</summary>
 [PublicAPI]
 public static class SetupSettingsPostgreSql
 {
     extension(HeadlessSettingsSetupBuilder setup)
     {
+        /// <summary>Configures the settings feature to use PostgreSQL, setting the connection string directly.</summary>
+        /// <param name="connectionString">PostgreSQL connection string. Must not be <see langword="null"/>, empty, or white space.</param>
+        /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="connectionString"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is empty or white space.</exception>
         public HeadlessSettingsSetupBuilder UsePostgreSql(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -27,6 +33,10 @@ public static class SetupSettingsPostgreSql
             });
         }
 
+        /// <summary>Configures the settings feature to use PostgreSQL, binding options from <paramref name="configuration"/>.</summary>
+        /// <param name="configuration">Configuration section to bind to <see cref="PostgreSqlSettingsOptions"/>. Must not be <see langword="null"/>.</param>
+        /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
         public HeadlessSettingsSetupBuilder UsePostgreSql(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -36,6 +46,10 @@ public static class SetupSettingsPostgreSql
             return setup;
         }
 
+        /// <summary>Configures the settings feature to use PostgreSQL, applying <paramref name="configure"/> to the provider options.</summary>
+        /// <param name="configure">Delegate used to configure <see cref="PostgreSqlSettingsOptions"/>. Must not be <see langword="null"/>.</param>
+        /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessSettingsSetupBuilder UsePostgreSql(Action<PostgreSqlSettingsOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -45,6 +59,10 @@ public static class SetupSettingsPostgreSql
             return setup;
         }
 
+        /// <summary>Configures the settings feature to use PostgreSQL, applying <paramref name="configure"/> to the provider options with access to the <see cref="IServiceProvider"/>.</summary>
+        /// <param name="configure">Delegate used to configure <see cref="PostgreSqlSettingsOptions"/> with service resolution. Must not be <see langword="null"/>.</param>
+        /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> instance to allow chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessSettingsSetupBuilder UsePostgreSql(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
@@ -55,6 +73,7 @@ public static class SetupSettingsPostgreSql
         }
     }
 
+    /// <summary>Wires the PostgreSQL provider services into the DI container when applied to the settings setup builder.</summary>
     private sealed class PostgreSqlSettingsOptionsExtension : ISettingsStorageOptionsExtension
     {
         private readonly IConfiguration? _configuration;
@@ -101,6 +120,7 @@ public static class SetupSettingsPostgreSql
         }
     }
 
+    /// <summary>Validates <see cref="SettingsStorageOptions"/> for use with the PostgreSQL backend, ensuring schema and table name identifiers are valid.</summary>
     private sealed class PostgreSqlSettingsStorageOptionsValidator : AbstractValidator<SettingsStorageOptions>
     {
         public PostgreSqlSettingsStorageOptionsValidator()

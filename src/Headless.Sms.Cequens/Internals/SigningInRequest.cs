@@ -2,7 +2,7 @@
 
 namespace Headless.Sms.Cequens.Internals;
 
-public sealed class SigningInRequest(string apiKey, string userName)
+internal sealed class SigningInRequest(string apiKey, string userName)
 {
     [JsonPropertyName("apiKey")]
     public string ApiKey { get; init; } = apiKey;

@@ -176,7 +176,7 @@ internal sealed class ConsumerRegister(
             {
                 try
                 {
-                    await DisposeAsync();
+                    await DisposeAsync().ConfigureAwait(false);
                 }
 #pragma warning disable ERP022 // Best-effort teardown — nothing useful to do with the exception
                 // ReSharper disable once EmptyGeneralCatchClause
@@ -207,7 +207,7 @@ internal sealed class ConsumerRegister(
 
         try
         {
-            await PulseAsync();
+            await PulseAsync().ConfigureAwait(false);
         }
         catch (AggregateException e)
         {
@@ -222,7 +222,7 @@ internal sealed class ConsumerRegister(
             // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
             if (_dispatcher is not null)
             {
-                await _dispatcher.DisposeAsync();
+                await _dispatcher.DisposeAsync().ConfigureAwait(false);
             }
 
             _restartGate.Dispose();
@@ -235,7 +235,7 @@ internal sealed class ConsumerRegister(
         // Cancel all group CTSes
         foreach (var handle in _groupHandles.Values)
         {
-            await handle.Cts.CancelAsync();
+            await handle.Cts.CancelAsync().ConfigureAwait(false);
         }
 
         // Wait for all consumer tasks to complete
@@ -244,7 +244,9 @@ internal sealed class ConsumerRegister(
         {
             try
             {
-                await Task.WhenAll(allTasks).WaitAsync(TimeSpan.FromSeconds(2), _timeProvider, CancellationToken.None);
+                await Task.WhenAll(allTasks)
+                    .WaitAsync(TimeSpan.FromSeconds(2), _timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
 #pragma warning disable ERP022, RCS1075 // Intentional: timeout or cancellation — proceed with cleanup
             // ReSharper disable once EmptyGeneralCatchClause
@@ -256,7 +258,7 @@ internal sealed class ConsumerRegister(
         // not on transport restarts where state must survive broker reconnects.
         foreach (var handle in _groupHandles.Values)
         {
-            await handle.DisposeAsync();
+            await handle.DisposeAsync().ConfigureAwait(false);
             if (removeCircuitState)
             {
                 if (_circuitBreakerStateManager is not null)
@@ -271,7 +273,7 @@ internal sealed class ConsumerRegister(
         // Dispose the token registration before disposing the CTS to prevent
         // accumulated Dispose callbacks across successive ReStartAsync calls.
         // CTS.Dispose alone does not deregister Token.Register callbacks.
-        await _stoppingCtsRegistration.DisposeAsync();
+        await _stoppingCtsRegistration.DisposeAsync().ConfigureAwait(false);
         _stoppingCts.Dispose();
     }
 
@@ -296,9 +298,12 @@ internal sealed class ConsumerRegister(
             ICollection<string> messageNames;
             try
             {
-                await using var client = await _CreateConsumerClientAsync(groupName, limit, intentType);
+                await using var client = await _CreateConsumerClientAsync(groupName, limit, intentType)
+                    .ConfigureAwait(false);
                 client.OnLogCallback = _WriteLog;
-                messageNames = await client.FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName));
+                messageNames = await client
+                    .FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName))
+                    .ConfigureAwait(false);
             }
             catch (BrokerConnectionException e)
             {
@@ -345,9 +350,10 @@ internal sealed class ConsumerRegister(
                         {
                             try
                             {
-                                var innerClient = await _CreateConsumerClientAsync(groupName, limit, intentType);
+                                var innerClient = await _CreateConsumerClientAsync(groupName, limit, intentType)
+                                    .ConfigureAwait(false);
 
-                                await handle.AddClientAsync(innerClient);
+                                await handle.AddClientAsync(innerClient).ConfigureAwait(false);
 
                                 _serverAddress = innerClient.BrokerAddress;
 
@@ -359,7 +365,7 @@ internal sealed class ConsumerRegister(
                                     groupCts.Token
                                 );
 
-                                await innerClient.SubscribeAsync(messageNames);
+                                await innerClient.SubscribeAsync(messageNames).ConfigureAwait(false);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
                                     .ConfigureAwait(false);
                             }
@@ -527,18 +533,19 @@ internal sealed class ConsumerRegister(
         var snapshot = handle.SnapshotClients();
 
         await Task.WhenAll(
-            snapshot.Select(async client =>
-            {
-                try
+                snapshot.Select(async client =>
                 {
-                    await client.PauseAsync(CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.PauseConsumerClientFailed(ex, handle.GroupName);
-                }
-            })
-        );
+                    try
+                    {
+                        await client.PauseAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.PauseConsumerClientFailed(ex, handle.GroupName);
+                    }
+                })
+            )
+            .ConfigureAwait(false);
     }
 
     private async ValueTask _ResumeGroupAsync(GroupHandle handle)
@@ -552,19 +559,20 @@ internal sealed class ConsumerRegister(
         ConcurrentBag<Exception> failures = [];
 
         await Task.WhenAll(
-            snapshot.Select(async client =>
-            {
-                try
+                snapshot.Select(async client =>
                 {
-                    await client.ResumeAsync(CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.ResumeConsumerClientFailed(ex, handle.GroupName);
-                    failures.Add(ex);
-                }
-            })
-        );
+                    try
+                    {
+                        await client.ResumeAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.ResumeConsumerClientFailed(ex, handle.GroupName);
+                        failures.Add(ex);
+                    }
+                })
+            )
+            .ConfigureAwait(false);
 
         if (failures.IsEmpty)
         {
@@ -606,7 +614,7 @@ internal sealed class ConsumerRegister(
 
                     if (!probeAcquired)
                     {
-                        await client.RejectAsync(sender);
+                        await client.RejectAsync(sender).ConfigureAwait(false);
                         return;
                     }
                 }
@@ -658,7 +666,9 @@ internal sealed class ConsumerRegister(
                             ? paramType.GetGenericArguments()[0]
                             : paramType;
 
-                    message = await _serializer.DeserializeAsync(transportMessage, messageValueType);
+                    message = await _serializer
+                        .DeserializeAsync(transportMessage, messageValueType)
+                        .ConfigureAwait(false);
                     message.RemoveException();
                 }
                 catch (Exception e)
@@ -720,7 +730,7 @@ internal sealed class ConsumerRegister(
                         )
                         .ConfigureAwait(false);
 
-                    await client.CommitAsync(sender);
+                    await client.CommitAsync(sender).ConfigureAwait(false);
 
                     var bypassCallback = _options.RetryPolicy.OnExhausted;
                     if (stored && bypassCallback is not null)
@@ -783,33 +793,37 @@ internal sealed class ConsumerRegister(
                 }
                 else
                 {
-                    var mediumMessage = await _storage.StoreReceivedMessageAsync(
-                        name,
-                        group,
-                        new MediumMessage
-                        {
-                            StorageId = Guid.Empty,
-                            Origin = message,
-                            Content = string.Empty,
-                            IntentType = intentType,
-                        },
-                        CancellationToken.None
-                    );
+                    var mediumMessage = await _storage
+                        .StoreReceivedMessageAsync(
+                            name,
+                            group,
+                            new MediumMessage
+                            {
+                                StorageId = Guid.Empty,
+                                Origin = message,
+                                Content = string.Empty,
+                                IntentType = intentType,
+                            },
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
                     mediumMessage.Origin = message;
 
                     _TracingAfter(tracingTimestamp, transportMessage, intentType, _serverAddress, hostShutdownToken);
 
-                    await _dispatcher.EnqueueToExecute(mediumMessage, executor, CancellationToken.None);
+                    await _dispatcher
+                        .EnqueueToExecute(mediumMessage, executor, CancellationToken.None)
+                        .ConfigureAwait(false);
                     probeOutcomeTransferred = true;
 
-                    await client.CommitAsync(sender);
+                    await client.CommitAsync(sender).ConfigureAwait(false);
                 }
             }
             catch (Exception e)
             {
                 _logger.LogProcessReceivedMessageFailed(e, transportMessage);
 
-                await client.RejectAsync(sender);
+                await client.RejectAsync(sender).ConfigureAwait(false);
 
                 _TracingError(
                     tracingTimestamp,
@@ -951,7 +965,7 @@ internal sealed class ConsumerRegister(
             if (shouldDispose)
             {
                 // Already shutting down — dispose outside the lock so we can properly await.
-                await client.DisposeAsync();
+                await client.DisposeAsync().ConfigureAwait(false);
                 return;
             }
 
@@ -959,7 +973,7 @@ internal sealed class ConsumerRegister(
             {
                 try
                 {
-                    await client.PauseAsync();
+                    await client.PauseAsync().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -978,7 +992,7 @@ internal sealed class ConsumerRegister(
 
         public async ValueTask DisposeAsync()
         {
-            await Cts.CancelAsync();
+            await Cts.CancelAsync().ConfigureAwait(false);
             Cts.Dispose();
 
             IConsumerClient[] snapshot;
@@ -990,7 +1004,7 @@ internal sealed class ConsumerRegister(
 
             foreach (var client in snapshot)
             {
-                await client.DisposeAsync();
+                await client.DisposeAsync().ConfigureAwait(false);
             }
         }
     }

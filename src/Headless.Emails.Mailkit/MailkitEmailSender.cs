@@ -8,21 +8,49 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Headless.Emails.Mailkit;
 
+/// <summary>
+/// <see cref="IEmailSender"/> implementation backed by MailKit over SMTP.
+/// </summary>
+/// <remarks>
+/// SMTP clients are pooled via <see cref="ObjectPool{T}"/>. A client is reconnected
+/// automatically if it is found disconnected when retrieved from the pool; disconnected
+/// or faulted clients are discarded rather than returned. The pool size is governed by
+/// <see cref="MailkitSmtpOptions.MaxPoolSize"/>.
+/// <para>
+/// Transient SMTP errors (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>,
+/// <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>) are logged and surfaced as a
+/// failed <see cref="SendSingleEmailResponse"/> rather than thrown.
+/// Authentication failures are logged at critical level and rethrown.
+/// </para>
+/// </remarks>
 public sealed class MailkitEmailSender(
     ObjectPool<SmtpClient> pool,
     IOptionsMonitor<MailkitSmtpOptions> options,
     ILogger<MailkitEmailSender> logger
 ) : IEmailSender
 {
+    /// <summary>
+    /// Sends a single email via SMTP using a pooled MailKit client.
+    /// </summary>
+    /// <param name="request">The email message to send.</param>
+    /// <param name="cancellationToken">Token used to cancel the send operation.</param>
+    /// <returns>
+    /// A successful response when the SMTP server accepts the message; a failed response
+    /// when an SMTP command or protocol error occurs.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when both <see cref="SendSingleEmailRequest.MessageText"/> and
+    /// <see cref="SendSingleEmailRequest.MessageHtml"/> are <see langword="null"/> or whitespace-only.
+    /// </exception>
+    /// <exception cref="MailKit.Security.AuthenticationException">
+    /// Thrown when the SMTP server rejects the configured credentials.
+    /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
         CancellationToken cancellationToken = default
     )
     {
-        if (request.MessageText is null && request.MessageHtml is null)
-        {
-            throw new InvalidOperationException("At least one of plainMessage or htmlMessage must be provided.");
-        }
+        request.EnsureHasBody();
 
         var settings = options.CurrentValue;
         using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).ConfigureAwait(false);
@@ -62,9 +90,21 @@ public sealed class MailkitEmailSender(
         CancellationToken cancellationToken
     )
     {
-        if (client.IsConnected)
+        // A pooled client that is already connected and (when required) authenticated is reusable.
+        if (client.IsConnected && (!options.HasCredentials || client.IsAuthenticated))
         {
             return;
+        }
+
+        // Bound the connect/authenticate phase by the configured timeout. SmtpClient.Timeout only
+        // governs subsequent read/write operations, not the initial TCP/TLS connect.
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(options.Timeout);
+
+        // A connected-but-unauthenticated client (credentials required) must be reset before re-auth.
+        if (client.IsConnected)
+        {
+            await client.DisconnectAsync(quit: true, timeoutCts.Token).ConfigureAwait(false);
         }
 
         await client
@@ -72,13 +112,13 @@ public sealed class MailkitEmailSender(
                 host: options.Server,
                 port: options.Port,
                 options: options.SocketOptions,
-                cancellationToken: cancellationToken
+                cancellationToken: timeoutCts.Token
             )
             .ConfigureAwait(false);
 
         if (options.HasCredentials)
         {
-            await client.AuthenticateAsync(options.User!, options.Password!, cancellationToken).ConfigureAwait(false);
+            await client.AuthenticateAsync(options.User!, options.Password!, timeoutCts.Token).ConfigureAwait(false);
         }
     }
 }

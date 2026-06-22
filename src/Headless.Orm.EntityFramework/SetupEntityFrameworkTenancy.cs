@@ -33,7 +33,9 @@ public static class SetupEntityFrameworkTenancy
 [PublicAPI]
 public sealed class HeadlessEntityFrameworkTenancyBuilder
 {
-    /// <summary>The seam name reported in the tenant posture manifest.</summary>
+    /// <summary>
+    /// The seam identifier used when recording this integration in the tenant posture manifest.
+    /// </summary>
     public const string Seam = "EntityFramework";
 
     internal const string GuardTenantWritesLabel = "guard-tenant-writes";

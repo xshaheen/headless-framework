@@ -457,8 +457,8 @@ services.AddHeadlessMessaging(setup =>
 
 ### Configuration
 
-- `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation.
-- Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options.
+- `MessagingOptions.DefaultGroupName`, `GroupNamePrefix`, `MessageNamePrefix`, and `Version` control naming and isolation. `Version` is validated non-empty and at most 20 characters — the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
+- Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200) caps the retry-pickup batch and `SchedulerBatchSize` (default 1,000) caps the delayed/queued scheduler batch.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(groupName)`.
@@ -472,20 +472,7 @@ services.AddHeadlessMessaging(setup =>
 
 Registers messaging services, hosted processors, publishers, consumers, storage abstractions, runtime registries, middleware registries, keyed messaging lock defaults, and the always-on `DeadOwnerRecoveryBridge<MessagingDeadOwnerReclaimer>` hosted service.
 
-## Headless.Messaging.Dashboard
-
-### Problem Solved
-
-Provides dashboard services and endpoints for inspecting messaging health, storage state, nodes, and operations.
-
-### Key Features
-
-- Dashboard option builder.
-- Node discovery abstraction and Consul discovery support.
-- Authentication options for dashboard access.
-- Monitoring API integration.
-
-### Installation
+## Retry Policy
 
 Retries up to `MaxInlineRetries` run **inline** inside the same `ExecuteAsync` / `SendAsync` call (with `Task.Delay` between attempts). Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
 
@@ -506,7 +493,7 @@ pickup 3 (persisted retry #2):
   attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
-#### FailedInfo construction (for tests / fakes)
+### FailedInfo construction (for tests / fakes)
 
 `FailedInfo` has six required-init properties — `Exception`, `StorageId`, and `RetryCount` are now part of the contract:
 
@@ -524,7 +511,7 @@ var info = new FailedInfo
 
 `ServiceProvider` is the **live per-message DI scope** — the same scope used while the consume / publish attempts ran. Scoped services resolved through `FailedInfo.ServiceProvider` are the same instances seen by the consumer/handler.
 
-#### RetryProcessorOptions
+### RetryProcessorOptions
 
 `MessagingOptions.RetryProcessor` controls the persisted-retry processor's polling cadence:
 
@@ -535,7 +522,7 @@ var info = new FailedInfo
 | `MaxPollingInterval` | `15m` | Cap on adaptive doubling. |
 | `CircuitOpenRateThreshold` | `0.8` | Above this fraction of circuit-open skips, the processor backs off. |
 
-#### Migration from pre-RetryPolicy primitives
+### Migration from pre-RetryPolicy primitives
 
 | Old property | New property | Notes |
 | --- | --- | --- |
@@ -917,23 +904,24 @@ The circuit breaker operates per-process only. There is no cross-instance coordi
 
 ---
 
-# Headless.Messaging.Dashboard
+## Headless.Messaging.Dashboard
 
 Web-based dashboard for monitoring and managing distributed messaging infrastructure.
 
-## Problem Solved
+### Problem Solved
 
 Provides real-time visibility into message processing, failures, retries, and system health through an embedded web UI for operations and troubleshooting.
 
-## Key Features
+### Key Features
 
 - **Real-Time Monitoring**: Live message throughput and latency metrics
 - **Message Explorer**: Search, filter, and inspect messages
 - **Failure Management**: View and retry failed messages
 - **Node Discovery**: Multi-instance cluster visibility
 - **Performance Metrics**: Consumer processing stats and bottlenecks
+- **Five authentication modes** (shared with the Jobs Dashboard via `Headless.Dashboard.Authentication`): none, Basic, API key, host-app auth, custom.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Messaging.Dashboard
@@ -941,21 +929,42 @@ dotnet add package Headless.Messaging.Dashboard
 
 ### Quick Start
 
+The dashboard is enabled on the `MessagingSetupBuilder` via `UseDashboard(...)`; it does not need an explicit `app.Use...` call:
+
 ```csharp
-services.AddMessagingDashboard(options => options.UseBasicAuth("admin", password));
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    // ... transport + storage registration ...
+    setup.UseDashboard(dashboard => dashboard.WithBasicAuth("admin", password));
+});
 ```
 
 ### Configuration
 
-Configure authentication, node discovery, dashboard pathing, and monitoring API access through the dashboard option builder.
+Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`. Authentication is opt-in — with `WithNoAuth()` (the default) the dashboard is public, so configure an auth mode for production.
+
+| Method | Default | Description |
+| --- | --- | --- |
+| `WithNoAuth()` | (default) | Public dashboard, no authentication. |
+| `WithBasicAuth(username, password)` | — | HTTP Basic authentication. |
+| `WithApiKey(apiKey)` | — | API-key authentication. |
+| `WithHostAuthentication(policy?)` | — | Reuse the host app's auth, with an optional authorization policy. |
+| `WithCustomAuth(validator)` | — | Custom `(token, services) => bool` validation. |
+| `WithSessionTimeout(minutes)` | `60` | Auth session lifetime. |
+| `SetBasePath(path)` | `/messaging` | Dashboard URL path. |
+| `SetStatsPollingInterval(ms)` | `2000` | `/stats` endpoint polling interval. |
+| `SetCorsPolicy(builder)` | none | CORS policy for cross-origin access. |
 
 ### Dependencies
 
-`Headless.Messaging.Core`, ASP.NET Core packages.
+- `Headless.Messaging.Core`
+- `Headless.Dashboard.Authentication`
+- `Consul`
+- `Microsoft.AspNetCore.App` (framework reference)
 
 ### Side Effects
 
-Registers dashboard services, request mapping, authentication helpers, and node discovery services.
+Mounts the embedded web UI and monitoring API through an `IStartupFilter` (no explicit middleware call required), and registers dashboard and node-discovery services.
 
 ## Headless.Messaging.Dashboard.K8s
 

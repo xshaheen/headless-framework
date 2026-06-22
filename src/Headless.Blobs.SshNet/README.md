@@ -37,26 +37,22 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ```json
 {
   "SftpBlob": {
-    "Host": "sftp.example.com",
-    "Port": 22,
-    "Username": "user",
-    "Password": "secret",
-    "BasePath": "/home/user/uploads"
+    "ConnectionString": "sftp://user:password@sftp.example.com:22/home/user/uploads"
   }
 }
 ```
 
 ### SSH Key Authentication
 
-```json
-{
-  "SftpBlob": {
-    "Host": "sftp.example.com",
-    "Username": "user",
-    "PrivateKeyPath": "/path/to/key",
-    "PrivateKeyPassphrase": "optional-passphrase"
-  }
-}
+```csharp
+// Key-based authentication: provide PrivateKey as a Stream
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseSsh(options =>
+    {
+        options.ConnectionString = "sftp://user@sftp.example.com:22/home/user/uploads";
+        options.PrivateKey = File.OpenRead("/path/to/key");
+        options.PrivateKeyPassPhrase = "optional-passphrase"; // nullable
+    }));
 ```
 
 ## Dependencies

@@ -31,11 +31,18 @@ internal interface IDbSynchronizationStrategy<TLockCookie>
     /// string) forces a colliding second acquirer onto a dedicated connection where the database serializes them
     /// correctly, instead of letting both "hold" the same physical lock on one shared connection.
     /// </summary>
+    /// <param name="resourceName">The resource name to resolve.</param>
+    /// <returns>An equatable physical-lock identity used to key the per-connection held-lock set.</returns>
     object GetHeldLockIdentity(string resourceName);
 
     /// <summary>
     /// Attempts to acquire the lock, returning <see langword="null"/> on failure or a non-null state cookie on success.
     /// </summary>
+    /// <param name="connection">The open connection on which to execute the acquire SQL.</param>
+    /// <param name="resourceName">The resource name to lock.</param>
+    /// <param name="timeout">Maximum server-side wait time; <see cref="TimeSpan.Zero"/> means try-once.</param>
+    /// <param name="cancellationToken">Token used to cancel the acquire.</param>
+    /// <returns>A non-null <typeparamref name="TLockCookie"/> on success; <see langword="null"/> when contended.</returns>
     ValueTask<TLockCookie?> TryAcquireAsync(
         DatabaseConnection connection,
         string resourceName,
@@ -44,5 +51,8 @@ internal interface IDbSynchronizationStrategy<TLockCookie>
     );
 
     /// <summary>Releases a lock previously acquired via <see cref="TryAcquireAsync"/>.</summary>
+    /// <param name="connection">The open connection that holds the lock.</param>
+    /// <param name="resourceName">The resource name whose lock should be released.</param>
+    /// <param name="lockCookie">The opaque state returned when the lock was acquired.</param>
     ValueTask ReleaseAsync(DatabaseConnection connection, string resourceName, TLockCookie lockCookie);
 }

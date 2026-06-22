@@ -5,9 +5,11 @@ using Npgsql;
 
 namespace Headless.Features.PostgreSql;
 
+/// <summary>Options for the PostgreSQL features storage provider.</summary>
 [PublicAPI]
 public sealed class PostgreSqlFeaturesOptions
 {
+    /// <summary>PostgreSQL connection string used to connect to the features database.</summary>
     public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>Timeout applied to DDL/DML commands issued by this provider. Defaults to 30 seconds.</summary>
@@ -16,6 +18,7 @@ public sealed class PostgreSqlFeaturesOptions
     internal NpgsqlConnection CreateConnection() => new(ConnectionString);
 }
 
+/// <summary>Validates <see cref="PostgreSqlFeaturesOptions"/>.</summary>
 internal sealed class PostgreSqlFeaturesOptionsValidator : AbstractValidator<PostgreSqlFeaturesOptions>
 {
     public PostgreSqlFeaturesOptionsValidator()

@@ -40,7 +40,7 @@ internal static class LogSanitizer
         var needsSanitization = false;
         for (var i = 0; i < scanLength; i++)
         {
-            if (ShouldStrip(value[i]))
+            if (_ShouldStrip(value[i]))
             {
                 needsSanitization = true;
                 break;
@@ -66,7 +66,7 @@ internal static class LogSanitizer
         for (; src < scanLength && pos < effectiveMax; src++)
         {
             var c = value[src];
-            if (!ShouldStrip(c))
+            if (!_ShouldStrip(c))
             {
                 buffer[pos++] = c;
             }
@@ -88,7 +88,7 @@ internal static class LogSanitizer
     /// <summary>
     /// Returns true if the character should be stripped from log output.
     /// </summary>
-    private static bool ShouldStrip(char c)
+    private static bool _ShouldStrip(char c)
     {
         return char.IsControl(c)
             || c

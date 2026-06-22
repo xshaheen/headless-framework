@@ -15,12 +15,25 @@ public static class IdempotencyEndpointConventionBuilderExtensions
         /// Attaches per-endpoint idempotency option overrides. The configure delegate runs
         /// once per request against a fresh clone of the application-level options.
         /// </summary>
+        /// <param name="configure">
+        /// Delegate applied to a per-request clone of <see cref="IdempotencyOptions"/>. May
+        /// mutate <see cref="IdempotencyOptions.Methods"/>,
+        /// <see cref="IdempotencyOptions.ReplayHeaderAllowlist"/>, scalar settings, and
+        /// delegate properties. Changes are scoped to the current request and do not affect
+        /// other endpoints or other in-flight requests.
+        /// </param>
+        /// <returns>The endpoint convention builder for further chaining.</returns>
         /// <remarks>
-        /// <c>HeaderName</c> overrides are ignored — the middleware reads the header before
-        /// resolving endpoint metadata. To change the header for a single endpoint, pre-set
-        /// it via custom middleware. Other options (Methods, ReplayHeaderAllowlist, delegates,
-        /// scalars) are merged as expected.
+        /// <see cref="IdempotencyOptions.HeaderName"/> overrides are ignored — the middleware
+        /// reads the header before resolving endpoint metadata. To change the header for a
+        /// single endpoint, pre-set it via custom middleware. All other options
+        /// (<see cref="IdempotencyOptions.Methods"/>,
+        /// <see cref="IdempotencyOptions.ReplayHeaderAllowlist"/>, delegates, scalars) are
+        /// merged as expected.
         /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// <paramref name="configure"/> is <see langword="null"/>.
+        /// </exception>
         public TBuilder WithIdempotency(Action<IdempotencyOptions> configure)
         {
             return builder.WithMetadata(new IdempotencyMetadata(configure));

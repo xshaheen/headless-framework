@@ -1,6 +1,19 @@
 # Headless.Jobs.Dashboard
 
-Monitoring dashboard for Headless.Jobs with built-in authentication options and real-time updates.
+Embedded web monitoring UI for `Headless.Jobs` with pluggable authentication and real-time cluster updates.
+
+## Problem Solved
+
+Provides operational visibility into the Jobs scheduler — job queues, execution history, live cluster nodes, retry/failure details — without requiring a separate monitoring service. The dashboard is embedded in the host application and mounted under a configurable URL path.
+
+## Key Features
+
+- **Embedded SPA**: served from the host process, no separate deployment.
+- **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or no auth for public dashboards.
+- **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
+- **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
+- **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsPolicy(policy)`.
+- **Pair with OpenTelemetry**: Dashboard for operational triage; `Headless.Jobs.OpenTelemetry` for trace-level diagnostics.
 
 ## Installation
 
@@ -8,7 +21,7 @@ Monitoring dashboard for Headless.Jobs with built-in authentication options and 
 dotnet add package Headless.Jobs.Dashboard
 ```
 
-## Minimal Setup
+## Quick Start
 
 ```csharp
 using Headless.Jobs.DependencyInjection;
@@ -18,110 +31,44 @@ builder.Services
     .AddDashboard(dashboard =>
     {
         dashboard.SetBasePath("/jobs-dashboard");
-        dashboard.WithHostAuthentication();
+        dashboard.WithHostAuthentication(); // or WithBasicAuth / WithApiKey
     });
 
+// No app.MapJobs() or app.UseJobs() — the dashboard middleware is injected via IStartupFilter.
 var app = builder.Build();
+app.Run();
 ```
 
-The dashboard API, SignalR hub, and UI are auto-mounted under the configured base path via `IStartupFilter`.
+## Configuration
 
-## 🚀 Quick Examples
-
-### No Authentication (Public Dashboard)
 ```csharp
-services.AddJobs<MyTimeJob, MyCronJob>(config =>
-{
-    config.AddDashboard(dashboard =>
+builder.Services
+    .AddHeadlessJobs()
+    .AddDashboard(dashboard =>
     {
-        // No authentication setup = public dashboard
-    });
-});
-```
+        dashboard.SetBasePath("/jobs");
+        dashboard.SetBackendDomain("https://api.example.com");
+        dashboard.SetCorsPolicy("MyPolicy");
 
-### Basic Authentication
-```csharp
-services.AddJobs<MyTimeJob, MyCronJob>(config =>
-{
-    config.AddDashboard(dashboard =>
-    {
-        dashboard.WithBasicAuth("admin", "secret123");
-    });
-});
-```
-
-### API Key Authentication
-```csharp
-services.AddJobs<MyTimeJob, MyCronJob>(config =>
-{
-    config.AddDashboard(dashboard =>
-    {
-        dashboard.WithApiKey("my-secret-api-key-12345");
-    });
-});
-```
-
-### Use Host Application's Authentication
-```csharp
-services.AddHeadlessJobs<MyTimeJob, MyCronJob>(config =>
-{
-    config.AddDashboard(dashboard =>
-    {
+        // Authentication — pick one:
+        dashboard.WithBasicAuth("admin", "secret");
+        dashboard.WithApiKey("my-api-key");
         dashboard.WithHostAuthentication();
-    });
-});
-```
-
-### Use Host Authentication with Custom Policy
-```csharp
-services.AddHeadlessJobs<MyTimeJob, MyCronJob>(config =>
-{
-    config.AddDashboard(dashboard =>
-    {
         dashboard.WithHostAuthentication("AdminPolicy");
+        // Omitting auth = public dashboard
     });
-});
 ```
 
-## 🔧 Fluent API Methods
-
-- `WithBasicAuth(username, password)` - Enable username/password authentication
-- `WithApiKey(apiKey)` - Enable API key authentication
-- `WithHostAuthentication(policy)` - Use your app's existing auth with optional policy (e.g., "AdminPolicy")
-- `SetBasePath(path)` - Set dashboard URL path
-- `SetBackendDomain(domain)` - Set backend API domain
-- `SetCorsPolicy(policy)` - Configure CORS
-
-## 🔒 How It Works
-
-The dashboard automatically detects your authentication method:
-
-1. **No auth configured** → Public dashboard
-2. **Basic auth configured** → Username/password login
-3. **Bearer token configured** → API key authentication
-4. **Host auth configured** → Delegates to your app's auth system
-
-## 🌐 Frontend Integration
-
-The frontend automatically adapts based on your backend configuration:
-- Shows appropriate login UI
-- Handles SignalR authentication
-- Supports both header and query parameter auth (for WebSockets)
-
-## Error Monitoring
-
-Dashboard tracks runtime outcomes from the scheduler, including:
-
-- Failed jobs after retry exhaustion
-- Cancelled jobs
-- Skipped jobs (for example, overlapping cron occurrences)
-- Retry count and latest execution details
-
-Use Dashboard for operational triage, then combine with `Headless.Jobs.OpenTelemetry` for trace-level diagnostics.
+Auth detection is automatic: no auth → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication middleware.
 
 ## Dependencies
 
 - `Headless.Jobs.Abstractions`
 - `Headless.Jobs.Core`
-- `Headless.Dashboard.Authentication` (shared auth with Messaging Dashboard)
-- Embedded web UI assets
+- `Headless.Dashboard.Authentication` (shared with `Headless.Messaging.Dashboard`)
+
+## Side Effects
+
+- Mounts dashboard HTTP API and SignalR hub under `SetBasePath` path via `IStartupFilter` (no explicit `app.Use…` call needed).
+- Subscribes to `Headless.Coordination` membership events for live-node push updates.
+- Serves embedded frontend SPA assets; requires Node 22 on `PATH` when building from source.

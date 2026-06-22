@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Blobs.Redis;
 
+/// <summary>Extension methods to register the Redis blob storage provider.</summary>
 [PublicAPI]
 public static class SetupRedisBlob
 {

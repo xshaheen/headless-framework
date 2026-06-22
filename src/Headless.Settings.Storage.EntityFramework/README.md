@@ -1,24 +1,23 @@
 # Headless.Settings.Storage.EntityFramework
 
-Entity Framework Core storage for settings management.
+Entity Framework Core storage implementation for settings management.
 
 ## Problem Solved
 
-Provides EF Core repository implementations for setting definitions and values using the consumer's own `DbContext`.
+Provides EF Core repository implementations for setting values and definitions using the consumer's own `DbContext`, with schema managed through EF migrations.
 
 ## Key Features
 
-- `AddHeadlessSettings(setup => setup.UseEntityFramework<TContext>())` storage registration
-- `modelBuilder.AddHeadlessSettings(this)` entity mapping for shared contexts (resolves `SettingsStorageOptions` from the context's service provider; an `(options)` overload exists for when you already hold the options)
-- `EfSettingValueRecordRepository` for setting values
-- `EfSettingDefinitionRecordRepository` for definition records
-- `SettingsStorageOptions` for schema and table-name configuration
+- `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessSettingsSetupBuilder`
+- `modelBuilder.AddHeadlessSettings(DbContext context)` — applies entity configurations by resolving `SettingsStorageOptions` from the context's service provider (no constructor injection required)
+- `modelBuilder.AddHeadlessSettings(SettingsStorageOptions options)` — overload for when you already hold the options
+- EF repositories for `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository`
+- `SettingsStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
+- Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing
 
 ## Design Notes
 
-The package no longer ships a dedicated settings DbContext or settings-specific DbContext interface. Consumers register `AddDbContextFactory<TContext>()`, map the Headless entities in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties.
-
-Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`. Writes commit through a fresh context owned by the repository, so they are not enlisted in the consumer's outer transaction.
+The package does not ship a dedicated settings `DbContext` or settings-specific `DbContext` interface. Consumers register `AddDbContextFactory<TContext>()`, map the Headless entities in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties. Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`. Writes commit through a fresh context owned by the repository, so they are not enlisted in the consumer's outer transaction.
 
 ## Installation
 
@@ -28,9 +27,7 @@ dotnet add package Headless.Settings.Storage.EntityFramework
 
 ## Quick Start
 
-`AddHeadlessSettings(...)` registers the settings management core automatically. Register
-the required services first — `TimeProvider`, caching, distributed lock, and
-`IStringEncryptionService` (the management core throws on startup if encryption is missing).
+`AddHeadlessSettings(...)` registers the settings management core automatically. Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService` (the management core throws on startup if encryption is missing).
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
@@ -54,6 +51,7 @@ builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 
+// AddHeadlessSettings registers the management core automatically.
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureStorage(storage =>
@@ -73,8 +71,9 @@ builder.Services.AddHeadlessSettings(setup =>
 - `Schema = "settings"`
 - `SettingValuesTableName = "SettingValues"`
 - `SettingDefinitionsTableName = "SettingDefinitions"`
+- `InitializeOnStartup = true`
 
-The registration validates these values on startup. The startup gate also inspects the EF model before hosted services start and fails with an actionable message if `SettingValueRecord` or `SettingDefinitionRecord` is missing.
+The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing. `InitializeOnStartup` is ignored by the EF provider — EF uses migrations, not startup DDL.
 
 ## Dependencies
 
@@ -84,7 +83,7 @@ The registration validates these values on startup. The startup gate also inspec
 
 ## Side Effects
 
-- Registers `ISettingValueRecordRepository` as singleton
-- Registers `ISettingDefinitionRecordRepository` as singleton
+- Registers `ISettingValueRecordRepository` (`EfSettingValueRecordRepository<TContext>`) as singleton
+- Registers `ISettingDefinitionRecordRepository` (`EfSettingDefinitionRecordRepository<TContext>`) as singleton
 - Registers validated `SettingsStorageOptions`
-- Registers an `IHostedLifecycleService` startup gate for missing entity mappings
+- Registers `SettingsEntityValidationStartupGate<TContext>` as `IHostedService`

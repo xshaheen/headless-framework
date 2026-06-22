@@ -12,7 +12,7 @@ public sealed class StringHashServiceTests
         new()
         {
             Iterations = 10_000,
-            Size = 32,
+            SizeInBytes = 32,
             Algorithm = HashAlgorithmName.SHA256,
             DefaultSalt = "DefaultSalt",
         };
@@ -52,7 +52,7 @@ public sealed class StringHashServiceTests
         var options = new StringHashOptions
         {
             Iterations = 10_000,
-            Size = 32,
+            SizeInBytes = 32,
             Algorithm = HashAlgorithmName.SHA256,
         };
 

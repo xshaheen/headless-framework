@@ -32,22 +32,14 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 ## Configuration
 
-### appsettings.json
-
-```json
-{
-  "RedisBlob": {
-    "ConnectionString": "localhost:6379,password=secret",
-    "KeyPrefix": "blobs:"
-  }
-}
-```
+`RedisBlobStorageOptions` requires an `IConnectionMultiplexer` instance; the options cannot be bound from `appsettings.json` directly. Wire up the multiplexer in code as shown in Quick Start.
 
 ### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `MaxBlobSizeBytes` | 10 MB | Maximum blob size. Set to 0 to disable. |
+| `ConnectionMultiplexer` | *(required)* | `IConnectionMultiplexer` instance for Redis. |
+| `MaxBlobSizeBytes` | 10 MB | Maximum blob size in bytes. Set to 0 to disable. |
 | `MaxBulkParallelism` | 10 | Maximum parallelism for bulk operations. |
 
 ## Usage Notes
@@ -64,4 +56,4 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ## Side Effects
 
 - Registers `IBlobStorage` as singleton
-- Requires Redis connection (uses existing `IConnectionMultiplexer` if registered)
+- Requires an `IConnectionMultiplexer` to be provided via `RedisBlobStorageOptions.ConnectionMultiplexer`

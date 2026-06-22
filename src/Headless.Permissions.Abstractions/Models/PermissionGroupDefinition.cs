@@ -4,6 +4,10 @@ using Headless.Checks;
 
 namespace Headless.Permissions.Models;
 
+/// <summary>
+/// A named container that groups related permissions for display and organization. Permissions are added with
+/// <see cref="AddChild"/> and may themselves nest further children to form a tree.
+/// </summary>
 public sealed class PermissionGroupDefinition : ICanAddChildPermission
 {
     private readonly List<PermissionDefinition> _permissions;
@@ -45,6 +49,7 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission
         set => Properties[name] = value;
     }
 
+    /// <summary>Returns every permission in this group, flattening nested children into a single pre-order list.</summary>
     public List<PermissionDefinition> GetFlatPermissions()
     {
         var permissions = new List<PermissionDefinition>();
@@ -57,6 +62,8 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission
         return permissions;
     }
 
+    /// <summary>Finds a permission by name within this group, searching nested children recursively.</summary>
+    /// <returns>The matching permission, or <see langword="null"/> if none is found in this group.</returns>
     public PermissionDefinition? GetPermissionOrDefault(string name)
     {
         Argument.IsNotNull(name);
@@ -64,6 +71,10 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission
         return _GetPermissionOrDefaultRecursively(Permissions, name);
     }
 
+    /// <summary>
+    /// Adds a top-level permission to this group and returns it for chaining. Unlike
+    /// <see cref="PermissionDefinition.AddChild"/>, the created permission has no <see cref="PermissionDefinition.Parent"/>.
+    /// </summary>
     public PermissionDefinition AddChild(string name, string? displayName = null, bool isEnabled = true)
     {
         var permission = new PermissionDefinition(name, displayName, isEnabled);

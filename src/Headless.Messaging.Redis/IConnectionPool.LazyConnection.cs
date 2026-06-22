@@ -7,6 +7,10 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.Redis;
 
+/// <summary>
+/// A lazily-initialised, retrying Redis connection that establishes the <c>IConnectionMultiplexer</c>
+/// on first await. Up to five connection attempts are made with a two-second delay between retries.
+/// </summary>
 public class AsyncLazyRedisConnection(
     MessagingRedisOptions redisOptions,
     ILogger<AsyncLazyRedisConnection> logger,
@@ -17,8 +21,13 @@ public class AsyncLazyRedisConnection(
         _ConnectAsync(redisOptions, logger, timeProvider ?? TimeProvider.System, cancellationToken)
     )
 {
+    /// <summary>
+    /// Returns the established <see cref="RedisConnection"/> when the lazy value has already been
+    /// resolved; otherwise <see langword="null"/>.
+    /// </summary>
     public RedisConnection? CreatedConnection => IsValueCreated ? Value.GetAwaiter().GetResult() : null;
 
+    /// <summary>Returns an awaiter so the connection can be awaited directly.</summary>
     public TaskAwaiter<RedisConnection> GetAwaiter()
     {
         return Value.GetAwaiter();
@@ -68,14 +77,23 @@ public class AsyncLazyRedisConnection(
     }
 }
 
+/// <summary>
+/// Wraps an established <c>IConnectionMultiplexer</c> with a capacity counter and owns its lifetime.
+/// </summary>
 public sealed class RedisConnection(IConnectionMultiplexer connection) : IDisposable
 {
     private bool _isDisposed;
 
+    /// <summary>The underlying StackExchange.Redis connection multiplexer.</summary>
     public IConnectionMultiplexer Connection { get; } = Argument.IsNotNull(connection);
 
+    /// <summary>
+    /// The number of outstanding (in-flight) commands on this connection, used by the pool
+    /// to select the least-loaded connection.
+    /// </summary>
     public long ConnectionCapacity => Connection.GetCounters().TotalOutstanding;
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         _Dispose(disposing: true);

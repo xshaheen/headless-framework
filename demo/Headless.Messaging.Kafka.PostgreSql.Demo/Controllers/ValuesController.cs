@@ -11,7 +11,7 @@ namespace Demo.Controllers;
 [Route("api/[controller]")]
 public class ValuesController(IOutboxQueue producer, IServiceProvider services) : Controller
 {
-    private const string MessageName = "sample.kafka.postgrsql";
+    private const string _MessageName = "sample.kafka.postgrsql";
 
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
@@ -34,7 +34,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     {
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { MessageName = MessageName }
+            new EnqueueOptions { MessageName = _MessageName }
         );
 
         return Ok();
@@ -45,7 +45,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
     {
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { MessageName = MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) }
+            new EnqueueOptions { MessageName = _MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) }
         );
 
         return Ok();
@@ -81,7 +81,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
 
             await producer.EnqueueAsync(
                 new KafkaMessage(DateTime.UtcNow),
-                new EnqueueOptions { MessageName = MessageName },
+                new EnqueueOptions { MessageName = _MessageName },
                 ct
             );
 
@@ -109,7 +109,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
 
                 await producer.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new EnqueueOptions { MessageName = MessageName },
+                    new EnqueueOptions { MessageName = _MessageName },
                     ct
                 );
             },
@@ -142,7 +142,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
 
                     await producer.EnqueueAsync(
                         new KafkaMessage(DateTime.UtcNow),
-                        new EnqueueOptions { MessageName = MessageName },
+                        new EnqueueOptions { MessageName = _MessageName },
                         ct
                     );
 
@@ -175,7 +175,7 @@ public class ValuesController(IOutboxQueue producer, IServiceProvider services) 
 
                 await producer.EnqueueAsync(
                     new KafkaMessage(DateTime.UtcNow),
-                    new EnqueueOptions { MessageName = MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) },
+                    new EnqueueOptions { MessageName = _MessageName, Delay = TimeSpan.FromSeconds(delaySeconds) },
                     ct
                 );
             },

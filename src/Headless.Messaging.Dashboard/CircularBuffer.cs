@@ -170,7 +170,7 @@ internal sealed class CircularBuffer<T> : ICollection<T>
         if (Count > array.Length - arrayIndex)
         {
             throw new ArgumentException(
-                @"The number of elements in the source CircularBuffer<T> is greater than the available space from arrayIndex to the end of the destination array.",
+                "The number of elements in the source CircularBuffer<T> is greater than the available space from arrayIndex to the end of the destination array.",
                 nameof(arrayIndex)
             );
         }

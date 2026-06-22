@@ -4,15 +4,20 @@ using Amazon.Auth.AccessControlPolicy;
 
 namespace Headless.Messaging.Aws;
 
+/// <summary>Extension methods for AWS IAM policy inspection and mutation used by the SQS/SNS transport.</summary>
 public static class AmazonPolicyExtensions
 {
     /// <summary>
-    /// Check to see if the policy for the queue has already given permission to the topic.
+    /// Determines whether the SQS queue policy already grants the specified SNS topic permission
+    /// to send messages.
     /// </summary>
-    /// <param name="policy"></param>
-    /// <param name="topicArn"></param>
-    /// <param name="sqsQueueArn"></param>
-    /// <returns></returns>
+    /// <param name="policy">The SQS queue access-control policy to inspect.</param>
+    /// <param name="topicArn">The SNS topic ARN to check for.</param>
+    /// <param name="sqsQueueArn">The SQS queue ARN that the permission must target.</param>
+    /// <returns>
+    /// <see langword="true"/> if a matching <c>sqs:SendMessage</c> statement already exists;
+    /// <see langword="false"/> otherwise.
+    /// </returns>
     public static bool HasSqsPermission(this Policy policy, string topicArn, string sqsQueueArn)
     {
         foreach (var statement in policy.Statements)
@@ -66,33 +71,27 @@ public static class AmazonPolicyExtensions
     }
 
     /// <summary>
-    /// Add statement to the SQS policy that gives the SNS topics access to send a message to the queue.
+    /// Appends an <c>sqs:SendMessage</c> allow statement to the SQS queue policy, granting each
+    /// of the specified SNS topics permission to deliver messages to the queue.
     /// </summary>
+    /// <remarks>
+    /// The generated statement uses <c>ArnLike</c> conditions on <c>aws:SourceArn</c> so that
+    /// only the listed SNS topics can send to the queue. Example of the produced policy fragment:
     /// <code>
     /// {
-    ///     "Version": "2012-10-17",
-    ///     "Statement": [
-    ///     {
-    ///         "Effect": "Allow",
-    ///         "Principal": {
-    ///             "AWS": "*"
-    ///         },
-    ///         "Action": "sqs:SendMessage",
-    ///         "Resource": "arn:aws:sqs:us-east-1:MyQueue",
-    ///         "Condition": {
-    ///             "ArnLike": {
-    ///                 "aws:SourceArn": [
-    ///                 "arn:aws:sns:us-east-1:FirstTopic",
-    ///                 "arn:aws:sns:us-east-1:SecondTopic"
-    ///                     ]
-    ///             }
-    ///         }
-    ///     }]
+    ///   "Effect": "Allow",
+    ///   "Principal": { "AWS": "*" },
+    ///   "Action": "sqs:SendMessage",
+    ///   "Resource": "arn:aws:sqs:us-east-1:MyQueue",
+    ///   "Condition": {
+    ///     "ArnLike": { "aws:SourceArn": ["arn:aws:sns:us-east-1:FirstTopic", ...] }
+    ///   }
     /// }
     /// </code>
-    /// <param name="policy"></param>
-    /// <param name="topicArns"></param>
-    /// <param name="sqsQueueArn"></param>
+    /// </remarks>
+    /// <param name="policy">The SQS queue policy to modify.</param>
+    /// <param name="topicArns">The SNS topic ARNs to grant send access from.</param>
+    /// <param name="sqsQueueArn">The SQS queue ARN that the permission applies to.</param>
     public static void AddSqsPermissions(this Policy policy, IEnumerable<string> topicArns, string sqsQueueArn)
     {
         var statement = new Statement(Statement.StatementEffect.Allow);

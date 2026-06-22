@@ -26,4 +26,12 @@ internal static partial class InfobipSmsLoggerExtensions
         int destinationCount,
         int errorCode
     );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SmsSendException",
+        Level = LogLevel.Error,
+        Message = "Failed to send SMS using Infobip API to {DestinationCount} recipients"
+    )]
+    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 }

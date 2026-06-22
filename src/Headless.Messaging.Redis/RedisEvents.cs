@@ -16,12 +16,12 @@ internal class RedisEvents
     {
         _logger = logger;
         _connection = connection;
-        _connection.ErrorMessage += Connection_ErrorMessage;
-        _connection.ConnectionRestored += Connection_ConnectionRestored;
-        _connection.ConnectionFailed += Connection_ConnectionFailed;
+        _connection.ErrorMessage += _Connection_ErrorMessage;
+        _connection.ConnectionRestored += _Connection_ConnectionRestored;
+        _connection.ConnectionFailed += _Connection_ConnectionFailed;
     }
 
-    private void Connection_ConnectionFailed(object? sender, ConnectionFailedEventArgs e)
+    private void _Connection_ConnectionFailed(object? sender, ConnectionFailedEventArgs e)
     {
         _logger.LogRedisConnectionFailed(
             e.Exception,
@@ -32,12 +32,12 @@ internal class RedisEvents
         );
     }
 
-    private void Connection_ConnectionRestored(object? sender, ConnectionFailedEventArgs e)
+    private void _Connection_ConnectionRestored(object? sender, ConnectionFailedEventArgs e)
     {
         _logger.LogRedisConnectionRestored(e.Exception?.Message, e.EndPoint, e.FailureType, e.ConnectionType);
     }
 
-    private void Connection_ErrorMessage(object? sender, RedisErrorEventArgs e)
+    private void _Connection_ErrorMessage(object? sender, RedisErrorEventArgs e)
     {
         if (e.Message.GetRedisErrorType() == RedisErrorTypes.Unknown)
         {

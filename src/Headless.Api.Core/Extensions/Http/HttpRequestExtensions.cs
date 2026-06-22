@@ -49,6 +49,20 @@ public static class HttpRequestExtensions
         return connection.RemoteIpAddress is null && connection.LocalIpAddress is null;
     }
 
+    /// <summary>
+    /// Determines whether the request's <c>Accept</c> header indicates acceptance of at least one of
+    /// the supplied content types. A missing or empty <c>Accept</c> header is treated as accepting
+    /// everything (per RFC 7231 §5.3.2).
+    /// </summary>
+    /// <param name="request">The HTTP request to inspect.</param>
+    /// <param name="contentTypes">One or more MIME types to check acceptance of.</param>
+    /// <returns>
+    /// <see langword="true"/> if the <c>Accept</c> header is absent, a wildcard (<c>*/*</c>), or
+    /// explicitly includes at least one of <paramref name="contentTypes"/>; otherwise
+    /// <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="contentTypes"/> is empty.</exception>
     public static bool CanAccept(this HttpRequest request, params ReadOnlySpan<string> contentTypes)
     {
         Argument.IsNotNull(request);
@@ -56,16 +70,30 @@ public static class HttpRequestExtensions
 
         var acceptHeader = request.Headers[HeaderNames.Accept];
 
-        if (acceptHeader.Count == 0 || acceptHeader.Equals("*/*"))
+        if (acceptHeader.Count == 0)
         {
             return true;
         }
 
-        foreach (var value in acceptHeader)
+        // ParseList handles comma-separated values across all header entries.
+        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader!);
+
+        if (parsed is null or { Count: 0 })
         {
+            return true;
+        }
+
+        foreach (var mediaType in parsed)
+        {
+            // Wildcard */* matches anything.
+            if (mediaType.MatchesAllTypes)
+            {
+                return true;
+            }
+
             foreach (var contentType in contentTypes)
             {
-                if (value.AsSpan().Contains(contentType.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                if (MediaTypeHeaderValue.TryParse(contentType, out var candidate) && mediaType.IsSubsetOf(candidate))
                 {
                     return true;
                 }
@@ -75,6 +103,21 @@ public static class HttpRequestExtensions
         return false;
     }
 
+    /// <summary>
+    /// Determines whether the request's <c>Accept</c> header indicates acceptance of the supplied
+    /// content type. A missing or empty <c>Accept</c> header is treated as accepting everything
+    /// (per RFC 7231 §5.3.2). Prefer the <c>ReadOnlySpan&lt;string&gt;</c> overload when checking
+    /// multiple types at once.
+    /// </summary>
+    /// <param name="request">The HTTP request to inspect.</param>
+    /// <param name="contentType">The MIME type to check acceptance of.</param>
+    /// <returns>
+    /// <see langword="true"/> if the <c>Accept</c> header is absent, a wildcard (<c>*/*</c>), or
+    /// explicitly includes <paramref name="contentType"/>; otherwise <see langword="false"/>.
+    /// Returns <see langword="false"/> when <paramref name="contentType"/> cannot be parsed as a
+    /// valid media type.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> or <paramref name="contentType"/> is <see langword="null"/>.</exception>
     public static bool CanAccept(this HttpRequest request, string contentType)
     {
         Argument.IsNotNull(request);
@@ -82,14 +125,21 @@ public static class HttpRequestExtensions
 
         var acceptHeader = request.Headers[HeaderNames.Accept];
 
-        if (acceptHeader.Count == 0 || acceptHeader.Equals("*/*"))
+        if (acceptHeader.Count == 0)
         {
             return true;
         }
 
-        foreach (var value in acceptHeader)
+        if (!MediaTypeHeaderValue.TryParse(contentType, out var candidate))
         {
-            if (value.AsSpan().Contains(contentType.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            return false;
+        }
+
+        var parsed = MediaTypeHeaderValue.ParseList(acceptHeader!);
+
+        foreach (var mediaType in parsed)
+        {
+            if (mediaType.MatchesAllTypes || mediaType.IsSubsetOf(candidate))
             {
                 return true;
             }

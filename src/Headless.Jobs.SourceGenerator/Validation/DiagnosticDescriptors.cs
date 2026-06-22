@@ -1,3 +1,6 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Resources;
 using Microsoft.CodeAnalysis;
 
 namespace Headless.Jobs.SourceGenerator.Validation;
@@ -7,93 +10,109 @@ namespace Headless.Jobs.SourceGenerator.Validation;
 /// </summary>
 internal static class DiagnosticDescriptors
 {
-    public static readonly DiagnosticDescriptor ClassAccessibility = new(
+    private const string _Category = "Headless.Jobs.SourceGenerator";
+    private const string _HelpLinkUri =
+        "https://github.com/xshaheen/headless-framework/blob/main/src/Headless.Jobs.SourceGenerator/AnalyzerReleases.Shipped.md";
+
+    private static readonly ResourceManager _Resources = new(
+        "Headless.Jobs.SourceGenerator.Resources.DiagnosticMessages",
+        typeof(DiagnosticDescriptors).Assembly
+    );
+
+    private static readonly string[] _CustomTags = [WellKnownDiagnosticTags.Telemetry];
+
+    public static readonly DiagnosticDescriptor ClassAccessibility = _Create(
         "TQ001",
-        "Class accessibility issue",
-        "The class '{0}' should be public or internal to be used with [JobFunction]",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "ClassAccessibilityTitle",
+        "ClassAccessibilityMessage",
+        DiagnosticSeverity.Error
     );
 
-    public static readonly DiagnosticDescriptor MethodAccessibility = new(
+    public static readonly DiagnosticDescriptor MethodAccessibility = _Create(
         "TQ002",
-        "Method accessibility issue",
-        "The method '{0}' should be public or internal to be used with [JobFunction]",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "MethodAccessibilityTitle",
+        "MethodAccessibilityMessage",
+        DiagnosticSeverity.Error
     );
 
-    public static readonly DiagnosticDescriptor InvalidCronExpression = new(
+    public static readonly DiagnosticDescriptor InvalidCronExpression = _Create(
         "TQ003",
-        "Invalid cron expression",
-        "The cron expression '{0}' in function '{1}' is invalid",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "InvalidCronExpressionTitle",
+        "InvalidCronExpressionMessage",
+        DiagnosticSeverity.Error
     );
 
-    public static readonly DiagnosticDescriptor MissingFunctionName = new(
+    public static readonly DiagnosticDescriptor MissingFunctionName = _Create(
         "TQ004",
-        "Missing function name",
-        "The [JobFunction] attribute on method '{0}' in class '{1}' must specify a function name",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "MissingFunctionNameTitle",
+        "MissingFunctionNameMessage",
+        DiagnosticSeverity.Error
     );
 
-    public static readonly DiagnosticDescriptor DuplicateFunctionName = new(
+    public static readonly DiagnosticDescriptor DuplicateFunctionName = _Create(
         "TQ005",
-        "Duplicate function name",
-        "The function name '{0}' is already used by another [JobFunction] method",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "DuplicateFunctionNameTitle",
+        "DuplicateFunctionNameMessage",
+        DiagnosticSeverity.Error
     );
 
-    public static readonly DiagnosticDescriptor MultipleConstructors = new(
+    public static readonly DiagnosticDescriptor MultipleConstructors = _Create(
         "TQ006",
-        "Multiple constructors detected",
-        "The class '{0}' has multiple constructors. Only the first constructor will be used for dependency injection. Consider using [JobsConstructor] attribute to explicitly mark the preferred constructor.",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Warning,
-        true
+        "MultipleConstructorsTitle",
+        "MultipleConstructorsMessage",
+        DiagnosticSeverity.Warning
     );
 
-    public static readonly DiagnosticDescriptor AbstractClass = new(
+    public static readonly DiagnosticDescriptor AbstractClass = _Create(
         "TQ007",
-        "Abstract class with JobFunction",
-        "The abstract class '{0}' contains [JobFunction] methods",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "AbstractClassTitle",
+        "AbstractClassMessage",
+        DiagnosticSeverity.Error
     );
 
-    public static readonly DiagnosticDescriptor NestedClass = new(
+    public static readonly DiagnosticDescriptor NestedClass = _Create(
         "TQ008",
-        "Nested class with JobFunction",
-        "The nested class '{0}' contains [JobFunction] methods. JobFunction methods are only allowed in top-level classes.",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "NestedClassTitle",
+        "NestedClassMessage",
+        DiagnosticSeverity.Error
     );
 
-    public static readonly DiagnosticDescriptor InvalidMethodParameter = new(
+    public static readonly DiagnosticDescriptor InvalidMethodParameter = _Create(
         "TQ009",
-        "Invalid JobFunction parameter",
-        "The method '{0}' has invalid parameter '{1}' of type '{2}'. JobFunction methods can only have JobFunctionContext, JobFunctionContext<T>, CancellationToken parameters, or no parameters.",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "InvalidMethodParameterTitle",
+        "InvalidMethodParameterMessage",
+        DiagnosticSeverity.Error
     );
 
-    public static readonly DiagnosticDescriptor MultipleJobsConstructorAttributes = new(
+    public static readonly DiagnosticDescriptor MultipleJobsConstructorAttributes = _Create(
         "TQ010",
-        "Multiple JobsConstructor attributes",
-        "The class '{0}' has multiple constructors with [JobsConstructor] attribute. Only one constructor can be marked with [JobsConstructor].",
-        "Headless.Jobs.SourceGenerator",
-        DiagnosticSeverity.Error,
-        true
+        "MultipleJobsConstructorAttributesTitle",
+        "MultipleJobsConstructorAttributesMessage",
+        DiagnosticSeverity.Error
     );
+
+    private static DiagnosticDescriptor _Create(
+        string id,
+        string titleResourceName,
+        string messageResourceName,
+        DiagnosticSeverity severity
+    )
+    {
+        var message = _Resource(messageResourceName);
+
+        return new DiagnosticDescriptor(
+            id,
+            _Resource(titleResourceName),
+            message,
+            _Category,
+            severity,
+            isEnabledByDefault: true,
+            description: message,
+            helpLinkUri: _HelpLinkUri,
+            customTags: _CustomTags
+        );
+    }
+
+    private static LocalizableString _Resource(string resourceName) =>
+        new LocalizableResourceString(resourceName, _Resources, typeof(DiagnosticDescriptors));
 }

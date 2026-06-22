@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
@@ -28,6 +27,14 @@ public static class PermissionsModelBuilderExtensions
             return modelBuilder.AddHeadlessPermissions(options);
         }
 
+        /// <summary>
+        /// Applies the Headless permissions entity configurations using the supplied
+        /// <paramref name="options"/>. Use this overload when you already hold a
+        /// <see cref="PermissionsStorageOptions"/> instance; otherwise prefer the
+        /// <c>AddHeadlessPermissions(DbContext)</c> overload, which resolves options from the
+        /// context's service provider.
+        /// </summary>
+        /// <param name="options">Storage options that drive the schema, table names, and column constraints applied to each entity.</param>
         public ModelBuilder AddHeadlessPermissions(PermissionsStorageOptions options)
         {
             Argument.IsNotNull(modelBuilder);

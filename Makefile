@@ -94,12 +94,17 @@ build-project: restore-project ## Build one project; preferred when working on a
 .PHONY: dashboards
 dashboards: dashboard-jobs dashboard-messaging ## Rebuild every SPA dashboard (npm ci + vite build into wwwroot/dist).
 
+# Internal: fail early with a clear message when Node/npm is missing.
+.PHONY: _node-check
+_node-check:
+	@command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: '$(NPM)' not found on PATH. Node 22+ is required to build the dashboards. Install from https://nodejs.org (LTS)."; exit 1; }
+
 .PHONY: dashboard-jobs
-dashboard-jobs: ## Rebuild the Jobs dashboard SPA (npm ci + vite build into wwwroot/dist).
+dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite build into wwwroot/dist).
 	cd "$(JOBS_DASHBOARD_DIR)" && $(NPM) ci && $(NPM) run build
 
 .PHONY: dashboard-messaging
-dashboard-messaging: ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
+dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
 	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci && $(NPM) run build
 
 .PHONY: format

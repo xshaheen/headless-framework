@@ -10,21 +10,54 @@ using RabbitMQ.Client;
 
 namespace Headless.Messaging.RabbitMq;
 
+/// <summary>
+/// Manages a pool of AMQP channels over a single shared RabbitMQ connection.
+/// </summary>
+/// <remarks>
+/// Channels are rented for publish operations and returned after use. The pool size is fixed at
+/// 15 slots by default. Renting blocks when all slots are occupied until a channel is returned.
+/// </remarks>
 public interface IConnectionChannelPool
 {
+    /// <summary>Gets the broker host address in <c>host:port</c> form.</summary>
     string HostAddress { get; }
 
+    /// <summary>
+    /// Gets the effective exchange name, which includes the messaging version suffix when the
+    /// configured version is not <c>"v1"</c>.
+    /// </summary>
     string Exchange { get; }
 
+    /// <summary>Returns the shared, lazily-established AMQP connection, opening it if necessary.</summary>
     Task<IConnection> GetConnectionAsync();
 
+    /// <summary>
+    /// Rents an AMQP channel from the pool, blocking until a slot is available.
+    /// The caller must return the channel via <see cref="Return"/> when done.
+    /// </summary>
     Task<IChannel> Rent();
 
+    /// <summary>
+    /// Rents an AMQP channel from the pool, blocking until a slot is available or
+    /// <paramref name="cancellationToken"/> is cancelled.
+    /// The caller must return the channel via <see cref="Return"/> when done.
+    /// </summary>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<IChannel> Rent(CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Returns a previously rented channel to the pool. If the pool is full or the channel is
+    /// closed, the channel is disposed instead.
+    /// </summary>
+    /// <param name="context">The channel to return.</param>
+    /// <returns>
+    /// <see langword="true"/> if the channel was returned to the pool;
+    /// <see langword="false"/> if it was disposed because the pool was full or the channel was closed.
+    /// </returns>
     bool Return(IChannel context);
 }
 
+/// <summary>Default implementation of <see cref="IConnectionChannelPool"/>.</summary>
 public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable, IAsyncDisposable
 {
     private const int _DefaultPoolSize = 15;

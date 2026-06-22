@@ -45,7 +45,8 @@ public interface IOutboxQueue
     /// Thrown when <see cref="MessageOptions.Headers"/> contains a reserved messaging header
     /// (use <see cref="MessageOptions"/> overrides instead), when a raw <see cref="Headers.TenantId"/>
     /// header is supplied without setting <see cref="MessageOptions.TenantId"/>, or when both are
-    /// supplied with disagreeing values.
+    /// supplied with disagreeing values, or when any outbound header name/value contains control
+    /// characters.
     /// </exception>
     Task EnqueueAsync<T>(T? contentObj, EnqueueOptions? options = null, CancellationToken cancellationToken = default);
 }

@@ -412,7 +412,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
-            new NullNodeMembership()
+            new NullNodeMembership(),
+            NullLogger<PostgreSqlDataStorage>.Instance
         );
     }
 }

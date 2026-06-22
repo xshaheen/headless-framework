@@ -5,7 +5,8 @@ using Microsoft.AspNetCore.StaticFiles;
 
 namespace Headless.Api.Abstractions;
 
-public sealed class ExtendedFileExtensionContentTypeProvider(IMimeTypeProvider mimeTypeProvider) : IContentTypeProvider
+internal sealed class ExtendedFileExtensionContentTypeProvider(IMimeTypeProvider mimeTypeProvider)
+    : IContentTypeProvider
 {
     public bool TryGetContentType(string subpath, [MaybeNullWhen(false)] out string contentType)
     {

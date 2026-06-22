@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
@@ -42,8 +44,15 @@ public sealed class AuthConfig
     public bool IsEnabled => Mode != AuthMode.None;
 
     /// <summary>
-    /// Validate the configuration.
+    /// Validates the configuration and throws when a required credential is missing for the
+    /// selected <see cref="Mode"/>.
     /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <see cref="Mode"/> is <see cref="AuthMode.Basic"/> and <see cref="BasicCredentials"/>
+    /// is null or empty, when <see cref="Mode"/> is <see cref="AuthMode.ApiKey"/> and <see cref="ApiKey"/>
+    /// is null or empty, or when <see cref="Mode"/> is <see cref="AuthMode.Custom"/> and
+    /// <see cref="CustomValidator"/> is null.
+    /// </exception>
     public void Validate()
     {
         switch (Mode)

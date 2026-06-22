@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Blobs.CloudflareR2;
 
+/// <summary>Extension methods to register the Cloudflare R2 blob storage provider.</summary>
 [PublicAPI]
 public static class SetupCloudflareR2Blob
 {

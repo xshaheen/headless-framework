@@ -5,6 +5,19 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Imaging;
 
+/// <summary>
+/// Default <see cref="IImageResizer"/> implementation that delegates to a chain of
+/// <see cref="IImageResizerContributor"/> instances resolved from DI.
+/// </summary>
+/// <remarks>
+/// Contributors are iterated in reverse registration order (last-registered wins). Each
+/// contributor is given the same seekable stream; the stream is rewound to the beginning
+/// after every attempt. If <see cref="ImageResizeArgs.Mode"/> is
+/// <see cref="ImageResizeMode.Default"/>, it is replaced with
+/// <see cref="ImagingOptions.DefaultResizeMode"/> before the first contributor is called.
+/// If all contributors return <see cref="ImageProcessState.Unsupported"/>, the result is
+/// <c>ImageStreamResizeResult.NotSupported()</c>.
+/// </remarks>
 public sealed class ImageResizer(
     IEnumerable<IImageResizerContributor> contributors,
     IOptions<ImagingOptions> optionsAccessor
@@ -13,6 +26,7 @@ public sealed class ImageResizer(
     private readonly IEnumerable<IImageResizerContributor> _contributors = contributors.Reverse();
     private readonly ImagingOptions _imagingOptions = optionsAccessor.Value;
 
+    /// <inheritdoc />
     public async Task<ImageStreamResizeResult> ResizeAsync(
         Stream stream,
         ImageResizeArgs args,
@@ -31,14 +45,14 @@ public sealed class ImageResizer(
         if (!stream.CanSeek)
         {
             var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream, cancellationToken);
+            await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
             _SeekToBegin(memoryStream);
             stream = memoryStream;
         }
 
         foreach (var resizerContributor in _contributors)
         {
-            var result = await resizerContributor.TryResizeAsync(stream, args, cancellationToken);
+            var result = await resizerContributor.TryResizeAsync(stream, args, cancellationToken).ConfigureAwait(false);
 
             _SeekToBegin(stream);
 

@@ -2,7 +2,7 @@
 
 namespace Headless.Sms.Dev;
 
-public sealed class NoopSmsSender : ISmsSender
+internal sealed class NoopSmsSender : ISmsSender
 {
     public ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,

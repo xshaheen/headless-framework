@@ -4,13 +4,25 @@ using System.Text.Unicode;
 
 namespace Headless.Slugs;
 
+/// <summary>Controls how <see cref="Slug.Create"/> generates a URL slug from source text.</summary>
 public sealed class SlugOptions
 {
+    /// <summary>The default maximum slug length (80 characters).</summary>
     public const int DefaultMaximumLength = 80;
+
+    /// <summary>The default word separator (<c>-</c>).</summary>
     public const string DefaultSeparator = "-";
 
+    /// <summary>
+    /// Maximum number of characters in the produced slug. Characters beyond this limit are dropped.
+    /// A value of <c>0</c> or less disables truncation. Default is <see cref="DefaultMaximumLength"/>.
+    /// </summary>
     public int MaximumLength { get; init; } = DefaultMaximumLength;
 
+    /// <summary>
+    /// Determines whether alphabetic characters are case-folded. Default is
+    /// <see cref="CasingTransformation.ToLowerCase"/>.
+    /// </summary>
     public CasingTransformation CasingTransformation { get; init; } = CasingTransformation.ToLowerCase;
 
     /// <summary>
@@ -26,8 +38,17 @@ public sealed class SlugOptions
                 : value;
     } = DefaultSeparator;
 
+    /// <summary>
+    /// The culture used when <see cref="CasingTransformation"/> is <see cref="CasingTransformation.ToLowerCase"/>
+    /// or <see cref="CasingTransformation.ToUpperCase"/>. When <see langword="null"/> (the default), invariant
+    /// casing is applied.
+    /// </summary>
     public CultureInfo? Culture { get; init; }
 
+    /// <summary>
+    /// When <see langword="true"/>, the slug may end with the <see cref="Separator"/>. When
+    /// <see langword="false"/> (the default), trailing separators are stripped from the result.
+    /// </summary>
     public bool CanEndWithSeparator { get; init; }
 
     /// <summary>
@@ -50,6 +71,12 @@ public sealed class SlugOptions
         UnicodeRange.Create('ؠ', 'ي'),
     ];
 
+    /// <summary>
+    /// Verbatim string substitutions applied before slug processing. Each key is replaced with its
+    /// corresponding value using ordinal comparison. Defaults to a small set of common symbol expansions:
+    /// <c>&amp;</c> to <c> and </c>, <c>+</c> to <c> plus </c>, <c>.</c> to <c> dot </c>, and
+    /// <c>%</c> to <c> percent </c>.
+    /// </summary>
     public FrozenDictionary<string, string> Replacements { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -59,6 +86,12 @@ public sealed class SlugOptions
             { "%", " percent " },
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="character"/> falls within at least one of the
+    /// <see cref="AllowedRanges"/>. When <see cref="AllowedRanges"/> is empty, all characters are allowed.
+    /// </summary>
+    /// <param name="character">The Unicode scalar value to test.</param>
+    /// <returns><see langword="true"/> if the character is allowed in the slug; otherwise <see langword="false"/>.</returns>
     public bool IsAllowed(Rune character)
     {
         if (AllowedRanges.Count == 0)

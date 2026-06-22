@@ -6,34 +6,34 @@ using FluentValidation;
 namespace Headless.Messaging.Kafka;
 
 /// <summary>
-/// Provides programmatic configuration for the messaging kafka project.
+/// Configuration options for the Apache Kafka messaging transport.
 /// </summary>
 public sealed class MessagingKafkaOptions
 {
     /// <summary>
-    /// librdkafka configuration parameters (refer to https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md).
-    /// <para>
-    /// Topic configuration parameters are specified via the "default.topic.config" sub-dictionary config parameter.
-    /// </para>
+    /// Raw librdkafka configuration key/value pairs that are merged into the producer and
+    /// consumer configuration before connecting. Topic-level parameters use the
+    /// <c>default.topic.config</c> sub-key.
+    /// See <see href="https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md"/> for the
+    /// full parameter reference.
     /// </summary>
     public Dictionary<string, string> MainConfig { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Producer connection pool size, default is 10
+    /// The number of <c>IProducer</c> instances kept in the shared producer pool.
+    /// Defaults to <c>10</c>. Increase this value when high publish concurrency causes pool contention.
     /// </summary>
     public int ConnectionPoolSize { get; set; } = 10;
 
     /// <summary>
-    /// The `bootstrap.servers` item config of <see cref="MainConfig" />.
-    /// <para>
-    /// Initial list of brokers as a CSV list of broker host or host:port.
-    /// </para>
+    /// The <c>bootstrap.servers</c> value — a comma-separated list of broker <c>host</c> or
+    /// <c>host:port</c> addresses used to establish the initial connection to the cluster.
     /// </summary>
     public required string Servers { get; set; }
 
     /// <summary>
-    /// If you need to get offset and partition and so on, you can use this function to write additional header into
-    /// <see cref="MessageHeader" />
+    /// Optional callback that adds extra headers to an inbound message from native Kafka metadata.
+    /// Use this to surface partition, offset, topic, or timestamp information as framework message headers.
     /// </summary>
     public Func<
         ConsumeResult<string, byte[]>,
@@ -42,13 +42,20 @@ public sealed class MessagingKafkaOptions
     >? CustomHeadersBuilder { get; set; }
 
     /// <summary>
-    /// New retriable error code (refer to
-    /// https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafkacpp_8h.html#a4c6b7af48c215724c323c60ea4080dbf)
+    /// The set of Kafka error codes that trigger a consume retry. The defaults include transient
+    /// errors such as leader elections, rebalances, and network timeouts.
+    /// See <see href="https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafkacpp_8h.html#a4c6b7af48c215724c323c60ea4080dbf"/>.
     /// </summary>
     public List<ErrorCode> RetriableErrorCodes { get; set; } = GetDefaultRetriableErrorCodes();
 
+    /// <summary>
+    /// Topic creation options applied when the framework auto-creates topics.
+    /// </summary>
     public KafkaTopicOptions TopicOptions { get; set; } = new();
 
+    /// <summary>
+    /// Returns the default set of retriable Kafka error codes.
+    /// </summary>
     public static List<ErrorCode> GetDefaultRetriableErrorCodes()
     {
         return
@@ -67,15 +74,18 @@ public sealed class MessagingKafkaOptions
     }
 }
 
+/// <summary>Topic creation settings used when the framework auto-creates Kafka topics.</summary>
 public sealed class KafkaTopicOptions
 {
     /// <summary>
-    /// The number of partitions for the new topic
+    /// The number of partitions for an auto-created topic. <c>-1</c> (default) delegates
+    /// the decision to the broker's configured default.
     /// </summary>
     public short NumPartitions { get; set; } = -1;
 
     /// <summary>
-    /// The replication factor for the new topic
+    /// The replication factor for an auto-created topic. <c>-1</c> (default) delegates
+    /// the decision to the broker's configured default.
     /// </summary>
     public short ReplicationFactor { get; set; } = -1;
 }

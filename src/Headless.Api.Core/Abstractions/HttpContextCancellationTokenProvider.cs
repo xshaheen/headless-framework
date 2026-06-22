@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Headless.Api.Abstractions;
 
-public sealed class HttpContextCancellationTokenProvider(IHttpContextAccessor accessor) : ICancellationTokenProvider
+internal sealed class HttpContextCancellationTokenProvider(IHttpContextAccessor accessor) : ICancellationTokenProvider
 {
     public CancellationToken Token => accessor.HttpContext?.RequestAborted ?? CancellationToken.None;
 }

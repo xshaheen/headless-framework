@@ -12,8 +12,18 @@ using UserId = Headless.Primitives.UserId;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
+/// <summary>
+/// Extension methods for registering Headless building-block primitive type converter mappings on a
+/// <see cref="ModelConfigurationBuilder"/>.
+/// </summary>
 public static class ModelConfigurationBuilderExtensions
 {
+    /// <summary>
+    /// Registers default column precision rules and value converters for the Headless primitive types
+    /// (<c>Money</c>, <c>Month</c>, <c>UserId</c>, <c>AccountId</c>, <c>Locales</c>,
+    /// <c>ExtraProperties</c>, <c>File</c>, <c>Image</c>) and configures <see cref="decimal"/> precision
+    /// and <see cref="Enum"/> string storage globally.
+    /// </summary>
     public static void AddBuildingBlocksPrimitivesConvertersMappings(this ModelConfigurationBuilder b)
     {
         b.Properties<decimal?>().HavePrecision(32, 10);

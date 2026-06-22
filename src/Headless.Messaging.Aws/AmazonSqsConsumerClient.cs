@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Immutable;
 using Amazon.Auth.AccessControlPolicy;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Headless.Checks;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -193,7 +191,7 @@ internal sealed class AmazonSqsConsumerClient(
             }
         }
 
-        async Task consumeAsync(string queueUrl, Amazon.SQS.Model.Message sqsMessage)
+        async Task consumeAsync(string queueUrl, Message sqsMessage)
         {
             var receiptHandle = sqsMessage.ReceiptHandle;
             var (header, body) = await _ReadMessageAsync(sqsMessage, receiptHandle).ConfigureAwait(false);
@@ -318,9 +316,11 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.PauseAsync().ConfigureAwait(false);
 
-    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) =>
+        await _pauseGate.ResumeAsync().ConfigureAwait(false);
 
     public ValueTask DisposeAsync()
     {
@@ -381,7 +381,7 @@ internal sealed class AmazonSqsConsumerClient(
     #region private methods
 
     private async Task<(Dictionary<string, string?>? Headers, string? Body)> _ReadMessageAsync(
-        Amazon.SQS.Model.Message sqsMessage,
+        Message sqsMessage,
         string receiptHandle
     )
     {

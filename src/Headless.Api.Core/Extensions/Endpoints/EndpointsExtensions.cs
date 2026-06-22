@@ -7,9 +7,27 @@ using Microsoft.AspNetCore.Http.Extensions;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Builder;
 
+/// <summary>
+/// Extension methods on <see cref="WebApplication"/> for mapping host-based permanent redirect routes.
+/// </summary>
 [PublicAPI]
 public static class EndpointsExtensions
 {
+    /// <summary>
+    /// Maps a catch-all <c>GET /{*path}</c> route constrained to <paramref name="redirectHosts"/>
+    /// that issues a 301 permanent redirect to the corresponding path under <paramref name="mainHost"/>.
+    /// No route is registered when <paramref name="redirectHosts"/> is <see langword="null"/> or empty.
+    /// </summary>
+    /// <param name="app">The web application to map the route on.</param>
+    /// <param name="mainHost">
+    /// The canonical host URL (scheme + host + optional port, e.g. <c>https://example.com</c>).
+    /// Must be an absolute URI.
+    /// </param>
+    /// <param name="redirectHosts">
+    /// Additional host names that should redirect to <paramref name="mainHost"/>.
+    /// Passed to <see cref="Microsoft.AspNetCore.Builder.RoutingEndpointConventionBuilderExtensions.RequireHost"/>.
+    /// </param>
+    /// <exception cref="UriFormatException"><paramref name="mainHost"/> is not a well-formed absolute URI.</exception>
     public static void RedirectHosts(this WebApplication app, string mainHost, string[]? redirectHosts)
     {
         if (redirectHosts is not { Length: > 0 })

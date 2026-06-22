@@ -6,8 +6,20 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
+/// <summary>
+/// xUnit v3 test-case discoverer for <see cref="RetryFactAttribute"/>. Produces a single
+/// <see cref="RetryTestCase"/> per decorated method.
+/// </summary>
+[PublicAPI]
 public sealed class RetryFactDiscoverer : IXunitTestCaseDiscoverer
 {
+    /// <summary>
+    /// Creates a <see cref="RetryTestCase"/> for the decorated fact method.
+    /// </summary>
+    /// <param name="discoveryOptions">Framework discovery options.</param>
+    /// <param name="testMethod">The test method being discovered.</param>
+    /// <param name="factAttribute">The <see cref="RetryFactAttribute"/> instance.</param>
+    /// <returns>A single-element collection containing the retry test case.</returns>
     public ValueTask<IReadOnlyCollection<IXunitTestCase>> Discover(
         ITestFrameworkDiscoveryOptions discoveryOptions,
         IXunitTestMethod testMethod,

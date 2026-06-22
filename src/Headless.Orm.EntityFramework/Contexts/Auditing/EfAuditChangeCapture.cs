@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Headless.AuditLog;
+using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
@@ -324,7 +325,7 @@ internal sealed class EfAuditChangeCapture(
             return;
         }
 
-        if (propertyName == "IsDeleted")
+        if (propertyName == nameof(IDeleteAudit.IsDeleted))
         {
             var nowDeleted = property.CurrentValue is true;
             var wasDeleted = property.OriginalValue is true;
@@ -334,7 +335,7 @@ internal sealed class EfAuditChangeCapture(
             return;
         }
 
-        if (propertyName == "IsSuspended")
+        if (propertyName == nameof(ISuspendAudit.IsSuspended))
         {
             var nowSuspended = property.CurrentValue is true;
             var wasSuspended = property.OriginalValue is true;

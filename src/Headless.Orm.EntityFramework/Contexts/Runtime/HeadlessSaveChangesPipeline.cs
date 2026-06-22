@@ -25,9 +25,25 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// Implementations own the transaction boundary. When an explicit transaction is already on the context
 /// the pipeline reuses it; otherwise it opens a transaction wrapped by the execution strategy so audit and
 /// message-emitter work commit atomically with the entity batch.
+/// <para>
+/// At-most-once domain-event delivery applies only to the pipeline-owned execution-strategy path (no explicit
+/// transaction on entry): the guard suppresses re-publication across the strategy's transient-fault replays.
+/// When the caller owns the transaction and drives its own retry loop, each <c>SaveChanges</c> is a fresh
+/// invocation with a fresh guard, so domain-event handlers can fire again and must stay idempotent /
+/// replay-safe. Integration events remain exactly-once via the transactional outbox regardless of path.
+/// </para>
 /// </remarks>
 public interface IHeadlessSaveChangesPipeline
 {
+    /// <summary>
+    /// Asynchronously executes the full Headless save pipeline: runs processors, captures audit entries,
+    /// dispatches domain events, persists the entity batch, enqueues integration events, and commits.
+    /// </summary>
+    /// <param name="context">The EF Core context being saved.</param>
+    /// <param name="baseSaveChangesAsync">The base <c>SaveChangesAsync</c> delegate from the context.</param>
+    /// <param name="acceptAllChangesOnSuccess">Whether to accept all changes on success.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
+    /// <returns>The number of state entries written to the database.</returns>
     Task<int> SaveChangesAsync(
         DbContext context,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
@@ -35,6 +51,13 @@ public interface IHeadlessSaveChangesPipeline
         CancellationToken cancellationToken
     );
 
+    /// <summary>
+    /// Synchronously executes the full Headless save pipeline.
+    /// </summary>
+    /// <param name="context">The EF Core context being saved.</param>
+    /// <param name="baseSaveChanges">The base <c>SaveChanges</c> delegate from the context.</param>
+    /// <param name="acceptAllChangesOnSuccess">Whether to accept all changes on success.</param>
+    /// <returns>The number of state entries written to the database.</returns>
     int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess);
 }
 
@@ -84,15 +107,6 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
     private readonly ILogger<HeadlessSaveChangesPipeline> _logger =
         logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
-
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "HeadlessAuditDiscardFailedDuringExceptionPath",
-        Level = LogLevel.Error,
-        Message = "Audit discard failed during exception path; rethrowing the original SaveChanges exception."
-    )]
-    // ReSharper disable once InconsistentNaming
-    private static partial void LogAuditDiscardFailed(ILogger logger, Exception exception);
 
     public async Task<int> SaveChangesAsync(
         DbContext context,
@@ -329,7 +343,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             catch (Exception discardFailure)
 #pragma warning restore CA1031
             {
-                LogAuditDiscardFailed(_logger, discardFailure);
+                _logger.LogAuditDiscardFailed(discardFailure);
             }
 
             ExceptionDispatchInfo.Capture(caught).Throw();
@@ -405,7 +419,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             catch (Exception discardFailure)
 #pragma warning restore CA1031
             {
-                LogAuditDiscardFailed(_logger, discardFailure);
+                _logger.LogAuditDiscardFailed(discardFailure);
             }
 
             ExceptionDispatchInfo.Capture(caught).Throw();
@@ -460,4 +474,15 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         // domain-event guard in _SaveWithinTransaction survives a replay. See the publish loop there.
         StrongBox<bool> DomainEventsPublished
     );
+}
+
+internal static partial class HeadlessSaveChangesPipelineLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "HeadlessAuditDiscardFailedDuringExceptionPath",
+        Level = LogLevel.Error,
+        Message = "Audit discard failed during exception path; rethrowing the original SaveChanges exception."
+    )]
+    public static partial void LogAuditDiscardFailed(this ILogger logger, Exception exception);
 }

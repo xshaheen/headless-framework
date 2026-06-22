@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -46,7 +44,10 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             if (ack.Seq == 0)
             {
                 return OperateResult.Failed(
-                    new PublisherSentFailedException("NATS message send failed, no consumer reply!")
+                    new PublisherSentFailedException(
+                        $"NATS JetStream publish to subject '{subject}' was not acknowledged by any stream (seq=0); "
+                            + "ensure a JetStream stream is configured to capture this subject."
+                    )
                 );
             }
 

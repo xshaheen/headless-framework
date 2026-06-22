@@ -24,7 +24,7 @@ namespace Headless.Caching.Benchmarks;
 )]
 internal static class CacheBenchmarkClientFactory
 {
-    private static readonly CacheBenchmarkClientDescriptor[] s_baseDescriptors =
+    private static readonly CacheBenchmarkClientDescriptor[] _BaseDescriptors =
     [
         new(
             BenchmarkProviderIds.HeadlessInMemory,
@@ -67,7 +67,7 @@ internal static class CacheBenchmarkClientFactory
         ),
     ];
 
-    private static readonly CacheBenchmarkClientDescriptor[] s_redisDescriptors =
+    private static readonly CacheBenchmarkClientDescriptor[] _RedisDescriptors =
     [
         new(
             BenchmarkProviderIds.HeadlessRedis,
@@ -105,7 +105,7 @@ internal static class CacheBenchmarkClientFactory
     ];
 
     public static IReadOnlyList<CacheBenchmarkClientDescriptor> GetDescriptors(bool includeRedis = false) =>
-        includeRedis ? [.. s_baseDescriptors, .. s_redisDescriptors] : s_baseDescriptors;
+        includeRedis ? [.. _BaseDescriptors, .. _RedisDescriptors] : _BaseDescriptors;
 
     public static bool IsRedisAvailable =>
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HEADLESS_CACHE_BENCHMARK_REDIS"));

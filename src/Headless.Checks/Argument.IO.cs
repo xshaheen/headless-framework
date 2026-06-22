@@ -8,7 +8,7 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="stream" /> is not support reading.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> does not support reading.</summary>
     /// <param name="stream">The argument <see cref="Stream"/> instance to check.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> doesn't support reading.</exception>
@@ -27,7 +27,7 @@ public static partial class Argument
         );
     }
 
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="stream" /> is not support writing.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> does not support writing.</summary>
     /// <param name="stream">The argument <see cref="Stream"/> instance to check.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> doesn't support writing.</exception>
@@ -46,7 +46,7 @@ public static partial class Argument
         );
     }
 
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="stream" /> is not support seeking.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> does not support seeking.</summary>
     /// <param name="stream">The argument <see cref="Stream"/> instance to check.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> doesn't support seeking.</exception>
@@ -60,12 +60,12 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support reading.",
+            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support seeking.",
             paramName
         );
     }
 
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="stream" /> is not at the starting position.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> is not at the starting position.</summary>
     /// <param name="stream">The argument <see cref="Stream"/> instance to check.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> is not at the starting position.</exception>

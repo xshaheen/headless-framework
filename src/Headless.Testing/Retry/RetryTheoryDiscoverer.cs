@@ -7,6 +7,13 @@ using Xunit.v3;
 
 namespace Headless.Testing.Retry;
 
+/// <summary>
+/// xUnit v3 test-case discoverer for <see cref="RetryTheoryAttribute"/>. Produces
+/// <see cref="RetryTestCase"/> instances for pre-enumerated rows and a
+/// <see cref="RetryDelayEnumeratedTestCase"/> when pre-enumeration is disabled or data
+/// is not serializable.
+/// </summary>
+[PublicAPI]
 public sealed class RetryTheoryDiscoverer : TheoryDiscoverer
 {
     // This override is used when the theory data is serializable and the user has requested pre-enumeration.

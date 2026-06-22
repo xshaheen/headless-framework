@@ -6,10 +6,15 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Api.Diagnostics;
 
-/// <summary>see: https://docs.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/diagnostics</summary>
-[PublicAPI]
-public sealed partial class BadRequestDiagnosticAdapter(ILogger logger)
+/// <summary>
+/// Diagnostic adapter that subscribes to the Kestrel bad-request event and writes a structured
+/// warning log entry. Register with <c>DiagnosticListener.SubscribeWithAdapter</c> on the
+/// process-wide <see cref="System.Diagnostics.DiagnosticListener"/>.
+/// </summary>
+/// <seealso href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/diagnostics"/>
+internal sealed partial class BadRequestDiagnosticAdapter(ILogger logger)
 {
+    /// <summary>Handles the <see cref="DiagnosticSources.KestrelOnBadRequest"/> diagnostic event.</summary>
     [DiagnosticName(DiagnosticSources.KestrelOnBadRequest)]
     public void OnBadRequest(KeyValuePair<string, object?> value)
     {

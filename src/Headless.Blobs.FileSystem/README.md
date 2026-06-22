@@ -37,7 +37,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ```json
 {
   "FileSystemBlob": {
-    "BasePath": "/var/data/blobs"
+    "BaseDirectoryPath": "/var/data/blobs"
   }
 }
 ```
@@ -45,7 +45,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ### Options
 
 ```csharp
-options.BasePath = "/path/to/storage";
+options.BaseDirectoryPath = "/path/to/storage";
 ```
 
 ## Dependencies

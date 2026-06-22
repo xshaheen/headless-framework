@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.PostgreSql;
 
+[PublicAPI]
 public partial class PostgreSqlEntityFrameworkMessagingOptions
 {
     public const string DefaultSchema = "messaging";
@@ -29,14 +30,11 @@ public partial class PostgreSqlEntityFrameworkMessagingOptions
         set
         {
             Argument.IsNotNullOrWhiteSpace(value);
-
-            if (!_ValidIdentifier().IsMatch(value))
-            {
-                throw new ArgumentException(
-                    $"Schema name must start with a letter or underscore and contain only letters, digits, underscores (max {MaxSchemaLength} chars)",
-                    nameof(value)
-                );
-            }
+            Argument.Matches(
+                value,
+                _ValidIdentifier(),
+                $"Schema name must start with a letter or underscore and contain only letters, digits, underscores (max {MaxSchemaLength} chars)"
+            );
 
             field = value;
         }
@@ -46,7 +44,7 @@ public partial class PostgreSqlEntityFrameworkMessagingOptions
     /// PostgreSQL identifier validation regex.
     /// Must start with a letter or underscore, contain only letters, digits, underscores, max 63 chars.
     /// </summary>
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$", RegexOptions.None, 100)]
+    [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]{0,62}$", RegexOptions.None, 100)]
     private static partial Regex _ValidIdentifier();
 
     /// <summary>

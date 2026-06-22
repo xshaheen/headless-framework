@@ -9,9 +9,15 @@ using Renci.SshNet;
 namespace Headless.Blobs.SshNet;
 
 /// <summary>
-/// Channel-based SFTP client pool for concurrent operations.
-/// Uses System.Threading.Channels for async-first pooling (Npgsql pattern).
+/// Channel-based pool of <see cref="SftpClient"/> connections for concurrent SFTP operations.
 /// </summary>
+/// <remarks>
+/// Uses <see cref="System.Threading.Channels.Channel{T}"/> for lock-free, async-first connection reuse
+/// (Npgsql-style pooling). The pool creates new connections on demand up to
+/// <see cref="SshBlobStorageOptions.MaxPoolSize"/> and validates each client before returning it to a caller.
+/// Invalid or disconnected clients are disposed and replaced. Dispose the pool when the application shuts down
+/// to close all open SSH connections.
+/// </remarks>
 public sealed class SftpClientPool : IDisposable
 {
     private readonly Channel<SftpClient> _idle;
@@ -36,8 +42,12 @@ public sealed class SftpClientPool : IDisposable
     }
 
     /// <summary>
-    /// Acquires an SFTP client from the pool. Creates new if pool empty.
+    /// Acquires an SFTP client from the pool, reusing an idle connection when available or creating a new one.
     /// </summary>
+    /// <param name="ct">Cancellation token. Passed to the connection semaphore and to the SSH handshake.</param>
+    /// <returns>A connected <see cref="SftpClient"/>. The caller must return it via <see cref="ReleaseAsync"/> when done.</returns>
+    /// <exception cref="ObjectDisposedException">Thrown when the pool has been disposed.</exception>
+    /// <exception cref="Renci.SshNet.Common.SshConnectionException">Thrown when a new SSH connection cannot be established.</exception>
     public async ValueTask<SftpClient> AcquireAsync(CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -88,8 +98,10 @@ public sealed class SftpClientPool : IDisposable
     }
 
     /// <summary>
-    /// Returns client to pool if healthy, otherwise disposes.
+    /// Returns a client to the pool if it is still connected and the pool has capacity; otherwise disposes it.
     /// </summary>
+    /// <param name="client">The client to return. Must not be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="client"/> is <see langword="null"/>.</exception>
     public ValueTask ReleaseAsync(SftpClient client)
     {
         Argument.IsNotNull(client);

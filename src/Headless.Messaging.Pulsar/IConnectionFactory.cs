@@ -8,15 +8,34 @@ using Pulsar.Client.Api;
 
 namespace Headless.Messaging.Pulsar;
 
+/// <summary>
+/// Manages the shared Pulsar client and per-topic producer cache for the Pulsar transport.
+/// </summary>
+/// <remarks>
+/// The <c>PulsarClient</c> is created lazily on the first call to <see cref="RentClient"/> or
+/// <see cref="CreateProducerAsync"/>. Producers are cached per topic; a failed producer task is
+/// evicted from the cache so the next call creates a fresh producer.
+/// </remarks>
 public interface IConnectionFactory
 {
+    /// <summary>Gets the formatted Pulsar service URL used by this factory.</summary>
     string ServersAddress { get; }
 
+    /// <summary>
+    /// Returns a cached producer for <paramref name="topic"/>, creating one on first call.
+    /// A failed producer is evicted from the cache so the next call can retry.
+    /// </summary>
+    /// <param name="topic">The fully-qualified Pulsar topic name.</param>
     Task<IProducer<byte[]>> CreateProducerAsync(string topic);
 
+    /// <summary>
+    /// Returns the shared <c>PulsarClient</c>, creating it if it has not been opened yet.
+    /// The client is long-lived; do not dispose it directly.
+    /// </summary>
     PulsarClient RentClient();
 }
 
+/// <summary>Default implementation of <see cref="IConnectionFactory"/>.</summary>
 public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
     private readonly Lock _lock = new();

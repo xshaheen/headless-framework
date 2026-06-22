@@ -5,9 +5,19 @@ using Headless.Primitives;
 
 namespace FluentValidation;
 
+/// <summary>FluentValidation integration helpers for the Headless error descriptor model.</summary>
 [PublicAPI]
 public static class FluentValidationExtensions
 {
+    /// <summary>
+    /// Applies an <see cref="ErrorDescriptor"/> to the rule, setting both the error code and the
+    /// error message in a single call.
+    /// </summary>
+    /// <typeparam name="T">The type being validated.</typeparam>
+    /// <typeparam name="TProperty">The property type being validated.</typeparam>
+    /// <param name="rule">The rule builder options to configure.</param>
+    /// <param name="errorDescriptor">The descriptor whose code and description are applied to the rule.</param>
+    /// <returns>The same rule builder options for chaining.</returns>
     public static IRuleBuilderOptions<T, TProperty> WithErrorDescriptor<T, TProperty>(
         this IRuleBuilderOptions<T, TProperty> rule,
         ErrorDescriptor errorDescriptor
@@ -20,6 +30,9 @@ public static class FluentValidationExtensions
         return rule.WithErrorCode(errorDescriptor.Code).WithMessage(description);
     }
 
+    /// <summary>Converts a FluentValidation <see cref="ValidationSeverity"/> to the Headless <see cref="Severity"/> equivalent.</summary>
+    /// <param name="severity">The FluentValidation severity to convert.</param>
+    /// <returns>The corresponding <see cref="Severity"/> value.</returns>
     public static Severity ToSeverity(this ValidationSeverity severity)
     {
         return severity switch
@@ -32,6 +45,16 @@ public static class FluentValidationExtensions
         };
     }
 
+    /// <summary>
+    /// Groups <see cref="ValidationFailure"/> instances by property path and converts each into an
+    /// <see cref="ErrorDescriptor"/>, mapping FluentValidation built-in codes via
+    /// <see cref="FluentValidationErrorCodeMapper.MapToHeadlessErrorCode"/>.
+    /// </summary>
+    /// <param name="failures">The validation failures to convert.</param>
+    /// <returns>
+    /// A dictionary keyed by camelCase property path, with each value being the list of
+    /// <see cref="ErrorDescriptor"/> instances for that property.
+    /// </returns>
     public static Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptors(
         this IEnumerable<ValidationFailure> failures
     )

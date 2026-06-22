@@ -28,13 +28,10 @@ public sealed class DefaultCachePredicateTests
         DefaultCachePredicate.Instance(_Context(status)).Should().BeTrue();
     }
 
-    // ── 4xx cacheable: 400, 401, 403, 404, 405, 409, 410, 411, 412, 413, 414, 415, 416, 422, 451 ──
+    // ── 4xx cacheable: 400, 405, 409, 410, 411, 412, 413, 414, 415, 416, 422, 451 ──
 
     [Theory]
     [InlineData(400)]
-    [InlineData(401)]
-    [InlineData(403)]
-    [InlineData(404)]
     [InlineData(405)]
     [InlineData(409)]
     [InlineData(410)]
@@ -58,6 +55,17 @@ public sealed class DefaultCachePredicateTests
     [InlineData(425)]
     [InlineData(429)]
     public void should_return_false_for_transient_4xx(int status)
+    {
+        DefaultCachePredicate.Instance(_Context(status)).Should().BeFalse();
+    }
+
+    // ── 4xx auth/not-found: 401, 403, 404 → not cached (transient w.r.t. idempotency) ──
+
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(404)]
+    public void should_return_false_for_auth_and_not_found_4xx(int status)
     {
         DefaultCachePredicate.Instance(_Context(status)).Should().BeFalse();
     }

@@ -17,7 +17,13 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
     private readonly bool _transactionScopedIfPossible;
     private readonly TimeSpan _keepaliveCadence;
 
-    /// <summary>Constructs an instance using the given EXTERNALLY OWNED connection factory.</summary>
+    /// <summary>
+    /// Constructs an instance that wraps a factory returning an externally-owned connection. The connection
+    /// is never opened, closed, or had a transaction started by this lock.
+    /// </summary>
+    /// <param name="name">The lock name / resource.</param>
+    /// <param name="externalConnectionFactory">Factory that returns an already-open, externally-owned connection.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> or <paramref name="externalConnectionFactory"/> is <see langword="null"/>.</exception>
     public DedicatedConnectionOrTransactionDbDistributedLock(
         string name,
         Func<DatabaseConnection> externalConnectionFactory
@@ -25,6 +31,14 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
         // useTransaction is irrelevant for the external-connection flow (it never creates a transaction itself).
         : this(name, externalConnectionFactory, useTransaction: true, keepaliveCadence: Timeout.InfiniteTimeSpan) { }
 
+    /// <summary>
+    /// Constructs an instance with full control over transaction scope and keepalive.
+    /// </summary>
+    /// <param name="name">The lock name / resource.</param>
+    /// <param name="connectionFactory">Factory that creates or returns a <see cref="DatabaseConnection"/>.</param>
+    /// <param name="useTransaction">When <see langword="true"/>, begins a transaction on internally-owned connections and uses it to scope the advisory lock.</param>
+    /// <param name="keepaliveCadence">Keepalive ping interval for held connections; <see cref="Timeout.InfiniteTimeSpan"/> disables keepalive.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> or <paramref name="connectionFactory"/> is <see langword="null"/>.</exception>
     public DedicatedConnectionOrTransactionDbDistributedLock(
         string name,
         Func<DatabaseConnection> connectionFactory,
@@ -38,6 +52,26 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
         _keepaliveCadence = keepaliveCadence;
     }
 
+    /// <summary>
+    /// Attempts to acquire the lock by opening a dedicated connection (or reusing the externally-owned one)
+    /// and invoking the strategy. Returns <see langword="null"/> if the strategy reports failure; returns a
+    /// live <see cref="IDistributedLease"/> handle on success.
+    /// </summary>
+    /// <typeparam name="TLockCookie">The strategy's opaque acquire/release state.</typeparam>
+    /// <param name="timeout">The maximum wait time passed to the strategy.</param>
+    /// <param name="strategy">The SQL synchronization strategy that emits the acquire/release SQL.</param>
+    /// <param name="contextHandle">
+    /// When non-<see langword="null"/>, a nested acquire: the lock reuses the connection from this existing
+    /// handle rather than opening a new one.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the connection open and strategy acquire.</param>
+    /// <returns>An <see cref="IDistributedLease"/> on success, or <see langword="null"/> on failure.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the externally-owned connection is disposed or closed, or when <paramref name="contextHandle"/>
+    /// has already been disposed.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">Thrown when <paramref name="contextHandle"/> is already disposed.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled during connection open or strategy acquire.</exception>
     public async ValueTask<IDistributedLease?> TryAcquireAsync<TLockCookie>(
         TimeSpan timeout,
         IDbSynchronizationStrategy<TLockCookie> strategy,

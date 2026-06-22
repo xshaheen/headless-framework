@@ -22,6 +22,7 @@ public sealed class RegexPatternsTests
 
     [Theory]
     [InlineData("مرحبا", true)]
+    [InlineData("ࢰ", true)] // Arabic Extended-A block (U+08A0-U+08FF), excluded by the previous en-dash bug
     [InlineData("hello", false)]
     public void arabic_characters_should_match_expected_results(string input, bool isMatch)
     {

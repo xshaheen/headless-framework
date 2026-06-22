@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Net;
 using Headless.Checks;
 using Headless.Constants;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Net.Http.Headers;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+// ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Http;
 
 [PublicAPI]
@@ -27,7 +26,7 @@ public static class HttpContextExtensions
     /// <param name="context">The HTTP context.</param>
     /// <param name="cacheProfile">The cache profile.</param>
     /// <returns>The same HTTP context.</returns>
-    /// <exception cref="ArgumentNullException">context or cacheProfile.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> or <paramref name="cacheProfile"/> is <see langword="null"/>.</exception>
     public static HttpContext ApplyCacheProfile(this HttpContext context, CacheProfile cacheProfile)
     {
         Argument.IsNotNull(context);
@@ -90,6 +89,11 @@ public static class HttpContextExtensions
         return context;
     }
 
+    /// <summary>
+    /// Adds <c>Cache-Control: no-cache, no-store, must-revalidate</c>, <c>Pragma: no-cache</c>,
+    /// and <c>Expires: -1</c> response headers, and removes any <c>ETag</c> header.
+    /// </summary>
+    /// <param name="context">The HTTP context whose response headers are modified.</param>
     public static void AddNoCacheHeaders(this HttpContext context)
     {
         var headers = context.Response.Headers;
@@ -99,36 +103,17 @@ public static class HttpContextExtensions
         headers.Remove(HeaderNames.ETag);
     }
 
+    /// <summary>
+    /// Returns the client IP address from <see cref="ConnectionInfo.RemoteIpAddress"/>, which
+    /// <c>UseForwardedHeaders</c> (when configured with trusted proxies) already rewrites from
+    /// the <c>X-Forwarded-For</c> / <c>X-Real-IP</c> headers. Reading those headers directly
+    /// is unsafe because any client can forge them; relying on the rewritten connection address
+    /// is the secure default.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <returns>The IPv4 or IPv6 address string, or <see langword="null"/> when no remote address is available.</returns>
     public static string? GetIpAddress(this HttpContext httpContext)
     {
-        // Check X-Forwarded-For header (standard for proxies/load balancers)
-        var forwardedFor = httpContext.Request.Headers.TryGetValue("X-Forwarded-For", out var obj)
-            ? obj.FirstOrDefault()
-            : null;
-
-        if (!string.IsNullOrWhiteSpace(forwardedFor))
-        {
-            // X-Forwarded-For can contain multiple IPs, take the first (original client)
-            var ips = forwardedFor.Split(',', StringSplitOptions.RemoveEmptyEntries);
-
-            if (ips.Length > 0 && IPAddress.TryParse(ips[0].Trim(), out var parsedIp))
-            {
-                return parsedIp.IsIPv4MappedToIPv6 ? parsedIp.MapToIPv4().ToString() : parsedIp.ToString();
-            }
-        }
-
-        // Check X-Real-IP header (nginx)
-        var realIp = httpContext.Request.Headers.TryGetValue("X-Real-IP", out var realIpObj)
-            ? realIpObj.FirstOrDefault()
-            : null;
-
-        if (!string.IsNullOrWhiteSpace(realIp) && IPAddress.TryParse(realIp, out var parsedRealIp))
-        {
-            return parsedRealIp.IsIPv4MappedToIPv6 ? parsedRealIp.MapToIPv4().ToString() : parsedRealIp.ToString();
-        }
-
-        // Fallback to connection remote IP
-
         var ip = httpContext.Connection.RemoteIpAddress;
 
         return ip is null ? null
@@ -136,26 +121,39 @@ public static class HttpContextExtensions
             : ip.ToString();
     }
 
+    /// <summary>Returns the <c>User-Agent</c> request header value, or <see langword="null"/> when absent.</summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <returns>The raw <c>User-Agent</c> header value, or <see langword="null"/> when the header is missing.</returns>
     public static string? GetUserAgent(this HttpContext httpContext)
     {
-        return httpContext.Request.Headers._GetOrDefault(HeaderNames.UserAgent).FirstOrDefault();
+        return httpContext.Request.Headers.TryGetValue(HeaderNames.UserAgent, out var value)
+            ? value.FirstOrDefault()
+            : null;
     }
 
+    /// <summary>
+    /// Returns the <c>X-Correlation-ID</c> request header value, or <see langword="null"/> when absent.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <returns>The raw <c>X-Correlation-ID</c> header value, or <see langword="null"/> when the header is missing.</returns>
     public static string? GetCorrelationId(this HttpContext httpContext)
     {
-        return httpContext.Request.Headers._GetOrDefault(HttpHeaderNames.CorrelationId).FirstOrDefault();
+        return httpContext.Request.Headers.TryGetValue(HttpHeaderNames.CorrelationId, out var value)
+            ? value.FirstOrDefault()
+            : null;
     }
 
+    /// <summary>
+    /// Executes an <see cref="IActionResult"/> against the current HTTP context without an MVC
+    /// controller, using an empty <see cref="Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor"/>.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="result">The action result to execute.</param>
+    /// <returns>A task that completes when the result has been written to the response.</returns>
     public static Task ExecuteResultAsync(this HttpContext httpContext, IActionResult result)
     {
         var actionContext = new ActionContext(httpContext, httpContext.GetRouteData(), _EmptyActionDescriptor);
 
         return result.ExecuteResultAsync(actionContext);
-    }
-
-    private static TValue? _GetOrDefault<TKey, TValue>(this IDictionary<TKey, TValue> dictionary, TKey key)
-        where TKey : notnull
-    {
-        return dictionary.TryGetValue(key, out var obj) ? obj : default;
     }
 }

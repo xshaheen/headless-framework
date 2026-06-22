@@ -12,6 +12,15 @@ using File = System.IO.File;
 
 namespace Headless.Blobs.FileSystem;
 
+/// <summary>
+/// <see cref="IBlobStorage"/> implementation backed by the local file system.
+/// </summary>
+/// <remarks>
+/// All blobs are stored under the directory configured via <see cref="FileSystemBlobStorageOptions.BaseDirectoryPath"/>.
+/// Path-traversal attempts (blob names or container segments that resolve outside the base directory) throw
+/// <see cref="ArgumentException"/>. The file system does not support blob metadata — metadata supplied on upload
+/// is silently ignored.
+/// </remarks>
 public sealed class FileSystemBlobStorage(
     IOptions<FileSystemBlobStorageOptions> optionsAccessor,
     IBlobNamingNormalizer normalizer,
@@ -74,8 +83,12 @@ public sealed class FileSystemBlobStorage(
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
+        PathValidation.ValidateContainer(container);
+
         var directoryPath = _GetDirectoryPath(container);
 
+        // Per-blob name safety is enforced inside FileHelper.SaveToLocalFileAsync, so a malicious file
+        // name surfaces as a per-blob Result.Fail rather than failing the whole batch.
         var result = await blobs
             .Select(blob => (blob.Stream, blob.FileName))
             .SaveToLocalFileAsync(directoryPath, cancellationToken)
@@ -393,7 +406,7 @@ public sealed class FileSystemBlobStorage(
             yield break;
         }
 
-        await ValueTask.CompletedTask;
+        await ValueTask.CompletedTask.ConfigureAwait(false);
 
         foreach (var path in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
         {

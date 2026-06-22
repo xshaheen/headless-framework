@@ -12,6 +12,18 @@ using UserId = Headless.Primitives.UserId;
 
 namespace Headless.EntityFramework.Contexts.Processors;
 
+/// <summary>
+/// Save-entry processor that stamps audit timestamps and actor identifiers on entities that implement
+/// the Headless audit interfaces.
+/// </summary>
+/// <remarks>
+/// On <c>Added</c> entries it sets <c>ICreateAudit.DateCreated</c> (if not already set) and
+/// <c>CreatedById</c> (resolved from <c>ICurrentUser</c>, skipped if already set or the user is
+/// anonymous). On <c>Modified</c> entries it updates <c>IUpdateAudit.DateUpdated</c> and
+/// <c>UpdatedById</c>, and reconciles delete/suspend audit fields when <c>IsDeleted</c> or
+/// <c>IsSuspended</c> transitions are detected.
+/// </remarks>
+[PublicAPI]
 public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser currentUser)
     : IHeadlessSaveEntryProcessor
 {
@@ -25,6 +37,9 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
         ConcurrentDictionary<Type, bool>
     >.CreateValueCallback _CreateImplementsInner = static _ => new ConcurrentDictionary<Type, bool>();
 
+    /// <summary>Stamps audit fields on the entry based on its current <see cref="EntityState"/>.</summary>
+    /// <param name="entry">The tracked entity entry to audit.</param>
+    /// <param name="context">The per-save scratchpad (tenant id unused by this processor).</param>
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         switch (entry.State)

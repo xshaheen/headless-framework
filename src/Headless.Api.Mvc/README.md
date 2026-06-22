@@ -4,7 +4,7 @@ Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JS
 
 ## Problem Solved
 
-Provides consistent MVC configuration, base controllers, and URL canonicalization for traditional controller-based APIs. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`), so MVC actions get the same response shape as Minimal-API endpoints.
+Provides consistent MVC configuration, base controllers, and URL canonicalization for traditional controller-based APIs. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api.Core`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`), so MVC actions get the same response shape as Minimal-API endpoints.
 
 ## Key Features
 
@@ -52,7 +52,7 @@ public sealed class OrdersController : ApiControllerBase
 
 ## Configuration
 
-No additional configuration beyond what `AddHeadless()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
+No additional configuration required.
 
 ## Dependencies
 

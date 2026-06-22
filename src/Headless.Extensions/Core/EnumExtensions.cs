@@ -13,6 +13,7 @@ using Humanizer;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
+/// <summary>Extension methods for reading metadata (display names, descriptions, and locales) from enum values.</summary>
 [PublicAPI]
 public static class EnumExtensions
 {
@@ -47,6 +48,10 @@ public static class EnumExtensions
         };
     }
 
+    /// <summary>Gets the <see cref="MemberInfo"/> for the field that declares the given enum value.</summary>
+    /// <param name="enumValue">The enum value whose declaring member is resolved.</param>
+    /// <returns>The <see cref="MemberInfo"/> of the field declaring <paramref name="enumValue"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="enumValue"/> is <see langword="null"/>.</exception>
     [RequiresUnreferencedCode("Uses Type.GetMember which is not compatible with trimming.")]
     [SystemPure, JetBrainsPure, MustUseReturnValue]
     public static MemberInfo GetEnumMemberInfo(this Enum enumValue)
@@ -56,14 +61,27 @@ public static class EnumExtensions
 
     extension(Enum? enumValue)
     {
+        /// <summary>Gets the first attribute of type <typeparamref name="T"/> declared on the enum value's member.</summary>
+        /// <typeparam name="T">The attribute type to look for.</typeparam>
+        /// <returns>
+        /// The first matching attribute, or <see langword="null"/> if none is declared or the enum value is
+        /// <see langword="null"/>.
+        /// </returns>
         [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public T? GetFirstAttribute<T>()
             where T : Attribute
         {
-            return enumValue?.GetEnumMemberInfo().GetFirstAttribute<T>(inherit: false);
+            return enumValue?.GetEnumMemberInfo().GetFirstOrDefaultAttribute<T>(inherit: false);
         }
 
+        /// <summary>
+        /// Gets a human-readable display name for the enum value, preferring a <see cref="DisplayNameAttribute"/>,
+        /// then a <see cref="DisplayAttribute"/>, and finally a humanized form of the member name.
+        /// </summary>
+        /// <returns>
+        /// The resolved display name, or <see cref="string.Empty"/> if the enum value is <see langword="null"/>.
+        /// </returns>
         [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public string GetDisplayName()
@@ -85,6 +103,11 @@ public static class EnumExtensions
             return !string.IsNullOrWhiteSpace(displayName) ? displayName : enumValue.ToString().Humanize();
         }
 
+        /// <summary>Gets the description declared on the enum value via <see cref="DescriptionAttribute"/>.</summary>
+        /// <returns>
+        /// The description text, or <see langword="null"/> if none is declared or the enum value is
+        /// <see langword="null"/>.
+        /// </returns>
         [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public string? GetDescription()
@@ -103,6 +126,13 @@ public static class EnumExtensions
     extension<T>(T enumValue)
         where T : struct, Enum
     {
+        /// <summary>Gets the localized display name of the enum value for the requested locale.</summary>
+        /// <param name="locale">The locale key (e.g. <c>"ar"</c>) to look up.</param>
+        /// <param name="fallbackLocale">(Optional) A locale key to fall back to when <paramref name="locale"/> has no entry.</param>
+        /// <returns>
+        /// The display name for <paramref name="locale"/>, the display name for <paramref name="fallbackLocale"/>,
+        /// or the default display name when neither locale is declared.
+        /// </returns>
         [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public string GetLocaleName(string locale, string? fallbackLocale = null)
@@ -110,6 +140,11 @@ public static class EnumExtensions
             return enumValue.GetLocale(locale, fallbackLocale).DisplayName;
         }
 
+        /// <summary>
+        /// Gets the default and all locale-specific values declared on the enum value via
+        /// <see cref="LocaleAttribute"/>. Results are cached per enum type and value.
+        /// </summary>
+        /// <returns>An <see cref="AllLocaleValue{T}"/> holding the default value and every declared locale entry.</returns>
         [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public AllLocaleValue<T> GetAllLocales()
@@ -153,6 +188,13 @@ public static class EnumExtensions
                 );
         }
 
+        /// <summary>Gets the localized value of the enum value for the requested locale.</summary>
+        /// <param name="locale">The locale key (e.g. <c>"ar"</c>) to look up.</param>
+        /// <param name="fallbackLocale">(Optional) A locale key to fall back to when <paramref name="locale"/> has no entry.</param>
+        /// <returns>
+        /// The <see cref="EnumLocale{T}"/> for <paramref name="locale"/>, for <paramref name="fallbackLocale"/>
+        /// when it has a non-empty display name, or the default value when neither locale is declared.
+        /// </returns>
         [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public EnumLocale<T> GetLocale(string locale, string? fallbackLocale = null)

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,12 +32,29 @@ public sealed class AuthMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<AuthMiddleware> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="AuthMiddleware"/>.
+    /// </summary>
+    /// <param name="next">The next middleware delegate in the ASP.NET Core pipeline.</param>
+    /// <param name="logger">The logger used to record authentication failures.</param>
     public AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger)
     {
         _next = next;
         _logger = logger;
     }
 
+    /// <summary>
+    /// Processes the request, enforcing authentication on <c>/api/</c> endpoints while passing
+    /// through static files, SignalR negotiate, and auth endpoints without challenge.
+    /// </summary>
+    /// <remarks>
+    /// On success, sets <see cref="UsernameKey"/> and <see cref="AuthenticatedKey"/> in
+    /// <see cref="HttpContext.Items"/> for downstream middleware. On failure, writes a
+    /// <c>401 Unauthorized</c> response and logs the sanitized request path at Warning level.
+    /// The query string is never logged to avoid leaking tokens passed via <c>access_token</c>.
+    /// </remarks>
+    /// <param name="context">The current HTTP context.</param>
+    /// <returns>A task that completes when the request has been handled.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";

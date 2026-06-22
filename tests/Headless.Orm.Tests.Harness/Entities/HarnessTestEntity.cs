@@ -52,6 +52,10 @@ public sealed class HarnessTestEntity
 
     public UserId? SuspendedById { get; private init; }
 
+    public DateTimeOffset? DateUnsuspended { get; private init; }
+
+    public UserId? UnsuspendedById { get; private init; }
+
     // Concurrency
     public string? ConcurrencyStamp { get; private init; }
 

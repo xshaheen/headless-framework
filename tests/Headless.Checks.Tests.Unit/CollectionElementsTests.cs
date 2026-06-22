@@ -141,6 +141,29 @@ public sealed class CollectionElementsTests
     }
 
     [Fact]
+    public void has_no_nulls_throws_argument_null_exception_with_correct_param_name_when_collection_is_null()
+    {
+        // given - variable intentionally NOT named "argument" to catch the param-name mis-binding
+        IReadOnlyCollection<string?>? roles = null;
+        const string customMessage = "roles collection is required";
+
+        // when
+        Action action = () => Argument.HasNoNulls(roles);
+        Action actionWithCustomMessage = () => Argument.HasNoNulls(roles, customMessage);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage($"Required argument \"{nameof(roles)}\" was null. (Parameter '{nameof(roles)}')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage($"{customMessage} (Parameter '{nameof(roles)}')");
+    }
+
+    [Fact]
     public void should_throw_has_no_nulls_when_array_contains_null()
     {
         // given - test array overload specifically

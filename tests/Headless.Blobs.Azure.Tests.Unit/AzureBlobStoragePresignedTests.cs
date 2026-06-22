@@ -41,7 +41,7 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
         var act = async () =>
             await sut.GetPresignedDownloadUrlAsync(["mycontainer"], "file.txt", TimeSpan.FromMinutes(5));
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot generate a SAS*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unable to generate a presigned URL*");
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
         var act = async () =>
             await sut.GetPresignedUploadUrlAsync(["mycontainer"], "file.txt", TimeSpan.FromMinutes(5));
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot generate a SAS*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unable to generate a presigned URL*");
     }
 
     [Fact]

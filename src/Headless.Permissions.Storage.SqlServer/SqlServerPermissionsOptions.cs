@@ -5,9 +5,13 @@ using Microsoft.Data.SqlClient;
 
 namespace Headless.Permissions.SqlServer;
 
+/// <summary>
+/// Connection and command options for the SQL Server permissions storage provider.
+/// </summary>
 [PublicAPI]
 public sealed class SqlServerPermissionsOptions
 {
+    /// <summary>The SQL Server connection string used to connect to the database.</summary>
     public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>Timeout applied to DDL/DML commands issued by this provider. Defaults to 30 seconds.</summary>

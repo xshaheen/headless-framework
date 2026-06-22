@@ -3,10 +3,15 @@
 using FluentValidation;
 using Headless.Primitives;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api.Contracts;
 
+/// <summary>
+/// API request contract for page SEO metadata. All properties are optional; validate with
+/// <see cref="FluentValidatorPageMetadataExtensions.PageMetadata{T}"/> to enforce field length limits.
+/// Maps to the domain <see cref="PageMetadata"/> primitive via <see cref="ToPageMetadata"/> or the
+/// implicit conversion.
+/// </summary>
 public sealed class PageMetadataRequest
 {
     /// <summary>Lowercase, hyphenated identifier typically used in URLs.</summary>
@@ -24,8 +29,13 @@ public sealed class PageMetadataRequest
     /// <summary>List of arbitrary tags typically used as metadata to improve search results or associate a custom behavior.</summary>
     public HashSet<string>? Tags { get; init; }
 
+    /// <summary>Maps this request to the domain <see cref="PageMetadata"/> primitive.</summary>
     public PageMetadata ToPageMetadata() => this;
 
+    /// <summary>
+    /// Implicitly converts to the domain <see cref="PageMetadata"/> primitive.
+    /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
+    /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
     public static implicit operator PageMetadata?(PageMetadataRequest? operand)
     {
@@ -42,7 +52,7 @@ public sealed class PageMetadataRequest
     }
 }
 
-public sealed class PageMetadataRequestValidator : AbstractValidator<PageMetadataRequest>
+internal sealed class PageMetadataRequestValidator : AbstractValidator<PageMetadataRequest>
 {
     public PageMetadataRequestValidator()
     {
@@ -54,8 +64,15 @@ public sealed class PageMetadataRequestValidator : AbstractValidator<PageMetadat
     }
 }
 
+[PublicAPI]
 public static class FluentValidatorPageMetadataExtensions
 {
+    /// <summary>
+    /// Applies <see cref="PageMetadataRequestValidator"/> to validate length constraints on all
+    /// populated fields. The validator is skipped when the <paramref name="builder"/> value is
+    /// <see langword="null"/> (the property is treated as not provided).
+    /// </summary>
+    /// <returns>The rule builder so that additional calls can be chained.</returns>
     public static IRuleBuilderOptions<T, PageMetadataRequest?> PageMetadata<T>(
         this IRuleBuilder<T, PageMetadataRequest?> builder
     )

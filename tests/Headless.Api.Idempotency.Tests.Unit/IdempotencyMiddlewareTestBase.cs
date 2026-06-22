@@ -23,7 +23,7 @@ namespace Tests;
 public abstract class IdempotencyMiddlewareTestBase : TestBase
 {
     internal IdempotencyMiddleware CreateMiddleware(
-        IOptionsSnapshot<IdempotencyOptions>? options = null,
+        IOptionsMonitor<IdempotencyOptions>? options = null,
         ICache? cache = null,
         ICurrentTenant? currentTenant = null,
         ICurrentUser? currentUser = null,
@@ -36,8 +36,8 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
     {
         if (options is null)
         {
-            var snapshot = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-            snapshot.Value.Returns(new IdempotencyOptions());
+            var snapshot = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+            snapshot.CurrentValue.Returns(new IdempotencyOptions());
             options = snapshot;
         }
 

@@ -8,7 +8,7 @@ namespace Headless.Jobs.Dashboard.Jwt.Demo;
 /// </summary>
 public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<DemoJobSeeder> logger) : BackgroundService
 {
-    private static readonly string[] TimeJobFunctions =
+    private static readonly string[] _TimeJobFunctions =
     [
         "Demo_OrderProcessing",
         "Demo_DataSync",
@@ -25,11 +25,11 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
 
         // Seed cron jobs
         logger.LogInformation("Seeding cron jobs...");
-        await SeedCronJobs(stoppingToken);
+        await _SeedCronJobs(stoppingToken);
 
         // Initial burst — populate dashboard with some history
         logger.LogInformation("Seeding initial time jobs...");
-        await ScheduleTimeJobs(15, stoppingToken);
+        await _ScheduleTimeJobs(15, stoppingToken);
         logger.LogInformation("Initial seed complete — switching to 30s interval");
 
         while (!stoppingToken.IsCancellationRequested)
@@ -39,7 +39,7 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
             try
             {
                 var count = Random.Shared.Next(2, 5);
-                await ScheduleTimeJobs(count, stoppingToken);
+                await _ScheduleTimeJobs(count, stoppingToken);
                 if (logger.IsEnabled(LogLevel.Information))
                 {
                     logger.LogInformation("Scheduled {Count} time jobs (cycle #{Cycle})", count, _counter);
@@ -52,7 +52,7 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
         }
     }
 
-    private async Task SeedCronJobs(CancellationToken ct)
+    private async Task _SeedCronJobs(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var cronManager = scope.ServiceProvider.GetRequiredService<ICronJobManager<CronJobEntity>>();
@@ -94,7 +94,7 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
         }
     }
 
-    private async Task ScheduleTimeJobs(int count, CancellationToken ct)
+    private async Task _ScheduleTimeJobs(int count, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var timeManager = scope.ServiceProvider.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
@@ -102,7 +102,7 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
         for (var i = 0; i < count; i++)
         {
             _counter++;
-            var function = TimeJobFunctions[Random.Shared.Next(TimeJobFunctions.Length)];
+            var function = _TimeJobFunctions[Random.Shared.Next(_TimeJobFunctions.Length)];
 
             // Mix of immediate (past) and near-future execution times
             var delay =

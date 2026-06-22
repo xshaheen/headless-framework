@@ -11,6 +11,7 @@ using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -44,7 +45,8 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            new NullNodeMembership()
+            new NullNodeMembership(),
+            NullLogger<SqlServerDataStorage>.Instance
         );
 
         await base.InitializeAsync();

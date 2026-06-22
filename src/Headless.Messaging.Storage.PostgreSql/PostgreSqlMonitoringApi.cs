@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -17,7 +18,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// PostgreSQL implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.
 /// Provides dashboard data including message counts, status breakdowns, and hourly metrics.
 /// </summary>
-public sealed class PostgreSqlMonitoringApi(
+internal sealed class PostgreSqlMonitoringApi(
     IOptions<PostgreSqlOptions> options,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
@@ -30,6 +31,7 @@ public sealed class PostgreSqlMonitoringApi(
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
+    /// <summary>Returns a single published message by its storage identifier, or <see langword="null"/> if not found.</summary>
     public async ValueTask<MediumMessage?> GetPublishedMessageAsync(
         Guid id,
         CancellationToken cancellationToken = default
@@ -38,6 +40,7 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessageAsync(_publishedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns the published messages matching the supplied storage identifiers.</summary>
     public async ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
         IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
@@ -46,6 +49,7 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessagesAsync(_publishedTable, storageIds, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns a single received message by its storage identifier, or <see langword="null"/> if not found.</summary>
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
         Guid id,
         CancellationToken cancellationToken = default
@@ -54,6 +58,7 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessageAsync(_receivedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns the received messages matching the supplied storage identifiers.</summary>
     public async ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
         IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
@@ -62,6 +67,10 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessagesAsync(_receivedTable, storageIds, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns aggregate message counts broken down by status (succeeded, failed, delayed, pending retry)
+    /// for both the published and received tables.
+    /// </summary>
     public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
@@ -119,6 +128,10 @@ public sealed class PostgreSqlMonitoringApi(
         return statistics;
     }
 
+    /// <summary>
+    /// Returns a paginated list of messages from either the published or received table,
+    /// filtered by the criteria in <paramref name="query"/> (status, name, group, content substring, intent type).
+    /// </summary>
     public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
         MessageQuery query,
         CancellationToken cancellationToken = default
@@ -148,7 +161,7 @@ public sealed class PostgreSqlMonitoringApi(
 
         if (!string.IsNullOrEmpty(query.Content))
         {
-            where += " AND \"Content\" ILike @Content";
+            where += " AND \"Content\" ILIKE @Content ESCAPE '\\'";
         }
 
         if (query.IntentType is { })
@@ -165,12 +178,16 @@ public sealed class PostgreSqlMonitoringApi(
 
         await using var connection = _options.CreateConnection();
 
+        // Escape LIKE metacharacters so a literal %, _ or \ in the user's search term matches
+        // literally instead of acting as a wildcard (paired with ESCAPE '\' in the ILIKE clause).
+        var contentLike = $"%{_EscapeLike(query.Content)}%";
+
         object[] sqlParams =
         [
             new NpgsqlParameter("@StatusName", query.StatusName ?? string.Empty),
             new NpgsqlParameter("@Group", query.Group ?? string.Empty),
             new NpgsqlParameter("@Name", query.Name ?? string.Empty),
-            new NpgsqlParameter("@Content", $"%{query.Content}%"),
+            new NpgsqlParameter("@Content", contentLike),
             new NpgsqlParameter("@IntentType", (short?)query.IntentType ?? 0),
             new NpgsqlParameter("@Offset", query.CurrentPage * query.PageSize),
             new NpgsqlParameter("@Limit", query.PageSize),
@@ -240,26 +257,34 @@ public sealed class PostgreSqlMonitoringApi(
         return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
+    /// <summary>Returns the total count of published messages in the <c>Failed</c> state.</summary>
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
+    /// <summary>Returns the total count of published messages in the <c>Succeeded</c> state.</summary>
     public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
+    /// <summary>Returns the total count of received messages in the <c>Failed</c> state.</summary>
     public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
+    /// <summary>Returns the total count of received messages in the <c>Succeeded</c> state.</summary>
     public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
+    /// <summary>
+    /// Returns a dictionary of UTC hour buckets to <c>Succeeded</c> message counts for the past 24 hours,
+    /// from the published or received table depending on <paramref name="type"/>.
+    /// </summary>
     public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
         MessageType type,
         CancellationToken cancellationToken = default
@@ -271,6 +296,10 @@ public sealed class PostgreSqlMonitoringApi(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns a dictionary of UTC hour buckets to <c>Failed</c> message counts for the past 24 hours,
+    /// from the published or received table depending on <paramref name="type"/>.
+    /// </summary>
     public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
         MessageType type,
         CancellationToken cancellationToken = default
@@ -365,7 +394,9 @@ public sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        dictionary.Add(reader.GetString(0), reader.GetInt32(1));
+                        // COUNT() is bigint in PostgreSQL; read as Int64 and saturate to int (GetStatisticsAsync
+                        // uses GetInt64 for the same columns). Avoids an InvalidCastException past int.MaxValue rows.
+                        dictionary.Add(reader.GetString(0), (int)Math.Min(reader.GetInt64(1), int.MaxValue));
                     }
 
                     return dictionary;
@@ -398,12 +429,7 @@ public sealed class PostgreSqlMonitoringApi(
             return [];
         }
 
-        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
-            ? @"""ExceptionInfo"""
-            : "NULL AS \"ExceptionInfo\"";
-
-        var sql =
-            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id"" = ANY(@Ids)";
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\" = ANY(@Ids)");
 
         await using var connection = _options.CreateConnection();
 
@@ -416,29 +442,7 @@ public sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        messages.Add(
-                            new MediumMessage
-                            {
-                                StorageId = reader.GetGuid(0),
-                                Origin = serializer.Deserialize(reader.GetString(1))!,
-                                Content = reader.GetString(1),
-                                IntentType = (IntentType)reader.GetInt16(2),
-                                Added = reader.GetDateTime(3),
-                                ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetDateTime(4),
-                                Retries = reader.GetInt32(5),
-                                ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetString(6),
-                                NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetDateTime(7),
-                                LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetDateTime(8),
-                            }
-                        );
+                        messages.Add(await _ReadMediumMessageAsync(reader, token).ConfigureAwait(false));
                     }
 
                     return (IReadOnlyList<MediumMessage>)messages;
@@ -456,11 +460,7 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
-            ? @"""ExceptionInfo"""
-            : "NULL AS \"ExceptionInfo\"";
-        var sql =
-            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id""=@Id";
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\"=@Id");
 
         await using var connection = _options.CreateConnection();
 
@@ -473,27 +473,7 @@ public sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        message = new MediumMessage
-                        {
-                            StorageId = reader.GetGuid(0),
-                            Origin = serializer.Deserialize(reader.GetString(1))!,
-                            Content = reader.GetString(1),
-                            IntentType = (IntentType)reader.GetInt16(2),
-                            Added = reader.GetDateTime(3),
-                            ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(4),
-                            Retries = reader.GetInt32(5),
-                            ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetString(6),
-                            NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(7),
-                            LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(8),
-                        };
+                        message = await _ReadMediumMessageAsync(reader, token).ConfigureAwait(false);
                     }
 
                     return message;
@@ -505,5 +485,50 @@ public sealed class PostgreSqlMonitoringApi(
             .ConfigureAwait(false);
 
         return mediumMessage;
+    }
+
+    // Shared SELECT used by _GetMessageAsync / _GetMessagesAsync. The only structural difference is the
+    // ExceptionInfo column (received table only) and the WHERE clause, so both are parameterized here to
+    // keep the column list and reader (see _ReadMediumMessageAsync) in a single place.
+    private string _BuildSelectMessageSql(string tableName, string whereClause)
+    {
+        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
+            ? @"""ExceptionInfo"""
+            : "NULL AS \"ExceptionInfo\"";
+
+        return $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} {whereClause}";
+    }
+
+    private async Task<MediumMessage> _ReadMediumMessageAsync(DbDataReader reader, CancellationToken token)
+    {
+        var content = reader.GetString(1);
+
+        return new MediumMessage
+        {
+            StorageId = reader.GetGuid(0),
+            Origin = serializer.Deserialize(content)!,
+            Content = content,
+            IntentType = (IntentType)reader.GetInt16(2),
+            Added = reader.GetDateTime(3),
+            ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false) ? null : reader.GetDateTime(4),
+            Retries = reader.GetInt32(5),
+            ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false) ? null : reader.GetString(6),
+            NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false) ? null : reader.GetDateTime(7),
+            LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false) ? null : reader.GetDateTime(8),
+        };
+    }
+
+    private static string _EscapeLike(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        // Escape the ESCAPE character first, then the LIKE wildcards, so user text matches literally.
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
     }
 }

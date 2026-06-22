@@ -3,7 +3,4 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Headless.Abstractions</RootNamespace>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="FluentValidation" />
-  </ItemGroup>
 </Project>

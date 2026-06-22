@@ -68,6 +68,86 @@ public sealed class FormattedStringValueExtractorTests
         }
     }
 
+    [Fact]
+    public void extract_should_not_match_when_input_has_trailing_text_after_final_constant()
+    {
+        // given
+        // The format ends with the constant ".", but "abc.def" has trailing "def" that the format
+        // can not consume, so the whole input is not matched.
+        const string input = "abc.def";
+        const string format = "{x}.";
+
+        // when
+        var result = FormattedStringValueExtractor.Extract(input, format);
+
+        // then
+        result.IsMatch.Should().BeFalse();
+    }
+
+    [Fact]
+    public void extract_should_match_when_input_ends_with_final_constant()
+    {
+        // given
+        const string input = "abc.";
+        const string format = "{x}.";
+
+        // when
+        var result = FormattedStringValueExtractor.Extract(input, format);
+
+        // then
+        result.IsMatch.Should().BeTrue();
+        result.Matches.Should().ContainSingle();
+        result.Matches[0].Should().BeEquivalentTo(new NameValue { Name = "x", Value = "abc" });
+    }
+
+    [Fact]
+    public void is_match_should_be_false_when_trailing_text_after_final_constant()
+    {
+        // when
+        var isMatch = FormattedStringValueExtractor.IsMatch("abc.def", "{x}.", out var values);
+
+        // then
+        isMatch.Should().BeFalse();
+        values.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void extract_trailing_dynamic_value_greedily_keeps_separator_literal()
+    {
+        // given
+        // The dynamic value {b} itself contains the separator "-"; the trailing dynamic value
+        // greedily captures the remaining input including the extra separator (documented limitation).
+        const string input = "x-y-z";
+        const string format = "{a}-{b}";
+
+        // when
+        var result = FormattedStringValueExtractor.Extract(input, format);
+
+        // then
+        result.IsMatch.Should().BeTrue();
+        result.Matches.Should().HaveCount(2);
+        result.Matches[0].Should().BeEquivalentTo(new NameValue { Name = "a", Value = "x" });
+        result.Matches[1].Should().BeEquivalentTo(new NameValue { Name = "b", Value = "y-z" });
+    }
+
+    [Fact]
+    public void extract_splits_on_first_separator_occurrence_when_all_placeholders_present()
+    {
+        // given
+        const string input = "x-y-z";
+        const string format = "{a}-{b}-{c}";
+
+        // when
+        var result = FormattedStringValueExtractor.Extract(input, format);
+
+        // then
+        result.IsMatch.Should().BeTrue();
+        result.Matches.Should().HaveCount(3);
+        result.Matches[0].Should().BeEquivalentTo(new NameValue { Name = "a", Value = "x" });
+        result.Matches[1].Should().BeEquivalentTo(new NameValue { Name = "b", Value = "y" });
+        result.Matches[2].Should().BeEquivalentTo(new NameValue { Name = "c", Value = "z" });
+    }
+
     private static NameValue[] _ConvertToNameValuePairs(string[]? expectedPairs)
     {
         if (expectedPairs is null)

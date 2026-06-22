@@ -8,22 +8,32 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.Caching;
 
 /// <summary>
-/// Two-tier hybrid cache combining fast in-memory L1 cache with distributed L2 cache.
-/// Provides automatic cross-instance cache invalidation via messaging.
+/// Two-tier hybrid cache combining a process-local L1 (<see cref="IInMemoryCache"/>) with a shared
+/// distributed L2 (<see cref="IRemoteCache"/>), with cross-instance L1 invalidation via
+/// <see cref="CacheInvalidationMessage"/> published over <c>IBus</c>.
 /// </summary>
 /// <remarks>
-/// <para><b>Read path:</b></para>
+/// <para><b>Read path (GetOrAddAsync):</b></para>
 /// <list type="number">
-/// <item>Check L1 (local in-memory) - fastest, per-instance</item>
-/// <item>Check L2 (distributed) - slower but shared across instances</item>
-/// <item>Execute factory if both miss, populate both caches, publish invalidation so peers drop stale L1</item>
+/// <item>L1 hit (fast, no network) → return.</item>
+/// <item>L2 hit → populate L1 with the remaining L2 logical TTL capped at <see cref="HybridCacheOptions.DefaultLocalExpiration"/> → return.</item>
+/// <item>Both miss → run factory (stampede-protected per-key), write L1 + L2, publish invalidation so peer L1s evict their stale copies.</item>
 /// </list>
 /// <para><b>Write/Invalidation path:</b></para>
 /// <list type="number">
-/// <item>Publish invalidation message first (to minimize race window)</item>
-/// <item>Update/remove from L1 and L2</item>
-/// <item>Other instances receive message and invalidate their L1</item>
+/// <item>Publish invalidation message first to narrow the stale-read window on peers.</item>
+/// <item>Write or remove from L1 and L2.</item>
+/// <item>Peers receive the message and drop their local copies.</item>
 /// </list>
+/// <para>
+/// L2 faults degrade gracefully by default: reads fall back to L1 or a miss; factory-path L2 writes are
+/// logged and dropped (or queued when <see cref="HybridCacheOptions.EnableAutoRecovery"/> is on).
+/// Set <see cref="HybridCacheOptions.ReThrowDistributedCacheExceptions"/> to fail loud instead.
+/// </para>
+/// <para>
+/// This class is <see cref="IAsyncDisposable"/>; dispose it to drain the auto-recovery queue and release
+/// internal resources. DI-registered singletons are disposed automatically on host shutdown.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public sealed partial class HybridCache(
@@ -536,13 +546,13 @@ public sealed partial class HybridCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Check if key exists in local cache first
-        var localExists = await LocalCache.ExistsAsync(key, cancellationToken).ConfigureAwait(false);
-        if (localExists)
+        // Single L1 lookup: a null return means the key is absent, avoiding a separate ExistsAsync round-trip.
+        var localExpiration = await LocalCache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+        if (localExpiration is not null)
         {
             _logger.LogLocalCacheHit(key);
             Interlocked.Increment(ref _localCacheHits);
-            return await LocalCache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
+            return localExpiration;
         }
 
         _logger.LogLocalCacheMiss(key);
@@ -776,16 +786,21 @@ public sealed partial class HybridCache(
     #region IAsyncDisposable
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _coordinator.Dispose();
-        RecoveryQueue?.Dispose();
-        return ValueTask.CompletedTask;
+
+        if (RecoveryQueue is not null)
+        {
+            // Cancel the timer before draining so no new ProcessAsync pass starts after we await the active one.
+            RecoveryQueue.Dispose();
+            await RecoveryQueue.DrainAsync(CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     #endregion

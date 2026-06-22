@@ -54,4 +54,18 @@ public sealed class MatchesTests
         // when & then
         Argument.Matches(argument, pattern);
     }
+
+    [Fact]
+    public void matches_should_throw_argument_null_exception_with_correct_param_name_when_argument_is_null()
+    {
+        // given
+        const string? value = null;
+        var pattern = new Regex("^[a-z]+$", RegexOptions.None, 1.Seconds());
+
+        // when
+        Action action = () => Argument.Matches(value!, pattern);
+
+        // then
+        action.Should().ThrowExactly<ArgumentNullException>().WithParameterName(nameof(value));
+    }
 }

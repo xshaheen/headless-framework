@@ -6,12 +6,18 @@ using Headless.Checks;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Threading.Tasks;
 
+/// <summary>Extensions for fire-and-forget execution, exception aggregation, result probing, and cancellation of <see cref="Task"/> instances.</summary>
 [PublicAPI]
 public static class HeadlessTaskExtensions
 {
     #region Forget
 
-    /// <summary><a href="https://www.meziantou.net/fire-and-forget-a-task-in-dotnet.htm">Blog post</a></summary>
+    /// <summary>
+    /// Observes and discards a task so it runs fire-and-forget without surfacing faults to the caller; any exception
+    /// the task produces is caught and ignored to avoid unobserved-task escalation.
+    /// </summary>
+    /// <param name="task">The task to run without awaiting its result.</param>
+    /// <seealso href="https://www.meziantou.net/fire-and-forget-a-task-in-dotnet.htm">Fire and forget a task in .NET</seealso>
     public static void Forget(this Task task)
     {
         // Only care about tasks that may fault or are faulted,
@@ -52,6 +58,8 @@ public static class HeadlessTaskExtensions
     /// Task t = Task.WhenAll(...); try { await t; } catch { throw t.Exception; }.
     /// See: <a href="https://stackoverflow.com/a/62607500">Stack Overflow</a>
     /// </summary>
+    /// <param name="this">The task whose faults should be flattened into a single aggregated exception when multiple are present.</param>
+    /// <returns>A task that mirrors <paramref name="this"/> but surfaces a flattened <see cref="AggregateException"/> when more than one fault occurred.</returns>
     public static Task WithAggregatedExceptions(this Task @this)
     {
         return @this
@@ -76,6 +84,9 @@ public static class HeadlessTaskExtensions
     /// Task t = Task.WhenAll(...); try { await t; } catch { throw t.Exception; }.
     /// See: <a href="https://stackoverflow.com/a/62607500">Stack Overflow</a>
     /// </summary>
+    /// <typeparam name="T">The result type produced by the task.</typeparam>
+    /// <param name="this">The task whose faults should be flattened into a single aggregated exception when multiple are present.</param>
+    /// <returns>A task that mirrors <paramref name="this"/> but surfaces a flattened <see cref="AggregateException"/> when more than one fault occurred.</returns>
     public static Task<T> WithAggregatedExceptions<T>(this Task<T> @this)
     {
         return @this
@@ -171,6 +182,8 @@ public static class HeadlessTaskExtensions
     /// <param name="task">The task to wrap.</param>
     /// <param name="cancellationToken">The token that can be canceled to break out of the await.</param>
     /// <returns>The wrapping task.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="task"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown by the returned task when <paramref name="cancellationToken"/> is cancelled before <paramref name="task"/> completes.</exception>
     public static Task<T> WithCancellation<T>(this Task<T> task, CancellationToken cancellationToken)
     {
         _ = Argument.IsNotNull(task);
@@ -195,6 +208,8 @@ public static class HeadlessTaskExtensions
     /// <param name="task">The task to wrap.</param>
     /// <param name="cancellationToken">The token that can be canceled to break out of the await.</param>
     /// <returns>The wrapping task.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="task"/> is <see langword="null"/>.</exception>
+    /// <exception cref="OperationCanceledException">Thrown by the returned task when <paramref name="cancellationToken"/> is cancelled before <paramref name="task"/> completes.</exception>
     public static Task WithCancellation(this Task task, CancellationToken cancellationToken)
     {
         _ = Argument.IsNotNull(task);
@@ -267,6 +282,15 @@ public static class HeadlessTaskExtensions
 
     extension(Task)
     {
+        /// <summary>Schedules <paramref name="action"/> to run on the thread pool after waiting for <paramref name="delay"/>.</summary>
+        /// <param name="delay">The time to wait before invoking <paramref name="action"/>.</param>
+        /// <param name="action">The asynchronous work to run after the delay, passed the <paramref name="cancellationToken"/>.</param>
+        /// <param name="timeProvider">The time provider used to schedule the delay; defaults to <see cref="TimeProvider.System"/> when <see langword="null"/>.</param>
+        /// <param name="cancellationToken">A token that cancels both the delay and the scheduled work.</param>
+        /// <returns>A task that completes once <paramref name="action"/> has finished running after the delay.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="delay"/> is not positive.</exception>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
+        /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled before or during the delay.</exception>
         public static Task DelayedAsync(
             TimeSpan delay,
             Func<CancellationToken, Task> action,

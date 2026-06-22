@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Headless.EntityFramework.Contexts.Processors;
@@ -17,5 +16,10 @@ namespace Headless.EntityFramework.Contexts.Processors;
 [PublicAPI]
 public interface IHeadlessSaveEntryProcessor
 {
+    /// <summary>
+    /// Processes a single tracked entity entry for the current save round.
+    /// </summary>
+    /// <param name="entry">The tracked entity entry to inspect or mutate.</param>
+    /// <param name="context">The per-save scratchpad shared across all processors for this round.</param>
     void Process(EntityEntry entry, HeadlessSaveEntryContext context);
 }

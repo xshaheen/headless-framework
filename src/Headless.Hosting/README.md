@@ -30,11 +30,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Conditional registration
 builder.Services.AddIf(
     builder.Environment.IsDevelopment(),
-    s => s.AddDevEmailSender("emails.txt")
+    s => s.AddHeadlessEmails(setup => setup.UseDevelopment("emails.txt"))
 );
 
 // Options with FluentValidation
-builder.Services.AddOptionsWithFluentValidation<MyOptions, MyOptionsValidator>("MySection");
+builder.Services.Configure<MyOptions, MyOptionsValidator>(builder.Configuration.GetSection("MySection"));
 
 // Replace existing service
 builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
@@ -55,7 +55,7 @@ services.AddIfElse(condition, ifAction, elseAction);
 ### Options with Validation
 
 ```csharp
-services.AddOptionsWithFluentValidation<AppOptions, AppOptionsValidator>("App");
+services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("App"));
 ```
 
 ### Database Seeders
@@ -105,7 +105,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Headless.Checks`
+- `Headless.FluentValidation`
 - `Microsoft.Extensions.Hosting`
 - `Microsoft.Extensions.Options`
 

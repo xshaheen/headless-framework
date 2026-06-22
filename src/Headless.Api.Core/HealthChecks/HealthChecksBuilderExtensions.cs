@@ -17,6 +17,7 @@ public static class HealthChecksBuilderExtensions
     /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
     /// <param name="action">The action used to add to the health check builder.</param>
     /// <returns>The same health checks builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="healthChecksBuilder"/> or <paramref name="action"/> is <see langword="null"/>.</exception>
     public static IHealthChecksBuilder AddIf(
         this IHealthChecksBuilder healthChecksBuilder,
         bool condition,
@@ -45,6 +46,7 @@ public static class HealthChecksBuilderExtensions
     /// <param name="ifAction">The action used to add to the health check builder if the condition is <see langword="true"/>.</param>
     /// <param name="elseAction">The action used to add to the health check builder if the condition is <see langword="false"/>.</param>
     /// <returns>The same health checks builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="healthChecksBuilder"/>, <paramref name="ifAction"/>, or <paramref name="elseAction"/> is <see langword="null"/>.</exception>
     public static IHealthChecksBuilder AddIfElse(
         this IHealthChecksBuilder healthChecksBuilder,
         bool condition,

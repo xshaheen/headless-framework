@@ -21,8 +21,8 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
         ICurrentTenant? tenant = null
     )
     {
-        var snapshot = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-        snapshot.Value.Returns(options);
+        var monitor = Substitute.For<IOptionsMonitor<IdempotencyOptions>>();
+        monitor.CurrentValue.Returns(options);
 
         // Default to a present tenant so the default key derivation produces a non-empty key;
         // tests that exercise pass-through-by-missing-identity supply their own substitutes.
@@ -32,7 +32,7 @@ public sealed class IdempotencyMiddlewareCustomHooksTests : IdempotencyMiddlewar
             tenant.Id.Returns("t1");
         }
 
-        return CreateMiddleware(options: snapshot, cache: cache, currentTenant: tenant);
+        return CreateMiddleware(options: monitor, cache: cache, currentTenant: tenant);
     }
 
     private static DefaultHttpContext _CreateLocalContext(

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.AuditLog;
 using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog.SqlServer;

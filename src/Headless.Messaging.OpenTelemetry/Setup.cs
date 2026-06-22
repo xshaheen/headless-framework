@@ -17,6 +17,7 @@ public static class SetupMessagingOpenTelemetry
     /// <param name="builder"><see cref="TracerProviderBuilder" /> being configured.</param>
     /// <param name="configure">Optional delegate to configure <see cref="MessagingInstrumentationOptions"/>.</param>
     /// <returns>The instance of <see cref="TracerProviderBuilder" /> to chain the calls.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="builder"/> is <see langword="null"/>.</exception>
     public static TracerProviderBuilder AddMessagingInstrumentation(
         this TracerProviderBuilder builder,
         Action<MessagingInstrumentationOptions>? configure = null

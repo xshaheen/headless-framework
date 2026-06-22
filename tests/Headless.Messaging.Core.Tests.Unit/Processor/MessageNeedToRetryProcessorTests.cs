@@ -131,7 +131,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         MessageNeedToRetryProcessor sut,
         int enqueued,
         int skippedCircuitOpen
-    ) => sut._AdjustPollingInterval(enqueued, skippedCircuitOpen);
+    ) => sut.AdjustPollingInterval(enqueued, skippedCircuitOpen);
 
     // -------------------------------------------------------------------------
     // US-012: Circuit-state awareness
@@ -402,7 +402,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var nearMaxTicks = (long.MaxValue / 2) + 1;
         _SetCurrentInterval(sut, TimeSpan.FromTicks(nearMaxTicks));
 
-        // Act — invoke _AdjustPollingInterval directly (enqueued=1, skippedCircuitOpen=9 → 90% > 50% threshold → backoff path)
+        // Act — invoke AdjustPollingInterval directly (enqueued=1, skippedCircuitOpen=9 → 90% > 50% threshold → backoff path)
         _InvokeAdjustPollingInterval(sut, enqueued: 1, skippedCircuitOpen: 9);
 
         // Assert — interval should be capped at max, not negative/overflowed
@@ -427,7 +427,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var barrier = new Barrier(2);
         const int iterations = 10_000;
 
-        // Act — race _AdjustPollingInterval (doubling path) against ResetBackpressureAsync
+        // Act — race AdjustPollingInterval (doubling path) against ResetBackpressureAsync
         var adjustTask = Task.Run(() =>
         {
             barrier.SignalAndWait();

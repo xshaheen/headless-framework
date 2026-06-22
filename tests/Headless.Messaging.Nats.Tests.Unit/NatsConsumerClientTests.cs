@@ -173,40 +173,40 @@ public sealed class NatsConsumerClientTests : TestBase
             .Be("queue-orders_created");
     }
 
-    // _NextBackoff tests
+    // NextBackoff tests
 
     [Fact]
     public void NextBackoff_should_double_current_delay()
     {
-        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(1));
+        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1));
         result.Should().Be(TimeSpan.FromSeconds(2));
     }
 
     [Fact]
     public void NextBackoff_should_cap_at_30_seconds()
     {
-        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(20));
+        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(20));
         result.Should().Be(TimeSpan.FromSeconds(30));
     }
 
     [Fact]
     public void NextBackoff_should_not_exceed_ceiling_even_with_large_input()
     {
-        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(60));
+        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(60));
         result.Should().Be(TimeSpan.FromSeconds(30));
     }
 
     [Fact]
     public void NextBackoff_should_enforce_floor_when_next_is_below()
     {
-        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(1), floor: TimeSpan.FromSeconds(5));
+        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(1), floor: TimeSpan.FromSeconds(5));
         result.Should().Be(TimeSpan.FromSeconds(5));
     }
 
     [Fact]
     public void NextBackoff_should_not_enforce_floor_when_next_is_above()
     {
-        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(5), floor: TimeSpan.FromSeconds(5));
+        var result = NatsConsumerClient.NextBackoff(TimeSpan.FromSeconds(5), floor: TimeSpan.FromSeconds(5));
         result.Should().Be(TimeSpan.FromSeconds(10));
     }
 
@@ -214,17 +214,17 @@ public sealed class NatsConsumerClientTests : TestBase
     public void NextBackoff_should_produce_correct_exponential_sequence()
     {
         var delay = TimeSpan.FromSeconds(1);
-        delay = NatsConsumerClient._NextBackoff(delay); // 2s
+        delay = NatsConsumerClient.NextBackoff(delay); // 2s
         delay.Should().Be(TimeSpan.FromSeconds(2));
-        delay = NatsConsumerClient._NextBackoff(delay); // 4s
+        delay = NatsConsumerClient.NextBackoff(delay); // 4s
         delay.Should().Be(TimeSpan.FromSeconds(4));
-        delay = NatsConsumerClient._NextBackoff(delay); // 8s
+        delay = NatsConsumerClient.NextBackoff(delay); // 8s
         delay.Should().Be(TimeSpan.FromSeconds(8));
-        delay = NatsConsumerClient._NextBackoff(delay); // 16s
+        delay = NatsConsumerClient.NextBackoff(delay); // 16s
         delay.Should().Be(TimeSpan.FromSeconds(16));
-        delay = NatsConsumerClient._NextBackoff(delay); // 30s (capped)
+        delay = NatsConsumerClient.NextBackoff(delay); // 30s (capped)
         delay.Should().Be(TimeSpan.FromSeconds(30));
-        delay = NatsConsumerClient._NextBackoff(delay); // 30s (stays capped)
+        delay = NatsConsumerClient.NextBackoff(delay); // 30s (stays capped)
         delay.Should().Be(TimeSpan.FromSeconds(30));
     }
 
@@ -233,13 +233,13 @@ public sealed class NatsConsumerClientTests : TestBase
     {
         var delay = TimeSpan.FromSeconds(1);
         var floor = TimeSpan.FromSeconds(5);
-        delay = NatsConsumerClient._NextBackoff(delay, floor); // max(2, 5) = 5s
+        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(2, 5) = 5s
         delay.Should().Be(TimeSpan.FromSeconds(5));
-        delay = NatsConsumerClient._NextBackoff(delay, floor); // max(10, 5) = 10s
+        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(10, 5) = 10s
         delay.Should().Be(TimeSpan.FromSeconds(10));
-        delay = NatsConsumerClient._NextBackoff(delay, floor); // max(20, 5) = 20s
+        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(20, 5) = 20s
         delay.Should().Be(TimeSpan.FromSeconds(20));
-        delay = NatsConsumerClient._NextBackoff(delay, floor); // max(30, 5) = 30s (capped)
+        delay = NatsConsumerClient.NextBackoff(delay, floor); // max(30, 5) = 30s (capped)
         delay.Should().Be(TimeSpan.FromSeconds(30));
     }
 
@@ -695,6 +695,108 @@ public sealed class NatsConsumerClientTests : TestBase
         finally
         {
             await _StopListeningAsync(listeningTask, cts);
+        }
+    }
+
+    [Fact]
+    public void BuildStreamSubjects_and_BuildConsumerSubjects_agree_for_duplicate_sharded_names()
+    {
+        // A sharded message name appearing more than once (e.g. two consumers of the same type) must
+        // yield the same {base, base.>} set from both builders: the JetStream stream config and the
+        // consumer FilterSubjects have to cover identical subjects or sharded messages are dropped.
+        var sharded = new HashSet<string>(StringComparer.Ordinal) { "orders" };
+        string[] names = ["orders", "orders"];
+
+        var streamSubjects = NatsConsumerClient.BuildStreamSubjects(names, sharded);
+        var consumerSubjects = NatsConsumerClient.BuildConsumerSubjects(names, sharded);
+
+        streamSubjects.Should().Equal("orders", "orders.>");
+        consumerSubjects.Should().Equal("orders", "orders.>");
+    }
+
+    [Fact]
+    public async Task DisposeAsync_drains_in_flight_concurrent_handler_before_completing()
+    {
+        // given — one message delivered, then NextAsync blocks until cancellation
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
+        msg.Headers.Returns((NatsHeaders?)null);
+
+        var delivered = 0;
+        var consumer = Substitute.For<INatsJSConsumer>();
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                if (Interlocked.Increment(ref delivered) == 1)
+                {
+                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
+                }
+
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                    Task.Delay(Timeout.InfiniteTimeSpan, token)
+                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                            static (t, _) =>
+                            {
+                                t.GetAwaiter().GetResult();
+                                return null;
+                            },
+                            null,
+                            CancellationToken.None,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default
+                        )
+                );
+            });
+
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var client = new NatsConsumerClient(
+            "test-group",
+            1, // concurrent path (groupConcurrent > 0) -> handler runs via Task.Run
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        client.OnMessageCallback = async (_, _) =>
+        {
+            handlerStarted.TrySetResult();
+            await releaseHandler.Task;
+        };
+        await client.SubscribeAsync(["orders.created"]);
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+
+        try
+        {
+            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+            // when — dispose must drain the still-running handler before completing
+            var disposeTask = client.DisposeAsync().AsTask();
+            var first = await Task.WhenAny(disposeTask, Task.Delay(300, AbortToken));
+            first.Should().NotBe(disposeTask, "DisposeAsync must not complete while a handler is in flight");
+
+            // then — releasing the handler lets dispose complete
+            releaseHandler.TrySetResult();
+            await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+        finally
+        {
+            releaseHandler.TrySetResult();
+            await cts.CancelAsync();
+            try
+            {
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            }
+            catch (OperationCanceledException) { }
+            catch (ObjectDisposedException) { }
         }
     }
 

@@ -48,4 +48,37 @@ public sealed class IsNullTests
         // when & then
         Argument.IsNull(str).Should().BeNull(str);
     }
+
+    [Fact]
+    public void is_null_nullable_struct_with_null_returns_null()
+    {
+        // given
+        int? value = null;
+
+        // when & then
+        Argument.IsNull(value).Should().BeNull();
+    }
+
+    [Fact]
+    public void is_null_nullable_struct_with_value_throws()
+    {
+        // given
+        int? value = 5;
+        const string customMessage = "value must be null";
+
+        // when
+        Action action = () => Argument.IsNull(value);
+        Action actionWithCustomMessage = () => Argument.IsNull(value, customMessage);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage("The argument \"value\" must be null. (Parameter 'value')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage($"{customMessage} (Parameter 'value')");
+    }
 }

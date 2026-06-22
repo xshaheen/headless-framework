@@ -233,7 +233,7 @@ internal static class IdempotencyTestApp
 
     private sealed class NullBuildInformationAccessor : IBuildInformationAccessor
     {
-        public string? GetBuildNumber() => null;
+        public string? GetVersion() => null;
 
         public string? GetCommitNumber() => null;
 

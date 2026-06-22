@@ -5,9 +5,14 @@ using System.IO.Compression;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
+/// <summary>Extension methods for compressing, decompressing, and comparing byte arrays.</summary>
 [PublicAPI]
 public static class ByteExtensions
 {
+    /// <summary>Compresses the given bytes using the Brotli algorithm.</summary>
+    /// <param name="bytes">The bytes to compress.</param>
+    /// <returns>The Brotli-compressed bytes.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bytes"/> is <see langword="null"/>.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static byte[] Compress(this byte[] bytes)
@@ -19,6 +24,11 @@ public static class ByteExtensions
         return output.ToArray();
     }
 
+    /// <summary>Decompresses the given Brotli-compressed bytes.</summary>
+    /// <param name="bytes">The Brotli-compressed bytes to decompress.</param>
+    /// <returns>The decompressed bytes.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bytes"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidDataException">Thrown when <paramref name="bytes"/> is not valid Brotli-compressed data.</exception>
     [SystemPure]
     [JetBrainsPure]
     public static byte[] Decompress(this byte[] bytes)
@@ -32,11 +42,14 @@ public static class ByteExtensions
     }
 
     /// <summary>
-    /// Compares two byte[] arrays, element by element, and returns the number of elements common to both arrays.
+    /// Compares two byte[] arrays, element by element, and returns the index of the first element that differs.
     /// </summary>
     /// <param name="bytes1">The first byte[] to compare.</param>
     /// <param name="bytes2">The second byte[] to compare.</param>
-    /// <returns>The number of common elements.</returns>
+    /// <returns>
+    /// The index of the first differing element; if one array is a prefix of the other, the length of the shorter
+    /// array (so identical arrays return their length).
+    /// </returns>
     [SystemPure]
     [JetBrainsPure]
     public static int BytesDifference(this byte[] bytes1, byte[] bytes2)

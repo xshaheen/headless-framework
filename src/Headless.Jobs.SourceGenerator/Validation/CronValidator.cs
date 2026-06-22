@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Headless.Jobs.SourceGenerator.Validation;
 
 public static class CronValidator

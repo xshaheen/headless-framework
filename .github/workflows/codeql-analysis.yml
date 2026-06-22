@@ -3,10 +3,19 @@ name: "CodeQL"
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/**/*.md'
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/**/*.md'
   schedule:
+    # Weekly full scan covers everything regardless of the path filters above.
     - cron: "0 8 * * 4"
   workflow_dispatch:
 
@@ -41,18 +50,18 @@ jobs:
 
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           lfs: false
           fetch-depth: 0
 
       - name: "Setup .NET SDK"
-        uses: actions/setup-dotnet@v5.3.0
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
         with:
           global-json-file: "./global.json"
 
       - name: "Setup nuget cache"
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ${{ env.NUGET_PACKAGES }}
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', 'global.json', 'nuget.config') }}
@@ -60,14 +69,16 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Authenticate GitHub Packages"
-        run: dotnet nuget update source github.com --username xshaheen --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --configfile nuget.config
+        env:
+          GH_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet nuget update source github.com --username xshaheen --password "$GH_PACKAGES_TOKEN" --store-password-in-clear-text --configfile nuget.config
         shell: bash
 
       - name: "Restore"
         run: make restore
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           languages: ${{ matrix.language }}
           build-mode: manual
@@ -76,4 +87,4 @@ jobs:
         run: make rebuild-no-restore
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4

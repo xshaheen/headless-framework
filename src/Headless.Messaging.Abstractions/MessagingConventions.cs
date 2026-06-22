@@ -63,6 +63,9 @@ public sealed class MessagingConventions
     /// <summary>
     /// Sets the application id used for deterministic default group generation.
     /// </summary>
+    /// <param name="applicationId">A non-whitespace identifier that scopes generated group names to this application.</param>
+    /// <returns>The same <see cref="MessagingConventions"/> instance for chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="applicationId"/> is null or whitespace.</exception>
     public MessagingConventions UseApplicationId(string applicationId)
     {
         if (string.IsNullOrWhiteSpace(applicationId))
@@ -77,6 +80,9 @@ public sealed class MessagingConventions
     /// <summary>
     /// Sets the messaging version used for deterministic default group generation.
     /// </summary>
+    /// <param name="version">A non-whitespace version label (e.g., <c>"v1"</c>, <c>"v2"</c>) appended to generated group names.</param>
+    /// <returns>The same <see cref="MessagingConventions"/> instance for chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="version"/> is null or whitespace.</exception>
     public MessagingConventions UseVersion(string version)
     {
         if (string.IsNullOrWhiteSpace(version))
@@ -89,8 +95,10 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Sets a message name prefix.
+    /// Sets a prefix that is prepended to every generated message name.
     /// </summary>
+    /// <param name="prefix">The prefix string, or <see langword="null"/> to clear a previously set prefix.</param>
+    /// <returns>The same <see cref="MessagingConventions"/> instance for chaining.</returns>
     public MessagingConventions WithMessageNamePrefix(string? prefix)
     {
         MessageNamePrefix = prefix;
@@ -98,8 +106,10 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Sets a message name suffix.
+    /// Sets a suffix that is appended to every generated message name.
     /// </summary>
+    /// <param name="suffix">The suffix string, or <see langword="null"/> to clear a previously set suffix.</param>
+    /// <returns>The same <see cref="MessagingConventions"/> instance for chaining.</returns>
     public MessagingConventions WithMessageNameSuffix(string? suffix)
     {
         MessageNameSuffix = suffix;
@@ -107,8 +117,10 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Sets an explicit default group name.
+    /// Sets an explicit default consumer group name that overrides convention-based group generation.
     /// </summary>
+    /// <param name="defaultGroup">The explicit group name, or <see langword="null"/> to restore convention-based generation.</param>
+    /// <returns>The same <see cref="MessagingConventions"/> instance for chaining.</returns>
     public MessagingConventions WithDefaultGroup(string? defaultGroup)
     {
         DefaultGroup = defaultGroup;
@@ -136,6 +148,12 @@ public sealed class MessagingConventions
     /// <summary>
     /// Generates the default consumer group for the specified handler identity.
     /// </summary>
+    /// <param name="handlerId">The deterministic handler identity string (e.g., from <see cref="GetDefaultHandlerId"/>).</param>
+    /// <returns>
+    /// The configured <see cref="DefaultGroup"/> when set; otherwise a dot-separated combination of the
+    /// normalized application id, handler id, and messaging version.
+    /// </returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="handlerId"/> is null or whitespace and no <see cref="DefaultGroup"/> is configured.</exception>
     public string GetGroupName(string handlerId)
     {
         if (!string.IsNullOrWhiteSpace(DefaultGroup))
@@ -158,6 +176,10 @@ public sealed class MessagingConventions
     /// <summary>
     /// Creates the deterministic default handler identity for a closed <see cref="IConsume{TMessage}"/> registration.
     /// </summary>
+    /// <param name="consumerType">The concrete consumer type that implements <see cref="IConsume{TMessage}"/>.</param>
+    /// <param name="messageType">The message type that the consumer handles.</param>
+    /// <returns>A stable identity string in the form <c>{consumerFullName}|{messageFullName}</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="consumerType"/> or <paramref name="messageType"/> is <see langword="null"/>.</exception>
     public static string GetDefaultHandlerId(Type consumerType, Type messageType)
     {
         Argument.IsNotNull(consumerType);
@@ -169,8 +191,14 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Creates the deterministic default handler identity for a runtime function subscription.
+    /// Creates the deterministic default handler identity for a runtime delegate subscription.
     /// </summary>
+    /// <param name="declaringType">The type that declares or owns the delegate method.</param>
+    /// <param name="methodName">The method name of the delegate (use <c>nameof</c>).</param>
+    /// <param name="messageType">The message type that the delegate handles.</param>
+    /// <returns>A stable identity string in the form <c>{declaringTypeFullName}|{methodName}|{messageFullName}</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="declaringType"/> or <paramref name="messageType"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="methodName"/> is null or whitespace.</exception>
     public static string GetDefaultRuntimeHandlerId(Type declaringType, string methodName, Type messageType)
     {
         Argument.IsNotNull(declaringType);
@@ -273,6 +301,7 @@ public sealed class MessagingConventions
 /// <summary>
 /// Defines the naming convention to use when generating message names from message types.
 /// </summary>
+[PublicAPI]
 public enum MessageNamingConvention
 {
     /// <summary>

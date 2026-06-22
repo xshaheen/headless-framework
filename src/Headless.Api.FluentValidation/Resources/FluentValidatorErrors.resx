@@ -26,9 +26,9 @@
     <value>The file type is not allowed.</value>
   </data>
   <data name="file:greater_than_or_equal_to" xml:space="preserve">
-    <value>The size of '{PropertyName}' must be less than {MaxLength} MB. You uploaded {TotalLength} MB.</value>
+    <value>The size of '{PropertyName}' must be at least {MinSize} MB. You uploaded {TotalLength} MB.</value>
   </data>
   <data name="file:less_than_or_equal_to" xml:space="preserve">
-    <value>The size of '{PropertyName}' must be at least {MinLength} MB. You uploaded {TotalLength} MB.</value>
+    <value>The size of '{PropertyName}' must be at most {MaxSize} MB. You uploaded {TotalLength} MB.</value>
   </data>
 </root>

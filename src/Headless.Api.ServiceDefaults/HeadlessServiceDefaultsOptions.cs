@@ -13,12 +13,6 @@ namespace Headless.Api;
 [PublicAPI]
 public sealed class HeadlessServiceDefaultsOptions
 {
-    internal bool UseHeadlessCalled { get; set; }
-
-    internal bool MapHeadlessEndpointsCalled { get; set; }
-
-    internal bool UseStatusCodesRewriterCalled { get; set; }
-
     /// <summary>Startup validation defaults.</summary>
     public HeadlessServiceDefaultsValidationOptions Validation { get; } = new();
 
@@ -219,11 +213,10 @@ public sealed class HeadlessServiceDefaultsAntiforgeryOptions
 
 /// <summary>
 /// Concrete <see cref="IStatusCodesRewriterCalledNotifier"/> that sets the
-/// <see cref="HeadlessServiceDefaultsOptions.UseStatusCodesRewriterCalled"/> flag on the singleton options when
+/// <see cref="HeadlessStartupState.UseStatusCodesRewriterCalled"/> flag on the singleton startup state when
 /// <see cref="SetupMiddlewares.UseStatusCodesRewriter"/> is called.
 /// </summary>
-internal sealed class StatusCodesRewriterCalledNotifier(HeadlessServiceDefaultsOptions options)
-    : IStatusCodesRewriterCalledNotifier
+internal sealed class StatusCodesRewriterCalledNotifier(HeadlessStartupState state) : IStatusCodesRewriterCalledNotifier
 {
-    public void OnCalled() => options.UseStatusCodesRewriterCalled = true;
+    public void OnCalled() => state.UseStatusCodesRewriterCalled = true;
 }

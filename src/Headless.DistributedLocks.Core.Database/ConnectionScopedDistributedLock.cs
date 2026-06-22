@@ -51,10 +51,33 @@ public sealed class ConnectionScopedDistributedLock(
         options.MaxWaitersPerResource
     );
 
+    /// <summary>
+    /// Connection-scoped locks have no TTL; the lock is held for the lifetime of the underlying connection.
+    /// Returns <see cref="Timeout.InfiniteTimeSpan"/>.
+    /// </summary>
     public TimeSpan DefaultTimeUntilExpires => Timeout.InfiniteTimeSpan;
 
+    /// <summary>
+    /// Default timeout applied when <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is not specified.
+    /// Defaults to 30 seconds.
+    /// </summary>
     public TimeSpan DefaultAcquireTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Acquires an exclusive lock on <paramref name="resource"/>, blocking until acquired or the
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is exceeded.
+    /// </summary>
+    /// <param name="resource">The resource to lock. Must be non-null, non-whitespace, and within the configured max length.</param>
+    /// <param name="acquireOptions">
+    /// Per-call options (acquire timeout, monitoring mode, release-on-dispose).
+    /// <see langword="null"/> applies the defaults set on this instance.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the acquire attempt.</param>
+    /// <returns>A held <see cref="IDistributedLease"/> that must be disposed to release the lock.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is whitespace or exceeds the configured maximum resource name length.</exception>
+    /// <exception cref="LockAcquisitionTimeoutException">Thrown when the lock cannot be acquired before the acquire timeout elapses.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<IDistributedLease> AcquireAsync(
         string resource,
         DistributedLockAcquireOptions? acquireOptions = null,
@@ -64,6 +87,20 @@ public sealed class ConnectionScopedDistributedLock(
         return _AcquireCoreAsync(throwOnTimeout: true, resource, acquireOptions, isShared: false, cancellationToken)!;
     }
 
+    /// <summary>
+    /// Attempts to acquire an exclusive lock on <paramref name="resource"/>, returning <see langword="null"/> if the
+    /// lock cannot be acquired before the acquire timeout elapses.
+    /// </summary>
+    /// <param name="resource">The resource to lock. Must be non-null, non-whitespace, and within the configured max length.</param>
+    /// <param name="acquireOptions">
+    /// Per-call options (acquire timeout, monitoring mode, release-on-dispose).
+    /// <see langword="null"/> applies the defaults set on this instance.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the acquire attempt.</param>
+    /// <returns>A held <see cref="IDistributedLease"/> on success, or <see langword="null"/> when contended past the timeout.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is whitespace or exceeds the configured maximum resource name length.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         DistributedLockAcquireOptions? acquireOptions = null,
@@ -73,6 +110,18 @@ public sealed class ConnectionScopedDistributedLock(
         return _AcquireCoreAsync(throwOnTimeout: false, resource, acquireOptions, isShared: false, cancellationToken);
     }
 
+    /// <summary>
+    /// Attempts to acquire the lock in shared or exclusive mode, used internally by
+    /// <see cref="ConnectionScopedReadWriteLock"/> to implement reader/writer semantics.
+    /// </summary>
+    /// <param name="resource">The resource to lock.</param>
+    /// <param name="isShared"><see langword="true"/> for a shared (reader) lock; <see langword="false"/> for exclusive.</param>
+    /// <param name="acquireOptions">Per-call options; <see langword="null"/> applies instance defaults.</param>
+    /// <param name="cancellationToken">Token used to cancel the acquire attempt.</param>
+    /// <returns>A held <see cref="IDistributedLease"/> on success, or <see langword="null"/> when contended past the timeout.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> is whitespace or exceeds the configured maximum resource name length.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     internal Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         bool isShared,
@@ -252,6 +301,16 @@ public sealed class ConnectionScopedDistributedLock(
         }
     }
 
+    /// <summary>
+    /// No-op for connection-scoped locks: advisory locks are held for the lifetime of the connection and
+    /// have no TTL to extend. Always returns <see langword="true"/>.
+    /// </summary>
+    /// <param name="resource">The locked resource (unused).</param>
+    /// <param name="leaseId">The lease identifier (unused).</param>
+    /// <param name="timeUntilExpires">Ignored; connection-scoped locks have no expiry.</param>
+    /// <param name="cancellationToken">Token observed before returning.</param>
+    /// <returns><see langword="true"/> unconditionally.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public Task<bool> RenewAsync(
         string resource,
         string leaseId,
@@ -263,27 +322,61 @@ public sealed class ConnectionScopedDistributedLock(
         return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// Returns the lease id held by this process for <paramref name="resource"/>, or <see langword="null"/> if
+    /// this process does not hold the lock. Only covers locks acquired through this provider instance.
+    /// </summary>
+    /// <param name="resource">The resource to inspect.</param>
+    /// <param name="cancellationToken">Token used to cancel the storage call.</param>
+    /// <returns>The local lease id, or <see langword="null"/> if not held by this process.</returns>
     public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         return storage.GetLocalLeaseIdAsync(resource, cancellationToken).AsTask();
     }
 
+    /// <summary>
+    /// Releases the lock for <paramref name="resource"/> identified by <paramref name="leaseId"/> and
+    /// publishes a wake-up signal to waiting acquirers.
+    /// </summary>
+    /// <param name="resource">The locked resource to release.</param>
+    /// <param name="leaseId">The lease id that identifies the held lock.</param>
+    /// <param name="cancellationToken">Token used to cancel the storage release call.</param>
     public async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         await storage.ReleaseAsync(resource, leaseId, cancellationToken).ConfigureAwait(false);
         await _PublishReleaseAsync(resource, leaseId).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> if <paramref name="resource"/> is currently locked in any mode.
+    /// </summary>
+    /// <param name="resource">The resource to check.</param>
+    /// <param name="cancellationToken">Token used to cancel the storage call.</param>
     public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         return storage.IsLockedAsync(resource, cancellationToken: cancellationToken).AsTask();
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> if <paramref name="resource"/> is locked in the specified mode.
+    /// Used internally by <see cref="ConnectionScopedReadWriteLock"/>.
+    /// </summary>
+    /// <param name="resource">The resource to check.</param>
+    /// <param name="isShared"><see langword="true"/> to check for a shared (reader) lock; <see langword="false"/> for exclusive.</param>
+    /// <param name="cancellationToken">Token used to cancel the storage call.</param>
     internal Task<bool> IsLockedAsync(string resource, bool isShared, CancellationToken cancellationToken = default)
     {
         return storage.IsLockedAsync(resource, isShared, cancellationToken).AsTask();
     }
 
+    /// <summary>
+    /// Returns the count of holders currently owning <paramref name="resource"/> in the specified mode.
+    /// Used internally by <see cref="ConnectionScopedReadWriteLock"/> to count readers.
+    /// </summary>
+    /// <param name="resource">The resource to count holders for.</param>
+    /// <param name="isShared"><see langword="true"/> for shared (reader) holders; <see langword="false"/> for exclusive.</param>
+    /// <param name="cancellationToken">Token used to cancel the storage call.</param>
+    /// <returns>The number of holders currently owning <paramref name="resource"/> in the specified mode.</returns>
     internal Task<long> GetLocksCountAsync(
         string resource,
         bool isShared,
@@ -293,12 +386,29 @@ public sealed class ConnectionScopedDistributedLock(
         return storage.GetLocksCountAsync(resource, isShared, cancellationToken).AsTask();
     }
 
+    /// <summary>
+    /// Connection-scoped locks have no TTL; always returns <see langword="null"/>.
+    /// </summary>
+    /// <param name="resource">The resource to inspect (unused).</param>
+    /// <param name="cancellationToken">Token observed before returning.</param>
+    /// <returns><see langword="null"/> unconditionally.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is already cancelled.</exception>
     public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<TimeSpan?>(null);
     }
 
+    /// <summary>
+    /// Returns lock information for <paramref name="resource"/> if it is currently held, or <see langword="null"/>
+    /// if it is not. The <see cref="DistributedLockInfo.LeaseId"/> will only be populated when this process
+    /// holds the lock; cross-process holder identity is not visible on the connection-scoped inspection path.
+    /// <see cref="DistributedLockInfo.TimeToLive"/> is always <see langword="null"/> because connection-scoped
+    /// locks have no TTL.
+    /// </summary>
+    /// <param name="resource">The resource to inspect.</param>
+    /// <param name="cancellationToken">Token used to cancel the storage calls.</param>
+    /// <returns>Lock information if held, or <see langword="null"/> if not locked.</returns>
     public async Task<DistributedLockInfo?> GetLockInfoAsync(
         string resource,
         CancellationToken cancellationToken = default
@@ -320,11 +430,22 @@ public sealed class ConnectionScopedDistributedLock(
         };
     }
 
+    /// <summary>
+    /// Lists active locks observable through the backing store's inspection path.
+    /// Some backends can only enumerate locks held by this process.
+    /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the storage call.</param>
+    /// <returns>Read-only collection of active lock information.</returns>
     public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
         return storage.ListActiveLocksAsync(cancellationToken).AsTask();
     }
 
+    /// <summary>
+    /// Returns the count of active locks observable through the backing store's inspection path.
+    /// Some backends can only count locks held by this process.
+    /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the storage call.</param>
     public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
         return storage.GetActiveLocksCountAsync(cancellationToken).AsTask();

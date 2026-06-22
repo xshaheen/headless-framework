@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -8,7 +9,7 @@ namespace Tests.GeoExtensions;
 
 public sealed class PolygonCreationTests
 {
-    private static GeometryFactory Factory => GeoConstants.GeometryFactory;
+    private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     // CCW coordinates (counterclockwise - going: right, up, left, down)
     private static Coordinate[] CcwCoords => [new(0, 0), new(1, 0), new(1, 1), new(0, 1), new(0, 0)];

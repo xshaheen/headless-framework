@@ -2,15 +2,23 @@
 
 namespace Headless.Permissions;
 
+/// <summary>
+/// Shared storage configuration for the Headless Permissions system. Applied to whichever storage
+/// provider is registered (EF Core, PostgreSQL raw-DDL, or SQL Server raw-DDL).
+/// </summary>
 [PublicAPI]
 public sealed class PermissionsStorageOptions
 {
+    /// <summary>Database schema that contains all permissions tables. Defaults to <c>"permissions"</c>.</summary>
     public string Schema { get; set; } = "permissions";
 
+    /// <summary>Table name for permission grant records. Defaults to <c>"PermissionGrants"</c>.</summary>
     public string PermissionGrantsTableName { get; set; } = "PermissionGrants";
 
+    /// <summary>Table name for static permission definition records. Defaults to <c>"PermissionDefinitions"</c>.</summary>
     public string PermissionDefinitionsTableName { get; set; } = "PermissionDefinitions";
 
+    /// <summary>Table name for permission group definition records. Defaults to <c>"PermissionGroupDefinitions"</c>.</summary>
     public string PermissionGroupDefinitionsTableName { get; set; } = "PermissionGroupDefinitions";
 
     /// <summary>

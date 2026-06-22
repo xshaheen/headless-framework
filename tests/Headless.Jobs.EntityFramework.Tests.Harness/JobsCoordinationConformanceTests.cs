@@ -445,6 +445,38 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
     }
 
     /// <summary>
+    /// #461: when coordination membership is not currently established (the host hasn't started / a transient blip),
+    /// the renewal returns a negative sentinel — distinct from <c>0</c> (lost) — and touches no row. The caller skips
+    /// the tick rather than cancelling a healthy job.
+    /// </summary>
+    public virtual async Task renewal_returns_the_membership_sentinel_when_membership_is_not_established()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        // No StartAsync: coordination membership is not established, so TryGetStampOwner returns false.
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var id = Guid.NewGuid();
+        var lease = DateTime.UtcNow.AddMinutes(5);
+        await fixture.SeedTimeJobAsync(id, "Job", (int)JobStatus.InProgress, "node-a@1", ct, lockedUntil: lease);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+        // Negative sentinel (skip-the-tick), NOT 0 (lost) and NOT a renewal.
+        (await persistence.RenewTimeJobLease(id, ct))
+            .Should()
+            .BeNegative();
+
+        // The row is untouched: ownership and lease are exactly as seeded (no UPDATE ran).
+        var detail = await fixture.ReadTimeJobDetailAsync(id, ct);
+        detail.Status.Should().Be((int)JobStatus.InProgress);
+        detail.OwnerId.Should().Be("node-a@1");
+        detail.LockedUntil.Should().BeCloseTo(lease, TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
     /// #316/U3: a job stuck InProgress whose lease lapsed is reclaimed per OnNodeDeath, independent of node death.
     /// A healthy (future-lease) row is untouched, and a second pass is idempotent.
     /// </summary>

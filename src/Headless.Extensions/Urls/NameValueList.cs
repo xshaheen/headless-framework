@@ -1,8 +1,11 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Headless.Urls;
 
 /// <summary>
 /// Defines common methods for INameValueList and IReadOnlyNameValueList.
 /// </summary>
+[PublicAPI]
 public interface INameValueListBase<TValue>
 {
     /// <summary>
@@ -35,6 +38,7 @@ public interface INameValueListBase<TValue>
 /// <summary>
 /// Defines an ordered collection of Name/Value pairs where duplicate names are allowed but aren't typical.
 /// </summary>
+[PublicAPI]
 public interface INameValueList<TValue> : IList<(string Name, TValue Value)>, INameValueListBase<TValue>
 {
     /// <summary>
@@ -58,6 +62,7 @@ public interface INameValueList<TValue> : IList<(string Name, TValue Value)>, IN
 /// <summary>
 /// Defines a read-only ordered collection of Name/Value pairs where duplicate names are allowed but aren't typical.
 /// </summary>
+[PublicAPI]
 public interface IReadOnlyNameValueList<TValue>
     : IReadOnlyList<(string Name, TValue Value)>,
         INameValueListBase<TValue>;
@@ -66,6 +71,7 @@ public interface IReadOnlyNameValueList<TValue>
 /// An ordered collection of Name/Value pairs where duplicate names are allowed but aren't typical.
 /// Useful for things where a dictionary would work great if not for those pesky edge cases (headers, cookies, etc).
 /// </summary>
+[PublicAPI]
 public sealed class NameValueList<TValue>(bool caseSensitiveNames)
     : List<(string Name, TValue Value)>,
         INameValueList<TValue>,

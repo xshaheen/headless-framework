@@ -4,13 +4,10 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.InteropServices;
-using System.Text;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
-using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -93,8 +90,9 @@ public sealed class RedisCache(
 
     private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger, factoryLockProvider);
 
-    private volatile bool _supportsMsetEx;
-    private volatile bool _supportsMsetExChecked;
+    // #37: collapsed two volatile bool fields (_supportsMsetEx + _supportsMsetExChecked) into a single
+    // Lazy<bool> to make the check-and-set atomic, matching the _isClusterLazy pattern.
+    private readonly Lazy<bool> _supportsMsetExLazy = new(() => _DetectMsetexSupport(options.ConnectionMultiplexer));
     private readonly Lazy<bool> _isClusterLazy = new(() => _CheckIsCluster(options.ConnectionMultiplexer));
     private readonly IDatabase _database = options.ConnectionMultiplexer.GetDatabase();
 
@@ -268,9 +266,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await ((IFactoryCacheStore)this)
-            .UpsertEntryAsync(key, value, options, timeProvider, cancellationToken)
-            .ConfigureAwait(false);
+        await (this).UpsertEntryAsync(key, value, options, timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -421,24 +417,17 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
-        var expiresArg = expiresMs ?? RedisValue.EmptyString;
-
-        var result = await scriptsLoader
-            .EvaluateAsync(
-                _database,
+        // #18: thin delegation to shared numeric-script helper
+        var raw = await _RunNumericScriptAsync(
                 IncrementWithExpireScriptDefinition.Instance,
-                new
-                {
-                    key = (RedisKey)_GetKey(key),
-                    value = amount,
-                    expires = expiresArg,
-                },
+                key,
+                (RedisValue)amount,
+                expiration,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return double.Parse(result.ToString(), CultureInfo.InvariantCulture);
+        return double.Parse(raw.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> IncrementAsync(
@@ -458,24 +447,17 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
-        var expiresArg = expiresMs ?? RedisValue.EmptyString;
-
-        var result = await scriptsLoader
-            .EvaluateAsync(
-                _database,
+        // #18: thin delegation to shared numeric-script helper
+        var raw = await _RunNumericScriptAsync(
                 IncrementWithExpireScriptDefinition.Instance,
-                new
-                {
-                    key = (RedisKey)_GetKey(key),
-                    value = amount,
-                    expires = expiresArg,
-                },
+                key,
+                (RedisValue)amount,
+                expiration,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return long.Parse(result.ToString(), CultureInfo.InvariantCulture);
+        return long.Parse(raw.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<double> SetIfHigherAsync(
@@ -495,24 +477,17 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
-        var expiresArg = expiresMs ?? RedisValue.EmptyString;
-
-        var result = await scriptsLoader
-            .EvaluateAsync(
-                _database,
+        // #18: thin delegation to shared numeric-script helper
+        var raw = await _RunNumericScriptAsync(
                 SetIfHigherScriptDefinition.Instance,
-                new
-                {
-                    key = (RedisKey)_GetKey(key),
-                    value,
-                    expires = expiresArg,
-                },
+                key,
+                (RedisValue)value,
+                expiration,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return double.Parse(result.ToString()!, CultureInfo.InvariantCulture);
+        return double.Parse(raw.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> SetIfHigherAsync(
@@ -532,24 +507,17 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
-        var expiresArg = expiresMs ?? RedisValue.EmptyString;
-
-        var result = await scriptsLoader
-            .EvaluateAsync(
-                _database,
+        // #18: thin delegation to shared numeric-script helper
+        var raw = await _RunNumericScriptAsync(
                 SetIfHigherScriptDefinition.Instance,
-                new
-                {
-                    key = (RedisKey)_GetKey(key),
-                    value,
-                    expires = expiresArg,
-                },
+                key,
+                (RedisValue)value,
+                expiration,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return long.Parse(result.ToString()!, CultureInfo.InvariantCulture);
+        return long.Parse(raw.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<double> SetIfLowerAsync(
@@ -569,24 +537,17 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
-        var expiresArg = expiresMs ?? RedisValue.EmptyString;
-
-        var result = await scriptsLoader
-            .EvaluateAsync(
-                _database,
+        // #18: thin delegation to shared numeric-script helper
+        var raw = await _RunNumericScriptAsync(
                 SetIfLowerScriptDefinition.Instance,
-                new
-                {
-                    key = (RedisKey)_GetKey(key),
-                    value,
-                    expires = expiresArg,
-                },
+                key,
+                (RedisValue)value,
+                expiration,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return double.Parse(result.ToString(), CultureInfo.InvariantCulture);
+        return double.Parse(raw.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> SetIfLowerAsync(
@@ -606,24 +567,17 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
-        var expiresArg = expiresMs ?? RedisValue.EmptyString;
-
-        var result = await scriptsLoader
-            .EvaluateAsync(
-                _database,
+        // #18: thin delegation to shared numeric-script helper
+        var raw = await _RunNumericScriptAsync(
                 SetIfLowerScriptDefinition.Instance,
-                new
-                {
-                    key = (RedisKey)_GetKey(key),
-                    value,
-                    expires = expiresArg,
-                },
+                key,
+                (RedisValue)value,
+                expiration,
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        return long.Parse(result.ToString(), CultureInfo.InvariantCulture);
+        return long.Parse(raw.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> SetAddAsync<T>(
@@ -638,47 +592,46 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        key = _GetKey(key);
-
         if (expiration is { Ticks: <= 0 })
         {
             await SetRemoveAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
-        var expiresAt = expiration.HasValue
-            ? timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiration.Value)
-            : DateTime.MaxValue;
+        var now = timeProvider.GetUtcNow();
+        var expiresAt = expiration.HasValue ? now.UtcDateTime.SafeAdd(expiration.Value) : DateTime.MaxValue;
 
-        var redisValues = new List<SortedSetEntry>();
-        var expiresAtMilliseconds = expiresAt.ToUnixTimeMilliseconds();
+        var redisValues = new List<RedisValue>();
+        var expiresAtMilliseconds = expiration.HasValue
+            ? expiresAt.ToUnixTimeMilliseconds()
+            : RedisCacheEntryFrame.MaxUnixEpochMilliseconds;
 
         if (value is string stringValue)
         {
-            redisValues.Add(new SortedSetEntry(_ToRedisValue(stringValue), expiresAtMilliseconds));
+            redisValues.Add(_ToRedisValue(stringValue));
         }
         else
         {
-            redisValues.AddRange(
-                value.Where(v => v is not null).Select(v => new SortedSetEntry(_ToRedisValue(v), expiresAtMilliseconds))
-            );
+            redisValues.AddRange(value.Where(v => v is not null).Select(_ToRedisValue));
         }
-
-        await _RemoveExpiredListValuesAsync(key).ConfigureAwait(false);
 
         if (redisValues.Count is 0)
         {
             return 0;
         }
 
-        var added = await _database.SortedSetAddAsync(key, [.. redisValues]).ConfigureAwait(false);
+        var redisKey = _GetKey(key);
 
-        if (added > 0)
-        {
-            await _SetListExpirationAsync(key).ConfigureAwait(false);
-        }
-
-        return added;
+        return await _RunSetMutationScriptAsync(
+                redisKey,
+                redisKey,
+                [.. redisValues],
+                operation: "add",
+                expiresAtMilliseconds,
+                now.ToUnixTimeMilliseconds(),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -690,8 +643,9 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
-        return await _RedisValueToCacheValueAsync<T>(_GetKey(key), redisValue).ConfigureAwait(false);
+        var redisKey = _GetKey(key);
+        var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
+        return await _RedisValueToCacheValueAsync<T>(redisKey, redisValue).ConfigureAwait(false);
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
@@ -839,8 +793,33 @@ public sealed class RedisCache(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var result = new Dictionary<string, CacheValueWithExpiration<T>>(redisKeys.Count, StringComparer.Ordinal);
 
-        // First pass: decode value + expiration from the frame. Collect keys whose expiration requires a
-        // live TTL probe (sliding entries or non-framed legacy payloads).
+        // #10: Decode all frames up-front so we can batch-prefetch stale tag markers for all entries in ONE
+        // MGET before the processing loop — previously _ResolveNewestMarkerAsync issued one MGET per entry
+        // whose tags were stale, resulting in N sequential round-trips for N tagged entries.
+        var decodedFrames = new RedisCacheEntryFrame.DecodedFrame?[rawValues.Length];
+
+        for (var i = 0; i < rawValues.Length; i++)
+        {
+            if (rawValues[i].HasValue)
+            {
+                try
+                {
+                    decodedFrames[i] = RedisCacheEntryFrame.Decode(rawValues[i]);
+                }
+                catch (Exception e)
+                {
+                    _logger.LogDeserializationFailed(e, rawValues[i].Length(), typeof(T).FullName);
+                    throw;
+                }
+            }
+        }
+
+        // Collect all unique tags from non-expired framed entries and prefetch their markers in one MGET.
+        // After this call, _markerCache will contain fresh entries for every stale tag, so per-entry calls
+        // to _ResolveNewestMarkerAsync below will all hit the local cache without additional network I/O.
+        await _PrefetchTagMarkersAsync(decodedFrames, now).ConfigureAwait(false);
+
+        // First pass: resolve marker checks + collect keys requiring live TTL probes.
         List<(int Index, RedisKey RedisKey, T? Value)>? slidingOrLegacyHits = null;
 
         for (var i = 0; i < originalKeys.Count; i++)
@@ -854,7 +833,7 @@ public sealed class RedisCache(
 
             try
             {
-                var frame = RedisCacheEntryFrame.Decode(rawValue);
+                var frame = decodedFrames[i]!.Value;
 
                 if (frame.IsFramed)
                 {
@@ -864,6 +843,7 @@ public sealed class RedisCache(
                     }
 
                     // Family-2: a tag/clear-invalidated entry is a miss for direct mirror reads.
+                    // Tag markers are now warm in _markerCache; this call incurs no extra RTT.
                     var newestMarker = await _ResolveNewestMarkerAsync(frame.Tags).ConfigureAwait(false);
 
                     if (CacheTagInvalidation.IsInvalidated(frame.CreatedAt, newestMarker))
@@ -1094,7 +1074,9 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
+        // #11: cache prefixed key to avoid repeated _GetKey allocations (called up to 3x previously)
+        var prefixedKey = _GetKey(key);
+        var redisValue = await _database.StringGetAsync(prefixedKey, options.ReadMode).ConfigureAwait(false);
 
         if (!redisValue.HasValue)
         {
@@ -1107,7 +1089,7 @@ public sealed class RedisCache(
         {
             // Non-framed (legacy/raw) keys carry no logical metadata, so fall back to the server TTL. Only
             // legacy keys pay this second round trip; framed keys return below from the decoded frame.
-            return await _database.KeyTimeToLiveAsync(_GetKey(key)).ConfigureAwait(false);
+            return await _database.KeyTimeToLiveAsync(prefixedKey).ConfigureAwait(false);
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -1127,7 +1109,7 @@ public sealed class RedisCache(
 
         if (frame.SlidingExpiration.HasValue)
         {
-            return await _database.KeyTimeToLiveAsync(_GetKey(key)).ConfigureAwait(false);
+            return await _database.KeyTimeToLiveAsync(prefixedKey).ConfigureAwait(false);
         }
 
         if (_IsExpired(frame.LogicalExpiresAt, now))
@@ -1345,7 +1327,7 @@ public sealed class RedisCache(
         // stamp is cleared — a logically-expired entry must route the next caller through the factory, not eager
         // refresh. Last-writer-wins under a concurrent fresh write, consistent with the sliding re-arm RMW.
         var reStamped = RedisCacheEntryFrame.Encode(
-            (byte[])frame.ValueSegment.ToArray(),
+            frame.ValueSegment.ToArray(),
             frame.IsNull,
             logicalExpiresAt: now,
             physicalExpiresAt: frame.PhysicalExpiresAt,
@@ -1420,13 +1402,15 @@ public sealed class RedisCache(
 
         if (IsCluster)
         {
-            foreach (var batch in redisKeys.Chunk(_BatchSize))
-            {
-                var slotBuckets = _GroupBySlot(batch, static key => key);
+            // #36: group by hash slot ONCE before chunking to avoid re-allocating a Dictionary per chunk.
+            // Previously _GroupBySlot was called inside the Chunk loop: N/250 allocations for N keys.
+            var slotBuckets = _GroupBySlot(redisKeys, static key => key);
 
-                foreach (var (slot, bucket) in slotBuckets)
+            foreach (var (slot, bucket) in slotBuckets)
+            {
+                foreach (var batch in bucket.Chunk(_BatchSize))
                 {
-                    var hashSlotKeys = bucket.ToArray();
+                    var hashSlotKeys = batch;
 
                     try
                     {
@@ -1669,7 +1653,6 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        key = _GetKey(key);
         var redisValues = new List<RedisValue>();
 
         if (value is string stringValue)
@@ -1681,21 +1664,23 @@ public sealed class RedisCache(
             redisValues.AddRange(value.Where(v => v is not null).Select(_ToRedisValue));
         }
 
-        await _RemoveExpiredListValuesAsync(key).ConfigureAwait(false);
-
         if (redisValues.Count is 0)
         {
             return 0;
         }
 
-        var removed = await _database.SortedSetRemoveAsync(key, [.. redisValues]).ConfigureAwait(false);
+        var redisKey = _GetKey(key);
 
-        if (removed > 0)
-        {
-            await _SetListExpirationAsync(key).ConfigureAwait(false);
-        }
-
-        return removed;
+        return await _RunSetMutationScriptAsync(
+                redisKey,
+                redisKey,
+                [.. redisValues],
+                operation: "remove",
+                scoreMilliseconds: 0,
+                nowMilliseconds: timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public ValueTask FlushAsync(CancellationToken cancellationToken = default)
@@ -1719,6 +1704,35 @@ public sealed class RedisCache(
     private string _GetKey(string key)
     {
         return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, key);
+    }
+
+    /// <summary>
+    /// Shared body for the six numeric-script operations (Increment×2, SetIfHigher×2, SetIfLower×2).
+    /// Each public method handles its own argument validation and zero-expiration early-exit, then delegates
+    /// the common script-invocation pattern here. Pure C# extraction — no Redis semantic change. (#18)
+    /// </summary>
+    private Task<RedisResult> _RunNumericScriptAsync(
+        RedisScriptDefinition script,
+        string key,
+        RedisValue value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken
+    )
+    {
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+
+        return scriptsLoader.EvaluateAsync(
+            _database,
+            script,
+            new
+            {
+                key = (RedisKey)_GetKey(key),
+                value,
+                expires = expiresArg,
+            },
+            cancellationToken
+        );
     }
 
     private string _GetTagMarkerKey(string tag) => string.Concat(_keyPrefix, _TagMarkerNamespace, tag);
@@ -1878,6 +1892,59 @@ public sealed class RedisCache(
 
     private static long _ParseMarkerMs(RedisValue value) =>
         RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
+
+    /// <summary>
+    /// Pre-warms <see cref="_markerCache"/> for all unique stale tag markers referenced by the supplied decoded
+    /// frames in a single MGET — O(1) Redis round-trip regardless of how many entries share tags.
+    /// Called once before the processing loop in <see cref="GetAllWithExpirationAsync{T}"/> so that subsequent
+    /// per-entry <see cref="_ResolveNewestMarkerAsync"/> calls hit the local cache without extra network I/O. (#10)
+    /// </summary>
+    private async ValueTask _PrefetchTagMarkersAsync(RedisCacheEntryFrame.DecodedFrame?[] decodedFrames, DateTime now)
+    {
+        // Collect all unique stale tags across all non-expired framed entries.
+        HashSet<string>? staleTags = null;
+
+        for (var i = 0; i < decodedFrames.Length; i++)
+        {
+            var frame = decodedFrames[i];
+
+            if (frame is not { IsFramed: true } f || _IsExpired(f.PhysicalExpiresAt, now) || f.Tags is null)
+            {
+                continue;
+            }
+
+            foreach (var tag in f.Tags)
+            {
+                if (!_markerCache.TryGetValue(tag, out var cached) || !_MarkerIsFresh(cached.FetchedTicks))
+                {
+                    (staleTags ??= new HashSet<string>(StringComparer.Ordinal)).Add(tag);
+                }
+            }
+        }
+
+        if (staleTags is null)
+        {
+            return;
+        }
+
+        // Fetch all stale tag markers in one MGET and populate the local cache.
+        var staleList = new List<string>(staleTags);
+        var markerKeys = new RedisKey[staleList.Count];
+
+        for (var i = 0; i < staleList.Count; i++)
+        {
+            markerKeys[i] = _GetTagMarkerKey(staleList[i]);
+        }
+
+        var values = await _database.StringGetAsync(markerKeys, options.ReadMode).ConfigureAwait(false);
+        var fetchedTicks = _StopwatchTicks();
+
+        for (var i = 0; i < staleList.Count; i++)
+        {
+            var ms = _ParseMarkerMs(values[i]);
+            _markerCache[staleList[i]] = (ms, fetchedTicks);
+        }
+    }
 
     /// <summary>Encodes a value to its bare wire bytes (the value codec) without any envelope framing.</summary>
     /// <remarks>
@@ -2222,10 +2289,14 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _SetEntryCoreAsync(key, entry);
+        return _SetEntryCoreAsync(key, entry, cancellationToken);
     }
 
-    private async ValueTask<bool> _SetEntryCoreAsync<T>(string key, CacheStoreEntryWrite<T> entry)
+    private async ValueTask<bool> _SetEntryCoreAsync<T>(
+        string key,
+        CacheStoreEntryWrite<T> entry,
+        CancellationToken cancellationToken = default // #7: thread caller token through CAS path
+    )
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var expiresIn = (entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt).Subtract(
@@ -2299,7 +2370,7 @@ public sealed class RedisCache(
                     expectedValue,
                     keyTtlMs,
                 },
-                CancellationToken.None
+                cancellationToken // #7: was CancellationToken.None — now respects caller's token
             )
             .ConfigureAwait(false);
 
@@ -2311,9 +2382,9 @@ public sealed class RedisCache(
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
     {
-        const string Prefix = "b64:";
+        const string prefix = "b64:";
 
-        if (!stamp.StartsWith(Prefix, StringComparison.Ordinal))
+        if (!stamp.StartsWith(prefix, StringComparison.Ordinal))
         {
             value = RedisValue.Null;
             return false;
@@ -2321,7 +2392,7 @@ public sealed class RedisCache(
 
         try
         {
-            value = Convert.FromBase64String(stamp[Prefix.Length..]);
+            value = Convert.FromBase64String(stamp[prefix.Length..]);
             return true;
         }
         catch (FormatException)
@@ -2510,6 +2581,15 @@ public sealed class RedisCache(
         return _RearmSlidingTtlAsync(redisKey, slidingExpiration, physicalExpiresAt, now, frame.LogicalExpiresAt);
     }
 
+    // #9: Lua script for atomic TTL-check-and-conditional-PEXPIRE in a single Redis round-trip.
+    // KEYS[1]=key, ARGV[1]=rearmThresholdMs (long), ARGV[2]=newTtlMs (long).
+    // Returns 1 if PEXPIRE was issued, 0 if the key already had enough TTL or is persistent (PTTL=-1).
+    private const string _SlidingRearmLua = """
+        local ttl = redis.call('PTTL', KEYS[1])
+        if ttl < 0 or ttl > tonumber(ARGV[1]) then return 0 end
+        return redis.call('PEXPIRE', KEYS[1], tonumber(ARGV[2]))
+        """;
+
     private async ValueTask _RearmSlidingTtlAsync(
         RedisKey redisKey,
         TimeSpan slidingExpiration,
@@ -2537,18 +2617,15 @@ public sealed class RedisCache(
 
         try
         {
-            // The TTL probe is part of the best-effort re-arm: keep it inside the catch so a transient Redis
-            // error during the probe degrades to "skip the re-arm" instead of failing a value read that the
-            // caller has already satisfied.
-            var ttl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
-
-            if (ttl.HasValue && ttl.Value > rearmThreshold)
-            {
-                return;
-            }
-
+            // #9: single-RTT atomic TTL-check-and-conditional-PEXPIRE via inline Lua.
+            // Previously issued KeyTimeToLiveAsync then (conditionally) KeyExpireAsync — 2 sequential RTTs.
             var expiresIn = _Min(slidingExpiration, remainingToCap);
-            await _database.KeyExpireAsync(redisKey, expiresIn).ConfigureAwait(false);
+            var rearmThresholdMs = (long)rearmThreshold.TotalMilliseconds;
+            var newTtlMs = (long)expiresIn.TotalMilliseconds;
+
+            await _database
+                .ScriptEvaluateAsync(_SlidingRearmLua, [redisKey], [(RedisValue)rearmThresholdMs, (RedisValue)newTtlMs])
+                .ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -2601,7 +2678,7 @@ public sealed class RedisCache(
     {
         if (expiresIn.HasValue)
         {
-            if (_SupportsMsetexCommand())
+            if (_supportsMsetExLazy.Value) // #37: atomic Lazy<bool> replaces non-atomic two-volatile check
             {
                 var success = await _database
                     .StringSetAsync(pairs, When.Always, new Expiration(expiresIn.Value))
@@ -2625,16 +2702,13 @@ public sealed class RedisCache(
         return msetSuccess ? pairs.Length : 0;
     }
 
-    private bool _SupportsMsetexCommand()
+    // #37: extracted into a static factory so _supportsMsetExLazy captures no instance state.
+    // Lazy<bool> gives us thread-safe once-only initialization matching the _isClusterLazy pattern.
+    private static bool _DetectMsetexSupport(IConnectionMultiplexer connectionMultiplexer)
     {
-        if (_supportsMsetExChecked)
-        {
-            return _supportsMsetEx;
-        }
-
         // Redis 8.4 RC1 is internally versioned as 8.3.224
         var minVersion = new Version(8, 3, 224);
-        var endpoints = options.ConnectionMultiplexer.GetEndPoints();
+        var endpoints = connectionMultiplexer.GetEndPoints();
 
         if (endpoints.Length is 0)
         {
@@ -2645,7 +2719,7 @@ public sealed class RedisCache(
 
         foreach (var endpoint in endpoints)
         {
-            var server = options.ConnectionMultiplexer.GetServer(endpoint);
+            var server = connectionMultiplexer.GetServer(endpoint);
 
             if (server is { IsConnected: true, IsReplica: false })
             {
@@ -2653,21 +2727,12 @@ public sealed class RedisCache(
 
                 if (server.Version < minVersion)
                 {
-                    _supportsMsetEx = false;
-                    _supportsMsetExChecked = true;
                     return false;
                 }
             }
         }
 
-        if (foundConnectedPrimary)
-        {
-            _supportsMsetEx = true;
-            _supportsMsetExChecked = true;
-            return true;
-        }
-
-        return false;
+        return foundConnectedPrimary;
     }
 
     private TimeSpan? _NormalizeExpiration(TimeSpan? expiresIn)
@@ -2709,41 +2774,59 @@ public sealed class RedisCache(
         return expiresAt == DateTime.MaxValue ? null : expiresAt;
     }
 
-    private async Task _SetListExpirationAsync(string key)
+    private async ValueTask<long> _RunSetMutationScriptAsync(
+        RedisKey key,
+        string logKey,
+        RedisValue[] values,
+        string operation,
+        long scoreMilliseconds,
+        long nowMilliseconds,
+        CancellationToken cancellationToken
+    )
     {
-        var items = await _database
-            .SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var result = await SetAddWithExpireScriptDefinition
+            .EvaluateAsync(
+                _database,
+                key,
+                _GetSetMutationScriptValues(operation, scoreMilliseconds, nowMilliseconds, values)
+            )
             .ConfigureAwait(false);
 
-        if (items.Length is 0)
+        var valuesResult = (RedisResult[]?)result;
+
+        if (valuesResult is null || valuesResult.Length < 2)
         {
-            return;
+            throw new RedisServerException("Unexpected set mutation script result.");
         }
 
-        var highestExpirationInMs = (long)items.Single().Score;
+        var changed = (long)valuesResult[0];
+        var pruned = (long)valuesResult[1];
 
-        if (highestExpirationInMs >= RedisCacheEntryFrame.MaxUnixEpochMilliseconds)
+        if (pruned > 0)
         {
-            await _database.KeyPersistAsync(key).ConfigureAwait(false);
-            return;
+            _logger.LogExpiredValuesRemoved(pruned, logKey);
         }
 
-        var furthestExpirationUtc = DateTimeOffset.FromUnixTimeMilliseconds(highestExpirationInMs);
-        var expiresIn = furthestExpirationUtc - timeProvider.GetUtcNow();
-
-        await _database.KeyExpireAsync(key, expiresIn).ConfigureAwait(false);
+        return changed;
     }
 
-    private async Task _RemoveExpiredListValuesAsync(string key)
+    private static RedisValue[] _GetSetMutationScriptValues(
+        string operation,
+        long scoreMilliseconds,
+        long nowMilliseconds,
+        RedisValue[] values
+    )
     {
-        var expiredValues = await _database
-            .SortedSetRemoveRangeByScoreAsync(key, 0, timeProvider.GetUtcNow().ToUnixTimeMilliseconds())
-            .ConfigureAwait(false);
+        var scriptValues = new RedisValue[values.Length + 4];
+        scriptValues[0] = operation;
+        scriptValues[1] = scoreMilliseconds;
+        scriptValues[2] = nowMilliseconds;
+        scriptValues[3] = RedisCacheEntryFrame.MaxUnixEpochMilliseconds;
+        values.CopyTo(scriptValues, 4);
 
-        if (expiredValues > 0)
-        {
-            _logger.LogExpiredValuesRemoved(expiredValues, key);
-        }
+        return scriptValues;
     }
 
     private async Task<long> _DeleteKeysAsync(RedisKey[] keys, bool isCluster)

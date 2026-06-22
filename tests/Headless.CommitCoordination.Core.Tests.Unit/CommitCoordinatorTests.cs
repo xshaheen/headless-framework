@@ -286,7 +286,7 @@ public sealed class CommitCoordinatorTests
         coordinator.TryClaimTerminal(CommitOutcome.Committed, out var claim).Should().BeTrue();
 
         var act = async () =>
-            await CommitCoordinator._DrainThenAsync(claim, new EmptyServiceProvider(), afterDrain: null);
+            await CommitCoordinator.DrainThenAsync(claim, new EmptyServiceProvider(), afterDrain: null);
 
         (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Be("drain boom");
     }
@@ -299,7 +299,7 @@ public sealed class CommitCoordinatorTests
         coordinator.TryClaimTerminal(CommitOutcome.Committed, out var claim).Should().BeTrue();
 
         var act = async () =>
-            await CommitCoordinator._DrainThenAsync(
+            await CommitCoordinator.DrainThenAsync(
                 claim,
                 new EmptyServiceProvider(),
                 () => throw new InvalidOperationException("cleanup boom")
@@ -318,7 +318,7 @@ public sealed class CommitCoordinatorTests
         coordinator.TryClaimTerminal(CommitOutcome.Committed, out var claim).Should().BeTrue();
 
         var act = async () =>
-            await CommitCoordinator._DrainThenAsync(
+            await CommitCoordinator.DrainThenAsync(
                 claim,
                 new EmptyServiceProvider(),
                 () => throw new InvalidOperationException("cleanup boom")

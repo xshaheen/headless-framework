@@ -9,12 +9,19 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Api.Filters;
 
+/// <summary>
+/// Action filter that blocks access to an endpoint when the host environment matches
+/// <see cref="Environment"/>. When the environment matches, the endpoint returns a 404 Not Found
+/// problem-details response and the action is never invoked. All other environments pass through normally.
+/// </summary>
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class BlockInEnvironmentAttribute(string environment) : Attribute, IAsyncResourceFilter
 {
+    /// <summary>Gets the environment name in which the endpoint is blocked.</summary>
     public string Environment { get; } = environment;
 
+    /// <inheritdoc/>
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
     {
         var services = context.HttpContext.RequestServices;

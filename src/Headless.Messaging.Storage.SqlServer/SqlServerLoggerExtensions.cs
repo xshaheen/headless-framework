@@ -13,4 +13,25 @@ internal static partial class SqlServerLoggerExtensions
         Message = "Ensuring messaging tables are created"
     )]
     public static partial void LogEnsuringTablesCreated(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "PoisonMessageSkipped",
+        Level = LogLevel.Warning,
+        Message = "Skipping un-deserializable message {StorageId} during retry pickup from {Table}; the batch proceeds and the row stays leased until its lease expires."
+    )]
+    public static partial void LogPoisonMessageSkipped(
+        this ILogger logger,
+        Guid storageId,
+        string table,
+        Exception exception
+    );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SchedulerBatchFetched",
+        Level = LogLevel.Debug,
+        Message = "Fetched {Count} delayed/queued message(s) for scheduling from {Table}."
+    )]
+    public static partial void LogSchedulerBatchFetched(this ILogger logger, int count, string table);
 }

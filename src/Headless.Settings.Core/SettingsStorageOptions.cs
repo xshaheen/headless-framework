@@ -2,13 +2,17 @@
 
 namespace Headless.Settings;
 
+/// <summary>Configuration options for the settings storage layer (schema name, table names, and startup behaviour).</summary>
 [PublicAPI]
 public sealed class SettingsStorageOptions
 {
+    /// <summary>Gets or sets the database schema that contains the settings tables. Defaults to <c>settings</c>.</summary>
     public string Schema { get; set; } = "settings";
 
+    /// <summary>Gets or sets the name of the table that stores setting values. Defaults to <c>SettingValues</c>.</summary>
     public string SettingValuesTableName { get; set; } = "SettingValues";
 
+    /// <summary>Gets or sets the name of the table that stores setting definitions. Defaults to <c>SettingDefinitions</c>.</summary>
     public string SettingDefinitionsTableName { get; set; } = "SettingDefinitions";
 
     /// <summary>

@@ -13,6 +13,7 @@ using Microsoft.Extensions.Options;
 #pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Blobs.Aws;
 
+/// <summary>Extension methods to register the AWS S3 blob storage provider.</summary>
 [PublicAPI]
 public static class SetupAwsS3
 {

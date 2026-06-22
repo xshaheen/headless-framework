@@ -72,7 +72,7 @@ packages: Blobs.Abstractions, Blobs.Core, Blobs.Aws, Blobs.Azure, Blobs.Cloudfla
   - [Installation](#installation-6)
   - [Quick Start](#quick-start-5)
   - [Configuration](#configuration-6)
-    - [appsettings.json](#appsettingsjson-5)
+    - [appsettings.json](#appsettingsjson-4)
   - [Behavior Notes](#behavior-notes)
   - [Dependencies](#dependencies-6)
   - [Side Effects](#side-effects-6)
@@ -288,6 +288,8 @@ dotnet add package Headless.Blobs.Azure
 
 ## Quick Start
 
+Register a `BlobServiceClient` in DI first, then call `AddHeadlessBlobs`:
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
@@ -311,8 +313,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 {
   "Azure": {
     "Storage": {
-      "ConnectionString": "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
-      "ContainerName": "my-container"
+      "ConnectionString": "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
     }
   }
 }
@@ -329,7 +330,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 ## Side Effects
 
-- Registers `BlobServiceClient` via Azure client factory
+- Requires a `BlobServiceClient` to be registered in DI before this call
 - Registers `IBlobStorage` as singleton
 - Registers `IBlobNamingNormalizer` as singleton
 ---
@@ -372,7 +373,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ```json
 {
   "FileSystemBlob": {
-    "BasePath": "/var/data/blobs"
+    "BaseDirectoryPath": "/var/data/blobs"
   }
 }
 ```
@@ -380,7 +381,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ### Options
 
 ```csharp
-options.BasePath = "/path/to/storage";
+options.BaseDirectoryPath = "/path/to/storage";
 ```
 
 ## Dependencies
@@ -427,22 +428,14 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
 ## Configuration
 
-### appsettings.json
-
-```json
-{
-  "RedisBlob": {
-    "ConnectionString": "localhost:6379,password=secret",
-    "KeyPrefix": "blobs:"
-  }
-}
-```
+`RedisBlobStorageOptions` requires an `IConnectionMultiplexer` instance; the options cannot be bound from `appsettings.json` directly. Wire up the multiplexer in code as shown in Quick Start.
 
 ### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `MaxBlobSizeBytes` | 10 MB | Maximum blob size. Set to 0 to disable. |
+| `ConnectionMultiplexer` | *(required)* | `IConnectionMultiplexer` instance for Redis. |
+| `MaxBlobSizeBytes` | 10 MB | Maximum blob size in bytes. Set to 0 to disable. |
 | `MaxBulkParallelism` | 10 | Maximum parallelism for bulk operations. |
 
 ## Usage Notes
@@ -459,7 +452,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ## Side Effects
 
 - Registers `IBlobStorage` as singleton
-- Requires Redis connection (uses existing `IConnectionMultiplexer` if registered)
+- Requires an `IConnectionMultiplexer` to be provided via `RedisBlobStorageOptions.ConnectionMultiplexer`
 ---
 # Headless.Blobs.SshNet
 
@@ -500,26 +493,22 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ```json
 {
   "SftpBlob": {
-    "Host": "sftp.example.com",
-    "Port": 22,
-    "Username": "user",
-    "Password": "secret",
-    "BasePath": "/home/user/uploads"
+    "ConnectionString": "sftp://user:password@sftp.example.com:22/home/user/uploads"
   }
 }
 ```
 
 ### SSH Key Authentication
 
-```json
-{
-  "SftpBlob": {
-    "Host": "sftp.example.com",
-    "Username": "user",
-    "PrivateKeyPath": "/path/to/key",
-    "PrivateKeyPassphrase": "optional-passphrase"
-  }
-}
+```csharp
+// Key-based authentication: provide PrivateKey as a Stream
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseSsh(options =>
+    {
+        options.ConnectionString = "sftp://user@sftp.example.com:22/home/user/uploads";
+        options.PrivateKey = File.OpenRead("/path/to/key");
+        options.PrivateKeyPassPhrase = "optional-passphrase"; // nullable
+    }));
 ```
 
 ## Dependencies

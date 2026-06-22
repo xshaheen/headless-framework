@@ -75,7 +75,10 @@ public sealed class IoTests
         var action = () => Argument.CanSeek(stream);
 
         // then
-        action.Should().ThrowExactly<ArgumentException>();
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("Stream \"stream\" (NonSeekableStream) doesn't support seeking. (Parameter 'stream')");
     }
 
     // FileExists tests

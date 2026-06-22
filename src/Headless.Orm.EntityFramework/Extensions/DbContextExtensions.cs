@@ -9,6 +9,13 @@ namespace Microsoft.EntityFrameworkCore;
 [PublicAPI]
 public static class DbContextExtensions
 {
+    /// <summary>
+    /// Resolves <typeparamref name="T"/> from the EF Core internal service provider, returning
+    /// <see langword="null"/> when the service is not registered instead of throwing.
+    /// </summary>
+    /// <typeparam name="T">The service type to resolve.</typeparam>
+    /// <param name="infrastructure">An EF Core infrastructure accessor (typically a <c>DbContext</c>).</param>
+    /// <returns>The resolved service, or <see langword="null"/> if not registered.</returns>
     public static T? GetServiceOrDefault<T>(this IInfrastructure<IServiceProvider> infrastructure)
         where T : class
     {

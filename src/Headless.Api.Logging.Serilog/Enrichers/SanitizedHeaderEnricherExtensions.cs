@@ -14,14 +14,21 @@ public static class SanitizedHeaderEnricherExtensions
     private const int _DefaultMaxLength = 512;
 
     /// <summary>
-    /// Enrich log events with a sanitized HTTP request header value.
-    /// Sanitization removes newlines, ANSI escape sequences, and truncates to max length.
+    /// Enriches log events with a sanitized HTTP request header value. Sanitization removes
+    /// newline characters (log-injection prevention), ANSI escape sequences, and other control
+    /// characters, then truncates the result to <paramref name="maxLength"/> characters.
     /// </summary>
     /// <param name="enrichmentConfiguration">Logger enrichment configuration.</param>
-    /// <param name="headerName">The name of the HTTP header to enrich with.</param>
-    /// <param name="propertyName">Optional property name. Defaults to header name without dashes.</param>
-    /// <param name="maxLength">Maximum length of the sanitized value. Default is 512.</param>
-    /// <returns>Configuration object allowing method chaining.</returns>
+    /// <param name="headerName">The name of the HTTP request header to read.</param>
+    /// <param name="propertyName">
+    /// The Serilog property name. Defaults to <paramref name="headerName"/> with dashes removed
+    /// (e.g. <c>"User-Agent"</c> becomes <c>"UserAgent"</c>).
+    /// </param>
+    /// <param name="maxLength">Maximum character length of the sanitized value. Default is 512.</param>
+    /// <returns><paramref name="enrichmentConfiguration"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="enrichmentConfiguration"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="headerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="headerName"/> is empty or whitespace.</exception>
     public static LoggerConfiguration WithSanitizedRequestHeader(
         this LoggerEnrichmentConfiguration enrichmentConfiguration,
         string headerName,
@@ -39,14 +46,22 @@ public static class SanitizedHeaderEnricherExtensions
     }
 
     /// <summary>
-    /// Enrich log events with a sanitized HTTP request header value using a service provider.
+    /// Enriches log events with a sanitized HTTP request header value, resolving
+    /// <c>IHttpContextAccessor</c> from <paramref name="serviceProvider"/> instead of creating a
+    /// new instance. Prefer this overload when the application's DI container already manages the accessor.
     /// </summary>
     /// <param name="enrichmentConfiguration">Logger enrichment configuration.</param>
-    /// <param name="serviceProvider">Service provider to resolve IHttpContextAccessor.</param>
-    /// <param name="headerName">The name of the HTTP header to enrich with.</param>
-    /// <param name="propertyName">Optional property name. Defaults to header name without dashes.</param>
-    /// <param name="maxLength">Maximum length of the sanitized value. Default is 512.</param>
-    /// <returns>Configuration object allowing method chaining.</returns>
+    /// <param name="serviceProvider">Service provider used to resolve <c>IHttpContextAccessor</c>.</param>
+    /// <param name="headerName">The name of the HTTP request header to read.</param>
+    /// <param name="propertyName">
+    /// The Serilog property name. Defaults to <paramref name="headerName"/> with dashes removed.
+    /// </param>
+    /// <param name="maxLength">Maximum character length of the sanitized value. Default is 512.</param>
+    /// <returns><paramref name="enrichmentConfiguration"/> for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="enrichmentConfiguration"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="serviceProvider"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="headerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="headerName"/> is empty or whitespace.</exception>
     public static LoggerConfiguration WithSanitizedRequestHeader(
         this LoggerEnrichmentConfiguration enrichmentConfiguration,
         IServiceProvider serviceProvider,

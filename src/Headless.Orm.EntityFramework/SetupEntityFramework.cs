@@ -17,11 +17,27 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework;
 
+/// <summary>
+/// Extension members for registering Headless EF Core contexts and infrastructure services
+/// on <see cref="IServiceCollection"/>.
+/// </summary>
 [PublicAPI]
 public static class SetupEntityFramework
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers <typeparamref name="TDbContext"/> together with the full Headless EF Core service set
+        /// (save pipeline, audit, multi-tenancy, domain-event bus bridge, compiled-query cache).
+        /// </summary>
+        /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
+        /// <param name="optionsAction">
+        /// Optional EF Core options callback. Do not pool the context here — see the
+        /// <see cref="HeadlessDbContext"/> remarks.
+        /// </param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>. Defaults to <see cref="ServiceLifetime.Scoped"/>.</param>
+        /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>. Defaults to <see cref="ServiceLifetime.Scoped"/>.</param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<DbContextOptionsBuilder>? optionsAction,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
@@ -37,6 +53,19 @@ public static class SetupEntityFramework
             );
         }
 
+        /// <summary>
+        /// Registers <typeparamref name="TDbContext"/> together with the full Headless EF Core service set,
+        /// with an additional callback to configure the Headless save pipeline options.
+        /// </summary>
+        /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
+        /// <param name="optionsAction">Optional EF Core options callback.</param>
+        /// <param name="configureHeadlessOptions">
+        /// Optional callback to customize <see cref="HeadlessDbContextOptions"/> (for example to add or
+        /// replace save-entry processors).
+        /// </param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>.</param>
+        /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>.</param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions,
@@ -53,6 +82,15 @@ public static class SetupEntityFramework
             );
         }
 
+        /// <summary>
+        /// Registers <typeparamref name="TDbContext"/> together with the full Headless EF Core service set.
+        /// The options callback receives the ambient <see cref="IServiceProvider"/> for provider-specific wiring.
+        /// </summary>
+        /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
+        /// <param name="optionsAction">Optional EF Core options callback that receives the scoped service provider.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>.</param>
+        /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>.</param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
@@ -68,6 +106,19 @@ public static class SetupEntityFramework
             );
         }
 
+        /// <summary>
+        /// Registers <typeparamref name="TDbContext"/> together with the full Headless EF Core service set.
+        /// The options callback receives the ambient <see cref="IServiceProvider"/> and an additional
+        /// callback allows customizing the Headless save pipeline options.
+        /// </summary>
+        /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
+        /// <param name="optionsAction">Optional EF Core options callback that receives the scoped service provider.</param>
+        /// <param name="configureHeadlessOptions">
+        /// Optional callback to customize <see cref="HeadlessDbContextOptions"/>.
+        /// </param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>.</param>
+        /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>.</param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions,
@@ -125,11 +176,27 @@ public static class SetupEntityFramework
             return services;
         }
 
+        /// <summary>
+        /// Registers the Headless EF Core infrastructure services (save pipeline, audit, multi-tenancy,
+        /// compiled-query cache, clock, GUID generator) without registering a specific
+        /// <see cref="HeadlessDbContext"/> subclass. Use when you need the core services but register the
+        /// DbContext separately.
+        /// </summary>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContextServices()
         {
             return services.AddHeadlessDbContextServices(configureOptions: null);
         }
 
+        /// <summary>
+        /// Registers the Headless EF Core infrastructure services with a callback to customize the
+        /// save-pipeline options.
+        /// </summary>
+        /// <param name="configureOptions">
+        /// Optional callback to configure <see cref="HeadlessDbContextOptions"/> before the services are
+        /// registered (for example to add custom save-entry processors).
+        /// </param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContextServices(
             Action<HeadlessDbContextOptions>? configureOptions
         )
@@ -166,6 +233,13 @@ public static class SetupEntityFramework
             return new HeadlessDbContextBuilder(services);
         }
 
+        /// <summary>
+        /// Enables the EF Core tenant write guard, which rejects cross-tenant mutations and mutations that
+        /// lack an ambient tenant context. Also implicitly calls
+        /// <c>AddHeadlessDbContextServices()</c> when needed.
+        /// </summary>
+        /// <param name="configure">Optional callback to adjust <see cref="TenantWriteGuardOptions"/>.</param>
+        /// <returns>The service collection.</returns>
         public IServiceCollection AddHeadlessTenantWriteGuard(Action<TenantWriteGuardOptions>? configure = null)
         {
             return services._AddHeadlessTenantWriteGuardCore(optionsBuilder =>
@@ -177,6 +251,13 @@ public static class SetupEntityFramework
             });
         }
 
+        /// <summary>
+        /// Enables the EF Core tenant write guard, binding <see cref="TenantWriteGuardOptions"/> from the
+        /// supplied configuration section.
+        /// </summary>
+        /// <param name="configuration">Configuration section to bind to <see cref="TenantWriteGuardOptions"/>.</param>
+        /// <returns>The service collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddHeadlessTenantWriteGuard(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -184,6 +265,16 @@ public static class SetupEntityFramework
             return services._AddHeadlessTenantWriteGuardCore(optionsBuilder => optionsBuilder.Bind(configuration));
         }
 
+        /// <summary>
+        /// Enables the EF Core tenant write guard, with a factory callback that receives the
+        /// <see cref="IServiceProvider"/> for resolving options dependencies.
+        /// </summary>
+        /// <param name="configure">
+        /// Callback receiving <see cref="TenantWriteGuardOptions"/> and the scoped
+        /// <see cref="IServiceProvider"/>.
+        /// </param>
+        /// <returns>The service collection.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddHeadlessTenantWriteGuard(
             Action<TenantWriteGuardOptions, IServiceProvider> configure
         )

@@ -2885,6 +2885,220 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         observedKey.Should().Be(key);
     }
 
+    // #21 — _ObserveDiscardedSuccess: a factory that ignores its hard-timeout CancellationToken and completes
+    // successfully AFTER the hard-timeout window fires. The coordinator must return the stale/miss result at
+    // hard-timeout and must NOT write the discarded value to the store. EventId 16 must fire on the logger.
+    [Fact]
+    public async Task should_discard_late_factory_success_after_hard_timeout_and_log_event_id_16()
+    {
+        // given — stale entry as fail-safe reserve so the coordinator returns stale (not throws)
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Gate the factory: it ignores cancellation and only completes when we signal it
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(isFailSafeEnabled: true, factoryHardTimeout: TimeSpan.FromSeconds(1));
+
+        async ValueTask<string?> IgnoresCancellationFactory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            // Deliberately ignore the cancellation token — factory keeps running past hard timeout
+            return await factoryGate.Task.ConfigureAwait(false);
+        }
+
+        // when — advance past hard timeout, coordinator returns stale
+        var resultTask = coordinator
+            .GetOrAddAsync(_store, key, IgnoresCancellationFactory, options, AbortToken)
+            .AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // hard timeout fires
+        var result = await resultTask;
+
+        // then — stale is returned
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        // The coordinator may restamp the throttle window on hard-timeout with fail-safe (1 write allowed);
+        // the important invariant is that the discarded factory's value is never written.
+        var writesAtTimeout = _store.SetEntryCalls;
+
+        // now let the factory complete successfully (it ignored cancellation)
+        factoryGate.SetResult("discarded-fresh");
+        // poll briefly for the ContinueWith continuation to run (OnlyOnRanToCompletion on TaskScheduler.Default)
+        var observed = false;
+        for (var attempt = 0; attempt < 200 && !observed; attempt++)
+        {
+            observed = logger
+                .ReceivedCalls()
+                .Any(call =>
+                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    && call.GetArguments()[1] is EventId { Id: 16, Name: "CacheFactoryDiscardedSuccess" }
+                );
+
+            if (!observed)
+            {
+                await Task.Delay(25, AbortToken);
+            }
+        }
+
+        // EventId 16 must fire (DiscardedSuccess observer)
+        observed
+            .Should()
+            .BeTrue("LogCacheFactoryDiscardedSuccess (EventId 16) must fire when the abandoned factory later resolves");
+        // No additional write must have occurred after the factory's discarded success — the discard path
+        // must not call SetEntryAsync. Any writes before this point are the coordinator's own restamp.
+        _store
+            .SetEntryCalls.Should()
+            .Be(writesAtTimeout, "the discarded factory result must never be written to the store");
+        // The store's value for this key must NOT be "discarded-fresh"
+        _store
+            .GetEntry(key)!
+            .Value.Should()
+            .NotBe("discarded-fresh", "discarded factory result must never be written to the store");
+    }
+
+    // #30 — _TryRestampStaleWithCeilingAsync ceiling-fires-before-restamp-write-completes branch.
+    // The restamp store write is gated behind a TaskCompletionSource; BackgroundFactoryCeiling is set shorter
+    // than the gate, so the ceiling fires first. Assert: coordinator returns control, the restamp is cancelled,
+    // and the stale entry's physical TTL is unchanged in the underlying store.
+    //
+    // NOTE: This test uses TimeProvider.System (real time) with a short ceiling (100ms) so the ceiling task
+    // is registered and fires by real time, avoiding FakeTimeProvider ordering races. The gated restamp write
+    // blocks indefinitely until the ceiling cancels it.
+    [Fact]
+    public async Task should_cancel_restamp_when_ceiling_fires_before_restamp_write_completes()
+    {
+        // given — stale entry; use a separate real-time store so FakeTimeProvider ordering is not an issue
+        var key = Faker.Random.AlphaNumeric(8);
+        var realStore = new FakeFactoryCacheStore();
+        var now = TimeProvider.System.GetUtcNow().UtcDateTime;
+        var stalePhysicalExpiry = now.AddMinutes(5);
+
+        // restampGate blocks the store write indefinitely so the ceiling can win the race
+        var restampGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gatedStore = new _GatedRestampStore(realStore, restampGate.Task);
+        realStore.SetEntry(key, "stale", now.AddSeconds(-1), stalePhysicalExpiry);
+
+        // Use TimeProvider.System so Task.Delay fires by wall time (avoids FakeTimeProvider advance races).
+        // Disposed manually after backgroundFinished to avoid CA2025 (task completes while Dispose is in flight).
+        var coordinator = new FactoryCacheCoordinator(
+            TimeProvider.System,
+            NullLogger<FactoryCacheCoordinator>.Instance
+        );
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // ceiling = 150ms (real time); factory soft-times out at 50ms and then fails in background
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(10),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+            FactorySoftTimeout = TimeSpan.FromMilliseconds(50),
+            FactoryHardTimeout = TimeSpan.FromSeconds(10),
+            BackgroundFactoryCeiling = TimeSpan.FromMilliseconds(150),
+            LockTimeout = Timeout.InfiniteTimeSpan,
+        };
+
+        // Factory waits for its gate, then fails — background completion follows the failure path
+        // (not the ceiling-abandoned path) which calls _TryRestampStaleWithCeilingAsync
+        async ValueTask<string?> FailingFactory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("background factory failed");
+        }
+
+        // when — soft timeout → stale returned, background completion starts
+        var first = coordinator.GetOrAddAsync(gatedStore, key, FailingFactory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        // Wait for soft timeout to fire by real time (50ms ceiling)
+        var staleResult = await first;
+        staleResult.IsStale.Should().BeTrue();
+
+        // Release the factory gate so it fails → background catches the exception, calls _TryRestampStaleWithCeilingAsync.
+        // The restamp write blocks on restampGate indefinitely.
+        // The 150ms ceiling inside _TryRestampStaleWithCeilingAsync will fire by real time and cancel the restamp.
+        factoryGate.SetException(new InvalidOperationException("background factory failed"));
+
+        // Wait for the background operation to fully finish (ceiling cancels restamp → background unwinds)
+        await backgroundFinished.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        coordinator.Dispose(); // dispose after background task completes to avoid CA2025
+
+        // then — restamp was attempted but the ceiling cancelled it before the gate opened
+        gatedStore.RestampAttempts.Should().Be(1, "restamp was attempted once");
+        var storeEntry = realStore.GetEntry(key);
+        storeEntry.Should().NotBeNull();
+        // The restamp write was cancelled before mutating the store; physical TTL must be unchanged
+        storeEntry!
+            .PhysicalExpiresAt.Should()
+            .Be(stalePhysicalExpiry, "ceiling must cancel the restamp before it can mutate the store's physical TTL");
+    }
+
+    // Wraps FakeFactoryCacheStore and delays SetEntryAsync (restamp writes) behind a Task gate so the
+    // ceiling-fires-before-restamp branch in _TryRestampStaleWithCeilingAsync can be exercised.
+    // RestampStarted fires when the restamp write begins (before the gate blocks), so the test can advance
+    // the fake clock AFTER the restamp task is in-flight but BEFORE the ceiling Task.Delay is created.
+    // Note: Task.Delay for the second ceiling is created by _TryRestampStaleWithCeilingAsync AFTER
+    // restampTask starts, so we yield after RestampStarted to let that registration happen.
+    private sealed class _GatedRestampStore(FakeFactoryCacheStore inner, Task gate) : IFactoryCacheStore
+    {
+        private readonly TaskCompletionSource _restampStartedTcs = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public int RestampAttempts { get; private set; }
+
+        /// <summary>Completes when a restamp write has started (entered the gate-wait).</summary>
+        public Task RestampStarted => _restampStartedTcs.Task;
+
+        public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
+            inner.TryGetEntryAsync<T>(key, cancellationToken);
+
+        public ValueTask<bool> SetEntryAsync<T>(
+            string key,
+            in CacheStoreEntryWrite<T> entry,
+            CancellationToken cancellationToken
+        )
+        {
+            // Copy the 'in' struct before entering the async state machine (async methods cannot have 'in' params).
+            var entryCopy = entry;
+            return _SetEntryAsyncCore(key, entryCopy, cancellationToken);
+        }
+
+        private async ValueTask<bool> _SetEntryAsyncCore<T>(
+            string key,
+            CacheStoreEntryWrite<T> entry,
+            CancellationToken cancellationToken
+        )
+        {
+            if (entry.IsRestamp)
+            {
+                RestampAttempts++;
+                _restampStartedTcs.TrySetResult(); // signal that the restamp is in-flight
+                // Block until the ceiling cancels us via cancellationToken (or gate is released)
+                await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return await inner.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+        }
+
+        public ValueTask TryRearmSlidingAsync(
+            string key,
+            TimeSpan slidingExpiration,
+            DateTime physicalExpiresAt,
+            DateTime now,
+            CancellationToken cancellationToken
+        ) => inner.TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken);
+    }
+
     // Models an actor that bypasses the coordinator (e.g. a direct RemoveAsync on the provider) while a factory
     // is in flight. Kept here (not on the fake) because only these interleaving tests need it.
     private static void _RemoveEntryDirectly(FakeFactoryCacheStore store, string key) => store.RemoveEntry(key);

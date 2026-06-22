@@ -36,12 +36,12 @@ public static partial class EnumerableExtensions
     }
 
     /// <summary>
-    /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="IList{T}" />.
+    /// Converts an <see cref="IEnumerable{T}" /> to a <see cref="List{T}" />.
     /// </summary>
     /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
-    /// Either <paramref name="source"/> if it can be cast to <see cref="IList{T}"/>; or a new IList&lt;T&gt; created from <c>source</c>.
+    /// Either <paramref name="source"/> if it can be cast to <see cref="List{T}"/>; or a new List&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
@@ -51,7 +51,7 @@ public static partial class EnumerableExtensions
     }
 
     /// <summary>
-    /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="List{T}" />.
+    /// Converts an <see cref="IEnumerable{T}" /> to a <see cref="List{T}" />.
     /// </summary>
     /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
@@ -142,6 +142,14 @@ public static partial class EnumerableExtensions
         return source as IReadOnlyList<T> ?? new ReadOnlyCollection<T>(source.AsList());
     }
 
+    /// <summary>
+    /// Returns the source as a concrete <see cref="Dictionary{TKey,TValue}"/>: the same instance if it already is one;
+    /// otherwise, a new dictionary copied from its pairs.
+    /// </summary>
+    /// <typeparam name="TKey">The type of keys in the dictionary.</typeparam>
+    /// <typeparam name="TValue">The type of values in the dictionary.</typeparam>
+    /// <param name="dict">The dictionary to convert.</param>
+    /// <returns>Either <paramref name="dict"/> if it is a <see cref="Dictionary{TKey,TValue}"/>; or a new dictionary copied from it.</returns>
     public static Dictionary<TKey, TValue> AsDictionary<TKey, TValue>(this IDictionary<TKey, TValue> dict)
         where TKey : notnull
     {
@@ -267,6 +275,14 @@ public static partial class EnumerableExtensions
         return condition ? source.Where(predicate) : source;
     }
 
+    /// <summary>
+    /// Determines whether the sequence contains two or more elements that share the same projected key.
+    /// </summary>
+    /// <typeparam name="T">The type of the elements of <paramref name="list"/>.</typeparam>
+    /// <typeparam name="TProp">The type of the key projected by <paramref name="selector"/>.</typeparam>
+    /// <param name="list">The sequence to inspect.</param>
+    /// <param name="selector">A function that projects each element to the key used for duplicate detection.</param>
+    /// <returns><see langword="true"/> if any projected key occurs more than once; otherwise, <see langword="false"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static bool HasDuplicates<T, TProp>(this IEnumerable<T> list, Func<T, TProp> selector)
@@ -276,6 +292,11 @@ public static partial class EnumerableExtensions
         return list.Any(t => !d.Add(selector(t)));
     }
 
+    /// <summary>Awaits a task that produces a sequence and materializes the result into a <see cref="List{T}"/>.</summary>
+    /// <typeparam name="T">The type of the elements of the sequence.</typeparam>
+    /// <param name="task">The task that produces the sequence.</param>
+    /// <returns>A <see cref="List{T}"/> containing the elements produced by <paramref name="task"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="task"/> is <see langword="null"/>.</exception>
     public static async Task<List<T>> ToListAsync<T>(this Task<IEnumerable<T>> task)
     {
 #pragma warning disable VSTHRD003
@@ -285,6 +306,11 @@ public static partial class EnumerableExtensions
         return result.ToList();
     }
 
+    /// <summary>Awaits a task that produces a sequence and materializes the result into an array.</summary>
+    /// <typeparam name="T">The type of the elements of the sequence.</typeparam>
+    /// <param name="task">The task that produces the sequence.</param>
+    /// <returns>An array containing the elements produced by <paramref name="task"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="task"/> is <see langword="null"/>.</exception>
     public static async Task<T[]> ToArrayAsync<T>(this Task<IEnumerable<T>> task)
     {
 #pragma warning disable VSTHRD003
@@ -295,8 +321,13 @@ public static partial class EnumerableExtensions
     }
 
     /// <summary>
-    /// Ensure the enumerable instance is enumerated only once.
+    /// Wraps the sequence so it can be enumerated only once. Enumerating the returned sequence a second time throws
+    /// an <see cref="InvalidOperationException"/>.
     /// </summary>
+    /// <typeparam name="T">The type of the elements of <paramref name="enumerable"/>.</typeparam>
+    /// <param name="enumerable">The sequence to guard against multiple enumeration.</param>
+    /// <returns>A sequence that permits only a single enumeration of <paramref name="enumerable"/>.</returns>
+    /// <exception cref="InvalidOperationException">Thrown during a second enumeration of the returned sequence.</exception>
     public static IEnumerable<T> AsEnumerableOnce<T>(this IEnumerable<T> enumerable)
     {
         return new EnumerableOnce<T>(enumerable);

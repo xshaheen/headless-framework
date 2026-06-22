@@ -450,6 +450,7 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `C
 - `Headless.Coordination.Core.Database`
 - `Headless.Hosting`
 - `Microsoft.Data.SqlClient`
+- `Polly.Core`
 
 ### Side Effects
 

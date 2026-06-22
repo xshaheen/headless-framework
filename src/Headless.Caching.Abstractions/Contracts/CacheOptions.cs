@@ -3,10 +3,18 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
+/// <summary>
+/// Base options shared by every cache provider (for example <c>InMemoryCacheOptions</c>, <c>RedisCacheOptions</c>,
+/// <c>HybridCacheOptions</c>). Provider-specific options extend this class.
+/// </summary>
 [PublicAPI]
 public class CacheOptions
 {
-    /// <summary>Cache key prefix.</summary>
+    /// <summary>
+    /// Gets or sets the string prepended to every cache key before it is sent to the backing store,
+    /// providing a simple namespace to isolate this instance's keys from other consumers of the same store.
+    /// Defaults to an empty string (no prefix).
+    /// </summary>
     public string KeyPrefix { get; set; } = "";
 
     /// <summary>
