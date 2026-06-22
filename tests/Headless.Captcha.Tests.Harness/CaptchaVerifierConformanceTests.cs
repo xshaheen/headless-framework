@@ -87,6 +87,19 @@ public abstract class CaptchaVerifierConformanceTests<TFixture> : TestBase, ICla
     }
 
     [Fact]
+    public async Task malformed_json_body_on_http_200_throws_invalid_operation()
+    {
+        // A non-JSON HTTP 200 (e.g. an HTML error page) must surface as InvalidOperationException, not a raw
+        // JsonException — callers only need to handle the documented exception contract.
+        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, "<html>oops</html>");
+        var verifier = _fixture.CreateVerifier(stub);
+
+        var act = async () => await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public async Task remote_ip_included_only_when_supplied()
     {
         var withIpStub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);

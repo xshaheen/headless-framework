@@ -22,6 +22,15 @@ public sealed class ReCaptchaV3ScriptTagHelper(
         /*
             <script src="https://www.google.com/recaptcha/api.js?render=_reCAPTCHA_site_key"></script>
         */
+
+        if (string.IsNullOrWhiteSpace(_options.SiteKey))
+        {
+            throw new InvalidOperationException(
+                "reCAPTCHA v3 tag helpers render the default provider; register it with "
+                    + "AddHeadlessCaptcha(b => b.UseReCaptchaV3(...)) — a named-only registration is not rendered by tag helpers."
+            );
+        }
+
         output.TagName = "";
 
         var src =

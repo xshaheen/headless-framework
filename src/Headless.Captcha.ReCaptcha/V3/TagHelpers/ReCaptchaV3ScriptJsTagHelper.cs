@@ -48,6 +48,14 @@ public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCapt
         });
          */
 
+        if (string.IsNullOrWhiteSpace(_options.SiteKey))
+        {
+            throw new InvalidOperationException(
+                "reCAPTCHA v3 tag helpers render the default provider; register it with "
+                    + "AddHeadlessCaptcha(b => b.UseReCaptchaV3(...)) — a named-only registration is not rendered by tag helpers."
+            );
+        }
+
         // Validate Callback is a valid JS identifier to prevent XSS
         if (!string.IsNullOrWhiteSpace(Callback) && !_ValidJsIdentifierRegex().IsMatch(Callback))
         {
@@ -60,7 +68,8 @@ public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCapt
         output.TagName = "script";
         output.TagMode = TagMode.StartTagAndEndTag;
 
-        // Encode Action to prevent XSS injection
+        // Encode SiteKey and Action to prevent XSS injection
+        var encodedSiteKey = JavaScriptEncoder.Default.Encode(_options.SiteKey);
         var encodedAction = string.IsNullOrWhiteSpace(Action) ? null : JavaScriptEncoder.Default.Encode(Action);
 
         var callbackParam = Execute ? "" : "callback";
@@ -69,7 +78,7 @@ public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCapt
         var autoExecute = Execute ? "grecaptcha.reExecute()" : "";
 
         var script =
-            $"grecaptcha.ready(function(){{ grecaptcha.reExecute = function({callbackParam}){{grecaptcha.execute('{_options.SiteKey}'{actionOption}){thenClause}}};{autoExecute}}});";
+            $"grecaptcha.ready(function(){{ grecaptcha.reExecute = function({callbackParam}){{grecaptcha.execute('{encodedSiteKey}'{actionOption}){thenClause}}};{autoExecute}}});";
 
         output.Content.SetHtmlContent(script);
     }

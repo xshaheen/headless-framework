@@ -9,8 +9,12 @@ namespace Headless.Captcha;
 /// only by resolving <see cref="IReCaptchaV3Verifier"/>; the base <see cref="ICaptchaVerifier"/> view is pass/fail.
 /// </summary>
 [PublicAPI]
-public sealed class ReCaptchaV3VerifyResult : CaptchaVerifyResult
+public sealed class ReCaptchaV3VerifyResult : CaptchaVerifyResult, IReCaptchaVerifyResult
 {
-    /// <summary>The score for this request (0.0 – 1.0), when the verification succeeded.</summary>
-    public float? Score { get; init; }
+    /// <summary>
+    /// The score for this request (0.0 – 1.0). On a successful verify Google always returns a score; on failure
+    /// the field is absent in the wire response and defaults to <c>0f</c> here (pass/fail is authoritative via
+    /// <see cref="CaptchaVerifyResult.Success"/>).
+    /// </summary>
+    public float Score { get; init; }
 }

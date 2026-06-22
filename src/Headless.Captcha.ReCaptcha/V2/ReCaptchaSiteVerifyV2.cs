@@ -65,13 +65,22 @@ internal sealed class ReCaptchaSiteVerifyV2(
             .Content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var wire = await JsonSerializer
-            .DeserializeAsync(
-                responseStream,
-                ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV2Response,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        ReCaptchaSiteVerifyV2Response? wire;
+
+        try
+        {
+            wire = await JsonSerializer
+                .DeserializeAsync(
+                    responseStream,
+                    ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV2Response,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Failed to deserialize reCAPTCHA siteverify response.", ex);
+        }
 
         if (wire is null)
         {
@@ -83,7 +92,7 @@ internal sealed class ReCaptchaSiteVerifyV2(
             logger?.LogReCaptchaFailure(wire);
         }
 
-        return new CaptchaVerifyResult
+        return new ReCaptchaV2VerifyResult
         {
             Success = wire.Success,
             ChallengeTimestamp = wire.ChallengeTimeStamp,

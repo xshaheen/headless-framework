@@ -31,6 +31,15 @@ internal sealed class TurnstileSiteVerify(
         return _VerifyAsync(request.Response, request.RemoteIp, request.IdempotencyKey, cancellationToken);
     }
 
+    /// <summary>
+    /// Verifies a CAPTCHA token through the shared <see cref="ICaptchaVerifier"/> contract, returning the common
+    /// pass/fail result.
+    /// </summary>
+    /// <remarks>
+    /// When <paramref name="request"/> is a <see cref="TurnstileVerifyRequest"/> the idempotency key is forwarded
+    /// to Cloudflare's siteverify endpoint. A plain <see cref="CaptchaVerifyRequest"/> carries no idempotency key,
+    /// so the field is silently omitted — no error is raised.
+    /// </remarks>
     async Task<CaptchaVerifyResult> ICaptchaVerifier.VerifyAsync(
         CaptchaVerifyRequest request,
         CancellationToken cancellationToken
@@ -89,13 +98,22 @@ internal sealed class TurnstileSiteVerify(
             .Content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var wire = await JsonSerializer
-            .DeserializeAsync(
-                responseStream,
-                TurnstileJsonSerializerContext.Default.TurnstileSiteVerifyResponse,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        TurnstileSiteVerifyResponse? wire;
+
+        try
+        {
+            wire = await JsonSerializer
+                .DeserializeAsync(
+                    responseStream,
+                    TurnstileJsonSerializerContext.Default.TurnstileSiteVerifyResponse,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Failed to deserialize Turnstile siteverify response.", ex);
+        }
 
         if (wire is null)
         {

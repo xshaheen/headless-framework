@@ -310,7 +310,8 @@ public static class SetupReCaptcha
                         client.BaseAddress = new Uri(options.VerifyBaseUrl);
                     }
                 )
-                .AddStandardResilienceHandler();
+                // reCAPTCHA tokens are single-use — disable retry on POST to avoid replaying them.
+                .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
             services.AddKeyedSingleton<IReCaptchaV3Verifier>(
                 name,
@@ -353,7 +354,8 @@ public static class SetupReCaptcha
                         client.BaseAddress = new Uri(options.VerifyBaseUrl);
                     }
                 )
-                .AddStandardResilienceHandler();
+                // reCAPTCHA tokens are single-use — disable retry on POST to avoid replaying them.
+                .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
             services.AddKeyedSingleton<ICaptchaVerifier>(
                 name,

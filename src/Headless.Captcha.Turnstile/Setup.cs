@@ -180,7 +180,8 @@ public static class SetupTurnstile
                         client.BaseAddress = new Uri(options.VerifyBaseUrl);
                     }
                 )
-                .AddStandardResilienceHandler();
+                // Turnstile tokens are single-use — disable retry on POST to avoid replaying them.
+                .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 
             services.AddKeyedSingleton<ITurnstileVerifier>(
                 name,

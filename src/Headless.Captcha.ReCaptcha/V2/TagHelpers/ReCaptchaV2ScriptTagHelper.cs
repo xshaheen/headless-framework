@@ -40,10 +40,12 @@ public sealed class ReCaptchaV2ScriptTagHelper(
 
         var src = $"{baseUrl}/recaptcha/api.js?hl={langCode}{onloadParam}{renderParam}";
 
-        var scriptAsync = ScriptAsync ? "async" : "";
-        var scriptDefer = ScriptDefer ? "defer" : "";
+        var attrs = string.Join(
+            " ",
+            new[] { ScriptAsync ? "async" : "", ScriptDefer ? "defer" : "", $"src=\"{src}\"" }.Where(a => a.Length > 0)
+        );
 
-        output.Content.SetHtmlContent($"<script {scriptAsync} {scriptDefer} src=\"{src}\"></script>");
+        output.Content.SetHtmlContent($"<script {attrs}></script>");
 
         if (HideBadge)
         {

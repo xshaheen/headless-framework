@@ -37,6 +37,14 @@ public sealed class ReCaptchaV2DivTagHelper(IOptionsSnapshot<ReCaptchaOptions> o
         </div>
         */
 
+        if (string.IsNullOrWhiteSpace(_options.SiteKey))
+        {
+            throw new InvalidOperationException(
+                "reCAPTCHA v2 tag helpers render the default provider; register it with "
+                    + "AddHeadlessCaptcha(b => b.UseReCaptchaV2(...)) — a named-only registration is not rendered by tag helpers."
+            );
+        }
+
         output.TagName = "div";
         output.TagMode = TagMode.StartTagAndEndTag;
 

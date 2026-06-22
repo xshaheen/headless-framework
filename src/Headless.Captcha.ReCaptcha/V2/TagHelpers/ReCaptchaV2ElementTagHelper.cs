@@ -57,6 +57,14 @@ public sealed class ReCaptchaV2ElementTagHelper(IOptionsSnapshot<ReCaptchaOption
         </div>
         */
 
+        if (string.IsNullOrWhiteSpace(_options.SiteKey))
+        {
+            throw new InvalidOperationException(
+                "reCAPTCHA v2 tag helpers render the default provider; register it with "
+                    + "AddHeadlessCaptcha(b => b.UseReCaptchaV2(...)) — a named-only registration is not rendered by tag helpers."
+            );
+        }
+
         output.Attributes.Add("class", "g-recaptcha");
         output.Attributes.Add("data-sitekey", _options.SiteKey);
 

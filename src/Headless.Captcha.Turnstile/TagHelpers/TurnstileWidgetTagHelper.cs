@@ -47,6 +47,14 @@ public sealed class TurnstileWidgetTagHelper(
         </div>
         */
 
+        if (string.IsNullOrWhiteSpace(_options.SiteKey))
+        {
+            throw new InvalidOperationException(
+                "Turnstile tag helpers render the default provider; register it with "
+                    + "AddHeadlessCaptcha(b => b.UseTurnstile(...)) — a named-only registration is not rendered by tag helpers."
+            );
+        }
+
         output.TagName = "div";
         output.TagMode = TagMode.StartTagAndEndTag;
 

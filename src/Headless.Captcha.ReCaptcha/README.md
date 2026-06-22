@@ -10,9 +10,10 @@ Provides server-side verification for both Google reCAPTCHA v2 and v3 against Go
 
 - `setup.UseReCaptchaV2(...)` / `setup.UseReCaptchaV3(...)` - builder entry points (default and name-taking variants), each with the overload trio: `Action<ReCaptchaOptions>`, `Action<ReCaptchaOptions, IServiceProvider>`, and `IConfiguration`. Bind config section `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3`.
 - `IReCaptchaV3Verifier : ICaptchaVerifier` - adds `new Task<ReCaptchaV3VerifyResult> VerifyAsync(CaptchaVerifyRequest, CancellationToken)`. Inject it to read the score; the base `ICaptchaVerifier` view returns pass/fail only.
-- reCAPTCHA v2 implements the plain `ICaptchaVerifier` (no provider-only data) — resolve it as `ICaptchaVerifier` (default unkeyed, or keyed by name / `CaptchaConstants.ReCaptchaV2Provider`).
-- `ReCaptchaV3VerifyResult : CaptchaVerifyResult` - adds `float? Score` (0.0–1.0 when the verification succeeded).
-- `ReCaptchaError` enum and `ReCaptchaResultExtensions.ToReCaptchaErrors(this CaptchaVerifyResult)` - parse the raw `ErrorCodes` into the typed reCAPTCHA error enum.
+- reCAPTCHA v2 implements the plain `ICaptchaVerifier` (no provider-only data beyond the base contract) — resolve it as `ICaptchaVerifier` (default unkeyed, or keyed by name / `CaptchaConstants.ReCaptchaV2Provider`). Returns a `ReCaptchaV2VerifyResult` at runtime.
+- `ReCaptchaV3VerifyResult : CaptchaVerifyResult, IReCaptchaVerifyResult` - adds `float Score` (0.0–1.0; defaults to `0f` on failure when no score is present in the wire response).
+- `ReCaptchaV2VerifyResult : CaptchaVerifyResult, IReCaptchaVerifyResult` - concrete v2 result type; carries no extra fields beyond the base contract.
+- `ReCaptchaError` enum and `ReCaptchaResultExtensions.ToReCaptchaErrors(this IReCaptchaVerifyResult)` - parse the raw `ErrorCodes` into the typed reCAPTCHA error enum. Scoped to `IReCaptchaVerifyResult` so it does not appear on unrelated types such as `TurnstileVerifyResult`.
 - `IReCaptchaLanguageCodeProvider` (+ `CultureInfoReCaptchaLanguageCodeProvider`) - supplies the `?hl=` language code appended to the script URL; defaults to the current UI culture.
 - Tag helpers: `<recaptcha-script-v2>`, `<recaptcha-div-v2>`, the `recaptcha-v2-*` attribute element helper, `<recaptcha-script-v3>`, and `<recaptcha-script-v3-js>`. They read the default provider's options under the matching canonical key.
 

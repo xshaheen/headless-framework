@@ -63,5 +63,30 @@ public sealed class TurnstileSiteVerifyTests : IDisposable
         result.ChallengeTimestamp.Should().BeNull();
     }
 
+    // -- ICaptchaVerifier explicit-impl idempotency key forwarding (Finding #7) ---------------------------------
+
+    [Fact]
+    public async Task explicit_base_verifier_forwards_idempotency_key_when_request_is_turnstile_type()
+    {
+        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        ICaptchaVerifier verifier = _fixture.CreateVerifier(stub);
+
+        await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token", IdempotencyKey = "x" });
+
+        stub.LastRequestBody.Should().Contain("idempotency_key");
+        stub.LastRequestBody.Should().Contain("x");
+    }
+
+    [Fact]
+    public async Task explicit_base_verifier_omits_idempotency_key_when_request_is_plain_base_type()
+    {
+        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        ICaptchaVerifier verifier = _fixture.CreateVerifier(stub);
+
+        await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" });
+
+        stub.LastRequestBody.Should().NotContain("idempotency_key");
+    }
+
     public void Dispose() => _fixture.Dispose();
 }

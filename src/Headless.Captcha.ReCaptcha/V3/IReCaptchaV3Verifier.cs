@@ -84,13 +84,22 @@ internal sealed class ReCaptchaSiteVerifyV3(
             .Content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var wire = await JsonSerializer
-            .DeserializeAsync(
-                responseStream,
-                ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV3Response,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        ReCaptchaSiteVerifyV3Response? wire;
+
+        try
+        {
+            wire = await JsonSerializer
+                .DeserializeAsync(
+                    responseStream,
+                    ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV3Response,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Failed to deserialize reCAPTCHA siteverify response.", ex);
+        }
 
         if (wire is null)
         {
@@ -109,7 +118,7 @@ internal sealed class ReCaptchaSiteVerifyV3(
             HostName = wire.HostName,
             Action = wire.Action,
             ErrorCodes = wire.ErrorCodes,
-            Score = wire.Score,
+            Score = wire.Score ?? 0f,
         };
     }
 

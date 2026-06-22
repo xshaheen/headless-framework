@@ -22,8 +22,7 @@ public sealed class TurnstileOptions
     public required string SiteSecret { get; set; }
 }
 
-[PublicAPI]
-public sealed class TurnstileOptionsValidator : AbstractValidator<TurnstileOptions>
+internal sealed class TurnstileOptionsValidator : AbstractValidator<TurnstileOptions>
 {
     public TurnstileOptionsValidator()
     {
