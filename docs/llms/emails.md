@@ -351,7 +351,7 @@ Credentials are resolved from the standard AWS credential chain (environment var
 ## Side Effects
 
 - Default: registers `IAmazonSimpleEmailServiceV2` via `TryAddAWSService` (no-op if already registered) and `IEmailSender` as an unkeyed singleton
-- Named (`AddNamed(name, i => i.UseAwsSes(…))`): registers a keyed `IAmazonSimpleEmailServiceV2` (built from the supplied or ambient `AWSOptions` via `AWSOptions.CreateServiceClient<T>` — `TryAddAWSService` has no keyed overload) and a keyed `IEmailSender`, both under the instance name
+- Named (`AddNamed(name, i => i.UseAwsSes(…))`): registers a keyed `IAmazonSimpleEmailServiceV2` (built from the supplied options, the ambient `AWSOptions` in DI, or `IConfiguration` (`AWS:*` via `GetAWSOptions()`) — mirroring `TryAddAWSService(null)` — using `AWSOptions.CreateServiceClient<T>`, since `TryAddAWSService` has no keyed overload) and a keyed `IEmailSender`, both under the instance name
 
 ---
 

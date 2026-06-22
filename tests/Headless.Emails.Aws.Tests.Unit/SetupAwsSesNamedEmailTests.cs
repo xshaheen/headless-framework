@@ -7,6 +7,7 @@ using Amazon.SimpleEmailV2;
 using Headless.Emails;
 using Headless.Emails.Aws;
 using Headless.Emails.Dev;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -83,5 +84,45 @@ public sealed class SetupAwsSesNamedEmailTests
 
         // then
         provider.GetRequiredKeyedService<IEmailSender>("ses").Should().BeOfType<AwsSesEmailSender>();
+    }
+
+    [Fact]
+    public void should_build_named_ses_client_from_iconfiguration_when_options_null()
+    {
+        // given - AWS:Region in IConfiguration and credentials via the standard chain (env), with no ambient
+        // AWSOptions. The named null-options path must read IConfiguration just like TryAddAWSService(null).
+        var previousKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
+        var previousSecret = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY");
+        Environment.SetEnvironmentVariable("AWS_ACCESS_KEY_ID", "fake-access-key");
+        Environment.SetEnvironmentVariable("AWS_SECRET_ACCESS_KEY", "fake-secret-key");
+
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["AWS:Region"] = "eu-west-1" }
+                )
+                .Build();
+            services.AddSingleton<IConfiguration>(configuration);
+
+            // when
+            services.AddHeadlessEmails(setup =>
+            {
+                setup.UseNoop();
+                setup.AddNamed("ses", instance => instance.UseAwsSes(null));
+            });
+            using var provider = services.BuildServiceProvider();
+
+            // then - the keyed client picks up AWS:Region from IConfiguration.
+            var client = provider.GetRequiredKeyedService<IAmazonSimpleEmailServiceV2>("ses");
+            client.Config.RegionEndpoint.SystemName.Should().Be("eu-west-1");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AWS_ACCESS_KEY_ID", previousKey);
+            Environment.SetEnvironmentVariable("AWS_SECRET_ACCESS_KEY", previousSecret);
+        }
     }
 }

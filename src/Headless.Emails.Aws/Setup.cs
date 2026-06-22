@@ -2,6 +2,7 @@
 
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.SimpleEmailV2;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -94,14 +95,22 @@ public static class SetupAwsSes
             return;
         }
 
-        // Capture `name` (keyed DI does not cascade the key) and resolve the client from the supplied options,
-        // falling back to the ambient AWSOptions in DI, then to defaults — mirroring TryAddAWSService(null).
+        // Capture `name` (keyed DI does not cascade the key) and resolve the client through the same lookup
+        // order TryAddAWSService(null) uses: supplied options, then the ambient AWSOptions in DI, then
+        // IConfiguration (AWS:* via GetAWSOptions), then defaults. Skipping the IConfiguration step would make
+        // a null-options named sender diverge from the null-options default sender.
         services.AddKeyedSingleton<IAmazonSimpleEmailServiceV2>(
             name,
             (sp, _) =>
-                (
-                    options ?? sp.GetService<AWSOptions>() ?? new AWSOptions()
-                ).CreateServiceClient<IAmazonSimpleEmailServiceV2>()
+            {
+                var resolved =
+                    options
+                    ?? sp.GetService<AWSOptions>()
+                    ?? sp.GetService<IConfiguration>()?.GetAWSOptions()
+                    ?? new AWSOptions();
+
+                return resolved.CreateServiceClient<IAmazonSimpleEmailServiceV2>();
+            }
         );
 
         services.AddKeyedSingleton<IEmailSender>(
