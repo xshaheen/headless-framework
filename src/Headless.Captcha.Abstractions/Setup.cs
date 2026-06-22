@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -48,8 +49,15 @@ public static class SetupCaptcha
             );
         }
 
+        // Snapshot the finalized name set so ICaptchaProvider can enumerate registered names and produce an
+        // actionable error listing them. Covers a default's canonical key plus every named instance.
+        var registeredNames = setup.RegisteredNames.ToFrozenSet(StringComparer.Ordinal);
+
         services.AddSingleton(new CaptchaProviderRegistration());
-        services.TryAddSingleton<ICaptchaProvider>(provider => new KeyedServiceCaptchaProvider(provider));
+        services.TryAddSingleton<ICaptchaProvider>(provider => new KeyedServiceCaptchaProvider(
+            provider,
+            registeredNames
+        ));
 
         foreach (var action in setup.DefaultRegistrations)
         {

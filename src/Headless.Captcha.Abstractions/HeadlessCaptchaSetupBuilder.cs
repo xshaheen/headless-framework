@@ -11,6 +11,12 @@ namespace Headless.Captcha;
 /// (unlimited, unique names, keyed-only). Nothing is registered into <see cref="Services"/> until the setup gates
 /// pass; contributions are queued only, so a throwing setup leaves the collection unchanged.
 /// </summary>
+/// <remarks>
+/// <see cref="RegisterDefault"/> and <see cref="RegisterNamed"/> are the public extension points provider packages
+/// (in this repository and out-of-repo) build their <c>Use{Provider}</c> members on top of. They are part of the
+/// package's NuGet contract — call them from a provider's <c>Use*</c> extension; consumers configure providers
+/// through those <c>Use*</c> members rather than calling these directly.
+/// </remarks>
 [PublicAPI]
 public sealed class HeadlessCaptchaSetupBuilder
 {
@@ -28,15 +34,38 @@ public sealed class HeadlessCaptchaSetupBuilder
     internal List<Action<IServiceCollection>> NamedRegistrations { get; } = [];
 
     /// <summary>
+    /// The names under which verifiers will be resolvable through <see cref="ICaptchaProvider"/> — every named
+    /// instance plus a default provider's canonical key.
+    /// </summary>
+    internal IReadOnlyCollection<string> RegisteredNames => _names;
+
+    /// <summary>
     /// Queues the default (unkeyed) verifier contribution, which is also aliased under <paramref name="providerKey"/>.
     /// At most one default may be registered; register additional providers with the name-taking overloads.
     /// </summary>
+    /// <remarks>
+    /// A public extension point for provider packages. <paramref name="providerKey"/> must be a framework-reserved
+    /// key (under the <c>Headless.Captcha:</c> namespace, see <see cref="CaptchaConstants.IsReservedProviderKey"/>)
+    /// so the default's canonical alias cannot collide with a consumer-owned keyed service.
+    /// </remarks>
     /// <param name="providerKey">The provider's canonical key (one of the <see cref="CaptchaConstants"/> values).</param>
     /// <param name="action">The provider's deferred service registration action.</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="providerKey"/> is not a reserved framework key.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when a default provider is already registered, or the key is taken.</exception>
     public void RegisterDefault(string providerKey, Action<IServiceCollection> action)
     {
         Argument.IsNotNullOrWhiteSpace(providerKey);
         Argument.IsNotNull(action);
+
+        if (!CaptchaConstants.IsReservedProviderKey(providerKey))
+        {
+            throw new ArgumentException(
+                $"The default captcha provider key '{providerKey}' must be a framework-reserved key (under the "
+                    + "'Headless.Captcha:' namespace) so the default's canonical alias cannot collide with a "
+                    + "consumer-owned keyed service. Use one of the CaptchaConstants values.",
+                nameof(providerKey)
+            );
+        }
 
         if (DefaultRegistrations.Count > 0)
         {

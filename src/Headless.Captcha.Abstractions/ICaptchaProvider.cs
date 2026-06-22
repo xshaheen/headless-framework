@@ -11,6 +11,15 @@ namespace Headless.Captcha;
 [PublicAPI]
 public interface ICaptchaProvider
 {
+    /// <summary>
+    /// Gets the names under which verifiers are registered — every named instance plus a default provider's canonical
+    /// key (the <c>Headless.Captcha:</c> constants on <see cref="CaptchaConstants"/>). Use this to validate an
+    /// externally supplied provider name (header, config, database row) before resolving it, rather than probing
+    /// <see cref="GetVerifier"/> and catching, or reconstructing the set from <see cref="CaptchaConstants"/> (which
+    /// omits consumer-chosen names).
+    /// </summary>
+    IReadOnlySet<string> RegisteredNames { get; }
+
     /// <summary>Gets the verifier registered under <paramref name="name"/>.</summary>
     /// <param name="name">The provider name (or a default provider's canonical key).</param>
     /// <returns>The resolved verifier.</returns>

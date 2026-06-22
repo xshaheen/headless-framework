@@ -60,6 +60,33 @@ public sealed class TurnstileSetupTests
     }
 
     [Fact]
+    public void registered_names_includes_default_key_and_named_instances()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder
+                .UseTurnstile(options =>
+                {
+                    options.SiteKey = "tk";
+                    options.SiteSecret = "ts";
+                })
+                .UseReCaptchaV3(
+                    "recaptcha",
+                    options =>
+                    {
+                        options.SiteKey = "rk";
+                        options.SiteSecret = "rs";
+                    }
+                )
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var provider = serviceProvider.GetRequiredService<ICaptchaProvider>();
+
+        provider.RegisteredNames.Should().BeEquivalentTo([CaptchaConstants.TurnstileProvider, "recaptcha"]);
+    }
+
+    [Fact]
     public void missing_site_secret_fails_options_validation()
     {
         var services = new ServiceCollection();
@@ -98,6 +125,9 @@ public sealed class TurnstileSetupTests
 
         var act = () => provider.GetVerifier("nonexistent");
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*nonexistent*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*nonexistent*")
+            .WithMessage($"*{CaptchaConstants.TurnstileProvider}*");
     }
 }
