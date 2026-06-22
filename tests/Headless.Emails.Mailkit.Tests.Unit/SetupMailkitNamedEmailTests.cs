@@ -89,6 +89,36 @@ public sealed class SetupMailkitNamedEmailTests
     }
 
     [Fact]
+    public void should_resolve_named_mailkit_sender_from_delegate_overload()
+    {
+        // given - the Action<MailkitSmtpOptions> overload (settable options); previously uncompilable.
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessEmails(setup =>
+        {
+            setup.UseNoop();
+            setup.AddNamed(
+                "smtp",
+                instance =>
+                    instance.UseMailkit(o =>
+                    {
+                        o.Server = "smtp.example.com";
+                        o.Port = 2525;
+                    })
+            );
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredKeyedService<IEmailSender>("smtp").Should().BeOfType<MailkitEmailSender>();
+        var monitor = provider.GetRequiredService<IOptionsMonitor<MailkitSmtpOptions>>();
+        monitor.Get("smtp").Server.Should().Be("smtp.example.com");
+        monitor.Get("smtp").Port.Should().Be(2525);
+    }
+
+    [Fact]
     public void should_resolve_named_mailkit_sender_alongside_default_noop()
     {
         // given
