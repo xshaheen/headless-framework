@@ -415,7 +415,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Conditional registration
 builder.Services.AddIf(
     builder.Environment.IsDevelopment(),
-    s => s.AddDevEmailSender("emails.txt")
+    s => s.AddHeadlessEmails(setup => setup.UseDevelopment("emails.txt"))
 );
 
 // Options with FluentValidation

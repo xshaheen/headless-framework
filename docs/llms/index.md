@@ -104,7 +104,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching with fail-safe, refresh, tagging, and distributed factory locks.
 - [commit-coordination.md](commit-coordination.md) — Post-commit and rollback callback coordination for outbox, jobs, cache, and events.
 - [coordination.md](coordination.md) — Node membership, liveness, lifecycle events, and provider-backed fail-stop fencing.
-- [emails.md](emails.md) — Email sending (AWS SES, MailKit SMTP, dev no-op).
+- [emails.md](emails.md) — Email sending (Azure Communication Services, AWS SES, MailKit SMTP, dev no-op).
 - [features.md](features.md) — Feature flags with caching, value providers, EF Core storage.
 - [identity.md](identity.md) — ASP.NET Core Identity with EF Core integration.
 - [imaging.md](imaging.md) — ImageSharp-based resizing and compression.
@@ -201,8 +201,9 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Email
 - `Headless.Emails.Abstractions` — Email sending interface.
-- `Headless.Emails.Core` — MimeKit-based core utilities.
+- `Headless.Emails.Core` — Setup builder + MimeKit-based core utilities.
 - `Headless.Emails.Aws` — AWS SES v2.
+- `Headless.Emails.Azure` — Azure Communication Services Email.
 - `Headless.Emails.Mailkit` — SMTP via MailKit.
 - `Headless.Emails.Dev` — Dev no-op (use in local/dev).
 
