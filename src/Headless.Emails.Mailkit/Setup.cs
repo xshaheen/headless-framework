@@ -10,8 +10,8 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 namespace Headless.Emails.Mailkit;
 
 /// <summary>
-/// Extension members on <see cref="HeadlessEmailsSetupBuilder"/> for selecting MailKit/SMTP as the
-/// email provider.
+/// Extension members for selecting MailKit/SMTP as a Headless email provider — the default (unkeyed) sender
+/// on <see cref="HeadlessEmailsSetupBuilder"/> or a named sender on <see cref="HeadlessEmailInstanceBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupMailkit
@@ -19,8 +19,8 @@ public static class SetupMailkit
     extension(HeadlessEmailsSetupBuilder setup)
     {
         /// <summary>
-        /// Selects MailKit/SMTP as the email provider, binding <see cref="MailkitSmtpOptions"/> from the
-        /// supplied configuration section.
+        /// Selects MailKit/SMTP as the default email provider, binding <see cref="MailkitSmtpOptions"/> from
+        /// the supplied configuration section.
         /// </summary>
         /// <param name="config">The configuration section that maps to <see cref="MailkitSmtpOptions"/> properties.</param>
         /// <returns>The same builder for chaining.</returns>
@@ -29,14 +29,16 @@ public static class SetupMailkit
         {
             Argument.IsNotNull(config);
 
-            setup.RegisterExtension(new MailkitEmailOptionsExtension(config));
+            setup.RegisterDefaultProvider(services =>
+                _AddMailkit(services, s => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(config))
+            );
 
             return setup;
         }
 
         /// <summary>
-        /// Selects MailKit/SMTP as the email provider, configuring <see cref="MailkitSmtpOptions"/> via a
-        /// setup delegate.
+        /// Selects MailKit/SMTP as the default email provider, configuring <see cref="MailkitSmtpOptions"/> via
+        /// a setup delegate.
         /// </summary>
         /// <param name="configure">Delegate that populates the options.</param>
         /// <returns>The same builder for chaining.</returns>
@@ -45,14 +47,16 @@ public static class SetupMailkit
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new MailkitEmailOptionsExtension(configure));
+            setup.RegisterDefaultProvider(services =>
+                _AddMailkit(services, s => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure))
+            );
 
             return setup;
         }
 
         /// <summary>
-        /// Selects MailKit/SMTP as the email provider, configuring <see cref="MailkitSmtpOptions"/> via a
-        /// setup delegate that also receives the <see cref="IServiceProvider"/>.
+        /// Selects MailKit/SMTP as the default email provider, configuring <see cref="MailkitSmtpOptions"/> via
+        /// a setup delegate that also receives the <see cref="IServiceProvider"/>.
         /// </summary>
         /// <param name="configure">Delegate that populates the options using DI-resolved services.</param>
         /// <returns>The same builder for chaining.</returns>
@@ -61,44 +65,27 @@ public static class SetupMailkit
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new MailkitEmailOptionsExtension(configure));
+            setup.RegisterDefaultProvider(services =>
+                _AddMailkit(services, s => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure))
+            );
 
             return setup;
         }
     }
 
-    private sealed class MailkitEmailOptionsExtension : IEmailProviderOptionsExtension
+    private static void _AddMailkit(IServiceCollection services, Action<IServiceCollection> configureOptions)
     {
-        private readonly Action<IServiceCollection> _configure;
+        configureOptions(services);
 
-        public MailkitEmailOptionsExtension(IConfiguration config)
+        services.AddSingleton<IPooledObjectPolicy<SmtpClient>, SmtpClientPooledObjectPolicy>();
+        services.AddSingleton<ObjectPool<SmtpClient>>(static sp =>
         {
-            _configure = services => services.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(config);
-        }
+            var opts = sp.GetRequiredService<IOptions<MailkitSmtpOptions>>().Value;
+            var policy = sp.GetRequiredService<IPooledObjectPolicy<SmtpClient>>();
+            var provider = new DefaultObjectPoolProvider { MaximumRetained = opts.MaxPoolSize };
 
-        public MailkitEmailOptionsExtension(Action<MailkitSmtpOptions> configure)
-        {
-            _configure = services => services.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure);
-        }
-
-        public MailkitEmailOptionsExtension(Action<MailkitSmtpOptions, IServiceProvider> configure)
-        {
-            _configure = services => services.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure);
-        }
-
-        public void AddServices(IServiceCollection services)
-        {
-            _configure(services);
-
-            services.AddSingleton<IPooledObjectPolicy<SmtpClient>, SmtpClientPooledObjectPolicy>();
-            services.AddSingleton<ObjectPool<SmtpClient>>(sp =>
-            {
-                var opts = sp.GetRequiredService<IOptions<MailkitSmtpOptions>>().Value;
-                var policy = sp.GetRequiredService<IPooledObjectPolicy<SmtpClient>>();
-                var provider = new DefaultObjectPoolProvider { MaximumRetained = opts.MaxPoolSize };
-                return provider.Create(policy);
-            });
-            services.AddSingleton<IEmailSender, MailkitEmailSender>();
-        }
+            return provider.Create(policy);
+        });
+        services.AddSingleton<IEmailSender, MailkitEmailSender>();
     }
 }

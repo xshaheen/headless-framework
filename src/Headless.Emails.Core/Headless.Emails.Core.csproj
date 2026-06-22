@@ -4,6 +4,7 @@
     <RootNamespace>Headless.Emails</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Emails.Core.Tests.Unit" />
     <PackageReference Include="MailKit" />
   </ItemGroup>
   <ItemGroup>

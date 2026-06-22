@@ -7,8 +7,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Emails.Aws;
 
 /// <summary>
-/// Extension members on <see cref="HeadlessEmailsSetupBuilder"/> for selecting Amazon SES v2 as the
-/// email provider.
+/// Extension members for selecting Amazon SES v2 as a Headless email provider — the default (unkeyed)
+/// sender on <see cref="HeadlessEmailsSetupBuilder"/> or a named sender on
+/// <see cref="HeadlessEmailInstanceBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupAwsSes
@@ -16,7 +17,7 @@ public static class SetupAwsSes
     extension(HeadlessEmailsSetupBuilder setup)
     {
         /// <summary>
-        /// Selects Amazon Simple Email Service v2 as the email provider.
+        /// Selects Amazon Simple Email Service v2 as the default email provider.
         /// </summary>
         /// <param name="options">
         /// AWS configuration (region, credentials). Pass <see langword="null"/> to use the
@@ -46,18 +47,15 @@ public static class SetupAwsSes
         /// </remarks>
         public HeadlessEmailsSetupBuilder UseAwsSes(AWSOptions? options)
         {
-            setup.RegisterExtension(new AwsSesEmailOptionsExtension(options));
+            setup.RegisterDefaultProvider(services => _AddAwsSes(services, options));
 
             return setup;
         }
     }
 
-    private sealed class AwsSesEmailOptionsExtension(AWSOptions? options) : IEmailProviderOptionsExtension
+    private static void _AddAwsSes(IServiceCollection services, AWSOptions? options)
     {
-        public void AddServices(IServiceCollection services)
-        {
-            services.TryAddAWSService<IAmazonSimpleEmailServiceV2>(options);
-            services.AddSingleton<IEmailSender, AwsSesEmailSender>();
-        }
+        services.TryAddAWSService<IAmazonSimpleEmailServiceV2>(options);
+        services.AddSingleton<IEmailSender, AwsSesEmailSender>();
     }
 }

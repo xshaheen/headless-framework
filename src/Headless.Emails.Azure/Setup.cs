@@ -11,8 +11,9 @@ using Microsoft.Extensions.Options;
 namespace Headless.Emails.Azure;
 
 /// <summary>
-/// Extension members on <see cref="HeadlessEmailsSetupBuilder"/> for selecting Azure Communication
-/// Services (ACS) Email as the email provider.
+/// Extension members for selecting Azure Communication Services (ACS) Email as a Headless email provider —
+/// the default (unkeyed) sender on <see cref="HeadlessEmailsSetupBuilder"/> or a named sender on
+/// <see cref="HeadlessEmailInstanceBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupAzureEmail
@@ -20,7 +21,7 @@ public static class SetupAzureEmail
     extension(HeadlessEmailsSetupBuilder setup)
     {
         /// <summary>
-        /// Selects Azure Communication Services Email as the email provider, binding
+        /// Selects Azure Communication Services Email as the default email provider, binding
         /// <see cref="AzureCommunicationEmailOptions"/> from the supplied configuration section.
         /// </summary>
         /// <param name="configuration">The configuration section to bind provider options from.</param>
@@ -35,13 +36,21 @@ public static class SetupAzureEmail
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new AzureCommunicationEmailOptionsExtension(configuration));
+            setup.RegisterDefaultProvider(services =>
+                _AddAzure(
+                    services,
+                    s =>
+                        s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
+                            configuration
+                        )
+                )
+            );
 
             return setup;
         }
 
         /// <summary>
-        /// Selects Azure Communication Services Email as the email provider, configuring
+        /// Selects Azure Communication Services Email as the default email provider, configuring
         /// <see cref="AzureCommunicationEmailOptions"/> via a setup delegate.
         /// </summary>
         /// <param name="configure">Delegate that populates the options.</param>
@@ -51,13 +60,18 @@ public static class SetupAzureEmail
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new AzureCommunicationEmailOptionsExtension(configure));
+            setup.RegisterDefaultProvider(services =>
+                _AddAzure(
+                    services,
+                    s => s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(configure)
+                )
+            );
 
             return setup;
         }
 
         /// <summary>
-        /// Selects Azure Communication Services Email as the email provider, configuring
+        /// Selects Azure Communication Services Email as the default email provider, configuring
         /// <see cref="AzureCommunicationEmailOptions"/> via a setup delegate that also receives the
         /// <see cref="IServiceProvider"/>.
         /// </summary>
@@ -68,51 +82,26 @@ public static class SetupAzureEmail
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new AzureCommunicationEmailOptionsExtension(configure));
+            setup.RegisterDefaultProvider(services =>
+                _AddAzure(
+                    services,
+                    s => s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(configure)
+                )
+            );
 
             return setup;
         }
     }
 
-    private sealed class AzureCommunicationEmailOptionsExtension : IEmailProviderOptionsExtension
+    private static void _AddAzure(IServiceCollection services, Action<IServiceCollection> configureOptions)
     {
-        private readonly Action<IServiceCollection> _configure;
+        configureOptions(services);
 
-        public AzureCommunicationEmailOptionsExtension(IConfiguration configuration)
-        {
-            _configure = services =>
-                services.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
-                    configuration
-                );
-        }
+        services.AddSingleton(static sp =>
+            _CreateClient(sp.GetRequiredService<IOptions<AzureCommunicationEmailOptions>>().Value)
+        );
 
-        public AzureCommunicationEmailOptionsExtension(Action<AzureCommunicationEmailOptions> configure)
-        {
-            _configure = services =>
-                services.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(configure);
-        }
-
-        public AzureCommunicationEmailOptionsExtension(
-            Action<AzureCommunicationEmailOptions, IServiceProvider> configure
-        )
-        {
-            _configure = services =>
-                services.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(configure);
-        }
-
-        public void AddServices(IServiceCollection services)
-        {
-            _configure(services);
-
-            services.AddSingleton(static sp =>
-            {
-                var options = sp.GetRequiredService<IOptions<AzureCommunicationEmailOptions>>().Value;
-
-                return _CreateClient(options);
-            });
-
-            services.AddSingleton<IEmailSender, AzureCommunicationEmailSender>();
-        }
+        services.AddSingleton<IEmailSender, AzureCommunicationEmailSender>();
     }
 
     private static EmailClient _CreateClient(AzureCommunicationEmailOptions options)
