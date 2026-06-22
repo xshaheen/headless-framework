@@ -17,8 +17,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// <summary>
 /// SQL Server implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.
 /// </summary>
-[PublicAPI]
-public sealed class SqlServerMonitoringApi(
+internal sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,

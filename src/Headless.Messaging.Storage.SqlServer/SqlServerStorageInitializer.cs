@@ -12,7 +12,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// SQL Server implementation of <see cref="IStorageInitializer"/> for database schema setup.
 /// Creates required tables (published, received) and indexes on first run.
 /// </summary>
-public sealed class SqlServerStorageInitializer(
+internal sealed class SqlServerStorageInitializer(
     ILogger<SqlServerStorageInitializer> logger,
     IOptions<SqlServerOptions> options,
     IOptions<MessagingOptions> messagingOptions
@@ -173,6 +173,16 @@ public sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
             END CATCH;
 
+            -- #8 — standalone StatusName index so GetStatisticsAsync per-status COUNT_BIGs do an index
+            -- scan instead of a full scan on large tables (composite indexes lead with ExpiresAt/Version).
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_StatusName' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_StatusName] ON {GetReceivedTableName()} ([StatusName] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
@@ -234,6 +244,15 @@ public sealed class SqlServerStorageInitializer(
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_ExpiresAt_StatusName' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
                     CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            -- #8 — see the received-table note above; standalone StatusName index for dashboard statistics.
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_StatusName' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_StatusName] ON {GetPublishedTableName()} ([StatusName] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;

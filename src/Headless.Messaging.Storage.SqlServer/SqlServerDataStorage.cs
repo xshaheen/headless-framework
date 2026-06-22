@@ -22,7 +22,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// SQL Server implementation of <see cref="IDataStorage"/> for message persistence.
 /// Handles storage, retrieval, and state transitions for published and received messages.
 /// </summary>
-public sealed class SqlServerDataStorage(
+internal sealed class SqlServerDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
@@ -773,6 +773,8 @@ public sealed class SqlServerDataStorage(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+
+        logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
 
         await scheduleTask(transaction, messageList).ConfigureAwait(false);
 

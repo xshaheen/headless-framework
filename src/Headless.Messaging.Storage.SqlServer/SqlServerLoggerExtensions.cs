@@ -26,4 +26,12 @@ internal static partial class SqlServerLoggerExtensions
         string table,
         Exception exception
     );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SchedulerBatchFetched",
+        Level = LogLevel.Debug,
+        Message = "Fetched {Count} delayed/queued message(s) for scheduling from {Table}."
+    )]
+    public static partial void LogSchedulerBatchFetched(this ILogger logger, int count, string table);
 }
