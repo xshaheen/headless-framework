@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -160,7 +161,7 @@ internal sealed class PostgreSqlMonitoringApi(
 
         if (!string.IsNullOrEmpty(query.Content))
         {
-            where += " AND \"Content\" ILike @Content";
+            where += " AND \"Content\" ILIKE @Content ESCAPE '\\'";
         }
 
         if (query.IntentType is { })
@@ -177,12 +178,16 @@ internal sealed class PostgreSqlMonitoringApi(
 
         await using var connection = _options.CreateConnection();
 
+        // Escape LIKE metacharacters so a literal %, _ or \ in the user's search term matches
+        // literally instead of acting as a wildcard (paired with ESCAPE '\' in the ILIKE clause).
+        var contentLike = $"%{_EscapeLike(query.Content)}%";
+
         object[] sqlParams =
         [
             new NpgsqlParameter("@StatusName", query.StatusName ?? string.Empty),
             new NpgsqlParameter("@Group", query.Group ?? string.Empty),
             new NpgsqlParameter("@Name", query.Name ?? string.Empty),
-            new NpgsqlParameter("@Content", $"%{query.Content}%"),
+            new NpgsqlParameter("@Content", contentLike),
             new NpgsqlParameter("@IntentType", (short?)query.IntentType ?? 0),
             new NpgsqlParameter("@Offset", query.CurrentPage * query.PageSize),
             new NpgsqlParameter("@Limit", query.PageSize),
@@ -424,12 +429,7 @@ internal sealed class PostgreSqlMonitoringApi(
             return [];
         }
 
-        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
-            ? @"""ExceptionInfo"""
-            : "NULL AS \"ExceptionInfo\"";
-
-        var sql =
-            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id"" = ANY(@Ids)";
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\" = ANY(@Ids)");
 
         await using var connection = _options.CreateConnection();
 
@@ -442,29 +442,7 @@ internal sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        messages.Add(
-                            new MediumMessage
-                            {
-                                StorageId = reader.GetGuid(0),
-                                Origin = serializer.Deserialize(reader.GetString(1))!,
-                                Content = reader.GetString(1),
-                                IntentType = (IntentType)reader.GetInt16(2),
-                                Added = reader.GetDateTime(3),
-                                ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetDateTime(4),
-                                Retries = reader.GetInt32(5),
-                                ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetString(6),
-                                NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetDateTime(7),
-                                LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
-                                    ? null
-                                    : reader.GetDateTime(8),
-                            }
-                        );
+                        messages.Add(await _ReadMediumMessageAsync(reader, token).ConfigureAwait(false));
                     }
 
                     return (IReadOnlyList<MediumMessage>)messages;
@@ -482,11 +460,7 @@ internal sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
-            ? @"""ExceptionInfo"""
-            : "NULL AS \"ExceptionInfo\"";
-        var sql =
-            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id""=@Id";
+        var sql = _BuildSelectMessageSql(tableName, "WHERE \"Id\"=@Id");
 
         await using var connection = _options.CreateConnection();
 
@@ -499,27 +473,7 @@ internal sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        message = new MediumMessage
-                        {
-                            StorageId = reader.GetGuid(0),
-                            Origin = serializer.Deserialize(reader.GetString(1))!,
-                            Content = reader.GetString(1),
-                            IntentType = (IntentType)reader.GetInt16(2),
-                            Added = reader.GetDateTime(3),
-                            ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(4),
-                            Retries = reader.GetInt32(5),
-                            ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetString(6),
-                            NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(7),
-                            LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(8),
-                        };
+                        message = await _ReadMediumMessageAsync(reader, token).ConfigureAwait(false);
                     }
 
                     return message;
@@ -531,5 +485,50 @@ internal sealed class PostgreSqlMonitoringApi(
             .ConfigureAwait(false);
 
         return mediumMessage;
+    }
+
+    // Shared SELECT used by _GetMessageAsync / _GetMessagesAsync. The only structural difference is the
+    // ExceptionInfo column (received table only) and the WHERE clause, so both are parameterized here to
+    // keep the column list and reader (see _ReadMediumMessageAsync) in a single place.
+    private string _BuildSelectMessageSql(string tableName, string whereClause)
+    {
+        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
+            ? @"""ExceptionInfo"""
+            : "NULL AS \"ExceptionInfo\"";
+
+        return $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} {whereClause}";
+    }
+
+    private async Task<MediumMessage> _ReadMediumMessageAsync(DbDataReader reader, CancellationToken token)
+    {
+        var content = reader.GetString(1);
+
+        return new MediumMessage
+        {
+            StorageId = reader.GetGuid(0),
+            Origin = serializer.Deserialize(content)!,
+            Content = content,
+            IntentType = (IntentType)reader.GetInt16(2),
+            Added = reader.GetDateTime(3),
+            ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false) ? null : reader.GetDateTime(4),
+            Retries = reader.GetInt32(5),
+            ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false) ? null : reader.GetString(6),
+            NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false) ? null : reader.GetDateTime(7),
+            LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false) ? null : reader.GetDateTime(8),
+        };
+    }
+
+    private static string _EscapeLike(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        // Escape the ESCAPE character first, then the LIKE wildcards, so user text matches literally.
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
     }
 }

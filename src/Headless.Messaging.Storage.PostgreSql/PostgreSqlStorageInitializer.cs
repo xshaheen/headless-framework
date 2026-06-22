@@ -294,6 +294,10 @@ internal sealed class PostgreSqlStorageInitializer(
             -- take an AccessExclusiveLock and block all writers to the hot retry-pickup path during
             -- every replica boot.
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
+            -- #8 — standalone "StatusName" index so GetStatisticsAsync / per-status COUNTs do an index
+            -- scan instead of a full sequential scan on large tables (existing composite indexes lead
+            -- with ExpiresAt/Version, so they do not serve a bare "StatusName" = '...' predicate).
+            CREATE INDEX IF NOT EXISTS "idx_received_StatusName" ON {GetReceivedTableName()} ("StatusName");
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
                 "Id" UUID PRIMARY KEY NOT NULL,
@@ -317,6 +321,9 @@ internal sealed class PostgreSqlStorageInitializer(
             -- retry-pickup index for published is also created post-transaction via
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
+            -- #8 — see the received-table note above; standalone "StatusName" index for the
+            -- dashboard statistics COUNTs.
+            CREATE INDEX IF NOT EXISTS "idx_published_StatusName" ON {GetPublishedTableName()} ("StatusName");
 
             """;
 
