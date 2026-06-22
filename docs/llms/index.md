@@ -102,6 +102,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing.
 - [blobs.md](blobs.md) — Unified blob storage (AWS S3, Azure, file system, Redis, SFTP).
 - [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching with fail-safe, refresh, tagging, and distributed factory locks.
+- [captcha.md](captcha.md) — CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) behind one pass/fail abstraction.
 - [commit-coordination.md](commit-coordination.md) — Post-commit and rollback callback coordination for outbox, jobs, cache, and events.
 - [coordination.md](coordination.md) — Node membership, liveness, lifecycle events, and provider-backed fail-stop fencing.
 - [emails.md](emails.md) — Email sending (Azure Communication Services, AWS SES, MailKit SMTP, dev no-op).
@@ -125,7 +126,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [testing.md](testing.md) — xUnit base classes and Testcontainers fixtures.
 - [jobs.md](jobs.md) — Distributed background jobs with cron, monitoring, source generation.
 - [tus.md](tus.md) — TUS protocol resumable file uploads with Azure and distributed lock support.
-- [utilities.md](utilities.md) — FluentValidation extensions, source-generated primitives, reCAPTCHA, sitemaps, slugs, Redis utilities.
+- [utilities.md](utilities.md) — FluentValidation extensions, source-generated primitives, sitemaps, slugs, Redis utilities.
 
 ## Packages
 
@@ -181,6 +182,11 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Caching.OutputCache` — ASP.NET Core `IOutputCacheStore` adapter over a named Headless cache; makes `AddOutputCache()` distributed and tag-aware.
 - `Headless.Caching.Redis` — Redis distributed cache.
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
+
+### Captcha
+- `Headless.Captcha.Abstractions` — `ICaptchaVerifier`, request/result contracts, the `AddHeadlessCaptcha` builder, and `ICaptchaProvider`.
+- `Headless.Captcha.ReCaptcha` — Google reCAPTCHA v2 (checkbox) and v3 (invisible score) verification with Razor tag helpers.
+- `Headless.Captcha.Turnstile` — Cloudflare Turnstile verification (pass/fail, `idempotency_key`, `cdata`) with Razor tag helpers.
 
 ### Commit Coordination
 - `Headless.CommitCoordination.Abstractions` — Register-only commit coordinator contracts, work buffers, and capabilities.
@@ -342,7 +348,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Generator.Primitives.Abstractions` — Attributes for the primitives source generator.
 - `Headless.Hosting` — Hosting utilities and options registration extensions.
 - `Headless.NetTopologySuite` — Geospatial operations and SQL Server geography compatibility.
-- `Headless.ReCaptcha` — Google reCAPTCHA v2 and v3 integration.
 - `Headless.Redis` — Redis utilities and Lua script management for StackExchange.Redis.
 - `Headless.Sitemaps` — XML sitemap generation.
 - `Headless.Slugs` — URL-friendly slug generation.

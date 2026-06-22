@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Captcha.Tests.Harness\Headless.Captcha.Tests.Harness.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Captcha.Turnstile\Headless.Captcha.Turnstile.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Captcha.ReCaptcha\Headless.Captcha.ReCaptcha.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+  </ItemGroup>
+</Project>
