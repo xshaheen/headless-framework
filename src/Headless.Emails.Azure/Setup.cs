@@ -39,7 +39,7 @@ public static class SetupAzureEmail
             Argument.IsNotNull(configuration);
 
             setup.RegisterDefaultProvider(services =>
-                _AddAzure(
+                _AddEmailsCore(
                     services,
                     name: null,
                     (s, n) =>
@@ -65,7 +65,7 @@ public static class SetupAzureEmail
             Argument.IsNotNull(configure);
 
             setup.RegisterDefaultProvider(services =>
-                _AddAzure(
+                _AddEmailsCore(
                     services,
                     name: null,
                     (s, n) =>
@@ -92,7 +92,7 @@ public static class SetupAzureEmail
             Argument.IsNotNull(configure);
 
             setup.RegisterDefaultProvider(services =>
-                _AddAzure(
+                _AddEmailsCore(
                     services,
                     name: null,
                     (s, n) =>
@@ -124,7 +124,7 @@ public static class SetupAzureEmail
             var name = instance.Name;
 
             instance.RegisterProvider(services =>
-                _AddAzure(
+                _AddEmailsCore(
                     services,
                     name,
                     (s, n) =>
@@ -152,7 +152,7 @@ public static class SetupAzureEmail
             var name = instance.Name;
 
             instance.RegisterProvider(services =>
-                _AddAzure(
+                _AddEmailsCore(
                     services,
                     name,
                     (s, n) =>
@@ -181,7 +181,7 @@ public static class SetupAzureEmail
             var name = instance.Name;
 
             instance.RegisterProvider(services =>
-                _AddAzure(
+                _AddEmailsCore(
                     services,
                     name,
                     (s, n) =>
@@ -203,7 +203,7 @@ public static class SetupAzureEmail
     /// named options snapshot (<c>IOptionsMonitor.Get(name)</c>), because .NET keyed registrations do not
     /// cascade the key to constructor dependencies.
     /// </summary>
-    private static void _AddAzure(
+    private static void _AddEmailsCore(
         IServiceCollection services,
         string? name,
         Action<IServiceCollection, string?> configureOptions

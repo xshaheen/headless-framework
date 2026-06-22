@@ -50,7 +50,7 @@ public static class SetupAwsSes
         /// </remarks>
         public HeadlessEmailsSetupBuilder UseAwsSes(AWSOptions? options)
         {
-            setup.RegisterDefaultProvider(services => _AddAwsSes(services, name: null, options));
+            setup.RegisterDefaultProvider(services => _AddEmailsCore(services, name: null, options));
 
             return setup;
         }
@@ -72,7 +72,7 @@ public static class SetupAwsSes
         {
             var name = instance.Name;
 
-            instance.RegisterProvider(services => _AddAwsSes(services, name, options));
+            instance.RegisterProvider(services => _AddEmailsCore(services, name, options));
 
             return instance;
         }
@@ -85,7 +85,7 @@ public static class SetupAwsSes
     /// <see cref="AWSOptions"/>. <c>TryAddAWSService</c> has no keyed overload, so the named client is
     /// constructed explicitly via <see cref="AWSOptions.CreateServiceClient{T}"/>.
     /// </summary>
-    private static void _AddAwsSes(IServiceCollection services, string? name, AWSOptions? options)
+    private static void _AddEmailsCore(IServiceCollection services, string? name, AWSOptions? options)
     {
         if (name is null)
         {

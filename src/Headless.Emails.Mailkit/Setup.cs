@@ -32,7 +32,7 @@ public static class SetupMailkit
             Argument.IsNotNull(config);
 
             setup.RegisterDefaultProvider(services =>
-                _AddMailkit(
+                _AddEmailsCore(
                     services,
                     name: null,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(config, n)
@@ -54,7 +54,7 @@ public static class SetupMailkit
             Argument.IsNotNull(configure);
 
             setup.RegisterDefaultProvider(services =>
-                _AddMailkit(
+                _AddEmailsCore(
                     services,
                     name: null,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
@@ -76,7 +76,7 @@ public static class SetupMailkit
             Argument.IsNotNull(configure);
 
             setup.RegisterDefaultProvider(services =>
-                _AddMailkit(
+                _AddEmailsCore(
                     services,
                     name: null,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
@@ -104,7 +104,7 @@ public static class SetupMailkit
             var name = instance.Name;
 
             instance.RegisterProvider(services =>
-                _AddMailkit(
+                _AddEmailsCore(
                     services,
                     name,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(config, n)
@@ -128,7 +128,7 @@ public static class SetupMailkit
             var name = instance.Name;
 
             instance.RegisterProvider(services =>
-                _AddMailkit(
+                _AddEmailsCore(
                     services,
                     name,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
@@ -152,7 +152,7 @@ public static class SetupMailkit
             var name = instance.Name;
 
             instance.RegisterProvider(services =>
-                _AddMailkit(
+                _AddEmailsCore(
                     services,
                     name,
                     (s, n) => s.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure, n)
@@ -170,7 +170,7 @@ public static class SetupMailkit
     /// keyed SMTP settings never bleed across instances — keyed DI does not cascade the key to ctor
     /// dependencies, and a keyed sender/policy must not read <c>CurrentValue</c> (which binds the default).
     /// </summary>
-    private static void _AddMailkit(
+    private static void _AddEmailsCore(
         IServiceCollection services,
         string? name,
         Action<IServiceCollection, string?> configureOptions
