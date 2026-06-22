@@ -11,7 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
-// REVIEW(#26): NEEDS DOCKER (Testcontainers Redis)
 // Three Hybrid-over-real-Redis scenarios that were not covered by the existing single-test
 // DefaultHybridCacheTiersTests (which only verified composition + key existence in L2).
 //
@@ -51,7 +50,6 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
         return new HybridCache(l1, l2, publisher, hybridOptions, NullLogger<HybridCache>.Instance, TimeProvider.System);
     }
 
-    // REVIEW(#26): NEEDS DOCKER (Testcontainers Redis)
     // FlushAll seed-order: after FlushAsync, a new upsert + read must return the new value, proving
     // that the L2 clear-marker was seeded before L1 was wiped (if the order were reversed, a concurrent
     // read in the gap would see a stale L2 hit; here we verify the net effect deterministically).
@@ -86,7 +84,6 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
         result.Value.Should().Be("post-flush", "hybrid must return the post-flush value, not the pre-flush value");
     }
 
-    // REVIEW(#26): NEEDS DOCKER (Testcontainers Redis)
     // L1 TTL capping: when DefaultLocalExpiration (e.g. 30s) is less than the L2 logical TTL (e.g. 5min),
     // the L1 entry's effective expiration must be capped to DefaultLocalExpiration (30s), not the full L2 TTL.
     [Fact]
@@ -116,7 +113,6 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
             );
     }
 
-    // REVIEW(#26): NEEDS DOCKER (Testcontainers Redis)
     // Backplane round-trip: an invalidation published by node A clears L1 on node B.
     // Node A upserts a key (both nodes can see it). Node B reads (populates node B's L1). Node A upserts
     // a new value + publishes invalidation. Node B's HandleInvalidationAsync must clear node B's L1 so

@@ -107,7 +107,6 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
         result.Should().Be(10.5);
     }
 
-    // REVIEW(#1): NEEDS DOCKER (Testcontainers Redis)
     // Regression test for the Lua math.modf fix: IncrementAsync(key, 0.5) must return 0.5 and must not throw.
     // Prior to the fix, math.modf(0.5) would mis-classify the fractional part and cause a Lua error.
     [Fact]
@@ -125,7 +124,6 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
         result.Should().Be(0.5);
     }
 
-    // REVIEW(#1): NEEDS DOCKER (Testcontainers Redis)
     // Negative fractional increment: ensures the Lua fractional branch handles negative fractions correctly.
     [Fact]
     public async Task should_increment_double_with_negative_fractional()
@@ -143,7 +141,6 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
         result.Should().BeApproximately(0.7, 1e-9);
     }
 
-    // REVIEW(#1): NEEDS DOCKER (Testcontainers Redis)
     // Integer-valued double: when the value is a whole number (no fractional part) the Lua modf integer branch
     // must be taken (HINCRBY path). Verifies both branches of the Lua fix.
     [Fact]
