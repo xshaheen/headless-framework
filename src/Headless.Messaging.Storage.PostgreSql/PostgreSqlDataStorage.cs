@@ -35,12 +35,6 @@ internal sealed class PostgreSqlDataStorage(
 ) : IDataStorage
 {
     /// <summary>
-    /// Maximum messages to fetch in a single retry batch.
-    /// Higher values process more but increase memory and lock contention.
-    /// </summary>
-    private const int _RetryBatchSize = 200;
-
-    /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
     /// (<c>Succeeded</c> / <c>Failed</c>) with no scheduled retry, while still respecting an
     /// optional optimistic-concurrency token (<c>@OriginalRetries</c>). Used by Change*StateAsync
@@ -994,7 +988,7 @@ internal sealed class PostgreSqlDataStorage(
                   AND ("LockedUntil" IS NULL OR "LockedUntil" <= @Now)
                   AND {_TerminalRowGuardSimple}
                 ORDER BY "NextRetryAt"
-                LIMIT {_RetryBatchSize}
+                LIMIT {messagingOptions.Value.RetryBatchSize}
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING "Id","Content","IntentType","Retries","Added","NextRetryAt","LockedUntil","Owner";

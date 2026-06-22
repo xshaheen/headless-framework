@@ -34,12 +34,6 @@ public sealed class SqlServerDataStorage(
 ) : IDataStorage
 {
     /// <summary>
-    /// Maximum messages to fetch in a single retry batch.
-    /// Higher values process more but increase memory and lock contention.
-    /// </summary>
-    private const int _RetryBatchSize = 200;
-
-    /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
     /// (<c>Succeeded</c> / <c>Failed</c>) with no scheduled retry, while still respecting an
     /// optional optimistic-concurrency token (<c>@OriginalRetries</c>). Used by Change*StateAsync
@@ -1015,7 +1009,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@BatchSize", _RetryBatchSize),
+            new SqlParameter("@BatchSize", messagingOptions.Value.RetryBatchSize),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@Now", SqlDbType.DateTime2) { Value = now },

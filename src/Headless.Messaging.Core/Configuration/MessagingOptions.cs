@@ -159,6 +159,13 @@ public sealed class MessagingOptions
     public int SchedulerBatchSize { get; set; } = 1000;
 
     /// <summary>
+    /// Gets or sets the maximum number of messages leased in a single retry-pickup batch.
+    /// Larger batches process more per cycle but increase memory and lock contention; smaller batches
+    /// reduce contention but may lower retry throughput. Default is 200.
+    /// </summary>
+    public int RetryBatchSize { get; set; } = 200;
+
+    /// <summary>
     /// Gets or sets the JSON serialization options used for message content serialization and deserialization.
     /// Customize this to control JSON formatting, naming policies, converters, and other serialization behavior.
     /// </summary>
@@ -480,6 +487,14 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
         RuleFor(x => x.DeadNodeReconcileInterval)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
+        // #2 — Version is persisted as a literal into a VARCHAR(20)/nvarchar(20) column by the SQL
+        // storage providers; reject >20 chars at startup instead of failing every outbox insert at runtime.
+        RuleFor(x => x.Version)
+            .NotEmpty()
+            .WithMessage("Version must not be empty.")
+            .MaximumLength(20)
+            .WithMessage("Version must not exceed 20 characters (it is stored in a VARCHAR(20) column).");
+        RuleFor(x => x.RetryBatchSize).GreaterThan(0).WithMessage("RetryBatchSize must be greater than zero.");
         RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
     }
 
