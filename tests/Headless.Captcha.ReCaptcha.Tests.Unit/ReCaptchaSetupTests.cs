@@ -59,6 +59,73 @@ public sealed class ReCaptchaSetupTests
     }
 
     [Fact]
+    public void missing_site_key_fails_options_validation()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseReCaptchaV3(options =>
+            {
+                options.SiteKey = "";
+                options.SiteSecret = "s";
+            })
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var act = () =>
+            serviceProvider
+                .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
+                .Get(CaptchaConstants.ReCaptchaV3Provider);
+
+        act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Fact]
+    public void missing_site_secret_fails_options_validation()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseReCaptchaV3(options =>
+            {
+                options.SiteKey = "k";
+                options.SiteSecret = "";
+            })
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var act = () =>
+            serviceProvider
+                .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
+                .Get(CaptchaConstants.ReCaptchaV3Provider);
+
+        act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Fact]
+    public void invalid_verify_base_url_fails_options_validation()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseReCaptchaV3(options =>
+            {
+                options.SiteKey = "k";
+                options.SiteSecret = "s";
+                options.VerifyBaseUrl = "not-a-url";
+            })
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var act = () =>
+            serviceProvider
+                .GetRequiredService<IOptionsMonitor<ReCaptchaOptions>>()
+                .Get(CaptchaConstants.ReCaptchaV3Provider);
+
+        act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Fact]
     public void v2_default_resolves_as_plain_captcha_verifier()
     {
         var services = new ServiceCollection();
