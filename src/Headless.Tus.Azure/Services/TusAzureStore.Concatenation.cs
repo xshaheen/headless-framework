@@ -172,11 +172,14 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                                 .StageBlockFromUriAsync(partialBlobClient.Uri, newBlockId, options, cancellationToken)
                                 .ConfigureAwait(false);
                         }
-                        catch (RequestFailedException ex) when (ex.Status == 501)
+                        catch (RequestFailedException ex) when (ex.Status is 501 or 403)
                         {
-                            // API not supported (e.g., Azurite) - fall back to streaming
+                            // Server-side copy unavailable: 501 = not implemented (e.g. Azurite); 403 = the
+                            // source blob is not readable via its bare URI (a private container needs a SAS on
+                            // the source). Both are permanent for this deployment, so switch to streaming
+                            // download+upload for this block and all remaining ones.
                             useServerSideCopy = false;
-                            _logger.LogStageBlockFromUriNotSupported();
+                            _logger.LogStageBlockFromUriNotSupported(ex.Status);
 
                             await _StageBlockViaStreamingAsync(
                                     blockBlobClient,
@@ -249,9 +252,13 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             .DownloadStreamingAsync(new BlobDownloadOptions { Range = sourceRange }, cancellationToken)
             .ConfigureAwait(false);
 
+        // BlobDownloadStreamingResult owns the live network stream; dispose it so the connection is
+        // released even on the upload path below. Block size is bounded by Azure's 100 MB block limit.
+        using var download = downloadResponse.Value;
+
         // Copy to MemoryStream since StageBlockAsync requires seekable stream with Length
         await using var buffer = new MemoryStream((int)blockSize);
-        await downloadResponse.Value.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+        await download.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
         buffer.Position = 0;
 
         await destinationClient

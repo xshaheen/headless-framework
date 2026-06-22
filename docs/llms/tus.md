@@ -76,7 +76,7 @@ app.MapTus("/files", async _ => new DefaultTusConfiguration
 - Set `FileLockProvider` in your `DefaultTusConfiguration` factory to the `ITusFileLockProvider` resolved from DI — it is not wired automatically. A single-node deployment can omit it and use tusdotnet's in-process lock.
 - `BlobMaxChunkSize` must be ≤ 100 MB (Azure block blob limit), and `BlobDefaultChunkSize` must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. The store auto-selects chunk size from `BlobDefaultChunkSize` vs `BlobMaxChunkSize` based on declared upload length.
 - Checksum verification (SHA1, SHA256, SHA512, MD5) is handled automatically when the TUS client sends `Upload-Checksum` headers. Blocks are staged but not committed until checksum passes; mismatched blocks are left uncommitted (Azure auto-removes them after 7 days).
-- The concatenation extension uses server-side block copy (`StageBlockFromUri`) when available, falling back to streaming on emulators (Azurite returns HTTP 501).
+- The concatenation extension uses server-side block copy (`StageBlockFromUri`) when available, falling back to streaming when it is not — Azurite returns HTTP 501, and a private container returns HTTP 403 for the bare source URI (no SAS).
 - `CreateContainerIfNotExists = true` calls `CreateIfNotExists` synchronously in the `TusAzureStore` constructor — ensure the `BlobServiceClient` has container-create permissions before constructing the store.
 - `ITusAzureBlobHttpHeadersProvider` lets you inject custom `Content-Type` / cache headers per file. Default sets `application/octet-stream`.
 
@@ -178,7 +178,7 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
 
 **Block blob chunking and checksum deferral.** TUS Checksum verification happens _after_ all PATCH data is staged. `TusAzureStore` stages blocks during `AppendDataAsync` but defers the commit list until `VerifyChecksumAsync` succeeds. The staged block IDs and pre-calculated checksum are written to blob metadata (`tus_last_chunk_blocks`, `tus_last_chunk_checksum`). On success, blocks are committed atomically together with metadata update. On mismatch, blocks are left uncommitted and Azure auto-purges them within 7 days. This means `GetUploadOffsetAsync` reads committed block sizes — not the blob `ContentLength` property — to report accurate offset to resuming clients.
 
-**Server-side concatenation.** Final-file creation uses `StageBlockFromUri` to copy block ranges across blobs without moving data through the application server. Azurite returns HTTP 501 for this API; the store detects this and falls back to download-then-re-upload streaming automatically.
+**Server-side concatenation.** Final-file creation uses `StageBlockFromUri` to copy block ranges across blobs without moving data through the application server. When server-side copy is unavailable — Azurite returns HTTP 501, and a private container returns HTTP 403 because the source blob is not readable via its bare URI (no SAS) — the store falls back to download-then-re-upload streaming automatically.
 
 **Constructor-time container init.** When `CreateContainerIfNotExists = true`, `_containerClient.CreateIfNotExists(ContainerPublicAccessType)` is called synchronously in the constructor. If the `BlobServiceClient` lacks container-create permission, construction fails.
 

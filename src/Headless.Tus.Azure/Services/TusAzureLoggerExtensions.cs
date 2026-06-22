@@ -30,9 +30,9 @@ internal static partial class TusAzureLoggerExtensions
         EventId = 3241,
         EventName = "StageBlockFromUriNotSupported",
         Level = LogLevel.Warning,
-        Message = "StageBlockFromUri not supported, falling back to streaming"
+        Message = "Server-side StageBlockFromUri unavailable (HTTP {Status}); falling back to streaming copy"
     )]
-    public static partial void LogStageBlockFromUriNotSupported(this ILogger logger);
+    public static partial void LogStageBlockFromUriNotSupported(this ILogger logger, int status);
 
     [LoggerMessage(
         EventId = 3242,
