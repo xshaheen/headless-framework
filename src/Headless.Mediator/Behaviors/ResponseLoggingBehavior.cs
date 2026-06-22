@@ -29,6 +29,13 @@ public sealed class ResponseLoggingBehavior<TMessage, TResponse>(
     /// <returns>A completed <see cref="ValueTask"/> because logging is synchronous.</returns>
     protected override ValueTask Handle(TMessage message, TResponse response, CancellationToken cancellationToken)
     {
+        // Gate before building args: LoggerMessage.Define checks IsEnabled inside the delegate, but C#
+        // evaluates _currentUser.UserId?.ToString() (a string allocation) first. Skip it when Debug is off.
+        if (!_logger.IsEnabled(LogLevel.Debug))
+        {
+            return ValueTask.CompletedTask;
+        }
+
         _LogMediatorResponse(
             _logger,
             userId: _currentUser.UserId?.ToString(),

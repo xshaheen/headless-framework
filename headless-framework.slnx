@@ -160,9 +160,14 @@
     <Folder Name="/Emails/">
         <Project Path="src\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
         <Project Path="src\Headless.Emails.Aws\Headless.Emails.Aws.csproj" />
+        <Project Path="src\Headless.Emails.Azure\Headless.Emails.Azure.csproj" />
         <Project Path="src\Headless.Emails.Core\Headless.Emails.Core.csproj" />
         <Project Path="src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
         <Project Path="src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
+    </Folder>
+    <Folder Name="/Emails/Tests/">
+        <Project Path="tests/Headless.Emails.Core.Tests.Unit/Headless.Emails.Core.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Emails.Azure.Tests.Unit/Headless.Emails.Azure.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Features/">
         <Project Path="src\Headless.Features.Abstractions\Headless.Features.Abstractions.csproj" />

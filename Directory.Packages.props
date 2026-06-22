@@ -23,6 +23,7 @@
     <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.14.4" />
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.2.33" />
     <PackageVersion Include="AWSSDK.SQS" Version="4.0.2.31" />
+    <PackageVersion Include="Azure.Communication.Email" Version="1.1.0" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
     <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.0" />

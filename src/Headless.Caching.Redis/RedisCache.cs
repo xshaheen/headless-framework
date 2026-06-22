@@ -643,7 +643,6 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // #11: cache prefixed key to avoid two _GetKey allocations for the same key
         var redisKey = _GetKey(key);
         var redisValue = await _database.StringGetAsync(redisKey, options.ReadMode).ConfigureAwait(false);
         return await _RedisValueToCacheValueAsync<T>(redisKey, redisValue).ConfigureAwait(false);
