@@ -11,7 +11,6 @@ internal sealed class IncrementWithExpireScriptDefinition : RedisScriptDefinitio
 
     private IncrementWithExpireScriptDefinition()
         : base(
-            // REVIEW(#1): NEEDS INTEGRATION VERIFICATION (Docker)
             // math.modf returns (intpart, frac); branching on the first return value means the
             // condition was true only when intpart == 0 (i.e. |value| < 1), which is exactly
             // backwards. Fix: capture the fractional part and branch on it.
