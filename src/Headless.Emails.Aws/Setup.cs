@@ -3,7 +3,9 @@
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.SimpleEmailV2;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
+#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Emails.Aws;
 
 /// <summary>
@@ -47,15 +49,68 @@ public static class SetupAwsSes
         /// </remarks>
         public HeadlessEmailsSetupBuilder UseAwsSes(AWSOptions? options)
         {
-            setup.RegisterDefaultProvider(services => _AddAwsSes(services, options));
+            setup.RegisterDefaultProvider(services => _AddAwsSes(services, name: null, options));
 
             return setup;
         }
     }
 
-    private static void _AddAwsSes(IServiceCollection services, AWSOptions? options)
+    extension(HeadlessEmailInstanceBuilder instance)
     {
-        services.TryAddAWSService<IAmazonSimpleEmailServiceV2>(options);
-        services.AddSingleton<IEmailSender, AwsSesEmailSender>();
+        /// <summary>
+        /// Uses Amazon Simple Email Service v2 for this named instance. The instance owns its own keyed
+        /// <see cref="IAmazonSimpleEmailServiceV2"/> client built from <paramref name="options"/>; it never
+        /// touches the default sender.
+        /// </summary>
+        /// <param name="options">
+        /// AWS configuration (region, credentials). Pass <see langword="null"/> to use the default
+        /// <see cref="AWSOptions"/> already registered in the DI container.
+        /// </param>
+        /// <returns>The instance builder for chaining.</returns>
+        public HeadlessEmailInstanceBuilder UseAwsSes(AWSOptions? options)
+        {
+            var name = instance.Name;
+
+            instance.RegisterProvider(services => _AddAwsSes(services, name, options));
+
+            return instance;
+        }
+    }
+
+    /// <summary>
+    /// Registers the AWS SES email sender. <paramref name="name"/> <see langword="null"/> registers the default
+    /// (unkeyed) sender via <c>TryAddAWSService</c>; a non-null name registers a keyed sender and a keyed
+    /// <see cref="IAmazonSimpleEmailServiceV2"/> client built from the supplied (or ambient)
+    /// <see cref="AWSOptions"/>. <c>TryAddAWSService</c> has no keyed overload, so the named client is
+    /// constructed explicitly via <see cref="AWSOptions.CreateServiceClient{T}"/>.
+    /// </summary>
+    private static void _AddAwsSes(IServiceCollection services, string? name, AWSOptions? options)
+    {
+        if (name is null)
+        {
+            services.TryAddAWSService<IAmazonSimpleEmailServiceV2>(options);
+            services.AddSingleton<IEmailSender, AwsSesEmailSender>();
+
+            return;
+        }
+
+        // Capture `name` (keyed DI does not cascade the key) and resolve the client from the supplied options,
+        // falling back to the ambient AWSOptions in DI, then to defaults — mirroring TryAddAWSService(null).
+        services.AddKeyedSingleton<IAmazonSimpleEmailServiceV2>(
+            name,
+            (sp, _) =>
+                (
+                    options ?? sp.GetService<AWSOptions>() ?? new AWSOptions()
+                ).CreateServiceClient<IAmazonSimpleEmailServiceV2>()
+        );
+
+        services.AddKeyedSingleton<IEmailSender>(
+            name,
+            (sp, _) =>
+                new AwsSesEmailSender(
+                    sp.GetRequiredKeyedService<IAmazonSimpleEmailServiceV2>(name),
+                    sp.GetRequiredService<ILogger<AwsSesEmailSender>>()
+                )
+        );
     }
 }
