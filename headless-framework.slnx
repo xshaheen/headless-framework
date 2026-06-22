@@ -165,6 +165,10 @@
         <Project Path="src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
         <Project Path="src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
     </Folder>
+    <Folder Name="/Emails/Tests/">
+        <Project Path="tests/Headless.Emails.Core.Tests.Unit/Headless.Emails.Core.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Emails.Azure.Tests.Unit/Headless.Emails.Azure.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Features/">
         <Project Path="src\Headless.Features.Abstractions\Headless.Features.Abstractions.csproj" />
         <Project Path="src\Headless.Features.Core\Headless.Features.Core.csproj" />
