@@ -54,73 +54,118 @@ internal sealed class PostgreSqlStorageInitializer(
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
+        // #6 — serialize concurrent-replica boots on a stable advisory-lock key derived from the schema
+        // name (hashtextextended is deterministic across sessions and needs no superuser, unlike
+        // CREATE EXTENSION). Without it two replicas booting together can race the CONCURRENTLY builds /
+        // probe-then-DROP below and one replica's startup fails (InitializeAsync has no retry).
+        var schema = postgreSqlOptions.Value.Schema;
+        object[] lockParams = [new NpgsqlParameter("@Schema", schema)];
+
         // PostgreSQL supports transactional DDL — wrap the batch so a mid-script failure
-        // (network drop, broker-side abort) cannot leave the schema half-initialized.
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        // (network drop, broker-side abort) cannot leave the schema half-initialized. The
+        // transaction-scoped advisory lock is released automatically on COMMIT/ROLLBACK.
+        await using (var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await connection
+                .ExecuteNonQueryAsync(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(@Schema, 0));",
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: lockParams,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
 
-        await connection
-            .ExecuteNonQueryAsync(
-                sql,
-                transaction: transaction,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+            await connection
+                .ExecuteNonQueryAsync(
+                    sql,
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         // Retry-pickup partial indexes and trigram content indexes use CREATE INDEX CONCURRENTLY so
         // the AccessExclusiveLock is replaced with a ShareUpdateExclusiveLock — readers and writers
         // stay live during the create. CONCURRENTLY cannot run inside a transaction (PG raises 25001),
         // so these run on an autocommit connection AFTER the schema/table DDL has committed above.
-        // Each statement is standalone (no transaction wrapping).
-        await _EnsureRetryPickupIndexConcurrentlyAsync(
-                connection,
-                GetReceivedTableName(),
-                indexName: "idx_received_Version_NextRetryAt",
-                cancellationToken
+        // A session-level advisory lock (same key) serializes this phase across replicas so two booters
+        // don't race the same CONCURRENTLY build / probe-then-DROP.
+        await connection
+            .ExecuteNonQueryAsync(
+                "SELECT pg_advisory_lock(hashtextextended(@Schema, 0));",
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: lockParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        await _EnsureRetryPickupIndexConcurrentlyAsync(
-                connection,
-                GetPublishedTableName(),
-                indexName: "idx_published_Version_NextRetryAt",
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        try
+        {
+            await _EnsureRetryPickupIndexConcurrentlyAsync(
+                    connection,
+                    GetReceivedTableName(),
+                    indexName: "idx_received_Version_NextRetryAt",
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-        await _EnsureContentTrgmIndexConcurrentlyAsync(
-                connection,
-                GetReceivedTableName(),
-                indexName: "idx_received_Content_trgm",
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+            await _EnsureRetryPickupIndexConcurrentlyAsync(
+                    connection,
+                    GetPublishedTableName(),
+                    indexName: "idx_published_Version_NextRetryAt",
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-        await _EnsureContentTrgmIndexConcurrentlyAsync(
-                connection,
-                GetPublishedTableName(),
-                indexName: "idx_published_Content_trgm",
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+            await _EnsureContentTrgmIndexConcurrentlyAsync(
+                    connection,
+                    GetReceivedTableName(),
+                    indexName: "idx_received_Content_trgm",
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-        await _EnsureOwnerIndexConcurrentlyAsync(
-                connection,
-                GetReceivedTableName(),
-                indexName: "idx_received_Owner_not_null",
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+            await _EnsureContentTrgmIndexConcurrentlyAsync(
+                    connection,
+                    GetPublishedTableName(),
+                    indexName: "idx_published_Content_trgm",
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-        await _EnsureOwnerIndexConcurrentlyAsync(
-                connection,
-                GetPublishedTableName(),
-                indexName: "idx_published_Owner_not_null",
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+            await _EnsureOwnerIndexConcurrentlyAsync(
+                    connection,
+                    GetReceivedTableName(),
+                    indexName: "idx_received_Owner_not_null",
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            await _EnsureOwnerIndexConcurrentlyAsync(
+                    connection,
+                    GetPublishedTableName(),
+                    indexName: "idx_published_Owner_not_null",
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            // Release the session advisory lock even if a CONCURRENTLY build was cancelled. Closing the
+            // connection would also release it, but unlock explicitly so a pooled connection comes back clean.
+            await connection
+                .ExecuteNonQueryAsync(
+                    "SELECT pg_advisory_unlock(hashtextextended(@Schema, 0));",
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: [new NpgsqlParameter("@Schema", schema)],
+                    cancellationToken: CancellationToken.None
+                )
+                .ConfigureAwait(false);
+        }
 
         logger.LogEnsuringTablesCreated();
     }
