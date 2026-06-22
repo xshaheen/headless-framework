@@ -12,6 +12,7 @@ using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -42,7 +43,8 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
-            new NullNodeMembership()
+            new NullNodeMembership(),
+            NullLogger<PostgreSqlDataStorage>.Instance
         );
 
         await base.InitializeAsync();

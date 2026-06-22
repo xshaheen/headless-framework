@@ -14,9 +14,10 @@ public sealed partial class TusAzureStore : ITusTerminationStore
     /// <param name="fileId">the TUS file identifier to delete</param>
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <remarks>
-    /// Silently succeeds if the blob does not exist. Deletion failures are logged at
-    /// <c>Error</c> level but do not propagate; the method returns normally even when the
-    /// underlying Azure operation fails.
+    /// Succeeds silently if the blob does not exist (<c>DeleteIfExists</c> returns <c>false</c>).
+    /// A genuine Azure failure (anything other than not-found) is logged and <em>rethrown</em> so the
+    /// caller does not mistake a failed deletion for success — a TUS <c>DELETE</c> must not report 204
+    /// while the blob persists, and <c>RemoveExpiredFilesAsync</c> must not count an undeleted file.
     /// </remarks>
     public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
     {
@@ -35,7 +36,8 @@ public sealed partial class TusAzureStore : ITusTerminationStore
         catch (Exception e)
         {
             _logger.BlobDeleteFailed(e, blobClient.Name);
-            deleted = false;
+
+            throw;
         }
 
         if (deleted)

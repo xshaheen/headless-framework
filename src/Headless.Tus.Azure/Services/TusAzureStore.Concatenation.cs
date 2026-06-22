@@ -129,7 +129,9 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
         try
         {
-            // Validate all partial files exist and are complete
+            // Validate all partial files exist and are complete. This is a separate pass from the copy below,
+            // so a concurrent PATCH/Delete on a partial between validation and copy is a known TOCTOU window;
+            // callers that mutate partials concurrently with concatenation must serialize via a lock provider.
             await _ValidatePartialFilesAsync(partialFiles, cancellationToken).ConfigureAwait(false);
 
             // Parse TUS metadata
@@ -139,6 +141,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             long totalSize = 0;
             var blockIds = new List<string>();
             var blockNumber = 0;
+            var blockToken = _NewBlockToken();
 
             // Try server-side copy first (most performant - data stays in Azure)
             // Falls back to streaming if not supported (e.g., Azurite emulator)
@@ -158,7 +161,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
                 foreach (var block in partialBlocks)
                 {
-                    var newBlockId = _GenerateBlockId(blockNumber++);
+                    var newBlockId = _GenerateBlockId(blockToken, blockNumber++);
                     var blockRange = new HttpRange(partialOffset, block.SizeLong);
 
                     if (useServerSideCopy)
@@ -171,11 +174,14 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                                 .StageBlockFromUriAsync(partialBlobClient.Uri, newBlockId, options, cancellationToken)
                                 .ConfigureAwait(false);
                         }
-                        catch (RequestFailedException ex) when (ex.Status == 501)
+                        catch (RequestFailedException ex) when (ex.Status is 501 or 403)
                         {
-                            // API not supported (e.g., Azurite) - fall back to streaming
+                            // Server-side copy unavailable: 501 = not implemented (e.g. Azurite); 403 = the
+                            // source blob is not readable via its bare URI (a private container needs a SAS on
+                            // the source). Both are permanent for this deployment, so switch to streaming
+                            // download+upload for this block and all remaining ones.
                             useServerSideCopy = false;
-                            _logger.LogStageBlockFromUriNotSupported();
+                            _logger.LogStageBlockFromUriNotSupported(ex.Status);
 
                             await _StageBlockViaStreamingAsync(
                                     blockBlobClient,
@@ -214,9 +220,18 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.ConcatType = "final";
             blobMetadata.PartialUploads = partialFiles;
 
-            // Commit all blocks to create the final file
+            // Commit all blocks to create the final file, applying the same content-type/HTTP headers the
+            // regular and partial create paths set (CreateFileAsync / CreatePartialFileAsync).
+            _EnsureWithinBlockLimit(blockIds.Count);
+            var commitOptions = new CommitBlockListOptions
+            {
+                Metadata = blobMetadata.ToAzure(),
+                HttpHeaders = await _blobHttpHeadersProvider
+                    .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
+                    .ConfigureAwait(false),
+            };
             await blockBlobClient
-                .CommitBlockListAsync(blockIds, metadata: blobMetadata.ToAzure(), cancellationToken: cancellationToken)
+                .CommitBlockListAsync(blockIds, commitOptions, cancellationToken)
                 .ConfigureAwait(false);
 
             _logger.LogCreatedFinalFile(fileId, partialFiles.Length, totalSize);
@@ -248,9 +263,13 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             .DownloadStreamingAsync(new BlobDownloadOptions { Range = sourceRange }, cancellationToken)
             .ConfigureAwait(false);
 
+        // BlobDownloadStreamingResult owns the live network stream; dispose it so the connection is
+        // released even on the upload path below. Block size is bounded by Azure's 100 MB block limit.
+        using var download = downloadResponse.Value;
+
         // Copy to MemoryStream since StageBlockAsync requires seekable stream with Length
         await using var buffer = new MemoryStream((int)blockSize);
-        await downloadResponse.Value.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+        await download.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
         buffer.Position = 0;
 
         await destinationClient
@@ -260,8 +279,16 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
     private async Task _ValidatePartialFilesAsync(string[] partialFiles, CancellationToken cancellationToken)
     {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var partialFileId in partialFiles)
         {
+            // Reject duplicates: a partial listed twice would have its blocks copied twice into the final blob.
+            if (!seen.Add(partialFileId))
+            {
+                throw new InvalidOperationException($"Partial file {partialFileId} is listed more than once");
+            }
+
             var blobClient = _GetBlobClient(partialFileId);
 
             var blobInfo =

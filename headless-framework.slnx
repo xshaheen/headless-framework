@@ -168,6 +168,7 @@
         <Project Path="src\Headless.Emails.Core\Headless.Emails.Core.csproj" />
         <Project Path="src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
         <Project Path="src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
+        <Project Path="tests\Headless.Emails.Tests.Unit\Headless.Emails.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Emails/Tests/">
         <Project Path="tests/Headless.Emails.Core.Tests.Unit/Headless.Emails.Core.Tests.Unit.csproj" />

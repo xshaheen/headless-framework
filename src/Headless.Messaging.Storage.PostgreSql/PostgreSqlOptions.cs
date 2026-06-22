@@ -16,6 +16,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// Extends <c>PostgreSqlEntityFrameworkMessagingOptions</c> with the raw-ADO connection
 /// settings used when the storage is not wired through an EF Core <c>DbContext</c>.
 /// </summary>
+[PublicAPI]
 public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOptions
 {
     /// <summary>
@@ -102,5 +103,19 @@ internal sealed class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceSco
         }
 #pragma warning restore REFL017 // Don't use name of wrong member
 #pragma warning restore REFL003 // The member does not exist
+
+        // Fail loud at configure time when the reflection extraction produced neither a DataSource
+        // nor a ConnectionString. Without this the failure surfaces far away as the validator's
+        // generic "requires either a DataSource or ConnectionString" message at ValidateOnStart,
+        // hiding the real cause (the Npgsql EF Core provider renamed/restructured these properties).
+        if (options.DataSource is null && string.IsNullOrWhiteSpace(options.ConnectionString))
+        {
+            throw new InvalidOperationException(
+                $"Failed to resolve a DataSource or ConnectionString from the EF Core provider extension "
+                    + $"'{extension.GetType().FullName}' for DbContext '{options.DbContextType.FullName}'. The reflected "
+                    + $"properties '{nameof(options.DataSource)}'/'{nameof(options.ConnectionString)}' returned null — "
+                    + "the Npgsql EF Core provider may have renamed or restructured them."
+            );
+        }
     }
 }

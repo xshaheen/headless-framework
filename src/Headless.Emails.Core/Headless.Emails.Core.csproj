@@ -10,4 +10,9 @@
     <ProjectReference Include="..\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Emails.Aws" />
+    <InternalsVisibleTo Include="Headless.Emails.Mailkit" />
+    <InternalsVisibleTo Include="Headless.Emails.Tests.Unit" />
+  </ItemGroup>
 </Project>

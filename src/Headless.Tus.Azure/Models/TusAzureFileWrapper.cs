@@ -27,16 +27,16 @@ internal sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blo
         }
     }
 
-    public async Task<Dictionary<string, Metadata>> GetMetadataAsync(CancellationToken cancellationToken)
+    public Task<Dictionary<string, Metadata>> GetMetadataAsync(CancellationToken cancellationToken)
     {
-        return await Task.FromResult(azureFile.Metadata.ToTus()).ConfigureAwait(false);
+        return Task.FromResult(azureFile.Metadata.ToTus());
     }
 }
 
 internal static partial class TusAzureFileWrapperLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 3244,
         EventName = "FailedToGetContent",
         Level = LogLevel.Error,
         Message = "Failed to get content for file {FileId}"

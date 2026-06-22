@@ -13,18 +13,12 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 {
     private readonly IEnumerable<string> _cachedSupportedAlgorithms = ["sha1", "sha256", "sha512", "md5"];
 
-    private readonly Dictionary<string, Func<HashAlgorithm>> _supportedAlgorithms = new(
-        StringComparer.OrdinalIgnoreCase
-    )
+    private readonly Dictionary<string, HashAlgorithmName> _supportedAlgorithms = new(StringComparer.OrdinalIgnoreCase)
     {
-#pragma warning disable CA5350 // Weak cryptographic algorithms
-        { "sha1", SHA1.Create },
-#pragma warning restore CA5350
-        { "sha256", SHA256.Create },
-        { "sha512", SHA512.Create },
-#pragma warning disable CA5351 // Broken cryptographic algorithms
-        { "md5", MD5.Create },
-#pragma warning restore CA5351
+        { "sha1", HashAlgorithmName.SHA1 },
+        { "sha256", HashAlgorithmName.SHA256 },
+        { "sha512", HashAlgorithmName.SHA512 },
+        { "md5", HashAlgorithmName.MD5 },
     };
 
     /// <summary>
@@ -83,42 +77,32 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         CancellationToken cancellationToken
     )
     {
+        var blockBlobClient = _GetBlockBlobClient(fileId);
+        TusAzureFile file;
+        byte[] calculatedChecksum;
+
         try
         {
             var blobClient = _GetBlobClient(fileId);
-            var blockBlobClient = _GetBlockBlobClient(fileId);
 
             // Get file info to access stored chunk metadata
-            var file = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
+            var info = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
-            if (file is null)
+            if (info is null)
             {
                 _logger.ChecksumVerificationFileInfoNotFound(fileId);
                 return false;
             }
 
+            file = info;
+
             // Get pre-calculated checksum from metadata (calculated during upload)
-            if (!_TryGetChecksum(file, out var calculatedChecksum))
+            if (!_TryGetChecksum(file, algorithm, out var stored))
             {
                 return false;
             }
 
-            if (_VerifyChecksum(calculatedChecksum, checksum))
-            {
-                _logger.ChecksumVerificationPassed(fileId, algorithm);
-
-                // Commit staged blocks and update metadata atomically
-                await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken).ConfigureAwait(false);
-
-                return true;
-            }
-
-            _logger.ChecksumVerificationFailed(fileId, algorithm, checksum, calculatedChecksum);
-
-            // Don't commit the last chunk, effectively discarding it (since it's not part of the committed blob)
-            // as the TUS protocol requires
-
-            return false;
+            calculatedChecksum = stored;
         }
         catch (Exception e)
         {
@@ -126,42 +110,77 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
             return false;
         }
+
+        if (!_VerifyChecksum(calculatedChecksum, checksum))
+        {
+            _logger.ChecksumVerificationFailed(fileId, algorithm, checksum, calculatedChecksum);
+
+            // Don't commit the last chunk, effectively discarding it (since it's not part of the committed blob)
+            // as the TUS protocol requires.
+            return false;
+        }
+
+        _logger.ChecksumVerificationPassed(fileId, algorithm);
+
+        // Commit OUTSIDE the catch-all above: a failure here is an infrastructure error (throttling, network),
+        // NOT a checksum mismatch. Let it propagate so the client retries the verification, instead of being
+        // told via a false return that its (correctly-checksummed) data was corrupt and discarding it.
+        await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken).ConfigureAwait(false);
+
+        return true;
     }
 
-    private HashAlgorithm? _CreateHashAlgorithm(string algorithm)
+    private IncrementalHash? _CreateHasher(string algorithm)
     {
-        return _supportedAlgorithms.TryGetValue(algorithm, out var factory) ? factory() : null;
+        return _supportedAlgorithms.TryGetValue(algorithm, out var name) ? IncrementalHash.CreateHash(name) : null;
     }
 
-    private bool _TryGetChecksum(TusAzureFile file, [NotNullWhen(true)] out byte[]? checksum)
+    private bool _TryGetChecksum(TusAzureFile file, string requestedAlgorithm, [NotNullWhen(true)] out byte[]? checksum)
     {
-        // The checksum is base64-encoded in metadata (LastChunkChecksum) and calculated during
-        // AppendDataAsync. If missing, it indicates either:
+        // The digest is stored in metadata (LastChunkChecksum) during AppendDataAsync as
+        // "{algorithm}:{base64digest}". If missing, it indicates either:
         // - A bug in the upload flow (checksum should have been calculated)
         // - Corrupted metadata
 
+        checksum = null;
         var lastChunkChecksum = file.Metadata.LastChunkChecksum;
 
         if (string.IsNullOrEmpty(lastChunkChecksum))
         {
             _logger.PreCalculatedChecksumMissing(file.FileId);
 
-            checksum = null;
+            return false;
+        }
+
+        var separator = lastChunkChecksum.IndexOf(':', StringComparison.Ordinal);
+
+        if (separator <= 0)
+        {
+            _logger.InvalidStoredChecksumFormat(new FormatException("Missing algorithm prefix."), file.FileId);
+
+            return false;
+        }
+
+        // Confirm the algorithm the client is verifying with is the one actually used to stage the data,
+        // rather than relying on the digest bytes happening to be equal-length.
+        var storedAlgorithm = lastChunkChecksum[..separator];
+
+        if (!string.Equals(storedAlgorithm, requestedAlgorithm, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.ChecksumAlgorithmMismatch(file.FileId, requestedAlgorithm, storedAlgorithm);
 
             return false;
         }
 
         try
         {
-            checksum = Convert.FromBase64String(lastChunkChecksum);
+            checksum = Convert.FromBase64String(lastChunkChecksum[(separator + 1)..]);
 
             _logger.UsingPreCalculatedChecksum(file.FileId);
         }
         catch (FormatException e)
         {
             _logger.InvalidStoredChecksumFormat(e, file.FileId);
-
-            checksum = null;
 
             return false;
         }
@@ -201,6 +220,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
             // Build complete block list BEFORE clearing metadata (use LastChunkBlocks while it still has data)
             List<string> allBlockIds = [.. committedBlocks.Select(x => x.Name), .. file.Metadata.LastChunkBlocks ?? []];
+            _EnsureWithinBlockLimit(allBlockIds.Count);
 
             // NOW clear chunk tracking metadata (after we've used it)
             file.Metadata.LastChunkBlocks = null;
@@ -299,6 +319,18 @@ internal static partial class TusAzureStoreChecksumLog
         Message = "Invalid stored checksum format for file {FileId} - metadata is corrupted"
     )]
     public static partial void InvalidStoredChecksumFormat(this ILogger logger, Exception exception, string fileId);
+
+    [LoggerMessage(
+        EventId = 3245,
+        Level = LogLevel.Warning,
+        Message = "Checksum algorithm mismatch for file {FileId}: client requested {Requested}, data was staged with {Stored}"
+    )]
+    public static partial void ChecksumAlgorithmMismatch(
+        this ILogger logger,
+        string fileId,
+        string requested,
+        string stored
+    );
 
     [LoggerMessage(
         EventId = 3237,

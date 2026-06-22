@@ -11,8 +11,9 @@ Owns the unified email setup builder (`AddHeadlessEmails`) plus shared conversio
 - `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` — the single provider-agnostic registration entry point, with an exactly-one-provider gate
 - `HeadlessEmailsSetupBuilder` — receives `Use*` provider selections; `IEmailProviderOptionsExtension` — the hook each provider implements
 - `EmailAttachmentContentType.Resolve(fileName)` — derives an attachment MIME type from its file name (MimeKit lookup, `application/octet-stream` fallback)
-- `EmailToMimMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (extension method on `SendSingleEmailRequest`)
-- `EmailRequestAddress.MapToMailboxAddress()` — maps to MimeKit `MailboxAddress`
+- `EmailToMimeMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (internal extension; exposed to the Aws/Mailkit providers via `InternalsVisibleTo`)
+- `MapToMailboxAddress()` — maps an `EmailRequestAddress` to a MimeKit `MailboxAddress` (internal)
+- Full address mapping (From, To, Cc, Bcc), body building (text + HTML via `BodyBuilder`), and attachment streaming
 
 ## Design Notes
 
@@ -30,9 +31,8 @@ dotnet add package Headless.Emails.Core
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
 builder.Services.AddHeadlessEmails(setup => setup.UseNoop());
 
-// Shared helpers used internally by providers — not called from application code:
+// Public content-type helper:
 var contentType = EmailAttachmentContentType.Resolve("invoice.pdf"); // "application/pdf"
-using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken);
 ```
 
 ## Configuration

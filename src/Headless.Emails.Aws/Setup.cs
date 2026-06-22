@@ -47,7 +47,6 @@ public static class SetupAwsSes
         public HeadlessEmailsSetupBuilder UseAwsSes(AWSOptions? options)
         {
             setup.RegisterExtension(new AwsSesEmailOptionsExtension(options));
-
             return setup;
         }
     }

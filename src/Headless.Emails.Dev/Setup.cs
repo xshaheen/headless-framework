@@ -53,7 +53,7 @@ public static class SetupDevEmail
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton<IEmailSender>(new DevEmailSender(filePath));
+            services.AddSingleton<IEmailSender>(_ => new DevEmailSender(filePath));
         }
     }
 

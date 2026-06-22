@@ -17,8 +17,7 @@ namespace Headless.Messaging.Storage.SqlServer;
 /// <summary>
 /// SQL Server implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.
 /// </summary>
-[PublicAPI]
-public sealed class SqlServerMonitoringApi(
+internal sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
@@ -138,7 +137,7 @@ public sealed class SqlServerMonitoringApi(
 
         if (!string.IsNullOrEmpty(query.Content))
         {
-            where += " AND [Content] LIKE @Content";
+            where += " AND [Content] LIKE @Content ESCAPE '\\'";
         }
 
         if (query.IntentType is { })
@@ -158,7 +157,7 @@ public sealed class SqlServerMonitoringApi(
             new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
             new SqlParameter("@Group", query.Group ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
-            new SqlParameter("@Content", $"%{query.Content}%"),
+            new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
             new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short?)query.IntentType ?? 0 },
         ];
 
@@ -167,7 +166,7 @@ public sealed class SqlServerMonitoringApi(
             new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
             new SqlParameter("@Group", query.Group ?? string.Empty),
             new SqlParameter("@Name", query.Name ?? string.Empty),
-            new SqlParameter("@Content", $"%{query.Content}%"),
+            new SqlParameter("@Content", $"%{_EscapeLike(query.Content)}%"),
             new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short?)query.IntentType ?? 0 },
             new SqlParameter("@Offset", query.CurrentPage * query.PageSize),
             new SqlParameter("@Limit", query.PageSize),
@@ -543,5 +542,21 @@ public sealed class SqlServerMonitoringApi(
             .ConfigureAwait(false);
 
         return mediumMessage;
+    }
+
+    private static string _EscapeLike(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        // Escape the ESCAPE character first, then the LIKE wildcards (% _ and the [ character class),
+        // so user text matches literally instead of acting as a wildcard.
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal)
+            .Replace("[", "\\[", StringComparison.Ordinal);
     }
 }

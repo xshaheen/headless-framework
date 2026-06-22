@@ -8,8 +8,8 @@ Provides safe email implementations for development and testing that do not send
 
 ## Key Features
 
-- `DevEmailSender` — writes full email content to a local file; appends with a `--------------------` separator per message; prefers `MessageText` over `MessageHtml` for readability
-- `NoopEmailSender` — silently discards all emails, always returns `Succeeded()`
+- `DevEmailSender` — writes full email content to a local file; appends with a `--------------------` separator per message; prefers `MessageText` over `MessageHtml` for readability. Writes are serialized so concurrent sends do not interleave, and a body-less request throws `InvalidOperationException` (same `EnsureHasBody()` guard as the real providers)
+- `NoopEmailSender` — silently discards all emails, always returns `Succeeded()` (never validates — the explicit "disable email" sender)
 - No network calls, no external dependencies beyond the abstractions and core packages
 
 ## Installation

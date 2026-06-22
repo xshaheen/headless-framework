@@ -8,6 +8,7 @@ using Azure.Storage.Blobs.Specialized;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Extensions.Store;
+using tusdotnet.Models;
 
 namespace Headless.Tus.Services;
 
@@ -51,6 +52,7 @@ public sealed partial class TusAzureStore
             ?? throw new InvalidOperationException($"File {fileId} does not exist");
 
         var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
+        var currentOffset = committedBlocks.Sum(b => b.SizeLong);
         using var hasher = await _GetHasher(stream, cancellationToken).ConfigureAwait(false);
 
         // Stage blocks (with or without chunking)
@@ -59,6 +61,7 @@ public sealed partial class TusAzureStore
                 stream,
                 nextBlockNumber: committedBlocks.Count,
                 azureFile.Metadata.UploadLength,
+                currentOffset,
                 hasher: hasher,
                 cancellationToken: cancellationToken
             )
@@ -68,16 +71,19 @@ public sealed partial class TusAzureStore
         if (hasher == null)
         {
             List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
+            _EnsureWithinBlockLimit(allBlockIds.Count);
             var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
             await blockBlobClient.CommitBlockListAsync(allBlockIds, options, cancellationToken).ConfigureAwait(false);
 
             return bytesWritten;
         }
 
-        // Store the block IDs for this chunk - these are the blocks that will need to be committed or rolled back
-
+        // Store the block IDs for this chunk - these are the blocks that will need to be committed or rolled back.
+        // The digest is prefixed with the algorithm so VerifyChecksumAsync can confirm the requested algorithm
+        // matches the one actually used to stage the data.
+        var algorithm = stream.GetUploadChecksumInfo()!.Algorithm;
         azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
-        azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.Hash ?? []);
+        azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{Convert.ToBase64String(hasher.GetHashAndReset())}";
         await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
         _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);
@@ -93,30 +99,45 @@ public sealed partial class TusAzureStore
         Stream stream,
         int nextBlockNumber,
         long? fileUploadLength,
-        HashAlgorithm? hasher,
+        long currentOffset,
+        IncrementalHash? hasher,
         CancellationToken cancellationToken
     )
     {
+        var blockToken = _NewBlockToken();
+
         if (!_options.EnableChunkSplitting)
         {
-            var blockId = _GenerateBlockId(nextBlockNumber);
+            var blockId = _GenerateBlockId(blockToken, nextBlockNumber);
 
             if (hasher is null) // No checksum, upload directly
             {
+                if (stream.CanSeek)
+                {
+                    await blockBlobClient
+                        .StageBlockAsync(blockId, stream, cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    return ([blockId], stream.Length);
+                }
+
+                // A non-seekable request body has no Length; buffer it so StageBlock has a content length and
+                // we can report the exact bytes staged without ever calling Stream.Length on a forward-only stream.
+                await using var buffered = new MemoryStream();
+                await stream.CopyToAsync(buffered, cancellationToken).ConfigureAwait(false);
+                buffered.Position = 0;
                 await blockBlobClient
-                    .StageBlockAsync(blockId, stream, cancellationToken: cancellationToken)
+                    .StageBlockAsync(blockId, buffered, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
-                return ([blockId], stream.Length);
+                return ([blockId], buffered.Length);
             }
 
             // Read entire stream into MemoryStream for hashing and upload
-            // Pre-allocate capacity if stream length is known to avoid resizing
-            var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)stream.Length : 0;
+            // Pre-allocate capacity if stream length is known to avoid resizing (clamped to int range)
+            var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)Math.Min(stream.Length, int.MaxValue) : 0;
             await using var memoryStream = new MemoryStream(capacity);
             await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
 
-            memoryStream.Position = 0; // Reset position for hashing
-            hasher.TransformFinalBlock(memoryStream.GetBuffer(), 0, (int)memoryStream.Length);
+            hasher.AppendData(memoryStream.GetBuffer().AsSpan(0, (int)memoryStream.Length));
 
             memoryStream.Position = 0; // Reuse MemoryStream for upload
             await blockBlobClient
@@ -137,11 +158,15 @@ public sealed partial class TusAzureStore
 
         await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken).ConfigureAwait(false))
         {
-            var blockId = _GenerateBlockId(nextBlockNumber++);
+            // Reject data beyond the declared upload length, mirroring the pipeline path's guard. (The
+            // no-split branch above cannot pre-check length; that is the EnableChunkSplitting=false path.)
+            _AssertNotToMuchData(currentOffset + bytesWritten, chunk.Count, fileUploadLength);
+
+            var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
 
             // Calculate hash for this chunk if needed
-            // TransformBlock uses the buffer synchronously - safe with shared buffer approach
-            hasher?.TransformBlock(chunk.Array!, chunk.Offset, chunk.Count, outputBuffer: null, 0);
+            // AppendData consumes the buffer synchronously - safe with the shared pooled-buffer approach
+            hasher?.AppendData(chunk.Array!, chunk.Offset, chunk.Count);
 
             // Upload the chunk as a block
             // MemoryStream wrapper is necessary (Azure SDK requires Stream) but doesn't copy data
@@ -154,9 +179,6 @@ public sealed partial class TusAzureStore
             chunkBlockIds.Add(blockId);
             bytesWritten += chunk.Count;
         }
-
-        // Finalize hash if needed (TransformFinalBlock with empty data)
-        hasher?.TransformFinalBlock([], 0, 0);
 
         return (chunkBlockIds, bytesWritten);
     }
@@ -187,7 +209,7 @@ public sealed partial class TusAzureStore
     /// <para>
     /// Why this is safe in current usage:
     /// - await foreach ensures synchronous iteration (waits for each iteration to complete)
-    /// - Caller immediately hashes the chunk (TransformBlock uses buffer synchronously)
+    /// - Caller immediately hashes the chunk (IncrementalHash.AppendData consumes the buffer synchronously)
     /// - Caller immediately uploads via MemoryStream (Azure SDK buffers data synchronously)
     /// - Both operations complete before next yield return is reached
     /// </para>
@@ -273,23 +295,54 @@ public sealed partial class TusAzureStore
         };
     }
 
+    /// <summary>
+    /// A short random token, generated once per append/commit call, that scopes the block IDs of that call.
+    /// </summary>
+    /// <remarks>
+    /// Block IDs are otherwise a pure function of the committed-block count, so two overlapping operations on the
+    /// same blob (concurrent PATCHes, or a checksum-deferred PATCH followed by another append before the first is
+    /// verified+committed) would generate identical IDs and silently overwrite each other's still-uncommitted
+    /// blocks. The per-call token makes each call's staged IDs unique. 8 hex chars keeps the comma-joined
+    /// <c>LastChunkBlocks</c> metadata well under Azure's 8&#160;KB per-blob metadata cap.
+    /// </remarks>
+    private static string _NewBlockToken()
+    {
+        return Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..8];
+    }
+
+    // Azure Block Blob caps a blob at 50,000 committed blocks. A long upload with a small chunk size can
+    // approach it; fail with an actionable message rather than an opaque Azure error at commit time.
+    private const int _MaxCommittedBlocks = 50_000;
+
+    private static void _EnsureWithinBlockLimit(int blockCount)
+    {
+        if (blockCount <= _MaxCommittedBlocks)
+        {
+            return;
+        }
+
+        FormattableString message =
+            $"Upload exceeds Azure's {_MaxCommittedBlocks}-block limit ({blockCount} blocks). Use a larger BlobDefaultChunkSize/BlobMaxChunkSize so the upload needs fewer, larger blocks.";
+
+        throw new TusStoreException(message.ToString(CultureInfo.InvariantCulture));
+    }
+
     /// <summary>Generates a unique, sortable block ID for Azure block blob uploads.</summary>
-    private static string _GenerateBlockId(int blockIndex)
+    private static string _GenerateBlockId(string token, int blockIndex)
     {
         // Azure requires block IDs to be:
         // - Base64-encoded
         // - Unique within the blob
         // - Same length for all blocks (for proper sorting)
 
-        // This method generates IDs in the format "block-{index:D10}" (e.g., "block-0000000000", "block-0000000001").
-        // The padding ensures lexicographic sorting matches numeric ordering.
-
-        return $"block-{blockIndex.ToString("D10", CultureInfo.InvariantCulture)}".ToBase64();
+        // IDs are "block-{token}-{index:D10}" (e.g. "block-1a2b3c4d-0000000000"). The token (see _NewBlockToken)
+        // guarantees uniqueness across overlapping calls; the zero-padded index preserves within-call ordering.
+        return $"block-{token}-{blockIndex.ToString("D10", CultureInfo.InvariantCulture)}".ToBase64();
     }
 
-    private async Task<HashAlgorithm?> _GetHasher(Stream stream, CancellationToken cancellationToken)
+    private async Task<IncrementalHash?> _GetHasher(Stream stream, CancellationToken cancellationToken)
     {
-        HashAlgorithm? hasher = null;
+        IncrementalHash? hasher = null;
 
         try
         {
@@ -300,7 +353,7 @@ public sealed partial class TusAzureStore
                 return null;
             }
 
-            hasher = _CreateHashAlgorithm(checksum.Algorithm);
+            hasher = _CreateHasher(checksum.Algorithm);
 
             if (hasher is not null)
             {

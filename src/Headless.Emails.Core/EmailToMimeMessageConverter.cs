@@ -7,7 +7,10 @@ namespace Headless.Emails;
 /// <summary>
 /// Converts <see cref="SendSingleEmailRequest"/> instances to MimeKit <see cref="MimeMessage"/> objects.
 /// </summary>
-public static class EmailToMimMessageConverter
+/// <remarks>
+/// Internal to the Emails providers (Aws, Mailkit) — application code does not call this directly.
+/// </remarks>
+internal static class EmailToMimeMessageConverter
 {
     /// <summary>
     /// Converts a <see cref="SendSingleEmailRequest"/> into a MimeKit <see cref="MimeMessage"/>,
@@ -19,7 +22,7 @@ public static class EmailToMimMessageConverter
     /// A fully-populated <see cref="MimeMessage"/>. The caller is responsible for disposing it.
     /// </returns>
     /// <remarks>
-    /// Attachments are streamed asynchronously from their byte arrays. If an exception is thrown
+    /// Attachments are streamed asynchronously from their backing memory. If an exception is thrown
     /// during construction the partially-built <see cref="MimeMessage"/> is disposed before
     /// the exception propagates.
     /// </remarks>
@@ -70,23 +73,39 @@ public static class EmailToMimMessageConverter
 
         var emailBuilder = new BodyBuilder();
 
-        if (request.MessageText is not null)
+        if (!string.IsNullOrWhiteSpace(request.MessageText))
         {
             emailBuilder.TextBody = request.MessageText;
         }
 
-        if (request.MessageHtml is not null)
+        if (!string.IsNullOrWhiteSpace(request.MessageHtml))
         {
             emailBuilder.HtmlBody = request.MessageHtml;
         }
 
         foreach (var requestAttachment in request.Attachments)
         {
-            var fileStream = new MemoryStream(requestAttachment.File);
-            fileStream.Seek(0, SeekOrigin.Begin);
-            await emailBuilder
-                .Attachments.AddAsync(requestAttachment.Name, fileStream, cancellationToken)
-                .ConfigureAwait(false);
+            using var fileStream = new MemoryStream(requestAttachment.File.Length);
+            fileStream.Write(requestAttachment.File.Span);
+            fileStream.Position = 0;
+
+            if (requestAttachment.ContentType is { Length: > 0 } contentType)
+            {
+                await emailBuilder
+                    .Attachments.AddAsync(
+                        requestAttachment.Name,
+                        fileStream,
+                        ContentType.Parse(contentType),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await emailBuilder
+                    .Attachments.AddAsync(requestAttachment.Name, fileStream, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         message.Body = emailBuilder.ToMessageBody();

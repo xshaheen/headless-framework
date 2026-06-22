@@ -74,16 +74,6 @@ public sealed class TusAzureStoreOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_default_lease_duration_to_infinite()
-    {
-        // when
-        var options = new TusAzureStoreOptions();
-
-        // then
-        options.LeaseDuration.Should().Be(Timeout.InfiniteTimeSpan);
-    }
-
-    [Fact]
     public void should_default_container_public_access_type_to_none()
     {
         // when
@@ -181,75 +171,6 @@ public sealed class TusAzureStoreOptionsTests : TestBase
 
     #endregion
 
-    #region Validation - LeaseDuration
-
-    [Fact]
-    public void should_accept_infinite_lease_duration()
-    {
-        // given
-        var options = new TusAzureStoreOptions { LeaseDuration = Timeout.InfiniteTimeSpan };
-
-        // when
-        var result = _validator.TestValidate(options);
-
-        // then
-        result.ShouldNotHaveValidationErrorFor(x => x.LeaseDuration);
-    }
-
-    [Fact]
-    public void should_reject_lease_duration_below_15_seconds()
-    {
-        // given
-        var options = new TusAzureStoreOptions { LeaseDuration = TimeSpan.FromSeconds(14) };
-
-        // when
-        var result = _validator.TestValidate(options);
-
-        // then
-        result.ShouldHaveValidationErrorFor(x => x.LeaseDuration);
-    }
-
-    [Fact]
-    public void should_reject_lease_duration_above_60_minutes()
-    {
-        // given
-        var options = new TusAzureStoreOptions { LeaseDuration = TimeSpan.FromMinutes(61) };
-
-        // when
-        var result = _validator.TestValidate(options);
-
-        // then
-        result.ShouldHaveValidationErrorFor(x => x.LeaseDuration);
-    }
-
-    [Fact]
-    public void should_accept_minimum_lease_duration()
-    {
-        // given
-        var options = new TusAzureStoreOptions { LeaseDuration = TimeSpan.FromSeconds(15) };
-
-        // when
-        var result = _validator.TestValidate(options);
-
-        // then
-        result.ShouldNotHaveValidationErrorFor(x => x.LeaseDuration);
-    }
-
-    [Fact]
-    public void should_accept_maximum_lease_duration()
-    {
-        // given
-        var options = new TusAzureStoreOptions { LeaseDuration = TimeSpan.FromMinutes(60) };
-
-        // when
-        var result = _validator.TestValidate(options);
-
-        // then
-        result.ShouldNotHaveValidationErrorFor(x => x.LeaseDuration);
-    }
-
-    #endregion
-
     #region Validation - ContainerPublicAccessType
 
     [Fact]
@@ -306,7 +227,6 @@ public sealed class TusAzureStoreOptionsTests : TestBase
             EnableChunkSplitting = false,
             BlobMaxChunkSize = 50 * 1024 * 1024,
             BlobDefaultChunkSize = 2 * 1024 * 1024,
-            LeaseDuration = TimeSpan.FromSeconds(30),
             ContainerPublicAccessType = PublicAccessType.Blob,
         };
 

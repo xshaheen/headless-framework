@@ -6,6 +6,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using FluentValidation;
 using Headless.Checks;
+using Headless.Tus.Internal;
 using Headless.Tus.Models;
 using Headless.Tus.Options;
 using Microsoft.Extensions.Logging;
@@ -150,28 +151,6 @@ public sealed partial class TusAzureStore
         }
     }
 
-    private static async Task<(List<BlobBlock> Committed, List<BlobBlock> Uncommitted)> _GetBlocksAsync(
-        BlockBlobClient client,
-        CancellationToken token
-    )
-    {
-        try
-        {
-            var blockListResponse = await client
-                .GetBlockListAsync(BlockListTypes.Committed, cancellationToken: token)
-                .ConfigureAwait(false);
-
-            return (
-                blockListResponse.Value.CommittedBlocks.AsList(),
-                blockListResponse.Value.UncommittedBlocks.AsList()
-            );
-        }
-        catch (RequestFailedException e) when (e.Status == 404)
-        {
-            return ([], []);
-        }
-    }
-
     private async Task<TusAzureFile?> _GetTusFileInfoAsync(string fileId, CancellationToken token)
     {
         var blobClient = _GetBlobClient(fileId);
@@ -211,7 +190,7 @@ public sealed partial class TusAzureStore
 
     private string _GetBlobName(string fileId)
     {
-        return $"{_options.BlobPrefix.EnsureEndsWith('/')}{fileId}";
+        return TusBlobName.Build(_options.BlobPrefix, fileId);
     }
 
     private string _ExtractFileIdFromBlobName(string blobName)

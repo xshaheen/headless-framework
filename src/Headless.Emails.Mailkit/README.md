@@ -17,7 +17,7 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 
 ## Design Notes
 
-The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected state. Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send.
+The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout` (which otherwise governs only read/write). Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send. A client left connected-but-unauthenticated by such a failure is disposed on return instead of being pooled, so it is never reused with authentication skipped.
 
 ## Installation
 
@@ -75,12 +75,13 @@ builder.Services.AddHeadlessEmails(setup => setup.UseMailkit((options, sp) =>
 | `User` | `null` | Authentication username; omit for anonymous SMTP |
 | `Password` | `null` | Authentication password; use user-secrets or key vault in production |
 | `SocketOptions` | `StartTls` | `SecureSocketOptions`: `None`, `Auto`, `StartTls`, `StartTlsWhenAvailable`, `SslOnConnect` |
-| `Timeout` | `30s` | Per-connection timeout |
-| `MaxPoolSize` | `10` | Max pooled SMTP connections; set `0` to disable pooling |
+| `Timeout` | `30s` | Connect/authenticate and per-read/write timeout |
+| `MaxPoolSize` | `10` | Max pooled SMTP connections; `0` retains at most one (the pool always keeps a fast-path slot) |
 
 ## Dependencies
 
 - `Headless.Emails.Core`
+- `Headless.Hosting` (options binding + FluentValidation via `Configure<TOptions, TValidator>`)
 - `MailKit`
 
 ## Side Effects

@@ -1,6 +1,5 @@
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Headless.Tus.Locks;
 using Headless.Tus.Options;
 using Headless.Tus.Services;
 using Microsoft.Extensions.Azure;
@@ -26,7 +25,9 @@ app.MapTus(
         var tusConfiguration = new DefaultTusConfiguration
         {
             Store = new TusAzureStore(blobServiceClient, tusAzureStoreOptions),
-            FileLockProvider = new AzureBlobFileLockProvider(blobServiceClient, tusAzureStoreOptions),
+            // For multi-node deployments, register Headless.Tus.DistributedLocks and set
+            // FileLockProvider = new DistributedLockTusLockProvider(distributedLock). Omitting it uses
+            // tusdotnet's in-process lock, which is sufficient for this single-node demo.
             UsePipelinesIfAvailable = true,
             AllowedExtensions = TusExtensions.All,
         };

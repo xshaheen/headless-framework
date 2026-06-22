@@ -4,6 +4,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>

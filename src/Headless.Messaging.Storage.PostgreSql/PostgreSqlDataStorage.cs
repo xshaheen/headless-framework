@@ -11,6 +11,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -21,7 +22,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// PostgreSQL implementation of <see cref="IDataStorage"/> for outbox pattern message persistence.
 /// Handles storage, retrieval, and state management of published and received messages.
 /// </summary>
-public sealed class PostgreSqlDataStorage(
+internal sealed class PostgreSqlDataStorage(
     IOptions<PostgreSqlOptions> postgreSqlOptions,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
@@ -29,15 +30,10 @@ public sealed class PostgreSqlDataStorage(
     // PostgreSQL stores message ids as native uuid (big-endian byte sort) -> Version7 keeps the PK sequential.
     [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
-    INodeMembership nodeMembership
+    INodeMembership nodeMembership,
+    ILogger<PostgreSqlDataStorage> logger
 ) : IDataStorage
 {
-    /// <summary>
-    /// Maximum messages to fetch in a single retry batch.
-    /// Higher values process more but increase memory and lock contention.
-    /// </summary>
-    private const int _RetryBatchSize = 200;
-
     /// <summary>
     /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
     /// (<c>Succeeded</c> / <c>Failed</c>) with no scheduled retry, while still respecting an
@@ -301,8 +297,14 @@ public sealed class PostgreSqlDataStorage(
                 );
             }
 
-            await dbTrans
-                .Connection!.ExecuteNonQueryAsync(
+            var connection =
+                dbTrans.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
+
+            await connection
+                .ExecuteNonQueryAsync(
                     sql,
                     transaction: dbTrans,
                     commandTimeout: messagingOptions.Value.CommandTimeout,
@@ -406,9 +408,13 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
             new NpgsqlParameter("@MessageId", message.Origin.GetId()),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
+            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
+            // shares one clock domain; keeps the guard testable with a fake clock.
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
-        return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        return rowId is not null;
     }
 
     /// <summary>
@@ -459,9 +465,19 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.Origin.GetId()),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
+            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
+            // shares one clock domain; keeps the guard testable with a fake clock.
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        // #5 — adopt the authoritative persisted row id. On a concurrent redelivery that takes the ON
+        // CONFLICT UPDATE branch the row keeps its original "Id", so the freshly-generated StorageId would
+        // be stale and the caller's later ChangeReceiveStateAsync (WHERE "Id"=@Id) would silently no-op.
+        var rowId = await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        if (rowId is { } id)
+        {
+            mediumMessage.StorageId = id;
+        }
 
         return mediumMessage;
     }
@@ -700,18 +716,32 @@ public sealed class PostgreSqlDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
+                        var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
 
-                        var mediumMessage = new MediumMessage
+                        MediumMessage mediumMessage;
+                        try
                         {
-                            StorageId = reader.GetGuid(0),
-                            Origin = serializer.Deserialize(content)!,
-                            Content = content,
-                            IntentType = (IntentType)reader.GetInt16(2),
-                            Retries = reader.GetInt32(3),
-                            Added = reader.GetDateTime(4),
-                            ExpiresAt = reader.GetDateTime(5),
-                        };
+                            mediumMessage = new MediumMessage
+                            {
+                                StorageId = storageId,
+                                Origin = serializer.Deserialize(content)!,
+                                Content = content,
+                                IntentType = (IntentType)reader.GetInt16(2),
+                                Retries = reader.GetInt32(3),
+                                Added = reader.GetDateTime(4),
+                                ExpiresAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(5),
+                            };
+                        }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
+                        catch (Exception ex)
+#pragma warning restore CA1031
+                        {
+                            logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                            continue;
+                        }
 
                         messages.Add(mediumMessage);
                     }
@@ -724,6 +754,8 @@ public sealed class PostgreSqlDataStorage(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+
+        logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
 
         await scheduleTask(transaction, messageList).ConfigureAwait(false);
 
@@ -769,7 +801,11 @@ public sealed class PostgreSqlDataStorage(
         int affectedRows;
         if (transaction is DbTransaction dbTransaction)
         {
-            var connection = dbTransaction.Connection!;
+            var connection =
+                dbTransaction.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -783,7 +819,11 @@ public sealed class PostgreSqlDataStorage(
         else if (transaction is IDbContextTransaction efTransaction)
         {
             var dbTrans = efTransaction.GetDbTransaction();
-            var connection = dbTrans.Connection!;
+            var connection =
+                dbTrans.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -811,7 +851,7 @@ public sealed class PostgreSqlDataStorage(
         return affectedRows > 0;
     }
 
-    private async ValueTask<bool> _StoreReceivedMessage(
+    private async ValueTask<Guid?> _StoreReceivedMessage(
         object[] sqlParams,
         CancellationToken cancellationToken = default
     )
@@ -828,11 +868,13 @@ public sealed class PostgreSqlDataStorage(
         // already-exhausted message cannot overwrite a previously-Succeeded row's status back to
         // Failed (which would re-fire OnExhausted spuriously).
         //
-        // RETURNING xmax gives us a cheap way to discriminate insert vs update vs no-op:
-        //   xmax = 0           → fresh INSERT (no previous tuple version)
-        //   xmax = current txn → UPDATE branch matched and the WHERE filter let it run
-        //   no row             → ON CONFLICT matched but the WHERE filter blocked the update
-        //                        (terminal-row guard hit). We treat as "not modified" → return false.
+        // RETURNING "Id" surfaces the authoritative persisted row id and discriminates written vs no-op:
+        //   one row returned → a fresh INSERT, OR an ON CONFLICT DO UPDATE whose WHERE guard passed; its
+        //                      "Id" is the canonical row id. On the UPDATE branch the existing row keeps
+        //                      its original "Id" (EXCLUDED."Id" is intentionally not in the SET list), which
+        //                      differs from the freshly-generated @Id — so callers must adopt this value.
+        //   no row returned  → ON CONFLICT matched but the DO UPDATE WHERE guard blocked the update
+        //                      (terminal-row guard or active-lease guard) → returns null ("not modified").
         // Use the inference form `ON CONFLICT (col, expression)` so the planner matches the
         // unique expression index by structure rather than
         // requiring a named constraint (a `CREATE UNIQUE INDEX` is an index, not a constraint;
@@ -857,20 +899,22 @@ public sealed class PostgreSqlDataStorage(
             WHERE NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND {_receivedTable}."NextRetryAt" IS NULL)
-              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= now())
+              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= @Now)
+            RETURNING "Id"
             """;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var affectedRows = await connection
-            .ExecuteNonQueryAsync(
+
+        return await connection
+            .ExecuteReaderAsync<Guid?>(
                 sql,
+                static async (reader, token) =>
+                    await reader.ReadAsync(token).ConfigureAwait(false) ? reader.GetGuid(0) : null,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-
-        return affectedRows > 0;
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -944,7 +988,7 @@ public sealed class PostgreSqlDataStorage(
                   AND ("LockedUntil" IS NULL OR "LockedUntil" <= @Now)
                   AND {_TerminalRowGuardSimple}
                 ORDER BY "NextRetryAt"
-                LIMIT {_RetryBatchSize}
+                LIMIT {messagingOptions.Value.RetryBatchSize}
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING "Id","Content","IntentType","Retries","Added","NextRetryAt","LockedUntil","Owner";
@@ -975,26 +1019,40 @@ public sealed class PostgreSqlDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
+                        var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
 
-                        var mediumMessage = new MediumMessage
+                        MediumMessage mediumMessage;
+                        try
                         {
-                            StorageId = reader.GetGuid(0),
-                            Origin = serializer.Deserialize(content)!,
-                            Content = content,
-                            IntentType = (IntentType)reader.GetInt16(2),
-                            Retries = reader.GetInt32(3),
-                            Added = reader.GetDateTime(4),
-                            NextRetryAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(5),
-                            LockedUntil = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(6),
-                            Owner = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetString(7),
-                        };
+                            mediumMessage = new MediumMessage
+                            {
+                                StorageId = storageId,
+                                Origin = serializer.Deserialize(content)!,
+                                Content = content,
+                                IntentType = (IntentType)reader.GetInt16(2),
+                                Retries = reader.GetInt32(3),
+                                Added = reader.GetDateTime(4),
+                                NextRetryAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(5),
+                                LockedUntil = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(6),
+                                Owner = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(7),
+                            };
+                        }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
+                        catch (Exception ex)
+#pragma warning restore CA1031
+                        {
+                            // #3 — poison row: skip so the rest of the leased batch still dispatches. The row stays
+                            // leased until LockedUntil expires, then is re-picked and re-skipped (no head-of-line stall).
+                            logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                            continue;
+                        }
 
                         messages.Add(mediumMessage);
                     }
