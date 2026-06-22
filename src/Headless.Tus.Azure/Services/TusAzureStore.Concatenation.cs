@@ -139,6 +139,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             long totalSize = 0;
             var blockIds = new List<string>();
             var blockNumber = 0;
+            var blockToken = _NewBlockToken();
 
             // Try server-side copy first (most performant - data stays in Azure)
             // Falls back to streaming if not supported (e.g., Azurite emulator)
@@ -158,7 +159,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
                 foreach (var block in partialBlocks)
                 {
-                    var newBlockId = _GenerateBlockId(blockNumber++);
+                    var newBlockId = _GenerateBlockId(blockToken, blockNumber++);
                     var blockRange = new HttpRange(partialOffset, block.SizeLong);
 
                     if (useServerSideCopy)

@@ -97,9 +97,11 @@ public sealed partial class TusAzureStore
         CancellationToken cancellationToken
     )
     {
+        var blockToken = _NewBlockToken();
+
         if (!_options.EnableChunkSplitting)
         {
-            var blockId = _GenerateBlockId(nextBlockNumber);
+            var blockId = _GenerateBlockId(blockToken, nextBlockNumber);
 
             if (hasher is null) // No checksum, upload directly
             {
@@ -137,7 +139,7 @@ public sealed partial class TusAzureStore
 
         await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken).ConfigureAwait(false))
         {
-            var blockId = _GenerateBlockId(nextBlockNumber++);
+            var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
 
             // Calculate hash for this chunk if needed
             // TransformBlock uses the buffer synchronously - safe with shared buffer approach
@@ -273,18 +275,32 @@ public sealed partial class TusAzureStore
         };
     }
 
+    /// <summary>
+    /// A short random token, generated once per append/commit call, that scopes the block IDs of that call.
+    /// </summary>
+    /// <remarks>
+    /// Block IDs are otherwise a pure function of the committed-block count, so two overlapping operations on the
+    /// same blob (concurrent PATCHes, or a checksum-deferred PATCH followed by another append before the first is
+    /// verified+committed) would generate identical IDs and silently overwrite each other's still-uncommitted
+    /// blocks. The per-call token makes each call's staged IDs unique. 8 hex chars keeps the comma-joined
+    /// <c>LastChunkBlocks</c> metadata well under Azure's 8&#160;KB per-blob metadata cap.
+    /// </remarks>
+    private static string _NewBlockToken()
+    {
+        return Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..8];
+    }
+
     /// <summary>Generates a unique, sortable block ID for Azure block blob uploads.</summary>
-    private static string _GenerateBlockId(int blockIndex)
+    private static string _GenerateBlockId(string token, int blockIndex)
     {
         // Azure requires block IDs to be:
         // - Base64-encoded
         // - Unique within the blob
         // - Same length for all blocks (for proper sorting)
 
-        // This method generates IDs in the format "block-{index:D10}" (e.g., "block-0000000000", "block-0000000001").
-        // The padding ensures lexicographic sorting matches numeric ordering.
-
-        return $"block-{blockIndex.ToString("D10", CultureInfo.InvariantCulture)}".ToBase64();
+        // IDs are "block-{token}-{index:D10}" (e.g. "block-1a2b3c4d-0000000000"). The token (see _NewBlockToken)
+        // guarantees uniqueness across overlapping calls; the zero-padded index preserves within-call ordering.
+        return $"block-{token}-{blockIndex.ToString("D10", CultureInfo.InvariantCulture)}".ToBase64();
     }
 
     private async Task<HashAlgorithm?> _GetHasher(Stream stream, CancellationToken cancellationToken)

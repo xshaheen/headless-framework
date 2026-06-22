@@ -69,6 +69,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         var optimalChunkSize = _CalculateOptimalChunkSize(azureFile.Metadata.UploadLength);
         var nextBlockNumber = committedBlocks.Count;
+        var blockToken = _NewBlockToken();
         var bytesWrittenThisRequest = 0L;
         var chunkBlockIds = new List<string>();
 
@@ -106,7 +107,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                     }
 
                     // Stage the block
-                    var blockId = _GenerateBlockId(nextBlockNumber++);
+                    var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
                     await using var chunkStream = new ReadOnlySequenceStream(chunk);
                     await blockBlobClient
                         .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)

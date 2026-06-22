@@ -17,7 +17,6 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
   - **Checksum** (`ITusChecksumStore`) — SHA1, SHA256, SHA512, MD5; constant-time comparison; deferred block commit
   - **Termination** (`ITusTerminationStore`) — `DeleteFileAsync`
   - **Readable** (`ITusReadableStore`) — `GetFileAsync` returns `ITusFile`
-- `AzureBlobFileLockProvider` / `AzureBlobFileLock` — Azure Blob Lease-based `ITusFileLockProvider` for single-region deployments
 - `ITusAzureBlobHttpHeadersProvider` / `DefaultTusAzureBlobHttpHeadersProvider` — per-file HTTP header customization (Content-Type, cache control)
 - Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (100 MB) based on declared upload size
 - Pooled buffer stream splitting via `ArrayPool<byte>` to minimize allocations during PATCH ingestion
@@ -71,29 +70,26 @@ app.MapTus("/files", async _ => new DefaultTusConfiguration
 app.Run();
 ```
 
-With Azure Blob file locking (single-region):
+Serializing concurrent PATCHes across nodes (multi-node deployments): register
+[`Headless.Tus.DistributedLocks`](../Headless.Tus.DistributedLocks/README.md), which bridges any
+`IDistributedLock` backend (Redis, SQL Server, …) to tusdotnet's `ITusFileLockProvider`:
 
 ```csharp
-using Headless.Tus.Locks;
-using Headless.Tus.Options;
+using Headless.Tus;            // AddDistributedLockTusLockProvider
 using tusdotnet.Interfaces;
 
-var options = new TusAzureStoreOptions
-{
-    ContainerName = "uploads",
-    BlobPrefix = "tus/",
-    LeaseDuration = Timeout.InfiniteTimeSpan   // infinite or 15 s–60 min
-};
+// Register an IDistributedLock backend (Redis, SQL Server, …) first, then the TUS lock adapter:
+builder.Services.AddDistributedLockTusLockProvider();
 
-var lockProvider = new AzureBlobFileLockProvider(blobServiceClient, options);
-
-app.MapTus("/files", async _ => new DefaultTusConfiguration
+app.MapTus("/files", httpContext => Task.FromResult(new DefaultTusConfiguration
 {
     Store = tusStore,
     UrlPath = "/files",
-    FileLockProvider = lockProvider
-});
+    FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>()
+}));
 ```
+
+A single-node deployment can omit the lock provider entirely and rely on tusdotnet's in-process lock.
 
 With custom HTTP headers per upload:
 
@@ -132,9 +128,8 @@ var store = new TusAzureStore(
 | `CreateContainerIfNotExists` | `true` | Calls `CreateIfNotExists` in the constructor. |
 | `ContainerPublicAccessType` | `PublicAccessType.None` | Access type used when creating the container. |
 | `EnableChunkSplitting` | `true` | Splits large PATCH bodies into multiple Azure blocks. |
-| `BlobDefaultChunkSize` | `4 MB` | Default block size for medium uploads. |
+| `BlobDefaultChunkSize` | `4 MB` | Default block size for medium uploads. Must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. |
 | `BlobMaxChunkSize` | `100 MB` | Block size used for uploads ≥ 100 MB. |
-| `LeaseDuration` | `Timeout.InfiniteTimeSpan` | Used by `AzureBlobFileLockProvider`. Must be infinite or 15 s–60 min. |
 
 Chunk size selection: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`; uploads 10–100 MB use `BlobDefaultChunkSize`; uploads ≥ 100 MB use `BlobMaxChunkSize`.
 
@@ -149,4 +144,4 @@ Chunk size selection: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`;
 ## Side Effects
 
 - Synchronously calls `BlobContainerClient.CreateIfNotExists` during `TusAzureStore` construction when `CreateContainerIfNotExists = true`.
-- No DI registrations — `TusAzureStore` and `AzureBlobFileLockProvider` are constructed manually.
+- No DI registrations — `TusAzureStore` is constructed manually. For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.

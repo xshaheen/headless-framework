@@ -58,18 +58,6 @@ public sealed class TusAzureStoreOptions
     /// <see cref="BlobMaxChunkSize"/> based on total upload size heuristics.</remarks>
     public int BlobDefaultChunkSize { get; set; } = 4 * 1024 * 1024; // 4MB
 
-    /// <summary>
-    /// Duration of the Azure Blob lease acquired to prevent concurrent PATCH requests on the same
-    /// file when <c>AzureBlobFileLockProvider</c> is used.
-    /// </summary>
-    /// <remarks>
-    /// Must be between 15 seconds and 60 minutes, or <see cref="Timeout.InfiniteTimeSpan"/> (-1)
-    /// for an infinite lease. Defaults to <see cref="Timeout.InfiniteTimeSpan"/>. Infinite leases
-    /// are released explicitly via <c>ReleaseIfHeld</c>; bounded leases expire automatically if
-    /// the process crashes before release.
-    /// </remarks>
-    public TimeSpan LeaseDuration { get; set; } = Timeout.InfiniteTimeSpan;
-
     /// <summary>Public access level applied when creating the container.</summary>
     /// <remarks>Only used when <see cref="CreateContainerIfNotExists"/> is <see langword="true"/>
     /// and the container does not yet exist. Defaults to <c>None</c> (private).</remarks>
@@ -93,11 +81,6 @@ internal sealed class TusAzureStoreOptionsValidator : AbstractValidator<TusAzure
             .WithMessage("BlobDefaultChunkSize must be between 1 byte and 100MB")
             .LessThanOrEqualTo(x => x.BlobMaxChunkSize)
             .WithMessage("BlobDefaultChunkSize must not exceed BlobMaxChunkSize");
-
-        RuleFor(x => x.LeaseDuration)
-            .InclusiveBetween(TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(60)) // 15 seconds to 60 minutes
-            .When(x => x.LeaseDuration != Timeout.InfiniteTimeSpan)
-            .WithMessage("DefaultLeaseTime must be between 15 seconds and 60 minutes or infinite (-1)");
 
         RuleFor(x => x.ContainerPublicAccessType).IsInEnum();
     }
