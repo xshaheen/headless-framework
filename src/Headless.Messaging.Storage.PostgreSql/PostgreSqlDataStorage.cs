@@ -301,8 +301,14 @@ internal sealed class PostgreSqlDataStorage(
                 );
             }
 
-            await dbTrans
-                .Connection!.ExecuteNonQueryAsync(
+            var connection =
+                dbTrans.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
+
+            await connection
+                .ExecuteNonQueryAsync(
                     sql,
                     transaction: dbTrans,
                     commandTimeout: messagingOptions.Value.CommandTimeout,
@@ -406,6 +412,9 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
             new NpgsqlParameter("@MessageId", message.Origin.GetId()),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
+            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
+            // shares one clock domain; keeps the guard testable with a fake clock.
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
         return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -459,6 +468,9 @@ internal sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.Origin.GetId()),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
+            // #4 — active-lease guard uses the injected TimeProvider (not DB now()) so all lease math
+            // shares one clock domain; keeps the guard testable with a fake clock.
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
         await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -771,7 +783,11 @@ internal sealed class PostgreSqlDataStorage(
         int affectedRows;
         if (transaction is DbTransaction dbTransaction)
         {
-            var connection = dbTransaction.Connection!;
+            var connection =
+                dbTransaction.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -785,7 +801,11 @@ internal sealed class PostgreSqlDataStorage(
         else if (transaction is IDbContextTransaction efTransaction)
         {
             var dbTrans = efTransaction.GetDbTransaction();
-            var connection = dbTrans.Connection!;
+            var connection =
+                dbTrans.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -860,7 +880,7 @@ internal sealed class PostgreSqlDataStorage(
             WHERE NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND {_receivedTable}."NextRetryAt" IS NULL)
-              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= now())
+              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= @Now)
             """;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();

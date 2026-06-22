@@ -284,8 +284,14 @@ public sealed class SqlServerDataStorage(
                 );
             }
 
-            await dbTrans
-                .Connection!.ExecuteNonQueryAsync(
+            var connection =
+                dbTrans.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
+
+            await connection
+                .ExecuteNonQueryAsync(
                     sql,
                     transaction: dbTrans,
                     commandTimeout: messagingOptions.Value.CommandTimeout,
@@ -392,6 +398,9 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@MessageId", message.Origin.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
+            // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
+            // math shares one clock domain; keeps the guard testable with a fake clock.
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -451,6 +460,9 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@MessageId", message.Origin.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", DBNull.Value),
+            // #4 — active-lease guard uses the injected TimeProvider (not GETUTCDATE()) so all lease
+            // math shares one clock domain; keeps the guard testable with a fake clock.
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -795,7 +807,11 @@ public sealed class SqlServerDataStorage(
         int affectedRows;
         if (transaction is DbTransaction dbTransaction)
         {
-            var connection = dbTransaction.Connection!;
+            var connection =
+                dbTransaction.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -809,7 +825,11 @@ public sealed class SqlServerDataStorage(
         else if (transaction is IDbContextTransaction efTransaction)
         {
             var dbTrans = efTransaction.GetDbTransaction();
-            var connection = dbTrans.Connection!;
+            var connection =
+                dbTrans.Connection
+                ?? throw new InvalidOperationException(
+                    "The supplied DbTransaction has no active Connection — it may have already been committed or rolled back."
+                );
             affectedRows = await connection
                 .ExecuteNonQueryAsync(
                     sql,
@@ -859,7 +879,7 @@ public sealed class SqlServerDataStorage(
                 AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
                     StatusName.Failed
                 )}') AND target.NextRetryAt IS NULL)
-                AND (target.LockedUntil IS NULL OR target.LockedUntil <= GETUTCDATE())
+                AND (target.LockedUntil IS NULL OR target.LockedUntil <= @Now)
             THEN
                 UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Owner = @Owner, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
