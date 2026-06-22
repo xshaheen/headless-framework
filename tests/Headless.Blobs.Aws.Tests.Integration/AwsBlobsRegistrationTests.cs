@@ -105,11 +105,10 @@ public sealed class AwsBlobsRegistrationTests
 
         // when
         var defaultStorage = serviceProvider.GetRequiredService<IBlobStorage>();
-        var presigned = serviceProvider.GetRequiredService<IPresignedUrlBlobStorage>();
 
-        // then — the AWS engine implements IPresignedUrlBlobStorage; the unkeyed alias points to the same instance
+        // then — the AWS engine implements IPresignedUrlBlobStorage, but no global alias is registered
         defaultStorage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
-        presigned.Should().BeSameAs(defaultStorage);
+        serviceProvider.GetService<IPresignedUrlBlobStorage>().Should().BeNull();
     }
 
     [Fact]

@@ -50,9 +50,9 @@ public sealed class SetupCloudflareR2BlobTests
         // when
         var storage = sp.GetRequiredService<IBlobStorage>();
 
-        // then — the reused AWS engine implements IPresignedUrlBlobStorage; the unkeyed alias is the same instance
+        // then — the reused AWS engine implements IPresignedUrlBlobStorage, but no global alias is registered
         storage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
-        sp.GetRequiredService<IPresignedUrlBlobStorage>().Should().BeSameAs(storage);
+        sp.GetService<IPresignedUrlBlobStorage>().Should().BeNull();
     }
 
     [Fact]

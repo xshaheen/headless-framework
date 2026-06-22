@@ -40,13 +40,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Register a BlobServiceClient (from a connection string, or via Microsoft.Extensions.Azure with
 // DefaultAzureCredential). The Azure store consumes it from DI.
 builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
-builder.Services.AddHeadlessBlobs(blobs => blobs.UseAzure(options => { }));
-
-// For a named store on a different account, supply a per-store client:
 builder.Services.AddHeadlessBlobs(blobs =>
+{
+    blobs.UseAzure(options => { });
+
+    // For a named store on a different account, supply a per-store client:
     blobs.AddNamed("archive", instance => instance.UseAzure(
         setupAction: options => { },
-        clientFactory: _ => new BlobServiceClient("<archive-account-connection-string>"))));
+        clientFactory: _ => new BlobServiceClient("<archive-account-connection-string>")));
+});
 ```
 
 ## Configuration

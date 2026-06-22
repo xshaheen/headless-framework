@@ -178,18 +178,25 @@ public static class SetupAwsS3
         {
             services.AddBlobStorageProvider();
 
-            services.AddSingleton<IBlobStorage>(serviceProvider => new AwsBlobStorage(
-                S3ClientFactory.Create(awsOptions),
-                serviceProvider.GetRequiredService<IMimeTypeProvider>(),
-                serviceProvider.GetRequiredService<IClock>(),
-                serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>(),
-                new AwsBlobNamingNormalizer(),
-                serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
-            ));
+            services.AddSingleton<IBlobStorage>(serviceProvider =>
+            {
+                var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
+                var clock = serviceProvider.GetRequiredService<IClock>();
+                var options = serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>();
+                _ = options.Value;
+                var logger =
+                    serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
+                var s3Client = S3ClientFactory.Create(awsOptions);
 
-            services.AddSingleton<IPresignedUrlBlobStorage>(serviceProvider =>
-                (IPresignedUrlBlobStorage)serviceProvider.GetRequiredService<IBlobStorage>()
-            );
+                return new AwsBlobStorage(
+                    s3Client,
+                    mimeTypeProvider,
+                    clock,
+                    options,
+                    new AwsBlobNamingNormalizer(),
+                    logger
+                );
+            });
 
             return services;
         }
@@ -201,16 +208,25 @@ public static class SetupAwsS3
             services.AddKeyedSingleton<IBlobStorage>(
                 name,
                 (serviceProvider, _) =>
-                    new AwsBlobStorage(
-                        S3ClientFactory.Create(awsOptions),
-                        serviceProvider.GetRequiredService<IMimeTypeProvider>(),
-                        serviceProvider.GetRequiredService<IClock>(),
-                        Options.Create(
-                            serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
-                        ),
+                {
+                    var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
+                    var clock = serviceProvider.GetRequiredService<IClock>();
+                    var options = Options.Create(
+                        serviceProvider.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>().Get(name)
+                    );
+                    var logger =
+                        serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
+                    var s3Client = S3ClientFactory.Create(awsOptions);
+
+                    return new AwsBlobStorage(
+                        s3Client,
+                        mimeTypeProvider,
+                        clock,
+                        options,
                         new AwsBlobNamingNormalizer(),
-                        serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
-                    )
+                        logger
+                    );
+                }
             );
 
             services.AddKeyedSingleton<IPresignedUrlBlobStorage>(

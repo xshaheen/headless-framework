@@ -115,12 +115,11 @@ public sealed class AzureBlobsRegistrationTests
 
         // when
         var defaultStorage = sp.GetRequiredService<IBlobStorage>();
-        var defaultPresigned = sp.GetRequiredService<IPresignedUrlBlobStorage>();
         var namedPresigned = sp.GetRequiredKeyedService<IPresignedUrlBlobStorage>("cdn");
 
-        // then — AzureBlobStorage implements IPresignedUrlBlobStorage; the forwarding registrations resolve
+        // then — AzureBlobStorage implements IPresignedUrlBlobStorage, but no global alias is registered
         defaultStorage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
-        defaultPresigned.Should().BeSameAs(defaultStorage);
+        sp.GetService<IPresignedUrlBlobStorage>().Should().BeNull();
 
         namedPresigned.Should().NotBeNull();
         namedPresigned.Should().BeSameAs(sp.GetRequiredKeyedService<IBlobStorage>("cdn"));

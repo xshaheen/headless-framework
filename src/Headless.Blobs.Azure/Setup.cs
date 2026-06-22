@@ -33,8 +33,8 @@ namespace Headless.Blobs.Azure;
 /// });
 /// </code>
 /// <para>
-/// Both keyed and unkeyed <see cref="IPresignedUrlBlobStorage"/> registrations forward to the same underlying
-/// <see cref="AzureBlobStorage"/> instance.
+/// Named stores also expose keyed <see cref="IPresignedUrlBlobStorage"/> forwards. Default presigned support is
+/// discovered by casting the resolved <see cref="IBlobStorage"/>.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -211,18 +211,24 @@ public static class SetupAzureBlob
         {
             services.AddBlobStorageProvider();
 
-            services.AddSingleton<IBlobStorage>(sp => new AzureBlobStorage(
-                clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>(),
-                sp.GetRequiredService<IMimeTypeProvider>(),
-                sp.GetRequiredService<IClock>(),
-                sp.GetRequiredService<IOptions<AzureStorageOptions>>(),
-                new AzureBlobNamingNormalizer(),
-                sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance
-            ));
+            services.AddSingleton<IBlobStorage>(sp =>
+            {
+                var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
+                var clock = sp.GetRequiredService<IClock>();
+                var options = sp.GetRequiredService<IOptions<AzureStorageOptions>>();
+                _ = options.Value;
+                var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
+                var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
 
-            services.AddSingleton<IPresignedUrlBlobStorage>(sp =>
-                (IPresignedUrlBlobStorage)sp.GetRequiredService<IBlobStorage>()
-            );
+                return new AzureBlobStorage(
+                    client,
+                    mimeTypeProvider,
+                    clock,
+                    options,
+                    new AzureBlobNamingNormalizer(),
+                    logger
+                );
+            });
 
             return services;
         }
@@ -237,14 +243,26 @@ public static class SetupAzureBlob
             services.AddKeyedSingleton<IBlobStorage>(
                 name,
                 (sp, _) =>
-                    new AzureBlobStorage(
-                        clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>(),
-                        sp.GetRequiredService<IMimeTypeProvider>(),
-                        sp.GetRequiredService<IClock>(),
-                        Options.Create(sp.GetRequiredService<IOptionsMonitor<AzureStorageOptions>>().Get(name)),
+                {
+                    var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
+                    var clock = sp.GetRequiredService<IClock>();
+                    var options = Options.Create(
+                        sp.GetRequiredService<IOptionsMonitor<AzureStorageOptions>>().Get(name)
+                    );
+                    var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
+                    var client = clientFactory is not null
+                        ? clientFactory(sp)
+                        : sp.GetRequiredService<BlobServiceClient>();
+
+                    return new AzureBlobStorage(
+                        client,
+                        mimeTypeProvider,
+                        clock,
+                        options,
                         new AzureBlobNamingNormalizer(),
-                        sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance
-                    )
+                        logger
+                    );
+                }
             );
 
             services.AddKeyedSingleton<IPresignedUrlBlobStorage>(

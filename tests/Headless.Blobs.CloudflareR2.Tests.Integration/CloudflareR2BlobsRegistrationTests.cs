@@ -56,6 +56,8 @@ public sealed class CloudflareR2BlobsRegistrationTests
 
         // then
         defaultStorage.Should().NotBeNull();
+        defaultStorage.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
+        sp.GetService<IPresignedUrlBlobStorage>().Should().BeNull();
         images.Should().NotBeSameAs(docs);
         sp.GetRequiredKeyedService<IBlobStorage>("images").Should().BeSameAs(images);
         images.Should().BeAssignableTo<IPresignedUrlBlobStorage>();
@@ -87,18 +89,20 @@ public sealed class CloudflareR2BlobsRegistrationTests
     public async Task default_r2_does_not_mutate_unnamed_or_named_aws_options()
     {
         // given — R2 as the DEFAULT store, plus a named AWS store
+        const string collidingName = "__headless_blobs_r2_default";
+
         var services = CreateServices();
         services.AddHeadlessBlobs(blobs =>
         {
             blobs.UseCloudflareR2(ConfigureR2);
-            blobs.AddNamed("aws", instance => instance.UseAws(options => { }));
+            blobs.AddNamed(collidingName, instance => instance.UseAws(options => { }));
         });
         await using var sp = services.BuildServiceProvider();
         var monitor = sp.GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>();
 
-        // then — the default R2 store binds its forced settings to an internal named slot, so neither the shared
-        // unnamed AwsBlobStorageOptions nor the named AWS store inherits R2's DisablePayloadSigning = true.
+        // then — the default R2 store uses a private options snapshot, so neither the shared unnamed
+        // AwsBlobStorageOptions nor an internal-looking named AWS store inherits R2's DisablePayloadSigning = true.
         sp.GetRequiredService<IOptions<AwsBlobStorageOptions>>().Value.DisablePayloadSigning.Should().BeFalse();
-        monitor.Get("aws").DisablePayloadSigning.Should().BeFalse();
+        monitor.Get(collidingName).DisablePayloadSigning.Should().BeFalse();
     }
 }

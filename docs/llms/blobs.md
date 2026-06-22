@@ -104,7 +104,7 @@ The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named
 - Container paths are string arrays, not slash-delimited strings: `["uploads", "images"]` not `"uploads/images"`.
 - Naming is normalized two-tier through each provider's `IBlobNamingNormalizer`: the **first** container segment is the backend bucket/container (strict backend rules — e.g. lowercase, length, allowed characters) and the **remaining** segments plus the blob name are the object path (lenient — validated, not rewritten). This is applied uniformly by every provider (AWS, R2, Azure, FileSystem, SshNet, Redis); do not manually normalize paths.
 - Metadata is a `Dictionary<string, string?>`. For `FileSystem` provider, metadata is stored as companion JSON files. For `Redis`, metadata is stored alongside blobs in Redis.
-- `SshNet` supports both password and SSH key authentication. Use `PrivateKeyPath` for key-based auth.
+- `SshNet` supports both password and SSH key authentication. Use `PrivateKey` for key-based auth.
 - A default store is optional and there is at most one (injected as plain `IBlobStorage`); a named-only configuration is valid and leaves plain `IBlobStorage` unregistered. The same provider may back multiple named stores with isolated config. Resolve named stores with `IBlobStorageProvider.GetStorage("name")` or `[FromKeyedServices("name")] IBlobStorage`. Calling `AddHeadlessBlobs` more than once on the same service collection throws.
 
 ---
@@ -296,13 +296,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Register a BlobServiceClient (connection string, or Microsoft.Extensions.Azure with DefaultAzureCredential).
 // The Azure store consumes it from DI.
 builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
-builder.Services.AddHeadlessBlobs(blobs => blobs.UseAzure(options => { }));
-
-// For a named store on a different account, supply a per-store client:
 builder.Services.AddHeadlessBlobs(blobs =>
+{
+    blobs.UseAzure(options => { });
+
+    // For a named store on a different account, supply a per-store client:
     blobs.AddNamed("archive", instance => instance.UseAzure(
         setupAction: options => { },
-        clientFactory: _ => new BlobServiceClient("<archive-account-connection-string>"))));
+        clientFactory: _ => new BlobServiceClient("<archive-account-connection-string>")));
+});
 ```
 
 ## Configuration

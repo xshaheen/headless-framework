@@ -118,27 +118,27 @@ public static class SetupCloudflareR2Blob
         {
             services.AddBlobStorageProvider();
 
-            // R2-safe behavior on the reused AWS engine, bound to an internal named-options slot so the forced
-            // settings are isolated to this default R2 store and never mutate the shared unnamed
-            // AwsBlobStorageOptions that other consumers may read. Mirrors the per-name binding the named path uses.
-            services.Configure<AwsBlobStorageOptions>(_DefaultAwsOptionsName, _ApplyR2ForcedDefaults);
+            services.AddSingleton<IBlobStorage>(serviceProvider =>
+            {
+                var r2Options = serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>();
+                _ = r2Options.Value;
+                var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
+                var clock = serviceProvider.GetRequiredService<IClock>();
+                var awsOptions = new AwsBlobStorageOptions();
+                _ApplyR2ForcedDefaults(awsOptions);
+                var logger =
+                    serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
+                var s3Client = R2ClientFactory.Create(r2Options.Value);
 
-            services.AddSingleton<IBlobStorage>(serviceProvider => new AwsBlobStorage(
-                R2ClientFactory.Create(serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>().Value),
-                serviceProvider.GetRequiredService<IMimeTypeProvider>(),
-                serviceProvider.GetRequiredService<IClock>(),
-                Options.Create(
-                    serviceProvider
-                        .GetRequiredService<IOptionsMonitor<AwsBlobStorageOptions>>()
-                        .Get(_DefaultAwsOptionsName)
-                ),
-                new R2BlobNamingNormalizer(),
-                serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance
-            ));
-
-            services.AddSingleton<IPresignedUrlBlobStorage>(serviceProvider =>
-                (IPresignedUrlBlobStorage)serviceProvider.GetRequiredService<IBlobStorage>()
-            );
+                return new AwsBlobStorage(
+                    s3Client,
+                    mimeTypeProvider,
+                    clock,
+                    Options.Create(awsOptions),
+                    new R2BlobNamingNormalizer(),
+                    logger
+                );
+            });
 
             return services;
         }
@@ -177,10 +177,6 @@ public static class SetupCloudflareR2Blob
             return services;
         }
     }
-
-    // Internal named-options slot for the default R2 store's AwsBlobStorageOptions. Keeps R2's forced settings
-    // out of the shared unnamed AwsBlobStorageOptions so a coexisting/consumer read of the default slot is clean.
-    private const string _DefaultAwsOptionsName = "__headless_blobs_r2_default";
 
     private static void _ApplyR2ForcedDefaults(AwsBlobStorageOptions options)
     {
