@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features;
 
+/// <summary>Extension members on <see cref="ModelBuilder"/> for registering Headless feature entity configurations.</summary>
 [PublicAPI]
 public static class FeaturesModelBuilderExtensions
 {
@@ -17,6 +18,9 @@ public static class FeaturesModelBuilderExtensions
         /// from the <paramref name="context"/>'s service provider. Call from <c>OnModelCreating</c> with
         /// <c>modelBuilder.AddHeadlessFeatures(this)</c> to avoid injecting the options into the context.
         /// </summary>
+        /// <param name="context">The <see cref="DbContext"/> whose service provider supplies <see cref="FeaturesStorageOptions"/>.</param>
+        /// <returns>The same <see cref="ModelBuilder"/> instance for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
         public ModelBuilder AddHeadlessFeatures(DbContext context)
         {
             Argument.IsNotNull(modelBuilder);
@@ -27,6 +31,10 @@ public static class FeaturesModelBuilderExtensions
             return modelBuilder.AddHeadlessFeatures(options);
         }
 
+        /// <summary>Applies the Headless features entity configurations using the supplied <paramref name="options"/>.</summary>
+        /// <param name="options">Storage options controlling table names and schema.</param>
+        /// <returns>The same <see cref="ModelBuilder"/> instance for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
         public ModelBuilder AddHeadlessFeatures(FeaturesStorageOptions options)
         {
             Argument.IsNotNull(modelBuilder);

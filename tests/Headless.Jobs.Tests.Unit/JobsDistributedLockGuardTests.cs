@@ -68,7 +68,7 @@ public sealed class JobsDistributedLockGuardTests
             NullLogger<JobsInitializationHostedService>.Instance
         );
 
-        await hostedService._SeedDefinedCronJobsAsync(options, cancellationToken);
+        await hostedService.SeedDefinedCronJobsAsync(options, cancellationToken);
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public sealed class JobsDistributedLockGuardTests
         );
 
         // Must not throw — the throwing factory is swallowed as a skip.
-        await hostedService._SeedDefinedCronJobsAsync(options, CancellationToken.None);
+        await hostedService.SeedDefinedCronJobsAsync(options, CancellationToken.None);
 
         await manager
             .DidNotReceive()

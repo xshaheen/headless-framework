@@ -3,11 +3,10 @@
 using System.Security.Cryptography;
 using Headless.Abstractions;
 
-#pragma warning disable CA5379
 namespace Headless;
 
-/// <summary>Creates salted string hashes using configured PBKDF2 options.</summary>
-public sealed class StringHashService(StringHashOptions options) : IStringHashService
+/// <summary>Creates deterministic, salted string hashes using configured PBKDF2 options.</summary>
+internal sealed class StringHashService(StringHashOptions options) : IStringHashService
 {
     /// <inheritdoc />
     public string Create(string value, string? salt = null)
@@ -19,7 +18,7 @@ public sealed class StringHashService(StringHashOptions options) : IStringHashSe
             Encoding.UTF8.GetBytes(salt),
             options.Iterations,
             options.Algorithm,
-            options.Size
+            options.SizeInBytes
         );
 
         return Convert.ToBase64String(bytes);

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Headless.NET.Sdk">
+<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Headless.Jobs</RootNamespace>
@@ -13,5 +13,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
   </ItemGroup>
 </Project>

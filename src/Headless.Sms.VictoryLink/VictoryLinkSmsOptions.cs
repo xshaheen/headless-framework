@@ -4,23 +4,34 @@ using FluentValidation;
 
 namespace Headless.Sms.VictoryLink;
 
+/// <summary>Options for the VictoryLink SMS provider.</summary>
+/// <remarks>
+/// VictoryLink auto-detects whether the message text is Arabic (RTL) and sets the language code
+/// accordingly. Credentials (<see cref="UserName"/> / <see cref="Password"/>) are sent in the request
+/// body on every call.
+/// </remarks>
 public sealed class VictoryLinkSmsOptions
 {
-    public required string Endpoint { get; init; } =
+    /// <summary>The VictoryLink API endpoint for sending SMS messages. Defaults to the VictoryLink production URL.</summary>
+    public string Endpoint { get; init; } =
         "https://smsvas.vlserv.com/VLSMSPlatformResellerAPI/NewSendingAPI/api/SMSSender/SendSMS";
 
+    /// <summary>The registered sender name displayed to recipients (the <c>SMSSender</c> field).</summary>
     public required string Sender { get; init; }
 
+    /// <summary>The VictoryLink account username sent with every request for authentication.</summary>
     public required string UserName { get; init; }
 
+    /// <summary>The VictoryLink account password sent with every request for authentication.</summary>
     public required string Password { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class VictoryLinkSmsOptionsValidator : AbstractValidator<VictoryLinkSmsOptions>
 {
     public VictoryLinkSmsOptionsValidator()
     {
-        RuleFor(x => x.Endpoint).NotEmpty().HttpUrl();
+        RuleFor(x => x.Endpoint).NotEmpty().HttpsOnlyUrl();
         RuleFor(x => x.Sender).NotEmpty();
         RuleFor(x => x.UserName).NotEmpty();
         RuleFor(x => x.Password).NotEmpty();

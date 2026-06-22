@@ -12,6 +12,17 @@ using Polly.Retry;
 
 namespace Headless.Permissions.Seeders;
 
+/// <summary>
+/// Hosted service that synchronizes static permission definitions to the dynamic store on application startup.
+/// Implements <see cref="IInitializer"/> so other components can await readiness via
+/// <see cref="WaitForInitializationAsync"/>. The service is a no-op when both
+/// <c>SaveStaticPermissionsToDatabase</c> and <c>IsDynamicPermissionStoreEnabled</c> are <see langword="false"/>,
+/// in which case <see cref="IsInitialized"/> is set to <see langword="true"/> immediately.
+/// <para>
+/// On failure the <see cref="IInitializer.WaitForInitializationAsync"/> task surfaces the exception so
+/// dependents receive it rather than hanging indefinitely.
+/// </para>
+/// </summary>
 public sealed class PermissionsInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
@@ -25,8 +36,16 @@ public sealed class PermissionsInitializationBackgroundService(
     private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicPermissionsTask;
 
+    /// <summary>
+    /// <see langword="true"/> once the startup sync has completed successfully;
+    /// <see langword="false"/> while it is still running or has failed.
+    /// </summary>
     public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
 
+    /// <summary>
+    /// Returns a task that completes when initialization finishes, or faults if it failed.
+    /// Respects <paramref name="cancellationToken"/> so callers do not block indefinitely.
+    /// </summary>
     public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
         _tcs.Task.WaitAsync(cancellationToken);
 
@@ -123,27 +142,29 @@ public sealed class PermissionsInitializationBackgroundService(
         var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
         var pipeline = builder.AddRetry(options).Build();
 
-        await pipeline.ExecuteAsync(
-            static async (state, cancellationToken) =>
-            {
-                var (scope, logger) = state;
-
-                var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
-
-                try
+        await pipeline
+            .ExecuteAsync(
+                static async (state, cancellationToken) =>
                 {
-                    await store.SaveAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception e)
-                {
-                    logger.LogFailedToSaveStaticPermissions(e);
+                    var (scope, logger) = state;
 
-                    throw; // Polly will catch it
-                }
-            },
-            (scope, logger),
-            cancellationToken
-        );
+                    var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
+
+                    try
+                    {
+                        await store.SaveAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogFailedToSaveStaticPermissions(e);
+
+                        throw; // Polly will catch it
+                    }
+                },
+                (scope, logger),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task _PreCacheDynamicPermissionsAsync(AsyncServiceScope scope, CancellationToken cancellationToken)

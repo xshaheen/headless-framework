@@ -42,7 +42,7 @@ public sealed class PhoneNumberValidatorsCountryCodeTests
     {
         var model = new NullableTestModel(CountryCode: 0);
         var result = _nullableSut.TestValidate(model);
-        result.ShouldHaveValidationErrorFor(x => x.CountryCode);
+        result.ShouldHaveValidationErrorFor(x => x.CountryCode).WithErrorCode("phone_number:invalid_country_code");
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class PhoneNumberValidatorsCountryCodeTests
     {
         var model = new NonNullableTestModel(CountryCode: 0);
         var result = _nonNullableSut.TestValidate(model);
-        result.ShouldHaveValidationErrorFor(x => x.CountryCode);
+        result.ShouldHaveValidationErrorFor(x => x.CountryCode).WithErrorCode("phone_number:invalid_country_code");
     }
 
     [Fact]

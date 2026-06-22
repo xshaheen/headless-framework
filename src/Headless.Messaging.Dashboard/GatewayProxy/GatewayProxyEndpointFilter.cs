@@ -24,7 +24,7 @@ public sealed class GatewayProxyEndpointFilter(IServiceProvider serviceProvider)
         if (agent is not null)
         {
             var httpContext = context.HttpContext;
-            if (await agent.Invoke(httpContext))
+            if (await agent.Invoke(httpContext).ConfigureAwait(false))
             {
                 // Proxy handled it — return empty result to skip endpoint handler
                 return Results.Empty;
@@ -32,6 +32,6 @@ public sealed class GatewayProxyEndpointFilter(IServiceProvider serviceProvider)
         }
 
         // No proxy or proxy didn't handle it — continue to endpoint
-        return await next(context);
+        return await next(context).ConfigureAwait(false);
     }
 }

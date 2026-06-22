@@ -12,10 +12,13 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistributedLock
 {
+    /// <inheritdoc />
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
+    /// <inheritdoc />
     public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
+    /// <inheritdoc />
     public Task<IDistributedLease> AcquireAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -28,6 +31,7 @@ public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistribute
         return Task.FromResult<IDistributedLease>(new NullDistributedLease(resource, timeProvider));
     }
 
+    /// <inheritdoc />
     public Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
@@ -40,6 +44,7 @@ public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistribute
         return Task.FromResult<IDistributedLease?>(new NullDistributedLease(resource, timeProvider));
     }
 
+    /// <inheritdoc />
     public Task<bool> RenewAsync(
         string resource,
         string leaseId,
@@ -52,6 +57,7 @@ public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistribute
         return Task.FromResult(true);
     }
 
+    /// <inheritdoc />
     public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -59,6 +65,7 @@ public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistribute
         return Task.FromResult<string?>(null);
     }
 
+    /// <inheritdoc />
     public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -66,26 +73,31 @@ public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistribute
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(false);
     }
 
+    /// <inheritdoc />
     public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default)
     {
         return Task.FromResult<TimeSpan?>(null);
     }
 
+    /// <inheritdoc />
     public Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
     {
         return Task.FromResult<DistributedLockInfo?>(null);
     }
 
+    /// <inheritdoc />
     public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
         return Task.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
     }
 
+    /// <inheritdoc />
     public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(0L);

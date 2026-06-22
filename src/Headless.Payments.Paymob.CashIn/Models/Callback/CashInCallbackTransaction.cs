@@ -6,6 +6,16 @@ using Humanizer;
 
 namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 
+/// <summary>
+/// Represents the full transaction object delivered by Paymob in a callback webhook or returned
+/// from the broker's refund and void operations.
+/// </summary>
+/// <remarks>
+/// When received as a webhook, verify authenticity with
+/// <c>IPaymobCashInBroker.Validate(CashInCallbackTransaction, string)</c> before acting on it.
+/// Use the helper methods (<c>IsCard</c>, <c>IsWallet</c>, <c>IsSuccess</c>, etc.) to interrogate
+/// the transaction's channel and outcome without string-matching raw field values directly.
+/// </remarks>
 [PublicAPI]
 public sealed class CashInCallbackTransaction
 {
@@ -161,7 +171,11 @@ public sealed class CashInCallbackTransaction
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; set; }
 
-    /// <summary>Return the concatenated string of transaction.</summary>
+    /// <summary>
+    /// Produces the HMAC input string for this transaction by concatenating the required fields
+    /// in Paymob's defined order.
+    /// </summary>
+    /// <remarks>Pass the result directly to <c>IPaymobCashInBroker.Validate(string, string)</c>.</remarks>
     public string ToConcatenatedString()
     {
         static string toString(bool value)
@@ -191,6 +205,10 @@ public sealed class CashInCallbackTransaction
             + toString(Success);
     }
 
+    /// <summary>
+    /// Parses <c>CreatedAt</c> into a <see cref="DateTimeOffset"/>, applying the Egypt/Cairo UTC+2
+    /// offset when the raw string carries no timezone information.
+    /// </summary>
     public DateTimeOffset CreatedAtDateTimeOffset()
     {
         var dateTime = DateTime.Parse(CreatedAt, CultureInfo.InvariantCulture);
@@ -204,58 +222,81 @@ public sealed class CashInCallbackTransaction
             : DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture);
     }
 
+    /// <summary>Returns <see langword="true"/> when the payment method was a credit or debit card.</summary>
     public bool IsCard()
     {
         return string.Equals(SourceData?.Type, "card", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the payment method was a mobile wallet (e.g., Vodafone Cash).</summary>
     public bool IsWallet()
     {
         return string.Equals(SourceData?.Type, "wallet", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the payment method was cash collection by courier.</summary>
     public bool IsCashCollection()
     {
         return string.Equals(SourceData?.Type, "cash_present", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the payment was made at an Aman kiosk (aggregator channel).</summary>
     public bool IsAcceptKiosk()
     {
         return string.Equals(SourceData?.Type, "aggregator", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the transaction was initiated through the hosted card-payment iframe.</summary>
     public bool IsFromIFrame()
     {
         return string.Equals(ApiSource, "IFRAME", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Returns <see langword="true"/> when the transaction was initiated via a Paymob-generated invoice link.</summary>
     public bool IsInvoice()
     {
         return string.Equals(ApiSource, "INVOICE", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when the failure reason is insufficient funds on the customer's card.
+    /// </summary>
     public bool IsInsufficientFundError()
     {
         return string.Equals(Data?.TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when the failure reason is a card authentication failure (e.g., wrong OTP or 3-D Secure rejection).
+    /// </summary>
     public bool IsAuthenticationFailedError()
     {
         return string.Equals(Data?.TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when the issuing bank declined the transaction (generic decline; check <c>Data.Message</c> for the bank's reason).
+    /// </summary>
     public bool IsDeclinedError()
     {
         // "data.message": may be "Do not honour", or "Invalid card number", ...
         return string.Equals(Data?.TxnResponseCode, "DECLINED", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when Paymob's fraud management system rejected the transaction
+    /// because it did not pass risk checks.
+    /// </summary>
     public bool IsRiskChecksError()
     {
         return Data is { TxnResponseCode: "11", Message: not null }
             && Data.Message.Contains("transaction did not pass risk checks", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Returns normalised card information when the payment method was a card, or
+    /// <see langword="null"/> for non-card channels.
+    /// </summary>
     public CashInCardInfo? Card()
     {
         if (!IsCard())

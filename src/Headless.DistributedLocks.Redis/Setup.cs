@@ -21,7 +21,7 @@ namespace Headless.DistributedLocks.Redis;
 /// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
 /// </remarks>
 [PublicAPI]
-public static class SetupRedisDistributedLock
+public static class SetupRedisDistributedLocks
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO.Converters;
@@ -62,29 +63,29 @@ public sealed class GeoConstantsTests
     public void NtsGeometryServices_should_be_configured_with_correct_srid()
     {
         // then
-        GeoConstants.NtsGeometryServices.DefaultSRID.Should().Be(4326);
+        GeoServices.NtsGeometryServices.DefaultSRID.Should().Be(4326);
     }
 
     [Fact]
     public void NtsGeometryServices_should_use_high_precision()
     {
         // then
-        GeoConstants.NtsGeometryServices.DefaultPrecisionModel.Should().BeSameAs(GeoConstants.HighPrecision);
+        GeoServices.NtsGeometryServices.DefaultPrecisionModel.Should().BeSameAs(GeoConstants.HighPrecision);
     }
 
     [Fact]
     public void GeometryFactory_should_have_correct_srid()
     {
         // then
-        GeoConstants.GeometryFactory.SRID.Should().Be(4326);
+        GeoServices.GeometryFactory.SRID.Should().Be(4326);
     }
 
     [Fact]
     public void CreateNtsGeometryServices_should_return_new_instance()
     {
         // when
-        var services1 = GeoConstants.CreateNtsGeometryServices();
-        var services2 = GeoConstants.CreateNtsGeometryServices();
+        var services1 = GeoServices.CreateNtsGeometryServices();
+        var services2 = GeoServices.CreateNtsGeometryServices();
 
         // then - Each call creates a new instance (not singleton)
         services1.Should().NotBeSameAs(services2);
@@ -95,7 +96,7 @@ public sealed class GeoConstantsTests
     public void CreateGeoJsonConverter_should_return_converter_with_correct_settings()
     {
         // when
-        var converter = GeoConstants.CreateGeoJsonConverter();
+        var converter = GeoServices.CreateGeoJsonConverter();
 
         // then - RingOrientationOption.EnforceRfc9746 should be set
         converter.Should().NotBeNull();
@@ -107,11 +108,11 @@ public sealed class GeoConstantsTests
     public void CreateGeoJsonConverter_should_not_write_bbox()
     {
         // given
-        var converter = GeoConstants.CreateGeoJsonConverter();
+        var converter = GeoServices.CreateGeoJsonConverter();
         var options = new JsonSerializerOptions { Converters = { converter } };
 
         // when - Create a simple point and serialize it
-        var point = GeoConstants.GeometryFactory.CreatePoint(new Coordinate(10, 20));
+        var point = GeoServices.GeometryFactory.CreatePoint(new Coordinate(10, 20));
         var json = JsonSerializer.Serialize(point, options);
 
         // then - JSON should not contain bbox

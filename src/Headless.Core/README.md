@@ -4,7 +4,7 @@ Core abstractions and utilities for building applications with multi-tenancy, us
 
 ## Problem Solved
 
-Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (retry logic, compression, structured logging) enabling consistent patterns across all application layers.
+Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (compression, structured logging) enabling consistent patterns across all application layers.
 
 ## Key Features
 
@@ -22,11 +22,10 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
   - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
   - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
   - `IEnumLocaleAccessor` - Localized enum display values
-  - `IHaveLogger` / `IHaveTimeProvider` - Mixin interfaces for logger and time provider access
 
 - **Utilities**:
   - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
-  - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
+  - `LogState` / `HeadlessLoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
   - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
 
 ## Installation

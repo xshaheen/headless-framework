@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging;
 
 namespace Headless.Caching;
 
@@ -203,9 +202,7 @@ public sealed partial class HybridCache
 
         // The hybrid store write fans out to L2 then L1 with the full per-entry metadata (tags included) and
         // publishes the key invalidation itself: every value-write through the composite store broadcasts.
-        await ((IFactoryCacheStore)this)
-            .UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken)
-            .ConfigureAwait(false);
+        await (this).UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken).ConfigureAwait(false);
 
         return true;
     }

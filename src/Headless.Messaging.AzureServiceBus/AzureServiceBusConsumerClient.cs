@@ -4,7 +4,6 @@ using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Headless.Checks;
 using Headless.Messaging.AzureServiceBus.Helpers;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -44,7 +43,7 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         Argument.IsNotNull(messageNames);
 
-        await ConnectAsync();
+        await ConnectAsync().ConfigureAwait(false);
 
         if (intentType == IntentType.Queue)
         {
@@ -103,18 +102,22 @@ internal sealed class AzureServiceBusConsumerClient(
                 currentRuleToAdd = correlationRule;
             }
 
-            await _administrationClient.CreateRuleAsync(
-                _asbOptions.TopicPath,
-                subscriptionName,
-                new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd }
-            );
+            await _administrationClient
+                .CreateRuleAsync(
+                    _asbOptions.TopicPath,
+                    subscriptionName,
+                    new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd }
+                )
+                .ConfigureAwait(false);
 
             logger.RuleAdded(newRule);
         }
 
         foreach (var oldRule in allRuleNames.Except(messageNamesList, StringComparer.Ordinal))
         {
-            await _administrationClient.DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule);
+            await _administrationClient
+                .DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule)
+                .ConfigureAwait(false);
 
             logger.RuleRemoved(oldRule);
         }
@@ -122,7 +125,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await ConnectAsync();
+        await ConnectAsync().ConfigureAwait(false);
 
         IReadOnlyList<ServiceBusProcessorFacade> processors =
             intentType == IntentType.Queue ? _queueProcessors : [_serviceBusProcessor!];
@@ -131,14 +134,14 @@ internal sealed class AzureServiceBusConsumerClient(
         {
             if (processor.IsSessionProcessor)
             {
-                processor.ProcessSessionMessageAsync += _serviceBusProcessor_ProcessSessionMessageAsync;
+                processor.ProcessSessionMessageAsync += _ServiceBusProcessor_ProcessSessionMessageAsync;
             }
             else
             {
-                processor.ProcessMessageAsync += _serviceBusProcessor_ProcessMessageAsync;
+                processor.ProcessMessageAsync += _ServiceBusProcessor_ProcessMessageAsync;
             }
 
-            processor.ProcessErrorAsync += _serviceBusProcessor_ProcessErrorAsync;
+            processor.ProcessErrorAsync += _ServiceBusProcessor_ProcessErrorAsync;
         }
 
         await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
@@ -162,14 +165,14 @@ internal sealed class AzureServiceBusConsumerClient(
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
         if (!_asbOptions.AutoCompleteMessages)
         {
-            await commitInput.CompleteMessageAsync();
+            await commitInput.CompleteMessageAsync().ConfigureAwait(false);
         }
     }
 
     public async ValueTask RejectAsync(object? sender)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        await commitInput.AbandonMessageAsync();
+        await commitInput.AbandonMessageAsync().ConfigureAwait(false);
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
@@ -179,7 +182,7 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        if (!await _pauseGate.PauseAsync())
+        if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -199,7 +202,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         // ASB is push-based — release the gate first (only affects startup gating),
         // then restart the processor which delivers messages via callbacks.
-        if (!await _pauseGate.ResumeAsync())
+        if (!await _pauseGate.ResumeAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -232,7 +235,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         if (_serviceBusProcessor is not null)
         {
-            await _serviceBusProcessor.DisposeAsync();
+            await _serviceBusProcessor.DisposeAsync().ConfigureAwait(false);
         }
 
         foreach (var processor in _queueProcessors)
@@ -242,7 +245,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         if (_serviceBusClient is not null)
         {
-            await _serviceBusClient.DisposeAsync();
+            await _serviceBusClient.DisposeAsync().ConfigureAwait(false);
         }
 
         _connectionLock.Dispose();
@@ -264,7 +267,7 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
-    private Task _serviceBusProcessor_ProcessErrorAsync(ProcessErrorEventArgs args)
+    private Task _ServiceBusProcessor_ProcessErrorAsync(ProcessErrorEventArgs args)
     {
         var exceptionMessage =
             $"- Identifier: {args.Identifier}"
@@ -282,7 +285,7 @@ internal sealed class AzureServiceBusConsumerClient(
         return Task.CompletedTask;
     }
 
-    private async Task _serviceBusProcessor_ProcessMessageAsync(ProcessMessageEventArgs arg)
+    private async Task _ServiceBusProcessor_ProcessMessageAsync(ProcessMessageEventArgs arg)
     {
         var context = _ConvertMessage(arg.Message);
 
@@ -304,7 +307,7 @@ internal sealed class AzureServiceBusConsumerClient(
         }
     }
 
-    private async Task _serviceBusProcessor_ProcessSessionMessageAsync(ProcessSessionMessageEventArgs arg)
+    private async Task _ServiceBusProcessor_ProcessSessionMessageAsync(ProcessSessionMessageEventArgs arg)
     {
         var context = _ConvertMessage(arg.Message);
 
@@ -318,7 +321,7 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        await _connectionLock.WaitAsync();
+        await _connectionLock.WaitAsync().ConfigureAwait(false);
 
         try
         {
@@ -350,15 +353,17 @@ internal sealed class AzureServiceBusConsumerClient(
 
                     foreach (var (topicPath, subscribe) in topicConfigs)
                     {
-                        if (!await administrationClient.TopicExistsAsync(topicPath))
+                        if (!await administrationClient.TopicExistsAsync(topicPath).ConfigureAwait(false))
                         {
-                            await administrationClient.CreateTopicAsync(topicPath);
+                            await administrationClient.CreateTopicAsync(topicPath).ConfigureAwait(false);
                             logger.TopicCreated(topicPath);
                         }
 
                         if (
                             subscribe
-                            && !await administrationClient.SubscriptionExistsAsync(topicPath, subscriptionName)
+                            && !await administrationClient
+                                .SubscriptionExistsAsync(topicPath, subscriptionName)
+                                .ConfigureAwait(false)
                         )
                         {
                             var subscriptionDescription = new CreateSubscriptionOptions(topicPath, subscriptionName)
@@ -370,7 +375,9 @@ internal sealed class AzureServiceBusConsumerClient(
                                 MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
                             };
 
-                            await administrationClient.CreateSubscriptionAsync(subscriptionDescription);
+                            await administrationClient
+                                .CreateSubscriptionAsync(subscriptionDescription)
+                                .ConfigureAwait(false);
 
                             logger.SubscriptionCreated(topicPath, subscriptionName);
                         }

@@ -3,18 +3,21 @@
 namespace Headless.CommitCoordination;
 
 /// <summary>
-/// Defines the terminal outcome signaled for a commit scope.
+/// The terminal outcome signalled for a commit coordination scope.
 /// </summary>
 [PublicAPI]
 public enum CommitOutcome
 {
     /// <summary>
-    /// The physical unit of work committed.
+    /// The physical unit of work (database transaction) committed successfully. Registered
+    /// <see cref="ICommitCoordinator.OnCommit" /> callbacks are drained.
     /// </summary>
     Committed,
 
     /// <summary>
-    /// The physical unit of work rolled back or was abandoned.
+    /// The physical unit of work rolled back or was abandoned (e.g. an exception was thrown or the scope was
+    /// disposed without signalling). Registered <see cref="ICommitCoordinator.OnRollback" /> callbacks are
+    /// drained.
     /// </summary>
     RolledBack,
 }

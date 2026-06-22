@@ -380,7 +380,7 @@ public sealed class MessagingOptions
         if (messageName.StartsWith('.') || messageName.EndsWith('.'))
         {
             throw new ArgumentException(
-                $@"Message name '{messageName}' cannot start or end with a dot.",
+                $"Message name '{messageName}' cannot start or end with a dot.",
                 nameof(messageName)
             );
         }
@@ -388,7 +388,7 @@ public sealed class MessagingOptions
         if (messageName.Contains("..", StringComparison.Ordinal))
         {
             throw new ArgumentException(
-                $@"Message name '{messageName}' cannot contain consecutive dots.",
+                $"Message name '{messageName}' cannot contain consecutive dots.",
                 nameof(messageName)
             );
         }
@@ -398,7 +398,7 @@ public sealed class MessagingOptions
             if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
             {
                 throw new ArgumentException(
-                    $@"Message name '{messageName}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
+                    $"Message name '{messageName}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
                     nameof(messageName)
                 );
             }
@@ -443,7 +443,7 @@ public sealed class MessagingOptions
         Conventions.Version = Version;
 
         var resolvedGroup =
-            !string.IsNullOrWhiteSpace(explicitGroup) ? explicitGroup!
+            !string.IsNullOrWhiteSpace(explicitGroup) ? explicitGroup
             : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup!
             : IsDefaultGroupNameConfigured ? DefaultGroupName
             : Conventions.GetGroupName(handlerId);

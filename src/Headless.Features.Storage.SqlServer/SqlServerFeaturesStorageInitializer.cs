@@ -7,13 +7,28 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features.SqlServer;
 
+/// <summary>
+/// Hosted initializer that creates or ensures the SQL Server schema, tables, indexes, and
+/// table-valued type required by the features storage provider. Runs on startup when
+/// <see cref="FeaturesStorageOptions.InitializeOnStartup"/> is <see langword="true"/>.
+/// Uses <c>sp_getapplock</c> to serialize concurrent-startup DDL across replicas.
+/// </summary>
 internal sealed class SqlServerFeaturesStorageInitializer(
     IOptions<SqlServerFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions
 ) : HostedInitializer
 {
+    /// <inheritdoc/>
     protected override bool RunOnStartup => storageOptions.Value.InitializeOnStartup;
 
+    /// <summary>
+    /// Creates or ensures the SQL Server schema, tables, indexes, and
+    /// <c>HeadlessFeaturesIdList</c> table-valued type. The script acquires a session-scoped
+    /// application lock, executes all DDL inside a single transaction, and releases the lock on
+    /// success. On failure the transaction is rolled back and the lock is released before
+    /// re-throwing.
+    /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = providerOptions.Value.CreateConnection();
@@ -25,6 +40,10 @@ internal sealed class SqlServerFeaturesStorageInitializer(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Returns the fully-qualified <c>[schema].[table]</c> identifier for <paramref name="tableName"/>.</summary>
+    /// <param name="options">Storage options supplying the schema name.</param>
+    /// <param name="tableName">Unqualified table name.</param>
+    /// <returns>A bracket-quoted, schema-qualified table identifier safe for SQL Server DDL/DML.</returns>
     internal static string Qualified(FeaturesStorageOptions options, string tableName) =>
         $"[{options.Schema}].[{tableName}]";
 

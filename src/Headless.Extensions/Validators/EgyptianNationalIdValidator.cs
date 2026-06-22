@@ -2,11 +2,22 @@
 
 namespace Headless.Validators;
 
+/// <summary>Validates and parses 14-digit Egyptian national identity numbers.</summary>
 [PublicAPI]
 public static class EgyptianNationalIdValidator
 {
+    /// <summary>
+    /// Maps the two-digit governorate code embedded in a national ID (digits 8-9) to the Arabic governorate name.
+    /// </summary>
     public static readonly FrozenDictionary<string, string> GovernorateIdMap = _CreateGovernorateIdMap();
 
+    /// <summary>Determines whether <paramref name="nationalId"/> is a structurally valid Egyptian national ID.</summary>
+    /// <param name="nationalId">The national ID string to validate.</param>
+    /// <returns>
+    /// <see langword="true"/> when <paramref name="nationalId"/> is 14 digits encoding a valid birth date and a known
+    /// governorate code; otherwise <see langword="false"/>. Invalid or <see langword="null"/>/empty input returns
+    /// <see langword="false"/> rather than throwing.
+    /// </returns>
     public static bool IsValid(string nationalId)
     {
         if (string.IsNullOrEmpty(nationalId))
@@ -69,6 +80,13 @@ public static class EgyptianNationalIdValidator
         return GovernorateIdMap.ContainsKey(governorateKey);
     }
 
+    /// <summary>Validates <paramref name="nationalId"/> and, when valid, extracts the encoded birth date and governorate.</summary>
+    /// <param name="nationalId">The national ID string to parse.</param>
+    /// <param name="year">When this method returns <see langword="true"/>, the encoded birth year; otherwise <c>0</c>.</param>
+    /// <param name="month">When this method returns <see langword="true"/>, the encoded birth month; otherwise <c>0</c>.</param>
+    /// <param name="day">When this method returns <see langword="true"/>, the encoded birth day; otherwise <c>0</c>.</param>
+    /// <param name="governorateName">When this method returns <see langword="true"/>, the Arabic governorate name; otherwise <see cref="string.Empty"/>.</param>
+    /// <returns><see langword="true"/> when <paramref name="nationalId"/> is valid and was parsed; otherwise <see langword="false"/>.</returns>
     public static bool TryParse(string nationalId, out int year, out int month, out int day, out string governorateName)
     {
         if (!IsValid(nationalId))

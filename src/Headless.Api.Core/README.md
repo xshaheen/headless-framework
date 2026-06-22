@@ -2,13 +2,26 @@
 
 Building blocks for ASP.NET Core APIs — primitives only. Provides service registration helpers, middleware, problem details, JWT, identity, security headers, and request-context abstractions.
 
-> Looking for `AddHeadless()`, `UseHeadless()`, `MapHeadlessEndpoints()`? Those live in [`Headless.Api.ServiceDefaults`](../Headless.Api.ServiceDefaults/README.md). This package is the parts catalog; ServiceDefaults is the assembly.
+> Looking for `AddHeadless()`, `UseHeadless()`, `MapHeadlessEndpoints()`? Those live in `Headless.Api.ServiceDefaults`. This package is the parts catalog; ServiceDefaults is the assembly.
 
-## When to Use This Package
+## Problem Solved
 
-Pull `Headless.Api.Core` directly when you need à la carte primitives without the framework orchestrator — for example, registering `AddHeadlessProblemDetails()` alone, or composing your own middleware pipeline without the default order.
+Exposes each API primitive individually so teams that need à-la-carte composition can register only what they need — for example, registering `AddHeadlessProblemDetails()` alone, or composing their own middleware pipeline without the default order. Also provides the HTTP-layer tenant resolution, tenant authorization, and antiforgery primitives that `Headless.Api.ServiceDefaults` wires together.
 
-For the standard one-line bootstrap, use [`Headless.Api.ServiceDefaults`](../Headless.Api.ServiceDefaults/README.md) instead. It transitively brings in this package.
+## Key Features
+
+- `AddHeadlessProblemDetails()` — registers `IProblemDetailsCreator`, `HeadlessApiExceptionHandler`, and the `CustomizeProblemDetails` hook that normalizes every response
+- `AddHeadlessApiResponseCompression()` — Brotli + Gzip at `Fastest` level; extends MIME list with `application/problem+json`, `image/svg+xml`, `image/x-icon`
+- `AddHeadlessAntiforgery()` — antiforgery service registration
+- `AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()` — rewrites bare 401, 403, 404 to structured `application/problem+json` via `IProblemDetailsCreator`
+- `ConfigureHeadlessDefaultApi()` — Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomain, preload), lowercase route URLs, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), default `self` liveness health check
+- `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
+- `AddHeadlessTimeService()` — `TimeProvider.System`, `IClock`, `ITimezoneProvider` (all `TryAddSingleton`)
+- `AddServerTimingMiddleware()` + `UseServerTiming()` — appends `Server-Timing` trailer when response supports trailers
+- `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
+- HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
+- HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
+- Diagnostic listeners: `AddHeadlessApiDiagnosticListeners()`, `BadRequestDiagnosticAdapter`, `MiddlewareAnalysisDiagnosticAdapter`
 
 ## Installation
 
@@ -16,42 +29,29 @@ For the standard one-line bootstrap, use [`Headless.Api.ServiceDefaults`](../Hea
 dotnet add package Headless.Api.Core
 ```
 
-## Key Features
+## Quick Start
 
-- Problem details standardization via `AddHeadlessProblemDetails()` (registers `HeadlessApiExceptionHandler` covering tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation)
-- Response compression (Brotli, Gzip) via `AddHeadlessApiResponseCompression()`
-- Antiforgery via `AddHeadlessAntiforgery()`
-- JWT token factory and claims principal handling
-- HSTS security configuration
-- API versioning integration
-- Device detection (`IWebClientInfoProvider`)
-- Server timing middleware
-- Request cancellation handling
-- Diagnostic listeners for debugging (`AddHeadlessApiDiagnosticListeners`)
-- Status codes rewriter (`AddStatusCodesRewriterMiddleware()`)
-- HTTP tenant resolution opt-out (`[SkipTenantResolution]`, `.SkipTenantResolution()`) — skips claim extraction for an endpoint or controller while still marking the request as processed
-- HTTP tenant authorization (`TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`)
-- Kestrel limits and default API conventions via `ConfigureHeadlessDefaultApi()`
-
-## Building Blocks Quick Reference
+Composing primitives without `Headless.Api.ServiceDefaults`:
 
 ```csharp
-services.AddHeadlessProblemDetails();
-services.AddHeadlessApiResponseCompression();
-services.AddHeadlessAntiforgery();
-services.AddStatusCodesRewriterMiddleware();
-services.ConfigureHeadlessDefaultApi();   // Kestrel limits, lowercase URLs, HSTS, default 'self' health check
-services.AddServerTimingMiddleware();
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddHeadlessProblemDetails();
+builder.Services.AddHeadlessApiResponseCompression();
+builder.Services.ConfigureHeadlessDefaultApi();   // Kestrel limits + HSTS + health check + routing
+builder.Services.AddStatusCodesRewriterMiddleware();
+builder.Services.AddServerTimingMiddleware();
+
+var app = builder.Build();
+app.UseResponseCompression();
+app.UseStatusCodesRewriter();   // before UseExceptionHandler
+app.UseExceptionHandler();
+app.UseServerTiming();
+app.MapHealthChecks("/health");
+app.Run();
 ```
 
-Tenant resolution primitives:
-
-```csharp
-builder.AddHeadlessMultiTenancy(options => options.ClaimType = UserClaimTypes.TenantId);
-app.UseTenantResolution();
-```
-
-Tenant authorization primitives:
+HTTP tenant resolution and authorization:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy
@@ -66,73 +66,35 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
-var publicGroup = app.MapGroup("/public").AllowMissingTenant();
-publicGroup.MapGet("/status", () => Results.Ok());
-publicGroup.MapGet("/tenant-data", () => Results.Ok()).RequireTenant();
-```
+app.UseAuthentication();
+app.UseHeadlessTenancy();   // between auth and authz
+app.UseAuthorization();
 
-Use `[SkipTenantResolution]` / `.SkipTenantResolution()` on an endpoint, route group, or MVC controller/action to bypass claim extraction entirely. The middleware marks the request as processed (`HeadlessTenancyResolutionApplied`) and passes through without calling `ICurrentTenant.Change(...)` — if no other resolver runs, `ICurrentTenant.Id` stays unset and `ICurrentTenant.IsAvailable` stays false.
-
-This marker is HTTP-layer only — Mediator tenant guards, EF write guards, and messaging publish guards still enforce `ICurrentTenant.Id`. A handler running under this marker that calls a tenant-required downstream service will still throw `MissingTenantContextException`.
-
-When the endpoint also lives under a tenant-required authorization policy (`TenantRequirement` in `DefaultPolicy` / `FallbackPolicy`), compose with `.AllowMissingTenant()` so the requirement is satisfied:
-
-```csharp
+// Opt out of tenant claim extraction for a specific endpoint
 app.MapGet("/webhook", handler)
    .SkipTenantResolution()
    .AllowMissingTenant();
 ```
 
-`TenantRequirement` succeeds when `ICurrentTenant.Id` is present or the latest tenant metadata marker is `[AllowMissingTenant]` / `.AllowMissingTenant()`. Use `[RequireTenant]` / `.RequireTenant()` to opt an action or endpoint back into tenant enforcement under broader allow-missing metadata. Tenant failures return the same structured 403 `g:tenant_required` ProblemDetails shape as the exception-handler fallback.
+## Configuration
 
-### Limitations
-
-- **Place `TenantRequirement` in `DefaultPolicy` or `FallbackPolicy`** for framework-level enforcement. The startup validator does NOT inspect named policies (`options.AddPolicy("name", ...)`), and `[Authorize("NamedPolicy")]` endpoints bypass `DefaultPolicy` / `FallbackPolicy` per ASP.NET Core's combinator semantics. If you use named policies, composing `TenantRequirement` into each is your responsibility.
-- **`StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator.** The structured 403 body is produced by the framework's rewriter reading a `HttpContext.Items` marker set by `TenantRequirementHandler`. The rewriter is wired in by `Headless.Api.ServiceDefaults`; apps that opt out of ServiceDefaults must call `UseStatusCodesRewriter()` themselves or the 403 will return a generic Forbidden body without the discriminator. `IAuthorizationMiddlewareResultHandler` ordering no longer matters — consumers can register their own handler in any order.
-- **`[AllowAnonymous]` endpoints bypass the authorization pipeline**, so `TenantRequirement` does not fire. If the handler reads `ICurrentTenant.Id` it throws `MissingTenantContextException`, which `HeadlessApiExceptionHandler` remaps to the same `g:tenant_required` 403. Prefer not reading `ICurrentTenant.Id` from anonymous endpoints; use `[AllowMissingTenant]` only when you want the authorization-pipeline opt-out specifically.
-- **`UseHeadlessTenancy()` / `UseTenantResolution()` must run after `UseRouting()`** so endpoint metadata is available when the middleware checks for `[SkipTenantResolution]`. Without that ordering, `HttpContext.GetEndpoint()` returns `null` and the skip marker silently has no effect — claim extraction runs as if the marker were absent.
-
-## Exception Mapping
-
-`AddHeadlessProblemDetails()` registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that maps framework exceptions to normalized ProblemDetails responses. Covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
+Exception mapping registered by `AddHeadlessProblemDetails()`:
 
 | Exception | Response |
 |-----------|----------|
-| `MissingTenantContextException` | 403 (identified by `error.code: g:tenant_required`) |
-| `CrossTenantWriteException` | 409 (identified by `error.code: g:cross_tenant_write`) |
+| `MissingTenantContextException` | 403 with `error.code: g:tenant_required` |
+| `CrossTenantWriteException` | 409 with `error.code: g:cross_tenant_write` |
 | `ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
 | `TimeoutException` | 408 |
 | `NotImplementedException` | 501 |
-| `OperationCanceledException` (or inner OCE at any depth) when `HttpContext.RequestAborted` is the source | 499 (no body — client closed request) |
+| `OperationCanceledException` (or inner OCE at any depth) when `HttpContext.RequestAborted` is the source | 499 (no body) |
 
-OCEs from other sources (server-side timeouts surfaced by `RequestTimeoutsMiddleware`, library-thrown OCEs whose cancellation token is not `RequestAborted`) are intentionally not mapped here — the handler returns `false` so the platform default or a downstream handler can render them.
+All other exceptions return `false`; the host default or a downstream handler renders them.
 
-Prerequisites: call `app.UseExceptionHandler()` to wire the `IExceptionHandler` chain into the pipeline.
-
-Tenancy response shape (other exceptions follow the same normalization):
-
-```json
-{
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.4",
-  "title": "forbidden",
-  "status": 403,
-  "detail": "An operation required an ambient tenant context but none was set.",
-  "error": {
-    "code": "g:tenant_required",
-    "description": "An operation required an ambient tenant context but none was set."
-  },
-  "traceId": "...",
-  "buildNumber": "...",
-  "commitNumber": "...",
-  "instance": "/path",
-  "timestamp": "..."
-}
-```
-
-The body deliberately surfaces no entity name, exception message, `Exception.Data` tag, or inner exception — those belong in server logs, not API responses. Clients route on the stable `error.code` and `status` values.
+`StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. `Headless.Api.ServiceDefaults` wires it automatically; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` / `UseTenantResolution()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated.
 
 ## Dependencies
 
@@ -150,3 +112,13 @@ The body deliberately surfaces no entity name, exception message, `Exception.Dat
 - `FluentValidation`
 - `Microsoft.Extensions.Http.Resilience`
 - `NetEscapades.AspNetCore.SecurityHeaders`
+
+## Side Effects
+
+- Registers `HttpContextAccessor` (via `AddHeadlessProblemDetails`)
+- Configures response compression providers (Brotli, Gzip)
+- Configures Kestrel limits and disables `Server` response header (via `ConfigureHeadlessDefaultApi`)
+- Configures route options (lowercase URLs, no trailing slash)
+- Configures form options (value limit, multipart limits)
+- Configures HSTS options (365-day max-age, subdomain inclusion, preload)
+- Registers `self` liveness health check tagged `live`

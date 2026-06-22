@@ -297,6 +297,72 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
         stream.IsDisposed.Should().BeTrue();
     }
 
+    [Fact]
+    public void Read_AfterDispose_Throws()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        stream.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => stream.Read(new byte[1], 0, 1));
+    }
+
+    [Fact]
+    public void ReadSpan_AfterDispose_Throws()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        stream.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => stream.Read(new byte[1].AsSpan()));
+    }
+
+    [Fact]
+    public void ReadByte_AfterDispose_Throws()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        stream.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => stream.ReadByte());
+    }
+
+    [Fact]
+    public async Task ReadAsync_AfterDispose_Throws()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        await stream.DisposeAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => stream.ReadAsync(new byte[1], 0, 1, AbortToken));
+    }
+
+    [Fact]
+    public async Task ReadAsyncMemory_AfterDispose_Throws()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        await stream.DisposeAsync();
+        var act = async () => await stream.ReadAsync(new byte[1].AsMemory(), AbortToken);
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void PositionGet_AfterDispose_Throws()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        stream.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => stream.Position);
+    }
+
+    [Fact]
+    public void PositionSet_AfterDispose_Throws()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        stream.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => stream.Position = 0);
+    }
+
+    [Fact]
+    public async Task CopyToAsync_AfterDispose_Throws()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        await stream.DisposeAsync();
+        var ms = new MemoryStream();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => stream.CopyToAsync(ms, AbortToken));
+    }
+
     private sealed class SeqSegment : ReadOnlySequenceSegment<byte>
     {
         public SeqSegment(byte[] buffer, SeqSegment? next)

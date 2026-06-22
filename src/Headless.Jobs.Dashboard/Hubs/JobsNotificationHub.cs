@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
@@ -16,7 +18,7 @@ public partial class JobsNotificationHub(
         logger.ConnectionAttempt(connectionId);
 
         // Authenticate the connection using new auth service
-        var authResult = await authService.AuthenticateAsync(Context.GetHttpContext()!);
+        var authResult = await authService.AuthenticateAsync(Context.GetHttpContext()!).ConfigureAwait(false);
 
         if (!authResult.IsAuthenticated)
         {
@@ -31,7 +33,7 @@ public partial class JobsNotificationHub(
         Context.Items["username"] = authResult.Username;
         Context.Items["authenticated"] = true;
 
-        await base.OnConnectedAsync();
+        await base.OnConnectedAsync().ConfigureAwait(false);
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
@@ -41,37 +43,37 @@ public partial class JobsNotificationHub(
 
         logger.ConnectionDisconnected(connectionId, username);
 
-        await base.OnDisconnectedAsync(exception);
+        await base.OnDisconnectedAsync(exception).ConfigureAwait(false);
     }
 
     public async Task JoinGroup(string groupName)
     {
         if (!_IsAuthenticated())
         {
-            await Clients.Caller.SendAsync("Error", "Authentication required");
+            await Clients.Caller.SendAsync("Error", "Authentication required").ConfigureAwait(false);
             return;
         }
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
+        await Groups.AddToGroupAsync(Context.ConnectionId, groupName).ConfigureAwait(false);
         var username = Context.Items["username"]?.ToString();
 
         logger.UserJoinedGroup(username, groupName);
-        await Clients.Caller.SendAsync("GroupJoined", groupName);
+        await Clients.Caller.SendAsync("GroupJoined", groupName).ConfigureAwait(false);
     }
 
     public async Task LeaveGroup(string groupName)
     {
         if (!_IsAuthenticated())
         {
-            await Clients.Caller.SendAsync("Error", "Authentication required");
+            await Clients.Caller.SendAsync("Error", "Authentication required").ConfigureAwait(false);
             return;
         }
 
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName).ConfigureAwait(false);
         var username = Context.Items["username"]?.ToString();
 
         logger.UserLeftGroup(username, groupName);
-        await Clients.Caller.SendAsync("GroupLeft", groupName);
+        await Clients.Caller.SendAsync("GroupLeft", groupName).ConfigureAwait(false);
     }
 
     public async Task GetStatus()
@@ -84,7 +86,7 @@ public partial class JobsNotificationHub(
             timestamp = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime,
         };
 
-        await Clients.Caller.SendAsync("Status", status);
+        await Clients.Caller.SendAsync("Status", status).ConfigureAwait(false);
     }
 
     private bool _IsAuthenticated()

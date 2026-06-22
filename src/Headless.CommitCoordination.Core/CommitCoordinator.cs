@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
-using System.Threading;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -143,7 +141,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
         Action? afterDrain = null
     )
     {
-        _ = Task.Run(() => _DrainThenAsync(claim, services, afterDrain))
+        _ = Task.Run(() => DrainThenAsync(claim, services, afterDrain))
             .ContinueWith(
                 static (t, state) => LogBackgroundDrainFaulted((ILogger)state!, t.Exception),
                 claim.Coordinator._logger,
@@ -153,7 +151,7 @@ internal sealed partial class CommitCoordinator : ICommitCoordinator
             );
     }
 
-    internal static async Task _DrainThenAsync(CommitTerminalClaim claim, IServiceProvider services, Action? afterDrain)
+    internal static async Task DrainThenAsync(CommitTerminalClaim claim, IServiceProvider services, Action? afterDrain)
     {
         ExceptionDispatchInfo? drainFault = null;
 

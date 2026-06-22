@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Headless.Primitives;
 
+/// <summary>A stored <see cref="File"/> that is an image, adding image-specific metadata (caption and pixel dimensions).</summary>
 [PublicAPI]
 [ComplexType]
 public sealed class Image : File

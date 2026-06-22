@@ -8,12 +8,12 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentNullException" /> if <paramref name="argument" /> is null.</summary>
+    /// <summary>Throws an <see cref="ArgumentNullException" /> if <paramref name="argument" /> is not null.</summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument is not null.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is null.</exception>
+    /// <returns><paramref name="argument" /> if the argument is null.</returns>
+    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is not null.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T? IsNull<T>(
@@ -33,25 +33,29 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentNullException" /> if <paramref name="argument" /> is null.</summary>
+    /// <summary>Throws an <see cref="ArgumentNullException" /> if <paramref name="argument" /> is not null.</summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument is not null.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is null.</exception>
+    /// <returns><paramref name="argument" /> if the argument is null.</returns>
+    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is not null.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static T IsNull<T>(
+    public static T? IsNull<T>(
         [JetBrainsNoEnumeration] T? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
         where T : struct
     {
-        return argument
-            ?? throw new ArgumentNullException(
+        if (argument is not null)
+        {
+            throw new ArgumentNullException(
                 paramName,
-                message ?? $"The argument '{paramName.ToAssertString()}' must be null."
+                message ?? $"The argument {paramName.ToAssertString()} must be null."
             );
+        }
+
+        return argument;
     }
 }

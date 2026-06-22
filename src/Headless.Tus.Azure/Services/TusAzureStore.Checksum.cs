@@ -27,6 +27,11 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 #pragma warning restore CA5351
     };
 
+    /// <summary>
+    /// Returns the hash algorithms supported for TUS checksum verification.
+    /// </summary>
+    /// <param name="cancellationToken">token to cancel the operation (not used; result is pre-cached)</param>
+    /// <returns>algorithm names: <c>sha1</c>, <c>sha256</c>, <c>sha512</c>, <c>md5</c></returns>
     public Task<IEnumerable<string>> GetSupportedAlgorithmsAsync(CancellationToken cancellationToken)
     {
         return Task.FromResult(_cachedSupportedAlgorithms);
@@ -52,6 +57,25 @@ public sealed partial class TusAzureStore : ITusChecksumStore
     // Uses "fail fast" approach - if pre-calculated checksum is missing, verification fails
     // without attempting recalculation, indicating a bug or corrupted metadata.
 
+    /// <summary>
+    /// Verifies the checksum of the most recent PATCH against the digest supplied by the client
+    /// and, on success, atomically commits the staged blocks.
+    /// </summary>
+    /// <param name="fileId">the TUS file identifier</param>
+    /// <param name="algorithm">hash algorithm name as reported in the TUS-Checksum header (e.g. <c>sha256</c>)</param>
+    /// <param name="checksum">expected digest bytes supplied by the client</param>
+    /// <param name="cancellationToken">token to cancel the operation</param>
+    /// <returns>
+    /// <see langword="true"/> if the stored pre-calculated digest matches <paramref name="checksum"/>
+    /// and the staged blocks were committed; <see langword="false"/> on mismatch, missing metadata,
+    /// or unexpected error — staged blocks are left uncommitted and Azure discards them after seven days
+    /// </returns>
+    /// <remarks>
+    /// The digest is not recalculated here; it was computed during <c>AppendDataAsync</c> and
+    /// stored in blob metadata under <c>tus_last_chunk_checksum</c>. A missing checksum value
+    /// in metadata indicates a bug or corrupted state and is treated as a verification failure.
+    /// Comparison uses <c>CryptographicOperations.FixedTimeEquals</c> to prevent timing attacks.
+    /// </remarks>
     public async Task<bool> VerifyChecksumAsync(
         string fileId,
         string algorithm,
@@ -65,7 +89,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
             var blockBlobClient = _GetBlockBlobClient(fileId);
 
             // Get file info to access stored chunk metadata
-            var file = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken);
+            var file = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
             if (file is null)
             {
@@ -84,7 +108,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
                 _logger.ChecksumVerificationPassed(fileId, algorithm);
 
                 // Commit staged blocks and update metadata atomically
-                await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken);
+                await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken).ConfigureAwait(false);
 
                 return true;
             }
@@ -173,7 +197,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
         try
         {
-            var committedBlocks = await _GetCommittedBlocksAsync(client, token);
+            var committedBlocks = await _GetCommittedBlocksAsync(client, token).ConfigureAwait(false);
 
             // Build complete block list BEFORE clearing metadata (use LastChunkBlocks while it still has data)
             List<string> allBlockIds = [.. committedBlocks.Select(x => x.Name), .. file.Metadata.LastChunkBlocks ?? []];
@@ -184,7 +208,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
             // ATOMIC: Commit blocks + update metadata in single operation
             var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure() };
-            await client.CommitBlockListAsync(allBlockIds, options, cancellationToken: token);
+            await client.CommitBlockListAsync(allBlockIds, options, cancellationToken: token).ConfigureAwait(false);
 
             _logger.LastChunkCommitted(file.FileId, allBlockIds.Count);
         }

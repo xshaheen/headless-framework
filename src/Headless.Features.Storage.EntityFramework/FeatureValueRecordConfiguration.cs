@@ -6,9 +6,12 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Features;
 
+/// <summary>EF Core entity type configuration for <see cref="FeatureValueRecord"/>.</summary>
+/// <param name="options">Storage options supplying the table name and schema.</param>
 internal sealed class FeatureValueRecordConfiguration(FeaturesStorageOptions options)
     : IEntityTypeConfiguration<FeatureValueRecord>
 {
+    /// <inheritdoc/>
     public void Configure(EntityTypeBuilder<FeatureValueRecord> b)
     {
         b.ToTable(options.FeatureValuesTableName, options.Schema);

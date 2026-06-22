@@ -27,10 +27,10 @@ internal sealed partial class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMes
         _flushTimeout = flushTimeout;
         _timeProvider = timeProvider;
         _logger = logger;
-        coordinator.OnCommit(FlushAsync);
+        coordinator.OnCommit(_FlushAsync);
     }
 
-    private async ValueTask FlushAsync(CommitContext context, CancellationToken cancellationToken)
+    private async ValueTask _FlushAsync(CommitContext context, CancellationToken cancellationToken)
     {
         // The drain deliberately runs with CancellationToken.None (D9 — a committed dispatch must not be
         // abandoned because the request was cancelled), so an unresponsive broker would otherwise hold the

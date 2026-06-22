@@ -4,7 +4,6 @@ using System.Diagnostics;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.Internal;
 

@@ -10,6 +10,15 @@ using Image = SixLabors.ImageSharp.Image;
 
 namespace Headless.Imaging.ImageSharp;
 
+/// <summary>
+/// An <see cref="IImageCompressorContributor"/> that uses ImageSharp to compress JPEG, PNG, and WebP images.
+/// </summary>
+/// <remarks>
+/// Compression is considered successful only when the re-encoded output is strictly smaller than the
+/// original stream. If the output is equal to or larger than the original, the contributor returns
+/// <see cref="ImageProcessState.Failed"/> and disposes the intermediate stream. GIF, BMP, TIFF, and
+/// other formats are not supported for compression and yield <see cref="ImageProcessState.Unsupported"/>.
+/// </remarks>
 public sealed class ImageSharpImageCompressorContributor(
     IOptions<ImageSharpOptions> optionsAccessor,
     ILogger<ImageSharpImageCompressorContributor> logger
@@ -17,6 +26,7 @@ public sealed class ImageSharpImageCompressorContributor(
 {
     private readonly ImageSharpOptions _options = optionsAccessor.Value;
 
+    /// <inheritdoc />
     public async Task<ImageStreamCompressResult> TryCompressAsync(
         Stream stream,
         ImageCompressArgs args,
@@ -28,7 +38,7 @@ public sealed class ImageSharpImageCompressorContributor(
             return ImageStreamCompressResult.NotSupported();
         }
 
-        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken);
+        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
 
         if (error is not null)
         {
@@ -48,14 +58,14 @@ public sealed class ImageSharpImageCompressorContributor(
             return ImageStreamCompressResult.NotSupportedMimeType(format.DefaultMimeType);
         }
 
-        var memoryStream = await _CreateCompressedStreamAsync(image, format, cancellationToken);
+        var memoryStream = await _CreateCompressedStreamAsync(image, format, cancellationToken).ConfigureAwait(false);
 
         if (memoryStream.Length < stream.Length)
         {
             return ImageStreamCompressResult.Done(memoryStream);
         }
 
-        await memoryStream.DisposeAsync();
+        await memoryStream.DisposeAsync().ConfigureAwait(false);
 
         return ImageStreamCompressResult.Failed("The compressed image is larger than the original.");
     }
@@ -66,7 +76,9 @@ public sealed class ImageSharpImageCompressorContributor(
 
         try
         {
-            await image.SaveAsync(memoryStream, _GetCompressEncoder(format), cancellationToken: token);
+            await image
+                .SaveAsync(memoryStream, _GetCompressEncoder(format), cancellationToken: token)
+                .ConfigureAwait(false);
 
             memoryStream.Position = 0;
 
@@ -74,7 +86,7 @@ public sealed class ImageSharpImageCompressorContributor(
         }
         catch
         {
-            await memoryStream.DisposeAsync();
+            await memoryStream.DisposeAsync().ConfigureAwait(false);
 
             throw;
         }

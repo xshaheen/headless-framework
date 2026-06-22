@@ -112,7 +112,7 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         }
 
         // pageSize=2 over 5 blobs => 3 pages; the bug left the last page undeleted and undercounted.
-        var deleted = await storage._DeleteAllAsync(container, blobSearchPattern: null, pageSize: 2, AbortToken);
+        var deleted = await storage.DeleteAllAsync(container, blobSearchPattern: null, pageSize: 2, AbortToken);
 
         deleted.Should().Be(total);
         (await storage.GetBlobsListAsync(container)).Should().BeEmpty();

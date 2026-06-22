@@ -35,4 +35,15 @@ internal static class VictoryLinkResponseCodes
     {
         return code is _Ok or _OkQueued;
     }
+
+    public static SmsFailureKind GetFailureKind(string code)
+    {
+        return code switch
+        {
+            _CreditError => SmsFailureKind.OutOfCredit,
+            _SendingRateError => SmsFailureKind.RateLimited,
+            _UserError => SmsFailureKind.InvalidRecipient,
+            _ => SmsFailureKind.Unknown,
+        };
+    }
 }

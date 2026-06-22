@@ -3,6 +3,7 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Imaging;
 
+/// <summary>Specifies the algorithm used to fit an image into a target bounding box.</summary>
 public enum ImageResizeMode
 {
     /// <summary>Default value. Doesn't apply any resizing.</summary>
@@ -36,5 +37,10 @@ public enum ImageResizeMode
     /// </summary>
     Pad = 6,
 
+    /// <summary>
+    /// Sentinel value meaning "use the pipeline default". Replaced at runtime by
+    /// <see cref="ImageResizeArgs.ChangeDefaultResizeMode"/> before the operation executes.
+    /// Do not pass this value to a contributor directly.
+    /// </summary>
     Default = 7,
 }

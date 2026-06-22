@@ -3,8 +3,6 @@
 using System.Collections.Concurrent;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -180,11 +178,11 @@ internal sealed class AmazonSnsBusTransport(
 
     public async ValueTask DisposeAsync()
     {
-        await castAndDispose(_semaphore);
+        await castAndDispose(_semaphore).ConfigureAwait(false);
 
         if (_snsClient is not null)
         {
-            await castAndDispose(_snsClient);
+            await castAndDispose(_snsClient).ConfigureAwait(false);
         }
 
         _topicArnMaps = null;

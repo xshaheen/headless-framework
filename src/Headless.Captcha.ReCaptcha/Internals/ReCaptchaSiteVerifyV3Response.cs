@@ -7,8 +7,6 @@ namespace Headless.Captcha;
 internal sealed class ReCaptchaSiteVerifyV3Response
 {
     [JsonPropertyName("success")]
-    [MemberNotNullWhen(true, nameof(HostName), nameof(ChallengeTimeStamp), nameof(Score), nameof(Action))]
-    [MemberNotNullWhen(false, nameof(ErrorCodes))]
     public bool Success { get; init; }
 
     [JsonPropertyName("challenge_ts")]
@@ -17,9 +15,11 @@ internal sealed class ReCaptchaSiteVerifyV3Response
     [JsonPropertyName("hostname")]
     public string? HostName { get; init; }
 
+    /// <summary>The risk score (0.0 – 1.0). Verify server-side against a threshold; a high score is not on its own a pass.</summary>
     [JsonPropertyName("score")]
     public float? Score { get; init; }
 
+    /// <summary>The action name supplied at execute time. Verify it matches the expected action to prevent cross-action token replay.</summary>
     [JsonPropertyName("action")]
     public string? Action { get; init; }
 

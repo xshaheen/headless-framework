@@ -5,6 +5,10 @@ using System.Buffers.Text;
 
 namespace Headless.Serializer.Converters;
 
+/// <summary>
+/// Converts <see cref="bool"/> values that arrive as JSON strings (e.g., <c>"true"</c>, <c>"false"</c>)
+/// in addition to the native JSON boolean tokens <c>true</c>/<c>false</c>.
+/// </summary>
 public sealed class StringToBooleanJsonConverter : JsonConverter<bool>
 {
     public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

@@ -71,11 +71,18 @@ public sealed class PostgreSqlDataStorage(
     private readonly string _receivedTable = initializer.GetReceivedTableName();
     private readonly INodeMembership _nodeMembership = nodeMembership;
 
+    /// <summary>
+    /// Returns the monitoring API for querying message statistics and dashboard data against this PostgreSQL storage.
+    /// </summary>
     public IMonitoringApi GetMonitoringApi()
     {
         return new PostgreSqlMonitoringApi(postgreSqlOptions, messagingOptions, initializer, serializer, timeProvider);
     }
 
+    /// <summary>
+    /// Bulk-transitions the specified published messages to <c>Delayed</c> status.
+    /// No-op when <paramref name="storageIds"/> is empty.
+    /// </summary>
     public async ValueTask ChangePublishStateToDelayedAsync(
         Guid[] storageIds,
         CancellationToken cancellationToken = default
@@ -106,6 +113,11 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Updates the status of a published message. Respects the terminal-row guard — rows already
+    /// in a permanent <c>Succeeded</c> or <c>Failed</c> state with no pending retry are not mutated.
+    /// </summary>
+    /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
     public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
@@ -128,12 +140,22 @@ public sealed class PostgreSqlDataStorage(
         );
     }
 
+    /// <summary>
+    /// Acquires a dispatch lease on a published message by setting <c>LockedUntil</c> and <c>Owner</c>.
+    /// Only succeeds if the row is currently unleased or its existing lease has expired.
+    /// </summary>
+    /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
     ) => _LeaseMessageAsync(_publishedTable, message, lockedUntil, cancellationToken);
 
+    /// <summary>
+    /// Updates the status of a received message, including writing <c>ExceptionInfo</c> when the
+    /// message faulted. Respects the terminal-row guard — permanently completed rows are not mutated.
+    /// </summary>
+    /// <returns><see langword="true"/> if a row was updated; <see langword="false"/> if the guard blocked it.</returns>
     public async ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
@@ -190,12 +212,26 @@ public sealed class PostgreSqlDataStorage(
         return affectedRows > 0;
     }
 
+    /// <summary>
+    /// Acquires a dispatch lease on a received message by setting <c>LockedUntil</c> and <c>Owner</c>.
+    /// Only succeeds if the row is currently unleased or its existing lease has expired.
+    /// </summary>
+    /// <returns><see langword="true"/> if the lease was acquired; <see langword="false"/> if another node already holds it.</returns>
     public ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
     ) => _LeaseMessageAsync(_receivedTable, message, lockedUntil, cancellationToken);
 
+    /// <summary>
+    /// Persists a published outbox message to the <c>published</c> table. When <paramref name="transaction"/>
+    /// is supplied the INSERT participates in the caller's database transaction (transactional outbox).
+    /// </summary>
+    /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="transaction"/> is a non-null type that is neither
+    /// <c>DbTransaction</c> nor <c>IDbContextTransaction</c>.
+    /// </exception>
     public async ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         MediumMessage message,
@@ -279,6 +315,11 @@ public sealed class PostgreSqlDataStorage(
         return stored;
     }
 
+    /// <summary>
+    /// Persists a published outbox message built from a raw <c>Message</c> payload to the <c>published</c> table.
+    /// Convenience overload that wraps <paramref name="content"/> in a <c>MediumMessage</c> before storing.
+    /// </summary>
+    /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
         Message content,
@@ -298,6 +339,12 @@ public sealed class PostgreSqlDataStorage(
             cancellationToken
         );
 
+    /// <summary>
+    /// Stores a received message that failed before it could be dispatched, using its raw serialized
+    /// <paramref name="content"/> string. The row is written directly into the <c>Failed</c> state with
+    /// the maximum retry count so it will not be re-picked up by the normal retry path.
+    /// </summary>
+    /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
@@ -323,6 +370,12 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Stores a received message that failed before it could be dispatched, using a pre-built
+    /// <c>MediumMessage</c>. The row is written directly into the <c>Failed</c> state with the maximum
+    /// retry count so it will not be re-picked up by the normal retry path.
+    /// </summary>
+    /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
@@ -358,6 +411,13 @@ public sealed class PostgreSqlDataStorage(
         return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Persists an inbound message to the <c>received</c> table using an atomic upsert. Concurrent
+    /// broker redeliveries of the same message are collapsed to a single row via the unique index on
+    /// <c>(Version, MessageId, COALESCE(Group, ''), IntentType)</c>; the terminal-row guard ensures
+    /// already-succeeded rows are never overwritten.
+    /// </summary>
+    /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
@@ -406,6 +466,11 @@ public sealed class PostgreSqlDataStorage(
         return mediumMessage;
     }
 
+    /// <summary>
+    /// Persists an inbound message built from a raw <c>Message</c> payload to the <c>received</c> table.
+    /// Convenience overload that wraps <paramref name="message"/> in a <c>MediumMessage</c> before storing.
+    /// </summary>
+    /// <returns>The stored <c>MediumMessage</c> with its generated <c>StorageId</c> and timestamps populated.</returns>
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
@@ -425,6 +490,12 @@ public sealed class PostgreSqlDataStorage(
             cancellationToken
         );
 
+    /// <summary>
+    /// Deletes expired terminal messages from the specified table in batches.
+    /// Only rows in <c>Succeeded</c> or <c>Failed</c> state with <c>ExpiresAt</c> before
+    /// <paramref name="timeout"/> and no pending retry (<c>NextRetryAt IS NULL</c>) are removed.
+    /// </summary>
+    /// <returns>The number of rows deleted.</returns>
     public async ValueTask<int> DeleteExpiresAsync(
         string table,
         DateTime timeout,
@@ -457,6 +528,10 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Fetches published messages eligible for retry dispatch. Uses an atomic UPDATE…RETURNING
+    /// to lease and return rows in a single round-trip, preventing double-dispatch across replicas.
+    /// </summary>
     public async ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
@@ -464,6 +539,11 @@ public sealed class PostgreSqlDataStorage(
         return await _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Shortens the remaining lease on published messages owned by nodes in <paramref name="deadOwners"/>
+    /// by setting <c>LockedUntil</c> to the current time, allowing live replicas to re-claim them.
+    /// </summary>
+    /// <returns>The number of rows whose leases were reclaimed.</returns>
     public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
         IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
@@ -472,6 +552,10 @@ public sealed class PostgreSqlDataStorage(
         return _ReclaimDeadOwnersAsync(_publishedTable, deadOwners, cancellationToken);
     }
 
+    /// <summary>
+    /// Fetches received messages eligible for retry dispatch. Uses an atomic UPDATE…RETURNING
+    /// to lease and return rows in a single round-trip, preventing double-dispatch across replicas.
+    /// </summary>
     public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
@@ -479,6 +563,11 @@ public sealed class PostgreSqlDataStorage(
         return await _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Shortens the remaining lease on received messages owned by nodes in <paramref name="deadOwners"/>
+    /// by setting <c>LockedUntil</c> to the current time, allowing live replicas to re-claim them.
+    /// </summary>
+    /// <returns>The number of rows whose leases were reclaimed.</returns>
     public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
         IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken = default
@@ -487,6 +576,8 @@ public sealed class PostgreSqlDataStorage(
         return _ReclaimDeadOwnersAsync(_receivedTable, deadOwners, cancellationToken);
     }
 
+    /// <summary>Deletes a single received message by its storage identifier.</summary>
+    /// <returns>1 if the row was deleted; 0 if not found.</returns>
     public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var sql = $"""DELETE FROM {_receivedTable} WHERE "Id"=@Id""";
@@ -503,6 +594,8 @@ public sealed class PostgreSqlDataStorage(
         return result;
     }
 
+    /// <summary>Deletes a single published message by its storage identifier.</summary>
+    /// <returns>1 if the row was deleted; 0 if not found.</returns>
     public async ValueTask<int> DeletePublishedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var sql = $"""DELETE FROM {_publishedTable} WHERE "Id"=@Id""";
@@ -519,6 +612,8 @@ public sealed class PostgreSqlDataStorage(
         return result;
     }
 
+    /// <summary>Deletes a batch of received messages by their storage identifiers.</summary>
+    /// <returns>The number of rows deleted.</returns>
     public async ValueTask<int> DeleteReceivedMessagesAsync(
         IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
@@ -542,6 +637,8 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>Deletes a batch of published messages by their storage identifiers.</summary>
+    /// <returns>The number of rows deleted.</returns>
     public async ValueTask<int> DeletePublishedMessagesAsync(
         IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
@@ -565,6 +662,12 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Atomically selects delayed and stale-queued messages within a database transaction and
+    /// invokes <paramref name="scheduleTask"/> to re-enqueue them. The SELECT uses
+    /// <c>FOR UPDATE SKIP LOCKED</c> so concurrent replicas skip rows another node is scheduling.
+    /// The transaction is committed after <paramref name="scheduleTask"/> completes.
+    /// </summary>
     public async ValueTask ScheduleMessagesOfDelayedAsync(
         Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
@@ -586,8 +689,8 @@ public sealed class PostgreSqlDataStorage(
         };
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         var messageList = await connection
             .ExecuteReaderAsync(
@@ -622,9 +725,9 @@ public sealed class PostgreSqlDataStorage(
             )
             .ConfigureAwait(false);
 
-        await scheduleTask(transaction, messageList);
+        await scheduleTask(transaction, messageList).ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally

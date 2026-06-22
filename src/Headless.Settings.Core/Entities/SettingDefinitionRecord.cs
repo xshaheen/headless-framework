@@ -6,8 +6,10 @@ using Headless.Primitives;
 
 namespace Headless.Settings.Entities;
 
+/// <summary>Persistence entity that represents a single setting definition stored in an external data source.</summary>
 public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
+    /// <summary>Parameterless constructor for ORM/serializer use only.</summary>
     [UsedImplicitly]
     private SettingDefinitionRecord()
     {
@@ -17,6 +19,25 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
         ExtraProperties = [];
     }
 
+    /// <summary>Initializes a new <see cref="SettingDefinitionRecord"/> with all required fields validated.</summary>
+    /// <param name="id">Unique identifier for the record.</param>
+    /// <param name="name">Unique name of the setting. Must not be null, empty, or whitespace and must not exceed <see cref="SettingDefinitionRecordConstants.NameMaxLength"/> characters.</param>
+    /// <param name="displayName">Human-readable display name. Must not be null, empty, or whitespace and must not exceed <see cref="SettingDefinitionRecordConstants.DisplayNameMaxLength"/> characters.</param>
+    /// <param name="description">Optional description. When non-<see langword="null"/>, must not exceed <see cref="SettingDefinitionRecordConstants.DescriptionMaxLength"/> characters.</param>
+    /// <param name="defaultValue">Optional default value. When non-<see langword="null"/>, must not exceed <see cref="SettingDefinitionRecordConstants.DefaultValueMaxLength"/> characters.</param>
+    /// <param name="providers">Optional comma-separated list of provider names. When non-<see langword="null"/>, must not exceed <see cref="SettingDefinitionRecordConstants.ProvidersMaxLength"/> characters.</param>
+    /// <param name="isVisibleToClients">Whether clients may read this setting and its value.</param>
+    /// <param name="isInherited">Whether the value falls back to the next provider when not set for the requested provider.</param>
+    /// <param name="isEncrypted">Whether the value is stored encrypted in the data source.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="displayName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> or <paramref name="displayName"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="name"/> exceeds <see cref="SettingDefinitionRecordConstants.NameMaxLength"/>,
+    /// <paramref name="displayName"/> exceeds <see cref="SettingDefinitionRecordConstants.DisplayNameMaxLength"/>,
+    /// <paramref name="description"/> exceeds <see cref="SettingDefinitionRecordConstants.DescriptionMaxLength"/>,
+    /// <paramref name="defaultValue"/> exceeds <see cref="SettingDefinitionRecordConstants.DefaultValueMaxLength"/>,
+    /// or <paramref name="providers"/> exceeds <see cref="SettingDefinitionRecordConstants.ProvidersMaxLength"/>.
+    /// </exception>
     [SetsRequiredMembers]
     public SettingDefinitionRecord(
         Guid id,
@@ -97,6 +118,9 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
     /// <summary>Gets the extra properties associated with this setting.</summary>
     public ExtraProperties ExtraProperties { get; private init; }
 
+    /// <summary>Returns <see langword="true"/> if <paramref name="other"/> carries identical data to this record (excluding <see cref="AggregateRoot{TKey}.Id"/>).</summary>
+    /// <param name="other">The record to compare against.</param>
+    /// <returns><see langword="true"/> when all data fields and extra properties are equal; otherwise <see langword="false"/>.</returns>
     public bool HasSameData(SettingDefinitionRecord other)
     {
         if (!string.Equals(Name, other.Name, StringComparison.Ordinal))
@@ -147,6 +171,8 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
         return true;
     }
 
+    /// <summary>Applies all data fields from <paramref name="other"/> onto this record in place.</summary>
+    /// <param name="other">The source record whose values will overwrite this record's fields.</param>
     public void Patch(SettingDefinitionRecord other)
     {
         Name = other.Name;

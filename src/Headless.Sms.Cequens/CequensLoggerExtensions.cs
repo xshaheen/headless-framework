@@ -42,4 +42,20 @@ internal static partial class CequensLoggerExtensions
         Message = "Failed to get authentication token, status: {StatusCode}"
     )]
     public static partial void LogFailedToGetTokenWithStatusCode(this ILogger logger, HttpStatusCode statusCode);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "SmsSendException",
+        Level = LogLevel.Error,
+        Message = "Failed to send SMS using Cequens API to {DestinationCount} destination(s)"
+    )]
+    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "FailedToGetTokenException",
+        Level = LogLevel.Warning,
+        Message = "Failed to get authentication token from Cequens API"
+    )]
+    public static partial void LogFailedToGetTokenException(this ILogger logger, Exception exception);
 }

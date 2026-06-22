@@ -7,8 +7,6 @@ namespace Headless.Captcha;
 internal sealed class ReCaptchaSiteVerifyV2Response
 {
     [JsonPropertyName("success")]
-    [MemberNotNullWhen(true, nameof(HostName), nameof(ChallengeTimeStamp))]
-    [MemberNotNullWhen(false, nameof(ErrorCodes))]
     public bool Success { get; init; }
 
     [JsonPropertyName("challenge_ts")]

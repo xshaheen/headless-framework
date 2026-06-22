@@ -10,6 +10,11 @@ using Headless.Permissions.Resources;
 
 namespace Headless.Permissions.Grants;
 
+/// <summary>
+/// Default <see cref="IPermissionManager"/> implementation. Delegates resolution to the registered
+/// <see cref="GrantProviders.IPermissionGrantProvider"/> chain using AWS IAM-style rules: an explicit <c>Prohibited</c>
+/// from any provider overrides all grants; the default is deny.
+/// </summary>
 public sealed class PermissionManager(
     IPermissionDefinitionManager definitionManager,
     IPermissionGrantProviderManager grantProviderManager,
@@ -24,14 +29,15 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
-        var permission = await definitionManager.FindAsync(permissionName, cancellationToken);
+        var permission = await definitionManager.FindAsync(permissionName, cancellationToken).ConfigureAwait(false);
 
         if (permission?.IsEnabled != true)
         {
             return new(permissionName, isGranted: false);
         }
 
-        var result = await _CoreGetOrDefaultAsync([permission], currentUser, providerName, cancellationToken);
+        var result = await _CoreGetOrDefaultAsync([permission], currentUser, providerName, cancellationToken)
+            .ConfigureAwait(false);
 
         return result[0];
     }
@@ -56,7 +62,7 @@ public sealed class PermissionManager(
 
         foreach (var permissionName in permissionNames)
         {
-            var permission = await definitionManager.FindAsync(permissionName, cancellationToken);
+            var permission = await definitionManager.FindAsync(permissionName, cancellationToken).ConfigureAwait(false);
 
             if (permission is not null)
             {
@@ -73,7 +79,8 @@ public sealed class PermissionManager(
             return undefinedPermissions.ConvertAll(name => new GrantedPermissionResult(name, isGranted: false));
         }
 
-        var result = await _CoreGetOrDefaultAsync(existPermissions, currentUser, providerName, cancellationToken);
+        var result = await _CoreGetOrDefaultAsync(existPermissions, currentUser, providerName, cancellationToken)
+            .ConfigureAwait(false);
 
         result.AddRange(undefinedPermissions.Select(name => new GrantedPermissionResult(name, isGranted: false)));
 
@@ -86,8 +93,9 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
-        var allDefinitions = await definitionManager.GetPermissionsAsync(cancellationToken);
-        var result = await _CoreGetOrDefaultAsync(allDefinitions, currentUser, providerName, cancellationToken);
+        var allDefinitions = await definitionManager.GetPermissionsAsync(cancellationToken).ConfigureAwait(false);
+        var result = await _CoreGetOrDefaultAsync(allDefinitions, currentUser, providerName, cancellationToken)
+            .ConfigureAwait(false);
 
         return result;
     }
@@ -101,27 +109,34 @@ public sealed class PermissionManager(
     )
     {
         var permission =
-            await definitionManager.FindAsync(permissionName, cancellationToken)
-            ?? throw new ConflictException(await errorsDescriptor.PermissionIsNotDefined(permissionName));
+            await definitionManager.FindAsync(permissionName, cancellationToken).ConfigureAwait(false)
+            ?? throw new ConflictException(
+                await errorsDescriptor.PermissionIsNotDefined(permissionName).ConfigureAwait(false)
+            );
 
         if (!permission.IsEnabled)
         {
-            throw new ConflictException(await errorsDescriptor.PermissionDisabled(permission.Name));
+            throw new ConflictException(
+                await errorsDescriptor.PermissionDisabled(permission.Name).ConfigureAwait(false)
+            );
         }
 
         if (permission.Providers.Count != 0 && !permission.Providers.Contains(providerName, StringComparer.Ordinal))
         {
             throw new ConflictException(
-                await errorsDescriptor.PermissionProviderNotDefined(permission.Name, providerName)
+                await errorsDescriptor.PermissionProviderNotDefined(permission.Name, providerName).ConfigureAwait(false)
             );
         }
 
         var provider =
             grantProviderManager.ValueProviders.FirstOrDefault(m =>
                 string.Equals(m.Name, providerName, StringComparison.Ordinal)
-            ) ?? throw new ConflictException(await errorsDescriptor.PermissionsProviderNotFound(providerName));
+            )
+            ?? throw new ConflictException(
+                await errorsDescriptor.PermissionsProviderNotFound(providerName).ConfigureAwait(false)
+            );
 
-        await provider.SetAsync(permission, providerKey, isGranted, cancellationToken);
+        await provider.SetAsync(permission, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task SetAsync(
@@ -132,7 +147,7 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
-        var allDefinitions = await definitionManager.GetPermissionsAsync(cancellationToken);
+        var allDefinitions = await definitionManager.GetPermissionsAsync(cancellationToken).ConfigureAwait(false);
 
         var definedPermissions = allDefinitions
             .Where(x => permissionNames.Contains(x.Name, StringComparer.Ordinal))
@@ -145,14 +160,18 @@ public sealed class PermissionManager(
         if (undefinedPermissions.Count != 0)
         {
             // Maybe they removed from dynamic permission definition store
-            throw new ConflictException(await errorsDescriptor.SomePermissionsAreNotDefined(undefinedPermissions));
+            throw new ConflictException(
+                await errorsDescriptor.SomePermissionsAreNotDefined(undefinedPermissions).ConfigureAwait(false)
+            );
         }
 
         var disabledPermissions = definedPermissions.Where(x => !x.IsEnabled).Select(x => x.Name).ToList();
 
         if (disabledPermissions.Count != 0)
         {
-            throw new ConflictException(await errorsDescriptor.SomePermissionsAreDisabled(disabledPermissions));
+            throw new ConflictException(
+                await errorsDescriptor.SomePermissionsAreDisabled(disabledPermissions).ConfigureAwait(false)
+            );
         }
 
         // Check if all permissions are granted
@@ -164,16 +183,21 @@ public sealed class PermissionManager(
         if (notDefinedProviderPermissions.Count != 0)
         {
             throw new ConflictException(
-                await errorsDescriptor.ProviderNotDefinedForSomePermissions(notDefinedProviderPermissions, providerName)
+                await errorsDescriptor
+                    .ProviderNotDefinedForSomePermissions(notDefinedProviderPermissions, providerName)
+                    .ConfigureAwait(false)
             );
         }
 
         var provider =
             grantProviderManager.ValueProviders.FirstOrDefault(m =>
                 string.Equals(m.Name, providerName, StringComparison.Ordinal)
-            ) ?? throw new ConflictException(await errorsDescriptor.PermissionsProviderNotFound(providerName));
+            )
+            ?? throw new ConflictException(
+                await errorsDescriptor.PermissionsProviderNotFound(providerName).ConfigureAwait(false)
+            );
 
-        await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken);
+        await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(
@@ -182,9 +206,11 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
-        var permissionGrants = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        var permissionGrants = await repository
+            .GetListAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
-        await repository.DeleteManyAsync(permissionGrants, cancellationToken);
+        await repository.DeleteManyAsync(permissionGrants, cancellationToken).ConfigureAwait(false);
     }
 
     #region Helpers
@@ -231,7 +257,9 @@ public sealed class PermissionManager(
                 continue;
             }
 
-            var providerGrants = await provider.CheckAsync(checkNeededPermissions, currentUser, cancellationToken);
+            var providerGrants = await provider
+                .CheckAsync(checkNeededPermissions, currentUser, cancellationToken)
+                .ConfigureAwait(false);
 
             foreach (var (permissionName, providerResult) in providerGrants)
             {
@@ -250,7 +278,9 @@ public sealed class PermissionManager(
                 continue;
             }
 
-            var providerGrants = await provider.CheckAsync(checkNeededPermissions, currentUser, cancellationToken);
+            var providerGrants = await provider
+                .CheckAsync(checkNeededPermissions, currentUser, cancellationToken)
+                .ConfigureAwait(false);
 
             foreach (var (permissionName, providerResult) in providerGrants)
             {

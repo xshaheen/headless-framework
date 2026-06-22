@@ -7,12 +7,24 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Headless.Api.ApiExplorer;
 
-/// <summary><see cref="IList{FilterDescriptor}"/> extension methods.</summary>
+/// <summary>Extension methods for <see cref="IList{FilterDescriptor}"/>.</summary>
 public static class FilterDescriptorExtensions
 {
-    /// <summary>Gets the authorization policy requirements.</summary>
-    /// <param name="mvcFilterDescriptors">The filter descriptors.</param>
-    /// <returns>A collection of authorization policy requirements.</returns>
+    /// <summary>
+    /// Collects all <see cref="IAuthorizationRequirement"/> instances from the effective authorization
+    /// policy for a given action's filter pipeline. Stops at the first
+    /// <see cref="AllowAnonymousFilter"/> found when scanning from the innermost filter outward,
+    /// matching ASP.NET Core's short-circuit behavior.
+    /// </summary>
+    /// <param name="mvcFilterDescriptors">The filter descriptors for the action, ordered by scope.</param>
+    /// <returns>
+    /// Requirements from all <see cref="AuthorizeFilter"/>s that apply before any
+    /// <see cref="AllowAnonymousFilter"/>. Returns an empty list when the action allows anonymous
+    /// access or has no authorization filters.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="mvcFilterDescriptors"/> is <see langword="null"/>.
+    /// </exception>
     public static IReadOnlyList<IAuthorizationRequirement> GetPolicyRequirements(
         this IList<FilterDescriptor> mvcFilterDescriptors
     )

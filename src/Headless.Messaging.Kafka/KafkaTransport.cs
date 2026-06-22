@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Kafka;

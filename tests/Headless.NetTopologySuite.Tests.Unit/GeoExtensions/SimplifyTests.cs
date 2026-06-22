@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.NetTopologySuite;
 using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -8,7 +9,7 @@ namespace Tests.GeoExtensions;
 
 public sealed class SimplifyTests
 {
-    private static GeometryFactory Factory => GeoConstants.GeometryFactory;
+    private static GeometryFactory Factory => GeoServices.GeometryFactory;
 
     [Fact]
     public void Simplify_geometry_should_reduce_vertex_count()

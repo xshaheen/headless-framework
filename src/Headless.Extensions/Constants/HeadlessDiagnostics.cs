@@ -20,8 +20,12 @@ public static class HeadlessDiagnostics
     private static readonly string _Version = typeof(HeadlessDiagnostics).Assembly.GetAssemblyVersion() ?? "1.0.0";
 
     /// <summary>Creates an <see cref="ActivitySource"/> named <c>Headless.{name}</c>.</summary>
+    /// <param name="name">The subsystem name to append to the <see cref="Prefix"/>.</param>
+    /// <returns>A new <see cref="ActivitySource"/> with the fully qualified name and assembly version.</returns>
     public static ActivitySource CreateActivitySource(string name) => new(Prefix + name, _Version);
 
     /// <summary>Creates a <see cref="Meter"/> named <c>Headless.{name}</c>.</summary>
+    /// <param name="name">The subsystem name to append to the <see cref="Prefix"/>.</param>
+    /// <returns>A new <see cref="Meter"/> with the fully qualified name and assembly version.</returns>
     public static Meter CreateMeter(string name) => new(Prefix + name, _Version);
 }

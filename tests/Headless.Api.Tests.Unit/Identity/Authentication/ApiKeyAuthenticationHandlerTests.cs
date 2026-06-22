@@ -114,10 +114,44 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_no_result_when_api_key_query_empty()
+    public async Task should_return_no_result_when_only_query_string_present_and_query_not_opted_in()
     {
-        // given
+        // given — AllowApiKeyInQueryString defaults to false; query string should be ignored
         var handler = _CreateHandler();
+        var context = _CreateContext();
+        context.Request.QueryString = new QueryString("?api_key=some-key");
+
+        await handler.InitializeAsync(
+            new AuthenticationScheme("ApiKey", null, typeof(ApiKeyAuthenticationHandler<TestUser, string>)),
+            context
+        );
+
+        // when
+        var result = await handler.AuthenticateAsync();
+
+        // then
+        result.None.Should().BeTrue();
+        result.Succeeded.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_return_no_result_when_api_key_query_empty_and_query_opted_in()
+    {
+        // given — AllowApiKeyInQueryString = true but the value is blank
+        var options = new ApiKeyAuthenticationSchemeOptions { AllowApiKeyInQueryString = true };
+        var optionsMonitor = Substitute.For<IOptionsMonitor<ApiKeyAuthenticationSchemeOptions>>();
+        optionsMonitor.Get(Arg.Any<string>()).Returns(options);
+        optionsMonitor.CurrentValue.Returns(options);
+
+        var handler = new ApiKeyAuthenticationHandler<TestUser, string>(
+            optionsMonitor,
+            LoggerFactory,
+            UrlEncoder.Default,
+            _userManager,
+            _signInManager,
+            _apiKeyStore
+        );
+
         var context = _CreateContext();
         context.Request.QueryString = new QueryString("?api_key=");
 
@@ -239,10 +273,23 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_header_over_query_when_both_present()
+    public async Task should_use_header_over_query_when_both_present_and_query_opted_in()
     {
-        // given
-        var handler = _CreateHandler();
+        // given — AllowApiKeyInQueryString = true; header must take precedence and query value must not be read
+        var options = new ApiKeyAuthenticationSchemeOptions { AllowApiKeyInQueryString = true };
+        var optionsMonitor = Substitute.For<IOptionsMonitor<ApiKeyAuthenticationSchemeOptions>>();
+        optionsMonitor.Get(Arg.Any<string>()).Returns(options);
+        optionsMonitor.CurrentValue.Returns(options);
+
+        var handler = new ApiKeyAuthenticationHandler<TestUser, string>(
+            optionsMonitor,
+            LoggerFactory,
+            UrlEncoder.Default,
+            _userManager,
+            _signInManager,
+            _apiKeyStore
+        );
+
         var context = _CreateContext();
         var headerUser = new TestUser("user-1", "headeruser", "header@example.com");
         var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "headeruser")]));
@@ -265,8 +312,8 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        await _apiKeyStore.Received(1).GetActiveApiKeyUserAsync("header-api-key");
-        await _apiKeyStore.DidNotReceive().GetActiveApiKeyUserAsync("query-api-key");
+        await _apiKeyStore.Received(1).GetActiveApiKeyUserAsync("header-api-key", Arg.Any<CancellationToken>());
+        await _apiKeyStore.DidNotReceive().GetActiveApiKeyUserAsync("query-api-key", Arg.Any<CancellationToken>());
     }
 
     #region Helpers

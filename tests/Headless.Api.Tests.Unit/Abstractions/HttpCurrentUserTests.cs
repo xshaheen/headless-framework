@@ -28,9 +28,9 @@ public sealed class HttpCurrentUserTests : TestBase
     }
 
     [Fact]
-    public void should_return_is_authenticated_true_when_user_id_present()
+    public void should_return_is_authenticated_true_when_identity_authenticated()
     {
-        // given
+        // given — a non-null authentication type makes ClaimsIdentity.IsAuthenticated true
         var claims = new[] { new Claim(UserClaimTypes.UserId, "user-123") };
         var identity = new ClaimsIdentity(claims, "TestAuth");
         var principal = new ClaimsPrincipal(identity);
@@ -46,10 +46,27 @@ public sealed class HttpCurrentUserTests : TestBase
     }
 
     [Fact]
-    public void should_return_is_authenticated_false_when_no_user_id()
+    public void should_return_is_authenticated_true_when_identity_authenticated_without_user_id()
     {
-        // given
+        // given — authenticated identity (non-null auth type) but no UserId claim
         var identity = new ClaimsIdentity([], "TestAuth");
+        var principal = new ClaimsPrincipal(identity);
+        var accessor = Substitute.For<ICurrentPrincipalAccessor>();
+        accessor.Principal.Returns(principal);
+        var sut = new HttpCurrentUser(accessor);
+
+        // when
+        var result = sut.IsAuthenticated;
+
+        // then
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_return_is_authenticated_false_when_identity_not_authenticated()
+    {
+        // given — no authentication type => ClaimsIdentity.IsAuthenticated is false even with a UserId claim
+        var identity = new ClaimsIdentity([new Claim(UserClaimTypes.UserId, "user-123")]);
         var principal = new ClaimsPrincipal(identity);
         var accessor = Substitute.For<ICurrentPrincipalAccessor>();
         accessor.Principal.Returns(principal);

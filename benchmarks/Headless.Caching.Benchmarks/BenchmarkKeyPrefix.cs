@@ -12,9 +12,9 @@ internal static class BenchmarkKeyPrefix
         Argument.IsNotNullOrWhiteSpace(scenario);
         Argument.IsNotNullOrWhiteSpace(runId);
 
-        return $"bench:{Sanitize(providerId)}:{Sanitize(scenario)}:{Sanitize(runId)}:";
+        return $"bench:{_Sanitize(providerId)}:{_Sanitize(scenario)}:{_Sanitize(runId)}:";
     }
 
-    private static string Sanitize(string value) =>
+    private static string _Sanitize(string value) =>
         value.Replace(" ", "-", StringComparison.Ordinal).ToLowerInvariant();
 }

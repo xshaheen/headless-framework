@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Immutable;
 using System.Reflection;
 using System.Threading.Channels;
 using Headless.Coordination;
@@ -72,7 +71,7 @@ public sealed class EventDeliveryTests : TestBase
         channel.Writer.TryComplete();
         var field = typeof(MembershipEventSource).GetField(
             "_subscribers",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         field.Should().NotBeNull();
         field!.SetValue(source, ImmutableArray.Create(channel));

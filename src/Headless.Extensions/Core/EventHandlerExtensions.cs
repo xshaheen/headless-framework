@@ -7,28 +7,28 @@ namespace System;
 [PublicAPI]
 public static class EventHandlerExtensions
 {
-    /// <summary>Raises given event safely with given arguments.</summary>
-    /// <param name="eventHandler">The event handler</param>
-    /// <param name="sender">Source of the event</param>
+    /// <summary>Invokes the event handler with <see cref="EventArgs.Empty"/> if it is not <see langword="null"/>; does nothing otherwise.</summary>
+    /// <param name="eventHandler">The event handler to invoke, or <see langword="null"/> to no-op.</param>
+    /// <param name="sender">The source of the event passed to each subscriber.</param>
     public static void InvokeSafely(this EventHandler? eventHandler, object sender)
     {
         eventHandler.InvokeSafely(sender, EventArgs.Empty);
     }
 
-    /// <summary>Raises given event safely with given arguments.</summary>
-    /// <param name="eventHandler">The event handler</param>
-    /// <param name="sender">Source of the event</param>
-    /// <param name="e">Event argument</param>
+    /// <summary>Invokes the event handler with the given arguments if it is not <see langword="null"/>; does nothing otherwise.</summary>
+    /// <param name="eventHandler">The event handler to invoke, or <see langword="null"/> to no-op.</param>
+    /// <param name="sender">The source of the event passed to each subscriber.</param>
+    /// <param name="e">The event data passed to each subscriber.</param>
     public static void InvokeSafely(this EventHandler? eventHandler, object sender, EventArgs e)
     {
         eventHandler?.Invoke(sender, e);
     }
 
-    /// <summary>Raises given event safely with given arguments.</summary>
-    /// <typeparam name="TEventArgs">Type of the <see cref="EventArgs"/></typeparam>
-    /// <param name="eventHandler">The event handler</param>
-    /// <param name="sender">Source of the event</param>
-    /// <param name="e">Event argument</param>
+    /// <summary>Invokes the generic event handler with the given arguments if it is not <see langword="null"/>; does nothing otherwise.</summary>
+    /// <typeparam name="TEventArgs">The event data type.</typeparam>
+    /// <param name="eventHandler">The event handler to invoke, or <see langword="null"/> to no-op.</param>
+    /// <param name="sender">The source of the event passed to each subscriber.</param>
+    /// <param name="e">The event data passed to each subscriber.</param>
     public static void InvokeSafely<TEventArgs>(
         this EventHandler<TEventArgs>? eventHandler,
         object sender,

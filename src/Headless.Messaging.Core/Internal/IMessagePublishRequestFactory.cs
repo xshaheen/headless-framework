@@ -121,7 +121,7 @@ internal sealed class MessagePublishRequestFactory(
 
         var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
             ? idGenerator.Create().ToString("D")
-            : _ValidateMessageId(options!.MessageId);
+            : _ValidateMessageId(options.MessageId);
 
         headers[Headers.MessageId] = messageId;
         var correlationId = _ResolveCorrelationId(
@@ -140,7 +140,7 @@ internal sealed class MessagePublishRequestFactory(
 
         if (!string.IsNullOrWhiteSpace(options?.CallbackName))
         {
-            headers[Headers.CallbackName] = options!.CallbackName;
+            headers[Headers.CallbackName] = options.CallbackName;
         }
 
         if (delayTime == null)
@@ -160,17 +160,17 @@ internal sealed class MessagePublishRequestFactory(
     {
         if (!string.IsNullOrWhiteSpace(explicitCorrelationId))
         {
-            return explicitCorrelationId!;
+            return explicitCorrelationId;
         }
 
         if (!string.IsNullOrWhiteSpace(selectorCorrelationId))
         {
-            return selectorCorrelationId!;
+            return selectorCorrelationId;
         }
 
         if (!string.IsNullOrWhiteSpace(ambientCorrelationId))
         {
-            return ambientCorrelationId!;
+            return ambientCorrelationId;
         }
 
         return messageId;
@@ -244,7 +244,7 @@ internal sealed class MessagePublishRequestFactory(
                     continue;
                 }
 
-                _ValidateProviderHeaderValue(contribution.HeaderName, value!, config);
+                _ValidateProviderHeaderValue(contribution.HeaderName, value, config);
                 headers[contribution.HeaderName] = value;
             }
         }
@@ -470,8 +470,8 @@ internal sealed class MessagePublishRequestFactory(
     {
         if (!string.IsNullOrWhiteSpace(explicitMessageName))
         {
-            MessagingOptions.ValidateMessageName(explicitMessageName!);
-            return _options.ApplyMessageNamePrefix(explicitMessageName!);
+            MessagingOptions.ValidateMessageName(explicitMessageName);
+            return _options.ApplyMessageNamePrefix(explicitMessageName);
         }
 
         if (_messageNameCache.TryGetValue(messageType, out var cachedName))

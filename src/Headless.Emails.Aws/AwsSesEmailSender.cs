@@ -10,10 +10,54 @@ namespace Headless.Emails.Aws;
  * API Docs
  * https://docs.aws.amazon.com/ses/latest/APIReference/Welcome.html
  */
+/// <summary>
+/// <see cref="IEmailSender"/> implementation backed by Amazon Simple Email Service v2 (SES).
+/// </summary>
+/// <remarks>
+/// When the request contains no attachments the structured SES API path is used
+/// (<c>SendEmailRequest</c> with a <c>Simple</c> content block). When attachments are
+/// present the message is serialized to a raw MIME stream and sent via the <c>Raw</c>
+/// content path. Non-2xx responses that do not throw are surfaced as a failed
+/// <see cref="SendSingleEmailResponse"/> with a generic error message; PII (addresses)
+/// is deliberately excluded from log output.
+/// </remarks>
 public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<AwsSesEmailSender> logger) : IEmailSender
 {
     private const string _Charset = "UTF-8";
 
+    /// <summary>
+    /// Sends a single email via Amazon SES v2.
+    /// </summary>
+    /// <param name="request">The email message to send.</param>
+    /// <param name="cancellationToken">Token used to cancel the send operation.</param>
+    /// <returns>
+    /// A successful response when SES returns a 2xx status code; a failed response
+    /// for non-2xx results that do not map to a thrown exception.
+    /// </returns>
+    /// <exception cref="Amazon.SimpleEmailV2.Model.MessageRejectedException">
+    /// Thrown when SES rejects the message (for example a missing verified sender).
+    /// </exception>
+    /// <exception cref="Amazon.SimpleEmailV2.Model.BadRequestException">
+    /// Thrown when the request is malformed.
+    /// </exception>
+    /// <exception cref="Amazon.SimpleEmailV2.Model.NotFoundException">
+    /// Thrown when a referenced resource (for example a configuration set) does not exist.
+    /// </exception>
+    /// <exception cref="Amazon.SimpleEmailV2.Model.AccountSuspendedException">
+    /// Thrown when the AWS account's email sending capability has been suspended.
+    /// </exception>
+    /// <exception cref="Amazon.SimpleEmailV2.Model.MailFromDomainNotVerifiedException">
+    /// Thrown when the MAIL FROM domain has not been verified with SES.
+    /// </exception>
+    /// <exception cref="Amazon.SimpleEmailV2.Model.LimitExceededException">
+    /// Thrown when the SES sending quota is exceeded.
+    /// </exception>
+    /// <exception cref="Amazon.SimpleEmailV2.Model.TooManyRequestsException">
+    /// Thrown when requests are throttled by SES.
+    /// </exception>
+    /// <exception cref="Amazon.SimpleEmailV2.Model.SendingPausedException">
+    /// Thrown when email sending has been paused for the account or configuration set.
+    /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
         CancellationToken cancellationToken = default
@@ -23,19 +67,19 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
         {
             var simpleRequest = _MapToSendEmailRequest(request);
 
-            return await _SendAsync(simpleRequest, cancellationToken);
+            return await _SendAsync(simpleRequest, cancellationToken).ConfigureAwait(false);
         }
 
-        using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken);
+        using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).ConfigureAwait(false);
         await using var memoryStream = new MemoryStream();
-        await mimeMessage.WriteToAsync(memoryStream, cancellationToken);
+        await mimeMessage.WriteToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
 
         var rawRequest = new SendEmailRequest
         {
             Content = new EmailContent { Raw = new RawMessage { Data = memoryStream } },
         };
 
-        return await _SendAsync(rawRequest, cancellationToken);
+        return await _SendAsync(rawRequest, cancellationToken).ConfigureAwait(false);
     }
 
     #region Helpers
@@ -49,7 +93,7 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
 
         try
         {
-            response = await ses.SendEmailAsync(request, cancellationToken);
+            response = await ses.SendEmailAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
             when (ex

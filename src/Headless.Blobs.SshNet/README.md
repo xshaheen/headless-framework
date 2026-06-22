@@ -25,13 +25,10 @@ dotnet add package Headless.Blobs.SshNet
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSshNetBlobStorage(options =>
+// Password authentication
+builder.Services.AddSshBlobStorage(options =>
 {
-    options.Host = "sftp.example.com";
-    options.Port = 22;
-    options.Username = "user";
-    options.Password = "password"; // Or use PrivateKeyPath
-    options.BasePath = "/home/user/uploads";
+    options.ConnectionString = "sftp://user:password@sftp.example.com:22/home/user/uploads";
 });
 ```
 
@@ -42,26 +39,21 @@ builder.Services.AddSshNetBlobStorage(options =>
 ```json
 {
   "SftpBlob": {
-    "Host": "sftp.example.com",
-    "Port": 22,
-    "Username": "user",
-    "Password": "secret",
-    "BasePath": "/home/user/uploads"
+    "ConnectionString": "sftp://user:password@sftp.example.com:22/home/user/uploads"
   }
 }
 ```
 
 ### SSH Key Authentication
 
-```json
+```csharp
+// Key-based authentication: provide PrivateKey as a Stream
+builder.Services.AddSshBlobStorage(options =>
 {
-  "SftpBlob": {
-    "Host": "sftp.example.com",
-    "Username": "user",
-    "PrivateKeyPath": "/path/to/key",
-    "PrivateKeyPassphrase": "optional-passphrase"
-  }
-}
+    options.ConnectionString = "sftp://user@sftp.example.com:22/home/user/uploads";
+    options.PrivateKey = File.OpenRead("/path/to/key");
+    options.PrivateKeyPassPhrase = "optional-passphrase"; // nullable
+});
 ```
 
 ## Dependencies

@@ -2,6 +2,10 @@
 
 namespace Headless.Serializer.Converters;
 
+/// <summary>
+/// Converts <see cref="DateTimeOffset"/> to and from Unix epoch seconds represented as a JSON number
+/// or a numeric string. Fractional seconds are not preserved.
+/// </summary>
 public sealed class UnixTimeJsonConverter : JsonConverter<DateTimeOffset>
 {
     public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

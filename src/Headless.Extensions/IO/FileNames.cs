@@ -7,11 +7,19 @@ using Headless.Checks;
 
 namespace Headless.IO;
 
+/// <summary>
+/// A helper class for sanitizing untrusted file names and deriving safe display and storage names from them.
+/// </summary>
 [PublicAPI]
 public static class FileNames
 {
     #region Invalid FileNames Characters
 
+    /// <summary>
+    /// The set of characters that are not allowed in a file name: the quote, angle brackets, pipe, colon, asterisk,
+    /// question mark, both path separators (<c>\</c> and <c>/</c>), and all control characters in the range
+    /// <c>U+0000</c> through <c>U+001F</c>. Used by <see cref="SanitizeFileName"/>.
+    /// </summary>
     public static readonly SearchValues<char> InvalidFileNameChars = SearchValues.Create(
         '"',
         '<',
@@ -64,7 +72,11 @@ public static class FileNames
     /// Sanitizes the given file name by removing invalid characters and replacing multiple spaces with a single space
     /// and encoded the result to HTML to prevent script injection attacks.
     /// </summary>
-    /// <param name="untrustedName">The file name without extension to sanitize.</param>
+    /// <param name="untrustedName">
+    /// The untrusted file name to sanitize. Any extension is preserved and the remainder is cleaned of invalid
+    /// characters; path separators are replaced with a space.
+    /// </param>
+    /// <returns>The sanitized, HTML-encoded file name (including any original extension).</returns>
     public static string SanitizeFileName(ReadOnlySpan<char> untrustedName)
     {
         var extension = Path.GetExtension(untrustedName);
@@ -113,6 +125,17 @@ public static class FileNames
 
     #region Trusted File Name
 
+    /// <summary>
+    /// Derives a trusted display name and a unique save name from an untrusted file name, appending a randomly
+    /// generated numeric suffix to the save name so it is unlikely to collide with existing files.
+    /// </summary>
+    /// <param name="untrustedName">The untrusted file name to derive trusted names from.</param>
+    /// <returns>
+    /// A tuple of <c>TrustedDisplayName</c> (the sanitized name, suitable for display) and <c>UniqueSaveName</c>
+    /// (a normalized name with a random suffix, suitable for storing on disk).
+    /// </returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="untrustedName"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the file name cannot be Unicode-normalized.</exception>
     public static (string TrustedDisplayName, string UniqueSaveName) GetTrustedFileName(
         ReadOnlySpan<char> untrustedName
     )
@@ -120,6 +143,18 @@ public static class FileNames
         return GetTrustedFileName(untrustedName, _GetRandomSuffix());
     }
 
+    /// <summary>
+    /// Derives a trusted display name and a unique save name from an untrusted file name, appending the supplied
+    /// <paramref name="randomSuffix"/> to the save name.
+    /// </summary>
+    /// <param name="untrustedName">The untrusted file name to derive trusted names from.</param>
+    /// <param name="randomSuffix">The suffix to append to the normalized name when building the unique save name.</param>
+    /// <returns>
+    /// A tuple of <c>TrustedDisplayName</c> (the sanitized name, suitable for display) and <c>UniqueSaveName</c>
+    /// (a normalized name with the supplied suffix, suitable for storing on disk).
+    /// </returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="untrustedName"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the file name cannot be Unicode-normalized.</exception>
     public static (string TrustedDisplayName, string UniqueSaveName) GetTrustedFileName(
         ReadOnlySpan<char> untrustedName,
         ReadOnlySpan<char> randomSuffix
@@ -148,55 +183,73 @@ public static class FileNames
         }
 
         var estimatedLength = fileName.GetNormalizedLength(NormalizationForm.FormD);
-        Span<char> normalizedName = stackalloc char[estimatedLength];
 
-        if (!fileName.TryNormalize(normalizedName, out var charsWritten, NormalizationForm.FormD))
+        // The normalized length is derived from untrusted input, so cap the stack buffer and rent from
+        // the shared pool for larger names to avoid a stack-overflow DoS on adversarially long inputs.
+        const int maxStackalloc = 256;
+        var rentedBuffer = estimatedLength > maxStackalloc ? ArrayPool<char>.Shared.Rent(estimatedLength) : null;
+
+        try
         {
-            throw new InvalidOperationException("Failed to normalize the file name.");
+            Span<char> normalizedName = rentedBuffer is not null
+                ? rentedBuffer.AsSpan(0, estimatedLength)
+                : stackalloc char[estimatedLength];
+
+            if (!fileName.TryNormalize(normalizedName, out var charsWritten, NormalizationForm.FormD))
+            {
+                throw new InvalidOperationException("Failed to normalize the file name.");
+            }
+
+            normalizedName = normalizedName[..charsWritten];
+
+            var builder = new StringBuilder();
+            var lastChar = '\0';
+
+            foreach (var c in normalizedName) // Normalize accent characters
+            {
+                char charToAppend;
+
+                // Replace all spaces with underscore (it should not contain duplicate spaces because SanitizeFileName does that)
+                // Replace all symbol characters with dash
+                if (char.IsWhiteSpace(c) || c == '_' || char.IsPunctuation(c) || char.IsSymbol(c))
+                {
+                    charToAppend = '_';
+                }
+                else if (_IsLetterOrDigit(c)) // Keep letters and digits
+                {
+                    charToAppend = c;
+                }
+                else
+                {
+                    continue; // Skip this character
+                }
+
+                // Skip duplicated [._-] characters
+                if ((charToAppend is '.' or '_' or '-') && (lastChar is '.' or '_' or '-'))
+                {
+                    continue;
+                }
+
+                builder.Append(charToAppend);
+                lastChar = charToAppend;
+            }
+
+            var result = builder.ToString().AsSpan();
+
+            // Remove leading ._- characters
+            result = result.TrimStart(['.', '_', '-']);
+            // Remove trailing ._- characters
+            result = result.TrimEnd(['.', '_', '-']);
+
+            return result;
         }
-
-        normalizedName = normalizedName[..charsWritten];
-
-        var builder = new StringBuilder();
-        var lastChar = '\0';
-
-        foreach (var c in normalizedName) // Normalize accent characters
+        finally
         {
-            char charToAppend;
-
-            // Replace all spaces with underscore (it should not contain duplicate spaces because SanitizeFileName does that)
-            // Replace all symbol characters with dash
-            if (char.IsWhiteSpace(c) || c == '_' || char.IsPunctuation(c) || char.IsSymbol(c))
+            if (rentedBuffer is not null)
             {
-                charToAppend = '_';
+                ArrayPool<char>.Shared.Return(rentedBuffer);
             }
-            else if (_IsLetterOrDigit(c)) // Keep letters and digits
-            {
-                charToAppend = c;
-            }
-            else
-            {
-                continue; // Skip this character
-            }
-
-            // Skip duplicated [._-] characters
-            if ((charToAppend is '.' or '_' or '-') && (lastChar is '.' or '_' or '-'))
-            {
-                continue;
-            }
-
-            builder.Append(charToAppend);
-            lastChar = charToAppend;
         }
-
-        var result = builder.ToString().AsSpan();
-
-        // Remove leading ._- characters
-        result = result.TrimStart(['.', '_', '-']);
-        // Remove trailing ._- characters
-        result = result.TrimEnd(['.', '_', '-']);
-
-        return result;
     }
 
     private static ReadOnlySpan<char> _GetRandomSuffix()

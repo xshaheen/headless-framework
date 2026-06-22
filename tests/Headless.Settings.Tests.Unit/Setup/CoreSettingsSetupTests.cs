@@ -35,7 +35,6 @@ public sealed class CoreSettingsSetupTests
         builder.Services.AddStringEncryptionService(options =>
         {
             options.DefaultPassPhrase = "ExplicitPassPhrase123";
-            options.InitVectorBytes = "ExplicitInitVect"u8.ToArray();
             options.DefaultSalt = "ExplicitSalt"u8.ToArray();
         });
 
@@ -47,7 +46,6 @@ public sealed class CoreSettingsSetupTests
 
         // then
         encryptionOptions.DefaultPassPhrase.Should().Be("ExplicitPassPhrase123");
-        encryptionOptions.InitVectorBytes.Should().BeEquivalentTo("ExplicitInitVect"u8.ToArray());
         encryptionOptions.DefaultSalt.Should().BeEquivalentTo("ExplicitSalt"u8.ToArray());
     }
 

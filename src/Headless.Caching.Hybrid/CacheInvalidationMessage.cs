@@ -3,8 +3,16 @@
 namespace Headless.Caching;
 
 /// <summary>
-/// Message published to notify other instances about cache invalidation.
+/// Message published over <c>IBus</c> by <see cref="HybridCache"/> to notify peer instances to evict specific
+/// L1 entries. Exactly one invalidation target must be set per message: <see cref="Key"/>, <see cref="Keys"/>,
+/// <see cref="Prefix"/>, <see cref="Tag"/>, <see cref="Clear"/>, or <see cref="FlushAll"/>.
 /// </summary>
+/// <remarks>
+/// Consumers register <see cref="HybridCacheInvalidationConsumer"/> with Headless Messaging to receive these
+/// messages. Messages whose <see cref="InstanceId"/> matches the receiving instance are silently ignored to
+/// prevent echo invalidation. The <see cref="Timestamp"/> field is load-bearing for tag/clear/flush messages:
+/// receivers seed their L1 marker from it so cross-node clock skew does not reintroduce stale entries.
+/// </remarks>
 [PublicAPI]
 public sealed record CacheInvalidationMessage
 {

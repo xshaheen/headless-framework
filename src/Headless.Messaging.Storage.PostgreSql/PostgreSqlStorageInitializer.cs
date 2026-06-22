@@ -2,7 +2,6 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -19,16 +18,31 @@ public sealed class PostgreSqlStorageInitializer(
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
+    /// <summary>
+    /// Returns the fully-qualified PostgreSQL table name for published outbox messages,
+    /// in the form <c>"schema"."published"</c>.
+    /// </summary>
     public string GetPublishedTableName()
     {
         return $"\"{postgreSqlOptions.Value.Schema}\".\"published\"";
     }
 
+    /// <summary>
+    /// Returns the fully-qualified PostgreSQL table name for received outbox messages,
+    /// in the form <c>"schema"."received"</c>.
+    /// </summary>
     public string GetReceivedTableName()
     {
         return $"\"{postgreSqlOptions.Value.Schema}\".\"received\"";
     }
 
+    /// <summary>
+    /// Creates the messaging schema, tables, and indexes if they do not already exist.
+    /// The core DDL runs inside a PostgreSQL transaction (DDL is transactional in PostgreSQL).
+    /// Partial indexes for retry pickup and full-text content search are created with
+    /// <c>CREATE INDEX CONCURRENTLY</c> after the transaction commits so writers remain
+    /// unblocked during startup on hot tables.
+    /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (cancellationToken.IsCancellationRequested)

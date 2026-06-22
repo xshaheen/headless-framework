@@ -1,16 +1,15 @@
 # Headless.Sql.SqlServer
 
-SQL Server connection factory using Microsoft.Data.SqlClient.
+SQL Server connection factory backed by `Microsoft.Data.SqlClient`.
 
 ## Problem Solved
 
-Provides SQL Server-specific implementation of the SQL connection factory, enabling efficient connection management with Microsoft.Data.SqlClient.
+Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementations for SQL Server and Azure SQL, wrapping `Microsoft.Data.SqlClient` so repositories can obtain open `SqlConnection` instances through the provider-agnostic interface.
 
 ## Key Features
 
-- `SqlServerConnectionFactory` - ISqlConnectionFactory implementation
-- `SqlServerConnectionStringChecker` - Connection string validation
-- Returns strongly-typed `SqlConnection` instances
+- `SqlServerConnectionFactory` — `ISqlConnectionFactory` implementation; `CreateNewConnectionAsync()` returns a strongly-typed `SqlConnection` (already open); `GetConnectionString()` retrieves the configured string
+- `SqlServerConnectionStringChecker` — `IConnectionStringChecker` that verifies server reachability and database existence by connecting to `master` first, then calling `ChangeDatabaseAsync` to the target
 
 ## Installation
 
@@ -27,14 +26,17 @@ var connectionString = builder.Configuration.GetConnectionString("Default")!;
 builder.Services.AddSingleton<ISqlConnectionFactory>(
     new SqlServerConnectionFactory(connectionString)
 );
+
+// Optional: register the health-check helper
+builder.Services.AddSingleton<IConnectionStringChecker, SqlServerConnectionStringChecker>();
 ```
 
-## Usage
+Use in a repository:
 
 ```csharp
-public sealed class ReportService(ISqlConnectionFactory connectionFactory)
+public sealed class ReportRepository(ISqlConnectionFactory connectionFactory)
 {
-    public async Task<IEnumerable<Report>> GetReportsAsync(CancellationToken ct)
+    public async Task<IEnumerable<Report>> GetRecentAsync(CancellationToken ct)
     {
         await using var connection = await connectionFactory.CreateNewConnectionAsync(ct);
 
@@ -48,7 +50,7 @@ public sealed class ReportService(ISqlConnectionFactory connectionFactory)
 
 ## Configuration
 
-Connection string via constructor:
+Pass the connection string directly to the constructor:
 
 ```csharp
 services.AddSingleton<ISqlConnectionFactory>(sp =>

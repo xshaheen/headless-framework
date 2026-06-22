@@ -1,17 +1,15 @@
 # Headless.Tus
 
-Core TUS protocol utilities and extensions.
+Base dependency that wires `tusdotnet` into the ASP.NET Core pipeline. Contains no store; exists to share the `tusdotnet` dependency and Headless hosting infrastructure across TUS packages.
 
 ## Problem Solved
 
-Provides shared utilities and base functionality for TUS (resumable file upload) protocol implementations, building on the tusdotnet library.
+Provides a consistent `tusdotnet` integration point for all TUS store packages so each provider does not independently manage endpoint wiring and version alignment.
 
 ## Key Features
 
-- Shared TUS protocol utilities
-- Base types for TUS stores
-- File metadata handling
-- Extension method helpers
+- Shared `tusdotnet` dependency (all TUS packages reference this one)
+- `Headless.Hosting` wiring for ASP.NET Core middleware
 
 ## Installation
 
@@ -19,17 +17,18 @@ Provides shared utilities and base functionality for TUS (resumable file upload)
 dotnet add package Headless.Tus
 ```
 
-## Usage
+## Quick Start
 
-This is a base package typically used by specific TUS store implementations (Azure, local filesystem). See `Headless.Tus.Azure` for a complete implementation.
+`Headless.Tus` is a base package. Add `Headless.Tus.Azure` for a complete upload setup. This package does not need to be installed directly; it is pulled in transitively.
 
 ## Configuration
 
-No configuration required.
+None.
 
 ## Dependencies
 
 - `tusdotnet`
+- `Headless.Hosting`
 
 ## Side Effects
 

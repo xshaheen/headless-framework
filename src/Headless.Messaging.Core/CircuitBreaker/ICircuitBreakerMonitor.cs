@@ -52,6 +52,9 @@ public interface ICircuitBreakerMonitor
     /// Returns <c>true</c> if the circuit for the specified delivery intent and consumer group
     /// is currently Open or HalfOpen.
     /// </summary>
+    /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
+    /// <param name="groupName">The consumer group name.</param>
+    /// <returns><see langword="true"/> when the circuit is Open or HalfOpen; <see langword="false"/> when Closed or not registered.</returns>
     bool IsOpen(IntentType intentType, string groupName);
 
     /// <summary>
@@ -96,6 +99,9 @@ public interface ICircuitBreakerMonitor
     /// Returns the current <see cref="CircuitBreakerState"/> for the specified delivery intent and consumer group,
     /// or <see langword="null"/> if the group is not registered.
     /// </summary>
+    /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
+    /// <param name="groupName">The consumer group name.</param>
+    /// <returns>The current state, or <see langword="null"/> when the group has never been registered.</returns>
     CircuitBreakerState? GetState(IntentType intentType, string groupName);
 
     /// <summary>
@@ -114,6 +120,9 @@ public interface ICircuitBreakerMonitor
     /// <summary>
     /// Gets a rich snapshot of the circuit breaker state for a delivery intent and consumer group.
     /// </summary>
+    /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
+    /// <param name="groupName">The consumer group name.</param>
+    /// <returns>The snapshot, or <see langword="null"/> if the group has not been accessed.</returns>
     CircuitBreakerSnapshot? GetSnapshot(IntentType intentType, string groupName);
 
     /// <summary>
@@ -144,8 +153,13 @@ public interface ICircuitBreakerMonitor
     ValueTask<bool> ResetAsync(string groupName);
 
     /// <summary>
-    /// Force-resets the circuit for the specified delivery intent and consumer group.
+    /// Force-resets the circuit for the specified delivery intent and consumer group to <see cref="CircuitBreakerState.Closed"/>.
     /// </summary>
+    /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
+    /// <param name="groupName">The consumer group name.</param>
+    /// <returns>
+    /// <see langword="true"/> if a reset was performed; <see langword="false"/> if the group was not found or was already Closed.
+    /// </returns>
     ValueTask<bool> ResetAsync(IntentType intentType, string groupName);
 
     /// <summary>
@@ -168,7 +182,13 @@ public interface ICircuitBreakerMonitor
     ValueTask<bool> ForceOpenAsync(string groupName);
 
     /// <summary>
-    /// Force-opens the circuit for the specified delivery intent and consumer group.
+    /// Force-opens the circuit for the specified delivery intent and consumer group, transitioning it to
+    /// <see cref="CircuitBreakerState.Open"/> and invoking the pause callback.
     /// </summary>
+    /// <param name="intentType">The delivery intent (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).</param>
+    /// <param name="groupName">The consumer group name.</param>
+    /// <returns>
+    /// <see langword="true"/> if the circuit was force-opened; <see langword="false"/> if the group was not found or was already Open.
+    /// </returns>
     ValueTask<bool> ForceOpenAsync(IntentType intentType, string groupName);
 }

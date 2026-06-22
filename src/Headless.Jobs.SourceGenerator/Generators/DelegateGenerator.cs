@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Text;
 using Headless.Jobs.SourceGenerator.Models;
 using Headless.Jobs.SourceGenerator.Utilities;

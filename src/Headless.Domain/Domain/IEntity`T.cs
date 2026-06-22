@@ -6,20 +6,25 @@ namespace Headless.Domain;
 
 /// <summary>Defines an entity with a single primary key with "ID" property.</summary>
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
+[PublicAPI]
 public interface IEntity<out TId> : IEntity
+    where TId : notnull
 {
     /// <summary>Unique identifier for this entity.</summary>
     TId Id { get; }
 }
 
 /// <summary>Base class for entities with a single primary key.</summary>
+[PublicAPI]
 public abstract class Entity<TId> : Entity, IEntity<TId>
-    where TId : IEquatable<TId>
+    where TId : notnull, IEquatable<TId>
 {
     /// <summary>Unique identifier for this entity.</summary>
-    public virtual TId Id { get; protected init; } = default!;
+    public required TId Id { get; init; }
 
+    /// <inheritdoc/>
     public override IReadOnlyList<object> GetKeys() => [Id];
 
+    /// <summary>Returns a diagnostic string of the form <c>[ENTITY: TypeName] Id = &lt;id&gt;</c>.</summary>
     public override string ToString() => $"[ENTITY: {GetType().Name}] Id = {Id}";
 }

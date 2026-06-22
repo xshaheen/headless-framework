@@ -617,6 +617,23 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
+    public void add_or_replace_fallback_singleton_should_preserve_factory_registered_fallback()
+    {
+        // given — a fallback registered via a factory delegate is indistinguishable from a consumer
+        // override, so it is intentionally preserved (only type-/instance-based fallbacks are removed).
+        var services = new ServiceCollection();
+        services.AddSingleton<IMyService>(_ => new FallbackService());
+
+        // when
+        var result = services.AddOrReplaceFallbackSingleton<IMyService, FallbackService, ReplacementService>();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        result.Should().BeFalse();
+        provider.GetRequiredService<IMyService>().Should().BeOfType<FallbackService>();
+    }
+
+    [Fact]
     public void replace_should_replace_service_with_new_factory()
     {
         // given

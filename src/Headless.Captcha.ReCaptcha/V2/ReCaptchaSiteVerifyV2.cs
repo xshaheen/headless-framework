@@ -19,8 +19,6 @@ internal sealed class ReCaptchaSiteVerifyV2(
     ILogger<ReCaptchaSiteVerifyV2>? logger
 ) : ICaptchaVerifier
 {
-    private static readonly Uri _SiteVerifyUri = new("recaptcha/api/siteverify", UriKind.Relative);
-
     public async Task<CaptchaVerifyResult> VerifyAsync(
         CaptchaVerifyRequest request,
         CancellationToken cancellationToken = default
@@ -29,63 +27,18 @@ internal sealed class ReCaptchaSiteVerifyV2(
         Argument.IsNotNull(request);
 
         var options = optionsMonitor.Get(name);
-
-        List<KeyValuePair<string, string>> formData =
-        [
-            new("secret", options.SiteSecret),
-            new("response", request.Response),
-        ];
-
-        if (request.RemoteIp is not null)
-        {
-            formData.Add(new("remoteip", request.RemoteIp));
-        }
-
-        using var content = new FormUrlEncodedContent(formData);
         var client = clientFactory.CreateClient(name);
 
-        using var httpResponseMessage = await client
-            .PostAsync(_SiteVerifyUri, content, cancellationToken)
+        var wire = await ReCaptchaSiteVerifyClient
+            .SendAsync(
+                client,
+                options.SiteSecret,
+                request,
+                ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV2Response,
+                logger,
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        if (!httpResponseMessage.IsSuccessStatusCode)
-        {
-            if (logger?.IsEnabled(LogLevel.Information) is true)
-            {
-                var responseBody = await httpResponseMessage
-                    .Content.ReadAsStringAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                logger.LogReCaptchaHttpFailure(httpResponseMessage.StatusCode, responseBody);
-            }
-
-            httpResponseMessage.EnsureSuccessStatusCode();
-        }
-
-        await using var responseStream = await httpResponseMessage
-            .Content.ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        ReCaptchaSiteVerifyV2Response? wire;
-
-        try
-        {
-            wire = await JsonSerializer
-                .DeserializeAsync(
-                    responseStream,
-                    ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV2Response,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        catch (JsonException ex)
-        {
-            throw new InvalidOperationException("Failed to deserialize reCAPTCHA siteverify response.", ex);
-        }
-
-        if (wire is null)
-        {
-            throw new InvalidOperationException("Failed to deserialize reCAPTCHA response. Response was null.");
-        }
 
         if (!wire.Success)
         {

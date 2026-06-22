@@ -81,7 +81,7 @@ public sealed class MessageProcessingServer(
             _disposed = true;
 
             _logger.ServerShuttingDown();
-            await _cts.CancelAsync();
+            await _cts.CancelAsync().ConfigureAwait(false);
 
             if (_compositeTask is not null)
             {
@@ -90,7 +90,9 @@ public sealed class MessageProcessingServer(
                 // the wait observes only the timeout (the linked _cts has already been cancelled by
                 // the CancelAsync above; if the composite tasks ignore it, falling back to the
                 // ambient stoppingToken would re-cancel into the same wait pointlessly).
-                await _compositeTask.WaitAsync(TimeSpan.FromSeconds(10), timeProvider, CancellationToken.None);
+                await _compositeTask
+                    .WaitAsync(TimeSpan.FromSeconds(10), timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
         }
         catch (AggregateException e)

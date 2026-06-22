@@ -7,11 +7,38 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.EntityFramework;
 
+/// <summary>
+/// Provides dependency-injection setup helpers for <see cref="HeadlessIdentityDbContext{TUser,TRole,TKey,TUserClaim,TUserRole,TUserLogin,TRoleClaim,TUserToken}"/>
+/// and its nine-type-parameter variant.
+/// </summary>
 [PublicAPI]
 public static class SetupIdentityEntityFramework
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers a <see cref="HeadlessIdentityDbContext{TUser,TRole,TKey,TUserClaim,TUserRole,TUserLogin,TRoleClaim,TUserToken}"/>
+        /// (with the default <see cref="IdentityUserPasskey{TKey}"/> passkey type) and the full
+        /// Headless service surface it requires.
+        /// </summary>
+        /// <typeparam name="TDbContext">The concrete Identity db context to register.</typeparam>
+        /// <typeparam name="TUser">The user entity type.</typeparam>
+        /// <typeparam name="TRole">The role entity type.</typeparam>
+        /// <typeparam name="TKey">The primary key type used by user and role entities.</typeparam>
+        /// <typeparam name="TUserClaim">The user-claim entity type.</typeparam>
+        /// <typeparam name="TUserRole">The user-role link entity type.</typeparam>
+        /// <typeparam name="TUserLogin">The external-login entity type.</typeparam>
+        /// <typeparam name="TRoleClaim">The role-claim entity type.</typeparam>
+        /// <typeparam name="TUserToken">The user authentication-token entity type.</typeparam>
+        /// <param name="optionsAction">
+        /// An optional action to configure the <see cref="DbContextOptionsBuilder"/> for the context.
+        /// </param>
+        /// <param name="configureHeadlessOptions">
+        /// An optional action to configure Headless-specific context options such as audit behaviour.
+        /// </param>
+        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
+        /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
+        /// <returns>The same <see cref="IServiceCollection"/> instance so calls can be chained.</returns>
         public IServiceCollection AddHeadlessDbContext<
             TDbContext,
             TUser,
@@ -61,6 +88,32 @@ public static class SetupIdentityEntityFramework
             >((_, ob) => optionsAction?.Invoke(ob), configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
+        /// <summary>
+        /// Registers a <see cref="HeadlessIdentityDbContext{TUser,TRole,TKey,TUserClaim,TUserRole,TUserLogin,TRoleClaim,TUserToken}"/>
+        /// (with the default <see cref="IdentityUserPasskey{TKey}"/> passkey type) and the full
+        /// Headless service surface it requires. The options action receives the scoped
+        /// <see cref="IServiceProvider"/> so it can resolve runtime services during configuration.
+        /// </summary>
+        /// <typeparam name="TDbContext">The concrete Identity db context to register.</typeparam>
+        /// <typeparam name="TUser">The user entity type.</typeparam>
+        /// <typeparam name="TRole">The role entity type.</typeparam>
+        /// <typeparam name="TKey">The primary key type used by user and role entities.</typeparam>
+        /// <typeparam name="TUserClaim">The user-claim entity type.</typeparam>
+        /// <typeparam name="TUserRole">The user-role link entity type.</typeparam>
+        /// <typeparam name="TUserLogin">The external-login entity type.</typeparam>
+        /// <typeparam name="TRoleClaim">The role-claim entity type.</typeparam>
+        /// <typeparam name="TUserToken">The user authentication-token entity type.</typeparam>
+        /// <param name="optionsAction">
+        /// An optional action to configure the <see cref="DbContextOptionsBuilder"/> using the
+        /// scoped <see cref="IServiceProvider"/>. Receives <see langword="null"/> for the provider
+        /// when called from design-time tooling.
+        /// </param>
+        /// <param name="configureHeadlessOptions">
+        /// An optional action to configure Headless-specific context options such as audit behaviour.
+        /// </param>
+        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
+        /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
+        /// <returns>The same <see cref="IServiceCollection"/> instance so calls can be chained.</returns>
         public IServiceCollection AddHeadlessDbContext<
             TDbContext,
             TUser,
@@ -110,6 +163,29 @@ public static class SetupIdentityEntityFramework
             >(optionsAction, configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
+        /// <summary>
+        /// Registers a <see cref="HeadlessIdentityDbContext{TUser,TRole,TKey,TUserClaim,TUserRole,TUserLogin,TRoleClaim,TUserToken,TUserPasskey}"/>
+        /// with a custom passkey type and the full Headless service surface it requires.
+        /// </summary>
+        /// <typeparam name="TDbContext">The concrete Identity db context to register.</typeparam>
+        /// <typeparam name="TUser">The user entity type.</typeparam>
+        /// <typeparam name="TRole">The role entity type.</typeparam>
+        /// <typeparam name="TKey">The primary key type used by user and role entities.</typeparam>
+        /// <typeparam name="TUserClaim">The user-claim entity type.</typeparam>
+        /// <typeparam name="TUserRole">The user-role link entity type.</typeparam>
+        /// <typeparam name="TUserLogin">The external-login entity type.</typeparam>
+        /// <typeparam name="TRoleClaim">The role-claim entity type.</typeparam>
+        /// <typeparam name="TUserToken">The user authentication-token entity type.</typeparam>
+        /// <typeparam name="TUserPasskey">The passkey entity type.</typeparam>
+        /// <param name="optionsAction">
+        /// An optional action to configure the <see cref="DbContextOptionsBuilder"/> for the context.
+        /// </param>
+        /// <param name="configureHeadlessOptions">
+        /// An optional action to configure Headless-specific context options such as audit behaviour.
+        /// </param>
+        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
+        /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
+        /// <returns>The same <see cref="IServiceCollection"/> instance so calls can be chained.</returns>
         public IServiceCollection AddHeadlessDbContext<
             TDbContext,
             TUser,
@@ -162,6 +238,33 @@ public static class SetupIdentityEntityFramework
             >((_, ob) => optionsAction?.Invoke(ob), configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
+        /// <summary>
+        /// Registers a <see cref="HeadlessIdentityDbContext{TUser,TRole,TKey,TUserClaim,TUserRole,TUserLogin,TRoleClaim,TUserToken,TUserPasskey}"/>
+        /// with a custom passkey type and the full Headless service surface it requires. The options
+        /// action receives the scoped <see cref="IServiceProvider"/> so it can resolve runtime
+        /// services during configuration.
+        /// </summary>
+        /// <typeparam name="TDbContext">The concrete Identity db context to register.</typeparam>
+        /// <typeparam name="TUser">The user entity type.</typeparam>
+        /// <typeparam name="TRole">The role entity type.</typeparam>
+        /// <typeparam name="TKey">The primary key type used by user and role entities.</typeparam>
+        /// <typeparam name="TUserClaim">The user-claim entity type.</typeparam>
+        /// <typeparam name="TUserRole">The user-role link entity type.</typeparam>
+        /// <typeparam name="TUserLogin">The external-login entity type.</typeparam>
+        /// <typeparam name="TRoleClaim">The role-claim entity type.</typeparam>
+        /// <typeparam name="TUserToken">The user authentication-token entity type.</typeparam>
+        /// <typeparam name="TUserPasskey">The passkey entity type.</typeparam>
+        /// <param name="optionsAction">
+        /// An optional action to configure the <see cref="DbContextOptionsBuilder"/> using the
+        /// scoped <see cref="IServiceProvider"/>. Receives <see langword="null"/> for the provider
+        /// when called from design-time tooling.
+        /// </param>
+        /// <param name="configureHeadlessOptions">
+        /// An optional action to configure Headless-specific context options such as audit behaviour.
+        /// </param>
+        /// <param name="contextLifetime">The DI lifetime for <typeparamref name="TDbContext"/> (default: Scoped).</param>
+        /// <param name="optionsLifetime">The DI lifetime for the EF Core options object (default: Scoped).</param>
+        /// <returns>The same <see cref="IServiceCollection"/> instance so calls can be chained.</returns>
         public IServiceCollection AddHeadlessDbContext<
             TDbContext,
             TUser,

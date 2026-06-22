@@ -758,7 +758,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var buildInfo = Substitute.For<IBuildInformationAccessor>();
-        buildInfo.GetBuildNumber().Returns("1.0.0");
+        buildInfo.GetVersion().Returns("1.0.0");
         buildInfo.GetCommitNumber().Returns("abc123");
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         var apiBehaviorOptions = Options.Create(new ApiBehaviorOptions());

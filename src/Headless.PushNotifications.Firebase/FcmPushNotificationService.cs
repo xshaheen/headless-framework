@@ -1,33 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FirebaseAdmin.Messaging;
 using Headless.Checks;
 using Headless.PushNotifications.Abstractions;
 using Headless.PushNotifications.Firebase.Internals;
-using Microsoft.Extensions.Logging;
-using Polly;
-using Polly.Registry;
 
 namespace Headless.PushNotifications.Firebase;
 
 /// <summary>
-/// Firebase Cloud Messaging (FCM) push notification service implementation.
+/// Firebase Cloud Messaging (FCM) push notification service. Validates input, splits multicast sends into
+/// FCM-sized batches, and aggregates per-token outcomes. All FCM interaction and transient-failure retry is
+/// delegated to <see cref="IFcmMessageSender"/>.
 /// </summary>
-/// <remarks>
-/// Implements automatic retry for transient FCM failures (rate limits, temporary outages, server errors)
-/// using exponential backoff with jitter. Permanent errors (invalid tokens, malformed requests) return immediately.
-/// Retry behavior configurable via <see cref="FirebaseOptions.Retry"/>.
-/// </remarks>
-public sealed class FcmPushNotificationService(
-    ILogger<FcmPushNotificationService> logger,
-    ResiliencePipelineProvider<string> pipelineProvider
-) : IPushNotificationService
+internal sealed class FcmPushNotificationService(IFcmMessageSender sender) : IPushNotificationService
 {
     private const int _MaxTitleLength = 100;
     private const int _MaxBodyLength = 4000;
     private const int _MaxTokensPerBatch = 500;
-
-    private readonly ResiliencePipeline _retryPipeline = pipelineProvider.GetPipeline("Headless:FcmRetry");
 
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
@@ -38,70 +26,11 @@ public sealed class FcmPushNotificationService(
     )
     {
         Argument.IsNotNullOrWhiteSpace(clientToken);
-        Argument.IsNotNullOrWhiteSpace(title);
-        Argument.IsNotNullOrWhiteSpace(body);
+        _ValidateContent(title, body, data);
 
-        if (title.Length > _MaxTitleLength)
-        {
-            throw new ArgumentException($"Title exceeds maximum length of {_MaxTitleLength} characters", nameof(title));
-        }
+        var content = new FcmMessageContent(title, body, data);
 
-        if (body.Length > _MaxBodyLength)
-        {
-            throw new ArgumentException($"Body exceeds maximum length of {_MaxBodyLength} characters", nameof(body));
-        }
-
-        _EnsureDataNotContainReservedWords(data);
-
-        var message = new Message
-        {
-            Token = clientToken,
-            Data = data,
-            Notification = new Notification { Title = title, Body = body },
-            Android = new AndroidConfig { Priority = Priority.High },
-            Apns = new ApnsConfig { Aps = new Aps { Badge = 1 } },
-        };
-
-        try
-        {
-            var context = ResilienceContextPool.Shared.Get(cancellationToken);
-            context.Properties.Set(new ResiliencePropertyKey<ILogger>("logger"), logger);
-
-            try
-            {
-                var messageId = await _retryPipeline
-                    .ExecuteAsync(
-                        static async (ctx, state) =>
-                        {
-                            var (msg, ct) = state;
-                            return await FirebaseMessaging.DefaultInstance.SendAsync(msg, ct).ConfigureAwait(false);
-                        },
-                        context,
-                        (message, cancellationToken)
-                    )
-                    .ConfigureAwait(false);
-
-                return PushNotificationResponse.Succeeded(clientToken, messageId);
-            }
-            finally
-            {
-                ResilienceContextPool.Shared.Return(context);
-            }
-        }
-        catch (FirebaseMessagingException e) when (e.MessagingErrorCode is MessagingErrorCode.Unregistered)
-        {
-            return PushNotificationResponse.Unregistered(clientToken);
-        }
-        catch (FirebaseMessagingException e)
-        {
-            return PushNotificationResponse.Failed(clientToken, _FirebaseMessagingExceptionToString(e));
-        }
-        catch (Exception e)
-        {
-            logger.FailedToSendPushNotification(e, clientToken.Length > 8 ? clientToken[..8] + "***" : "***");
-
-            return PushNotificationResponse.Failed(clientToken, "An internal error occurred");
-        }
+        return await sender.SendAsync(content, clientToken, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<BatchPushNotificationResponse> SendMulticastAsync(
@@ -113,130 +42,66 @@ public sealed class FcmPushNotificationService(
     )
     {
         Argument.IsNotNullOrEmpty(clientTokens);
-        Argument.IsNotNullOrWhiteSpace(title);
-        Argument.IsNotNullOrWhiteSpace(body);
+        _ValidateContent(title, body, data);
 
-        if (title.Length > _MaxTitleLength)
-        {
-            throw new ArgumentException($"Title exceeds maximum length of {_MaxTitleLength} characters", nameof(title));
-        }
-
-        if (body.Length > _MaxBodyLength)
-        {
-            throw new ArgumentException($"Body exceeds maximum length of {_MaxBodyLength} characters", nameof(body));
-        }
-
-        _EnsureDataNotContainReservedWords(data);
-
-        var allResponses = new List<PushNotificationResponse>(clientTokens.Count);
+        var content = new FcmMessageContent(title, body, data);
+        var responses = new List<PushNotificationResponse>(clientTokens.Count);
         var successCount = 0;
         var failureCount = 0;
 
-        try
+        foreach (var batch in clientTokens.Chunk(_MaxTokensPerBatch))
         {
-            foreach (var batch in clientTokens.Chunk(_MaxTokensPerBatch))
+            var batchResponses = await sender.SendBatchAsync(content, batch, cancellationToken).ConfigureAwait(false);
+
+            foreach (var response in batchResponses)
             {
-                var batchList = batch.ToList();
-                var message = new MulticastMessage
+                responses.Add(response);
+
+                if (response.IsSucceeded())
                 {
-                    Tokens = batchList,
-                    Data = data,
-                    Notification = new Notification { Title = title, Body = body },
-                    Android = new AndroidConfig { Priority = Priority.High },
-                    Apns = new ApnsConfig { Aps = new Aps { Badge = 1 } },
-                };
-
-                var context = ResilienceContextPool.Shared.Get(cancellationToken);
-                context.Properties.Set(new ResiliencePropertyKey<ILogger>("logger"), logger);
-
-                try
-                {
-                    var batchResponse = await _retryPipeline
-                        .ExecuteAsync(
-                            static async (ctx, state) =>
-                            {
-                                var (msg, ct) = state;
-                                return await FirebaseMessaging
-                                    .DefaultInstance.SendEachForMulticastAsync(msg, ct)
-                                    .ConfigureAwait(false);
-                            },
-                            context,
-                            (message, cancellationToken)
-                        )
-                        .ConfigureAwait(false);
-
-                    if (batchResponse.Responses.Count != batchList.Count)
-                    {
-                        throw new InvalidOperationException(
-                            $"Firebase response count ({batchResponse.Responses.Count}) does not match token count ({batchList.Count})"
-                        );
-                    }
-
-                    successCount += batchResponse.SuccessCount;
-                    failureCount += batchResponse.FailureCount;
-
-                    for (var i = 0; i < batchResponse.Responses.Count; i++)
-                    {
-                        var response = batchResponse.Responses[i];
-                        var token = batchList[i];
-
-                        if (response.IsSuccess)
-                        {
-                            allResponses.Add(PushNotificationResponse.Succeeded(token, response.MessageId));
-                        }
-                        else if (response.Exception.MessagingErrorCode == MessagingErrorCode.Unregistered)
-                        {
-                            allResponses.Add(PushNotificationResponse.Unregistered(token));
-                        }
-                        else
-                        {
-                            allResponses.Add(
-                                PushNotificationResponse.Failed(
-                                    token,
-                                    _FirebaseMessagingExceptionToString(response.Exception)
-                                )
-                            );
-                        }
-                    }
+                    successCount++;
                 }
-                finally
+                else
                 {
-                    ResilienceContextPool.Shared.Return(context);
+                    failureCount++;
                 }
             }
-        }
-        catch (Exception e)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                var notificationTarget = $"multicast:{clientTokens.Count}";
-                logger.FailedToSendPushNotification(e, notificationTarget);
-            }
-
-            throw;
         }
 
         return new BatchPushNotificationResponse
         {
             SuccessCount = successCount,
             FailureCount = failureCount,
-            Responses = allResponses,
+            Responses = responses,
         };
     }
 
-    private static void _EnsureDataNotContainReservedWords(IReadOnlyDictionary<string, string>? data)
+    private static void _ValidateContent(string title, string body, IReadOnlyDictionary<string, string>? data)
     {
-        if (
-            data is not null
-            && (data.ContainsKey("from") || data.ContainsKey("notification") || data.ContainsKey("message_type"))
-        )
-        {
-            throw new InvalidOperationException("Notification data contain reserved word(s).");
-        }
+        Argument.IsNotNullOrWhiteSpace(title);
+        Argument.IsNotNullOrWhiteSpace(body);
+        Argument.IsLessThanOrEqualTo(title.Length, _MaxTitleLength);
+        Argument.IsLessThanOrEqualTo(body.Length, _MaxBodyLength);
+        _EnsureDataAllowed(data);
     }
 
-    private static string _FirebaseMessagingExceptionToString(FirebaseMessagingException exception)
+    private static void _EnsureDataAllowed(IReadOnlyDictionary<string, string>? data)
     {
-        return $"MessagingErrorCode: {exception.MessagingErrorCode}";
+        if (data is null)
+        {
+            return;
+        }
+
+        foreach (var key in data.Keys)
+        {
+            if (
+                key is "from" or "notification" or "message_type"
+                || key.StartsWith("google", StringComparison.Ordinal)
+                || key.StartsWith("gcm", StringComparison.Ordinal)
+            )
+            {
+                throw new ArgumentException($"Notification data contains the reserved FCM key '{key}'.", nameof(data));
+            }
+        }
     }
 }

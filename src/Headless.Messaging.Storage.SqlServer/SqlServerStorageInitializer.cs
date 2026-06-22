@@ -3,7 +3,6 @@
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -19,16 +18,30 @@ public sealed class SqlServerStorageInitializer(
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
+    /// <summary>
+    /// Returns the fully-qualified SQL Server table name for published outbox messages,
+    /// in the form <c>schema.Published</c>.
+    /// </summary>
     public string GetPublishedTableName()
     {
         return $"{options.Value.Schema}.Published";
     }
 
+    /// <summary>
+    /// Returns the fully-qualified SQL Server table name for received outbox messages,
+    /// in the form <c>schema.Received</c>.
+    /// </summary>
     public string GetReceivedTableName()
     {
         return $"{options.Value.Schema}.Received";
     }
 
+    /// <summary>
+    /// Creates the messaging schema, tables, indexes, and the <c>HeadlessMessagingIdList</c>
+    /// table-valued parameter type if they do not already exist. Each DDL block is guarded by
+    /// an <c>IF NOT EXISTS</c> check inside a <c>TRY/CATCH</c> that swallows only duplicate-object
+    /// (2714) and PK-violation (2627) errors so concurrent multi-replica startups converge safely.
+    /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (cancellationToken.IsCancellationRequested)

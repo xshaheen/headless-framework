@@ -7,6 +7,13 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Identity.TokenProviders;
 
+/// <summary>
+/// Data-protection-based token provider for email confirmation links.
+/// Wraps <see cref="DataProtectorTokenProvider{TUser}"/> with the
+/// <see cref="EmailConfirmationTokenProviderOptions"/> defaults (6-hour lifetime).
+/// Produces opaque tokens suitable for URL-safe confirmation links.
+/// </summary>
+/// <typeparam name="TUser">The user type managed by ASP.NET Core Identity.</typeparam>
 public sealed class EmailConfirmationTokenProvider<TUser>(
     IDataProtectionProvider dataProtectionProvider,
     IOptions<EmailConfirmationTokenProviderOptions> optionsAccessor,

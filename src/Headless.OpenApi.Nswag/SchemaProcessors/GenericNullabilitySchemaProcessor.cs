@@ -18,7 +18,7 @@ namespace Headless.Api.SchemaProcessors;
 /// usage site, which NJsonSchema does not propagate to the generic type's property schemas.
 /// </para>
 /// <para>
-/// <b>Solution:</b> This processor inspects <see cref="ContextualType.GenericArguments"/>
+/// <b>Solution:</b> This processor inspects <c>ContextualType.GenericArguments</c>
 /// (from Namotion.Reflection), which preserves the nullable annotation context. For each schema
 /// property whose declaring type is a generic type parameter, it checks whether the corresponding
 /// generic argument is annotated as nullable and sets <c>IsNullableRaw = true</c> on the property
@@ -40,6 +40,11 @@ namespace Headless.Api.SchemaProcessors;
 /// </remarks>
 public sealed class GenericNullabilitySchemaProcessor : ISchemaProcessor
 {
+    /// <summary>
+    /// Inspects the current schema's generic type arguments and marks properties whose backing type
+    /// parameter was annotated as nullable at the call site.
+    /// </summary>
+    /// <param name="context">The NSwag schema processor context for the type being processed.</param>
     public void Process(SchemaProcessorContext context)
     {
         if (

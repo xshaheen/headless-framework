@@ -4,77 +4,99 @@ Core implementation of feature management with caching, value providers, and def
 
 ## Problem Solved
 
-Provides the full feature management implementation including hierarchical value resolution (Tenant > Edition > Default), caching, background initialization, and extensible value providers.
+Provides the full feature management implementation including hierarchical value resolution (Tenant > Edition > Default), feature value caching, background initialization that seeds static definitions into the database, and an extensible value-provider pipeline.
 
 ## Key Features
 
-- `FeatureManager` - Full implementation of `IFeatureManager`
-- Value providers: Default, Edition, Tenant
-- Static and dynamic feature definition stores
-- Feature value caching with invalidation
-- Background service for feature initialization
-- Method invocation feature checking
+- `FeatureManager` — full implementation of `IFeatureManager`; walks the registered provider chain, caches results, and coordinates writes with cache invalidation
+- `IFeatureValueProvider` / `IFeatureValueReadProvider` — read-write and read-only contracts for custom value providers
+- Built-in value providers: `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider`
+- `IStaticFeatureDefinitionStore` — builds the feature catalog lazily and thread-safely from all registered `IFeatureDefinitionProvider` implementations
+- `IDynamicFeatureDefinitionStore` — database-backed definition store with in-process caching and distributed-stamp cross-instance coordination
+- `FeaturesInitializationBackgroundService` — seeds static definitions to the database at startup with exponential-back-off retry; pre-caches dynamic definitions when enabled
+- `FeatureManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle, and named cache routing
+- `FeaturesStorageOptions` — schema and table name configuration shared across all storage providers
+- `HeadlessFeaturesSetupBuilder` — fluent builder returned to `AddHeadlessFeatures`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
+- `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
+- `services.AddFeatureValueProvider<T>()` — registers a custom `IFeatureValueReadProvider` (idempotent by type)
+
+## Design Notes
+
+- Value providers are registered with the last-added provider having the highest resolution priority. The built-in order is `DefaultValue` → `Edition` → `Tenant` (Tenant wins). Custom providers added via `AddFeatureValueProvider<T>()` are appended after `Tenant` and therefore have the highest priority. This matters when writing custom providers that must override built-in resolution.
+- `AddHeadlessFeatures` is guarded on `IFeatureManager` so it is safe to call more than once (only the first call registers the core; the storage extension always applies). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
+- `FeaturesInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. If the host is stopped before initialization finishes, the background task is cancelled and the `TaskCompletionSource` is faulted with `OperationCanceledException`.
 
 ## Installation
 
 ```bash
 dotnet add package Headless.Features.Core
-dotnet add package Headless.Features.Storage.EntityFramework
 ```
 
 ## Quick Start
 
-`AddHeadlessFeatures(...)` registers the management core automatically, so a storage
-provider is all you need. Register the required services (`TimeProvider`, `ICache`,
-`IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessFeatures`.
+Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessFeatures`:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
-
-// Register feature definition providers
+// Register feature definitions
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
-// Add management core + storage in one call (Entity Framework shown)
+// Register the management core + storage in one call
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
-
-For Entity Framework storage, register an `IDbContextFactory<AppDbContext>` and call
-`modelBuilder.AddHeadlessFeatures(featuresStorageOptions)` from your DbContext model configuration.
 
 ### Custom Value Provider
 
 ```csharp
-builder.Services.AddFeatureValueProvider<CustomFeatureValueProvider>();
+// T must implement IFeatureValueReadProvider (read-only) or IFeatureValueProvider (read-write)
+builder.Services.AddFeatureValueProvider<MyCustomFeatureValueProvider>();
 ```
 
 ## Configuration
 
-### Options
-
-Tune the management options through `setup.ConfigureManagement(...)` inside the
-`AddHeadlessFeatures` block, next to `ConfigureStorage`:
+Configure management options via `setup.ConfigureManagement(...)` or `services.Configure<FeatureManagementOptions>(...)`:
 
 ```csharp
 services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureManagement(options =>
     {
+        // Distributed lock key coordinating cross-instance definition saves (default: "features:common_update_lock")
         options.CrossApplicationsCommonLockKey = "features:common_update_lock";
-        // Optional: route feature-value caching to a named cache instance or role key.
-        // Null/empty uses the default registered ICache.
-        options.FeatureValueCacheName = "features";
+
+        // Route feature-value cache to a named ICache instance; null/empty uses the default ICache
+        options.FeatureValueCacheName = null;
+
+        // Persist static definitions to the DB on startup (default: true)
+        options.SaveStaticFeaturesToDatabase = true;
+
+        // Enable the dynamic definition store (default: false)
+        options.IsDynamicFeatureStoreEnabled = false;
+
+        // How long dynamic definitions stay in the in-process cache before the stamp is re-checked (default: 30 seconds)
+        options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
-`FeatureValueCacheName` (default `null`) — optional cache instance name or `CacheConstants` role key for feature-value caching; `null`/empty uses the default registered `ICache`. Set it when feature caching should use a dedicated named cache (e.g. `setup.AddNamed("features", ...)`) rather than the application's default cache.
+Configure schema and table names via `setup.ConfigureStorage(...)`:
 
-The `(options, IServiceProvider)` overload is available when configuration needs resolved
-services. `services.Configure<FeatureManagementOptions>(...)` also works and composes with
-the auto-registration regardless of order.
+```csharp
+services.AddHeadlessFeatures(setup =>
+{
+    setup.ConfigureStorage(o =>
+    {
+        o.Schema = "features";                               // default
+        o.FeatureValuesTableName = "FeatureValues";          // default
+        o.FeatureDefinitionsTableName = "FeatureDefinitions"; // default
+        o.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"; // default
+        o.InitializeOnStartup = true;                        // default; set false when schema is provisioned out-of-band
+    });
+    setup.UseEntityFramework<AppDbContext>();
+});
+```
 
 ## Dependencies
 
@@ -86,6 +108,8 @@ the auto-registration regardless of order.
 ## Side Effects
 
 - Registers `IFeatureManager` as transient
-- Registers feature stores as singletons
-- Starts `FeaturesInitializationBackgroundService` hosted service
-- Registers cache invalidation handler for feature value changes
+- Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
+- Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
+- Starts `FeaturesInitializationBackgroundService` as a hosted service
+- Registers `FeatureValueCacheItemInvalidator` as a `IDomainEventHandler<EntityChangedEventData<FeatureValueRecord>>`
+- Registers `IMethodInvocationFeatureCheckerService` as singleton

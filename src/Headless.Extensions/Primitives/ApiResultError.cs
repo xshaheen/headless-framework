@@ -20,13 +20,16 @@ public abstract record ResultError
     public abstract string Message { get; }
 
     /// <summary>
-    /// Additional structured data about the error.
+    /// Additional structured data about the error, or <see langword="null"/> when none is provided.
     /// </summary>
     public virtual IReadOnlyDictionary<string, object?>? Metadata => null;
 
     /// <summary>
     /// Creates a simple error without defining a new type.
     /// </summary>
+    /// <param name="code">The machine-readable error code.</param>
+    /// <param name="message">The human-readable error message.</param>
+    /// <returns>A <see cref="ResultError"/> carrying the supplied code and message.</returns>
     public static ResultError Custom(string code, string message) => new SimpleError(code, message);
 
     private sealed record SimpleError(string Code, string Message) : ResultError
@@ -42,9 +45,13 @@ public abstract record ResultError
 [PublicAPI]
 public sealed record AggregateError : ResultError
 {
+    /// <summary>The individual errors that were aggregated.</summary>
     public required IReadOnlyList<ResultError> Errors { get; init; }
 
+    /// <inheritdoc/>
     public override string Code => "aggregate:multiple_errors";
+
+    /// <inheritdoc/>
     public override string Message => $"{Errors.Count} errors occurred.";
 }
 
@@ -54,12 +61,19 @@ public sealed record AggregateError : ResultError
 [PublicAPI]
 public sealed record NotFoundError : ResultError
 {
+    /// <summary>The logical name of the entity that could not be found.</summary>
     public required string Entity { get; init; }
+
+    /// <summary>The key or identifier used to look up the entity.</summary>
     public required string Key { get; init; }
 
+    /// <inheritdoc/>
     public override string Code => field ??= $"notfound:{Entity.ToLowerInvariant()}";
+
+    /// <inheritdoc/>
     public override string Message => $"{Entity} with key '{Key}' was not found.";
 
+    /// <inheritdoc/>
     public override IReadOnlyDictionary<string, object?> Metadata =>
         field ??= new Dictionary<string, object?>(StringComparer.Ordinal) { ["entity"] = Entity, ["key"] = Key };
 }
@@ -75,7 +89,10 @@ public sealed record UnauthorizedError : ResultError
     /// </summary>
     public static readonly UnauthorizedError Instance = new();
 
+    /// <inheritdoc/>
     public override string Code => "unauthorized";
+
+    /// <inheritdoc/>
     public override string Message => "Authentication required.";
 }
 
@@ -85,19 +102,28 @@ public sealed record UnauthorizedError : ResultError
 [PublicAPI]
 public sealed record ForbiddenError : ResultError
 {
+    /// <summary>The reason the operation is not permitted; also surfaced as the <see cref="Message"/>.</summary>
     public required string Reason { get; init; }
 
+    /// <inheritdoc/>
     public override string Code => "forbidden:access_denied";
+
+    /// <inheritdoc/>
     public override string Message => Reason;
 }
 
 /// <summary>
 /// Business rule conflict (duplicate, invalid state, etc.).
 /// </summary>
+/// <param name="Code">A machine-readable code describing the type of conflict.</param>
+/// <param name="Message">A human-readable message describing the conflict.</param>
 [PublicAPI]
 public sealed record ConflictError(string Code, string Message) : ResultError
 {
+    /// <inheritdoc/>
     public override string Code { get; } = Code;
+
+    /// <inheritdoc/>
     public override string Message { get; } = Message;
 }
 
@@ -107,16 +133,24 @@ public sealed record ConflictError(string Code, string Message) : ResultError
 [PublicAPI]
 public sealed record ValidationError : ResultError
 {
+    /// <summary>The field-level errors, keyed by field name, each mapping to one or more error messages.</summary>
     public required IReadOnlyDictionary<string, IReadOnlyList<string>> FieldErrors { get; init; }
 
+    /// <inheritdoc/>
     public override string Code => "validation:failed";
+
+    /// <inheritdoc/>
     public override string Message => "One or more validation errors occurred.";
 
+    /// <inheritdoc/>
     public override IReadOnlyDictionary<string, object?> Metadata
     {
         get => field ??= FieldErrors.ToDictionary(kv => kv.Key, object? (kv) => kv.Value, StringComparer.Ordinal);
     }
 
+    /// <summary>Builds a <see cref="ValidationError"/> from field/error pairs, grouping repeated fields together.</summary>
+    /// <param name="errors">The field-error pairs representing the validation issues.</param>
+    /// <returns>A <see cref="ValidationError"/> whose <see cref="FieldErrors"/> groups messages by field.</returns>
     public static ValidationError FromFields(params (string Field, string Error)[] errors)
     {
         var grouped = errors
@@ -131,8 +165,9 @@ public sealed record ValidationError : ResultError
     }
 
     /// <summary>
-    /// Converts field errors to a dictionary of ErrorDescriptor lists.
+    /// Converts the <see cref="FieldErrors"/> into a dictionary of <see cref="ErrorDescriptor"/> lists keyed by field name.
     /// </summary>
+    /// <returns>A dictionary mapping each field name to its list of <see cref="ErrorDescriptor"/> entries.</returns>
     public Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptorDictionary()
     {
         return FieldErrors.ToDictionary(

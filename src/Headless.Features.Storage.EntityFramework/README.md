@@ -4,15 +4,16 @@ Entity Framework Core storage implementation for feature management.
 
 ## Problem Solved
 
-Provides EF Core repository implementations for feature values, feature definitions, and feature group definitions using the consumer's own `DbContext`.
+Provides EF Core repository implementations for feature values, feature definitions, and feature group definitions using the consumer's own `DbContext`, with schema managed through EF migrations.
 
 ## Key Features
 
-- `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())` storage registration
-- `modelBuilder.AddHeadlessFeatures(this)` entity mapping for shared contexts (resolves `FeaturesStorageOptions` from the context's service provider; an `(options)` overload exists for when you already hold the options)
-- `EfFeatureValueRecordRecordRepository` for feature values
-- `EfFeatureDefinitionRecordRepository` for feature definitions and groups
-- `FeaturesStorageOptions` for schema and table-name configuration
+- `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via the `HeadlessFeaturesSetupBuilder`
+- `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required)
+- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options)` — overload for when you already hold the options
+- EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
+- `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
+- Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any feature entity is missing from the model
 
 ## Installation
 
@@ -21,10 +22,6 @@ dotnet add package Headless.Features.Storage.EntityFramework
 ```
 
 ## Quick Start
-
-`AddHeadlessFeatures(...)` registers the features management core automatically. Register
-the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and
-`IGuidGenerator`.
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
@@ -42,6 +39,7 @@ builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
 
+// AddHeadlessFeatures registers the management core automatically.
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "app_features");
@@ -58,7 +56,9 @@ builder.Services.AddHeadlessFeatures(setup =>
 - `FeatureDefinitionsTableName = "FeatureDefinitions"`
 - `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
 
-The registration validates these values on startup. The startup gate also inspects the EF model before hosted services start and fails with an actionable message if any features entity is missing.
+The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any features entity is missing.
+
+`InitializeOnStartup` is ignored by the EF provider — EF uses migrations, not startup DDL. Set it on raw-DDL providers (`Headless.Features.Storage.PostgreSql` / `Headless.Features.Storage.SqlServer`) only.
 
 ## Dependencies
 
@@ -68,7 +68,7 @@ The registration validates these values on startup. The startup gate also inspec
 
 ## Side Effects
 
-- Registers `IFeatureDefinitionRecordRepository` as singleton
-- Registers `IFeatureValueRecordRepository` as singleton
+- Registers `IFeatureDefinitionRecordRepository` (`EfFeatureDefinitionRecordRepository<TContext>`) as singleton
+- Registers `IFeatureValueRecordRepository` (`EfFeatureValueRecordRecordRepository<TContext>`) as singleton
 - Registers validated `FeaturesStorageOptions`
-- Registers an `IHostedLifecycleService` startup gate for missing entity mappings
+- Registers `FeaturesEntityValidationStartupGate<TContext>` as `IHostedService`

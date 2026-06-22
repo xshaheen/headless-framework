@@ -64,4 +64,18 @@ public sealed class CollectionValidatorsUniqueElementsTests
         var result = sut.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.Elements);
     }
+
+    [Fact]
+    public void should_report_correct_total_duplicates_count()
+    {
+        var sut = new TestModelValidator();
+        // A duplicate appearing before later-distinct items previously miscounted (Any() short-circuit):
+        // distinct = {a,b,c}, so excess items = 1.
+        var model = new TestModel(["a", "a", "b", "c"]);
+        var result = sut.TestValidate(model);
+
+        result.ShouldHaveValidationErrorFor(x => x.Elements);
+        var failure = result.Errors.Single(e => e.PropertyName == nameof(TestModel.Elements));
+        failure.FormattedMessagePlaceholderValues["TotalDuplicates"].Should().Be(1);
+    }
 }

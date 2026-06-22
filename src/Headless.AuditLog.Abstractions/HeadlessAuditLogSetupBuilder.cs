@@ -5,6 +5,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.AuditLog;
 
+/// <summary>
+/// Fluent builder for configuring the audit log and its storage provider during
+/// <c>AddHeadlessAuditLog(setup =&gt; …)</c>. Accepts exactly one <c>Use…</c> extension call
+/// (e.g., <c>UseEntityFramework</c>, <c>UsePostgreSql</c>, <c>UseSqlServer</c>) that selects
+/// and wires the storage backend.
+/// </summary>
 [PublicAPI]
 public sealed class HeadlessAuditLogSetupBuilder
 {
@@ -45,6 +51,13 @@ public sealed class HeadlessAuditLogSetupBuilder
         return this;
     }
 
+    /// <summary>
+    /// Configures shared storage options (schema, table name, JSON column type, <c>CreatedAt</c>
+    /// column type, and startup initialization behavior). The delegate is applied immediately and
+    /// merged into the shared <see cref="AuditLogStorageOptions"/> instance.
+    /// </summary>
+    /// <param name="configure">Delegate that mutates the shared storage options.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <c>null</c>.</exception>
     public HeadlessAuditLogSetupBuilder ConfigureStorage(Action<AuditLogStorageOptions> configure)
     {
         Argument.IsNotNull(configure);
@@ -53,6 +66,13 @@ public sealed class HeadlessAuditLogSetupBuilder
         return this;
     }
 
+    /// <summary>
+    /// Registers a storage-provider extension that contributes services to the DI container
+    /// when the setup builder is committed. Typically called by provider packages
+    /// (e.g., <c>UseEntityFramework</c>, <c>UsePostgreSql</c>) rather than end consumers.
+    /// </summary>
+    /// <param name="extension">The extension to register.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="extension"/> is <c>null</c>.</exception>
     public void RegisterExtension(IAuditLogStorageOptionsExtension extension)
     {
         Argument.IsNotNull(extension);

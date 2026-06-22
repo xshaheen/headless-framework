@@ -16,6 +16,12 @@ public static class SetupAuditLogPostgreSql
 {
     extension(HeadlessAuditLogSetupBuilder setup)
     {
+        /// <summary>
+        /// Configures the audit log to persist entries to PostgreSql using the provided
+        /// connection string.
+        /// </summary>
+        /// <param name="connectionString">Npgsql connection string. Must not be <c>null</c> or whitespace.</param>
+        /// <exception cref="ArgumentException"><paramref name="connectionString"/> is <c>null</c> or whitespace.</exception>
         public HeadlessAuditLogSetupBuilder UsePostgreSql(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -26,6 +32,21 @@ public static class SetupAuditLogPostgreSql
             });
         }
 
+        /// <summary>
+        /// Configures the audit log to persist entries to PostgreSql, applying the specified
+        /// options delegate to <see cref="PostgreSqlAuditLogOptions"/>.
+        /// </summary>
+        /// <param name="configure">Delegate that configures the provider options.</param>
+        /// <remarks>
+        /// The provider self-initializes the schema and table on startup (serialized with
+        /// <c>pg_advisory_xact_lock</c> across replicas) unless
+        /// <see cref="AuditLogStorageOptions.InitializeOnStartup"/> is <c>false</c>. Audit rows
+        /// are written via batched <c>INSERT … VALUES</c> statements (up to 500 rows per command).
+        /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
+        /// <c>DbContext</c> has an open <c>NpgsqlTransaction</c>, writes enroll atomically in
+        /// that transaction; otherwise they commit on a separate connection.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <c>null</c>.</exception>
         public HeadlessAuditLogSetupBuilder UsePostgreSql(Action<PostgreSqlAuditLogOptions> configure)
         {
             Argument.IsNotNull(configure);

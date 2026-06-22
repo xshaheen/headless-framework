@@ -18,7 +18,9 @@ public static class StorageIdentifierValidators
     /// Validates a PostgreSQL unquoted identifier (schema/table name): leading letter or
     /// underscore, then letters / digits / underscores, capped at NAMEDATALEN - 1 = 63 chars.
     /// </summary>
-    public static IRuleBuilderOptions<T, string?> IsValidPostgreSqlIdentifier<T>(this IRuleBuilder<T, string?> rule)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> IsValidPostgreSqlIdentifier<T>(this IRuleBuilder<T, string> rule)
+#nullable restore
     {
         return rule.NotEmpty()
             .Matches(StorageIdentifier.PostgreSql.IdentifierPattern)
@@ -30,7 +32,9 @@ public static class StorageIdentifierValidators
     /// underscore, then letters / digits / underscores / <c>@</c> / <c>$</c> / <c>#</c>, capped
     /// at 128 chars.
     /// </summary>
-    public static IRuleBuilderOptions<T, string?> IsValidSqlServerIdentifier<T>(this IRuleBuilder<T, string?> rule)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> IsValidSqlServerIdentifier<T>(this IRuleBuilder<T, string> rule)
+#nullable restore
     {
         return rule.NotEmpty()
             .Matches(StorageIdentifier.SqlServer.IdentifierPattern)
@@ -43,7 +47,9 @@ public static class StorageIdentifierValidators
     /// validators accept either provider's identifiers; the underlying database surfaces any
     /// provider-specific length/character issues at migration time.
     /// </summary>
-    public static IRuleBuilderOptions<T, string?> IsValidCrossProviderIdentifier<T>(this IRuleBuilder<T, string?> rule)
+#nullable disable // keep the builder nullability-agnostic: binds to nullable and non-nullable properties, preserving the caller's nullability
+    public static IRuleBuilderOptions<T, string> IsValidCrossProviderIdentifier<T>(this IRuleBuilder<T, string> rule)
+#nullable restore
     {
         return rule.NotEmpty()
             .Matches(StorageIdentifier.SqlServer.IdentifierPattern)

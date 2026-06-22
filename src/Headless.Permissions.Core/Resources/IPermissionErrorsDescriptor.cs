@@ -4,6 +4,10 @@ using Headless.Primitives;
 
 namespace Headless.Permissions.Resources;
 
+/// <summary>
+/// Produces localized <see cref="ErrorDescriptor"/> instances for permission-related conflict errors.
+/// Replace the default implementation via DI to customize error codes or messages.
+/// </summary>
 public interface IPermissionErrorsDescriptor
 {
     ValueTask<ErrorDescriptor> SomePermissionsAreNotDefined(IReadOnlyCollection<string> permissionNames);

@@ -12,6 +12,13 @@ namespace Headless.Logging.Enrichers;
 /// Protects against log injection attacks by removing control characters,
 /// ANSI escape sequences, and truncating to a maximum length.
 /// </summary>
+/// <param name="contextAccessor">Provides access to the current <see cref="HttpContext"/>.</param>
+/// <param name="headerName">The HTTP request header whose value is attached to log events.</param>
+/// <param name="propertyName">
+/// The Serilog log property name. When <see langword="null"/>, defaults to <paramref name="headerName"/>
+/// with dashes removed (e.g. <c>"User-Agent"</c> becomes <c>"UserAgent"</c>).
+/// </param>
+/// <param name="maxLength">Maximum character length of the sanitized header value. Default is 512.</param>
 [PublicAPI]
 public sealed partial class SanitizedHeaderEnricher(
     IHttpContextAccessor contextAccessor,
@@ -22,6 +29,12 @@ public sealed partial class SanitizedHeaderEnricher(
 {
     private readonly string _propertyName = propertyName ?? _SanitizePropertyName(headerName);
 
+    /// <summary>
+    /// Reads the configured request header from the current <see cref="HttpContext"/>, sanitizes its value,
+    /// and adds it as a Serilog property on <paramref name="logEvent"/> if the header is present and non-empty.
+    /// </summary>
+    /// <param name="logEvent">The log event to enrich.</param>
+    /// <param name="propertyFactory">Factory used to create the Serilog property.</param>
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
     {
         var httpContext = contextAccessor.HttpContext;

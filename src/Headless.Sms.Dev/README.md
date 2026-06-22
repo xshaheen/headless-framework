@@ -1,16 +1,16 @@
 # Headless.Sms.Dev
 
-Development SMS implementations for testing.
+Development SMS implementations that avoid real sends.
 
 ## Problem Solved
 
-Provides development-only SMS senders that either log messages to a file or silently discard them, enabling SMS workflow testing without sending actual messages.
+Provides no-op and file-logging SMS senders for development and test environments, enabling full SMS workflow testing without requiring vendor credentials or sending actual messages.
 
 ## Key Features
 
-- `DevSmsSender` - Writes SMS to a file for inspection
-- `NoopSmsSender` - Silently discards all messages
-- No external dependencies or API calls
+- `DevSmsSender` — appends formatted SMS details to a local file for inspection.
+- `NoopSmsSender` — silently discards all messages and returns `SendSingleSmsResponse.Succeeded()`.
+- No external dependencies, no HTTP calls, no API credentials needed.
 
 ## Installation
 
@@ -27,7 +27,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddDevSmsSender("sms-log.txt");
+    builder.Services.AddHeadlessSms(setup => setup.UseDev("sms-log.txt"));
 }
 ```
 
@@ -38,7 +38,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 if (builder.Environment.IsDevelopment())
 {
-    builder.Services.AddNoopSmsSender();
+    builder.Services.AddHeadlessSms(setup => setup.UseNoop());
 }
 ```
 

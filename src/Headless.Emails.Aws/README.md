@@ -4,14 +4,16 @@ AWS SES (Simple Email Service) v2 implementation of the email sending abstractio
 
 ## Problem Solved
 
-Provides email sending via AWS SES using the unified `IEmailSender` abstraction, ideal for production deployments on AWS.
+Provides email sending via AWS SES v2 using the unified `IEmailSender` abstraction, ideal for production deployments on AWS.
 
 ## Key Features
 
-- Full `IEmailSender` implementation using AWS SES v2
-- High deliverability and scalability
-- AWS SDK configuration integration
-- Attachment support
+- Full `IEmailSender` implementation using AWS SES v2 (`AWSSDK.SimpleEmailV2`)
+- Simple sends (no attachments) use the SES structured API path — no MIME serialization
+- Attachment sends serialize to raw MIME and use the SES raw message path
+- AWS SDK configuration integration (`AWSOptions` from `AWSSDK.Extensions.NETCore.Setup`)
+- SES-specific exceptions (`MessageRejectedException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`) propagate — not wrapped in `Failed()`
+- Non-PII logging on non-success HTTP responses (status code, request ID, message ID — no recipient/sender addresses)
 
 ## Installation
 
@@ -24,29 +26,32 @@ dotnet add package Headless.Emails.Aws
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Using configuration
+// Option 1: from configuration (reads AWS:Region, credentials from environment/profile)
 var awsOptions = builder.Configuration.GetAWSOptions();
 builder.Services.AddAwsSesEmailSender(awsOptions);
 
-// Or using explicit options
+// Option 2: explicit credentials
 builder.Services.AddAwsSesEmailSender(new AWSOptions
 {
     Region = RegionEndpoint.USEast1,
-    Credentials = new BasicAWSCredentials("accessKey", "secretKey")
+    Credentials = new BasicAWSCredentials("accessKey", "secretKey"),
 });
+
+// Option 3: use default AWSOptions already registered in DI (pass null)
+builder.Services.AddAwsSesEmailSender(null);
 ```
 
 ## Configuration
 
-### appsettings.json
-
 ```json
 {
-  "AWS": {
-    "Region": "us-east-1"
-  }
+    "AWS": {
+        "Region": "us-east-1"
+    }
 }
 ```
+
+Credentials are resolved from the standard AWS credential chain (environment variables, `~/.aws/credentials`, IAM role) when not passed explicitly.
 
 ## Dependencies
 
@@ -56,5 +61,5 @@ builder.Services.AddAwsSesEmailSender(new AWSOptions
 
 ## Side Effects
 
-- Registers `IAmazonSimpleEmailServiceV2` if not already registered
+- Registers `IAmazonSimpleEmailServiceV2` via `TryAddAWSService` (no-op if already registered)
 - Registers `IEmailSender` as singleton

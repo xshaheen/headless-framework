@@ -3,7 +3,6 @@
 using Headless.AuditLog;
 using Headless.Checks;
 using Headless.Hosting.Initialization;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -50,6 +49,7 @@ public static class SetupAuditLog
                 setup.Extensions.Count,
                 setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
                 "Headless.AuditLog",
+                ["UseEntityFramework", "UsePostgreSql", "UseSqlServer"],
                 static name => new AuditLogStorageProviderRegistration(name)
             );
 

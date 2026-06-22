@@ -12,6 +12,18 @@ using Polly.Retry;
 
 namespace Headless.Features.Seeders;
 
+/// <summary>
+/// Hosted service that seeds static feature definitions into the database and pre-caches dynamic
+/// feature values on application startup.
+/// </summary>
+/// <remarks>
+/// On startup, this service:
+/// <list type="number">
+///   <item><description>Saves static definitions to the database (retried up to 10 times with exponential back-off when <see cref="FeatureManagementOptions.SaveStaticFeaturesToDatabase"/> is <see langword="true"/>).</description></item>
+///   <item><description>Pre-caches the dynamic feature catalog so the first request does not incur a cold-cache database round-trip (when <see cref="FeatureManagementOptions.IsDynamicFeatureStoreEnabled"/> is <see langword="true"/>).</description></item>
+/// </list>
+/// Both steps are skipped (and the initializer signals completion immediately) when both options are disabled.
+/// </remarks>
 public sealed class FeaturesInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
@@ -25,11 +37,15 @@ public sealed class FeaturesInitializationBackgroundService(
     private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicFeaturesTask;
 
+    /// <inheritdoc/>
     public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
 
+    /// <inheritdoc/>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled before initialization completes.</exception>
     public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
         _tcs.Task.WaitAsync(cancellationToken);
 
+    /// <inheritdoc/>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (_options is { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
@@ -46,6 +62,7 @@ public sealed class FeaturesInitializationBackgroundService(
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
@@ -62,6 +79,7 @@ public sealed class FeaturesInitializationBackgroundService(
         }
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         _linkedCts?.Dispose();
@@ -120,27 +138,29 @@ public sealed class FeaturesInitializationBackgroundService(
         var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
         var pipeline = builder.AddRetry(options).Build();
 
-        await pipeline.ExecuteAsync(
-            static async (state, cancellationToken) =>
-            {
-                var (scope, logger) = state;
-
-                var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
-
-                try
+        await pipeline
+            .ExecuteAsync(
+                static async (state, cancellationToken) =>
                 {
-                    await store.SaveAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception e)
-                {
-                    logger.LogFailedToSaveStaticFeatures(e);
+                    var (scope, logger) = state;
 
-                    throw; // Polly will catch it
-                }
-            },
-            (scope, logger),
-            cancellationToken
-        );
+                    var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
+
+                    try
+                    {
+                        await store.SaveAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogFailedToSaveStaticFeatures(e);
+
+                        throw; // Polly will catch it
+                    }
+                },
+                (scope, logger),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task _PreCacheDynamicFeaturesAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
@@ -166,6 +186,7 @@ public sealed class FeaturesInitializationBackgroundService(
     }
 }
 
+/// <summary>High-performance log helpers for <see cref="FeaturesInitializationBackgroundService"/>.</summary>
 internal static partial class FeaturesInitializationBackgroundServiceLog
 {
     [LoggerMessage(

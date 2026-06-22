@@ -176,7 +176,7 @@ public static class ArrayExtensions
         Array.Reverse(array);
     }
 
-    /// <summary>Reverses the sequence of the elements in the entire one-dimensional <see cref="Array" />.</summary>
+    /// <summary>Reverses the sequence of the elements in a range of elements in the one-dimensional <see cref="Array" />.</summary>
     /// <typeparam name="T">The type of the elements of the array.</typeparam>
     /// <param name="array">The one-dimensional <see cref="Array" /> to reverse.</param>
     /// <param name="index">The starting index of the section to reverse.</param>
@@ -187,6 +187,9 @@ public static class ArrayExtensions
     /// <paramref name="index" /> is less than the lower bound of <paramref name="array" />.
     /// -or-
     /// <paramref name="length" /> is less than zero.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="index" /> and <paramref name="length" /> do not specify a valid range in <paramref name="array" />.
     /// </exception>
     public static void Reverse<T>(this T[] array, int index, int length)
     {
@@ -318,6 +321,22 @@ public static class ArrayExtensions
         Array.Sort(array, index, length, comparer);
     }
 
+    /// <summary>
+    /// Searches for an element that matches the conditions defined by the specified predicate, and returns the
+    /// first occurrence within the entire <see cref="Array" />.
+    /// </summary>
+    /// <typeparam name="T">The type of the elements of the array.</typeparam>
+    /// <param name="array">The one-dimensional, zero-based <see cref="Array" /> to search.</param>
+    /// <param name="match">The <see cref="Predicate{T}" /> that defines the conditions of the element to search for.</param>
+    /// <returns>
+    /// The first element that matches the conditions defined by <paramref name="match" />, if found;
+    /// otherwise, the default value for type <typeparamref name="T" />.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="array" /> is null.
+    /// -or-
+    /// <paramref name="match" /> is null.
+    /// </exception>
     [MustUseReturnValue]
     public static T? Find<T>(this T[] array, Predicate<T> match)
     {
@@ -327,11 +346,18 @@ public static class ArrayExtensions
     /// <summary>
     /// Retrieves all the elements that match the conditions defined by the specified predicate.
     /// </summary>
-    /// <param name="array">The one-dimensional, zero-based Array to search.</param>
-    /// <param name="match">The Predicate&lt;in T&gt;(T) that defines the conditions of the elements to search for.</param>
-    /// <typeparam name="T"></typeparam>
-    /// <returns>An Array containing all the elements that match the conditions defined by the specified predicate, if found; otherwise, an empty Array.</returns>
-    /// <exception cref="ArgumentNullException">array is null. -or- match is null.</exception>
+    /// <typeparam name="T">The type of the elements of the array.</typeparam>
+    /// <param name="array">The one-dimensional, zero-based <see cref="Array" /> to search.</param>
+    /// <param name="match">The <see cref="Predicate{T}" /> that defines the conditions of the elements to search for.</param>
+    /// <returns>
+    /// An <see cref="Array" /> containing all the elements that match the conditions defined by <paramref name="match" />,
+    /// if found; otherwise, an empty <see cref="Array" />.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="array" /> is null.
+    /// -or-
+    /// <paramref name="match" /> is null.
+    /// </exception>
     [MustUseReturnValue]
     public static T[] FindAll<T>(this T[] array, Predicate<T> match)
     {
@@ -339,14 +365,40 @@ public static class ArrayExtensions
     }
 
     /// <summary>
-    /// Converts the elements of an <see cref="Array"/> to the specified type.
+    /// Converts each element of an <see cref="Array"/> of one type to an element of another type.
     /// </summary>
+    /// <typeparam name="TInput">The type of the elements of the source array.</typeparam>
+    /// <typeparam name="TOutput">The type of the elements of the target array.</typeparam>
+    /// <param name="array">The one-dimensional, zero-based <see cref="Array" /> to convert to a target type.</param>
+    /// <param name="converter">The <see cref="Converter{TInput,TOutput}" /> that converts each element from one type to another type.</param>
+    /// <returns>An <see cref="Array" /> of the target type containing the converted elements from <paramref name="array" />.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="array" /> is null.
+    /// -or-
+    /// <paramref name="converter" /> is null.
+    /// </exception>
     [MustUseReturnValue]
     public static TOutput[] ConvertAll<TInput, TOutput>(this TInput[] array, Converter<TInput, TOutput> converter)
     {
         return Array.ConvertAll(array, converter);
     }
 
+    /// <summary>
+    /// Determines whether the <see cref="Array" /> contains elements that match the conditions defined by the
+    /// specified predicate.
+    /// </summary>
+    /// <typeparam name="TInput">The type of the elements of the array.</typeparam>
+    /// <param name="array">The one-dimensional, zero-based <see cref="Array" /> to search.</param>
+    /// <param name="converter">The <see cref="Predicate{T}" /> that defines the conditions of the elements to search for.</param>
+    /// <returns>
+    /// <see langword="true" /> if <paramref name="array" /> contains one or more elements that match the conditions
+    /// defined by <paramref name="converter" />; otherwise, <see langword="false" />.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="array" /> is null.
+    /// -or-
+    /// <paramref name="converter" /> is null.
+    /// </exception>
     [MustUseReturnValue]
     public static bool Exists<TInput>(this TInput[] array, Predicate<TInput> converter)
     {

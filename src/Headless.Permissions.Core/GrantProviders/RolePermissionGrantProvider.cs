@@ -7,14 +7,22 @@ using Headless.Permissions.Models;
 
 namespace Headless.Permissions.GrantProviders;
 
+/// <summary>
+/// Grant provider that resolves permissions via the user's roles. For each role assigned to the current
+/// user, it queries <see cref="IPermissionGrantStore"/> with <c>providerName = "Role"</c> and
+/// <c>providerKey = role name</c>. Resolution stops early when all permissions have a definitive status.
+/// A permission remains <c>Undefined</c> when the user has no roles.
+/// </summary>
 [PublicAPI]
 public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
     : StorePermissionGrantProvider(grantStore, currentTenant)
 {
     private readonly IPermissionGrantStore _grantStore = grantStore;
 
+    /// <summary>The fixed provider name (<c>"Role"</c>) used as the <c>providerName</c> key in the grant store.</summary>
     public const string ProviderName = PermissionGrantProviderNames.Role;
 
+    /// <inheritdoc/>
     public override string Name => ProviderName;
 
     public override async Task<MultiplePermissionGrantStatusResult> CheckAsync(
@@ -38,12 +46,14 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
 
         foreach (var role in roles)
         {
-            var roleGrantStatusResults = await _grantStore.IsGrantedAsync(
-                names: permissionNames,
-                providerName: Name,
-                providerKey: role,
-                cancellationToken: cancellationToken
-            );
+            var roleGrantStatusResults = await _grantStore
+                .IsGrantedAsync(
+                    names: permissionNames,
+                    providerName: Name,
+                    providerKey: role,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
 
             var foundedStatuses = roleGrantStatusResults.Where(newStatus =>
                 newStatus.Value is not PermissionGrantStatus.Undefined

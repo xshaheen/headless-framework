@@ -7,11 +7,21 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Coordination.SqlServer;
 
+/// <summary>
+/// Extension members on <see cref="HeadlessCoordinationSetupBuilder"/> for selecting SQL Server as the
+/// coordination backing store.
+/// </summary>
 [PublicAPI]
 public static class SetupSqlServerCoordination
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {
+        /// <summary>
+        /// Selects SQL Server as the coordination backing store using the supplied connection string.
+        /// </summary>
+        /// <param name="connectionString">The SQL Server connection string. Must not be null, empty, or whitespace.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="connectionString"/> is empty or whitespace.</exception>
         public HeadlessCoordinationSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
@@ -22,6 +32,13 @@ public static class SetupSqlServerCoordination
             });
         }
 
+        /// <summary>
+        /// Selects SQL Server as the coordination backing store, binding
+        /// <see cref="SqlServerCoordinationOptions"/> from the supplied <see cref="IConfiguration"/> section.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind provider options from.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
         public HeadlessCoordinationSetupBuilder UseSqlServer(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -31,6 +48,12 @@ public static class SetupSqlServerCoordination
             return setup;
         }
 
+        /// <summary>
+        /// Selects SQL Server as the coordination backing store using the supplied options delegate.
+        /// </summary>
+        /// <param name="configure">Delegate that configures <see cref="SqlServerCoordinationOptions"/>.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessCoordinationSetupBuilder UseSqlServer(Action<SqlServerCoordinationOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -40,6 +63,13 @@ public static class SetupSqlServerCoordination
             return setup;
         }
 
+        /// <summary>
+        /// Selects SQL Server as the coordination backing store using the supplied options delegate with
+        /// access to the DI container.
+        /// </summary>
+        /// <param name="configure">Delegate that configures <see cref="SqlServerCoordinationOptions"/> with service-provider access.</param>
+        /// <returns>The same builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessCoordinationSetupBuilder UseSqlServer(
             Action<SqlServerCoordinationOptions, IServiceProvider> configure
         )

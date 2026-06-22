@@ -9,9 +9,20 @@ using SixLabors.ImageSharp.Processing;
 
 namespace Headless.Imaging.ImageSharp;
 
+/// <summary>
+/// An <see cref="IImageResizerContributor"/> that uses ImageSharp to resize JPEG, PNG, GIF, BMP, TIFF, and WebP images.
+/// </summary>
+/// <remarks>
+/// When <see cref="ImageResizeArgs.Mode"/> resolves to <see cref="ImageResizeMode.None"/> (after
+/// <see cref="ImageResizeArgs.ChangeDefaultResizeMode"/> has been applied), the contributor returns the
+/// original stream unchanged without re-encoding it. GIF and BMP images are accepted for format
+/// detection and pass-through, but the ImageSharp resize pipeline does not apply mode-specific
+/// transformations differently for those formats — they are resized the same as other supported types.
+/// </remarks>
 public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageResizerContributor> logger)
     : IImageResizerContributor
 {
+    /// <inheritdoc />
     public async Task<ImageStreamResizeResult> TryResizeAsync(
         Stream stream,
         ImageResizeArgs args,
@@ -23,7 +34,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
             return ImageStreamResizeResult.NotSupportedMimeType(args.MimeType);
         }
 
-        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken);
+        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken).ConfigureAwait(false);
 
         if (error is not null)
         {
@@ -58,7 +69,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
 
         try
         {
-            await image.SaveAsync(memoryStream, format, cancellationToken);
+            await image.SaveAsync(memoryStream, format, cancellationToken).ConfigureAwait(false);
 
             memoryStream.Position = 0;
 
@@ -66,7 +77,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
         }
         catch
         {
-            await memoryStream.DisposeAsync();
+            await memoryStream.DisposeAsync().ConfigureAwait(false);
 
             throw;
         }

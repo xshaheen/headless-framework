@@ -27,7 +27,7 @@ This package is an intentional **public extension point**: a third-party backend
 2. **`IReleaseSignal`** — the wake-up seam between retry attempts. Back it with a native push channel (for example Postgres `LISTEN/NOTIFY`) so a blocked acquirer wakes promptly on release. **Polling is the correctness fallback**: `WaitAsync` must return by `pollingFallback` even if no signal arrives, so a dropped or missed `PublishAsync` only costs latency — never a stuck acquirer. If you have no push channel, reuse the in-process `PollingReleaseSignal`.
 3. **`IFencingTokenSource`** *(optional)* — stamps exclusive locks with a monotonic fencing token from a durable, strictly-increasing sequence. `NextAsync` returns `null` when no token applies (the handle is then unfenced). Shared (reader) locks never request a token. Omit the source entirely if your backend has no use for fencing.
 
-Then compose them: construct a `ConnectionScopedDistributedLock` with your storage, release signal, and (optionally) fencing source, and wrap it in a `ConnectionScopedReadWriteLock` to expose read/write locks. See `Headless.DistributedLocks.Postgres` for a complete worked example.
+Then compose them: construct a `ConnectionScopedDistributedLock` with your storage, release signal, and (optionally) fencing source, and wrap it in a `ConnectionScopedReadWriteLock` to expose read/write locks. See `Headless.DistributedLocks.PostgreSql` for a complete worked example.
 
 ## Installation
 
@@ -37,7 +37,7 @@ dotnet add package Headless.DistributedLocks.Core.Database
 
 ## Quick Start
 
-Use a concrete provider such as `Headless.DistributedLocks.Postgres`; application code normally does not register `Core.Database` directly.
+Use a concrete provider such as `Headless.DistributedLocks.PostgreSql`; application code normally does not register `Core.Database` directly.
 
 ## Configuration
 

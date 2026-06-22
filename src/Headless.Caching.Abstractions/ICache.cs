@@ -2,6 +2,16 @@
 
 namespace Headless.Caching;
 
+/// <summary>
+/// Provider-agnostic contract for a key/value cache with factory-backed reads, fail-safe stale serving,
+/// tag-based and generation-based logical invalidation, sliding expiration, and numeric/set primitives.
+/// </summary>
+/// <remarks>
+/// Implementations include <see cref="IInMemoryCache"/> (process-local L1), <see cref="IRemoteCache"/>
+/// (distributed L2), and the two-tier hybrid. All timestamps are UTC. Methods that accept
+/// <see cref="CacheEntryOptions"/> validate them before any I/O; an invalid option set throws
+/// <see cref="ArgumentOutOfRangeException"/> or <see cref="ArgumentException"/> before anything is written.
+/// </remarks>
 [PublicAPI]
 public interface ICache
 {
@@ -96,15 +106,21 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Upsert all async.</summary>
+    /// <summary>
+    /// Writes all entries in <paramref name="value"/> with the given <paramref name="expiration"/>.
+    /// Returns the number of keys successfully written.
+    /// </summary>
+    /// <returns>The number of entries written.</returns>
     ValueTask<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Tries the add.</summary>
-    /// <returns><see langword="true"/>, if set/add success, <see langword="false"/> if <paramref name="key"/> already exists.</returns>
+    /// <summary>
+    /// Inserts <paramref name="value"/> only when <paramref name="key"/> does not already exist (add-only).
+    /// </summary>
+    /// <returns><see langword="true"/> when the key was absent and the value was inserted; <see langword="false"/> when the key already existed.</returns>
     ValueTask<bool> TryInsertAsync<T>(
         string key,
         T? value,
@@ -112,6 +128,10 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Replaces the value only when <paramref name="key"/> already exists (update-only).
+    /// </summary>
+    /// <returns><see langword="true"/> when the key existed and was updated; <see langword="false"/> when the key was absent.</returns>
     ValueTask<bool> TryReplaceAsync<T>(
         string key,
         T? value,
@@ -119,6 +139,11 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Atomically replaces the value only when the current stored value equals <paramref name="expected"/>
+    /// (compare-and-swap). Useful for optimistic-concurrency updates without external locking.
+    /// </summary>
+    /// <returns><see langword="true"/> when the stored value matched <paramref name="expected"/> and was replaced; <see langword="false"/> otherwise.</returns>
     ValueTask<bool> TryReplaceIfEqualAsync<T>(
         string key,
         T? expected,
@@ -127,6 +152,11 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Atomically adds <paramref name="amount"/> to the numeric value stored at <paramref name="key"/>,
+    /// creating the key if absent, and resets the expiration to <paramref name="expiration"/>.
+    /// </summary>
+    /// <returns>The new value after the increment.</returns>
     ValueTask<double> IncrementAsync(
         string key,
         double amount,
@@ -134,6 +164,11 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Atomically adds <paramref name="amount"/> to the numeric value stored at <paramref name="key"/>,
+    /// creating the key if absent, and resets the expiration to <paramref name="expiration"/>.
+    /// </summary>
+    /// <returns>The new value after the increment.</returns>
     ValueTask<long> IncrementAsync(
         string key,
         long amount,
@@ -141,6 +176,11 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is greater than the current
+    /// stored value. Returns the difference <c>(new - old)</c> when the store was updated, or <c>0</c> when
+    /// the current value was already ≥ <paramref name="value"/>.
+    /// </summary>
     ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
@@ -148,6 +188,11 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is greater than the current
+    /// stored value. Returns the difference <c>(new - old)</c> when the store was updated, or <c>0</c> when
+    /// the current value was already ≥ <paramref name="value"/>.
+    /// </summary>
     ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
@@ -155,6 +200,11 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is less than the current
+    /// stored value. Returns the difference <c>(old - new)</c> when the store was updated, or <c>0</c> when
+    /// the current value was already ≤ <paramref name="value"/>.
+    /// </summary>
     ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
@@ -162,6 +212,11 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is less than the current
+    /// stored value. Returns the difference <c>(old - new)</c> when the store was updated, or <c>0</c> when
+    /// the current value was already ≤ <paramref name="value"/>.
+    /// </summary>
     ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
@@ -169,6 +224,11 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Adds members to the set stored at <paramref name="key"/>, creating the set if absent. String members
+    /// are compared case-insensitively; other types use default equality. Null members are silently skipped.
+    /// Returns the number of members actually added (duplicates excluded).
+    /// </summary>
     ValueTask<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
@@ -180,36 +240,58 @@ public interface ICache
 
     #region Get
 
-    /// <summary>Gets all.</summary>
+    /// <summary>Reads many keys in one call and returns a result for each, including misses.</summary>
+    /// <returns>A dictionary keyed by the original cache keys; each value is a <see cref="CacheValue{T}"/> indicating hit or miss.</returns>
     ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets the by prefix.</summary>
+    /// <summary>
+    /// Reads all entries whose key starts with <paramref name="prefix"/>. The semantics are the same as
+    /// <c>GetAsync</c> applied to each matching key: logically expired and tag-invalidated entries are
+    /// excluded; physically present fail-safe reserves are NOT returned (direct reads return misses on stale).
+    /// </summary>
+    /// <returns>A dictionary keyed by cache key containing only hits.</returns>
     ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets all keys by prefix.</summary>
+    /// <summary>Returns all keys whose name starts with <paramref name="prefix"/>. Includes physically-expired and logically-expired keys: callers should re-check existence before use.</summary>
     ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets the specified cache key.</summary>
+    /// <summary>
+    /// Gets the value for <paramref name="key"/>. Returns <see cref="CacheValue{T}.NoValue"/> on a miss,
+    /// logical expiry, or tag-invalidation; the fail-safe physical reserve, if any, is left intact for
+    /// <c>GetOrAddAsync</c> to serve on a subsequent factory failure.
+    /// </summary>
     ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets the count async.</summary>
+    /// <summary>
+    /// Returns the count of non-expired entries, optionally filtered to those whose key starts with
+    /// <paramref name="prefix"/>. The count is approximate on distributed stores.
+    /// </summary>
     ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
 
-    /// <summary>Check if the key exists in the cache.</summary>
+    /// <summary>Returns <see langword="true"/> when <paramref name="key"/> exists and is not logically expired or tag-invalidated.</summary>
     ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets the expiration of specify cache key.</summary>
+    /// <summary>
+    /// Returns the remaining logical TTL for <paramref name="key"/>, or <see langword="null"/> when the key
+    /// is absent, logically expired, tag-invalidated, or was written without an explicit expiration.
+    /// </summary>
     ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reads an optionally-paginated page of members from the set stored at <paramref name="key"/>. Members
+    /// that have individually expired within the set are excluded. Returns <see cref="CacheValue{T}.NoValue"/>
+    /// when the key is absent. <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to
+    /// return all members.
+    /// </summary>
     ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
         int? pageIndex = null,
@@ -248,13 +330,16 @@ public interface ICache
     /// <returns><see langword="true"/> when an entry was found and expired; otherwise <see langword="false"/>.</returns>
     ValueTask<bool> ExpireAsync(string key, CancellationToken cancellationToken = default);
 
-    /// <summary>Remove only if equal the expected value.</summary>
+    /// <summary>
+    /// Removes <paramref name="key"/> only when the current stored value equals <paramref name="expected"/>
+    /// (compare-and-delete). Returns <see langword="false"/> when the key is absent or the value did not match.
+    /// </summary>
     ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes all.</summary>
+    /// <summary>Removes all specified keys. Returns the number of keys that were present and removed.</summary>
     ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes cached item by cache key's prefix.</summary>
+    /// <summary>Removes all keys whose name starts with <paramref name="prefix"/>. Returns the number of keys removed.</summary>
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -283,7 +368,10 @@ public interface ICache
     /// <param name="cancellationToken">Cancellation token.</param>
     ValueTask ClearAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Remove some values from set.</summary>
+    /// <summary>
+    /// Removes the specified members from the set stored at <paramref name="key"/>.
+    /// Returns the number of members that were present and removed.
+    /// </summary>
     ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,

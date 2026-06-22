@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging;
-
 namespace Headless.Caching;
 
 public sealed partial class HybridCache

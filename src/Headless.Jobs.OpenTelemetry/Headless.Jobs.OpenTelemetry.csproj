@@ -9,5 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
   </ItemGroup>
 </Project>

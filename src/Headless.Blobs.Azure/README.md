@@ -32,21 +32,26 @@ dotnet add package Headless.Blobs.Azure
 
 ## Quick Start
 
+Register a `BlobServiceClient` in DI first, then call `AddAzureBlobStorage`:
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.ConnectionString = builder.Configuration["Azure:Storage:ConnectionString"];
-    options.ContainerName = "my-container";
-});
+// Option 1: connection string
+builder.Services.AddSingleton(new BlobServiceClient(
+    builder.Configuration["Azure:Storage:ConnectionString"]));
 
-// Or with Azure.Identity
+// Option 2: Azure.Identity (DefaultAzureCredential)
+builder.Services.AddSingleton(new BlobServiceClient(
+    new Uri($"https://mystorageaccount.blob.core.windows.net"),
+    new DefaultAzureCredential()));
+
+// Option 3: Aspire integration
+// builder.AddAzureBlobClient("blobs");
+
 builder.Services.AddAzureBlobStorage(options =>
 {
-    options.AccountName = "mystorageaccount";
-    options.ContainerName = "my-container";
-    // Uses DefaultAzureCredential
+    options.AutoCreateContainer = true; // default
 });
 ```
 
@@ -58,8 +63,7 @@ builder.Services.AddAzureBlobStorage(options =>
 {
   "Azure": {
     "Storage": {
-      "ConnectionString": "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
-      "ContainerName": "my-container"
+      "ConnectionString": "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
     }
   }
 }
@@ -76,6 +80,6 @@ builder.Services.AddAzureBlobStorage(options =>
 
 ## Side Effects
 
-- Registers `BlobServiceClient` via Azure client factory
+- Requires a `BlobServiceClient` to be registered in DI before this call
 - Registers `IBlobStorage` as singleton
 - Registers `IBlobNamingNormalizer` as singleton

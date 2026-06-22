@@ -7,9 +7,27 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Options;
 
+/// <summary>
+/// Configures <see cref="MvcOptions"/> and <see cref="ApiBehaviorOptions"/> with Headless API defaults.
+/// </summary>
+/// <remarks>
+/// Applied automatically by <see cref="SetupMvc.ConfigureMvc(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/>.
+/// Behavior applied to <see cref="MvcOptions"/>:
+/// <list type="bullet">
+///   <item>Disables <c>HttpNoContentOutputFormatter.TreatNullValueAsNoContent</c> so that <c>Ok(null)</c> serializes normally instead of emitting 204.</item>
+///   <item>Enables 406 Not Acceptable when the client's <c>Accept</c> header cannot be satisfied.</item>
+///   <item>Clears the default model-validator providers and substitutes <c>SystemTextJsonValidationMetadataProvider</c>.</item>
+/// </list>
+/// Behavior applied to <see cref="ApiBehaviorOptions"/>:
+/// <list type="bullet">
+///   <item>Suppresses the automatic 400 model-state filter added by <c>[ApiController]</c>, deferring validation to application-level handlers.</item>
+/// </list>
+/// </remarks>
 [PublicAPI]
 public sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IConfigureOptions<ApiBehaviorOptions>
 {
+    /// <summary>Applies Headless MVC defaults to <paramref name="options"/>.</summary>
+    /// <param name="options">The <see cref="MvcOptions"/> instance to configure.</param>
     public void Configure(MvcOptions options)
     {
         // Disable treat Ok(null) as NoContent. https://github.com/aspnet/AspNetCore/issues/8847
@@ -28,6 +46,8 @@ public sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, ICon
         // AddHeadlessProblemDetails). No MVC IExceptionFilter needed.
     }
 
+    /// <summary>Applies Headless API behavior defaults to <paramref name="options"/>.</summary>
+    /// <param name="options">The <see cref="ApiBehaviorOptions"/> instance to configure.</param>
     public void Configure(ApiBehaviorOptions options)
     {
         // Disable the behavior that [ApiController] attribute makes model

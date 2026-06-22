@@ -12,7 +12,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 - **Blob storage.** Use `IBlobStorage` from `Headless.Blobs.Abstractions`. Do not call cloud SDK clients (`Amazon.S3.IAmazonS3`, `Azure.Storage.Blobs.BlobServiceClient`) from application code.
 - **Serialization.** Use `ISerializer` from `Headless.Serializer.Abstractions`. Default to `Headless.Serializer.Json`; use `Headless.Serializer.MessagePack` only when binary performance is required. Do not call `System.Text.Json.JsonSerializer` directly.
 - **Distributed messaging.** Use `Headless.Messaging` abstractions. Do not use raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`, `Azure.Messaging.ServiceBus`) from application code.
-- **Background jobs.** Use `Headless.Jobs` — mark jobs with `[Jobs]` and add `Headless.Jobs.SourceGenerator`. Do not use Hangfire or Quartz.
+- **Background jobs.** Use `Headless.Jobs` — mark job methods with `[JobFunction]` and add `Headless.Jobs.SourceGenerator`. Do not use Hangfire or Quartz.
 - **Feature flags.** Use `Headless.Features`. Do not use `Microsoft.FeatureManagement`.
 - **Distributed locks.** Use `IDistributedLease` from `Headless.DistributedLocks.Abstractions`, not ad-hoc Redis `SET NX` or database row locks.
 - **Rate limiting.** The framework does not ship a rate-limiting package. Use `Microsoft.AspNetCore.RateLimiting` for in-process limits; for distributed scenarios, use `Polly.RateLimiting` composed with a community Redis-backed `RateLimiter` such as `RedisRateLimiting`.
@@ -111,6 +111,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [imaging.md](imaging.md) — ImageSharp-based resizing and compression.
 - [logging.md](logging.md) — Serilog configuration with structured logging defaults.
 - [media.md](media.md) — Text extraction from PDF, Word, PowerPoint for indexing.
+- [mediator.md](mediator.md) — In-process request/handler dispatch with pipeline behaviors; what belongs in the pipeline and what stays at the boundary.
 - [messaging.md](messaging.md) — Distributed messaging with transactional outbox, 8 transports, 3 storage backends.
 - [openapi.md](openapi.md) — NSwag OpenAPI generation and Scalar documentation UI.
 - [orm.md](orm.md) — Entity Framework Core and Couchbase with DDD support.
@@ -132,10 +133,12 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 Catalog of all Headless packages, grouped by domain. Use this to identify which package to add via `dotnet add package`. For setup details, fetch the relevant domain doc above.
 
 ### API & Web
-- `Headless.Api` — ASP.NET Core API infrastructure, service registration, JWT, middleware.
 - `Headless.Api.Abstractions` — `IRequestContext`, `IWebClientInfoProvider`, request-scoped contracts.
+- `Headless.Api.Core` — ASP.NET Core API primitives: problem details, response compression, antiforgery, JSON/time services, status-code rewriter, tenancy resolution.
+- `Headless.Api.ServiceDefaults` — one-line bootstrap (`AddHeadless()`/`UseHeadless()`/`MapHeadlessEndpoints()`) combining the Core primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience).
 - `Headless.Api.DataProtection` — Persist ASP.NET Data Protection keys to any `IBlobStorage`.
 - `Headless.Api.FluentValidation` — Validators for `IFormFile` uploads (size, content type, magic bytes).
+- `Headless.Api.Idempotency` — Stripe-style idempotency middleware: cache full HTTP responses on first execution and replay them on identical retries.
 - `Headless.Api.Logging.Serilog` — Serilog enrichers for per-request context.
 - `Headless.Api.MinimalApi` — Minimal API integration (JSON config, validation filters, exception handling).
 - `Headless.Api.Mvc` — MVC/Web API integration (controllers, filters, URL canonicalization).
@@ -148,6 +151,12 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Checks` — Guard clauses (`Argument.*`, `Ensure.*`).
 - `Headless.Domain` — DDD entities, aggregate roots, value objects, auditing.
 - `Headless.Domain.LocalEventBus` — DI-based `ILocalEventBus` for in-process domain events.
+
+### Multi-Tenancy
+- `Headless.MultiTenancy` — Tenancy composition root: `AddHeadlessTenancy(...)` builder, `UseHeadlessTenancy()` middleware, posture manifest, and startup validation. Seam packages (API, EF Core, messaging) contribute resolution strategies.
+
+### Mediator
+- `Headless.Mediator` — In-process request/handler dispatch with cross-cutting pipeline behaviors (validation, logging). Deliberately narrow: boundary concerns (auth, tenancy enforcement, idempotency, HTTP shaping) stay out of the pipeline.
 
 ### Audit Log
 - `Headless.AuditLog.Abstractions` — Audit log contracts.
@@ -162,6 +171,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Blobs.FileSystem` — Local file system implementation.
 - `Headless.Blobs.Redis` — Redis implementation (small blobs).
 - `Headless.Blobs.SshNet` — SFTP/SSH implementation.
+- `Headless.Blobs.CloudflareR2` — Cloudflare R2 implementation (S3-compatible).
 
 ### Caching
 - `Headless.Caching.Abstractions` — `ICache` interface.
@@ -243,6 +253,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
 - `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
 - `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).
+- `Headless.Messaging.Testing` — In-process test harness for asserting dispatch/consume behavior (documented in [testing.md](testing.md)).
 
 ### OpenAPI
 - `Headless.OpenApi.Nswag` — NSwag OpenAPI generation with framework processors.
@@ -276,7 +287,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.DistributedLocks.Core` — Core implementation with storage abstraction.
 - `Headless.DistributedLocks.InMemory` — In-process lock storage.
 - `Headless.DistributedLocks.Core.Database` — Shared connection-scoped database lock engine.
-- `Headless.DistributedLocks.Postgres` — PostgreSQL advisory-lock provider.
+- `Headless.DistributedLocks.PostgreSql` — PostgreSQL advisory-lock provider.
 - `Headless.DistributedLocks.Redis` — Redis-based lock storage.
 - `Headless.DistributedLocks.SqlServer` — SQL Server application-lock provider.
 
@@ -311,15 +322,19 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Testing
 - `Headless.Testing` — xUnit base classes and testing utilities.
+- `Headless.Testing.AspNetCore` — `WebApplicationFactory`-based fixtures with database reset for ASP.NET Core integration tests.
 - `Headless.Testing.Testcontainers` — Testcontainers fixtures for integration tests.
 
 ### Jobs (Background Jobs)
 - `Headless.Jobs.Abstractions` — Job scheduling interface.
 - `Headless.Jobs.Core` — Reliable distributed job scheduling (cron, delayed execution, monitoring).
-- `Headless.Jobs.SourceGenerator` — Compile-time codegen for `[Jobs]`-marked methods.
+- `Headless.Jobs.SourceGenerator` — Compile-time codegen for `[JobFunction]`-marked methods.
 - `Headless.Jobs.Dashboard` — Auth and web UI for job monitoring.
 - `Headless.Jobs.OpenTelemetry` — Tracing and metrics.
 - `Headless.Jobs.EntityFramework` — EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching.
+
+### Dashboards (shared)
+- `Headless.Dashboard.Authentication` — Shared authentication middleware (none / Basic / API key / host-app / custom) for the Jobs and Messaging dashboards.
 
 ### TUS (Resumable Uploads)
 - `Headless.Tus` — Core TUS protocol utilities.
@@ -327,7 +342,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Tus.DistributedLocks` — TUS file locking via `Headless.DistributedLocks`.
 
 ### Utilities
-- `Headless.FluentValidation` — Enterprise-grade FluentValidation extensions.
+- `Headless.FluentValidation` — FluentValidation rule and extension helpers.
 - `Headless.Generator.Primitives` — Source generator for strongly-typed domain primitives.
 - `Headless.Generator.Primitives.Abstractions` — Attributes for the primitives source generator.
 - `Headless.Hosting` — Hosting utilities and options registration extensions.

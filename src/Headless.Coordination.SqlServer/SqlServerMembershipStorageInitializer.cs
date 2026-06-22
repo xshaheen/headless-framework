@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Coordination.SqlServer;

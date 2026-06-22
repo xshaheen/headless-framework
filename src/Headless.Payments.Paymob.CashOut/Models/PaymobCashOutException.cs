@@ -4,18 +4,30 @@ using System.Net;
 
 namespace Headless.Payments.Paymob.CashOut.Models;
 
+/// <summary>
+/// Represents an HTTP error returned by the Paymob CashOut API.
+/// </summary>
+/// <remarks>
+/// Thrown by broker and authenticator methods when Paymob responds with a non-success HTTP
+/// status code. Inspect <c>StatusCode</c> and <c>Body</c> to diagnose the failure.
+/// </remarks>
 [Serializable]
 public sealed class PaymobCashOutException(string? message, HttpStatusCode statusCode, string? body)
     : Exception(message)
 {
-    /// <summary>Gets the HTTP response status code.</summary>
+    /// <summary>Gets the HTTP response status code returned by Paymob.</summary>
     /// <value>An HTTP status code.</value>
     public HttpStatusCode StatusCode { get; } = statusCode;
 
-    /// <summary>Gets the HTTP response body if presented.</summary>
-    /// <value>An HTTP body.</value>
+    /// <summary>Gets the raw HTTP response body, if one was present and readable.</summary>
+    /// <value>The response body string, or <see langword="null"/> when absent or unreadable.</value>
     public string? Body { get; } = body;
 
+    /// <summary>
+    /// Reads the response body and throws a <c>PaymobCashOutException</c> when the response
+    /// indicates failure. Returns without throwing on success responses.
+    /// </summary>
+    /// <param name="response">The HTTP response to inspect.</param>
     public static async Task ThrowAsync(HttpResponseMessage response)
     {
         if (response.IsSuccessStatusCode)
@@ -27,7 +39,7 @@ public sealed class PaymobCashOutException(string? message, HttpStatusCode statu
 
         try
         {
-            body = await response.Content.ReadAsStringAsync();
+            body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         }
 #pragma warning disable ERP022
         catch

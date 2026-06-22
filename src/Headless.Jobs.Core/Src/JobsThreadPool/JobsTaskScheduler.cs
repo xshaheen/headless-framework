@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Jobs.Enums;
@@ -99,7 +101,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
                     {
                         try
                         {
-                            await work(cancellationToken);
+                            await work(cancellationToken).ConfigureAwait(false);
                         }
 #pragma warning disable ERP022 // Scheduler must continue running even if task execution throws.
                         catch
@@ -121,7 +123,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         var targetQueue = _workerQueues[queueIndex];
 
         // Wait for capacity if needed
-        await _WaitForCapacityAsync(targetQueue, cancellationToken);
+        await _WaitForCapacityAsync(targetQueue, cancellationToken).ConfigureAwait(false);
 
         // Enqueue work
         var workItem = new WorkItem(work, cancellationToken);
@@ -154,7 +156,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
                 _EnsureWorkerAvailable();
                 waitCount = 0;
             }
-            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
+            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -220,7 +222,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         try
         {
             // Run the async worker loop
-            Task.Run(async () => await _WorkerLoopCoreAsync(workerId)).GetAwaiter().GetResult();
+            Task.Run(async () => await _WorkerLoopCoreAsync(workerId).ConfigureAwait(false)).GetAwaiter().GetResult();
         }
         finally
         {
@@ -261,7 +263,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
             if (foundWork)
             {
                 lastWorkTime = _timeProvider.GetUtcNow().UtcDateTime;
-                await _ExecuteWorkAsync(workItem);
+                await _ExecuteWorkAsync(workItem).ConfigureAwait(false);
             }
             else
             {
@@ -292,10 +294,12 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
                 // Brief sleep to avoid spinning
                 if (consecutiveStealFailures > 3)
                 {
-                    await _timeProvider.Delay(
-                        TimeSpan.FromMilliseconds(Math.Min(consecutiveStealFailures * 2, 50)),
-                        _shutdownCts.Token
-                    );
+                    await _timeProvider
+                        .Delay(
+                            TimeSpan.FromMilliseconds(Math.Min(consecutiveStealFailures * 2, 50)),
+                            _shutdownCts.Token
+                        )
+                        .ConfigureAwait(false);
                 }
                 else
                 {
@@ -399,7 +403,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
                     // Task already completed synchronously – observe any exception
                     try
                     {
-                        await task;
+                        await task.ConfigureAwait(false);
                     }
                     // ERP022: Worker thread must continue running.
 #pragma warning disable ERP022
@@ -502,7 +506,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     /// </summary>
     public string GetDiagnostics()
     {
-        var text = $"=== Jobs Work-Stealing Scheduler ===\n";
+        var text = "=== Jobs Work-Stealing Scheduler ===\n";
         text += $"Status: {(_isFrozen ? "FROZEN" : (_disposed ? "DISPOSED" : "ACTIVE"))}\n";
         text += $"Workers: {_activeWorkers}/{_maxConcurrency}\n";
         text += $"Total Queued (counter): {_totalQueuedTasks}\n\n";
@@ -551,7 +555,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
                 return false; // Timeout
             }
 
-            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), CancellationToken.None);
+            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), CancellationToken.None).ConfigureAwait(false);
         }
 
         return true;
@@ -566,13 +570,13 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
         _disposed = true;
         _isFrozen = true; // Prevent new tasks
-        await _shutdownCts.CancelAsync();
+        await _shutdownCts.CancelAsync().ConfigureAwait(false);
 
         // Wait for workers to exit gracefully
         var timeout = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(5);
         while (_activeWorkers > 0 && _timeProvider.GetUtcNow().UtcDateTime < timeout)
         {
-            await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
+            await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None).ConfigureAwait(false);
         }
 
         _notifyDebounce?.Dispose();

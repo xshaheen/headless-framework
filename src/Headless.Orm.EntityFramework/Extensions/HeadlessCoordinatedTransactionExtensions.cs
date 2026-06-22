@@ -48,7 +48,7 @@ public static class HeadlessCoordinatedTransactionExtensions
     )
         where TContext : DbContext, IHeadlessDbContext
     {
-        var services = ((IHeadlessDbContext)context).ServiceProvider;
+        var services = (context).ServiceProvider;
         var state = (Operation: operation, Isolation: isolation, Context: context, Services: services);
 
         return context
@@ -86,7 +86,7 @@ public static class HeadlessCoordinatedTransactionExtensions
     )
         where TContext : DbContext, IHeadlessDbContext
     {
-        var services = ((IHeadlessDbContext)context).ServiceProvider;
+        var services = (context).ServiceProvider;
         var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: context, Services: services);
 
         return context
@@ -129,7 +129,7 @@ public static class HeadlessCoordinatedTransactionExtensions
     )
         where TContext : DbContext, IHeadlessDbContext
     {
-        var services = ((IHeadlessDbContext)context).ServiceProvider;
+        var services = (context).ServiceProvider;
         var state = (Operation: operation, Isolation: isolation, Context: context, Services: services);
 
         return context
@@ -167,7 +167,7 @@ public static class HeadlessCoordinatedTransactionExtensions
     )
         where TContext : DbContext, IHeadlessDbContext
     {
-        var services = ((IHeadlessDbContext)context).ServiceProvider;
+        var services = (context).ServiceProvider;
         var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: context, Services: services);
 
         return context

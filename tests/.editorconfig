@@ -108,6 +108,10 @@ dotnet_diagnostic.CA2225.severity = suggestion
 dotnet_diagnostic.AsyncFixer03.severity = suggestion
 dotnet_diagnostic.VSTHRD100.severity = suggestion
 
+# IDE1006: Naming rule violation
+# Tests use the snake_case `should_do_thing` method-naming convention for readability.
+dotnet_diagnostic.IDE1006.severity = none
+
 # ReSharper - DisposeOnUsingVariable
 # Test objects often managed by test framework or intentionally not disposed
 resharper_dispose_on_using_variable_highlighting = none

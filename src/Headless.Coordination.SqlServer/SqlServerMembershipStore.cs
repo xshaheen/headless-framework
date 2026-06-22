@@ -466,7 +466,11 @@ internal sealed class SqlServerMembershipStore(
         try
         {
             await _deadlockRetryPipeline
-                .ExecuteAsync(static async (action, ct) => await action(ct), action, cancellationToken)
+                .ExecuteAsync(
+                    static async (action, ct) => await action(ct).ConfigureAwait(false),
+                    action,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         catch (SqlException ex) when (_IsDeadlockVictim(ex))

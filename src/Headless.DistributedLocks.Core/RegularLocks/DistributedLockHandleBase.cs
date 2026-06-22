@@ -52,6 +52,23 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
 
     protected ILogger Logger { get; }
 
+    /// <summary>
+    /// Initialises the shared lease handle state. Called by derived type constructors.
+    /// </summary>
+    /// <param name="resource">The resource name for which the lease was acquired.</param>
+    /// <param name="leaseId">The unique lease identifier stored in the backend.</param>
+    /// <param name="fencingToken">Backend-assigned fencing token, or <see langword="null"/>.</param>
+    /// <param name="leaseDuration">The finite TTL negotiated with the backend at acquire time.</param>
+    /// <param name="timeWaitedForLock">Wall-clock time spent waiting before acquisition.</param>
+    /// <param name="releaseOnDispose">When <see langword="true"/>, <see cref="DisposeAsync"/> triggers <see cref="ReleaseAsync"/>.</param>
+    /// <param name="autoExtend">When <see langword="true"/>, the attached monitor extends TTL; otherwise it only validates.</param>
+    /// <param name="options">Configuration used to compute monitoring cadence and dispose timeout.</param>
+    /// <param name="timeProvider">Time provider for elapsed-time and UTC-now measurements.</param>
+    /// <param name="deregisterMonitor">
+    /// Callback invoked with (<paramref name="resource"/>, <paramref name="leaseId"/>) after the
+    /// attached monitor is disposed, allowing the provider to remove the monitor from its registry.
+    /// </param>
+    /// <param name="logger">Logger for lifecycle events.</param>
     protected DistributedLockHandleBase(
         string resource,
         string leaseId,
@@ -88,26 +105,54 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
             _monitoringCadenceSnapshot.TotalSeconds < 5.0 ? _monitoringCadenceSnapshot : TimeSpan.FromSeconds(5);
     }
 
+    /// <summary>The unique identifier for this lease, matching the value stored in the backend.</summary>
     public string LeaseId { get; }
 
+    /// <summary>
+    /// The monotonically-increasing fencing token assigned by the backend at acquire time, or
+    /// <see langword="null"/> when the backend does not support fencing tokens.
+    /// </summary>
     public long? FencingToken { get; }
 
+    /// <summary>The resource name for which this lease was acquired.</summary>
     public string Resource { get; }
 
+    /// <summary>The UTC timestamp at which this lease was acquired.</summary>
     public DateTimeOffset DateAcquired { get; }
 
+    /// <summary>The total wall-clock duration spent waiting before this lease was granted.</summary>
     public TimeSpan TimeWaitedForLock { get; }
 
+    /// <summary>
+    /// Cancelled when the lease monitor detects that this handle no longer holds the lease.
+    /// <see cref="CancellationToken.None"/> when no monitor is attached (i.e. the handle was
+    /// acquired without a monitoring mode). Check <see cref="CanObserveLoss"/> before registering
+    /// callbacks to distinguish "no monitor" from "monitor attached, lease still held".
+    /// </summary>
     public CancellationToken LostToken => _handleLostToken;
 
+    /// <summary>
+    /// <see langword="true"/> when a <see cref="LeaseMonitor"/> is attached and lease-loss events
+    /// can be observed via <see cref="LostToken"/>. <see langword="false"/> for handles acquired
+    /// without a monitoring mode.
+    /// </summary>
     public bool CanObserveLoss => _monitor is not null;
 
+    /// <summary>
+    /// The number of successful TTL renewals performed since this handle was acquired, including
+    /// both manual calls to <see cref="RenewAsync"/> and automatic renewals by the attached monitor.
+    /// </summary>
     public int RenewalCount => Volatile.Read(ref _renewalCount);
 
     TimeSpan LeaseMonitor.ILeaseHandle.LeaseDuration => LeaseDuration;
 
     TimeSpan LeaseMonitor.ILeaseHandle.MonitoringCadence => _monitoringCadenceSnapshot;
 
+    /// <summary>
+    /// Attaches a <see cref="LeaseMonitor"/> to this handle and snapshots its
+    /// <see cref="LeaseMonitor.LostToken"/> into <see cref="LostToken"/>. Must be called at most
+    /// once, immediately after construction and before the handle is returned to the caller.
+    /// </summary>
     internal void AttachMonitor(LeaseMonitor monitor)
     {
         _monitor = monitor;
@@ -151,11 +196,35 @@ internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMoni
         Interlocked.Increment(ref _renewalCount);
     }
 
+    /// <summary>
+    /// Extends the lease TTL in the storage backend. Derived types implement this by calling the
+    /// provider's renew API and incrementing <see cref="RenewalCount"/> on success.
+    /// </summary>
+    /// <param name="timeUntilExpires">
+    /// New TTL from now. <see langword="null"/> applies the provider's default lease duration.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the renewal storage call.</param>
+    /// <returns>
+    /// <see langword="true"/> when the TTL was extended; <see langword="false"/> when the lease is
+    /// no longer held in storage (expired or released by another path).
+    /// </returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
     public abstract Task<bool> RenewAsync(
         TimeSpan? timeUntilExpires = null,
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Releases the lease/slot in storage and stops the attached monitor. Idempotent — subsequent
+    /// calls after the first successful release are no-ops. Thread-safe: concurrent callers are
+    /// serialised by an internal async lock.
+    /// </summary>
+    /// <remarks>
+    /// The monitor is stopped unconditionally before the storage call so <see cref="LostToken"/>
+    /// is not cancelled after an explicit release, even if the storage call fails transiently.
+    /// The handle remains usable (the released flag is only set after a successful storage call)
+    /// so a retry via <see cref="ReleaseAsync"/> or <see cref="DisposeAsync"/> can succeed.
+    /// </remarks>
     public async Task ReleaseAsync()
     {
         if (_isReleased)

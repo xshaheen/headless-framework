@@ -4,6 +4,15 @@ using Headless.Checks;
 
 namespace Headless.Payments.Paymob.CashIn.Models.Orders;
 
+/// <summary>
+/// Represents the request body for creating a Paymob Accept order. Use the static factory
+/// methods to construct instances.
+/// </summary>
+/// <remarks>
+/// An order is a logical container required before obtaining a payment key. Use
+/// <c>CreateOrder</c> for standard orders and <c>CreateDeliveryOrder</c> when Paymob's
+/// courier delivery service is needed.
+/// </remarks>
 [PublicAPI]
 public sealed class CashInCreateOrderRequest
 {
@@ -35,7 +44,13 @@ public sealed class CashInCreateOrderRequest
     /// </summary>
     public IEnumerable<CashInCreateOrderRequestOrderItem> Items { get; private init; } = [];
 
-    /// <summary>Create order without delivery.</summary>
+    /// <summary>Creates a standard order without delivery.</summary>
+    /// <param name="amountCents">The order amount in the smallest currency unit (cents). Must be positive.</param>
+    /// <param name="currency">ISO 4217 currency code. Defaults to <c>EGP</c>.</param>
+    /// <param name="merchantOrderId">Your own order reference ID, used to correlate Paymob orders with your system.</param>
+    /// <returns>A configured <c>CashInCreateOrderRequest</c> with <c>DeliveryNeeded</c> set to false.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="amountCents"/> is not positive.</exception>
+    /// <exception cref="ArgumentException"><paramref name="currency"/> is null or empty.</exception>
     public static CashInCreateOrderRequest CreateOrder(
         int amountCents,
         string currency = "EGP",
@@ -54,7 +69,17 @@ public sealed class CashInCreateOrderRequest
         };
     }
 
-    /// <summary>Create delivery order.</summary>
+    /// <summary>Creates an order that will be fulfilled via Paymob's courier delivery service.</summary>
+    /// <param name="shippingDetails">Dimensions and weight of the parcel to be delivered.</param>
+    /// <param name="shippingData">Recipient contact and address information.</param>
+    /// <param name="items">The line items in the order. Must not be empty.</param>
+    /// <param name="amountCents">The order amount in the smallest currency unit (cents). Must be positive.</param>
+    /// <param name="currency">ISO 4217 currency code. Defaults to <c>EGP</c>.</param>
+    /// <param name="merchantOrderId">Your own order reference ID.</param>
+    /// <returns>A configured <c>CashInCreateOrderRequest</c> with <c>DeliveryNeeded</c> set to true.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="amountCents"/> is not positive.</exception>
+    /// <exception cref="ArgumentException"><paramref name="currency"/> is null or empty; or <paramref name="items"/> is empty.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="shippingDetails"/> or <paramref name="shippingData"/> is <see langword="null"/>.</exception>
     public static CashInCreateOrderRequest CreateDeliveryOrder(
         CashInCreateOrderRequestShippingDetails shippingDetails,
         CashInCreateOrderRequestShippingData shippingData,

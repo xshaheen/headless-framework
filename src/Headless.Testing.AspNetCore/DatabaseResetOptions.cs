@@ -10,6 +10,7 @@ namespace Headless.Testing.AspNetCore;
 /// Configuration for <see cref="DatabaseReset"/>. Provides Respawner settings and
 /// an optional connection provider for <see cref="HeadlessTestServer{TProgram}"/> integration.
 /// </summary>
+[PublicAPI]
 public sealed class DatabaseResetOptions
 {
     /// <summary>The database adapter. Defaults to <see cref="DbAdapter.Postgres"/>.</summary>

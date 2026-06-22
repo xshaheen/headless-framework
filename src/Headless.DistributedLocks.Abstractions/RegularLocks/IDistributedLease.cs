@@ -55,6 +55,9 @@ public interface IDistributedLease : IAsyncDisposable
     bool IsLost => LostToken.IsCancellationRequested;
 
     /// <summary>Throws <see cref="LockHandleLostException"/> when this process has observed lease loss.</summary>
+    /// <exception cref="LockHandleLostException">
+    /// <see cref="IsLost"/> is <see langword="true"/> — this process has observed that the lease was lost.
+    /// </exception>
     void ThrowIfLost()
     {
         if (IsLost)
@@ -63,9 +66,23 @@ public interface IDistributedLease : IAsyncDisposable
         }
     }
 
-    /// <summary>Releases the lease.</summary>
+    /// <summary>
+    /// Releases the lease. Releasing a lease that is no longer held (already expired or taken over) is a
+    /// no-op rather than an error. To bound release with your own <see cref="CancellationToken"/>, acquire
+    /// with <see cref="DistributedLockAcquireOptions.ReleaseOnDispose"/> set to <see langword="false"/> and
+    /// call the owning provider's release path directly.
+    /// </summary>
     Task ReleaseAsync();
 
-    /// <summary>Attempts to renew the lease.</summary>
+    /// <summary>Attempts to renew the lease, extending its expiration while it is still held.</summary>
+    /// <param name="timeUntilExpires">
+    /// New lease duration from now. <see langword="null"/> applies the owning provider's default lease duration.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the renewal; surfaces as <see cref="OperationCanceledException"/>.</param>
+    /// <returns>
+    /// <see langword="true"/> when the lease was still held and was extended; <see langword="false"/> when it
+    /// was already lost (expired or taken over by another holder).
+    /// </returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default);
 }

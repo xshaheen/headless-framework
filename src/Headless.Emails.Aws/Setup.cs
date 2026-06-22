@@ -6,22 +6,41 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Emails.Aws;
 
+/// <summary>
+/// Registers the Amazon SES v2 email sender with the DI container.
+/// </summary>
 [PublicAPI]
 public static class SetupAwsSes
 {
     /// <summary>
-    /// AWSOptions usage:
+    /// Registers <see cref="AwsSesEmailSender"/> as the <see cref="IEmailSender"/> singleton
+    /// backed by Amazon Simple Email Service v2.
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="options">
+    /// AWS configuration (region, credentials). Pass <see langword="null"/> to use the
+    /// default <see cref="AWSOptions"/> already registered in the DI container (for example
+    /// from <c>builder.Configuration.GetAWSOptions()</c>).
+    /// </param>
+    /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    /// <remarks>
     /// <code>
+    /// // From configuration:
     /// var awsOptions = builder.Configuration.GetAWSOptions();
-    /// // or
+    ///
+    /// // Explicit credentials:
     /// var awsOptions = new AWSOptions
     /// {
     ///     Region = RegionEndpoint.GetBySystemName(builder.Configuration["AWS:Region"]),
-    ///     Credentials = new BasicAWSCredentials(builder.Configuration["AWS:AccessKey"], builder.Configuration["AWS:SecretKey"]),
+    ///     Credentials = new BasicAWSCredentials(
+    ///         builder.Configuration["AWS:AccessKey"],
+    ///         builder.Configuration["AWS:SecretKey"]),
     /// };
-    /// // or pass null to use the default AWSOptions registered in the DI container
+    ///
+    /// // Or pass null to rely on the AWSOptions already in DI:
+    /// services.AddAwsSesEmailSender(null);
     /// </code>
-    /// </summary>
+    /// </remarks>
     public static IServiceCollection AddAwsSesEmailSender(this IServiceCollection services, AWSOptions? options)
     {
         services.TryAddAWSService<IAmazonSimpleEmailServiceV2>(options);

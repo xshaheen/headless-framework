@@ -7,9 +7,37 @@ using NSwag.Generation.Processors.Contexts;
 
 namespace Headless.Api;
 
-/// <summary>https://docs.microsoft.com/en-us/odata/concepts/queryoptions-overview</summary>
+/// <summary>
+/// NSwag operation processor that injects standard OData query-parameter documentation
+/// (<c>$select</c>, <c>$expand</c>, <c>$filter</c>, <c>$search</c>, <c>$top</c>, <c>$skip</c>,
+/// <c>$orderby</c>) into the generated OpenAPI operation.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The processor activates for an operation when either of the following is true:
+/// <list type="bullet">
+///   <item><description>
+///     The action method (or its declaring controller type) carries an <c>EnableQueryAttribute</c>.
+///   </description></item>
+///   <item><description>
+///     The action has a parameter whose type is or derives from <c>ODataQueryOptions</c>. In that case
+///     the <c>ODataQueryOptions</c> parameter is removed from the generated parameter list and replaced
+///     by the individual OData query string parameters.
+///   </description></item>
+/// </list>
+/// </para>
+/// <para>
+/// See <see href="https://docs.microsoft.com/en-us/odata/concepts/queryoptions-overview"/> for OData
+/// query option semantics.
+/// </para>
+/// </remarks>
 public sealed class ODataOperationFilter : IOperationProcessor
 {
+    /// <summary>
+    /// Processes the NSwag operation context and, when applicable, injects OData query parameters.
+    /// </summary>
+    /// <param name="context">The NSwag operation processor context for the current operation.</param>
+    /// <returns>Always <see langword="true"/> so that subsequent processors continue to run.</returns>
     public bool Process(OperationProcessorContext context)
     {
         var operation = context.OperationDescription.Operation;

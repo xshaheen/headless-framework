@@ -6,9 +6,12 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Features;
 
+/// <summary>EF Core entity type configuration for <see cref="FeatureGroupDefinitionRecord"/>.</summary>
+/// <param name="options">Storage options supplying the table name and schema.</param>
 internal sealed class FeatureGroupDefinitionRecordConfiguration(FeaturesStorageOptions options)
     : IEntityTypeConfiguration<FeatureGroupDefinitionRecord>
 {
+    /// <inheritdoc/>
     public void Configure(EntityTypeBuilder<FeatureGroupDefinitionRecord> b)
     {
         b.ToTable(options.FeatureGroupDefinitionsTableName, options.Schema);

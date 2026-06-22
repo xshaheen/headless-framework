@@ -18,11 +18,24 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Headless.Api;
 
+/// <summary>
+/// Extension members on <see cref="IServiceCollection"/> for registering core Headless API
+/// infrastructure — JSON serialization, time services, ProblemDetails, compression, and common
+/// Kestrel / routing / form defaults.
+/// </summary>
 [PublicAPI]
 public static class SetupApiServices
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers the Headless JSON stack: <see cref="IJsonOptionsProvider"/> (default options),
+        /// <see cref="IJsonSerializer"/> (System.Text.Json), and the <see cref="ITextSerializer"/>
+        /// and <see cref="ISerializer"/> adapters that delegate to it.
+        /// All registrations are guarded with <c>TryAddSingleton</c> so consumers can supply their
+        /// own implementations before calling this method.
+        /// </summary>
+        /// <returns>The same service collection.</returns>
         public IServiceCollection AddHeadlessJsonService()
         {
             services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
@@ -35,6 +48,12 @@ public static class SetupApiServices
             return services;
         }
 
+        /// <summary>
+        /// Registers the Headless time stack: <see cref="TimeProvider.System"/>, <see cref="IClock"/>,
+        /// and <see cref="ITimezoneProvider"/> (TzConvert-backed).
+        /// All registrations are guarded with <c>TryAddSingleton</c>.
+        /// </summary>
+        /// <returns>The same service collection.</returns>
         public IServiceCollection AddHeadlessTimeService()
         {
             services.TryAddSingleton(TimeProvider.System);
@@ -44,6 +63,30 @@ public static class SetupApiServices
             return services;
         }
 
+        /// <summary>
+        /// Registers <see cref="IProblemDetailsCreator"/>, ASP.NET Core's
+        /// <see cref="Microsoft.AspNetCore.Http.IProblemDetailsService"/> with a
+        /// <c>CustomizeProblemDetails</c> hook that normalizes the response through the creator, and
+        /// <see cref="Middlewares.HeadlessApiExceptionHandler"/> as a singleton
+        /// <see cref="Microsoft.AspNetCore.Diagnostics.IExceptionHandler"/>.
+        /// </summary>
+        /// <remarks>
+        /// The exception handler maps the following exception types to HTTP status codes:
+        /// <list type="bullet">
+        /// <item><description><see cref="Headless.Exceptions.UnauthorizedException"/> → 401</description></item>
+        /// <item><description><see cref="Headless.Exceptions.ConflictException"/> → 409</description></item>
+        /// <item><description><see cref="Headless.Exceptions.EntityNotFoundException"/> → 404</description></item>
+        /// <item><description><see cref="Headless.Abstractions.CrossTenantWriteException"/> → 409 with <c>g:cross_tenant_write</c></description></item>
+        /// <item><description><see cref="Headless.Abstractions.MissingTenantContextException"/> → 403 with <c>g:tenant_required</c></description></item>
+        /// <item><description><c>FluentValidation.ValidationException</c> → 422</description></item>
+        /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException</c> (matched by name) → 409</description></item>
+        /// <item><description><see cref="TimeoutException"/> → 408</description></item>
+        /// <item><description><see cref="NotImplementedException"/> → 501</description></item>
+        /// <item><description>Client-cancelled (<see cref="OperationCanceledException"/> with <c>RequestAborted</c>) → 499</description></item>
+        /// </list>
+        /// All other exceptions return <see langword="false"/> and are left to subsequent handlers.
+        /// </remarks>
+        /// <returns>The same service collection.</returns>
         public IServiceCollection AddHeadlessProblemDetails()
         {
             services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
@@ -74,6 +117,12 @@ public static class SetupApiServices
             return services;
         }
 
+        /// <summary>
+        /// Adds response compression with Brotli and Gzip providers at <c>Fastest</c> level,
+        /// and extends the default MIME-type list with <c>application/problem+json</c>,
+        /// <c>image/svg+xml</c>, and <c>image/x-icon</c>.
+        /// </summary>
+        /// <returns>The same service collection.</returns>
         public IServiceCollection AddHeadlessApiResponseCompression()
         {
             services
@@ -94,6 +143,18 @@ public static class SetupApiServices
             return services;
         }
 
+        /// <summary>
+        /// Applies Headless-standard defaults to Kestrel, routing, form options, and HSTS:
+        /// <list type="bullet">
+        /// <item><description>Kestrel: no <c>Server</c> header, 30 MB request body limit, 40-header max.</description></item>
+        /// <item><description>Health check: a self-check tagged with <paramref name="aliveTag"/> for liveness probes.</description></item>
+        /// <item><description>Routing: lowercase URLs, no trailing slash.</description></item>
+        /// <item><description>Form: 4 MB value limit, 16 KB multipart-headers limit, 30 MB multipart-body limit.</description></item>
+        /// <item><description>HSTS: 365-day max-age, subdomain inclusion, preload enabled.</description></item>
+        /// </list>
+        /// </summary>
+        /// <param name="aliveTag">Tag applied to the self health check (used by liveness probes). Defaults to <c>live</c>.</param>
+        /// <returns>The same service collection.</returns>
         public IServiceCollection ConfigureHeadlessDefaultApi(string aliveTag = "live")
         {
             services.Configure<KestrelServerOptions>(options =>

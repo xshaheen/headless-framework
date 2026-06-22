@@ -71,5 +71,6 @@ public static partial class QueryableExtensions
     }
 }
 
+/// <summary>A month bucket returned by <c>CountPerMonthAsync</c> with a <c>DateOnly</c> date selector.</summary>
 [PublicAPI]
 public sealed record EntityPerDateOnly(DateOnly Date, int Count);

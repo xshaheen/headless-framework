@@ -31,6 +31,20 @@ public sealed class CrossTenantWriteException : Exception
         Operation = operation;
     }
 
+    /// <summary>Initializes a new instance of the <see cref="CrossTenantWriteException"/> class with an inner exception.</summary>
+    /// <param name="entityType">The CLR entity type name that failed the guard.</param>
+    /// <param name="operation">The neutral operation name that failed the guard.</param>
+    /// <param name="innerException">The underlying exception that triggered this failure, if any.</param>
+    public CrossTenantWriteException(string entityType, string operation, Exception? innerException)
+        : base(
+            $"Tenant-owned {operation} write for entity type '{entityType}' does not match the current tenant context.",
+            innerException
+        )
+    {
+        EntityType = entityType;
+        Operation = operation;
+    }
+
     /// <summary>Gets the CLR entity type name that failed the guard.</summary>
     public string EntityType { get; }
 

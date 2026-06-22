@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using System.Security.Claims;
+using Headless.Checks;
 using Headless.Hosting.Initialization;
 using Headless.Messaging.Testing;
 using Headless.Testing.DependencyInjection;
@@ -23,6 +24,7 @@ namespace Headless.Testing.AspNetCore;
 /// (for xUnit fixture support) and <see cref="IAsyncDisposable"/> (for <c>await using</c> patterns).
 /// Dispose is idempotent — safe to call from both xUnit lifecycle and consumer code.
 /// </remarks>
+[PublicAPI]
 public sealed class HeadlessTestServer<TProgram>(
     Action<IServiceCollection>? configureTestServices = null,
     Action<IWebHostBuilder>? configureWebHost = null,
@@ -47,8 +49,17 @@ public sealed class HeadlessTestServer<TProgram>(
     public FakeTimeProvider TimeProvider { get; private set; } = null!;
 
     /// <summary>The underlying <see cref="WebApplicationFactory{TEntryPoint}"/> for advanced scenarios.</summary>
-    public WebApplicationFactory<TProgram> Factory =>
-        _factory ?? throw new InvalidOperationException("Server not initialized. Call InitializeAsync() first.");
+    public WebApplicationFactory<TProgram> Factory
+    {
+        get
+        {
+            // Surface ObjectDisposedException after disposal rather than the misleading
+            // "not initialized" message — _factory is also null once disposed.
+            Ensure.NotDisposed(_disposed, this);
+            return _factory
+                ?? throw new InvalidOperationException("Server not initialized. Call InitializeAsync() first.");
+        }
+    }
 
     /// <summary>The root service provider of the test host.</summary>
     public IServiceProvider Services => Factory.Services;
@@ -85,8 +96,15 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </param>
     /// <param name="timeout">
     /// Maximum time to wait for the check to complete. Defaults to 30 seconds.
-    /// Throws <see cref="TimeoutException"/> if exceeded.
     /// </param>
+    /// <returns>This instance for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when called after <see cref="InitializeAsync"/> has started.
+    /// </exception>
+    /// <exception cref="TimeoutException">
+    /// Thrown during <see cref="InitializeAsync"/> when the check does not complete within
+    /// <paramref name="timeout"/>.
+    /// </exception>
     public HeadlessTestServer<TProgram> WaitForReadiness(Func<IServiceProvider, Task> check, TimeSpan? timeout = null)
     {
         if (_factory is not null || _initStarted)
@@ -103,6 +121,11 @@ public sealed class HeadlessTestServer<TProgram>(
     /// <see cref="InitializeAsync"/>. Requires <see cref="DatabaseResetOptions.ConnectionProvider"/>
     /// to be set.
     /// </summary>
+    /// <param name="configure">Delegate that configures the <see cref="DatabaseResetOptions"/>.</param>
+    /// <returns>This instance for method chaining.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when called after <see cref="InitializeAsync"/> has started.
+    /// </exception>
     public HeadlessTestServer<TProgram> ConfigureDatabaseReset(Action<DatabaseResetOptions> configure)
     {
         if (_factory is not null || _initStarted)
@@ -132,13 +155,13 @@ public sealed class HeadlessTestServer<TProgram>(
             );
         }
 
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
 
         await _resetGate.WaitAsync().ConfigureAwait(false);
 
         try
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Ensure.NotDisposed(_disposed, this);
 
             if (_databaseReset is null)
             {
@@ -170,13 +193,18 @@ public sealed class HeadlessTestServer<TProgram>(
                 catch (DbException) when (retries > 1)
                 {
                     retries--;
-                    await System.TimeProvider.System.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
 
                     // Re-open if closed or broken
                     if (_resetConnection!.State != System.Data.ConnectionState.Open)
                     {
                         await _resetConnection.OpenAsync().ConfigureAwait(false);
                     }
+                }
+                catch (DbException ex)
+                {
+                    // Final attempt failed — surface retry-exhaustion context instead of a bare DbException.
+                    throw new InvalidOperationException("Database reset failed after 3 attempts.", ex);
                 }
             }
         }
@@ -186,7 +214,9 @@ public sealed class HeadlessTestServer<TProgram>(
         }
     }
 
-    /// <summary>Creates a DI scope, invokes the delegate, and disposes the scope.</summary>
+    /// <summary>Creates a DI scope, invokes <paramref name="action"/>, and disposes the scope.</summary>
+    /// <param name="action">Delegate that receives the scoped <see cref="IServiceProvider"/>.</param>
+    /// <returns>The value returned by <paramref name="action"/>.</returns>
     public async Task<T> ExecuteScopeAsync<T>(Func<IServiceProvider, Task<T>> action)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -194,9 +224,13 @@ public sealed class HeadlessTestServer<TProgram>(
     }
 
     /// <summary>
-    /// Creates a DI scope, wires the <paramref name="principal"/> to <see cref="Microsoft.AspNetCore.Http.HttpContext"/>,
-    /// invokes the delegate, and disposes the scope.
+    /// Creates a DI scope, wires <paramref name="principal"/> to an ambient
+    /// <see cref="Microsoft.AspNetCore.Http.HttpContext"/> via <c>TestHttpContextExtensions.SetHttpContext</c>,
+    /// invokes <paramref name="action"/>, and disposes the scope.
     /// </summary>
+    /// <param name="action">Delegate that receives the scoped <see cref="IServiceProvider"/>.</param>
+    /// <param name="principal">The claims principal to associate with the request context.</param>
+    /// <returns>The value returned by <paramref name="action"/>.</returns>
     public async Task<T> ExecuteScopeAsync<T>(Func<IServiceProvider, Task<T>> action, ClaimsPrincipal principal)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -204,7 +238,8 @@ public sealed class HeadlessTestServer<TProgram>(
         return await action(scope.ServiceProvider).ConfigureAwait(false);
     }
 
-    /// <summary>Creates a DI scope, invokes the delegate, and disposes the scope.</summary>
+    /// <summary>Creates a DI scope, invokes <paramref name="action"/>, and disposes the scope.</summary>
+    /// <param name="action">Delegate that receives the scoped <see cref="IServiceProvider"/>.</param>
     public async Task ExecuteScopeAsync(Func<IServiceProvider, Task> action)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -212,9 +247,12 @@ public sealed class HeadlessTestServer<TProgram>(
     }
 
     /// <summary>
-    /// Creates a DI scope, wires the <paramref name="principal"/> to <see cref="Microsoft.AspNetCore.Http.HttpContext"/>,
-    /// invokes the delegate, and disposes the scope.
+    /// Creates a DI scope, wires <paramref name="principal"/> to an ambient
+    /// <see cref="Microsoft.AspNetCore.Http.HttpContext"/> via <c>TestHttpContextExtensions.SetHttpContext</c>,
+    /// invokes <paramref name="action"/>, and disposes the scope.
     /// </summary>
+    /// <param name="action">Delegate that receives the scoped <see cref="IServiceProvider"/>.</param>
+    /// <param name="principal">The claims principal to associate with the request context.</param>
     public async Task ExecuteScopeAsync(Func<IServiceProvider, Task> action, ClaimsPrincipal principal)
     {
         await using var scope = Services.CreateAsyncScope();
@@ -232,6 +270,14 @@ public sealed class HeadlessTestServer<TProgram>(
     }
 
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the host does not register a <see cref="FakeTimeProvider"/>, when an
+    /// <c>IInitializer</c> faults, or when <see cref="DisposeAsync"/> has already been called.
+    /// </exception>
+    /// <exception cref="TimeoutException">
+    /// Thrown when an <c>IInitializer</c> or a registered readiness check does not complete
+    /// within its configured timeout.
+    /// </exception>
     public async ValueTask InitializeAsync()
     {
         _initStarted = true;
@@ -241,7 +287,7 @@ public sealed class HeadlessTestServer<TProgram>(
             return;
         }
 
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
 
         await _initGate.WaitAsync().ConfigureAwait(false);
 
@@ -249,7 +295,7 @@ public sealed class HeadlessTestServer<TProgram>(
 
         try
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Ensure.NotDisposed(_disposed, this);
 
             if (_factory is not null)
             {
@@ -263,7 +309,11 @@ public sealed class HeadlessTestServer<TProgram>(
             // Force host startup — triggers ConfigureTestServices
             _ = factory.Services;
 
-            TimeProvider = (FakeTimeProvider)factory.Services.GetRequiredService<TimeProvider>();
+            TimeProvider =
+                factory.Services.GetRequiredService<TimeProvider>() as FakeTimeProvider
+                ?? throw new InvalidOperationException(
+                    "Expected a FakeTimeProvider to be registered. Ensure AddTestTimeProvider() was not overridden by configureTestServices."
+                );
 
             // Await all IInitializer services (e.g. settings/permissions/features sync)
             var initializers = factory.Services.GetServices<IInitializer>();

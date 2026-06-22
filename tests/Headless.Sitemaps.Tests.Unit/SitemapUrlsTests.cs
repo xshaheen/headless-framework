@@ -344,6 +344,49 @@ public sealed class SitemapUrlsTests : SitemapTestBase
 
     #endregion
 
+    #region Stream Output Contract (P1)
+
+    [Fact]
+    public async Task write_async_returns_rewound_readable_streams()
+    {
+        var urls = Enumerable
+            .Range(0, 10)
+            .Select(i => new SitemapUrl(new Uri($"https://example.com/page{i}")))
+            .ToList();
+
+        var streams = await urls.WriteAsync(AbortToken);
+
+        streams.Should().ContainSingle();
+        streams[0].Position.Should().Be(0);
+
+        using var reader = new StreamReader(streams[0], Encoding.UTF8);
+        var content = await reader.ReadToEndAsync(AbortToken);
+        content.Should().Contain("<loc>https://example.com/page0</loc>");
+    }
+
+    [Fact]
+    public async Task write_each_async_yields_one_rewound_stream_per_shard()
+    {
+        var urls = Enumerable
+            .Range(0, SitemapConstants.MaxSitemapUrls + 1)
+            .Select(i => new SitemapUrl(new Uri($"https://example.com/page{i}")))
+            .ToList();
+
+        var count = 0;
+
+        await foreach (var stream in urls.WriteEachAsync(AbortToken))
+        {
+            stream.Position.Should().Be(0);
+            stream.Length.Should().BeGreaterThan(0);
+            count++;
+            await stream.DisposeAsync();
+        }
+
+        count.Should().Be(2);
+    }
+
+    #endregion
+
     #region Edge Cases (P2)
 
     [Fact]

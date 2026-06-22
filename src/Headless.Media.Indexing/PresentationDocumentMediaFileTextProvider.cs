@@ -6,8 +6,30 @@ using DocumentFormat.OpenXml.Presentation;
 
 namespace Headless.Media.Indexing;
 
+/// <summary>
+/// Extracts plain text from a PowerPoint presentation (.pptx) using the Open XML SDK.
+/// </summary>
+/// <remarks>
+/// Text is collected from every <c>Drawing.Text</c> element across all slides in slide-id order,
+/// with paragraphs separated by spaces and slides separated by line breaks. Speaker notes,
+/// embedded objects, charts, and SmartArt text are not included. The extraction is purely
+/// structural — OCR is not performed.
+/// <para>
+/// The implementation is synchronous internally and returns a completed <see cref="Task{TResult}"/>
+/// via <c>Task.FromResult</c>; no I/O is performed after the initial read of the input stream.
+/// </para>
+/// </remarks>
 public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextProvider
 {
+    /// <summary>
+    /// Reads <paramref name="fileStream"/> and returns the visible text from every slide in the
+    /// presentation.
+    /// </summary>
+    /// <param name="fileStream">A stream containing a valid .pptx (Open XML) PowerPoint presentation.</param>
+    /// <returns>
+    /// The plain-text content of all slides joined by line breaks, or an empty string when the
+    /// presentation contains no slides or no extractable text.
+    /// </returns>
     public Task<string> GetTextAsync(Stream fileStream)
     {
         using var document = PresentationDocument.Open(fileStream, isEditable: false);

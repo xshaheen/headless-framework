@@ -2,30 +2,41 @@
 
 using Headless.Primitives;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api.Contracts;
 
+/// <summary>
+/// API response view for page SEO metadata. Maps the domain <see cref="PageMetadata"/> primitive
+/// to a serializable shape.
+/// </summary>
 public sealed class PageMetadataView
 {
     /// <summary>Lowercase, hyphenated identifier typically used in URLs.</summary>
-    public required string? Slug { get; init; }
+    public string? Slug { get; init; }
 
     /// <summary>Page title used for search engine optimization purposes.</summary>
-    public required string? MetaTitle { get; init; }
+    public string? MetaTitle { get; init; }
 
     /// <summary>Page description used for search engine optimization purposes.</summary>
-    public required string? MetaDescription { get; init; }
+    public string? MetaDescription { get; init; }
 
     /// <summary>Page keywords used for search engine optimization purposes.</summary>
-    public required HashSet<string>? MetaKeywords { get; init; }
+    public HashSet<string>? MetaKeywords { get; init; }
 
     /// <summary>List of arbitrary tags typically used as metadata to improve search results or associate a custom behavior.</summary>
-    public required HashSet<string>? Tags { get; init; }
+    public HashSet<string>? Tags { get; init; }
 
+    /// <summary>
+    /// Maps a domain <see cref="PageMetadata"/> to a <see cref="PageMetadataView"/>.
+    /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
+    /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
     public static PageMetadataView? FromPageMetadata(PageMetadata? operand) => operand;
 
+    /// <summary>
+    /// Implicitly converts a domain <see cref="PageMetadata"/> to a <see cref="PageMetadataView"/>.
+    /// Returns <see langword="null"/> when <paramref name="operand"/> is <see langword="null"/>.
+    /// </summary>
     [return: NotNullIfNotNull(nameof(operand))]
     public static implicit operator PageMetadataView?(PageMetadata? operand)
     {

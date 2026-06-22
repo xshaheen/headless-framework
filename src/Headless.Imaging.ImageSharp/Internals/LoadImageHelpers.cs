@@ -21,7 +21,7 @@ internal static class LoadImageHelpers
 
         try
         {
-            image = await Image.LoadAsync(stream, cancellationToken);
+            image = await Image.LoadAsync(stream, cancellationToken).ConfigureAwait(false);
         }
         catch (NotSupportedException e)
         {

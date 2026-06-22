@@ -76,7 +76,7 @@ internal static class RedisStreamManagerExtensions
     {
         try
         {
-            var groupInfo = await database.StreamGroupInfoAsync(stream);
+            var groupInfo = await database.StreamGroupInfoAsync(stream).ConfigureAwait(false);
 
             if (groupInfo.Any(g => g.Name == consumerGroup))
             {

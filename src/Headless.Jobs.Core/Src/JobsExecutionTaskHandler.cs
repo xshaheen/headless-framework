@@ -37,7 +37,7 @@ internal class JobsExecutionTaskHandler(
     {
         if (context.Type == JobType.CronJobOccurrence)
         {
-            await _RunContextFunctionAsync(context, isDue, cancellationToken);
+            await _RunContextFunctionAsync(context, isDue, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -72,7 +72,7 @@ internal class JobsExecutionTaskHandler(
         }
 
         // Wait for concurrent tasks (parent + InProgress children)
-        await Task.WhenAll(tasksToRunNow.AsSpan(0, tasksToRunNowCount).ToArray());
+        await Task.WhenAll(tasksToRunNow.AsSpan(0, tasksToRunNowCount).ToArray()).ConfigureAwait(false);
 
         // Process deferred children after parent completion
         if (childrenToRunAfterCount > 0)
@@ -111,16 +111,15 @@ internal class JobsExecutionTaskHandler(
             // Bulk update skipped children
             if (childrenToSkip.Count > 0)
             {
-                await internalJobsManager.UpdateSkipTimeJobsWithUnifiedContextAsync(
-                    childrenToSkip.ToArray(),
-                    cancellationToken
-                );
+                await internalJobsManager
+                    .UpdateSkipTimeJobsWithUnifiedContextAsync(childrenToSkip.ToArray(), cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             // Wait for deferred tasks
             if (taskCount > 0)
             {
-                await Task.WhenAll(childrenToRunAfterTask.AsSpan(0, taskCount).ToArray());
+                await Task.WhenAll(childrenToRunAfterTask.AsSpan(0, taskCount).ToArray()).ConfigureAwait(false);
             }
         }
     }
@@ -154,7 +153,7 @@ internal class JobsExecutionTaskHandler(
 
         if (isChild)
         {
-            await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+            await internalJobsManager.UpdateTickerAsync(context, cancellationToken).ConfigureAwait(false);
         }
 
         var stopWatch = new Stopwatch();
@@ -175,6 +174,9 @@ internal class JobsExecutionTaskHandler(
             Type = context.Type,
             IsDue = isDue,
             ScheduledFor = context.ExecutionTime,
+            // The running job invokes this action during execution (before any exit path disposes the CTS — see the
+            // CA2000 note above), so the captured cancellationTokenSource is alive whenever the closure runs.
+            // ReSharper disable once AccessToDisposedClosure
             RequestCancelOperationAction = () => cancellationTokenSource.Cancel(),
             CronOccurrenceOperations = new CronOccurrenceOperations
             {
@@ -210,6 +212,9 @@ internal class JobsExecutionTaskHandler(
 
         async Task StopRenewalAsync()
         {
+            // StopRenewalAsync is a local function invoked on each exit path before `using var renewalCts` disposes
+            // at method end, so renewalCts is never disposed when this runs.
+            // ReSharper disable once AccessToDisposedClosure
             await renewalCts.CancelAsync().ConfigureAwait(false);
             // ERP022: renewal-loop teardown errors are non-fatal to job completion.
             // VSTHRD003: renewalTask is started locally (above) and intentionally awaited to bound the loop's lifetime.
@@ -237,7 +242,10 @@ internal class JobsExecutionTaskHandler(
 
             try
             {
-                if (await _WaitForRetry(context, attempt, cancellationTokenSource, cancellationToken))
+                if (
+                    await _WaitForRetry(context, attempt, cancellationTokenSource, cancellationToken)
+                        .ConfigureAwait(false)
+                )
                 {
                     break;
                 }
@@ -247,7 +255,9 @@ internal class JobsExecutionTaskHandler(
                 // Create service scope - will be disposed automatically via await using
                 await using var scope = serviceProvider.CreateAsyncScope();
                 jobFunctionContext.SetServiceScope(scope);
-                await context.CachedDelegate(cancellationTokenSource.Token, scope.ServiceProvider, jobFunctionContext);
+                await context
+                    .CachedDelegate(cancellationTokenSource.Token, scope.ServiceProvider, jobFunctionContext)
+                    .ConfigureAwait(false);
 
                 success = true;
                 context.RetryCount = attempt;
@@ -263,7 +273,7 @@ internal class JobsExecutionTaskHandler(
                     // MarkFailed/Skip terminalize). Writing Cancelled here would terminalize a row that is still ours
                     // when the loss was a false positive (slow-but-healthy store), permanently dropping a Retry job.
                     logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
-                    await StopRenewalAsync();
+                    await StopRenewalAsync().ConfigureAwait(false);
                     cancellationTokenSource?.Dispose();
                     JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                     return;
@@ -284,15 +294,15 @@ internal class JobsExecutionTaskHandler(
 
                 if (serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
                 {
-                    await handler.HandleCanceledExceptionAsync(ex, context.JobId, context.Type);
+                    await handler.HandleCanceledExceptionAsync(ex, context.JobId, context.Type).ConfigureAwait(false);
                 }
 
                 // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
                 // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
-                await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
+                await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
 
                 // Clean up and exit early on cancellation
-                await StopRenewalAsync();
+                await StopRenewalAsync().ConfigureAwait(false);
                 cancellationTokenSource?.Dispose();
                 JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                 return;
@@ -323,10 +333,10 @@ internal class JobsExecutionTaskHandler(
 
                 // Terminal-status write must persist even on graceful host-stop (cancellationToken already cancelled)
                 // or lease-loss; the WhereOwnedBy completion fence already prevents clobbering a sweep's result.
-                await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
+                await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
 
                 // Clean up and exit early on termination
-                await StopRenewalAsync();
+                await StopRenewalAsync().ConfigureAwait(false);
                 cancellationTokenSource.Dispose();
                 JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                 return;
@@ -360,7 +370,9 @@ internal class JobsExecutionTaskHandler(
             );
 
             // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
-            var affected = await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
+            var affected = await internalJobsManager
+                .UpdateTickerAsync(context, CancellationToken.None)
+                .ConfigureAwait(false);
             if (affected == 0)
             {
                 // #462: the success write matched 0 rows — the row was reclaimed/terminalized by a sweep (e.g. a
@@ -393,15 +405,15 @@ internal class JobsExecutionTaskHandler(
 
             if (serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
             {
-                await handler.HandleExceptionAsync(lastException, context.JobId, context.Type);
+                await handler.HandleExceptionAsync(lastException, context.JobId, context.Type).ConfigureAwait(false);
             }
 
             // Terminal-status write must persist regardless of host-stop/lease-loss (completion fence guards it).
-            await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None);
+            await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
         }
 
         // Stop renewal before disposing the job CTS it cancels on loss.
-        await StopRenewalAsync();
+        await StopRenewalAsync().ConfigureAwait(false);
 
         // IMPORTANT: Always dispose CancellationTokenSource to prevent memory leaks
         cancellationTokenSource?.Dispose();
@@ -540,7 +552,7 @@ internal class JobsExecutionTaskHandler(
 
         context.SetProperty(x => x.RetryCount, attempt);
 
-        await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
+        await internalJobsManager.UpdateTickerAsync(context, cancellationToken).ConfigureAwait(false);
 
         context.ResetUpdateProps();
 
@@ -551,7 +563,9 @@ internal class JobsExecutionTaskHandler(
                     : context.RetryIntervals[^1]
                 : 30;
 
-        await timeProvider.Delay(TimeSpan.FromSeconds(retryInterval), cancellationTokenSource.Token);
+        await timeProvider
+            .Delay(TimeSpan.FromSeconds(retryInterval), cancellationTokenSource.Token)
+            .ConfigureAwait(false);
 
         return false;
     }

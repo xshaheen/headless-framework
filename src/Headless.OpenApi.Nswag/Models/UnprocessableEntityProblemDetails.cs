@@ -9,5 +9,9 @@ namespace Headless.Api.Models;
 /// </summary>
 public sealed class UnprocessableEntityProblemDetails : HeadlessProblemDetails
 {
+    /// <summary>
+    /// A dictionary of field-level validation failures keyed by the property name (typically camelCase).
+    /// Each value is the ordered list of <c>ErrorDescriptor</c> entries produced for that field.
+    /// </summary>
     public required Dictionary<string, List<ErrorDescriptor>> Errors { get; init; }
 }

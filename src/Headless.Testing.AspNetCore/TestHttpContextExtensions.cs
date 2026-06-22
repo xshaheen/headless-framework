@@ -11,6 +11,7 @@ namespace Headless.Testing.AspNetCore;
 /// <summary>
 /// Extensions for setting up a test <see cref="HttpContext"/> on <see cref="IHttpContextAccessor"/>.
 /// </summary>
+[PublicAPI]
 public static class TestHttpContextExtensions
 {
     /// <summary>
@@ -58,9 +59,20 @@ public static class TestHttpContextExtensions
     }
 
     /// <summary>
-    /// Overload for <see cref="SetHttpContext(IServiceProvider, ClaimsPrincipal?, IPAddress?, string?)"/>
-    /// that accepts the remote IP as a string.
+    /// Overload of <see cref="SetHttpContext(IServiceProvider, ClaimsPrincipal?, IPAddress?, string?)"/>
+    /// that accepts the remote IP as a string and parses it via <see cref="System.Net.IPAddress.Parse(string)"/>.
     /// </summary>
+    /// <param name="serviceProvider">The scoped service provider to attach to the context.</param>
+    /// <param name="principal">The claims principal for the simulated request. Defaults to an empty principal.</param>
+    /// <param name="remoteIp">A non-empty string parseable as an IP address.</param>
+    /// <param name="userAgent">Optional value written to <c>Request.Headers.UserAgent</c>.</param>
+    /// <returns>The created <see cref="HttpContext"/> for further customization.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="remoteIp"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="remoteIp"/> is empty.
+    /// </exception>
     public static HttpContext SetHttpContext(
         this IServiceProvider serviceProvider,
         ClaimsPrincipal? principal,

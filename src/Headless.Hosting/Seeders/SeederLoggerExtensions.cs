@@ -7,7 +7,7 @@ namespace Headless.Hosting.Seeders;
 internal static partial class SeederLoggerExtensions
 {
     [LoggerMessage(EventId = 4, EventName = "Seeding", Level = LogLevel.Information, Message = ">>> Seeding")]
-    public static partial void LogSeeding(this ILogger logger);
+    internal static partial void LogSeeding(this ILogger logger);
 
     [LoggerMessage(
         EventId = 5,
@@ -15,7 +15,7 @@ internal static partial class SeederLoggerExtensions
         Level = LogLevel.Information,
         Message = ">>> Seeding using {TypeName}"
     )]
-    public static partial void LogSeedingUsing(this ILogger logger, string typeName);
+    internal static partial void LogSeedingUsing(this ILogger logger, string typeName);
 
     [LoggerMessage(
         EventId = 6,
@@ -23,5 +23,5 @@ internal static partial class SeederLoggerExtensions
         Level = LogLevel.Information,
         Message = ">>> Seeding completed"
     )]
-    public static partial void LogSeedingCompleted(this ILogger logger);
+    internal static partial void LogSeedingCompleted(this ILogger logger);
 }

@@ -39,14 +39,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     // Feature-namespaced (jobs:) so the cron entry never collides with another feature's key when the host shares
     // one default ICache across features — matches the permissions:/features:/settings: convention.
-    private const string CronExpressionsCacheKey = "jobs:cron:expressions";
+    private const string _CronExpressionsCacheKey = "jobs:cron:expressions";
 
     // EF Core provider names for the DB-clock dispatch in GetDatabaseUtcNowAsync. Named so a silent TimeProvider
     // fallback (a provider rename, or a new backend without a switch arm) is grep-locatable rather than a magic string.
     private const string _NpgsqlProviderName = "Npgsql.EntityFrameworkCore.PostgreSQL";
     private const string _SqlServerProviderName = "Microsoft.EntityFrameworkCore.SqlServer";
 
-    private static readonly CacheEntryOptions CronExpressionsCacheOptions = TimeSpan.FromMinutes(10);
+    private static readonly CacheEntryOptions _CronExpressionsCacheOptions = TimeSpan.FromMinutes(10);
 
     protected ICache? Cache { get; } = cache;
 
@@ -115,7 +115,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             .SetProperty(x => x.UpdatedAt, now)
                             .SetProperty(x => x.Status, JobStatus.Queued),
                     cancellationToken
-                );
+                )
+                .ConfigureAwait(false);
 
             if (updatedTicker <= 0)
             {
@@ -708,7 +709,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         {
             var result = await Cache
                 .GetOrAddAsync<CronJobEntity[]>(
-                    CronExpressionsCacheKey,
+                    _CronExpressionsCacheKey,
                     async ct =>
                     {
                         try
@@ -724,7 +725,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                             throw;
                         }
                     },
-                    CronExpressionsCacheOptions,
+                    _CronExpressionsCacheOptions,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -775,7 +776,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // Best-effort housekeeping AFTER the cron write has committed: decoupled from the caller token so a
             // cancellation racing the commit-to-invalidate window cannot leave the cache stale for the full TTL.
             // Mirrors FactoryCacheCoordinator's restamp, which uses CancellationToken.None for the same reason.
-            await Cache.RemoveAsync(CronExpressionsCacheKey, CancellationToken.None).ConfigureAwait(false);
+            await Cache.RemoveAsync(_CronExpressionsCacheKey, CancellationToken.None).ConfigureAwait(false);
         }
 #pragma warning disable ERP022, RCS1075
         catch (Exception exception)
@@ -783,7 +784,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // Cache invalidation is best-effort; cron writes have already committed to the durable store. Log at
             // Warning so a recurring cache outage on the durable scheduler path (which would otherwise serve stale
             // cron expressions cluster-wide until the TTL elapses) is observable rather than silent.
-            Logger.LogCronExpressionsCacheInvalidationFailed(exception, CronExpressionsCacheKey);
+            Logger.LogCronExpressionsCacheInvalidationFailed(exception, _CronExpressionsCacheKey);
         }
 #pragma warning restore ERP022, RCS1075
     }

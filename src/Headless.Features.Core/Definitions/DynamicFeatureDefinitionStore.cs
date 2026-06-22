@@ -13,19 +13,36 @@ using Nito.AsyncEx;
 
 namespace Headless.Features.Definitions;
 
-/// <summary>Store for feature definitions that defined dynamically from an external source like a database.</summary>
+/// <summary>Store for feature definitions that are defined dynamically from an external source such as a database.</summary>
 public interface IDynamicFeatureDefinitionStore
 {
+    /// <summary>Returns the feature definition with the given <paramref name="name"/>, or <see langword="null"/> if not found.</summary>
+    /// <param name="name">The unique feature name to look up.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The matching <see cref="FeatureDefinition"/>, or <see langword="null"/> when absent.</returns>
     Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns all feature definitions held in this dynamic store.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A read-only list of all <see cref="FeatureDefinition"/> instances.</returns>
     Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Returns all feature group definitions held in this dynamic store.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A read-only list of all <see cref="FeatureGroupDefinition"/> instances.</returns>
     Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Save the application static features to the dynamic store.</summary>
+    /// <summary>Saves the application's static feature definitions into the dynamic store, creating, updating, or removing records as needed.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the distributed lock required for the save operation cannot be acquired.</exception>
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// <see cref="IDynamicFeatureDefinitionStore"/> implementation that reads feature definitions from a database-backed
+/// repository and caches them in-process. Changes are coordinated across application instances via a distributed
+/// cache stamp and a distributed lock.
+/// </summary>
 public sealed class DynamicFeatureDefinitionStore(
     IFeatureDefinitionRecordRepository repository,
     IStaticFeatureDefinitionStore staticStore,
@@ -53,6 +70,7 @@ public sealed class DynamicFeatureDefinitionStore(
 
     #region Get Methods
 
+    /// <inheritdoc/>
     public async Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
         if (!_options.IsDynamicFeatureStoreEnabled)
@@ -68,15 +86,16 @@ public sealed class DynamicFeatureDefinitionStore(
         }
 
         // Slow path: acquire lock and refresh if needed
-        using (await _syncSemaphore.LockAsync(cancellationToken))
+        using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
 
             var cache = _featureMemoryCache; // Capture local reference
             return cache.GetValueOrDefault(name);
         }
     }
 
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default)
     {
         if (!_options.IsDynamicFeatureStoreEnabled)
@@ -92,15 +111,16 @@ public sealed class DynamicFeatureDefinitionStore(
         }
 
         // Slow path: acquire lock and refresh if needed
-        using (await _syncSemaphore.LockAsync(cancellationToken))
+        using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
 
             var cache = _featureMemoryCache; // Capture local reference
             return cache.Values.ToImmutableList();
         }
     }
 
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(
         CancellationToken cancellationToken = default
     )
@@ -118,9 +138,9 @@ public sealed class DynamicFeatureDefinitionStore(
         }
 
         // Slow path: acquire lock and refresh if needed
-        using (await _syncSemaphore.LockAsync(cancellationToken))
+        using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
 
             var cache = _groupMemoryCache; // Capture local reference
             return cache.Values.ToImmutableList();
@@ -150,7 +170,7 @@ public sealed class DynamicFeatureDefinitionStore(
             return; // Get the latest feature with a small delay for optimization
         }
 
-        var cacheStamp = await _GetOrSetDistributedCacheStampAsync(cancellationToken);
+        var cacheStamp = await _GetOrSetDistributedCacheStampAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.Equals(cacheStamp, _cacheStamp, StringComparison.Ordinal))
         {
@@ -159,7 +179,7 @@ public sealed class DynamicFeatureDefinitionStore(
             return;
         }
 
-        await _UpdateInMemoryStoreCacheAsync(cancellationToken);
+        await _UpdateInMemoryStoreCacheAsync(cancellationToken).ConfigureAwait(false);
         _cacheStamp = cacheStamp;
         _lastCheckTime = timeProvider.GetUtcNow();
     }
@@ -167,7 +187,7 @@ public sealed class DynamicFeatureDefinitionStore(
     private async Task<string> _GetOrSetDistributedCacheStampAsync(CancellationToken cancellationToken)
     {
         var cacheKey = _options.CommonFeaturesUpdatedStampCacheKey;
-        var cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken);
+        var cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken).ConfigureAwait(false);
 
         if (!cachedStamp.IsNull)
         {
@@ -175,35 +195,37 @@ public sealed class DynamicFeatureDefinitionStore(
         }
 
         await using var distributedLock =
-            await distributedLockProvider.TryAcquireAsync(
-                resource: _options.CrossApplicationsCommonLockKey,
-                new DistributedLockAcquireOptions
-                {
-                    TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
-                    AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
-                },
-                cancellationToken
-            )
+            await distributedLockProvider
+                .TryAcquireAsync(
+                    resource: _options.CrossApplicationsCommonLockKey,
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                        AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for feature definition common stamp check!"
             ); // This request will fail
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken);
+        cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken).ConfigureAwait(false);
 
         if (!cachedStamp.IsNull)
         {
             return cachedStamp.Value;
         }
 
-        return await _ChangeCommonStampAsync(cancellationToken);
+        return await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _UpdateInMemoryStoreCacheAsync(CancellationToken cancellationToken)
     {
-        var featureGroupRecords = await repository.GetGroupsListAsync(cancellationToken);
-        var featureRecords = await repository.GetFeaturesListAsync(cancellationToken);
+        var featureGroupRecords = await repository.GetGroupsListAsync(cancellationToken).ConfigureAwait(false);
+        var featureRecords = await repository.GetFeaturesListAsync(cancellationToken).ConfigureAwait(false);
 
         // Build new caches instead of mutating existing ones
         var newGroupCache = ImmutableDictionary.CreateBuilder<string, FeatureGroupDefinition>(StringComparer.Ordinal);
@@ -293,6 +315,7 @@ public sealed class DynamicFeatureDefinitionStore(
         return elapsedSinceLastCheck > _options.DynamicDefinitionsMemoryCacheExpiration;
     }
 
+    /// <summary>Releases the internal semaphore used to synchronize in-process cache refreshes.</summary>
     public void Dispose()
     {
         _syncSemaphore.Dispose();
@@ -302,17 +325,20 @@ public sealed class DynamicFeatureDefinitionStore(
 
     #region Save Method
 
+    /// <inheritdoc/>
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        await using var appDistributedLock = await distributedLockProvider.TryAcquireAsync(
-            _appSaveLockKey,
-            new DistributedLockAcquireOptions
-            {
-                TimeUntilExpires = _options.ApplicationSaveLockExpiration,
-                AcquireTimeout = _options.ApplicationSaveLockAcquireTimeout,
-            },
-            cancellationToken
-        );
+        await using var appDistributedLock = await distributedLockProvider
+            .TryAcquireAsync(
+                _appSaveLockKey,
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = _options.ApplicationSaveLockExpiration,
+                    AcquireTimeout = _options.ApplicationSaveLockAcquireTimeout,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         if (appDistributedLock is null)
         {
@@ -326,8 +352,10 @@ public sealed class DynamicFeatureDefinitionStore(
         // But the code would be more complex.
         // This is enough for now.
 
-        var cachedHash = await distributedCache.GetAsync<string>(_appSaveFeaturesHashCacheKey, cancellationToken);
-        var groups = await staticStore.GetGroupsAsync(cancellationToken);
+        var cachedHash = await distributedCache
+            .GetAsync<string>(_appSaveFeaturesHashCacheKey, cancellationToken)
+            .ConfigureAwait(false);
+        var groups = await staticStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
         var (featureGroupRecords, featureRecords) = serializer.Serialize(groups);
 
         var currentHash = _CalculateHash(
@@ -343,50 +371,59 @@ public sealed class DynamicFeatureDefinitionStore(
         }
 
         await using var commonDistributedLock =
-            await distributedLockProvider.TryAcquireAsync(
-                resource: _options.CrossApplicationsCommonLockKey,
-                new DistributedLockAcquireOptions
-                {
-                    TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
-                    AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
-                },
-                cancellationToken
-            ) ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static features!"); // It will re-try
+            await distributedLockProvider
+                .TryAcquireAsync(
+                    resource: _options.CrossApplicationsCommonLockKey,
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                        AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static features!"); // It will re-try
 
         var (newGroups, updatedGroups, deletedGroups) = await _UpdateChangedFeatureGroupsAsync(
-            featureGroupRecords,
-            cancellationToken
-        );
+                featureGroupRecords,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         var (newFeatures, updatedFeatures, deletedFeatures) = await _UpdateChangedFeaturesAsync(
-            featureRecords,
-            cancellationToken
-        );
+                featureRecords,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         var hasChangesInGroups = newGroups.Count != 0 || updatedGroups.Count != 0 || deletedGroups.Count != 0;
         var hasChangesInFeatures = newFeatures.Count != 0 || updatedFeatures.Count != 0 || deletedFeatures.Count != 0;
 
         if (hasChangesInGroups || hasChangesInFeatures)
         {
-            await repository.SaveAsync(
-                newGroups,
-                updatedGroups,
-                deletedGroups,
-                newFeatures,
-                updatedFeatures,
-                deletedFeatures,
-                cancellationToken
-            );
+            await repository
+                .SaveAsync(
+                    newGroups,
+                    updatedGroups,
+                    deletedGroups,
+                    newFeatures,
+                    updatedFeatures,
+                    deletedFeatures,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-            await _ChangeCommonStampAsync(cancellationToken);
+            await _ChangeCommonStampAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await distributedCache.UpsertAsync(
-            _appSaveFeaturesHashCacheKey,
-            currentHash,
-            _options.FeaturesHashCacheExpiration,
-            cancellationToken
-        );
+        await distributedCache
+            .UpsertAsync(
+                _appSaveFeaturesHashCacheKey,
+                currentHash,
+                _options.FeaturesHashCacheExpiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -402,7 +439,7 @@ public sealed class DynamicFeatureDefinitionStore(
         CancellationToken cancellationToken
     )
     {
-        var dbRecords = await repository.GetGroupsListAsync(cancellationToken);
+        var dbRecords = await repository.GetGroupsListAsync(cancellationToken).ConfigureAwait(false);
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<FeatureGroupDefinitionRecord>();
@@ -447,7 +484,7 @@ public sealed class DynamicFeatureDefinitionStore(
         CancellationToken cancellationToken
     )
     {
-        var dbRecords = await repository.GetFeaturesListAsync(cancellationToken);
+        var dbRecords = await repository.GetFeaturesListAsync(cancellationToken).ConfigureAwait(false);
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<FeatureDefinitionRecord>();
@@ -540,12 +577,14 @@ public sealed class DynamicFeatureDefinitionStore(
     {
         var stamp = guidGenerator.Create().ToString("N");
 
-        await distributedCache.UpsertAsync(
-            _options.CommonFeaturesUpdatedStampCacheKey,
-            stamp,
-            _options.CommonFeaturesUpdatedStampCacheExpiration,
-            cancellationToken
-        );
+        await distributedCache
+            .UpsertAsync(
+                _options.CommonFeaturesUpdatedStampCacheKey,
+                stamp,
+                _options.CommonFeaturesUpdatedStampCacheExpiration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         return stamp;
     }

@@ -121,10 +121,12 @@ options.UseDashboard(dashboard =>
 
 - `Headless.Messaging.Core`
 - `Headless.Dashboard.Authentication` (shared auth with Jobs Dashboard)
-- Embedded web UI assets
+- `Consul` (node discovery)
+- `Microsoft.AspNetCore.App` (framework reference)
 
 ## Side Effects
 
-- Exposes web endpoint at configured path (default: `/messaging`)
+- Mounts the embedded web UI and monitoring API through an `IStartupFilter` — no explicit middleware call is required
+- Exposes a web endpoint at the configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
-- No authentication by default — configure auth for production use
+- No authentication by default — configure an auth mode for production use

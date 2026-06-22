@@ -8,12 +8,43 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Headless.Emails.Mailkit;
 
+/// <summary>
+/// <see cref="IEmailSender"/> implementation backed by MailKit over SMTP.
+/// </summary>
+/// <remarks>
+/// SMTP clients are pooled via <see cref="ObjectPool{T}"/>. A client is reconnected
+/// automatically if it is found disconnected when retrieved from the pool; disconnected
+/// or faulted clients are discarded rather than returned. The pool size is governed by
+/// <see cref="MailkitSmtpOptions.MaxPoolSize"/>.
+/// <para>
+/// Transient SMTP errors (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>,
+/// <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>) are logged and surfaced as a
+/// failed <see cref="SendSingleEmailResponse"/> rather than thrown.
+/// Authentication failures are logged at critical level and rethrown.
+/// </para>
+/// </remarks>
 public sealed class MailkitEmailSender(
     ObjectPool<SmtpClient> pool,
     IOptionsMonitor<MailkitSmtpOptions> options,
     ILogger<MailkitEmailSender> logger
 ) : IEmailSender
 {
+    /// <summary>
+    /// Sends a single email via SMTP using a pooled MailKit client.
+    /// </summary>
+    /// <param name="request">The email message to send.</param>
+    /// <param name="cancellationToken">Token used to cancel the send operation.</param>
+    /// <returns>
+    /// A successful response when the SMTP server accepts the message; a failed response
+    /// when an SMTP command or protocol error occurs.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when both <see cref="SendSingleEmailRequest.MessageText"/> and
+    /// <see cref="SendSingleEmailRequest.MessageHtml"/> are <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="System.Security.Authentication.AuthenticationException">
+    /// Thrown when the SMTP server rejects the configured credentials.
+    /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
         CancellationToken cancellationToken = default

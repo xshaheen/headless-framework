@@ -8,7 +8,7 @@ namespace Headless.Messaging.RabbitMq;
 internal static partial class RabbitMqValidation
 {
     // RabbitMQ naming rules: alphanumeric, dash, underscore, period
-    [GeneratedRegex(@"^[a-zA-Z0-9._-]+$", RegexOptions.Compiled, 100)]
+    [GeneratedRegex("^[a-zA-Z0-9._-]+$", RegexOptions.Compiled, 100)]
     private static partial Regex _NamePattern();
 
     // RabbitMQ Max length 255 chars

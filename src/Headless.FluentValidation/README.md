@@ -26,7 +26,7 @@ dotnet add package Headless.FluentValidation
 ## Quick Start
 
 ```csharp
-using Headless.FluentValidation;
+using FluentValidation;
 
 public sealed class UserValidator : AbstractValidator<User>
 {
@@ -69,9 +69,11 @@ var errors = result.Errors.ToErrorDescriptors(); // Dictionary<string, List<Erro
 | Phone | `BasicPhoneNumber`, `PhoneNumber`, `InternationalPhoneNumber`, `PhoneCountryCode` |
 | National ID | `EgyptianNationalId` |
 | Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
-| Geo | `Latitude`, `Longitude` |
+| Geo | `Latitude`, `Longitude` (`double`, `double?`, and `string` overloads) |
 | Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
-| URL | `Url`, `HttpUrl` |
+| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
+| Storage Identifier | `IsValidPostgreSqlIdentifier`, `IsValidSqlServerIdentifier`, `IsValidCrossProviderIdentifier` |
+| String | `OnlyIntegers` |
 | ID | `Id` (validates non-empty Guid, positive int/long) |
 
 ## Configuration

@@ -17,6 +17,14 @@ internal interface IDbDistributedLock
     /// already holds the outer lock.
     /// </summary>
     /// <typeparam name="TLockCookie">The strategy's opaque acquire/release state.</typeparam>
+    /// <param name="timeout">Maximum time to wait for the strategy's native lock acquisition.</param>
+    /// <param name="strategy">The SQL synchronization strategy that emits acquire/release SQL.</param>
+    /// <param name="contextHandle">
+    /// When non-<see langword="null"/>, a nested acquire: the implementation reuses the connection from this
+    /// existing handle. <see langword="null"/> opens or borrows a connection from the pool.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>A live <see cref="IDistributedLease"/> on success, or <see langword="null"/> on failure.</returns>
     ValueTask<IDistributedLease?> TryAcquireAsync<TLockCookie>(
         TimeSpan timeout,
         IDbSynchronizationStrategy<TLockCookie> strategy,

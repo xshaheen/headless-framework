@@ -1,16 +1,18 @@
 # Headless.Sms.Abstractions
 
-Defines the unified interface for SMS sending.
+Defines the unified interface and message contract for SMS sending.
 
 ## Problem Solved
 
-Provides a provider-agnostic SMS sending API, enabling consistent SMS functionality across different providers (Twilio, AWS SNS, etc.) without changing application code.
+Provides a provider-agnostic SMS sending API so application code stays decoupled from the underlying gateway (Twilio, AWS SNS, Cequens, etc.). Provider selection is a DI registration concern only.
 
 ## Key Features
 
-- `ISmsSender` - Core interface for sending SMS
-- `SendSingleSmsRequest` - SMS request model
-- `SendSingleSmsResponse` - SMS response with status
+- `ISmsSender` — single method `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
+- `SendSingleSmsRequest` — message contract with `Destinations` (list of `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
+- `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
+- `SendSingleSmsResponse` — closed result type; `Success` (bool) and `FailureError` (string? non-null on failure).
+- Never throws for provider errors — only `OperationCanceledException` propagates.
 
 ## Installation
 
@@ -18,7 +20,7 @@ Provides a provider-agnostic SMS sending API, enabling consistent SMS functional
 dotnet add package Headless.Sms.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class OtpService(ISmsSender smsSender)
@@ -27,15 +29,15 @@ public sealed class OtpService(ISmsSender smsSender)
     {
         var request = new SendSingleSmsRequest
         {
-            To = phoneNumber,
-            Message = $"Your verification code is: {code}"
+            Destinations = [new SmsRequestDestination(20, phoneNumber)], // 20 = Egypt calling code
+            Text = $"Your verification code is: {code}"
         };
 
         var response = await smsSender.SendAsync(request, ct);
 
-        if (!response.IsSuccess)
+        if (!response.Success)
         {
-            throw new InvalidOperationException($"SMS failed: {response.ErrorMessage}");
+            throw new InvalidOperationException($"SMS failed: {response.FailureError}");
         }
     }
 }

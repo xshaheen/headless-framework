@@ -7,21 +7,30 @@ using Microsoft.Extensions.Logging;
 #pragma warning disable IDE0060
 namespace Headless.Api.Diagnostics;
 
+/// <summary>
+/// Diagnostic adapter that subscribes to middleware analysis events and writes structured log
+/// entries for each middleware start, finish, and exception. Register with
+/// <c>DiagnosticListener.SubscribeWithAdapter</c> after calling
+/// <see cref="AddMiddlewareAnalyzerFilterExtensions.AddMiddlewareAnalyzerFilter"/>.
+/// </summary>
 [PublicAPI]
 public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
 {
+    /// <summary>Handles the <see cref="DiagnosticSources.AnalysisOnMiddlewareStarting"/> event.</summary>
     [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareStarting)]
     public void OnMiddlewareStarting(HttpContext httpContext, string name, Guid instance, long timestamp)
     {
         Extensions.MiddlewareStarting(logger, timestamp, name, httpContext.Request.Path);
     }
 
+    /// <summary>Handles the <see cref="DiagnosticSources.AnalysisOnMiddlewareFinished"/> event.</summary>
     [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareFinished)]
     public void OnMiddlewareFinished(HttpContext httpContext, string name, Guid instance, long timestamp, long duration)
     {
         Extensions.MiddlewareFinished(logger, timestamp, name, duration, httpContext.Response.StatusCode);
     }
 
+    /// <summary>Handles the <see cref="DiagnosticSources.AnalysisOnMiddlewareException"/> event.</summary>
     [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareException)]
     public void OnMiddlewareException(
         Exception exception,

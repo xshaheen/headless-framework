@@ -4,7 +4,12 @@ using Headless.PushNotifications.Abstractions;
 
 namespace Headless.PushNotifications.Dev;
 
-public sealed class NoopPushNotificationService : IPushNotificationService
+/// <summary>
+/// No-op <see cref="IPushNotificationService"/> for local development and testing. It sends nothing and
+/// always reports success, returning a freshly generated GUID as the message id for every token. It never
+/// validates input or throws (so it stays inert for any caller); do not use in production.
+/// </summary>
+internal sealed class NoopPushNotificationService : IPushNotificationService
 {
     public ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
@@ -14,7 +19,7 @@ public sealed class NoopPushNotificationService : IPushNotificationService
         CancellationToken cancellationToken = default
     )
     {
-        var response = PushNotificationResponse.Succeeded(clientToken, Guid.NewGuid().ToString());
+        var response = PushNotificationResponse.SucceededUnchecked(clientToken, Guid.NewGuid().ToString());
 
         return ValueTask.FromResult(response);
     }
@@ -27,9 +32,11 @@ public sealed class NoopPushNotificationService : IPushNotificationService
         CancellationToken cancellationToken = default
     )
     {
-        var responses = clientTokens
-            .Select(clientToken => PushNotificationResponse.Succeeded(clientToken, Guid.NewGuid().ToString()))
-            .ToList();
+        var responses = new List<PushNotificationResponse>(clientTokens.Count);
+        foreach (var clientToken in clientTokens)
+        {
+            responses.Add(PushNotificationResponse.SucceededUnchecked(clientToken, Guid.NewGuid().ToString()));
+        }
 
         return ValueTask.FromResult(
             new BatchPushNotificationResponse

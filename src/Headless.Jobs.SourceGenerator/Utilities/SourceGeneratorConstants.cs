@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Text.RegularExpressions;
 
 namespace Headless.Jobs.SourceGenerator.Utilities;

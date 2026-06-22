@@ -1,17 +1,22 @@
 # Headless.Sms.Vodafone
 
-Vodafone SMS gateway implementation.
+Vodafone Egypt enterprise SMS gateway implementation of `ISmsSender`.
 
 ## Problem Solved
 
-Provides SMS sending via Vodafone's enterprise messaging API with OAuth2 authentication.
+Provides SMS sending via the Vodafone Egypt enterprise messaging API, which uses a shared-secret (`SecureHash`) authentication model alongside account credentials.
 
 ## Key Features
 
-- `VodafoneSmsSender` - ISmsSender implementation using Vodafone
-- OAuth2 client credentials authentication
-- Configurable sender name and base URL
-- Regional endpoint support
+- `VodafoneSmsSender` — `ISmsSender` implementation backed by the Vodafone Egypt REST API.
+- Account credentials: `AccountId` + `Password` + `SecureHash`.
+- Configurable `Sender` name and `SendSmsEndpoint`.
+- Standard resilience pipeline with auto-retry **disabled** by default to prevent duplicate SMS.
+- Optional `configureClient` and `configureResilience` hooks for fine-grained `HttpClient` control.
+
+## Design Notes
+
+Vodafone Egypt's API requires a `SecureHash` in addition to account credentials — this is not an OAuth2 or JWT flow. The hash is issued by Vodafone at account provisioning and must be stored as a secret. Do not confuse this provider with a generic Vodafone API; the endpoint defaults to `https://e3len.vodafone.com.eg/web2sms/sms/submit/`.
 
 ## Installation
 
@@ -24,13 +29,18 @@ dotnet add package Headless.Sms.Vodafone
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddVodafoneSmsSender(options =>
+builder.Services.AddHeadlessSms(setup => setup.UseVodafone(
+    builder.Configuration.GetSection("Sms:Vodafone")
+));
+
+// Or in code:
+builder.Services.AddHeadlessSms(setup => setup.UseVodafone(options =>
 {
-    options.ClientId = "your-client-id";
-    options.ClientSecret = "your-client-secret";
-    options.SenderName = "MyApp";
-    options.BaseUrl = "https://api.vodafone.com";
-});
+    options.AccountId = "your-account-id";
+    options.Password = "your-password";
+    options.SecureHash = "your-secure-hash";
+    options.Sender = "MyApp";
+}));
 ```
 
 ## Configuration
@@ -41,19 +51,32 @@ builder.Services.AddVodafoneSmsSender(options =>
 {
   "Sms": {
     "Vodafone": {
-      "ClientId": "your-client-id",
-      "ClientSecret": "your-client-secret",
-      "SenderName": "MyApp",
-      "BaseUrl": "https://api.vodafone.com"
+      "AccountId": "your-account-id",
+      "Password": "your-password",
+      "SecureHash": "your-secure-hash",
+      "Sender": "MyApp",
+      "SendSmsEndpoint": "https://e3len.vodafone.com.eg/web2sms/sms/submit/"
     }
   }
 }
 ```
 
+### Options
+
+| Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `AccountId` | `string` | Yes | — | Vodafone Egypt account identifier. |
+| `Password` | `string` | Yes | — | Vodafone Egypt account password. |
+| `SecureHash` | `string` | Yes | — | Shared secret issued at provisioning. |
+| `Sender` | `string` | Yes | — | Sender name shown to recipients. |
+| `SendSmsEndpoint` | `string` | No | `https://e3len.vodafone.com.eg/web2sms/sms/submit/` | Override for non-default environments. |
+
 ## Dependencies
 
 - `Headless.Sms.Abstractions`
+- `Microsoft.Extensions.Http.Resilience`
 
 ## Side Effects
 
-- Registers `ISmsSender` as singleton
+- Registers `ISmsSender` as singleton (`VodafoneSmsSender`).
+- Registers a named `HttpClient` (`Headless:VodafoneSms`) with a standard resilience handler (retry disabled).

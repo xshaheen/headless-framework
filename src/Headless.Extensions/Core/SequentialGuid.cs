@@ -16,6 +16,7 @@ public static class SequentialGuid
     /// block SQL Server treats as most significant when sorting <c>uniqueidentifier</c>. Byte-for-byte the same
     /// strategy as EF Core's <c>SequentialGuidValueGenerator</c>. Use for SQL Server clustered/primary keys.
     /// </summary>
+    /// <returns>A new <see cref="Guid"/> whose trailing bytes increase monotonically across calls, keeping values sequential in SQL Server's sort order.</returns>
     public static Guid NextSequentialAtEnd()
     {
         var guidBytes = Guid.NewGuid().ToByteArray();

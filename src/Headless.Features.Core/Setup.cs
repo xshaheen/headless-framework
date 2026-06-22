@@ -20,11 +20,19 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features;
 
+/// <summary>DI entry point for the Headless Features Core module.</summary>
 [PublicAPI]
 public static class SetupCore
 {
     extension(IServiceCollection services)
     {
+        /// <summary>
+        /// Registers the Headless Features infrastructure (definitions, values, providers, cache invalidation, and hosted
+        /// initializer) and applies the storage provider selected via <paramref name="configure"/>.
+        /// </summary>
+        /// <param name="configure">A delegate that configures the setup builder, including the storage provider.</param>
+        /// <returns>A <see cref="HeadlessFeaturesBuilder"/> for further post-registration configuration.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessFeaturesBuilder AddHeadlessFeatures(Action<HeadlessFeaturesSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -35,6 +43,14 @@ public static class SetupCore
             return _AddFeaturesStorageCore(services, setup);
         }
 
+        /// <summary>Registers a custom <see cref="IFeatureDefinitionProvider"/> that contributes in-code feature definitions.</summary>
+        /// <typeparam name="T">The provider type to register.</typeparam>
+        /// <returns>The <see cref="IServiceCollection"/> to allow chaining.</returns>
+        /// <remarks>
+        /// Providers are invoked in registration order during the static-store build.
+        /// If two providers declare a feature with the same name, the static store throws
+        /// <see cref="InvalidOperationException"/> at startup.
+        /// </remarks>
         public IServiceCollection AddFeatureDefinitionProvider<T>()
             where T : class, IFeatureDefinitionProvider
         {
@@ -48,6 +64,15 @@ public static class SetupCore
             return services;
         }
 
+        /// <summary>Registers a custom <see cref="IFeatureValueReadProvider"/> into the provider chain (idempotent by provider type).</summary>
+        /// <typeparam name="T">The provider type to register.</typeparam>
+        /// <returns>The <see cref="IServiceCollection"/> to allow chaining.</returns>
+        /// <remarks>
+        /// Providers are consulted in reverse registration order (last-registered = highest priority).
+        /// The built-in chain is <c>DefaultValue</c> → <c>Edition</c> → <c>Tenant</c>, so
+        /// <c>Tenant</c> wins when multiple providers supply a value for the same feature.
+        /// Calling this method more than once for the same <typeparamref name="T"/> is a no-op.
+        /// </remarks>
         public IServiceCollection AddFeatureValueProvider<T>()
             where T : class, IFeatureValueReadProvider
         {
@@ -98,6 +123,7 @@ public static class SetupCore
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
             "Headless.Features",
+            ["UseEntityFramework", "UsePostgreSql", "UseSqlServer"],
             static name => new FeaturesStorageProviderRegistration(name)
         );
 

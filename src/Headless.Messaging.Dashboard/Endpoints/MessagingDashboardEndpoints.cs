@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using System.Net;
-using Headless.Checks;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
@@ -178,7 +177,7 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _ValidateAuth(HttpContext context, IAuthService authService)
     {
-        var authResult = await authService.AuthenticateAsync(context);
+        var authResult = await authService.AuthenticateAsync(context).ConfigureAwait(false);
 
         if (authResult.IsAuthenticated)
         {
@@ -234,7 +233,7 @@ public static class MessagingDashboardEndpoints
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
-        var result = await monitoringApi.GetStatisticsAsync();
+        var result = await monitoringApi.GetStatisticsAsync().ConfigureAwait(false);
 
         // Set subscriber count
         var subscriberCache = sp.GetRequiredService<MethodMatcherCache>();
@@ -251,7 +250,7 @@ public static class MessagingDashboardEndpoints
             if (sp.GetService<ConsulDiscoveryOptions>() != null)
             {
                 var discoveryProvider = sp.GetRequiredService<INodeDiscoveryProvider>();
-                var nodes = await discoveryProvider.GetNodes();
+                var nodes = await discoveryProvider.GetNodes().ConfigureAwait(false);
                 result.Servers = nodes.Count;
             }
         }
@@ -271,10 +270,10 @@ public static class MessagingDashboardEndpoints
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
-        var ps = await monitoringApi.HourlySucceededJobs(MessageType.Publish);
-        var pf = await monitoringApi.HourlyFailedJobs(MessageType.Publish);
-        var ss = await monitoringApi.HourlySucceededJobs(MessageType.Subscribe);
-        var sf = await monitoringApi.HourlyFailedJobs(MessageType.Subscribe);
+        var ps = await monitoringApi.HourlySucceededJobs(MessageType.Publish).ConfigureAwait(false);
+        var pf = await monitoringApi.HourlyFailedJobs(MessageType.Publish).ConfigureAwait(false);
+        var ss = await monitoringApi.HourlySucceededJobs(MessageType.Subscribe).ConfigureAwait(false);
+        var sf = await monitoringApi.HourlyFailedJobs(MessageType.Subscribe).ConfigureAwait(false);
 
         var dayHour = ps.Keys.OrderBy(x => x).Select(x => new DateTimeOffset(x).ToUnixTimeSeconds());
 
@@ -297,7 +296,7 @@ public static class MessagingDashboardEndpoints
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
-        var message = await monitoringApi.GetPublishedMessageAsync(id);
+        var message = await monitoringApi.GetPublishedMessageAsync(id).ConfigureAwait(false);
         if (message == null)
         {
             return Results.NotFound();
@@ -323,7 +322,7 @@ public static class MessagingDashboardEndpoints
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
 
-        var message = await monitoringApi.GetReceivedMessageAsync(id);
+        var message = await monitoringApi.GetReceivedMessageAsync(id).ConfigureAwait(false);
         if (message == null)
         {
             return Results.NotFound();
@@ -348,7 +347,7 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _PublishedRequeue(HttpContext httpContext, IServiceProvider sp)
     {
-        var storageIds = await _ReadStorageIdsAsync(httpContext);
+        var storageIds = await _ReadStorageIdsAsync(httpContext).ConfigureAwait(false);
         if (storageIds == null || storageIds.Length == 0)
         {
             return Results.UnprocessableEntity();
@@ -365,7 +364,9 @@ public static class MessagingDashboardEndpoints
         var busTransport = sp.GetService<IBusTransport>();
         var queueTransport = sp.GetService<IQueueTransport>();
 
-        var messages = await monitoringApi.GetPublishedMessagesAsync(storageIds, httpContext.RequestAborted);
+        var messages = await monitoringApi
+            .GetPublishedMessagesAsync(storageIds, httpContext.RequestAborted)
+            .ConfigureAwait(false);
 
         var rejected = new List<Guid>();
         var requeued = new List<Guid>();
@@ -385,7 +386,7 @@ public static class MessagingDashboardEndpoints
                 continue;
             }
 
-            await dispatcher.EnqueueToPublish(message, httpContext.RequestAborted);
+            await dispatcher.EnqueueToPublish(message, httpContext.RequestAborted).ConfigureAwait(false);
             requeued.Add(message.StorageId);
         }
 
@@ -399,7 +400,7 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _PublishedDelete(HttpContext httpContext, IServiceProvider sp)
     {
-        var storageIds = await _ReadStorageIdsAsync(httpContext);
+        var storageIds = await _ReadStorageIdsAsync(httpContext).ConfigureAwait(false);
         if (storageIds == null || storageIds.Length == 0)
         {
             return Results.UnprocessableEntity();
@@ -411,13 +412,15 @@ public static class MessagingDashboardEndpoints
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
-        _ = await dataStorage.DeletePublishedMessagesAsync(storageIds, httpContext.RequestAborted);
+        _ = await dataStorage
+            .DeletePublishedMessagesAsync(storageIds, httpContext.RequestAborted)
+            .ConfigureAwait(false);
         return Results.NoContent();
     }
 
     private static async Task<IResult> _ReceivedRequeue(HttpContext httpContext, IServiceProvider sp)
     {
-        var storageIds = await _ReadStorageIdsAsync(httpContext);
+        var storageIds = await _ReadStorageIdsAsync(httpContext).ConfigureAwait(false);
         if (storageIds == null || storageIds.Length == 0)
         {
             return Results.UnprocessableEntity();
@@ -434,7 +437,9 @@ public static class MessagingDashboardEndpoints
         var busTransport = sp.GetService<IBusTransport>();
         var queueTransport = sp.GetService<IQueueTransport>();
 
-        var messages = await monitoringApi.GetReceivedMessagesAsync(storageIds, httpContext.RequestAborted);
+        var messages = await monitoringApi
+            .GetReceivedMessagesAsync(storageIds, httpContext.RequestAborted)
+            .ConfigureAwait(false);
 
         var rejected = new List<Guid>();
         var requeued = new List<Guid>();
@@ -454,7 +459,7 @@ public static class MessagingDashboardEndpoints
                 continue;
             }
 
-            await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted);
+            await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted).ConfigureAwait(false);
             requeued.Add(message.StorageId);
         }
 
@@ -468,7 +473,7 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _ReceivedDelete(HttpContext httpContext, IServiceProvider sp)
     {
-        var storageIds = await _ReadStorageIdsAsync(httpContext);
+        var storageIds = await _ReadStorageIdsAsync(httpContext).ConfigureAwait(false);
         if (storageIds == null || storageIds.Length == 0)
         {
             return Results.UnprocessableEntity();
@@ -480,7 +485,7 @@ public static class MessagingDashboardEndpoints
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
-        _ = await dataStorage.DeleteReceivedMessagesAsync(storageIds, httpContext.RequestAborted);
+        _ = await dataStorage.DeleteReceivedMessagesAsync(storageIds, httpContext.RequestAborted).ConfigureAwait(false);
         return Results.NoContent();
     }
 
@@ -510,7 +515,7 @@ public static class MessagingDashboardEndpoints
             PageSize = pageSize,
         };
 
-        var result = await monitoringApi.GetMessagesAsync(queryDto);
+        var result = await monitoringApi.GetMessagesAsync(queryDto).ConfigureAwait(false);
         return Results.Json(_MapMessagePage(result));
     }
 
@@ -542,7 +547,7 @@ public static class MessagingDashboardEndpoints
             PageSize = pageSize,
         };
 
-        var result = await monitoringApi.GetMessagesAsync(queryDto);
+        var result = await monitoringApi.GetMessagesAsync(queryDto).ConfigureAwait(false);
         return Results.Json(_MapMessagePage(result));
     }
 
@@ -631,7 +636,9 @@ public static class MessagingDashboardEndpoints
     {
         try
         {
-            var payload = await httpContext.Request.ReadFromJsonAsync<JsonElement>(httpContext.RequestAborted);
+            var payload = await httpContext
+                .Request.ReadFromJsonAsync<JsonElement>(httpContext.RequestAborted)
+                .ConfigureAwait(false);
             if (payload.ValueKind != JsonValueKind.Array)
             {
                 return null;
@@ -665,7 +672,7 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<Node>());
         }
 
-        var result = await discoveryProvider.GetNodes() ?? [];
+        var result = await discoveryProvider.GetNodes().ConfigureAwait(false) ?? [];
         return Results.Json(result);
     }
 
@@ -677,7 +684,7 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<string>());
         }
 
-        var nsList = await discoveryProvider.GetNamespaces(httpContext.RequestAborted);
+        var nsList = await discoveryProvider.GetNamespaces(httpContext.RequestAborted).ConfigureAwait(false);
         if (nsList == null)
         {
             return Results.NotFound();
@@ -694,7 +701,7 @@ public static class MessagingDashboardEndpoints
             return Results.Json(new List<Node>());
         }
 
-        var result = await discoveryProvider.ListServices(@namespace);
+        var result = await discoveryProvider.ListServices(@namespace).ConfigureAwait(false);
         return Results.Json(result);
     }
 
@@ -716,7 +723,7 @@ public static class MessagingDashboardEndpoints
             return Results.BadRequest("Node discovery is not configured.");
         }
 
-        var nodes = await discoveryProvider.GetNodes();
+        var nodes = await discoveryProvider.GetNodes().ConfigureAwait(false);
         var isRegistered = nodes.Any(n =>
             endpoint.StartsWith($"http://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
             || endpoint.StartsWith($"https://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
@@ -733,7 +740,7 @@ public static class MessagingDashboardEndpoints
         {
             sw.Restart();
             var healthEndpoint = endpoint + config.BasePath + "/api/health";
-            var response = await httpClient.GetStringAsync(healthEndpoint);
+            var response = await httpClient.GetStringAsync(healthEndpoint).ConfigureAwait(false);
             sw.Stop();
 
             if (response == "OK")

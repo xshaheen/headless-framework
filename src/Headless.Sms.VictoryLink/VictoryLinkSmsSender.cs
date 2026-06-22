@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Sms.VictoryLink;
 
-public sealed class VictoryLinkSmsSender(
+internal sealed class VictoryLinkSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<VictoryLinkSmsOptions> optionsAccessor,
     ILogger<VictoryLinkSmsSender> logger
@@ -33,6 +33,27 @@ public sealed class VictoryLinkSmsSender(
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        try
+        {
+            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            logger.LogSmsSendException(e, request.Destinations.Count);
+
+            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+        }
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
+        SendSingleSmsRequest request,
+        CancellationToken cancellationToken
+    )
+    {
         var victoryLinkRequest = new VictoryLinkRequest
         {
             SmsId = request.MessageId ?? Guid.NewGuid().ToString(),
@@ -42,8 +63,8 @@ public sealed class VictoryLinkSmsSender(
             SmsLang = request.Text.IsRtlText() ? "a" : "e",
             SmsSender = _options.Sender,
             SmsReceiver = request.IsBatch
-                ? string.Join(',', request.Destinations.Select(x => x.Number))
-                : request.Destinations[0].Number,
+                ? string.Join(',', request.Destinations.Select(x => x.ToString()))
+                : request.Destinations[0].ToString(),
         };
 
         using var httpClient = httpClientFactory.CreateClient(SetupVictoryLink.HttpClientName);
@@ -59,15 +80,18 @@ public sealed class VictoryLinkSmsSender(
             return SendSingleSmsResponse.Failed("Failed to send.");
         }
 
-        if (VictoryLinkResponseCodes.IsSuccess(rawContent))
+        // The API returns the numeric code as a bare/JSON-quoted string; normalize before matching.
+        var code = rawContent.Trim().Trim('"').Trim();
+
+        if (VictoryLinkResponseCodes.IsSuccess(code))
         {
             return SendSingleSmsResponse.Succeeded();
         }
 
-        var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(rawContent);
+        var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(code);
 
         logger.LogFailedToSendSms(request.Destinations.Count, responseMessage);
 
-        return SendSingleSmsResponse.Failed(responseMessage);
+        return SendSingleSmsResponse.Failed(responseMessage, VictoryLinkResponseCodes.GetFailureKind(code));
     }
 }

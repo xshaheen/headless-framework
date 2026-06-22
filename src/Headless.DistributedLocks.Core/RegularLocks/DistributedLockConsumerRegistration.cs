@@ -6,6 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// Helpers for registering the lock-release consumer that bridges the messaging bus and the
+/// in-process distributed-lock providers.
+/// </summary>
 internal static class DistributedLockConsumerRegistration
 {
     /// <summary>

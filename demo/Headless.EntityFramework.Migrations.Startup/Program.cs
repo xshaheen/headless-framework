@@ -33,7 +33,6 @@ builder.Host.UseDefaultServiceProvider(
 builder.AddHeadless(encryption =>
 {
     encryption.DefaultPassPhrase = "DemoPassPhrase123456";
-    encryption.InitVectorBytes = "DemoIV0123456789"u8.ToArray();
     encryption.DefaultSalt = "DemoSalt"u8.ToArray();
 });
 

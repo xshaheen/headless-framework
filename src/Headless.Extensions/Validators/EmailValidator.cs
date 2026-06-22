@@ -4,6 +4,7 @@ using Headless.Constants;
 
 namespace Headless.Validators;
 
+/// <summary>Validates e-mail addresses against the HTML5 living-standard e-mail regular expression.</summary>
 [PublicAPI]
 public static class EmailValidator
 {

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Security.Cryptography;
 using Headless;
 using Headless.Abstractions;
 
@@ -11,7 +12,6 @@ public sealed class StringEncryptionServiceTests
         new()
         {
             DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
             DefaultSalt = "TestSalt12345678"u8.ToArray(),
             KeySize = 256,
         };
@@ -73,6 +73,23 @@ public sealed class StringEncryptionServiceTests
     }
 
     [Fact]
+    public void should_produce_different_ciphertext_for_same_plaintext_due_to_random_nonce()
+    {
+        // given
+        var sut = new StringEncryptionService(_CreateValidOptions());
+        const string plainText = "RepeatedMessage";
+
+        // when
+        var first = sut.Encrypt(plainText);
+        var second = sut.Encrypt(plainText);
+
+        // then (a fresh nonce per call means identical plaintexts never share ciphertext)
+        first.Should().NotBe(second);
+        sut.Decrypt(first).Should().Be(plainText);
+        sut.Decrypt(second).Should().Be(plainText);
+    }
+
+    [Fact]
     public void should_use_custom_pass_phrase()
     {
         // given
@@ -83,11 +100,9 @@ public sealed class StringEncryptionServiceTests
 
         // when
         var encryptedWithCustom = sut.Encrypt(plainText, passPhrase: customPassPhrase);
-        var encryptedWithDefault = sut.Encrypt(plainText);
         var decryptedWithCustom = sut.Decrypt(encryptedWithCustom, passPhrase: customPassPhrase);
 
         // then
-        encryptedWithCustom.Should().NotBe(encryptedWithDefault);
         decryptedWithCustom.Should().Be(plainText);
     }
 
@@ -102,46 +117,41 @@ public sealed class StringEncryptionServiceTests
 
         // when
         var encryptedWithCustom = sut.Encrypt(plainText, salt: customSalt);
-        var encryptedWithDefault = sut.Encrypt(plainText);
         var decryptedWithCustom = sut.Decrypt(encryptedWithCustom, salt: customSalt);
 
         // then
-        encryptedWithCustom.Should().NotBe(encryptedWithDefault);
         decryptedWithCustom.Should().Be(plainText);
     }
 
     [Fact]
-    public void should_match_default_encryption_when_defaults_are_passed_explicitly()
+    public void should_throw_when_decrypting_with_wrong_pass_phrase()
     {
         // given
-        var options = _CreateValidOptions();
-        var sut = new StringEncryptionService(options);
-        const string plainText = "DeterministicDefaultMessage";
+        var sut = new StringEncryptionService(_CreateValidOptions());
+        var encrypted = sut.Encrypt("SecretMessage", passPhrase: "FirstPassPhrase12345");
 
         // when
-        var encryptedWithImplicitDefaults = sut.Encrypt(plainText);
-        var encryptedWithExplicitDefaults = sut.Encrypt(plainText, options.DefaultPassPhrase, options.DefaultSalt);
+        var act = () => sut.Decrypt(encrypted, passPhrase: "SecondPassPhrase1234");
 
-        // then
-        encryptedWithImplicitDefaults.Should().Be(encryptedWithExplicitDefaults);
+        // then (AES-GCM authentication rejects a key that did not produce the tag)
+        act.Should().Throw<CryptographicException>();
     }
 
     [Fact]
-    public void should_produce_different_output_for_different_passphrases()
+    public void should_throw_when_cipher_text_is_tampered()
     {
         // given
-        var options = _CreateValidOptions();
-        var sut = new StringEncryptionService(options);
-        const string plainText = "SameMessage";
-        const string passPhrase1 = "FirstPassPhrase12345";
-        const string passPhrase2 = "SecondPassPhrase1234";
+        var sut = new StringEncryptionService(_CreateValidOptions());
+        var encrypted = sut.Encrypt("SensitiveData")!;
+        var bytes = Convert.FromBase64String(encrypted);
+        bytes[^1] ^= 0xFF; // flip the last byte of the cipher text
+        var tampered = Convert.ToBase64String(bytes);
 
         // when
-        var encrypted1 = sut.Encrypt(plainText, passPhrase: passPhrase1);
-        var encrypted2 = sut.Encrypt(plainText, passPhrase: passPhrase2);
+        var act = () => sut.Decrypt(tampered);
 
         // then
-        encrypted1.Should().NotBe(encrypted2);
+        act.Should().Throw<CryptographicException>();
     }
 
     [Fact]

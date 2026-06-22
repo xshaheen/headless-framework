@@ -11,5 +11,8 @@ namespace Headless.Coordination;
 [PublicAPI]
 public interface INodeIdProvider
 {
+    /// <summary>Returns the stable <see cref="NodeId"/> for this process.</summary>
+    /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
+    /// <returns>A <see cref="NodeId"/> that is unique within the coordination cluster.</returns>
     ValueTask<NodeId> GetNodeIdAsync(CancellationToken cancellationToken = default);
 }

@@ -2,15 +2,24 @@
 
 namespace Headless.Payments.Paymob.Services.CashIn.Models;
 
+/// <summary>
+/// The webhook envelope for a Paymob cash-collection delivery status update.
+/// </summary>
 public sealed class CashInCashDeliveryStatus
 {
+    /// <summary>The event type discriminator sent by Paymob.</summary>
     [JsonPropertyName("type")]
     public string? Type { get; init; }
 
+    /// <summary>The delivery status payload, present when <c>Type</c> indicates a delivery event.</summary>
     [JsonPropertyName("obj")]
     public CashInCashDeliveryStatusObj? Obj { get; init; }
 }
 
+/// <summary>
+/// The delivery event payload inside a <c>CashInCashDeliveryStatus</c> callback, describing the
+/// current courier status of a cash-collection order.
+/// </summary>
 public sealed class CashInCashDeliveryStatusObj
 {
     [JsonPropertyName("order_id")]

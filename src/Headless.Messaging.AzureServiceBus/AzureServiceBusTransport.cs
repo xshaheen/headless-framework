@@ -4,8 +4,6 @@ using System.Collections.Concurrent;
 using Azure.Messaging.ServiceBus;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Headless.Messaging.AzureServiceBus.Producer;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -95,7 +93,7 @@ internal sealed class AzureServiceBusTransport(
     {
         if (_client is not null)
         {
-            await _client.DisposeAsync();
+            await _client.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

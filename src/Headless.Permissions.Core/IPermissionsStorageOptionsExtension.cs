@@ -8,5 +8,9 @@ namespace Headless.Permissions;
 [PublicAPI]
 public interface IPermissionsStorageOptionsExtension
 {
+    /// <summary>
+    /// Registers the storage provider's services (repositories, initializers, etc.) into
+    /// <paramref name="services"/>. Called once by the setup pipeline after all extensions are collected.
+    /// </summary>
     void AddServices(IServiceCollection services);
 }

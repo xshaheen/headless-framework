@@ -11,6 +11,11 @@ using Npgsql;
 
 namespace Headless.Messaging.Storage.PostgreSql;
 
+/// <summary>
+/// PostgreSQL-specific configuration for the messaging outbox storage backend.
+/// Extends <c>PostgreSqlEntityFrameworkMessagingOptions</c> with the raw-ADO connection
+/// settings used when the storage is not wired through an EF Core <c>DbContext</c>.
+/// </summary>
 public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOptions
 {
     /// <summary>

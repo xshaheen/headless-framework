@@ -4,7 +4,6 @@ using System.Text.RegularExpressions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Constants;
-using Headless.Core;
 using Headless.Primitives;
 using Headless.Serializer;
 using Headless.Urls;
@@ -17,6 +16,19 @@ using StackExchange.Redis;
 
 namespace Headless.Blobs.Redis;
 
+/// <summary>
+/// <see cref="IBlobStorage"/> implementation backed by Redis hashes.
+/// </summary>
+/// <remarks>
+/// Blobs and their metadata are stored in separate Redis hashes keyed by the container path. All mutating
+/// operations (upload, delete, rename, copy) use Lua scripts for atomicity. A Polly retry pipeline retries
+/// transient <see cref="StackExchange.Redis.RedisConnectionException"/> and timeout errors with exponential
+/// back-off and jitter.
+/// <para>
+/// Redis blob storage is appropriate for small or ephemeral blobs. Uploads that exceed
+/// <see cref="RedisBlobStorageOptions.MaxBlobSizeBytes"/> throw <see cref="ArgumentException"/>.
+/// </para>
+/// </remarks>
 public sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
@@ -74,6 +86,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         return 0
         """;
 
+    /// <summary>The Redis database obtained from the configured <see cref="IConnectionMultiplexer"/>.</summary>
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
     public RedisBlobStorage(
@@ -151,7 +164,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             if (_options.MaxBlobSizeBytes > 0 && stream.CanSeek && stream.Length > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $@"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
+                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
                     nameof(stream)
                 );
             }
@@ -286,7 +299,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         var (blobsContainer, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
 
-        return await _DeleteAsync(blobPath, infoContainer, blobsContainer, cancellationToken);
+        return await _DeleteAsync(blobPath, infoContainer, blobsContainer, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> _DeleteAsync(
@@ -703,7 +716,8 @@ public sealed class RedisBlobStorage : IBlobStorage
             );
         }
 
-        var list = await _ScanBlobInfoListAsync(container, criteria, skip, pagingLimit, cancellationToken);
+        var list = await _ScanBlobInfoListAsync(container, criteria, skip, pagingLimit, cancellationToken)
+            .ConfigureAwait(false);
 
         var hasMore = false;
 
@@ -749,7 +763,8 @@ public sealed class RedisBlobStorage : IBlobStorage
             );
         }
 
-        var blobs = await _ScanBlobInfoListAsync(infoContainer, criteria, skip ?? 0, pageSize, cancellationToken);
+        var blobs = await _ScanBlobInfoListAsync(infoContainer, criteria, skip ?? 0, pageSize, cancellationToken)
+            .ConfigureAwait(false);
 
         return blobs;
     }
@@ -903,7 +918,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             if (totalBytes > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $@"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
+                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. Redis blob storage is intended for small/ephemeral blobs only.",
                     nameof(source)
                 );
             }

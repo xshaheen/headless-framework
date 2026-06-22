@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Messaging.ServiceBus;
-using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.AzureServiceBus;
 
