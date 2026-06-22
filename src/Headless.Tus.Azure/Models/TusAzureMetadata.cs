@@ -244,7 +244,17 @@ internal sealed partial class TusAzureMetadata
 
         foreach (var (key, value) in parseResult.Metadata)
         {
-            result[_SanitizeAzureMetadataKey(key)] = value.GetString(Encoding.UTF8);
+            var azureKey = _SanitizeAzureMetadataKey(key);
+
+            // User metadata shares the blob's metadata dictionary with the store's own tus_* tracking keys.
+            // Reject any user key that sanitizes onto a reserved key so a client cannot overwrite internal
+            // state (expiration, concat type, staged-chunk checksum, ...) via the Upload-Metadata header.
+            if (_IsSystemMetadataKey(azureKey))
+            {
+                throw new TusStoreException($"Metadata key '{key}' is reserved for internal use.");
+            }
+
+            result[azureKey] = value.GetString(Encoding.UTF8);
         }
 
         return new TusAzureMetadata(result);

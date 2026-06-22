@@ -129,7 +129,9 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
         try
         {
-            // Validate all partial files exist and are complete
+            // Validate all partial files exist and are complete. This is a separate pass from the copy below,
+            // so a concurrent PATCH/Delete on a partial between validation and copy is a known TOCTOU window;
+            // callers that mutate partials concurrently with concatenation must serialize via a lock provider.
             await _ValidatePartialFilesAsync(partialFiles, cancellationToken).ConfigureAwait(false);
 
             // Parse TUS metadata
@@ -268,8 +270,16 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
     private async Task _ValidatePartialFilesAsync(string[] partialFiles, CancellationToken cancellationToken)
     {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var partialFileId in partialFiles)
         {
+            // Reject duplicates: a partial listed twice would have its blocks copied twice into the final blob.
+            if (!seen.Add(partialFileId))
+            {
+                throw new InvalidOperationException($"Partial file {partialFileId} is listed more than once");
+            }
+
             var blobClient = _GetBlobClient(partialFileId);
 
             var blobInfo =

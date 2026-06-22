@@ -51,6 +51,7 @@ public sealed partial class TusAzureStore
             ?? throw new InvalidOperationException($"File {fileId} does not exist");
 
         var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken).ConfigureAwait(false);
+        var currentOffset = committedBlocks.Sum(b => b.SizeLong);
         using var hasher = await _GetHasher(stream, cancellationToken).ConfigureAwait(false);
 
         // Stage blocks (with or without chunking)
@@ -59,6 +60,7 @@ public sealed partial class TusAzureStore
                 stream,
                 nextBlockNumber: committedBlocks.Count,
                 azureFile.Metadata.UploadLength,
+                currentOffset,
                 hasher: hasher,
                 cancellationToken: cancellationToken
             )
@@ -93,6 +95,7 @@ public sealed partial class TusAzureStore
         Stream stream,
         int nextBlockNumber,
         long? fileUploadLength,
+        long currentOffset,
         HashAlgorithm? hasher,
         CancellationToken cancellationToken
     )
@@ -139,6 +142,10 @@ public sealed partial class TusAzureStore
 
         await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken).ConfigureAwait(false))
         {
+            // Reject data beyond the declared upload length, mirroring the pipeline path's guard. (The
+            // no-split branch above cannot pre-check length; that is the EnableChunkSplitting=false path.)
+            _AssertNotToMuchData(currentOffset + bytesWritten, chunk.Count, fileUploadLength);
+
             var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
 
             // Calculate hash for this chunk if needed
