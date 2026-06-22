@@ -39,6 +39,13 @@ builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(new AWSOptions
 
 // Option 3: use default AWSOptions already registered in DI (pass null)
 builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(null));
+
+// Named instance (keyed IEmailSender, resolvable via IEmailSenderProvider):
+builder.Services.AddHeadlessEmails(setup =>
+{
+    setup.UseNoop();                                       // default (required)
+    setup.AddNamed("ses", i => i.UseAwsSes(awsOptions));   // keyed "ses"
+});
 ```
 
 ## Configuration
@@ -61,5 +68,5 @@ Credentials are resolved from the standard AWS credential chain (environment var
 
 ## Side Effects
 
-- Registers `IAmazonSimpleEmailServiceV2` via `TryAddAWSService` (no-op if already registered)
-- Registers `IEmailSender` as singleton
+- Default: registers `IAmazonSimpleEmailServiceV2` via `TryAddAWSService` (no-op if already registered) and `IEmailSender` as an unkeyed singleton
+- Named (`AddNamed(name, i => i.UseAwsSes(…))`): registers a keyed `IAmazonSimpleEmailServiceV2` (built from the supplied or ambient `AWSOptions` via `AWSOptions.CreateServiceClient<T>` — `TryAddAWSService` has no keyed overload) and a keyed `IEmailSender`, both under the instance name

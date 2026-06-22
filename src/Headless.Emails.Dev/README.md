@@ -31,6 +31,13 @@ if (builder.Environment.IsDevelopment())
     // Or discard silently (useful in automated tests)
     // builder.Services.AddHeadlessEmails(setup => setup.UseNoop());
 }
+
+// As a named instance alongside a real default sender (keyed IEmailSender "audit"):
+builder.Services.AddHeadlessEmails(setup =>
+{
+    setup.UseAwsSes(awsOptions);                              // default (required)
+    setup.AddNamed("audit", i => i.UseDevelopment("audit-emails.txt"));
+});
 ```
 
 Example output written to the file:
@@ -60,3 +67,4 @@ Hello World!
 
 - `UseDevelopment` registers `IEmailSender` as singleton (instance of `DevEmailSender`); appends to the specified file on each `SendAsync` call
 - `UseNoop` registers `IEmailSender` as singleton (instance of `NoopEmailSender`); no I/O
+- Named (`AddNamed(name, i => i.UseDevelopment(path))` / `i.UseNoop()`): registers the same sender as a keyed `IEmailSender` under the instance name

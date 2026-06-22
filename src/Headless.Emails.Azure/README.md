@@ -49,6 +49,13 @@ builder.Services.AddHeadlessEmails(setup => setup.UseAzure(options =>
     options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
     options.TokenCredential = new DefaultAzureCredential();
 }));
+
+// Named instance (keyed IEmailSender + keyed EmailClient, resolvable via IEmailSenderProvider):
+builder.Services.AddHeadlessEmails(setup =>
+{
+    setup.UseNoop();                                                            // default (required)
+    setup.AddNamed("alerts", i => i.UseAzure(builder.Configuration.GetSection("AlertsEmail")));
+});
 ```
 
 ## Configuration
@@ -78,6 +85,5 @@ builder.Services.AddHeadlessEmails(setup => setup.UseAzure(options =>
 
 ## Side Effects
 
-- Binds and validates `AzureCommunicationEmailOptions` (exactly one auth mode required)
-- Registers `EmailClient` as singleton (constructed from the configured auth mode)
-- Registers `IEmailSender` as singleton
+- Default: binds and validates `AzureCommunicationEmailOptions` (exactly one auth mode required), and registers `EmailClient` and `IEmailSender` as unkeyed singletons
+- Named (`AddNamed(name, i => i.UseAzure(…))`): binds named options and registers a keyed `EmailClient` (constructed from the named auth mode) and a keyed `IEmailSender`, both under the instance name

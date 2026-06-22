@@ -1,14 +1,15 @@
 # Headless.Emails.Abstractions
 
-Defines the unified interface for sending emails across different providers (AWS SES, SMTP/MailKit, development).
+Defines the unified interface for sending emails across different providers (Azure Communication Services, AWS SES, SMTP/MailKit, development).
 
 ## Problem Solved
 
-Provides a provider-agnostic email sending API, enabling seamless switching between email providers without changing application code.
+Provides a provider-agnostic email sending API, enabling switching between email providers without changing application code.
 
 ## Key Features
 
 - `IEmailSender` — core interface with a single `SendAsync(SendSingleEmailRequest, CancellationToken)` method returning `ValueTask<SendSingleEmailResponse>`
+- `IEmailSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)`. Backed by the container's keyed `IEmailSender` registrations
 - `SendSingleEmailRequest` — immutable record with required `From`, `Destination`, `Subject`; optional `MessageHtml`, `MessageText`, `Attachments`
 - `EmailRequestAddress` — wraps email address + optional display name; supports implicit conversion from `string`
 - `EmailRequestDestination` — groups `ToAddresses` (required), `CcAddresses`, `BccAddresses`
