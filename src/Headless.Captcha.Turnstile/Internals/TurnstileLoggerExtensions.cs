@@ -11,7 +11,7 @@ internal static partial class TurnstileLoggerExtensions
     [LoggerMessage(
         EventId = 1,
         EventName = "TurnstileHttpFailure",
-        Level = LogLevel.Information,
+        Level = LogLevel.Warning,
         Message = "[Turnstile] verification failed with status code {StatusCode} and response {Response}"
     )]
     public static partial void LogTurnstileHttpFailure(this ILogger logger, HttpStatusCode statusCode, string response);

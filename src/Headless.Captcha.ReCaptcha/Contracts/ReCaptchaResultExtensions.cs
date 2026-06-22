@@ -15,7 +15,12 @@ public static class ReCaptchaResultExtensions
     {
         Argument.IsNotNull(result);
 
-        var captchaResult = (CaptchaVerifyResult)result;
+        var captchaResult =
+            result as CaptchaVerifyResult
+            ?? throw new InvalidOperationException(
+                $"{nameof(IReCaptchaVerifyResult)} implementations must also derive from {nameof(CaptchaVerifyResult)}, "
+                    + $"but received '{result.GetType().FullName}'."
+            );
 
         return captchaResult.ErrorCodes is { } codes
             ? Array.ConvertAll(codes, static code => code.ToReCaptchaError())

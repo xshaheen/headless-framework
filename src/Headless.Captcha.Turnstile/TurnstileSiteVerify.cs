@@ -64,12 +64,12 @@ internal sealed class TurnstileSiteVerify(
 
         List<KeyValuePair<string, string>> formData = [new("secret", options.SiteSecret), new("response", response)];
 
-        if (remoteIp is not null)
+        if (!string.IsNullOrEmpty(remoteIp))
         {
             formData.Add(new("remoteip", remoteIp));
         }
 
-        if (idempotencyKey is not null)
+        if (!string.IsNullOrEmpty(idempotencyKey))
         {
             formData.Add(new("idempotency_key", idempotencyKey));
         }
@@ -83,7 +83,7 @@ internal sealed class TurnstileSiteVerify(
 
         if (!httpResponseMessage.IsSuccessStatusCode)
         {
-            if (logger?.IsEnabled(LogLevel.Information) is true)
+            if (logger?.IsEnabled(LogLevel.Warning) is true)
             {
                 var responseBody = await httpResponseMessage
                     .Content.ReadAsStringAsync(cancellationToken)
