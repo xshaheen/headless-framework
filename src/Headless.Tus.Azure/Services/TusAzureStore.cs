@@ -6,6 +6,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using FluentValidation;
 using Headless.Checks;
+using Headless.Tus.Internal;
 using Headless.Tus.Models;
 using Headless.Tus.Options;
 using Microsoft.Extensions.Logging;
@@ -189,7 +190,7 @@ public sealed partial class TusAzureStore
 
     private string _GetBlobName(string fileId)
     {
-        return $"{_options.BlobPrefix.EnsureEndsWith('/')}{fileId}";
+        return TusBlobName.Build(_options.BlobPrefix, fileId);
     }
 
     private string _ExtractFileIdFromBlobName(string blobName)

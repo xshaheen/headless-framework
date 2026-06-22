@@ -83,42 +83,32 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         CancellationToken cancellationToken
     )
     {
+        var blockBlobClient = _GetBlockBlobClient(fileId);
+        TusAzureFile file;
+        byte[] calculatedChecksum;
+
         try
         {
             var blobClient = _GetBlobClient(fileId);
-            var blockBlobClient = _GetBlockBlobClient(fileId);
 
             // Get file info to access stored chunk metadata
-            var file = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
+            var info = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken).ConfigureAwait(false);
 
-            if (file is null)
+            if (info is null)
             {
                 _logger.ChecksumVerificationFileInfoNotFound(fileId);
                 return false;
             }
 
+            file = info;
+
             // Get pre-calculated checksum from metadata (calculated during upload)
-            if (!_TryGetChecksum(file, out var calculatedChecksum))
+            if (!_TryGetChecksum(file, out var stored))
             {
                 return false;
             }
 
-            if (_VerifyChecksum(calculatedChecksum, checksum))
-            {
-                _logger.ChecksumVerificationPassed(fileId, algorithm);
-
-                // Commit staged blocks and update metadata atomically
-                await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken).ConfigureAwait(false);
-
-                return true;
-            }
-
-            _logger.ChecksumVerificationFailed(fileId, algorithm, checksum, calculatedChecksum);
-
-            // Don't commit the last chunk, effectively discarding it (since it's not part of the committed blob)
-            // as the TUS protocol requires
-
-            return false;
+            calculatedChecksum = stored;
         }
         catch (Exception e)
         {
@@ -126,6 +116,24 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
             return false;
         }
+
+        if (!_VerifyChecksum(calculatedChecksum, checksum))
+        {
+            _logger.ChecksumVerificationFailed(fileId, algorithm, checksum, calculatedChecksum);
+
+            // Don't commit the last chunk, effectively discarding it (since it's not part of the committed blob)
+            // as the TUS protocol requires.
+            return false;
+        }
+
+        _logger.ChecksumVerificationPassed(fileId, algorithm);
+
+        // Commit OUTSIDE the catch-all above: a failure here is an infrastructure error (throttling, network),
+        // NOT a checksum mismatch. Let it propagate so the client retries the verification, instead of being
+        // told via a false return that its (correctly-checksummed) data was corrupt and discarding it.
+        await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken).ConfigureAwait(false);
+
+        return true;
     }
 
     private HashAlgorithm? _CreateHashAlgorithm(string algorithm)

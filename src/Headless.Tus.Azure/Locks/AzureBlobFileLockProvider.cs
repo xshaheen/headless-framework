@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs;
+using Headless.Tus.Internal;
 using Headless.Tus.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,15 +39,10 @@ public sealed class AzureBlobFileLockProvider(
     /// </returns>
     public Task<ITusFileLock> AquireLock(string fileId)
     {
-        var blobName = _GetBlobName(fileId);
+        var blobName = TusBlobName.Build(options.BlobPrefix, fileId);
         var blobClient = _containerClient.GetBlobClient(blobName);
         var logger = loggerFactory?.CreateLogger<AzureBlobFileLock>() ?? NullLogger<AzureBlobFileLock>.Instance;
 
         return Task.FromResult<ITusFileLock>(new AzureBlobFileLock(blobClient, options.LeaseDuration, logger));
-    }
-
-    private string _GetBlobName(string fileId)
-    {
-        return $"{options.BlobPrefix.EnsureEndsWith('/')}{fileId}";
     }
 }

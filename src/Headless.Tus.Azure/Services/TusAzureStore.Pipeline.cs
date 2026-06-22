@@ -168,17 +168,21 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             }
 #pragma warning restore ERP022
 
-            if (e is OperationCanceledException or TaskCanceledException)
-            {
-                _logger.UploadOperationCanceled(fileId);
-            }
-            else
+            if (e is not OperationCanceledException and not TaskCanceledException)
             {
                 throw;
             }
-#pragma warning disable ERP022 // Justification: Swallowing exceptions from cleanup code to not hide the original exception.
-        }
+
+            _logger.UploadOperationCanceled(fileId);
+
+            // CommitBlockListAsync / SetMetadata run only AFTER the read loop, so a cancellation mid-PATCH
+            // committed nothing durable. Report 0 rather than the staged-but-uncommitted byte count, which
+            // would otherwise tell the caller that bytes were persisted when GetUploadOffsetAsync (committed
+            // blocks only) will report the old offset. The staged blocks are discarded by Azure's block GC.
+#pragma warning disable ERP022 // Cancellation is intentionally observed and handled here, not swallowed silently.
+            return 0;
 #pragma warning restore ERP022
+        }
 
         return bytesWrittenThisRequest;
     }
