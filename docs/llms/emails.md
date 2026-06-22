@@ -62,7 +62,7 @@ Install `Headless.Emails.Abstractions` + one provider. Code against `IEmailSende
 - **AWS production**: `Headless.Emails.Aws` — sends via AWS SES v2. Call `AddAwsSesEmailSender()`.
 - **SMTP (any server)**: `Headless.Emails.Mailkit` — sends via SMTP using MailKit with connection pooling. Supports SSL/TLS, authentication, and works with Gmail, Outlook, SendGrid, on-premises servers. Call `AddMailKitEmailSender()`.
 
-`Headless.Emails.Core` provides shared MimeKit conversion utilities (`ConvertToMimeMessageAsync()`) used internally by the Aws and Mailkit providers. Both providers pull it transitively — you rarely need to install it directly.
+`Headless.Emails.Core` provides shared MimeKit conversion utilities (internal API) used by the Aws and Mailkit providers. Both providers pull it transitively; do not install `Headless.Emails.Core` directly.
 
 Send emails via `IEmailSender.SendAsync(SendSingleEmailRequest)` which returns `SendSingleEmailResponse` with `Success` and `FailureError`.
 
@@ -70,11 +70,11 @@ Send emails via `IEmailSender.SendAsync(SendSingleEmailRequest)` which returns `
 
 - Always use `Emails.Dev` (`AddDevEmailSender()` or `AddNoopEmailSender()`) in development environments to prevent sending real emails. Gate with `builder.Environment.IsDevelopment()`.
 - Use `IEmailSender` from `Headless.Emails.Abstractions` — never reference `AwsSesEmailSender`, `MailkitEmailSender`, or other concrete types in application code.
-- `SendSingleEmailRequest` requires both `From` (an `EmailRequestAddress`) and `Destination` (an `EmailRequestDestination`) — they are `required` properties. Provide at least one of `MessageHtml` or `MessageText`; `MailkitEmailSender` throws `InvalidOperationException` if both are null.
+- `SendSingleEmailRequest` requires both `From` (an `EmailRequestAddress`) and `Destination` (an `EmailRequestDestination`) — they are `required` properties. Provide at least one of `MessageHtml` or `MessageText`; every sender calls `SendSingleEmailRequest.EnsureHasBody()` and throws `InvalidOperationException` when both are null or whitespace (`NoopEmailSender` is the exception — it discards everything and never validates).
 - Check `response.Success` after calling `SendAsync` — do not assume success. Read `response.FailureError` (non-null when `Success` is false) on failure.
 - `Emails.Aws` uses AWS SES **v2** (`AWSSDK.SimpleEmailV2`), not v1. Pass `AWSOptions?` (nullable — `null` uses the default `AWSOptions` registered in the DI container) to `AddAwsSesEmailSender()`.
-- For SMTP via MailKit, configure `MailkitSmtpOptions`: `Server` (required), `Port` (default 587), `SocketOptions` (default `StartTls`), `Timeout` (default 30s), `MaxPoolSize` (default 10; set 0 to disable pooling).
-- `MailkitEmailSender` uses an `ObjectPool<SmtpClient>` — SMTP connections are pooled and reused. Authentication happens on reconnect. If `AuthenticationException` is thrown (wrong credentials), it propagates — it is not swallowed like SMTP command/protocol errors.
+- For SMTP via MailKit, configure `MailkitSmtpOptions`: `Server` (required), `Port` (default 587), `SocketOptions` (default `StartTls`), `Timeout` (default 30s), `MaxPoolSize` (default 10; the pool always keeps one fast-path slot, so `0` retains at most one connection rather than disabling pooling).
+- `MailkitEmailSender` uses an `ObjectPool<SmtpClient>` — SMTP connections are pooled and reused. Authentication happens on reconnect, bounded by `Timeout` (which otherwise governs only read/write). If `AuthenticationException` is thrown (wrong credentials), it propagates — it is not swallowed like SMTP command/protocol errors — and the connection is discarded rather than returned to the pool, so a later send never reuses an unauthenticated client.
 - All providers register `IEmailSender` as singleton.
 - `DevEmailSender` appends to a file with separators — it writes `MessageText` preferring it over `MessageHtml` for readability.
 - `Emails.Core` is a utility package consumed by providers — it is not used directly in application code.
@@ -95,6 +95,8 @@ Send emails via `IEmailSender.SendAsync(SendSingleEmailRequest)` which returns `
 | `Attachments` | `IReadOnlyList<EmailRequestAttachment>` | File attachments (default empty) |
 
 `EmailRequestAddress` accepts a display name: `new EmailRequestAddress("addr@ex.com", "Alice")` or bare string `"addr@ex.com"` (implicit conversion).
+
+All contract value types (`SendSingleEmailRequest`, `EmailRequestAddress`, `EmailRequestDestination`, `EmailRequestAttachment`) are immutable `sealed record`s. `EmailRequestAttachment` carries `Name`, `File` (`ReadOnlyMemory<byte>`), and an optional `ContentType` (inferred from `Name` when null).
 
 `SendSingleEmailResponse` is a closed type (private constructor). Use the static factory pair that providers call:
 - `SendSingleEmailResponse.Succeeded()` — `Success = true`
@@ -122,15 +124,15 @@ Defines the unified interface for sending emails across different providers (AWS
 
 ## Problem Solved
 
-Provides a provider-agnostic email sending API, enabling seamless switching between email providers without changing application code.
+Provides a provider-agnostic email sending API for switching email providers without changing application code.
 
 ## Key Features
 
 - `IEmailSender` — core interface with a single `SendAsync(SendSingleEmailRequest, CancellationToken)` method returning `ValueTask<SendSingleEmailResponse>`
 - `SendSingleEmailRequest` — immutable record with required `From`, `Destination`, `Subject`; optional `MessageHtml`, `MessageText`, `Attachments`
 - `EmailRequestAddress` — wraps email address + optional display name; supports implicit conversion from `string`
-- `EmailRequestDestination` — groups `ToAddresses` (required), `CcAddresses`, `BccAddresses`
-- `EmailRequestAttachment` — `Name` + `File` (byte array)
+- `EmailRequestDestination` — sealed record grouping `ToAddresses` (required), `CcAddresses`, `BccAddresses`
+- `EmailRequestAttachment` — sealed record: `Name` + `File` (`ReadOnlyMemory<byte>`) + optional `ContentType`
 - `SendSingleEmailResponse` — closed result type with `Success` bool and nullable `FailureError` string
 
 ## Installation
@@ -190,8 +192,8 @@ Provides shared conversion logic to bridge the framework email contracts with Mi
 
 ## Key Features
 
-- `EmailToMimMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (extension method on `SendSingleEmailRequest`)
-- `EmailRequestAddress.MapToMailboxAddress()` — maps to MimeKit `MailboxAddress`
+- `EmailToMimeMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (internal extension; visible to the Aws/Mailkit providers via `InternalsVisibleTo`)
+- `MapToMailboxAddress()` — maps an `EmailRequestAddress` to a MimeKit `MailboxAddress` (internal)
 - Full address mapping (From, To, Cc, Bcc), body building (text + HTML via `BodyBuilder`), and attachment streaming
 
 ## Design Notes
@@ -207,8 +209,8 @@ dotnet add package Headless.Emails.Core
 ## Quick Start
 
 ```csharp
-// Used internally by providers — not called from application code.
-// Shown for provider implementors:
+// Internal to the Aws/Mailkit providers (internal API, not reachable from application code).
+// Illustrative of what a provider does internally:
 using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken);
 ```
 
@@ -241,7 +243,7 @@ Provides email sending via AWS SES v2 using the unified `IEmailSender` abstracti
 - Simple sends (no attachments) use the SES structured API path — no MIME serialization
 - Attachment sends serialize to raw MIME and use the SES raw message path
 - AWS SDK configuration integration (`AWSOptions` from `AWSSDK.Extensions.NETCore.Setup`)
-- SES-specific exceptions (`MessageRejectedException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`) propagate — not wrapped in `Failed()`
+- SES-specific exceptions (`MessageRejectedException`, `BadRequestException`, `NotFoundException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`, `SendingPausedException`) propagate — not wrapped in `Failed()`
 - Non-PII logging on non-success HTTP responses (status code, request ID, message ID — no recipient/sender addresses)
 
 ## Installation
@@ -378,7 +380,7 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 
 ## Design Notes
 
-The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected state. Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send.
+The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout`. Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send. A client left connected-but-unauthenticated by such a failure is disposed on return instead of being pooled, so it is never reused with authentication skipped.
 
 ## Installation
 
@@ -437,7 +439,7 @@ builder.Services.AddMailKitEmailSender((options, sp) =>
 | `Password` | `null` | Authentication password; use user-secrets or key vault in production |
 | `SocketOptions` | `StartTls` | `SecureSocketOptions`: `None`, `Auto`, `StartTls`, `StartTlsWhenAvailable`, `SslOnConnect` |
 | `Timeout` | `30s` | Per-connection timeout |
-| `MaxPoolSize` | `10` | Max pooled SMTP connections; set `0` to disable pooling |
+| `MaxPoolSize` | `10` | Max pooled SMTP connections; `0` retains at most one (the pool always keeps a fast-path slot) |
 
 ## Dependencies
 

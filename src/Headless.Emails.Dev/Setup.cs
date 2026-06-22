@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Emails.Dev;
 
@@ -27,7 +29,8 @@ public static class SetupDevEmail
         /// </exception>
         public IServiceCollection AddDevEmailSender(string filePath)
         {
-            services.AddSingleton<IEmailSender>(new DevEmailSender(filePath));
+            Argument.IsNotNullOrEmpty(filePath);
+            services.TryAddSingleton<IEmailSender>(_ => new DevEmailSender(filePath));
 
             return services;
         }
@@ -39,7 +42,7 @@ public static class SetupDevEmail
         /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
         public IServiceCollection AddNoopEmailSender()
         {
-            services.AddSingleton<IEmailSender, NoopEmailSender>();
+            services.TryAddSingleton<IEmailSender, NoopEmailSender>();
 
             return services;
         }

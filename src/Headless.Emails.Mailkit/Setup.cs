@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using SmtpClient = MailKit.Net.Smtp.SmtpClient;
@@ -66,7 +67,7 @@ public static class SetupMailkit
             var provider = new DefaultObjectPoolProvider { MaximumRetained = opts.MaxPoolSize };
             return provider.Create(policy);
         });
-        services.AddSingleton<IEmailSender, MailkitEmailSender>();
+        services.TryAddSingleton<IEmailSender, MailkitEmailSender>();
 
         return services;
     }

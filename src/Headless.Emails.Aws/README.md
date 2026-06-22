@@ -12,7 +12,8 @@ Provides email sending via AWS SES v2 using the unified `IEmailSender` abstracti
 - Simple sends (no attachments) use the SES structured API path — no MIME serialization
 - Attachment sends serialize to raw MIME and use the SES raw message path
 - AWS SDK configuration integration (`AWSOptions` from `AWSSDK.Extensions.NETCore.Setup`)
-- SES-specific exceptions (`MessageRejectedException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`) propagate — not wrapped in `Failed()`
+- SES-specific exceptions (`MessageRejectedException`, `BadRequestException`, `NotFoundException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`, `SendingPausedException`) propagate — not wrapped in `Failed()`
+- BCC is delivered via the SES envelope (`Destination`) and the `Bcc` header is hidden from the serialized MIME on the raw (attachment) path, so BCC recipients are never disclosed
 - Non-PII logging on non-success HTTP responses (status code, request ID, message ID — no recipient/sender addresses)
 
 ## Installation
@@ -56,10 +57,11 @@ Credentials are resolved from the standard AWS credential chain (environment var
 ## Dependencies
 
 - `Headless.Emails.Core`
+- `Headless.Extensions`
 - `AWSSDK.SimpleEmailV2`
 - `AWSSDK.Extensions.NETCore.Setup`
 
 ## Side Effects
 
 - Registers `IAmazonSimpleEmailServiceV2` via `TryAddAWSService` (no-op if already registered)
-- Registers `IEmailSender` as singleton
+- Registers `IEmailSender` via `TryAddSingleton` (no-op if a provider is already registered)

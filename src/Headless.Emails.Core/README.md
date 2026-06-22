@@ -8,8 +8,8 @@ Provides shared conversion logic to bridge the framework email contracts with Mi
 
 ## Key Features
 
-- `EmailToMimMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (extension method on `SendSingleEmailRequest`)
-- `EmailRequestAddress.MapToMailboxAddress()` — maps to MimeKit `MailboxAddress`
+- `EmailToMimeMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (internal extension; exposed to the Aws/Mailkit providers via `InternalsVisibleTo`)
+- `MapToMailboxAddress()` — maps an `EmailRequestAddress` to a MimeKit `MailboxAddress` (internal)
 - Full address mapping (From, To, Cc, Bcc), body building (text + HTML via `BodyBuilder`), and attachment streaming
 
 ## Design Notes
@@ -25,8 +25,8 @@ dotnet add package Headless.Emails.Core
 ## Quick Start
 
 ```csharp
-// Used internally by providers — not called from application code.
-// Shown for provider implementors:
+// Internal to the Aws/Mailkit providers (internal API, not reachable from application code).
+// Illustrative of what a provider does internally:
 using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken);
 ```
 

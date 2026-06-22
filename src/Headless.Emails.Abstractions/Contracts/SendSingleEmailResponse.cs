@@ -12,6 +12,7 @@ namespace Headless.Emails;
 /// wrapping every send in a try/catch. Unrecoverable faults (for example SMTP authentication
 /// failure) are still thrown by the underlying implementation.
 /// </remarks>
+[PublicAPI]
 public sealed class SendSingleEmailResponse
 {
     private SendSingleEmailResponse() { }
