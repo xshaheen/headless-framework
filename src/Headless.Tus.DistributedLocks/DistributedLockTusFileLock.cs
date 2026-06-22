@@ -16,6 +16,7 @@ namespace Headless.Tus;
 /// The lock is acquired with a zero-wait timeout (fail fast, no blocking), and with a finite,
 /// auto-extending lease that is held while the upload runs but frees the file if the holder crashes.
 /// </remarks>
+[PublicAPI]
 public sealed class DistributedLockTusFileLock(string fileId, IDistributedLock distributedLockProvider)
     : ITusFileLock,
         IAsyncDisposable

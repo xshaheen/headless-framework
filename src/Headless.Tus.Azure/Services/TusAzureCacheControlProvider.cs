@@ -14,6 +14,7 @@ namespace Headless.Tus.Services;
 /// user-supplied TUS metadata key/value pairs (system keys such as <c>tus_upload_length</c> are
 /// already stripped), allowing header derivation from file name or content-type hints.
 /// </remarks>
+[PublicAPI]
 public interface ITusAzureBlobHttpHeadersProvider
 {
     /// <summary>
@@ -28,6 +29,7 @@ public interface ITusAzureBlobHttpHeadersProvider
 /// Default implementation of <c>ITusAzureBlobHttpHeadersProvider</c> that sets
 /// <c>application/octet-stream</c> as the blob content type for every upload.
 /// </summary>
+[PublicAPI]
 public sealed class DefaultTusAzureBlobHttpHeadersProvider : ITusAzureBlobHttpHeadersProvider
 {
     /// <summary>

@@ -8,6 +8,7 @@ using Azure.Storage.Blobs.Specialized;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Extensions.Store;
+using tusdotnet.Models;
 
 namespace Headless.Tus.Services;
 
@@ -70,16 +71,19 @@ public sealed partial class TusAzureStore
         if (hasher == null)
         {
             List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
+            _EnsureWithinBlockLimit(allBlockIds.Count);
             var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
             await blockBlobClient.CommitBlockListAsync(allBlockIds, options, cancellationToken).ConfigureAwait(false);
 
             return bytesWritten;
         }
 
-        // Store the block IDs for this chunk - these are the blocks that will need to be committed or rolled back
-
+        // Store the block IDs for this chunk - these are the blocks that will need to be committed or rolled back.
+        // The digest is prefixed with the algorithm so VerifyChecksumAsync can confirm the requested algorithm
+        // matches the one actually used to stage the data.
+        var algorithm = stream.GetUploadChecksumInfo()!.Algorithm;
         azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
-        azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.GetHashAndReset());
+        azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{Convert.ToBase64String(hasher.GetHashAndReset())}";
         await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
         _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);
@@ -108,15 +112,28 @@ public sealed partial class TusAzureStore
 
             if (hasher is null) // No checksum, upload directly
             {
+                if (stream.CanSeek)
+                {
+                    await blockBlobClient
+                        .StageBlockAsync(blockId, stream, cancellationToken: cancellationToken)
+                        .ConfigureAwait(false);
+                    return ([blockId], stream.Length);
+                }
+
+                // A non-seekable request body has no Length; buffer it so StageBlock has a content length and
+                // we can report the exact bytes staged without ever calling Stream.Length on a forward-only stream.
+                await using var buffered = new MemoryStream();
+                await stream.CopyToAsync(buffered, cancellationToken).ConfigureAwait(false);
+                buffered.Position = 0;
                 await blockBlobClient
-                    .StageBlockAsync(blockId, stream, cancellationToken: cancellationToken)
+                    .StageBlockAsync(blockId, buffered, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
-                return ([blockId], stream.Length);
+                return ([blockId], buffered.Length);
             }
 
             // Read entire stream into MemoryStream for hashing and upload
-            // Pre-allocate capacity if stream length is known to avoid resizing
-            var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)stream.Length : 0;
+            // Pre-allocate capacity if stream length is known to avoid resizing (clamped to int range)
+            var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)Math.Min(stream.Length, int.MaxValue) : 0;
             await using var memoryStream = new MemoryStream(capacity);
             await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
 
@@ -291,6 +308,23 @@ public sealed partial class TusAzureStore
     private static string _NewBlockToken()
     {
         return Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..8];
+    }
+
+    // Azure Block Blob caps a blob at 50,000 committed blocks. A long upload with a small chunk size can
+    // approach it; fail with an actionable message rather than an opaque Azure error at commit time.
+    private const int _MaxCommittedBlocks = 50_000;
+
+    private static void _EnsureWithinBlockLimit(int blockCount)
+    {
+        if (blockCount <= _MaxCommittedBlocks)
+        {
+            return;
+        }
+
+        FormattableString message =
+            $"Upload exceeds Azure's {_MaxCommittedBlocks}-block limit ({blockCount} blocks). Use a larger BlobDefaultChunkSize/BlobMaxChunkSize so the upload needs fewer, larger blocks.";
+
+        throw new TusStoreException(message.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <summary>Generates a unique, sortable block ID for Azure block blob uploads.</summary>

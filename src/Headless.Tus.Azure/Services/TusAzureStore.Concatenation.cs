@@ -220,9 +220,18 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.ConcatType = "final";
             blobMetadata.PartialUploads = partialFiles;
 
-            // Commit all blocks to create the final file
+            // Commit all blocks to create the final file, applying the same content-type/HTTP headers the
+            // regular and partial create paths set (CreateFileAsync / CreatePartialFileAsync).
+            _EnsureWithinBlockLimit(blockIds.Count);
+            var commitOptions = new CommitBlockListOptions
+            {
+                Metadata = blobMetadata.ToAzure(),
+                HttpHeaders = await _blobHttpHeadersProvider
+                    .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
+                    .ConfigureAwait(false),
+            };
             await blockBlobClient
-                .CommitBlockListAsync(blockIds, metadata: blobMetadata.ToAzure(), cancellationToken: cancellationToken)
+                .CommitBlockListAsync(blockIds, commitOptions, cancellationToken)
                 .ConfigureAwait(false);
 
             _logger.LogCreatedFinalFile(fileId, partialFiles.Length, totalSize);

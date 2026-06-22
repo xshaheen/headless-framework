@@ -135,6 +135,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             {
                 // No checksum - commit immediately
                 List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
+                _EnsureWithinBlockLimit(allBlockIds.Count);
                 var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
                 await blockBlobClient
                     .CommitBlockListAsync(allBlockIds, options, cancellationToken)
@@ -142,9 +143,11 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             }
             else
             {
-                // With checksum - store chunk info for later verification
+                // With checksum - store chunk info for later verification. The digest is prefixed with the
+                // algorithm so VerifyChecksumAsync can confirm the requested algorithm matches the staged one.
                 azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
-                azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.GetHashAndReset());
+                azureFile.Metadata.LastChunkChecksum =
+                    $"{checksumInfo!.Algorithm}:{Convert.ToBase64String(hasher.GetHashAndReset())}";
                 await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
                 _logger.StoredPipelineChunkMetadata(fileId, chunkBlockIds.Count);

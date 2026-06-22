@@ -29,6 +29,8 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
 
 **Constructor-time container init.** When `CreateContainerIfNotExists = true`, `_containerClient.CreateIfNotExists(ContainerPublicAccessType)` is called synchronously in the constructor. If the `BlobServiceClient` lacks container-create permission, construction fails.
 
+**Limits & input validation.** An upload is capped at Azure's 50,000 committed blocks; exceeding it (a too-small chunk size on a very large upload) throws a `TusStoreException` at commit time — raise `BlobDefaultChunkSize`/`BlobMaxChunkSize` for fewer, larger blocks. User `Upload-Metadata` keys are normalized to Azure's letter/digit/underscore charset; keys that collide after normalization, or with a reserved `tus_*` key, are rejected.
+
 ## Installation
 
 ```bash
