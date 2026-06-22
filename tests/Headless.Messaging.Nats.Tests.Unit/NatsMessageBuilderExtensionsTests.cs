@@ -43,5 +43,31 @@ public sealed class NatsMessageBuilderExtensionsTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*SubjectShard*");
     }
 
+    [Fact]
+    public void Validate_returns_null_for_null_shard()
+    {
+        NatsSubjectShard.Validate(null).Should().BeNull();
+    }
+
+    [Fact]
+    public void Validate_returns_valid_token_unchanged()
+    {
+        NatsSubjectShard.Validate("tenant-a").Should().Be("tenant-a");
+    }
+
+    [Fact]
+    public void Validate_throws_for_empty_shard()
+    {
+        var act = () => NatsSubjectShard.Validate("");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*SubjectShard*");
+    }
+
+    [Fact]
+    public void Validate_throws_for_oversized_shard()
+    {
+        var act = () => NatsSubjectShard.Validate(new string('a', 257));
+        act.Should().Throw<InvalidOperationException>().WithMessage("*SubjectShard*");
+    }
+
     private sealed record TestMessage(string TenantId);
 }

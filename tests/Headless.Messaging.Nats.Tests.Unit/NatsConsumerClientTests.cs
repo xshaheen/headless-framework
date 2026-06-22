@@ -698,6 +698,108 @@ public sealed class NatsConsumerClientTests : TestBase
         }
     }
 
+    [Fact]
+    public void BuildStreamSubjects_and_BuildConsumerSubjects_agree_for_duplicate_sharded_names()
+    {
+        // A sharded message name appearing more than once (e.g. two consumers of the same type) must
+        // yield the same {base, base.>} set from both builders: the JetStream stream config and the
+        // consumer FilterSubjects have to cover identical subjects or sharded messages are dropped.
+        var sharded = new HashSet<string>(StringComparer.Ordinal) { "orders" };
+        string[] names = ["orders", "orders"];
+
+        var streamSubjects = NatsConsumerClient.BuildStreamSubjects(names, sharded);
+        var consumerSubjects = NatsConsumerClient.BuildConsumerSubjects(names, sharded);
+
+        streamSubjects.Should().Equal("orders", "orders.>");
+        consumerSubjects.Should().Equal("orders", "orders.>");
+    }
+
+    [Fact]
+    public async Task DisposeAsync_drains_in_flight_concurrent_handler_before_completing()
+    {
+        // given — one message delivered, then NextAsync blocks until cancellation
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
+        msg.Headers.Returns((NatsHeaders?)null);
+
+        var delivered = 0;
+        var consumer = Substitute.For<INatsJSConsumer>();
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                if (Interlocked.Increment(ref delivered) == 1)
+                {
+                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
+                }
+
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                    Task.Delay(Timeout.InfiniteTimeSpan, token)
+                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                            static (t, _) =>
+                            {
+                                t.GetAwaiter().GetResult();
+                                return null;
+                            },
+                            null,
+                            CancellationToken.None,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default
+                        )
+                );
+            });
+
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var client = new NatsConsumerClient(
+            "test-group",
+            1, // concurrent path (groupConcurrent > 0) -> handler runs via Task.Run
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        client.OnMessageCallback = async (_, _) =>
+        {
+            handlerStarted.TrySetResult();
+            await releaseHandler.Task;
+        };
+        await client.SubscribeAsync(["orders.created"]);
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+
+        try
+        {
+            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+            // when — dispose must drain the still-running handler before completing
+            var disposeTask = client.DisposeAsync().AsTask();
+            var first = await Task.WhenAny(disposeTask, Task.Delay(300, AbortToken));
+            first.Should().NotBe(disposeTask, "DisposeAsync must not complete while a handler is in flight");
+
+            // then — releasing the handler lets dispose complete
+            releaseHandler.TrySetResult();
+            await disposeTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        }
+        finally
+        {
+            releaseHandler.TrySetResult();
+            await cts.CancelAsync();
+            try
+            {
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            }
+            catch (OperationCanceledException) { }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
     {
         return new NatsConsumerClient(groupName, groupConcurrent, _options, _serviceProvider);

@@ -28,7 +28,11 @@ public interface INatsConnectionPool : IAsyncDisposable
 }
 
 /// <summary>Default implementation of <see cref="INatsConnectionPool"/>.</summary>
-public sealed class NatsConnectionPool : INatsConnectionPool
+/// <remarks>
+/// Internal implementation detail: consumers resolve <see cref="INatsConnectionPool"/> from DI and
+/// never reference this concrete type. Kept <see langword="internal"/> to stay off the package's public surface.
+/// </remarks>
+internal sealed class NatsConnectionPool : INatsConnectionPool
 {
     private readonly NatsConnection[] _connections;
     private int _disposed;
