@@ -13,18 +13,12 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 {
     private readonly IEnumerable<string> _cachedSupportedAlgorithms = ["sha1", "sha256", "sha512", "md5"];
 
-    private readonly Dictionary<string, Func<HashAlgorithm>> _supportedAlgorithms = new(
-        StringComparer.OrdinalIgnoreCase
-    )
+    private readonly Dictionary<string, HashAlgorithmName> _supportedAlgorithms = new(StringComparer.OrdinalIgnoreCase)
     {
-#pragma warning disable CA5350 // Weak cryptographic algorithms
-        { "sha1", SHA1.Create },
-#pragma warning restore CA5350
-        { "sha256", SHA256.Create },
-        { "sha512", SHA512.Create },
-#pragma warning disable CA5351 // Broken cryptographic algorithms
-        { "md5", MD5.Create },
-#pragma warning restore CA5351
+        { "sha1", HashAlgorithmName.SHA1 },
+        { "sha256", HashAlgorithmName.SHA256 },
+        { "sha512", HashAlgorithmName.SHA512 },
+        { "md5", HashAlgorithmName.MD5 },
     };
 
     /// <summary>
@@ -136,9 +130,9 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         return true;
     }
 
-    private HashAlgorithm? _CreateHashAlgorithm(string algorithm)
+    private IncrementalHash? _CreateHasher(string algorithm)
     {
-        return _supportedAlgorithms.TryGetValue(algorithm, out var factory) ? factory() : null;
+        return _supportedAlgorithms.TryGetValue(algorithm, out var name) ? IncrementalHash.CreateHash(name) : null;
     }
 
     private bool _TryGetChecksum(TusAzureFile file, [NotNullWhen(true)] out byte[]? checksum)

@@ -79,7 +79,7 @@ public sealed partial class TusAzureStore
         // Store the block IDs for this chunk - these are the blocks that will need to be committed or rolled back
 
         azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
-        azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.Hash ?? []);
+        azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.GetHashAndReset());
         await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
         _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);
@@ -96,7 +96,7 @@ public sealed partial class TusAzureStore
         int nextBlockNumber,
         long? fileUploadLength,
         long currentOffset,
-        HashAlgorithm? hasher,
+        IncrementalHash? hasher,
         CancellationToken cancellationToken
     )
     {
@@ -120,8 +120,7 @@ public sealed partial class TusAzureStore
             await using var memoryStream = new MemoryStream(capacity);
             await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
 
-            memoryStream.Position = 0; // Reset position for hashing
-            hasher.TransformFinalBlock(memoryStream.GetBuffer(), 0, (int)memoryStream.Length);
+            hasher.AppendData(memoryStream.GetBuffer().AsSpan(0, (int)memoryStream.Length));
 
             memoryStream.Position = 0; // Reuse MemoryStream for upload
             await blockBlobClient
@@ -149,8 +148,8 @@ public sealed partial class TusAzureStore
             var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
 
             // Calculate hash for this chunk if needed
-            // TransformBlock uses the buffer synchronously - safe with shared buffer approach
-            hasher?.TransformBlock(chunk.Array!, chunk.Offset, chunk.Count, outputBuffer: null, 0);
+            // AppendData consumes the buffer synchronously - safe with the shared pooled-buffer approach
+            hasher?.AppendData(chunk.Array!, chunk.Offset, chunk.Count);
 
             // Upload the chunk as a block
             // MemoryStream wrapper is necessary (Azure SDK requires Stream) but doesn't copy data
@@ -163,9 +162,6 @@ public sealed partial class TusAzureStore
             chunkBlockIds.Add(blockId);
             bytesWritten += chunk.Count;
         }
-
-        // Finalize hash if needed (TransformFinalBlock with empty data)
-        hasher?.TransformFinalBlock([], 0, 0);
 
         return (chunkBlockIds, bytesWritten);
     }
@@ -196,7 +192,7 @@ public sealed partial class TusAzureStore
     /// <para>
     /// Why this is safe in current usage:
     /// - await foreach ensures synchronous iteration (waits for each iteration to complete)
-    /// - Caller immediately hashes the chunk (TransformBlock uses buffer synchronously)
+    /// - Caller immediately hashes the chunk (IncrementalHash.AppendData consumes the buffer synchronously)
     /// - Caller immediately uploads via MemoryStream (Azure SDK buffers data synchronously)
     /// - Both operations complete before next yield return is reached
     /// </para>
@@ -310,9 +306,9 @@ public sealed partial class TusAzureStore
         return $"block-{token}-{blockIndex.ToString("D10", CultureInfo.InvariantCulture)}".ToBase64();
     }
 
-    private async Task<HashAlgorithm?> _GetHasher(Stream stream, CancellationToken cancellationToken)
+    private async Task<IncrementalHash?> _GetHasher(Stream stream, CancellationToken cancellationToken)
     {
-        HashAlgorithm? hasher = null;
+        IncrementalHash? hasher = null;
 
         try
         {
@@ -323,7 +319,7 @@ public sealed partial class TusAzureStore
                 return null;
             }
 
-            hasher = _CreateHashAlgorithm(checksum.Algorithm);
+            hasher = _CreateHasher(checksum.Algorithm);
 
             if (hasher is not null)
             {

@@ -56,7 +56,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         // Get checksum info if provided (from request headers via tusdotnet extension method)
         var checksumInfo = pipeReader.GetUploadChecksumInfo();
-        using var hasher = checksumInfo is not null ? _CreateHashAlgorithm(checksumInfo.Algorithm) : null;
+        using var hasher = checksumInfo is not null ? _CreateHasher(checksumInfo.Algorithm) : null;
 
         if (checksumInfo is not null && hasher is null)
         {
@@ -130,9 +130,6 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
             await pipeReader.CompleteAsync().ConfigureAwait(false);
 
-            // Finalize hash if checksum verification is needed
-            hasher?.TransformFinalBlock([], 0, 0);
-
             // ATOMIC: Commit blocks + update metadata
             if (hasher is null)
             {
@@ -147,7 +144,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             {
                 // With checksum - store chunk info for later verification
                 azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
-                azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.Hash ?? []);
+                azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.GetHashAndReset());
                 await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
                 _logger.StoredPipelineChunkMetadata(fileId, chunkBlockIds.Count);
@@ -189,13 +186,13 @@ public sealed partial class TusAzureStore : ITusPipelineStore
     }
 
     /// <summary>
-    /// Hashes a <see cref="ReadOnlySequence{T}"/> by processing each segment.
+    /// Hashes a <see cref="ReadOnlySequence{T}"/> by feeding each segment's span to the incremental hash.
     /// </summary>
-    private static void _HashSequence(HashAlgorithm hasher, ReadOnlySequence<byte> sequence)
+    private static void _HashSequence(IncrementalHash hasher, ReadOnlySequence<byte> sequence)
     {
         foreach (var segment in sequence)
         {
-            hasher.TransformBlock(segment.ToArray(), 0, segment.Length, outputBuffer: null, 0);
+            hasher.AppendData(segment.Span);
         }
     }
 
