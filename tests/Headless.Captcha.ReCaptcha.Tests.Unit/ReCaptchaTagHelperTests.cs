@@ -124,6 +124,37 @@ public sealed class ReCaptchaTagHelperTests
         content.Should().Contain(".then(callback)");
     }
 
+    [Fact]
+    public void v2_element_helper_injects_recaptcha_attributes_onto_target()
+    {
+        var helper = new ReCaptchaV2ElementTagHelper(_Options(CaptchaConstants.ReCaptchaV2Provider, "v2-site"))
+        {
+            Theme = "dark",
+            Size = "invisible",
+            Callback = "onSubmit",
+        };
+        var output = _NewOutput("button");
+
+        helper.Process(_NewContext(), output);
+
+        output.Attributes["class"].Value.Should().Be("g-recaptcha");
+        output.Attributes["data-sitekey"].Value.Should().Be("v2-site");
+        output.Attributes["data-theme"].Value.Should().Be("dark");
+        output.Attributes["data-size"].Value.Should().Be("invisible");
+        output.Attributes["data-callback"].Value.Should().Be("onSubmit");
+    }
+
+    [Fact]
+    public void v2_element_helper_throws_when_default_provider_not_registered()
+    {
+        var helper = new ReCaptchaV2ElementTagHelper(_Options(CaptchaConstants.ReCaptchaV2Provider, ""));
+        var output = _NewOutput("button");
+
+        var act = () => helper.Process(_NewContext(), output);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     private static string _Src(TagHelperOutput output) => output.Attributes["src"].Value?.ToString() ?? "";
 
     [Fact]

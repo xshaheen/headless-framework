@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Captcha;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -129,5 +130,102 @@ public sealed class TurnstileSetupTests
             .Throw<InvalidOperationException>()
             .WithMessage("*nonexistent*")
             .WithMessage($"*{CaptchaConstants.TurnstileProvider}*");
+    }
+
+    [Fact]
+    public void default_configuration_overload_binds_the_section()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["Headless:Captcha:Turnstile:SiteKey"] = "cfg-key",
+                    ["Headless:Captcha:Turnstile:SiteSecret"] = "cfg-secret",
+                }
+            )
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseTurnstile(configuration.GetSection("Headless:Captcha:Turnstile"))
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var options = serviceProvider
+            .GetRequiredService<IOptionsMonitor<TurnstileOptions>>()
+            .Get(CaptchaConstants.TurnstileProvider);
+
+        options.SiteKey.Should().Be("cfg-key");
+        options.SiteSecret.Should().Be("cfg-secret");
+        serviceProvider.GetRequiredService<ITurnstileVerifier>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void default_service_provider_overload_resolves_verifier()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseTurnstile(
+                (options, _) =>
+                {
+                    options.SiteKey = "k";
+                    options.SiteSecret = "s";
+                }
+            )
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        serviceProvider.GetRequiredService<ITurnstileVerifier>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void named_configuration_overload_resolves_by_name()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["ts:SiteKey"] = "ck",
+                    ["ts:SiteSecret"] = "cs",
+                }
+            )
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder => builder.UseTurnstile("ts-cfg", configuration.GetSection("ts")));
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        serviceProvider
+            .GetRequiredService<ICaptchaProvider>()
+            .GetVerifier("ts-cfg")
+            .Should()
+            .BeAssignableTo<ITurnstileVerifier>();
+    }
+
+    [Fact]
+    public void named_service_provider_overload_resolves_by_name()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessCaptcha(builder =>
+            builder.UseTurnstile(
+                "ts-sp",
+                (options, _) =>
+                {
+                    options.SiteKey = "k";
+                    options.SiteSecret = "s";
+                }
+            )
+        );
+
+        using var serviceProvider = services.BuildServiceProvider();
+
+        serviceProvider
+            .GetRequiredService<ICaptchaProvider>()
+            .GetVerifier("ts-sp")
+            .Should()
+            .BeAssignableTo<ITurnstileVerifier>();
     }
 }
