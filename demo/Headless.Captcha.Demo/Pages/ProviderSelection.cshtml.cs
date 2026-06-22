@@ -16,9 +16,17 @@ internal sealed class ProviderSelectionModel(ICaptchaProvider captchaProvider) :
     {
         SelectedProvider = provider;
 
-        // Resolve the verifier by the name it was registered under — the default Turnstile provider's canonical
-        // key or the "recaptcha" named provider — and route verification to that backend.
-        var verifier = captchaProvider.GetVerifier(provider);
+        // The provider name arrives from untrusted form input, so resolve with the non-throwing GetVerifierOrNull and
+        // short-circuit on an unknown name instead of letting GetVerifier throw a 500. (GetVerifierOrNull still
+        // rejects an empty name, so guard that first.)
+        var verifier = string.IsNullOrWhiteSpace(provider) ? null : captchaProvider.GetVerifierOrNull(provider);
+
+        if (verifier is null)
+        {
+            Result = $"Unknown or unsupported captcha provider '{provider}'.";
+
+            return;
+        }
 
         var request = new CaptchaVerifyRequest
         {
