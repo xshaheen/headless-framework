@@ -122,6 +122,10 @@ public sealed class SqlServerStorageInitializer(
                         [Version] [nvarchar](20) NOT NULL,
                         [Name] [nvarchar](200) NOT NULL,
                         [Group] [nvarchar](200) NULL,
+                        -- #19 — PERSISTED ISNULL collapses a NULL [Group] to '' so the unique index below
+                        -- converges NULL-group redeliveries to one row, matching the PostgreSQL
+                        -- COALESCE("Group", '') index (a plain nullable [Group] treats each NULL as distinct).
+                        [GroupCoalesced] AS ISNULL([Group], N'') PERSISTED,
                         [Content] [nvarchar](max) NULL,
                         [IntentType] [smallint] NOT NULL,
                         [Retries] [int] NOT NULL,
@@ -142,9 +146,12 @@ public sealed class SqlServerStorageInitializer(
                 IF ERROR_NUMBER() <> 2714 THROW;
             END CATCH;
 
+            -- #19 — unique index on the GroupCoalesced computed column (not the nullable [Group]) so the
+            -- schema-level uniqueness guarantee for NULL groups matches PostgreSQL; raw INSERTs that bypass
+            -- the MERGE can no longer accumulate duplicate NULL-group rows.
             BEGIN TRY
-                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_MessageId_Group_IntentType' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_MessageId_Group_IntentType] ON {GetReceivedTableName()} ([Version] ASC, [MessageId] ASC, [Group] ASC, [IntentType] ASC);
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_MessageId_GroupCoalesced_IntentType' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_MessageId_GroupCoalesced_IntentType] ON {GetReceivedTableName()} ([Version] ASC, [MessageId] ASC, [GroupCoalesced] ASC, [IntentType] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
