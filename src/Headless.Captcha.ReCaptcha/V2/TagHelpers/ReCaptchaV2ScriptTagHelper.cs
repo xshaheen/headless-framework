@@ -52,21 +52,39 @@ public sealed class ReCaptchaV2ScriptTagHelper(
             <script src="https://www.google.com/recaptcha/api.js" async defer></script>
         */
 
-        output.TagName = "";
+        // The script helpers render the default provider, like the div/element helpers. A missing/empty SiteKey means
+        // no default was registered (named-only), so fail consistently instead of silently emitting the API script.
+        if (string.IsNullOrWhiteSpace(_options.SiteKey))
+        {
+            throw new InvalidOperationException(
+                "reCAPTCHA v2 tag helpers render the default provider; register it with "
+                    + "AddHeadlessCaptcha(b => b.UseReCaptchaV2(...)) — a named-only registration is not rendered by tag helpers."
+            );
+        }
 
-        var baseUrl = _options.VerifyBaseUrl.RemovePostFix(StringComparison.OrdinalIgnoreCase, "/");
+        var baseUrl = _options.VerifyBaseUrl.TrimEnd('/');
         var langCode = Uri.EscapeDataString(reCaptchaLanguageCodeProvider.GetLanguageCode());
         var onloadParam = string.IsNullOrWhiteSpace(Onload) ? "" : $"&onload={Uri.EscapeDataString(Onload)}";
         var renderParam = string.IsNullOrWhiteSpace(Render) ? "" : $"&render={Uri.EscapeDataString(Render)}";
 
         var src = $"{baseUrl}/recaptcha/api.js?hl={langCode}{onloadParam}{renderParam}";
 
-        var attrs = string.Join(
-            " ",
-            new[] { ScriptAsync ? "async" : "", ScriptDefer ? "defer" : "", $"src=\"{src}\"" }.Where(a => a.Length > 0)
-        );
+        // Emit through the tag-helper output API so the framework HTML-encodes the attribute value (no raw
+        // SetHtmlContent string-concatenation of the URL into the <script> markup).
+        output.TagName = "script";
+        output.TagMode = TagMode.StartTagAndEndTag;
 
-        output.Content.SetHtmlContent($"<script {attrs}></script>");
+        output.Attributes.Add("src", src);
+
+        if (ScriptAsync)
+        {
+            output.Attributes.Add(new TagHelperAttribute("async"));
+        }
+
+        if (ScriptDefer)
+        {
+            output.Attributes.Add(new TagHelperAttribute("defer"));
+        }
 
         if (HideBadge)
         {

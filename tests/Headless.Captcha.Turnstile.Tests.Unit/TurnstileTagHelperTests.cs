@@ -18,9 +18,11 @@ public sealed class TurnstileTagHelperTests
 
         helper.Process(_NewContext(), output);
 
-        var content = output.Content.GetContent();
-        content.Should().Contain("turnstile/v0/api.js");
-        content.Should().NotContain("render=explicit");
+        // The src is emitted as an encoded output attribute (not raw SetHtmlContent), so the <script> tag renders.
+        output.TagName.Should().Be("script");
+        var src = _Src(output);
+        src.Should().Contain("turnstile/v0/api.js");
+        src.Should().NotContain("render=explicit");
     }
 
     [Fact]
@@ -34,7 +36,20 @@ public sealed class TurnstileTagHelperTests
 
         helper.Process(_NewContext(), output);
 
-        output.Content.GetContent().Should().Contain("render=explicit");
+        _Src(output).Should().Contain("render=explicit");
+    }
+
+    [Fact]
+    public void script_helper_throws_when_default_provider_not_registered()
+    {
+        // Empty SiteKey models a named-only registration (no default). The script helper must fail consistently with
+        // the widget helper instead of silently emitting the API script.
+        var helper = new TurnstileScriptTagHelper(_Options(new TurnstileOptions { SiteKey = "", SiteSecret = "s" }));
+        var output = _NewOutput("turnstile-script");
+
+        var act = () => helper.Process(_NewContext(), output);
+
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
@@ -68,6 +83,8 @@ public sealed class TurnstileTagHelperTests
         output.Attributes["data-cdata"].Value.Should().Be("cd-1");
         output.Attributes["data-language"].Value.Should().Be("en-US");
     }
+
+    private static string _Src(TagHelperOutput output) => output.Attributes["src"].Value?.ToString() ?? "";
 
     private static IOptionsSnapshot<TurnstileOptions> _Options(TurnstileOptions options)
     {

@@ -32,7 +32,15 @@ public sealed class TurnstileScriptTagHelper(IOptionsSnapshot<TurnstileOptions> 
             <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
         */
 
-        output.TagName = "";
+        // The script helpers render the default provider, like the widget helper. A missing/empty SiteKey means no
+        // default was registered (named-only), so fail consistently with the widget instead of half-rendering.
+        if (string.IsNullOrWhiteSpace(_options.SiteKey))
+        {
+            throw new InvalidOperationException(
+                "Turnstile tag helpers render the default provider; register it with "
+                    + "AddHeadlessCaptcha(b => b.UseTurnstile(...)) — a named-only registration is not rendered by tag helpers."
+            );
+        }
 
         var baseUrl = _options.VerifyBaseUrl.TrimEnd('/');
 
@@ -46,11 +54,21 @@ public sealed class TurnstileScriptTagHelper(IOptionsSnapshot<TurnstileOptions> 
 
         var src = $"{baseUrl}/turnstile/v0/api.js{query}";
 
-        var attrs = string.Join(
-            " ",
-            new[] { ScriptAsync ? "async" : "", ScriptDefer ? "defer" : "", $"src=\"{src}\"" }.Where(a => a.Length > 0)
-        );
+        // Emit through the tag-helper output API so the framework HTML-encodes the attribute value, matching the
+        // widget helper. Avoids raw SetHtmlContent string-concatenation of the URL into the <script> markup.
+        output.TagName = "script";
+        output.TagMode = TagMode.StartTagAndEndTag;
 
-        output.Content.SetHtmlContent($"<script {attrs}></script>");
+        output.Attributes.Add("src", src);
+
+        if (ScriptAsync)
+        {
+            output.Attributes.Add(new TagHelperAttribute("async"));
+        }
+
+        if (ScriptDefer)
+        {
+            output.Attributes.Add(new TagHelperAttribute("defer"));
+        }
     }
 }

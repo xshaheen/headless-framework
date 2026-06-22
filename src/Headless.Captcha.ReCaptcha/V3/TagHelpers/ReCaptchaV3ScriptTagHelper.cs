@@ -41,12 +41,15 @@ public sealed class ReCaptchaV3ScriptTagHelper(
             );
         }
 
-        output.TagName = "";
-
         var src =
-            $"{_options.VerifyBaseUrl.RemovePostFix(StringComparison.OrdinalIgnoreCase, "/")}/recaptcha/api.js?hl={Uri.EscapeDataString(reCaptchaLanguageCodeProvider.GetLanguageCode())}&render={Uri.EscapeDataString(_options.SiteKey)}";
+            $"{_options.VerifyBaseUrl.TrimEnd('/')}/recaptcha/api.js?hl={Uri.EscapeDataString(reCaptchaLanguageCodeProvider.GetLanguageCode())}&render={Uri.EscapeDataString(_options.SiteKey)}";
 
-        output.Content.SetHtmlContent($"<script src=\"{src}\"></script>");
+        // Emit through the tag-helper output API so the framework HTML-encodes the attribute value (no raw
+        // SetHtmlContent string-concatenation of the URL into the <script> markup).
+        output.TagName = "script";
+        output.TagMode = TagMode.StartTagAndEndTag;
+
+        output.Attributes.Add("src", src);
 
         if (HideBadge)
         {
