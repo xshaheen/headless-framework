@@ -12,8 +12,9 @@ namespace Headless.Domain;
 public interface IValueObject;
 
 /// <summary>
-/// Base class for DDD value objects. Two instances are equal when all of their
-/// <c>EqualityComponents()</c> values are equal; neither instance needs a dedicated identity field.
+/// Base class for DDD value objects. Two instances are equal when all of their equality components
+/// (declared via <c>EqualityComponentsEqual</c> / <c>BuildHashCode</c>) are equal; neither instance needs a
+/// dedicated identity field.
 /// </summary>
 [PublicAPI]
 public abstract class ValueObject : EqualityBase<ValueObject>, IValueObject;

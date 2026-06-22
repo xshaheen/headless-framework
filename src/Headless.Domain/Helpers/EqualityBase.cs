@@ -5,12 +5,14 @@
 namespace Headless.Domain;
 
 /// <summary>
-/// Abstract base that implements structural equality for a type by delegating comparison
-/// to a sequence of <c>EqualityComponents()</c> values rather than reference identity.
+/// Abstract base that implements structural equality for a type by delegating comparison and hashing to
+/// strongly-typed hooks rather than reference identity.
 /// </summary>
 /// <remarks>
-/// Subclasses must override <c>EqualityComponents()</c> and return all fields that define equality.
-/// Two instances of the same concrete type are considered equal when every component compares equal in order.
+/// Subclasses override <see cref="EqualityComponentsEqual"/> (compare each equality-defining field to the
+/// other instance) and <see cref="BuildHashCode"/> (feed each equality-defining field into the hash). Both
+/// run without boxing value-type components, unlike an <c>IEnumerable&lt;object?&gt;</c> component sequence.
+/// Two instances of the same concrete type are equal when every component compares equal.
 /// </remarks>
 /// <typeparam name="T">The concrete subclass; used to constrain the typed <c>Equals</c> overload.</typeparam>
 [PublicAPI]
@@ -18,8 +20,8 @@ public abstract class EqualityBase<T> : IEquatable<T>
     where T : EqualityBase<T>
 {
     /// <summary>
-    /// Determines whether this instance is equal to <paramref name="other"/> by comparing
-    /// their runtime types and <c>EqualityComponents()</c> sequences.
+    /// Determines whether this instance is equal to <paramref name="other"/> by comparing their runtime
+    /// types and equality components.
     /// </summary>
     /// <param name="other">The instance to compare against, or <see langword="null"/>.</param>
     /// <returns><see langword="true"/> if both instances have the same type and equal components; otherwise <see langword="false"/>.</returns>
@@ -35,7 +37,7 @@ public abstract class EqualityBase<T> : IEquatable<T>
             return true;
         }
 
-        return GetType() == other.GetType() && EqualityComponents().SequenceEqual(other.EqualityComponents());
+        return GetType() == other.GetType() && EqualityComponentsEqual(other);
     }
 
     /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are structurally equal.</summary>
@@ -60,23 +62,29 @@ public abstract class EqualityBase<T> : IEquatable<T>
         return Equals(obj as T);
     }
 
-    /// <summary>Computes a hash code from all <c>EqualityComponents()</c> values.</summary>
+    /// <summary>Computes a hash code from all equality components.</summary>
     /// <returns>A combined hash code consistent with <c>Equals</c>.</returns>
     public sealed override int GetHashCode()
     {
         var hash = new HashCode();
-
-        foreach (var component in EqualityComponents())
-        {
-            hash.Add(component);
-        }
+        BuildHashCode(ref hash);
 
         return hash.ToHashCode();
     }
 
     /// <summary>
-    /// Returns the ordered sequence of values that define equality for this instance.
-    /// Include every field or property that participates in identity; exclude transient or navigation state.
+    /// Compares this instance's equality components to <paramref name="other"/>. The caller guarantees
+    /// <paramref name="other"/> is non-null and has the same runtime type as this instance, so implementations
+    /// may cast it to the concrete type and compare fields directly without boxing.
     /// </summary>
-    protected abstract IEnumerable<object?> EqualityComponents();
+    /// <param name="other">The same-typed instance to compare against.</param>
+    /// <returns><see langword="true"/> when every equality component is equal; otherwise <see langword="false"/>.</returns>
+    protected abstract bool EqualityComponentsEqual(T other);
+
+    /// <summary>
+    /// Feeds each equality-defining component into <paramref name="hash"/>. Add the same components, in the
+    /// same set, that <see cref="EqualityComponentsEqual"/> compares, so equal instances hash equally.
+    /// </summary>
+    /// <param name="hash">The hash accumulator to add components to.</param>
+    protected abstract void BuildHashCode(ref HashCode hash);
 }

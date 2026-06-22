@@ -12,10 +12,17 @@ public sealed class ValueObjectTests
 
         public required string City { get; init; }
 
-        protected override IEnumerable<object?> EqualityComponents()
+        protected override bool EqualityComponentsEqual(ValueObject other)
         {
-            yield return Street;
-            yield return City;
+            var o = (Address)other;
+
+            return Street == o.Street && City == o.City;
+        }
+
+        protected override void BuildHashCode(ref HashCode hash)
+        {
+            hash.Add(Street);
+            hash.Add(City);
         }
     }
 

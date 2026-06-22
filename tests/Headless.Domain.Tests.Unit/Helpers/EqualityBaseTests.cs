@@ -12,10 +12,9 @@ public sealed class EqualityBaseTests
 
         public string? Description { get; init; }
 
-        protected override IEnumerable<object?> EqualityComponents()
-        {
-            yield return Id;
-        }
+        protected override bool EqualityComponentsEqual(IdEqualityItem other) => Id.Equals(other.Id);
+
+        protected override void BuildHashCode(ref HashCode hash) => hash.Add(Id);
     }
 
     private sealed class CompositeEqualityItem : EqualityBase<CompositeEqualityItem>
@@ -24,10 +23,13 @@ public sealed class EqualityBaseTests
 
         public int Value { get; init; }
 
-        protected override IEnumerable<object?> EqualityComponents()
+        protected override bool EqualityComponentsEqual(CompositeEqualityItem other) =>
+            Name == other.Name && Value == other.Value;
+
+        protected override void BuildHashCode(ref HashCode hash)
         {
-            yield return Name;
-            yield return Value;
+            hash.Add(Name);
+            hash.Add(Value);
         }
     }
 
