@@ -1622,13 +1622,16 @@ public sealed class HybridCacheTests : TestBase
         // when
         var act = async () => await cache.RemoveAllAsync(keys, AbortToken);
 
-        // then — PINNED: the L2 failure propagates to the caller before L1 is touched, nothing is published,
-        // and nothing is queued (bulk removals are never captured by auto-recovery).
+        // then — the L2 failure propagates to the caller; L1 is cleaned before the rethrow to avoid leaving
+        // stale entries on this node (finding #4 fix). Nothing is published because L2 never confirmed the
+        // removal, and bulk removals are never captured by auto-recovery.
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         foreach (var key in keys)
         {
-            (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue("L1 is only cleared after L2 succeeds");
+            (await l1.GetAsync<int>(key, AbortToken))
+                .HasValue.Should()
+                .BeFalse("L1 is cleaned before the rethrow to avoid stale entries");
         }
 
         await publisher
