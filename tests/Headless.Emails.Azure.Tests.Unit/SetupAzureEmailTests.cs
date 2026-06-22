@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Communication.Email;
+using Azure.Core;
 using Headless.Emails;
 using Headless.Emails.Azure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 
 namespace Tests;
 
@@ -48,6 +50,28 @@ public sealed class SetupAzureEmailTests
             {
                 options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
                 options.AccessKey = "bm90LWEtcmVhbC1rZXk=";
+            })
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IEmailSender>().Should().BeOfType<AzureCommunicationEmailSender>();
+        provider.GetRequiredService<EmailClient>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_resolve_azure_sender_for_endpoint_and_token_credential_mode()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessEmails(setup =>
+            setup.UseAzure(options =>
+            {
+                options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
+                options.TokenCredential = Substitute.For<TokenCredential>();
             })
         );
         using var provider = services.BuildServiceProvider();
