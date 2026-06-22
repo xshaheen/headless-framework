@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.PostgreSql;
 
+[PublicAPI]
 public partial class PostgreSqlEntityFrameworkMessagingOptions
 {
     public const string DefaultSchema = "messaging";
@@ -29,14 +30,11 @@ public partial class PostgreSqlEntityFrameworkMessagingOptions
         set
         {
             Argument.IsNotNullOrWhiteSpace(value);
-
-            if (!_ValidIdentifier().IsMatch(value))
-            {
-                throw new ArgumentException(
-                    $"Schema name must start with a letter or underscore and contain only letters, digits, underscores (max {MaxSchemaLength} chars)",
-                    nameof(value)
-                );
-            }
+            Argument.Matches(
+                value,
+                _ValidIdentifier(),
+                $"Schema name must start with a letter or underscore and contain only letters, digits, underscores (max {MaxSchemaLength} chars)"
+            );
 
             field = value;
         }

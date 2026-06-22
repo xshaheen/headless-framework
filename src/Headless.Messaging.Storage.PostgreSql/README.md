@@ -58,7 +58,6 @@ options.UsePostgreSql(config =>
 - Creates database tables in configured schema:
   - `{schema}.published` - Published messages
   - `{schema}.received` - Received messages
-  - `{schema}.lock` - Distributed lock table
 - Uses PostgreSQL `UUID` primary keys for message row IDs
 - Creates indexes for message queries
 - Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly

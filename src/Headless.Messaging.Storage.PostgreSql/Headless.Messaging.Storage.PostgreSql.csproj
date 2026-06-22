@@ -4,6 +4,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Npgsql" />
   </ItemGroup>

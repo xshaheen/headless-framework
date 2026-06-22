@@ -12,7 +12,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// PostgreSQL implementation of <see cref="IStorageInitializer"/> for database schema setup.
 /// Creates required tables (published, received) and indexes on first run.
 /// </summary>
-public sealed class PostgreSqlStorageInitializer(
+internal sealed class PostgreSqlStorageInitializer(
     ILogger<PostgreSqlStorageInitializer> logger,
     IOptions<PostgreSqlOptions> postgreSqlOptions,
     IOptions<MessagingOptions> messagingOptions
@@ -221,10 +221,11 @@ public sealed class PostgreSqlStorageInitializer(
 
         await using var probeCommand = new NpgsqlCommand(probeSql, connection)
         {
-            CommandTimeout = (int)messagingOptions.Value.CommandTimeout.TotalSeconds,
+            CommandTimeout = (int)
+                Math.Min(Math.Ceiling(messagingOptions.Value.CommandTimeout.TotalSeconds), int.MaxValue),
         };
-        probeCommand.Parameters.AddWithValue("IndexName", indexName);
-        probeCommand.Parameters.AddWithValue("Schema", postgreSqlOptions.Value.Schema);
+        probeCommand.Parameters.Add(new NpgsqlParameter("@IndexName", indexName));
+        probeCommand.Parameters.Add(new NpgsqlParameter("@Schema", postgreSqlOptions.Value.Schema));
 
         var probeResult = await probeCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
@@ -316,9 +317,6 @@ public sealed class PostgreSqlStorageInitializer(
             -- retry-pickup index for published is also created post-transaction via
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
-
-            ALTER TABLE {GetReceivedTableName()} ADD COLUMN IF NOT EXISTS "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL;
-            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL;
 
             """;
 

@@ -17,7 +17,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// PostgreSQL implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.
 /// Provides dashboard data including message counts, status breakdowns, and hourly metrics.
 /// </summary>
-public sealed class PostgreSqlMonitoringApi(
+internal sealed class PostgreSqlMonitoringApi(
     IOptions<PostgreSqlOptions> options,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
@@ -389,7 +389,9 @@ public sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        dictionary.Add(reader.GetString(0), reader.GetInt32(1));
+                        // COUNT() is bigint in PostgreSQL; read as Int64 and saturate to int (GetStatisticsAsync
+                        // uses GetInt64 for the same columns). Avoids an InvalidCastException past int.MaxValue rows.
+                        dictionary.Add(reader.GetString(0), (int)Math.Min(reader.GetInt64(1), int.MaxValue));
                     }
 
                     return dictionary;

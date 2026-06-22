@@ -21,7 +21,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// PostgreSQL implementation of <see cref="IDataStorage"/> for outbox pattern message persistence.
 /// Handles storage, retrieval, and state management of published and received messages.
 /// </summary>
-public sealed class PostgreSqlDataStorage(
+internal sealed class PostgreSqlDataStorage(
     IOptions<PostgreSqlOptions> postgreSqlOptions,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
@@ -710,7 +710,9 @@ public sealed class PostgreSqlDataStorage(
                             IntentType = (IntentType)reader.GetInt16(2),
                             Retries = reader.GetInt32(3),
                             Added = reader.GetDateTime(4),
-                            ExpiresAt = reader.GetDateTime(5),
+                            ExpiresAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(5),
                         };
 
                         messages.Add(mediumMessage);
@@ -828,11 +830,12 @@ public sealed class PostgreSqlDataStorage(
         // already-exhausted message cannot overwrite a previously-Succeeded row's status back to
         // Failed (which would re-fire OnExhausted spuriously).
         //
-        // RETURNING xmax gives us a cheap way to discriminate insert vs update vs no-op:
-        //   xmax = 0           → fresh INSERT (no previous tuple version)
-        //   xmax = current txn → UPDATE branch matched and the WHERE filter let it run
-        //   no row             → ON CONFLICT matched but the WHERE filter blocked the update
-        //                        (terminal-row guard hit). We treat as "not modified" → return false.
+        // Discrimination is by affected-row count from ExecuteNonQuery (there is no RETURNING clause):
+        //   affectedRows > 0 → a row was written: a fresh INSERT, OR an ON CONFLICT DO UPDATE whose
+        //                      WHERE guard passed.
+        //   affectedRows = 0 → ON CONFLICT matched but the DO UPDATE WHERE guard blocked the update
+        //                      (terminal-row guard or active-lease guard). Treated as "not modified" → false.
+        // The return value does not distinguish a fresh insert from a conflict-update.
         // Use the inference form `ON CONFLICT (col, expression)` so the planner matches the
         // unique expression index by structure rather than
         // requiring a named constraint (a `CREATE UNIQUE INDEX` is an index, not a constraint;
