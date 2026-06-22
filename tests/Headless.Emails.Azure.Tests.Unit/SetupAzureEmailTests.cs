@@ -4,6 +4,7 @@ using Azure.Communication.Email;
 using Azure.Core;
 using Headless.Emails;
 using Headless.Emails.Azure;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -73,6 +74,45 @@ public sealed class SetupAzureEmailTests
                 options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
                 options.TokenCredential = Substitute.For<TokenCredential>();
             })
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IEmailSender>().Should().BeOfType<AzureCommunicationEmailSender>();
+        provider.GetRequiredService<EmailClient>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_resolve_azure_sender_for_configuration_binding_overload()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["ConnectionString"] = _ConnectionString }
+            )
+            .Build();
+
+        // when
+        services.AddHeadlessEmails(setup => setup.UseAzure(configuration));
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IEmailSender>().Should().BeOfType<AzureCommunicationEmailSender>();
+        provider.GetRequiredService<EmailClient>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_resolve_azure_sender_for_service_provider_delegate_overload()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessEmails(setup =>
+            setup.UseAzure((options, _) => options.ConnectionString = _ConnectionString)
         );
         using var provider = services.BuildServiceProvider();
 

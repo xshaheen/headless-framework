@@ -50,23 +50,69 @@ public sealed class AzureCommunicationEmailOptions
     /// <summary>Returns a diagnostics-safe description that never includes the connection string or access key.</summary>
     public override string ToString()
     {
-        if (!string.IsNullOrWhiteSpace(ConnectionString))
+        return ResolveAuthMode() switch
         {
-            return "AzureCommunicationEmail: connection-string auth";
-        }
-
-        if (Endpoint is not null && TokenCredential is not null)
-        {
-            return $"AzureCommunicationEmail: {Endpoint} (token-credential auth)";
-        }
-
-        if (Endpoint is not null && !string.IsNullOrWhiteSpace(AccessKey))
-        {
-            return $"AzureCommunicationEmail: {Endpoint} (access-key auth)";
-        }
-
-        return "AzureCommunicationEmail: <unconfigured>";
+            AzureCommunicationEmailAuthMode.ConnectionString => "AzureCommunicationEmail: connection-string auth",
+            AzureCommunicationEmailAuthMode.TokenCredential =>
+                $"AzureCommunicationEmail: {Endpoint} (token-credential auth)",
+            AzureCommunicationEmailAuthMode.AccessKey => $"AzureCommunicationEmail: {Endpoint} (access-key auth)",
+            _ => "AzureCommunicationEmail: <unconfigured>",
+        };
     }
+
+    /// <summary>
+    /// Resolves which single authentication mode these options describe. Returns
+    /// <see cref="AzureCommunicationEmailAuthMode.Unconfigured"/> when none is set and
+    /// <see cref="AzureCommunicationEmailAuthMode.Ambiguous"/> when more than one is set — the validator
+    /// rejects both. Centralizing the precedence here keeps the client factory, <see cref="ToString"/>,
+    /// and the validator from drifting when an authentication mode is added.
+    /// </summary>
+    internal AzureCommunicationEmailAuthMode ResolveAuthMode()
+    {
+        var connectionStringMode = !string.IsNullOrWhiteSpace(ConnectionString);
+        var accessKeyMode = Endpoint is not null && !string.IsNullOrWhiteSpace(AccessKey);
+        var tokenCredentialMode = Endpoint is not null && TokenCredential is not null;
+
+        var configuredModes = (connectionStringMode ? 1 : 0) + (accessKeyMode ? 1 : 0) + (tokenCredentialMode ? 1 : 0);
+
+        if (configuredModes == 0)
+        {
+            return AzureCommunicationEmailAuthMode.Unconfigured;
+        }
+
+        if (configuredModes > 1)
+        {
+            return AzureCommunicationEmailAuthMode.Ambiguous;
+        }
+
+        if (connectionStringMode)
+        {
+            return AzureCommunicationEmailAuthMode.ConnectionString;
+        }
+
+        return tokenCredentialMode
+            ? AzureCommunicationEmailAuthMode.TokenCredential
+            : AzureCommunicationEmailAuthMode.AccessKey;
+    }
+}
+
+/// <summary>The single authentication mode an <see cref="AzureCommunicationEmailOptions"/> instance describes.</summary>
+internal enum AzureCommunicationEmailAuthMode
+{
+    /// <summary>No authentication mode is configured.</summary>
+    Unconfigured,
+
+    /// <summary>More than one authentication mode is configured.</summary>
+    Ambiguous,
+
+    /// <summary>The resource connection string.</summary>
+    ConnectionString,
+
+    /// <summary>Endpoint paired with an access key.</summary>
+    AccessKey,
+
+    /// <summary>Endpoint paired with a Microsoft Entra ID token credential.</summary>
+    TokenCredential,
 }
 
 [UsedImplicitly]
@@ -84,12 +130,7 @@ internal sealed class AzureCommunicationEmailOptionsValidator : AbstractValidato
 
     private static bool _HasExactlyOneAuthMode(AzureCommunicationEmailOptions options)
     {
-        var connectionStringMode = !string.IsNullOrWhiteSpace(options.ConnectionString);
-        var accessKeyMode = options.Endpoint is not null && !string.IsNullOrWhiteSpace(options.AccessKey);
-        var tokenCredentialMode = options.Endpoint is not null && options.TokenCredential is not null;
-
-        var configuredModes = (connectionStringMode ? 1 : 0) + (accessKeyMode ? 1 : 0) + (tokenCredentialMode ? 1 : 0);
-
-        return configuredModes == 1;
+        return options.ResolveAuthMode()
+            is not (AzureCommunicationEmailAuthMode.Unconfigured or AzureCommunicationEmailAuthMode.Ambiguous);
     }
 }

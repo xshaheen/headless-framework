@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Azure;
 using Azure.Communication.Email;
 using Headless.Checks;
@@ -116,24 +117,24 @@ public static class SetupAzureEmail
 
     private static EmailClient _CreateClient(AzureCommunicationEmailOptions options)
     {
-        if (!string.IsNullOrWhiteSpace(options.ConnectionString))
+        // The options validator (wired with ValidateOnStart via Configure<TOptions, TValidator>) guarantees
+        // exactly one mode before this factory runs, so the resolved mode is never Unconfigured/Ambiguous on
+        // the validated path. Note: in a non-hosted container (bare BuildServiceProvider without IHost),
+        // ValidateOnStart never fires, so a misconfiguration instead surfaces here on first resolve.
+        return options.ResolveAuthMode() switch
         {
-            return new EmailClient(options.ConnectionString);
-        }
-
-        if (options.Endpoint is not null && options.TokenCredential is not null)
-        {
-            return new EmailClient(options.Endpoint, options.TokenCredential);
-        }
-
-        if (options.Endpoint is not null && !string.IsNullOrWhiteSpace(options.AccessKey))
-        {
-            return new EmailClient(options.Endpoint, new AzureKeyCredential(options.AccessKey));
-        }
-
-        throw new InvalidOperationException(
-            "AzureCommunicationEmailOptions is not configured with a valid authentication mode. Set ConnectionString, "
-                + "or Endpoint + AccessKey, or Endpoint + TokenCredential."
-        );
+            AzureCommunicationEmailAuthMode.ConnectionString => new EmailClient(options.ConnectionString!),
+            AzureCommunicationEmailAuthMode.TokenCredential => new EmailClient(
+                options.Endpoint!,
+                options.TokenCredential!
+            ),
+            AzureCommunicationEmailAuthMode.AccessKey => new EmailClient(
+                options.Endpoint!,
+                new AzureKeyCredential(options.AccessKey!)
+            ),
+            var mode => throw new UnreachableException(
+                $"AzureCommunicationEmailOptions resolved to {mode}; the options validator should have rejected this before the EmailClient factory ran."
+            ),
+        };
     }
 }

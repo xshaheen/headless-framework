@@ -9,5 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Emails.Azure\Headless.Emails.Azure.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

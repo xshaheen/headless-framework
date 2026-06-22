@@ -4,12 +4,13 @@ using Azure;
 using Azure.Communication.Email;
 using Headless.Emails;
 using Headless.Emails.Azure;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace Tests;
 
-public sealed class AzureCommunicationEmailSenderTests
+public sealed class AzureCommunicationEmailSenderTests : TestBase
 {
     private const string _SenderAddress = "sender@example.com";
     private const string _RecipientAddress = "recipient@example.com";
@@ -24,7 +25,7 @@ public sealed class AzureCommunicationEmailSenderTests
         var sender = new AzureCommunicationEmailSender(new FakeEmailClient(_ => operation), _logger);
 
         // when
-        var response = await sender.SendAsync(_Request());
+        var response = await sender.SendAsync(_Request(), AbortToken);
 
         // then
         response.Success.Should().BeTrue();
@@ -39,7 +40,7 @@ public sealed class AzureCommunicationEmailSenderTests
         var sender = new AzureCommunicationEmailSender(new FakeEmailClient(_ => operation), _logger);
 
         // when
-        var response = await sender.SendAsync(_Request());
+        var response = await sender.SendAsync(_Request(), AbortToken);
 
         // then
         response.Success.Should().BeFalse();
@@ -60,7 +61,7 @@ public sealed class AzureCommunicationEmailSenderTests
         );
 
         // when
-        var response = await sender.SendAsync(_Request());
+        var response = await sender.SendAsync(_Request(), AbortToken);
 
         // then
         response.Success.Should().BeFalse();
@@ -79,7 +80,7 @@ public sealed class AzureCommunicationEmailSenderTests
         );
 
         // when
-        var action = async () => await sender.SendAsync(_Request());
+        var action = async () => await sender.SendAsync(_Request(), AbortToken);
 
         // then
         await action.Should().ThrowAsync<OperationCanceledException>();
