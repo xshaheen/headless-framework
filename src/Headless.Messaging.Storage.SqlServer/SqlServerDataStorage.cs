@@ -13,6 +13,7 @@ using Headless.Messaging.Serialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.SqlServer;
@@ -28,7 +29,8 @@ public sealed class SqlServerDataStorage(
     ISerializer serializer,
     [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
-    INodeMembership nodeMembership
+    INodeMembership nodeMembership,
+    ILogger<SqlServerDataStorage> logger
 ) : IDataStorage
 {
     /// <summary>
@@ -741,20 +743,32 @@ public sealed class SqlServerDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
+                        var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
 
-                        messages.Add(
-                            new MediumMessage
+                        MediumMessage mediumMessage;
+                        try
+                        {
+                            mediumMessage = new MediumMessage
                             {
-                                StorageId = reader.GetGuid(0),
+                                StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
                                 IntentType = (IntentType)reader.GetInt16(2),
                                 Retries = reader.GetInt32(3),
                                 Added = reader.GetDateTime(4),
                                 ExpiresAt = reader.GetDateTime(5),
-                            }
-                        );
+                            };
+                        }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
+                        catch (Exception ex)
+#pragma warning restore CA1031
+                        {
+                            logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                            continue;
+                        }
+
+                        messages.Add(mediumMessage);
                     }
 
                     return messages;
@@ -1019,12 +1033,15 @@ public sealed class SqlServerDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
+                        var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
 
-                        messages.Add(
-                            new MediumMessage
+                        MediumMessage mediumMessage;
+                        try
+                        {
+                            mediumMessage = new MediumMessage
                             {
-                                StorageId = reader.GetGuid(0),
+                                StorageId = storageId,
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
                                 IntentType = (IntentType)reader.GetInt16(2),
@@ -1039,8 +1056,17 @@ public sealed class SqlServerDataStorage(
                                 Owner = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetString(7),
-                            }
-                        );
+                            };
+                        }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
+                        catch (Exception ex)
+#pragma warning restore CA1031
+                        {
+                            logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                            continue;
+                        }
+
+                        messages.Add(mediumMessage);
                     }
 
                     return messages;

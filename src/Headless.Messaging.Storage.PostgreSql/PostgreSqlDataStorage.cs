@@ -11,6 +11,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -29,7 +30,8 @@ internal sealed class PostgreSqlDataStorage(
     // PostgreSQL stores message ids as native uuid (big-endian byte sort) -> Version7 keeps the PK sequential.
     [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
-    INodeMembership nodeMembership
+    INodeMembership nodeMembership,
+    ILogger<PostgreSqlDataStorage> logger
 ) : IDataStorage
 {
     /// <summary>
@@ -720,20 +722,32 @@ internal sealed class PostgreSqlDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
+                        var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
 
-                        var mediumMessage = new MediumMessage
+                        MediumMessage mediumMessage;
+                        try
                         {
-                            StorageId = reader.GetGuid(0),
-                            Origin = serializer.Deserialize(content)!,
-                            Content = content,
-                            IntentType = (IntentType)reader.GetInt16(2),
-                            Retries = reader.GetInt32(3),
-                            Added = reader.GetDateTime(4),
-                            ExpiresAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(5),
-                        };
+                            mediumMessage = new MediumMessage
+                            {
+                                StorageId = storageId,
+                                Origin = serializer.Deserialize(content)!,
+                                Content = content,
+                                IntentType = (IntentType)reader.GetInt16(2),
+                                Retries = reader.GetInt32(3),
+                                Added = reader.GetDateTime(4),
+                                ExpiresAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(5),
+                            };
+                        }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
+                        catch (Exception ex)
+#pragma warning restore CA1031
+                        {
+                            logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
+                            continue;
+                        }
 
                         messages.Add(mediumMessage);
                     }
@@ -746,6 +760,8 @@ internal sealed class PostgreSqlDataStorage(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+
+        logger.LogSchedulerBatchFetched(messageList.Count, _publishedTable);
 
         await scheduleTask(transaction, messageList).ConfigureAwait(false);
 
@@ -1009,26 +1025,40 @@ internal sealed class PostgreSqlDataStorage(
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
+                        var storageId = reader.GetGuid(0);
                         var content = reader.GetString(1);
 
-                        var mediumMessage = new MediumMessage
+                        MediumMessage mediumMessage;
+                        try
                         {
-                            StorageId = reader.GetGuid(0),
-                            Origin = serializer.Deserialize(content)!,
-                            Content = content,
-                            IntentType = (IntentType)reader.GetInt16(2),
-                            Retries = reader.GetInt32(3),
-                            Added = reader.GetDateTime(4),
-                            NextRetryAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(5),
-                            LockedUntil = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(6),
-                            Owner = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetString(7),
-                        };
+                            mediumMessage = new MediumMessage
+                            {
+                                StorageId = storageId,
+                                Origin = serializer.Deserialize(content)!,
+                                Content = content,
+                                IntentType = (IntentType)reader.GetInt16(2),
+                                Retries = reader.GetInt32(3),
+                                Added = reader.GetDateTime(4),
+                                NextRetryAt = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(5),
+                                LockedUntil = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(6),
+                                Owner = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(7),
+                            };
+                        }
+#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
+                        catch (Exception ex)
+#pragma warning restore CA1031
+                        {
+                            // #3 — poison row: skip so the rest of the leased batch still dispatches. The row stays
+                            // leased until LockedUntil expires, then is re-picked and re-skipped (no head-of-line stall).
+                            logger.LogPoisonMessageSkipped(storageId, tableName, ex);
+                            continue;
+                        }
 
                         messages.Add(mediumMessage);
                     }

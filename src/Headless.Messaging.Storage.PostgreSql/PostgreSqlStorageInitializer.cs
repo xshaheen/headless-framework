@@ -243,6 +243,8 @@ internal sealed class PostgreSqlStorageInitializer(
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
+
+            logger.LogInvalidIndexDropped(indexName, postgreSqlOptions.Value.Schema);
         }
     }
 
