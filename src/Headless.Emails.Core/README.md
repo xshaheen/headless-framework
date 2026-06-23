@@ -32,8 +32,8 @@ dotnet add package Headless.Emails.Core
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop();                                       // default (required)
-    setup.AddNamed("marketing", i => i.UseNoop());         // optional named sender, keyed "marketing"
+    setup.UseNoop(); // default (required)
+    setup.AddNamed("marketing", i => i.UseNoop()); // optional named sender, keyed "marketing"
 });
 
 // Resolve a named sender:

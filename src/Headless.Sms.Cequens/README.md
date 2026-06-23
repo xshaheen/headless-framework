@@ -30,17 +30,17 @@ dotnet add package Headless.Sms.Cequens
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseCequens(
-    builder.Configuration.GetSection("Sms:Cequens")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseCequens(builder.Configuration.GetSection("Sms:Cequens")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseCequens(options =>
-{
-    options.ApiKey = "your-api-key";
-    options.UserName = "your-username";
-    options.SenderName = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseCequens(options =>
+    {
+        options.ApiKey = "your-api-key";
+        options.UserName = "your-username";
+        options.SenderName = "MyApp";
+    })
+);
 ```
 
 ## Configuration

@@ -10,58 +10,54 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
-  - [Setting Definitions vs. Setting Values](#setting-definitions-vs-setting-values)
-  - [Value Providers and Resolution Order](#value-providers-and-resolution-order)
-  - [Static Store vs. Dynamic Store](#static-store-vs-dynamic-store)
-  - [Setting Value Caching](#setting-value-caching)
-  - [Startup Initialization](#startup-initialization)
+    - [Setting Definitions vs. Setting Values](#setting-definitions-vs-setting-values)
+    - [Value Providers and Resolution Order](#value-providers-and-resolution-order)
+    - [Static Store vs. Dynamic Store](#static-store-vs-dynamic-store)
+    - [Setting Value Caching](#setting-value-caching)
+    - [Startup Initialization](#startup-initialization)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Settings.Abstractions](#headlesssettingsabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Settings.Core](#headlesssettingscore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration-1)
-    - [SettingManagementOptions](#settingmanagementoptions)
-    - [SettingsStorageOptions](#settingsstorageoptions)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Settings.Storage.EntityFramework](#headlesssettingsstorageentityframework)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Design Notes](#design-notes-1)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Settings.Storage.PostgreSql](#headlesssettingsstoragepostgresql)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-3)
-    - [Options](#options)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Settings.Storage.SqlServer](#headlesssettingsstoragesqlserver)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-3)
-  - [Configuration](#configuration-4)
-    - [Options](#options-1)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 
 > Dynamic, hierarchical application settings with runtime read/write support and multiple value providers (DefaultValue, Configuration, Global, Tenant, User) resolved from lowest to highest priority.
 
@@ -78,9 +74,8 @@ Minimal wiring:
 ```csharp
 builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
+
 // AddHeadlessSettings registers the management core automatically.
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
@@ -139,15 +134,15 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 ---
 
-# Headless.Settings.Abstractions
+## Headless.Settings.Abstractions
 
 Defines the provider-agnostic interfaces for dynamic application settings management.
 
-## Problem Solved
+### Problem Solved
 
 Provides a storage-independent API for managing application settings with support for multiple value providers (DefaultValue, Configuration, Global, Tenant, User), enabling hierarchical settings that can be overridden at different levels without changing application code.
 
-## Key Features
+### Key Features
 
 - `ISettingManager` — reads and writes setting values across the registered provider chain; supports single and bulk queries with optional provider targeting and fallback
 - `ISettingDefinitionManager` — looks up and enumerates all registered setting definitions
@@ -159,13 +154,13 @@ Provides a storage-independent API for managing application settings with suppor
 - General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `FindAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
 - Scoped extension members: `FindForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `FindGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `FindDefaultAsync` / `GetAllDefaultAsync`, `FindInConfigurationAsync` / `GetAllInConfigurationAsync`
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Settings.Abstractions
 ```
 
-## Usage
+### Quick Start
 
 ```csharp
 public sealed class NotificationService(ISettingManager settingManager)
@@ -195,7 +190,7 @@ public sealed class NotificationService(ISettingManager settingManager)
 }
 ```
 
-### Defining Settings
+#### Defining Settings
 
 ```csharp
 public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
@@ -203,11 +198,7 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
     public void Define(ISettingDefinitionContext context)
     {
         context.Add(
-            new SettingDefinition(
-                name: "App.MaxFileSize",
-                defaultValue: "10485760",
-                displayName: "Maximum File Size"
-            ),
+            new SettingDefinition(name: "App.MaxFileSize", defaultValue: "10485760", displayName: "Maximum File Size"),
             new SettingDefinition(
                 name: "App.ApiKey",
                 displayName: "API Key",
@@ -219,29 +210,29 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 }
 ```
 
-## Configuration
+### Configuration
 
 None. This is an abstractions-only package.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Settings.Core
+## Headless.Settings.Core
 
 Core implementation of dynamic settings management with hierarchical value providers, caching, encryption, and background initialization.
 
-## Problem Solved
+### Problem Solved
 
 Provides the full settings management implementation including hierarchical value resolution (User > Tenant > Global > Configuration > DefaultValue), setting value caching with distributed invalidation, transparent encryption for sensitive settings, and background startup initialization that seeds static definitions to the database.
 
-## Key Features
+### Key Features
 
 - `SettingManager` — full implementation of `ISettingManager`; walks the registered provider chain, caches results, and coordinates writes with cache invalidation
 - `ISettingValueReadProvider` / `ISettingValueProvider` — read-only and read-write contracts for custom value providers; register with `services.AddSettingValueProvider<T>()`
@@ -255,7 +246,7 @@ Provides the full settings management implementation including hierarchical valu
 - `services.AddSettingDefinitionProvider<T>()` — registers a custom `ISettingDefinitionProvider`
 - `services.AddSettingValueProvider<T>()` — registers a custom value provider (idempotent by type)
 
-## Design Notes
+### Design Notes
 
 Value providers are registered with the last-added provider having the highest resolution priority. The built-in order (from setup) is `DefaultValue → Configuration → Global → Tenant → User` — User wins. Custom providers added via `AddSettingValueProvider<T>()` are appended after `User` and therefore have the highest priority of all. This matters when writing custom providers that must override built-in resolution.
 
@@ -263,13 +254,13 @@ Value providers are registered with the last-added provider having the highest r
 
 `SettingsInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. If the host is stopped before initialization finishes, the background task is cancelled and the `TaskCompletionSource` is faulted with `OperationCanceledException`.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Settings.Core
 ```
 
-## Quick Start
+### Quick Start
 
 Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IStringEncryptionService`) first, then call `AddHeadlessSettings`:
 
@@ -279,9 +270,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Required dependencies
 builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 // Register management core + storage in one call
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
@@ -290,29 +279,23 @@ builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbCont
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 ```
 
-### Define Settings
+#### Define Settings
 
 ```csharp
 public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(new SettingDefinition(
-            name: "App.MaxFileSize",
-            displayName: "Maximum File Size",
-            defaultValue: "10485760"
-        ));
+        context.Add(
+            new SettingDefinition(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760")
+        );
 
-        context.Add(new SettingDefinition(
-            name: "App.ApiKey",
-            displayName: "API Key",
-            isEncrypted: true
-        ));
+        context.Add(new SettingDefinition(name: "App.ApiKey", displayName: "API Key", isEncrypted: true));
     }
 }
 ```
 
-### Read and Write Settings
+#### Read and Write Settings
 
 ```csharp
 public sealed class ConfigService(ISettingManager settings)
@@ -336,14 +319,14 @@ public sealed class ConfigService(ISettingManager settings)
 }
 ```
 
-### Custom Value Provider
+#### Custom Value Provider
 
 ```csharp
 // T must implement ISettingValueReadProvider (read-only) or ISettingValueProvider (read-write)
 builder.Services.AddSettingValueProvider<MyCustomSettingValueProvider>();
 ```
 
-## Configuration
+### Configuration
 
 Pre-requisite: configure and register string encryption before settings management:
 
@@ -359,7 +342,7 @@ Pre-requisite: configure and register string encryption before settings manageme
 }
 ```
 
-### SettingManagementOptions
+#### SettingManagementOptions
 
 Configure via `setup.ConfigureManagement(...)` or `services.Configure<SettingManagementOptions>(...)`:
 
@@ -389,7 +372,7 @@ services.AddHeadlessSettings(setup =>
 
 All lock- and cache-expiry options default to reasonable production values. The validator rejects empty lock keys and zero/negative expiry spans.
 
-### SettingsStorageOptions
+#### SettingsStorageOptions
 
 Configure schema and table names via `setup.ConfigureStorage(...)`:
 
@@ -398,16 +381,16 @@ services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "settings";                          // default
-        o.SettingValuesTableName = "SettingValues";     // default
+        o.Schema = "settings"; // default
+        o.SettingValuesTableName = "SettingValues"; // default
         o.SettingDefinitionsTableName = "SettingDefinitions"; // default
-        o.InitializeOnStartup = true;                   // default; set false when schema is provisioned out-of-band
+        o.InitializeOnStartup = true; // default; set false when schema is provisioned out-of-band
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Settings.Abstractions`
 - `Headless.Security`
@@ -415,7 +398,7 @@ services.AddHeadlessSettings(setup =>
 - `Headless.DistributedLocks.Abstractions`
 - `Headless.Domain`
 
-## Side Effects
+### Side Effects
 
 - Registers `ISettingManager` as singleton
 - Registers `ISettingDefinitionManager`, `IStaticSettingDefinitionStore`, `IDynamicSettingDefinitionStore`, `ISettingValueStore`, `ISettingValueProviderManager` as singletons
@@ -425,15 +408,15 @@ services.AddHeadlessSettings(setup =>
 
 ---
 
-# Headless.Settings.Storage.EntityFramework
+## Headless.Settings.Storage.EntityFramework
 
 Entity Framework Core storage implementation for settings management.
 
-## Problem Solved
+### Problem Solved
 
 Provides EF Core repository implementations for setting values and definitions using the consumer's own `DbContext`, with schema managed through EF migrations.
 
-## Key Features
+### Key Features
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessSettingsSetupBuilder`
 - `modelBuilder.AddHeadlessSettings(DbContext context)` — applies entity configurations by resolving `SettingsStorageOptions` from the context's service provider (no constructor injection required)
@@ -442,17 +425,17 @@ Provides EF Core repository implementations for setting values and definitions u
 - `SettingsStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
 - Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing
 
-## Design Notes
+### Design Notes
 
 The package does not ship a dedicated settings `DbContext` or settings-specific `DbContext` interface. Consumers register `AddDbContextFactory<TContext>()`, map the Headless entities in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties. Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`. Writes commit through a fresh context owned by the repository, so they are not enlisted in the consumer's outer transaction.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Settings.Storage.EntityFramework
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
@@ -489,7 +472,7 @@ builder.Services.AddHeadlessSettings(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
 `SettingsStorageOptions` defaults:
 
@@ -500,13 +483,13 @@ builder.Services.AddHeadlessSettings(setup =>
 
 The registration validates identifier names using cross-provider rules (SQL Server superset). The startup gate inspects the EF model before hosted services start and fails with an actionable message if any settings entity is missing. `InitializeOnStartup` is ignored by the EF provider — EF uses migrations, not startup DDL.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Settings.Core`
 - `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
-## Side Effects
+### Side Effects
 
 - Registers `ISettingValueRecordRepository` (`EfSettingValueRecordRepository<TContext>`) as singleton
 - Registers `ISettingDefinitionRecordRepository` (`EfSettingDefinitionRecordRepository<TContext>`) as singleton
@@ -515,15 +498,15 @@ The registration validates identifier names using cross-provider rules (SQL Serv
 
 ---
 
-# Headless.Settings.Storage.PostgreSql
+## Headless.Settings.Storage.PostgreSql
 
 PostgreSQL raw-DDL storage for settings management.
 
-## Problem Solved
+### Problem Solved
 
 Provides settings repositories and startup schema initialization without requiring the consumer to use Entity Framework for settings persistence. All schema is created idempotently at host startup via raw ADO.NET.
 
-## Key Features
+### Key Features
 
 - `setup.UsePostgreSql(string connectionString)` — registers the PostgreSQL storage provider from a connection string
 - `setup.UsePostgreSql(IConfiguration configuration)` — overload that binds `PostgreSqlSettingsOptions` from a configuration section
@@ -534,22 +517,20 @@ Provides settings repositories and startup schema initialization without requiri
 - `PostgreSqlSettingsOptions` — connection string and command timeout
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Settings.Storage.PostgreSql
 ```
 
-## Quick Start
+### Quick Start
 
 Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
 
 ```csharp
 builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 builder.Services.AddHeadlessSettings(setup =>
 {
@@ -568,9 +549,9 @@ builder.Services.AddHeadlessSettings(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### Options
+#### Options
 
 `PostgreSqlSettingsOptions`:
 
@@ -581,13 +562,13 @@ builder.Services.AddHeadlessSettings(setup =>
 
 Configure schema and table names through `SettingsStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (migrations job, DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Settings.Core`
 - `Headless.Serializer.Json`
 - `Npgsql`
 
-## Side Effects
+### Side Effects
 
 - Registers `PostgreSqlSettingsStorageInitializer` as `IHostedService` and `IInitializer`
 - Registers `PostgreSqlSettingValueRecordRepository` as `ISettingValueRecordRepository` (singleton)
@@ -595,15 +576,15 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 
 ---
 
-# Headless.Settings.Storage.SqlServer
+## Headless.Settings.Storage.SqlServer
 
 SQL Server raw-DDL storage for settings management.
 
-## Problem Solved
+### Problem Solved
 
 Provides settings repositories and startup schema initialization without requiring the consumer to use Entity Framework for settings persistence. All schema is created idempotently at host startup via raw ADO.NET.
 
-## Key Features
+### Key Features
 
 - `setup.UseSqlServer(string connectionString)` — registers the SQL Server storage provider from a connection string
 - `setup.UseSqlServer(IConfiguration configuration)` — overload that binds `SqlServerSettingsOptions` from a configuration section
@@ -614,22 +595,20 @@ Provides settings repositories and startup schema initialization without requiri
 - `SqlServerSettingsOptions` — connection string and command timeout
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Settings.Storage.SqlServer
 ```
 
-## Quick Start
+### Quick Start
 
 Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
 
 ```csharp
 builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 builder.Services.AddHeadlessSettings(setup =>
 {
@@ -648,9 +627,9 @@ builder.Services.AddHeadlessSettings(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### Options
+#### Options
 
 `SqlServerSettingsOptions`:
 
@@ -661,13 +640,13 @@ builder.Services.AddHeadlessSettings(setup =>
 
 Configure schema and table names through `SettingsStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (migrations job, DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Settings.Core`
 - `Headless.Serializer.Json`
 - `Microsoft.Data.SqlClient`
 
-## Side Effects
+### Side Effects
 
 - Registers `SqlServerSettingsStorageInitializer` as `IHostedService` and `IInitializer`
 - Registers `SqlServerSettingValueRecordRepository` as `ISettingValueRecordRepository` (singleton)

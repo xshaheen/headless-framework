@@ -55,10 +55,10 @@ builder.Services.AddIdempotency(o =>
 var app = builder.Build();
 
 app.UseAuthentication();
-app.UseHeadlessTenancy();       // tenant must be resolved before idempotency
+app.UseHeadlessTenancy(); // tenant must be resolved before idempotency
 app.UseAuthorization();
-app.UseResponseCompression();   // must be OUTSIDE (before) UseIdempotency
-app.UseIdempotency();           // place AFTER auth and tenancy
+app.UseResponseCompression(); // must be OUTSIDE (before) UseIdempotency
+app.UseIdempotency(); // place AFTER auth and tenancy
 
 app.MapPost("/disbursements", CreateDisbursement);
 app.Run();
@@ -68,11 +68,11 @@ Per-endpoint overrides:
 
 ```csharp
 app.MapPost("/webhooks", HandleWebhook)
-   .WithIdempotency(o =>
-   {
-       o.IdempotencyKeyExpiration = TimeSpan.FromDays(7);
-       o.MismatchStatusCode = StatusCodes.Status409Conflict;
-   });
+    .WithIdempotency(o =>
+    {
+        o.IdempotencyKeyExpiration = TimeSpan.FromDays(7);
+        o.MismatchStatusCode = StatusCodes.Status409Conflict;
+    });
 ```
 
 ## Configuration

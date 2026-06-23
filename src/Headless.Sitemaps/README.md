@@ -34,11 +34,7 @@ var urls = new List<SitemapUrl>
         changeFrequency: ChangeFrequency.Daily,
         priority: 1.0f
     ),
-    new(
-        location: new Uri("https://example.com/about"),
-        changeFrequency: ChangeFrequency.Monthly,
-        priority: 0.8f
-    ),
+    new(location: new Uri("https://example.com/about"), changeFrequency: ChangeFrequency.Monthly, priority: 0.8f),
 };
 
 // Write to stream

@@ -10,6 +10,8 @@ packages: Emails.Abstractions, Emails.Core, Emails.Aws, Emails.Azure, Emails.Dev
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
+    - [Request and Response model](#request-and-response-model)
+    - [Provider wiring (unified setup builder)](#provider-wiring-unified-setup-builder)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Emails.Abstractions](#headlessemailsabstractions)
     - [Problem Solved](#problem-solved)
@@ -22,6 +24,7 @@ packages: Emails.Abstractions, Emails.Core, Emails.Aws, Emails.Azure, Emails.Dev
 - [Headless.Emails.Core](#headlessemailscore)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
     - [Configuration](#configuration-1)
@@ -38,6 +41,7 @@ packages: Emails.Abstractions, Emails.Core, Emails.Aws, Emails.Azure, Emails.Dev
 - [Headless.Emails.Azure](#headlessemailsazure)
     - [Problem Solved](#problem-solved-3)
     - [Key Features](#key-features-3)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-3)
     - [Quick Start](#quick-start-3)
     - [Configuration](#configuration-3)
@@ -54,6 +58,7 @@ packages: Emails.Abstractions, Emails.Core, Emails.Aws, Emails.Azure, Emails.Dev
 - [Headless.Emails.Mailkit](#headlessemailsmailkit)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
@@ -134,9 +139,9 @@ A host can register one **default** sender plus any number of **named** senders 
 ```csharp
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseAwsSes(awsOptions);                                   // default (required)
-    setup.AddNamed("marketing", i => i.UseMailkit(smtpSection));   // named, keyed "marketing"
-    setup.AddNamed("alerts", i => i.UseAzure(acsSection));         // named, keyed "alerts"
+    setup.UseAwsSes(awsOptions); // default (required)
+    setup.AddNamed("marketing", i => i.UseMailkit(smtpSection)); // named, keyed "marketing"
+    setup.AddNamed("alerts", i => i.UseAzure(acsSection)); // named, keyed "alerts"
 });
 ```
 
@@ -156,15 +161,15 @@ builder.Services.AddHeadlessEmails(setup =>
 
 ---
 
-# Headless.Emails.Abstractions
+## Headless.Emails.Abstractions
 
 Defines the unified interface for sending emails across different providers (Azure Communication Services, AWS SES, SMTP/MailKit, development).
 
-## Problem Solved
+### Problem Solved
 
 Provides a provider-agnostic email sending API for switching email providers without changing application code.
 
-## Key Features
+### Key Features
 
 - `IEmailSender` — core interface with a single `SendAsync(SendSingleEmailRequest, CancellationToken)` method returning `ValueTask<SendSingleEmailResponse>`
 - `IEmailSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)`. Backed by the container's keyed `IEmailSender` registrations
@@ -174,30 +179,32 @@ Provides a provider-agnostic email sending API for switching email providers wit
 - `EmailRequestAttachment` — sealed record: `Name` + `File` (`ReadOnlyMemory<byte>`) + optional `ContentType`
 - `SendSingleEmailResponse` — closed result type with `Success` bool and nullable `FailureError` string
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Emails.Abstractions
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class NotificationService(IEmailSender emailSender)
 {
     public async Task SendWelcomeEmailAsync(string to, string name, CancellationToken ct)
     {
-        var response = await emailSender.SendAsync(new SendSingleEmailRequest
-        {
-            From = "noreply@example.com",
-            Destination = new EmailRequestDestination
-            {
-                ToAddresses = [new EmailRequestAddress(to)],
-            },
-            Subject = "Welcome!",
-            MessageHtml = $"<h1>Hello {name}!</h1>",
-            MessageText = $"Hello {name}!",
-        }, ct).ConfigureAwait(false);
+        var response = await emailSender
+            .SendAsync(
+                new SendSingleEmailRequest
+                {
+                    From = "noreply@example.com",
+                    Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress(to)] },
+                    Subject = "Welcome!",
+                    MessageHtml = $"<h1>Hello {name}!</h1>",
+                    MessageText = $"Hello {name}!",
+                },
+                ct
+            )
+            .ConfigureAwait(false);
 
         if (!response.Success)
         {
@@ -207,29 +214,29 @@ public sealed class NotificationService(IEmailSender emailSender)
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required. This is an abstractions-only package.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Emails.Core
+## Headless.Emails.Core
 
 Setup builder, MimeKit integration, and shared utilities for email implementations.
 
-## Problem Solved
+### Problem Solved
 
 Owns the unified email setup builder (`AddHeadlessEmails`) plus shared conversion logic that bridges the framework email contracts with MimeKit, eliminating duplication across the provider implementations.
 
-## Key Features
+### Key Features
 
 - `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` — the single provider-agnostic registration entry point, with an exactly-one-default-provider gate
 - `HeadlessEmailsSetupBuilder` — receives the default `Use*` selection plus `AddNamed(name, …)` named instances; `HeadlessEmailInstanceBuilder` — the per-named-instance builder that providers extend with their `Use*` members
@@ -239,24 +246,24 @@ Owns the unified email setup builder (`AddHeadlessEmails`) plus shared conversio
 - `MapToMailboxAddress()` — maps an `EmailRequestAddress` to a MimeKit `MailboxAddress` (internal)
 - Full address mapping (From, To, Cc, Bcc), body building (text + HTML via `BodyBuilder`), and attachment streaming
 
-## Design Notes
+### Design Notes
 
 The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate is **per-slot**: it requires exactly one default provider (rejecting zero or multiple) while allowing unbounded uniquely-named instances, and rejects a repeated `AddHeadlessEmails` on the same `IServiceCollection`. Providers contribute deferred `Action<IServiceCollection>` registrations (`RegisterDefaultProvider` for the default, `instance.RegisterProvider` for a named instance) rather than implementing a provider interface, keeping the default and named paths symmetric. The MimeKit converter returns a `MimeMessage` that callers dispose; the implementation disposes the message if an exception occurs during construction, preventing a resource leak.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Emails.Core
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop();                                       // default (required)
-    setup.AddNamed("marketing", i => i.UseNoop());         // optional named sender, keyed "marketing"
+    setup.UseNoop(); // default (required)
+    setup.AddNamed("marketing", i => i.UseNoop()); // optional named sender, keyed "marketing"
 });
 
 // Resolve a named sender:
@@ -266,31 +273,31 @@ var marketing = serviceProvider.GetRequiredService<IEmailSenderProvider>().GetSe
 var contentType = EmailAttachmentContentType.Resolve("invoice.pdf"); // "application/pdf"
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Emails.Abstractions`
 - `Headless.Hosting`
 - `MailKit`
 
-## Side Effects
+### Side Effects
 
 `AddHeadlessEmails` registers a provider-registration marker and `IEmailSenderProvider` (keyed-service-backed), then runs the default provider's wiring (the unkeyed `IEmailSender`) followed by each named instance's wiring (keyed under the instance name). The marker enforces the single-call rule.
 
 ---
 
-# Headless.Emails.Aws
+## Headless.Emails.Aws
 
 AWS SES (Simple Email Service) v2 implementation of the email sending abstraction.
 
-## Problem Solved
+### Problem Solved
 
 Provides email sending via AWS SES v2 using the unified `IEmailSender` abstraction, ideal for production deployments on AWS.
 
-## Key Features
+### Key Features
 
 - Full `IEmailSender` implementation using AWS SES v2 (`AWSSDK.SimpleEmailV2`)
 - Simple sends (no attachments) use the SES structured API path — no MIME serialization
@@ -300,13 +307,13 @@ Provides email sending via AWS SES v2 using the unified `IEmailSender` abstracti
 - BCC is delivered via the SES envelope (`Destination`) and the `Bcc` header is hidden from the serialized MIME on the raw (attachment) path, so BCC recipients are never disclosed
 - Non-PII logging on non-success HTTP responses (status code, request ID, message ID — no recipient/sender addresses)
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Emails.Aws
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -316,11 +323,15 @@ var awsOptions = builder.Configuration.GetAWSOptions();
 builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(awsOptions));
 
 // Option 2: explicit credentials
-builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(new AWSOptions
-{
-    Region = RegionEndpoint.USEast1,
-    Credentials = new BasicAWSCredentials("accessKey", "secretKey"),
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAwsSes(
+        new AWSOptions
+        {
+            Region = RegionEndpoint.USEast1,
+            Credentials = new BasicAWSCredentials("accessKey", "secretKey"),
+        }
+    )
+);
 
 // Option 3: use default AWSOptions already registered in DI (pass null)
 builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(null));
@@ -328,12 +339,12 @@ builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(null));
 // Named instance (keyed IEmailSender, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop();                                       // default (required)
-    setup.AddNamed("ses", i => i.UseAwsSes(awsOptions));   // keyed "ses"
+    setup.UseNoop(); // default (required)
+    setup.AddNamed("ses", i => i.UseAwsSes(awsOptions)); // keyed "ses"
 });
 ```
 
-## Configuration
+### Configuration
 
 ```json
 {
@@ -345,29 +356,29 @@ builder.Services.AddHeadlessEmails(setup =>
 
 Credentials are resolved from the standard AWS credential chain (environment variables, `~/.aws/credentials`, IAM role) when not passed explicitly.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Emails.Core`
 - `Headless.Extensions`
 - `AWSSDK.SimpleEmailV2`
 - `AWSSDK.Extensions.NETCore.Setup`
 
-## Side Effects
+### Side Effects
 
 - Default: registers `IAmazonSimpleEmailServiceV2` via `TryAddAWSService` (no-op if already registered) and `IEmailSender` as an unkeyed singleton
 - Named (`AddNamed(name, i => i.UseAwsSes(…))`): registers a keyed `IAmazonSimpleEmailServiceV2` (built from the supplied options, the ambient `AWSOptions` in DI, or `IConfiguration` (`AWS:*` via `GetAWSOptions()`) — mirroring `TryAddAWSService(null)` — using `AWSOptions.CreateServiceClient<T>`, since `TryAddAWSService` has no keyed overload) and a keyed `IEmailSender`, both under the instance name
 
 ---
 
-# Headless.Emails.Azure
+## Headless.Emails.Azure
 
 Azure Communication Services (ACS) Email implementation of the email sending abstraction.
 
-## Problem Solved
+### Problem Solved
 
 Provides email sending via Azure Communication Services using the unified `IEmailSender` abstraction — the intended cloud-email backend for Azure-hosted consumers, with managed-identity support.
 
-## Key Features
+### Key Features
 
 - Full `IEmailSender` implementation over `Azure.Communication.Email`
 - Three authentication modes: connection string, endpoint + access key, and endpoint + managed-identity `TokenCredential`
@@ -376,50 +387,53 @@ Provides email sending via Azure Communication Services using the unified `IEmai
 - Both a thrown `RequestFailedException` and a completed-but-failed terminal status map to `SendSingleEmailResponse.Failed(...)`
 - Non-PII logging on failure (operation id, status, error code — no recipient/sender addresses)
 
-## Design Notes
+### Design Notes
 
 The send uses `EmailClient.SendAsync(WaitUntil.Completed, …)`, so the call blocks until ACS reaches a terminal state — matching the contract's "accepted for delivery" success semantics. ACS can complete a long-running send with a non-`Succeeded` status **without throwing**, so the sender inspects `operation.Value.Status` and treats any terminal non-`Succeeded` state as a failure (an exception-only check would report rejected mail as delivered). Only `Succeeded` returns `Succeeded()`; unrelated exceptions (cancellation, argument errors) propagate.
 
 The package depends on `Azure.Core` (not `Azure.Identity`): supply your own `DefaultAzureCredential` through the delegate overload to keep the dependency surface narrow. The `IConfiguration` overload binds only the connection-string and endpoint + access-key modes. ACS's `senderAddress` is a bare string, so the sender's display name is not honored. No custom retry loop is added — `Azure.Core`'s pipeline already retries 429/5xx honoring `Retry-After`. The sender domain must be verified and linked in the Communication Services resource; managed-domain send limits are low (5/min; custom domains 30/min).
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Emails.Azure
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: connection string or endpoint + access key, bound from configuration
-builder.Services.AddHeadlessEmails(setup =>
-    setup.UseAzure(builder.Configuration.GetSection("AzureEmail")));
+builder.Services.AddHeadlessEmails(setup => setup.UseAzure(builder.Configuration.GetSection("AzureEmail")));
 
 // Option 2: endpoint + access key (delegate)
-builder.Services.AddHeadlessEmails(setup => setup.UseAzure(options =>
-{
-    options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
-    options.AccessKey = builder.Configuration["AzureEmail:AccessKey"]!;
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAzure(options =>
+    {
+        options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
+        options.AccessKey = builder.Configuration["AzureEmail:AccessKey"]!;
+    })
+);
 
 // Option 3: managed identity (TokenCredential — delegate only; requires the Azure.Identity package)
-builder.Services.AddHeadlessEmails(setup => setup.UseAzure(options =>
-{
-    options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
-    options.TokenCredential = new DefaultAzureCredential();
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAzure(options =>
+    {
+        options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
+        options.TokenCredential = new DefaultAzureCredential();
+    })
+);
 
 // Named instance (keyed IEmailSender + keyed EmailClient, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop();                                                            // default (required)
+    setup.UseNoop(); // default (required)
     setup.AddNamed("alerts", i => i.UseAzure(builder.Configuration.GetSection("AlertsEmail")));
 });
 ```
 
-## Configuration
+### Configuration
 
 ```json
 {
@@ -438,40 +452,40 @@ builder.Services.AddHeadlessEmails(setup =>
 | `AccessKey` | `string?` | Resource access key (access-key mode) |
 | `TokenCredential` | `TokenCredential?` | Managed-identity credential (delegate overload only — not bindable from configuration) |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Emails.Abstractions`
 - `Headless.Emails.Core`
 - `Azure.Communication.Email`
 
-## Side Effects
+### Side Effects
 
 - Default: binds and validates `AzureCommunicationEmailOptions` (exactly one auth mode required), and registers `EmailClient` and `IEmailSender` as unkeyed singletons
 - Named (`AddNamed(name, i => i.UseAzure(…))`): binds named options and registers a keyed `EmailClient` (constructed from the named auth mode) and a keyed `IEmailSender`, both under the instance name
 
 ---
 
-# Headless.Emails.Dev
+## Headless.Emails.Dev
 
 Development email implementations for local testing and debugging.
 
-## Problem Solved
+### Problem Solved
 
 Provides safe email implementations for development and testing that do not send real emails, preventing accidental sends and enabling easy inspection of email content locally.
 
-## Key Features
+### Key Features
 
 - `DevEmailSender` — writes full email content to a local file; appends with a `--------------------` separator per message; prefers `MessageText` over `MessageHtml` for readability. Writes are serialized so concurrent sends do not interleave, and a body-less request throws `InvalidOperationException` (same `EnsureHasBody()` guard as the real providers)
 - `NoopEmailSender` — silently discards all emails, always returns `Succeeded()` (never validates — the explicit "disable email" sender)
 - No network calls, no external dependencies beyond the abstractions and core packages
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Emails.Dev
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -488,7 +502,7 @@ if (builder.Environment.IsDevelopment())
 // As a named instance alongside a real default sender (keyed IEmailSender "audit"):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseAwsSes(awsOptions);                              // default (required)
+    setup.UseAwsSes(awsOptions); // default (required)
     setup.AddNamed("audit", i => i.UseDevelopment("audit-emails.txt"));
 });
 ```
@@ -505,18 +519,18 @@ Hello World!
 --------------------
 ```
 
-## Configuration
+### Configuration
 
 `UseDevelopment(string filePath)` — the file path is the only parameter. The file is created if it does not exist; emails are appended.
 
 `UseNoop()` — no parameters. Useful in test projects where you want `IEmailSender` resolved but do not want file I/O.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Emails.Abstractions`
 - `Headless.Emails.Core`
 
-## Side Effects
+### Side Effects
 
 - `UseDevelopment` registers `IEmailSender` as singleton (instance of `DevEmailSender`); appends to the specified file on each `SendAsync` call
 - `UseNoop` registers `IEmailSender` as singleton (instance of `NoopEmailSender`); no I/O
@@ -524,15 +538,15 @@ Hello World!
 
 ---
 
-# Headless.Emails.Mailkit
+## Headless.Emails.Mailkit
 
 SMTP implementation of the email abstraction using MailKit with connection pooling.
 
-## Problem Solved
+### Problem Solved
 
 Provides email sending via standard SMTP protocol using MailKit, supporting any SMTP server (Gmail, Outlook, SendGrid, on-premises, etc.) with connection pooling to amortize reconnect cost.
 
-## Key Features
+### Key Features
 
 - Full `IEmailSender` implementation using MailKit
 - SMTP connection pool (`ObjectPool<SmtpClient>`) — connections are retained and reused across sends
@@ -541,17 +555,17 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 - Three `UseMailkit` overloads: `IConfiguration`, `Action<MailkitSmtpOptions>`, `Action<MailkitSmtpOptions, IServiceProvider>`
 - `SmtpCommandException` and `SmtpProtocolException` are caught and returned as `Failed()` responses; `AuthenticationException` propagates
 
-## Design Notes
+### Design Notes
 
 The pool (`MaxPoolSize`, default 10) amortizes TCP connect + TLS handshake across concurrent sends. Each `SmtpClient` is reconnected (and authenticated if credentials are set) lazily when retrieved from the pool in a disconnected or unauthenticated state; the connect/authenticate phase is bounded by `Timeout`. Authentication failures (`AuthenticationException`) are intentionally re-thrown rather than returned as `Failed()` — they represent configuration errors, not transient delivery failures, and must be surfaced at startup or on first send. A client left connected-but-unauthenticated by such a failure is disposed on return instead of being pooled, so it is never reused with authentication skipped.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Emails.Mailkit
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -560,32 +574,38 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(builder.Configuration.GetSection("Smtp")));
 
 // Option 2: action
-builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(options =>
-{
-    options.Server = "smtp.example.com";
-    options.Port = 587;
-    options.User = "user@example.com";
-    options.Password = "securepassword";
-    options.SocketOptions = SecureSocketOptions.StartTls;
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseMailkit(options =>
+    {
+        options.Server = "smtp.example.com";
+        options.Port = 587;
+        options.User = "user@example.com";
+        options.Password = "securepassword";
+        options.SocketOptions = SecureSocketOptions.StartTls;
+    })
+);
 
 // Option 3: action with IServiceProvider
-builder.Services.AddHeadlessEmails(setup => setup.UseMailkit((options, sp) =>
-{
-    var cfg = sp.GetRequiredService<IConfiguration>();
-    options.Server = cfg["Smtp:Server"]!;
-    options.Port = int.Parse(cfg["Smtp:Port"]!);
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseMailkit(
+        (options, sp) =>
+        {
+            var cfg = sp.GetRequiredService<IConfiguration>();
+            options.Server = cfg["Smtp:Server"]!;
+            options.Port = int.Parse(cfg["Smtp:Port"]!);
+        }
+    )
+);
 
 // Named instance — each named SMTP sender owns an isolated connection pool (keyed "marketing"):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseMailkit(builder.Configuration.GetSection("Smtp"));                         // default (required)
+    setup.UseMailkit(builder.Configuration.GetSection("Smtp")); // default (required)
     setup.AddNamed("marketing", i => i.UseMailkit(builder.Configuration.GetSection("MarketingSmtp")));
 });
 ```
 
-## Configuration
+### Configuration
 
 ```json
 {
@@ -611,12 +631,12 @@ builder.Services.AddHeadlessEmails(setup =>
 | `Timeout` | `30s` | Per-connection timeout |
 | `MaxPoolSize` | `10` | Max pooled SMTP connections; `0` retains at most one (the pool always keeps a fast-path slot) |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Emails.Core`
 - `MailKit`
 
-## Side Effects
+### Side Effects
 
 - Default: registers `IPooledObjectPolicy<SmtpClient>`, `ObjectPool<SmtpClient>`, and `IEmailSender` as unkeyed singletons
 - Named (`AddNamed(name, i => i.UseMailkit(…))`): registers a keyed policy, pool, and `IEmailSender` plus named options under the instance name, so each named SMTP sender owns an isolated pool and never reads another instance's settings

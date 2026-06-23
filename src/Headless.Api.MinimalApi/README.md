@@ -28,8 +28,7 @@ builder.AddHeadless().ConfigureMinimalApi();
 
 var app = builder.Build();
 
-app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id }))
-   .Validate<GetOrderRequest>();
+app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id })).Validate<GetOrderRequest>();
 
 app.Run();
 ```

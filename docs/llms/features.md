@@ -10,57 +10,53 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
-  - [Feature Definitions vs. Feature Values](#feature-definitions-vs-feature-values)
-  - [Value Providers and Resolution Order](#value-providers-and-resolution-order)
-  - [Static Store vs. Dynamic Store](#static-store-vs-dynamic-store)
-  - [Feature Value Caching](#feature-value-caching)
-  - [Startup Initialization](#startup-initialization)
+    - [Feature Definitions vs. Feature Values](#feature-definitions-vs-feature-values)
+    - [Value Providers and Resolution Order](#value-providers-and-resolution-order)
+    - [Static Store vs. Dynamic Store](#static-store-vs-dynamic-store)
+    - [Feature Value Caching](#feature-value-caching)
+    - [Startup Initialization](#startup-initialization)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Features.Abstractions](#headlessfeaturesabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Features.Core](#headlessfeaturescore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration-1)
-    - [FeatureManagementOptions](#featuremanagementoptions)
-    - [FeaturesStorageOptions](#featuresstorageoptions)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Features.Storage.EntityFramework](#headlessfeaturesstorageentityframework)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Features.Storage.PostgreSql](#headlessfeaturesstoragepostgresql)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-3)
-    - [Options](#options)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Features.Storage.SqlServer](#headlessfeaturesstoragesqlserver)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-3)
-  - [Configuration](#configuration-4)
-    - [Options](#options-1)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 
 > Dynamic feature flags and feature value management with hierarchical resolution (Tenant > Edition > Default), caching, and database persistence via EF Core, PostgreSQL, or SQL Server.
 
@@ -136,15 +132,15 @@ The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog 
 
 ---
 
-# Headless.Features.Abstractions
+## Headless.Features.Abstractions
 
 Defines the unified interface for feature management and feature flags across different storage providers.
 
-## Problem Solved
+### Problem Solved
 
 Provides a provider-agnostic feature management API, enabling dynamic feature toggling with support for multi-tenancy, editions, and hierarchical feature values without changing application code.
 
-## Key Features
+### Key Features
 
 - `IFeatureManager` — reads and writes feature values across the registered provider chain; supports single-feature and bulk queries with optional provider targeting and fallback
 - `IFeatureDefinitionProvider` — contributes feature groups and feature definitions at startup via `IFeatureDefinitionContext`
@@ -158,13 +154,13 @@ Provides a provider-agnostic feature management API, enabling dynamic feature to
 - `RequiresFeatureAttribute` — gates a controller class or action on one or more features; `IsAnd` property controls AND vs. OR policy (default: OR)
 - `DisableFeatureCheckAttribute` — bypasses a class-level `[RequiresFeature]` gate on individual action methods
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Features.Abstractions
 ```
 
-## Usage
+### Quick Start
 
 ```csharp
 public sealed class BillingService(IFeatureManager features)
@@ -191,15 +187,13 @@ public sealed class BillingService(IFeatureManager features)
 // Shorter form using scoped extension members
 public sealed class TenantOnboardingService(IFeatureManager features)
 {
-    public Task GrantPremiumAsync(string tenantId)
-        => features.GrantToTenantAsync("EnableReports", tenantId);
+    public Task GrantPremiumAsync(string tenantId) => features.GrantToTenantAsync("EnableReports", tenantId);
 
-    public Task RevokeAsync(string tenantId)
-        => features.RevokeFromTenantAsync("EnableReports", tenantId);
+    public Task RevokeAsync(string tenantId) => features.RevokeFromTenantAsync("EnableReports", tenantId);
 }
 ```
 
-### Defining Features
+#### Defining Features
 
 ```csharp
 public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
@@ -218,29 +212,29 @@ public sealed class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
 }
 ```
 
-## Configuration
+### Configuration
 
 None. This is an abstractions-only package.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Features.Core
+## Headless.Features.Core
 
 Core implementation of feature management with caching, value providers, and definition management.
 
-## Problem Solved
+### Problem Solved
 
 Provides the full feature management implementation including hierarchical value resolution (Tenant > Edition > Default), feature value caching, background initialization that seeds static definitions into the database, and an extensible value-provider pipeline.
 
-## Key Features
+### Key Features
 
 - `FeatureManager` — full implementation of `IFeatureManager`; walks the registered provider chain, caches results, and coordinates writes with cache invalidation
 - `IFeatureValueProvider` / `IFeatureValueReadProvider` — read-write and read-only contracts for custom value providers
@@ -254,19 +248,19 @@ Provides the full feature management implementation including hierarchical value
 - `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
 - `services.AddFeatureValueProvider<T>()` — registers a custom `IFeatureValueReadProvider` (idempotent by type)
 
-## Design Notes
+### Design Notes
 
 - Value providers are registered with the last-added provider having the highest resolution priority. The built-in order is `DefaultValue` → `Edition` → `Tenant` (Tenant wins). Custom providers added via `AddFeatureValueProvider<T>()` are appended after `Tenant` and therefore have the highest priority. This matters when writing custom providers that must override built-in resolution.
 - `AddHeadlessFeatures` is guarded on `IFeatureManager` so it is safe to call more than once (only the first call registers the core; the storage extension always applies). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 - `FeaturesInitializationBackgroundService` implements `IInitializer` so anything that awaits `WaitForInitializationAsync()` blocks until the seed and pre-cache steps complete. If the host is stopped before initialization finishes, the background task is cancelled and the `TaskCompletionSource` is faulted with `OperationCanceledException`.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Features.Core
 ```
 
-## Quick Start
+### Quick Start
 
 Register the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessFeatures`:
 
@@ -280,16 +274,16 @@ builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
-### Custom Value Provider
+#### Custom Value Provider
 
 ```csharp
 // T must implement IFeatureValueReadProvider (read-only) or IFeatureValueProvider (read-write)
 builder.Services.AddFeatureValueProvider<MyCustomFeatureValueProvider>();
 ```
 
-## Configuration
+### Configuration
 
-### FeatureManagementOptions
+#### FeatureManagementOptions
 
 Configure via `setup.ConfigureManagement(...)` or `services.Configure<FeatureManagementOptions>(...)`:
 
@@ -319,7 +313,7 @@ services.AddHeadlessFeatures(setup =>
 
 All lock- and cache-expiry options default to reasonable production values. The validator rejects empty lock keys and zero/negative expiry spans.
 
-### FeaturesStorageOptions
+#### FeaturesStorageOptions
 
 Configure schema and table names via `setup.ConfigureStorage(...)`:
 
@@ -328,24 +322,24 @@ services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "features";                              // default
-        o.FeatureValuesTableName = "FeatureValues";         // default
+        o.Schema = "features"; // default
+        o.FeatureValuesTableName = "FeatureValues"; // default
         o.FeatureDefinitionsTableName = "FeatureDefinitions"; // default
         o.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"; // default
-        o.InitializeOnStartup = true;                       // default; set false when schema is provisioned out-of-band
+        o.InitializeOnStartup = true; // default; set false when schema is provisioned out-of-band
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Features.Abstractions`
 - `Headless.Domain`
 - `Headless.Caching.Abstractions`
 - `Headless.DistributedLocks.Abstractions`
 
-## Side Effects
+### Side Effects
 
 - Registers `IFeatureManager` as transient
 - Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
@@ -356,15 +350,15 @@ services.AddHeadlessFeatures(setup =>
 
 ---
 
-# Headless.Features.Storage.EntityFramework
+## Headless.Features.Storage.EntityFramework
 
 Entity Framework Core storage implementation for feature management.
 
-## Problem Solved
+### Problem Solved
 
 Provides EF Core repository implementations for feature values, feature definitions, and feature group definitions using the consumer's own `DbContext`, with schema managed through EF migrations.
 
-## Key Features
+### Key Features
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via the `HeadlessFeaturesSetupBuilder`
 - `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required)
@@ -373,13 +367,13 @@ Provides EF Core repository implementations for feature values, feature definiti
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
 - Startup validation gate that inspects the EF model before hosted services start and fails with an actionable message if any feature entity is missing from the model
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Features.Storage.EntityFramework
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
@@ -405,7 +399,7 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
 `FeaturesStorageOptions` defaults:
 
@@ -419,13 +413,13 @@ The registration validates identifier names using cross-provider rules (SQL Serv
 
 `InitializeOnStartup` is ignored by the EF provider — EF uses migrations, not startup DDL. Set it on raw-DDL providers (PostgreSQL / SqlServer) only.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Features.Core`
 - `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
-## Side Effects
+### Side Effects
 
 - Registers `IFeatureDefinitionRecordRepository` (`EfFeatureDefinitionRecordRepository<TContext>`) as singleton
 - Registers `IFeatureValueRecordRepository` (`EfFeatureValueRecordRecordRepository<TContext>`) as singleton
@@ -434,15 +428,15 @@ The registration validates identifier names using cross-provider rules (SQL Serv
 
 ---
 
-# Headless.Features.Storage.PostgreSql
+## Headless.Features.Storage.PostgreSql
 
 PostgreSQL raw-DDL storage for feature management.
 
-## Problem Solved
+### Problem Solved
 
 Provides feature repositories and startup schema initialization without requiring the consumer to use Entity Framework for feature persistence. All schema is created idempotently at host startup via raw ADO.NET.
 
-## Key Features
+### Key Features
 
 - `setup.UsePostgreSql(string connectionString)` — registers the PostgreSQL storage provider from a connection string
 - `setup.UsePostgreSql(Action<PostgreSqlFeaturesOptions> configure)` — overload for full option control
@@ -451,13 +445,13 @@ Provides feature repositories and startup schema initialization without requirin
 - `PostgreSqlFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Features.Storage.PostgreSql
 ```
 
-## Quick Start
+### Quick Start
 
 Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` registers the management core automatically.
 
@@ -479,9 +473,9 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### Options
+#### Options
 
 `PostgreSqlFeaturesOptions`:
 
@@ -492,13 +486,13 @@ builder.Services.AddHeadlessFeatures(setup =>
 
 Configure schema and table names through `FeaturesStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Features.Core`
 - `Headless.Serializer.Json`
 - `Npgsql`
 
-## Side Effects
+### Side Effects
 
 - Registers `PostgreSqlFeaturesStorageInitializer` as `IHostedService` and `IInitializer`
 - Registers `PostgreSqlFeatureValueRecordRepository` as `IFeatureValueRecordRepository` (singleton)
@@ -506,15 +500,15 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 
 ---
 
-# Headless.Features.Storage.SqlServer
+## Headless.Features.Storage.SqlServer
 
 SQL Server raw-DDL storage for feature management.
 
-## Problem Solved
+### Problem Solved
 
 Provides feature repositories and startup schema initialization without requiring the consumer to use Entity Framework for feature persistence. All schema is created idempotently at host startup via raw ADO.NET.
 
-## Key Features
+### Key Features
 
 - `setup.UseSqlServer(string connectionString)` — registers the SQL Server storage provider from a connection string
 - `setup.UseSqlServer(Action<SqlServerFeaturesOptions> configure)` — overload for full option control
@@ -523,13 +517,13 @@ Provides feature repositories and startup schema initialization without requirin
 - `SqlServerFeaturesOptions` — connection string and command timeout (`CommandTimeout`, default 30 seconds)
 - Shares `FeaturesStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Features.Storage.SqlServer
 ```
 
-## Quick Start
+### Quick Start
 
 Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` registers the management core automatically.
 
@@ -551,9 +545,9 @@ builder.Services.AddHeadlessFeatures(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### Options
+#### Options
 
 `SqlServerFeaturesOptions`:
 
@@ -564,13 +558,13 @@ builder.Services.AddHeadlessFeatures(setup =>
 
 Configure schema and table names through `FeaturesStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Features.Core`
 - `Headless.Serializer.Json`
 - `Microsoft.Data.SqlClient`
 
-## Side Effects
+### Side Effects
 
 - Registers `SqlServerFeaturesStorageInitializer` as `IHostedService` and `IInitializer`
 - Registers `SqlServerFeatureValueRecordRepository` as `IFeatureValueRecordRepository` (singleton)

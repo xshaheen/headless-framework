@@ -86,15 +86,15 @@ Register via:
 
 ---
 
-# Headless.Payments.Paymob.CashIn
+## Headless.Payments.Paymob.CashIn
 
 Paymob Accept integration for cash-in (payment collection) operations.
 
-## Problem Solved
+### Problem Solved
 
 Provides a typed client for the Paymob Accept payment gateway, supporting multiple collection channels (cards via iframe, mobile wallets, kiosk, cash collection) with HMAC validation for secure callback verification.
 
-## Key Features
+### Key Features
 
 - `IPaymobCashInBroker` — main payment operations interface:
   - `CreateIntentionAsync` — v2 Payment Intentions API; returns `ClientSecret` for frontend use
@@ -110,19 +110,19 @@ Provides a typed client for the Paymob Accept payment gateway, supporting multip
 - `CashInStatuses` — `pending`, `declined`, `success` constants
 - `PaymobCashInException` — thrown on non-success HTTP responses from Paymob
 
-## Design Notes
+### Design Notes
 
 `IPaymobCashInBroker` is registered as scoped (not singleton) because it takes a typed `HttpClient`. `IPaymobCashInAuthenticator` is singleton and holds the cached auth token; the broker calls the authenticator on each request. Options changes invalidate the cached token automatically via `IOptionsMonitor<PaymobCashInOptions>`.
 
 The package adds `AddStandardResilienceHandler()` to the named HTTP client automatically. Pass `configureResilience` to `AddPaymobCashIn(...)` to override the resilience policy (e.g., adjust timeouts for wallet redirects).
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Payments.Paymob.CashIn
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -146,20 +146,23 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
 {
     public async Task<string> CreatePaymentAsync(decimal amountCents, int integrationId, CancellationToken ct)
     {
-        var response = await broker.CreateIntentionAsync(new CashInCreateIntentionRequest
-        {
-            Amount = amountCents,           // in cents, e.g. 10000 = 100 EGP
-            Currency = "EGP",
-            PaymentMethods = [integrationId],
-            BillingData = new CashInCreateIntentionRequestBillingData
+        var response = await broker.CreateIntentionAsync(
+            new CashInCreateIntentionRequest
             {
-                FirstName = "Ahmed",
-                LastName = "Ali",
-                PhoneNumber = "+201001234567",
-                Email = "ahmed@example.com",
+                Amount = amountCents, // in cents, e.g. 10000 = 100 EGP
+                Currency = "EGP",
+                PaymentMethods = [integrationId],
+                BillingData = new CashInCreateIntentionRequestBillingData
+                {
+                    FirstName = "Ahmed",
+                    LastName = "Ali",
+                    PhoneNumber = "+201001234567",
+                    Email = "ahmed@example.com",
+                },
+                Items = [],
             },
-            Items = [],
-        }, ct);
+            ct
+        );
 
         return response!.ClientSecret; // pass to your frontend Paymob.js
     }
@@ -170,9 +173,7 @@ Validate an incoming callback:
 
 ```csharp
 [HttpPost("paymob/callback")]
-public IActionResult HandleCallback(
-    [FromBody] CashInCallbackTransaction transaction,
-    [FromQuery] string hmac)
+public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transaction, [FromQuery] string hmac)
 {
     if (!_broker.Validate(transaction, hmac))
         return BadRequest("Invalid HMAC");
@@ -186,9 +187,9 @@ public IActionResult HandleCallback(
 }
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -204,7 +205,7 @@ public IActionResult HandleCallback(
 }
 ```
 
-### Options (`PaymobCashInOptions`)
+#### Options (`PaymobCashInOptions`)
 
 | Property | Required | Default | Description |
 |---|---|---|---|
@@ -217,12 +218,12 @@ public IActionResult HandleCallback(
 | `CreateIntentionUrl` | No | `https://accept.paymob.com/v1/intention/` | v2 Intentions endpoint. |
 | `IframeBaseUrl` | No | `https://accept.paymob.com/api/acceptance/iframes` | Card iframe base URL. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Extensions`
 - `Microsoft.Extensions.Http.Resilience`
 
-## Side Effects
+### Side Effects
 
 - Registers `IPaymobCashInAuthenticator` as singleton
 - Registers `IPaymobCashInBroker` as scoped with typed `HttpClient`
@@ -230,15 +231,15 @@ public IActionResult HandleCallback(
 
 ---
 
-# Headless.Payments.Paymob.CashOut
+## Headless.Payments.Paymob.CashOut
 
 Paymob integration for cash-out (disbursement) operations.
 
-## Problem Solved
+### Problem Solved
 
 Provides a typed client for the Paymob disbursement API, enabling payouts to bank accounts (via IBAN or card number), Egyptian mobile wallets (Vodafone, Etisalat, Orange), bank wallets, and Aman cash pickup.
 
-## Key Features
+### Key Features
 
 - `IPaymobCashOutBroker` — disbursement operations interface:
   - `Disburse(request)` — execute disbursement, returns `CashOutTransaction`
@@ -258,19 +259,19 @@ Provides a typed client for the Paymob disbursement API, enabling payouts to ban
   - `IsNotHaveVodafoneCashError()`, `IsNotHaveEtisalatCashError()`, `IsRequestValidationError()`
 - `PaymobCashOutException` — thrown on non-success HTTP responses
 
-## Design Notes
+### Design Notes
 
 `IPaymobCashOutBroker` is registered as scoped with a typed `HttpClient`. The broker method is `Disburse(...)` (synchronous name, async implementation) — not `DisburseAsync`. `IPaymobCashOutAuthenticator` is singleton and caches the Bearer token; on options change, the cached token is invalidated automatically.
 
 The CashOut authentication uses OAuth2 password grant, unlike CashIn's proprietary API-key flow. Credentials include `ClientId`/`ClientSecret` for Basic auth on the token endpoint, plus `UserName`/`Password` as the grant body. `TokenRefreshBuffer` (default 10 min) controls how far ahead of expiry to renew.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Payments.Paymob.CashOut
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -291,7 +292,10 @@ Disburse to a mobile wallet:
 public sealed class DisbursementService(IPaymobCashOutBroker broker)
 {
     public async Task<CashOutTransaction> DisburseToVodafoneAsync(
-        decimal amount, string phoneNumber, CancellationToken ct)
+        decimal amount,
+        string phoneNumber,
+        CancellationToken ct
+    )
     {
         var request = CashOutDisburseRequest.Vodafone(amount, phoneNumber);
         var result = await broker.Disburse(request, ct);
@@ -299,7 +303,8 @@ public sealed class DisbursementService(IPaymobCashOutBroker broker)
         if (result.IsFailed())
         {
             throw new InvalidOperationException(
-                $"Disbursement failed: {result.DisbursementStatus} ({result.StatusCode})");
+                $"Disbursement failed: {result.DisbursementStatus} ({result.StatusCode})"
+            );
         }
 
         return result;
@@ -320,9 +325,9 @@ var request = CashOutDisburseRequest.BankCard(
 var result = await broker.Disburse(request, cancellationToken);
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -339,7 +344,7 @@ var result = await broker.Disburse(request, cancellationToken);
 }
 ```
 
-### Options (`PaymobCashOutOptions`)
+#### Options (`PaymobCashOutOptions`)
 
 | Property | Required | Default | Description |
 |---|---|---|---|
@@ -350,14 +355,14 @@ var result = await broker.Disburse(request, cancellationToken);
 | `ClientSecret` | Yes | — | OAuth2 Basic auth client secret. |
 | `TokenRefreshBuffer` | No | `00:10:00` | Token cache duration (max 60 min). |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Extensions`
 - `Headless.Http`
 - `Headless.Urls`
 - `Microsoft.Extensions.Http.Resilience`
 
-## Side Effects
+### Side Effects
 
 - Registers `IPaymobCashOutAuthenticator` as singleton
 - Registers `IPaymobCashOutBroker` as scoped with typed `HttpClient`
@@ -365,15 +370,15 @@ var result = await broker.Disburse(request, cancellationToken);
 
 ---
 
-# Headless.Payments.Paymob.Services
+## Headless.Payments.Paymob.Services
 
 Higher-level service layer for Paymob CashIn and CashOut with typed per-channel request/response models, automatic error mapping, and fees calculation.
 
-## Problem Solved
+### Problem Solved
 
 `IPaymobCashInBroker` and `IPaymobCashOutBroker` expose the raw Paymob API surface; using them directly requires understanding the legacy order/payment-key flow, channel-specific field combinations, and raw status codes. This package provides domain-facing services (`IPaymobCashInService`, `ICashOutService`) that handle the orchestration internally and expose typed, per-channel request/response records. It also provides `IPaymobCashInFeesCalculator` for computing Paymob processing fees without making network calls.
 
-## Key Features
+### Key Features
 
 - `IPaymobCashInService` — typed cash-in flows:
   - `StartAsync(PaymobCardCashInRequest)` → `PaymobCardCashInResponse` (IframeSrc, PaymentKey, OrderId, Expiration)
@@ -395,13 +400,13 @@ Higher-level service layer for Paymob CashIn and CashOut with typed per-channel 
 - `PaymobTransactionResponseCodes` — constants for card response codes (0 = approved, etc.)
 - `PaymobRiskDeclineCodes` — constants for Paymob FMS risk decline codes (111–301)
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Payments.Paymob.Services
 ```
 
-## Quick Start
+### Quick Start
 
 Register the underlying brokers first, then register the service classes:
 
@@ -443,14 +448,21 @@ Start a card payment (legacy iframe flow):
 public sealed class CheckoutService(IPaymobCashInService cashIn)
 {
     public async Task<string> GetIframeUrlAsync(
-        decimal amount, PaymobCashInCustomerData customer, int cardIntegrationId, string iframeId, CancellationToken ct)
+        decimal amount,
+        PaymobCashInCustomerData customer,
+        int cardIntegrationId,
+        string iframeId,
+        CancellationToken ct
+    )
     {
-        var response = await cashIn.StartAsync(new PaymobCardCashInRequest(
-            Amount: amount,
-            Customer: customer,
-            CardIntegrationId: cardIntegrationId,
-            IframeSrc: iframeId
-        ));
+        var response = await cashIn.StartAsync(
+            new PaymobCardCashInRequest(
+                Amount: amount,
+                Customer: customer,
+                CardIntegrationId: cardIntegrationId,
+                IframeSrc: iframeId
+            )
+        );
         return response.IframeSrc;
     }
 }
@@ -463,13 +475,15 @@ public sealed class PayoutService(ICashOutService cashOut)
 {
     public async Task PayoutAsync(decimal amount, string accountNumber, string bankCode, CancellationToken ct)
     {
-        var result = await cashOut.DisburseAsync(new BankAccountCashOutRequest(
-            Amount: amount,
-            AccountNumber: accountNumber,
-            BankCode: bankCode,
-            Type: BankTransactionType.CashTransfer,
-            FullName: "Ahmed Ali"
-        ));
+        var result = await cashOut.DisburseAsync(
+            new BankAccountCashOutRequest(
+                Amount: amount,
+                AccountNumber: accountNumber,
+                BankCode: bankCode,
+                Type: BankTransactionType.CashTransfer,
+                FullName: "Ahmed Ali"
+            )
+        );
 
         if (!result.Succeeded)
         {
@@ -479,16 +493,16 @@ public sealed class PayoutService(ICashOutService cashOut)
 }
 ```
 
-## Configuration
+### Configuration
 
 No additional configuration beyond `Headless.Payments.Paymob.CashIn` and `Headless.Payments.Paymob.CashOut`. `PaymobCashInFeesCalculator` accepts constructor parameters for fee rates — pass the values Paymob has configured for your merchant account.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Payments.Paymob.CashIn`
 - `Headless.Payments.Paymob.CashOut`
 - `Headless.Primitives`
 
-## Side Effects
+### Side Effects
 
 None. The Services package does not call `AddSingleton`/`AddScoped` internally — register `IPaymobCashInService`, `ICashOutService`, and `IPaymobCashInFeesCalculator` manually as shown above.

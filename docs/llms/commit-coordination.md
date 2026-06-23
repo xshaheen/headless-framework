@@ -238,8 +238,7 @@ dotnet add package Headless.CommitCoordination.DurableWork
 ```csharp
 public sealed record JobRow(string Name);
 
-public sealed class JobWorkBuffer(ICommitCoordinator coordinator)
-    : DurableWorkBuffer<JobRow>(coordinator)
+public sealed class JobWorkBuffer(ICommitCoordinator coordinator) : DurableWorkBuffer<JobRow>(coordinator)
 {
     protected override ValueTask WriteRowAsync(JobRow row, IRelationalCommitContext context, CancellationToken ct)
     {
@@ -301,7 +300,8 @@ services.AddEntityFrameworkCommitCoordination();
 // services.AddDiRegisteredInterceptorsConfiguration<MyDbContext>() (both from Headless.Orm.EntityFramework).
 // AddHeadlessDbContext / AddHeadlessIdentityDbContext and the messaging EF storage path do this for you.
 services.AddDbContext<MyDbContext>(
-    (sp, options) => options.UseNpgsql(connectionString).AddDiRegisteredInterceptors(sp));
+    (sp, options) => options.UseNpgsql(connectionString).AddDiRegisteredInterceptors(sp)
+);
 
 // Open + enlist + commit in one call; publishes inside the operation drain atomically on commit.
 await db.ExecuteCoordinatedTransactionAsync(
@@ -310,7 +310,8 @@ await db.ExecuteCoordinatedTransactionAsync(
         await context.SaveChangesAsync(ct);
         await bus.PublishAsync(new OrderPlaced(orderId), ct);
     },
-    services: requestServiceProvider);
+    services: requestServiceProvider
+);
 ```
 
 ### Configuration
@@ -393,11 +394,11 @@ services.AddPostgreSqlCommitCoordination();
 
 // Open + enlist + commit in one call; the enlist cannot be forgotten.
 await connection.ExecuteCoordinatedTransactionAsync(
-    async (conn, ct) =>
-    {
+    async (conn, ct) => {
         // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
     },
-    services: requestServiceProvider);
+    services: requestServiceProvider
+);
 ```
 
 ### Advanced: raw enlistment
@@ -412,6 +413,7 @@ await connection.ExecuteCoordinatedTransactionAsync(
 ```csharp
 await using var tx = await connection.BeginTransactionAsync(ct);
 await using var scope = connection.EnlistCommitCoordination(tx, requestServiceProvider);
+
 // ... raw-ADO work + publishes ...
 await tx.CommitAsync(ct);
 await scope.SignalAsync(CommitOutcome.Committed); // REQUIRED — see warning above
@@ -467,11 +469,11 @@ services.AddSqlServerCommitCoordination();
 
 // Open + enlist + commit in one call; the enlist cannot be forgotten.
 await connection.ExecuteCoordinatedTransactionAsync(
-    async (conn, ct) =>
-    {
+    async (conn, ct) => {
         // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
     },
-    services: requestServiceProvider);
+    services: requestServiceProvider
+);
 ```
 
 ### Configuration
@@ -481,8 +483,7 @@ services.AddSqlServerCommitCoordination(options =>
 {
     options.DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Strict;
     options.DiagnosticProbeTimeout = TimeSpan.FromSeconds(5);
-    options.DiagnosticProbeConnectionFactory = ct =>
-        ValueTask.FromResult(new SqlConnection(connectionString));
+    options.DiagnosticProbeConnectionFactory = ct => ValueTask.FromResult(new SqlConnection(connectionString));
 });
 ```
 

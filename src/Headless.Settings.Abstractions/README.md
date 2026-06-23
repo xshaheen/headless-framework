@@ -24,7 +24,7 @@ Provides a storage-independent API for managing application settings with suppor
 dotnet add package Headless.Settings.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class NotificationService(ISettingManager settingManager)
@@ -62,11 +62,7 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
     public void Define(ISettingDefinitionContext context)
     {
         context.Add(
-            new SettingDefinition(
-                name: "App.MaxFileSize",
-                defaultValue: "10485760",
-                displayName: "Maximum File Size"
-            ),
+            new SettingDefinition(name: "App.MaxFileSize", defaultValue: "10485760", displayName: "Maximum File Size"),
             new SettingDefinition(
                 name: "App.ApiKey",
                 displayName: "API Key",

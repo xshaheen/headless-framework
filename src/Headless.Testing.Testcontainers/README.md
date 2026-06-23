@@ -62,9 +62,7 @@ public sealed class CacheIntegrationTests : IClassFixture<HeadlessRedisFixture>
     [Fact]
     public async Task should_cache_value()
     {
-        var multiplexer = await ConnectionMultiplexer.ConnectAsync(
-            _redis.Container.GetConnectionString()
-        );
+        var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.Container.GetConnectionString());
         var db = multiplexer.GetDatabase();
 
         await db.StringSetAsync("key", "value");

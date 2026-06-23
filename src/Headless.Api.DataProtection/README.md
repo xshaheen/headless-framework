@@ -23,16 +23,13 @@ dotnet add package Headless.Api.DataProtection
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDataProtection()
-    .PersistKeysToBlobStorage();
+builder.Services.AddDataProtection().PersistKeysToBlobStorage();
 
 // Or with explicit storage instance
-builder.Services.AddDataProtection()
-    .PersistKeysToBlobStorage(storageInstance);
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance);
 
 // Or with factory
-builder.Services.AddDataProtection()
-    .PersistKeysToBlobStorage(sp => sp.GetRequiredService<IBlobStorage>());
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(sp => sp.GetRequiredService<IBlobStorage>());
 ```
 
 ## Configuration

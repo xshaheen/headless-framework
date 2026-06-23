@@ -10,31 +10,34 @@ packages: Tus, Tus.Azure, Tus.DistributedLocks
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
+    - [TUS Protocol Flow](#tus-protocol-flow)
+    - [Azure Block Blob Mapping](#azure-block-blob-mapping)
+    - [Concurrent PATCH Safety](#concurrent-patch-safety)
 - [Headless.Tus](#headlesstus)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Tus.Azure](#headlesstusazure)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Tus.DistributedLocks](#headlesstusdistributedlocks)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 
 > TUS protocol implementation for resumable file uploads with Azure Blob Storage backend and distributed lock support.
 
@@ -53,18 +56,17 @@ Three packages compose the TUS domain:
 Minimal Azure setup:
 
 ```csharp
-var store = new TusAzureStore(blobServiceClient, new TusAzureStoreOptions
-{
-    ContainerName = "uploads",
-    BlobPrefix = "tus/",
-    CreateContainerIfNotExists = true
-});
+var store = new TusAzureStore(
+    blobServiceClient,
+    new TusAzureStoreOptions
+    {
+        ContainerName = "uploads",
+        BlobPrefix = "tus/",
+        CreateContainerIfNotExists = true,
+    }
+);
 
-app.MapTus("/files", async _ => new DefaultTusConfiguration
-{
-    Store = store,
-    UrlPath = "/files"
-});
+app.MapTus("/files", async _ => new DefaultTusConfiguration { Store = store, UrlPath = "/files" });
 ```
 
 ## Agent Instructions
@@ -115,53 +117,53 @@ Register it with `services.AddDistributedLockTusLockProvider()` after registerin
 
 ---
 
-# Headless.Tus
+## Headless.Tus
 
 Base dependency that wires `tusdotnet` into the ASP.NET Core pipeline. Contains no store; exists to share the `tusdotnet` dependency and Headless hosting infrastructure across TUS packages.
 
-## Problem Solved
+### Problem Solved
 
 Provides a consistent `tusdotnet` integration point for all TUS store packages so each provider does not independently manage endpoint wiring and version alignment.
 
-## Key Features
+### Key Features
 
 - Shared `tusdotnet` dependency (all TUS packages reference this one)
 - `Headless.Hosting` wiring for ASP.NET Core middleware
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Tus
 ```
 
-## Quick Start
+### Quick Start
 
 `Headless.Tus` is a base package. Add `Headless.Tus.Azure` for a complete upload setup. This package does not need to be installed directly; it is pulled in transitively.
 
-## Configuration
+### Configuration
 
 None.
 
-## Dependencies
+### Dependencies
 
 - `tusdotnet`
 - `Headless.Hosting`
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Tus.Azure
+## Headless.Tus.Azure
 
 Azure Blob Storage TUS store implementation.
 
-## Problem Solved
+### Problem Solved
 
 Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resumable uploads with Azure Blob Storage block blobs. Supports all major TUS extensions: Creation, CreationDeferLength, Concatenation, Expiration, Checksum, and Termination.
 
-## Key Features
+### Key Features
 
 - `TusAzureStore` — full `ITusStore` implementation backed by Azure block blobs; also implements `ITusPipelineStore` for zero-copy `PipeReader`-based ingestion
 - TUS extensions supported:
@@ -176,7 +178,7 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
 - Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (100 MB) based on declared upload size
 - Pooled buffer stream splitting via `ArrayPool<byte>` to minimize allocations during PATCH ingestion
 
-## Design Notes
+### Design Notes
 
 **Block blob chunking and checksum deferral.** TUS Checksum verification happens _after_ all PATCH data is staged. `TusAzureStore` stages blocks during `AppendDataAsync` but defers the commit list until `VerifyChecksumAsync` succeeds. The staged block IDs and pre-calculated checksum are written to blob metadata (`tus_last_chunk_blocks`, `tus_last_chunk_checksum`). On success, blocks are committed atomically together with metadata update. On mismatch, blocks are left uncommitted and Azure auto-purges them within 7 days. This means `GetUploadOffsetAsync` reads committed block sizes — not the blob `ContentLength` property — to report accurate offset to resuming clients.
 
@@ -184,13 +186,13 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
 
 **Constructor-time container init.** When `CreateContainerIfNotExists = true`, `_containerClient.CreateIfNotExists(ContainerPublicAccessType)` is called synchronously in the constructor. If the `BlobServiceClient` lacks container-create permission, construction fails.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Tus.Azure
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Azure.Storage.Blobs;
@@ -200,9 +202,7 @@ using tusdotnet.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var blobServiceClient = new BlobServiceClient(
-    builder.Configuration["Azure:Storage:ConnectionString"]
-);
+var blobServiceClient = new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]);
 
 var tusStore = new TusAzureStore(
     blobServiceClient,
@@ -210,17 +210,13 @@ var tusStore = new TusAzureStore(
     {
         ContainerName = "uploads",
         BlobPrefix = "tus/",
-        CreateContainerIfNotExists = true
+        CreateContainerIfNotExists = true,
     }
 );
 
 var app = builder.Build();
 
-app.MapTus("/files", async _ => new DefaultTusConfiguration
-{
-    Store = tusStore,
-    UrlPath = "/files"
-});
+app.MapTus("/files", async _ => new DefaultTusConfiguration { Store = tusStore, UrlPath = "/files" });
 
 app.Run();
 ```
@@ -228,18 +224,24 @@ app.Run();
 Serializing concurrent PATCHes across nodes (multi-node deployments) with `Headless.Tus.DistributedLocks`:
 
 ```csharp
-using Headless.Tus;            // AddDistributedLockTusLockProvider
+using Headless.Tus; // AddDistributedLockTusLockProvider
 using tusdotnet.Interfaces;
 
 // Register an IDistributedLock backend (Redis, SQL Server, …) first, then the TUS lock adapter:
 builder.Services.AddDistributedLockTusLockProvider();
 
-app.MapTus("/files", httpContext => Task.FromResult(new DefaultTusConfiguration
-{
-    Store = tusStore,
-    UrlPath = "/files",
-    FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>()
-}));
+app.MapTus(
+    "/files",
+    httpContext =>
+        Task.FromResult(
+            new DefaultTusConfiguration
+            {
+                Store = tusStore,
+                UrlPath = "/files",
+                FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>(),
+            }
+        )
+);
 ```
 
 A single-node deployment can omit the lock provider and rely on tusdotnet's in-process lock.
@@ -270,7 +272,7 @@ var store = new TusAzureStore(
 );
 ```
 
-## Configuration
+### Configuration
 
 `TusAzureStoreOptions` — all properties have defaults:
 
@@ -286,7 +288,7 @@ var store = new TusAzureStore(
 
 Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`; uploads 10–100 MB use `BlobDefaultChunkSize`; uploads ≥ 100 MB use `BlobMaxChunkSize`.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Tus`
 - `Azure.Storage.Blobs`
@@ -294,22 +296,22 @@ Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileS
 - `Microsoft.Extensions.Azure`
 - `Microsoft.Extensions.Logging.Abstractions`
 
-## Side Effects
+### Side Effects
 
 - Synchronously calls `BlobContainerClient.CreateIfNotExists` during `TusAzureStore` construction when `CreateContainerIfNotExists = true`.
 - No DI registrations — `TusAzureStore` is constructed manually. For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
 
 ---
 
-# Headless.Tus.DistributedLocks
+## Headless.Tus.DistributedLocks
 
 Distributed lock-based TUS file lock provider, using `Headless.DistributedLocks` to prevent concurrent PATCH corruption across multiple application instances.
 
-## Problem Solved
+### Problem Solved
 
 The TUS protocol allows only one concurrent PATCH per file. On single-instance deployments, `tusdotnet`'s default in-process locking suffices. On multi-instance deployments (load-balanced or Kubernetes pods), each instance has its own in-process lock table, so two nodes can simultaneously PATCH the same file, producing interleaved blocks and corrupted uploads. `DistributedLockTusLockProvider` uses the framework's `IDistributedLock` to coordinate across nodes.
 
-## Key Features
+### Key Features
 
 - `DistributedLockTusLockProvider` — `ITusFileLockProvider` backed by `IDistributedLock`
 - `DistributedLockTusFileLock` — `ITusFileLock` that calls `TryAcquireAsync` with zero wait; returns `false` immediately if another node holds the lock (tusdotnet returns `409 Conflict` to the client)
@@ -317,13 +319,13 @@ The TUS protocol allows only one concurrent PATCH per file. On single-instance d
 - Compatible with any `IDistributedLock` backend (Redis, in-memory, etc.)
 - Single `AddDistributedLockTusLockProvider()` extension on `IServiceCollection`
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Tus.DistributedLocks
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.Tus;
@@ -341,31 +343,34 @@ builder.Services.AddDistributedLockTusLockProvider();
 var app = builder.Build();
 
 // 3. Wire the lock provider into the TUS configuration
-app.MapTus("/files", async ctx =>
-{
-    var lockProvider = ctx.RequestServices.GetRequiredService<ITusFileLockProvider>();
-
-    return new DefaultTusConfiguration
+app.MapTus(
+    "/files",
+    async ctx =>
     {
-        Store = tusStore,       // your TusAzureStore instance
-        UrlPath = "/files",
-        FileLockProvider = lockProvider
-    };
-});
+        var lockProvider = ctx.RequestServices.GetRequiredService<ITusFileLockProvider>();
+
+        return new DefaultTusConfiguration
+        {
+            Store = tusStore, // your TusAzureStore instance
+            UrlPath = "/files",
+            FileLockProvider = lockProvider,
+        };
+    }
+);
 
 app.Run();
 ```
 
-## Configuration
+### Configuration
 
 None beyond registering an `IDistributedLock` provider. The lock acquires with `AcquireTimeout = TimeSpan.Zero` (non-blocking) and `TimeUntilExpires = Timeout.InfiniteTimeSpan` (no expiry while held).
 
-## Dependencies
+### Dependencies
 
 - `Headless.Tus`
 - `Headless.DistributedLocks.Abstractions`
 
-## Side Effects
+### Side Effects
 
 - `AddDistributedLockTusLockProvider()` registers `ITusFileLockProvider` as a singleton (`DistributedLockTusLockProvider`).
 - Requires `IDistributedLock` to be registered in DI before this call.

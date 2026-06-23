@@ -34,18 +34,20 @@ dotnet add package Headless.Messaging.Core
 // Register messaging with storage and transport
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessagesFromAssemblyContaining<Program>((ctx, consumer) =>
-    {
-        if (ctx.ConsumerType.Name.EndsWith("Worker", StringComparison.Ordinal))
+    setup.ForMessagesFromAssemblyContaining<Program>(
+        (ctx, consumer) =>
         {
-            consumer.OnQueue().Group("imports").Concurrency(4);
-        }
+            if (ctx.ConsumerType.Name.EndsWith("Worker", StringComparison.Ordinal))
+            {
+                consumer.OnQueue().Group("imports").Concurrency(4);
+            }
 
-        if (ctx.ConsumerType.Namespace?.Contains(".Experimental.", StringComparison.Ordinal) == true)
-        {
-            consumer.Skip();
+            if (ctx.ConsumerType.Namespace?.Contains(".Experimental.", StringComparison.Ordinal) == true)
+            {
+                consumer.Skip();
+            }
         }
-    });
+    );
 
     // Core configuration (value-typed options live under setup.Options)
     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
@@ -66,7 +68,6 @@ builder.Services.AddHeadlessMessaging(setup =>
         rmq.HostName = "localhost";
         rmq.Port = 5672;
     });
-
 });
 
 // Publish broadcast messages with the transactional outbox (reliable delivery).
@@ -123,9 +124,8 @@ The write is atomic with the business data; delivery is still at-least-once, so 
 
 ```csharp
 setup.ForMessage<OrderPlaced>(message =>
-    message
-        .MessageName("orders.placed")
-        .CorrelationFrom(order => order.OrderId.ToString()));
+    message.MessageName("orders.placed").CorrelationFrom(order => order.OrderId.ToString())
+);
 ```
 
 - `setup.ForMessagesFromAssembly(...)` and `setup.ForMessagesFromAssemblyContaining<TMarker>()` preserve assembly scanning for closed `IConsume<TMessage>` implementations and register untouched scanned consumers as bus consumers from the `AddHeadlessMessaging(...)` callback. Use the callback overloads to call `OnQueue()`, `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()` per discovered consumer; message-name overrides stay on explicit `ForMessage<TMessage>(...)` registrations.
@@ -203,10 +203,7 @@ public sealed class ProjectionSubscriptions(IRuntimeSubscriber subscriber)
                 var projector = services.GetRequiredService<IOrderProjector>();
                 await projector.ProjectAsync(context.Message, ct);
             },
-            new RuntimeSubscriptionOptions
-            {
-                HandlerId = "ProjectionSubscriptions.OrderPlaced",
-            },
+            new RuntimeSubscriptionOptions { HandlerId = "ProjectionSubscriptions.OrderPlaced" },
             cancellationToken
         );
     }
@@ -278,8 +275,8 @@ Middleware can short-circuit by returning without calling `next`. Use ordinary `
 When a host uses the root tenancy surface, configure messaging tenant posture there:
 
 ```csharp
-builder.AddHeadlessTenancy(
-    tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
 );
 ```
 
@@ -429,15 +426,15 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 builder.Services.AddHeadlessMessaging(setup =>
 {
     // Circuit breaker (applies to all consumer groups)
-    setup.Options.CircuitBreaker.FailureThreshold = 5;                       // consecutive transient failures to trip
-    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);    // initial open duration
+    setup.Options.CircuitBreaker.FailureThreshold = 5; // consecutive transient failures to trip
+    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30); // initial open duration
     setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
 
     // Adaptive retry backpressure
     setup.Options.RetryProcessor.AdaptivePolling = true;
-    setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(60);     // replaces the old FailedRetryInterval; default 60s
+    setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(60); // replaces the old FailedRetryInterval; default 60s
     setup.Options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15); // 15 min cap
-    setup.Options.RetryProcessor.CircuitOpenRateThreshold = 0.8;              // back off above 80% circuit-open rate
+    setup.Options.RetryProcessor.CircuitOpenRateThreshold = 0.8; // back off above 80% circuit-open rate
 });
 ```
 
@@ -447,15 +444,21 @@ builder.Services.AddHeadlessMessaging(setup =>
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.ForMessage<PaymentProcessed>(message =>
-        message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
-        {
-            cb.FailureThreshold = 3;                    // more sensitive
-            cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
-        })));
+        message
+            .MessageName("payments.process")
+            .OnBus<PaymentHandler>(consumer =>
+                consumer.WithCircuitBreaker(cb =>
+                {
+                    cb.FailureThreshold = 3; // more sensitive
+                    cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+                })
+            )
+    );
 
     // Disable circuit breaker for a best-effort consumer
     setup.ForMessage<MetricsUpdated>(message =>
-        message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
+        message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false))
+    );
 });
 ```
 

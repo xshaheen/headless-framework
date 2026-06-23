@@ -34,11 +34,13 @@ dotnet add package Headless.DistributedLocks.SqlServer
 ## Quick Start
 
 ```csharp
-builder.Services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(options =>
-{
-    options.ConnectionString = builder.Configuration.GetConnectionString("SqlServer");
-    options.KeyPrefix = "distributed-lock:";
-}));
+builder.Services.AddHeadlessDistributedLocks(setup =>
+    setup.UseSqlServer(options =>
+    {
+        options.ConnectionString = builder.Configuration.GetConnectionString("SqlServer");
+        options.KeyPrefix = "distributed-lock:";
+    })
+);
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -58,11 +60,7 @@ await using var connection = new SqlConnection(connectionString);
 await connection.OpenAsync(ct);
 await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(ct);
 
-await SqlServerDistributedLock.AcquireWithTransactionAsync(
-    "orders:123",
-    transaction,
-    cancellationToken: ct
-);
+await SqlServerDistributedLock.AcquireWithTransactionAsync("orders:123", transaction, cancellationToken: ct);
 
 // mutate protected rows, then commit or rollback to release the lock
 await transaction.CommitAsync(ct);
@@ -71,8 +69,8 @@ await transaction.CommitAsync(ct);
 ## Configuration
 
 ```csharp
-options.ConnectionString = "...";        // required
-options.Schema = "dbo";                  // fencing sequence schema
+options.ConnectionString = "..."; // required
+options.Schema = "dbo"; // fencing sequence schema
 options.KeyPrefix = "distributed-lock:";
 options.CommandTimeout = TimeSpan.FromSeconds(30);
 options.EnableFencing = true;

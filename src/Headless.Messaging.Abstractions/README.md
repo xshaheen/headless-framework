@@ -31,7 +31,8 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
             "Processing {OrderId} from {MessageName} with {Intent}",
             context.Message.OrderId,
             context.MessageName,
-            context.IntentType);
+            context.IntentType
+        );
 
         return ValueTask.CompletedTask;
     }

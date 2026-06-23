@@ -27,7 +27,7 @@ Provides a provider-agnostic permission management API, enabling dynamic permiss
 dotnet add package Headless.Permissions.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class OrderService(IPermissionManager permissions, ICurrentUser currentUser)

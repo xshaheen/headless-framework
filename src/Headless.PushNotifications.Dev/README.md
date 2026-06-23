@@ -31,7 +31,8 @@ if (builder.Environment.IsDevelopment())
 else
 {
     builder.Services.AddHeadlessPushNotifications(setup =>
-        setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+        setup.UseFirebase(builder.Configuration.GetSection("Firebase"))
+    );
 }
 ```
 

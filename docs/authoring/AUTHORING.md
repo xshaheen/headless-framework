@@ -50,11 +50,12 @@ Templates:
 - **Per-package optional H3 sub-section**: `Design Notes`, placed between `Key Features` and `Installation`. Include when the package makes a non-obvious choice that affects how the agent must use it (default rationale, ordering guarantees, threading model, why a dependency exists). Skip entirely for conventional packages — do **not** write `None.`.
 - **Naming**: `Quick Start` (not `Usage`, `Minimal Setup`, `Getting Started`). `Configuration` (not `Options`). `Side Effects` (not `Effects`, `Registrations`).
 - **Package order**: Abstractions first, then Core, then providers alphabetically.
+- **Exactly one H1 — package headings are H2.** The domain title is the file's only `#` heading. Every package section is H2 (`## Headless.<Package>`) and its sub-sections are H3 — never promote a package to its own H1. Multiple H1s per file break the single-H1 invariant and corrupt the generated ToC anchors. This holds for single-package domains too (e.g., `logging.md`, `identity.md`, `mediator.md`): the one package is still H2, not H1.
 - **Banned in headings**: emojis (break anchors and chunking), version numbers, dates.
 - **Banned in prose**: marketing adjectives (`blazing fast`, `enterprise-grade`, `robust`, `seamless`), unexplained jargon, hedging (`should probably`, `might`).
 - **Install commands are version-free**: `dotnet add package Headless.<Name>` only — versions live in `Directory.Packages.props`.
 - **Cross-links** use relative paths within `docs/llms/`.
-- **`docs/llms/index.md`** is the cross-domain hub. Keep its **Domain documentation** list and **Packages** catalog in sync when domains or packages change.
+- **`docs/llms/index.md`** is the cross-domain hub. Keep its **Domain documentation** list and **Packages** catalog in sync when domains or packages change, and keep the **End-to-End Example** compiling against the current public API of the packages it threads (update it when a registration entry point or abstraction signature it uses changes).
 
 ### Workflow: writing a new doc
 

@@ -59,7 +59,10 @@ Disburse to a mobile wallet:
 public sealed class DisbursementService(IPaymobCashOutBroker broker)
 {
     public async Task<CashOutTransaction> DisburseToVodafoneAsync(
-        decimal amount, string phoneNumber, CancellationToken ct)
+        decimal amount,
+        string phoneNumber,
+        CancellationToken ct
+    )
     {
         var request = CashOutDisburseRequest.Vodafone(amount, phoneNumber);
         var result = await broker.Disburse(request, ct);
@@ -67,7 +70,8 @@ public sealed class DisbursementService(IPaymobCashOutBroker broker)
         if (result.IsFailed())
         {
             throw new InvalidOperationException(
-                $"Disbursement failed: {result.DisbursementStatus} ({result.StatusCode})");
+                $"Disbursement failed: {result.DisbursementStatus} ({result.StatusCode})"
+            );
         }
 
         return result;

@@ -72,7 +72,8 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(
 // Wait for a specific message matching a predicate
 var recorded = await harness.WaitForConsumed<OrderCreated>(
     predicate: m => m.OrderId == "ORD-1",
-    timeout: TimeSpan.FromSeconds(5));
+    timeout: TimeSpan.FromSeconds(5)
+);
 
 // Same API for published and faulted
 await harness.WaitForPublished<OrderCreated>(TimeSpan.FromSeconds(5));
@@ -142,8 +143,7 @@ public sealed class OrderMessagingTests : TestBase
         await harness.Publisher.PublishAsync(new OrderCreated("ORD-1"), AbortToken);
         var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
 
-        recorded.Message.Should().BeOfType<OrderCreated>()
-            .Which.OrderId.Should().Be("ORD-1");
+        recorded.Message.Should().BeOfType<OrderCreated>().Which.OrderId.Should().Be("ORD-1");
     }
 }
 ```
@@ -179,8 +179,7 @@ public sealed class OrderHarnessFixture : IAsyncLifetime
     }
 }
 
-public sealed class OrderMessagingTests(OrderHarnessFixture fixture)
-    : TestBase, IClassFixture<OrderHarnessFixture>
+public sealed class OrderMessagingTests(OrderHarnessFixture fixture) : TestBase, IClassFixture<OrderHarnessFixture>
 {
     [Fact]
     public async Task Should_consume_order_created_event()
@@ -210,15 +209,14 @@ public sealed class OrderApiTests : TestBase
     [Fact]
     public async Task Post_order_should_publish_and_consume_event()
     {
-        await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
             {
-                builder.ConfigureTestServices(services =>
-                {
-                    // Decorates the app's existing messaging registrations with recording
-                    services.AddMessagingTestHarness();
-                });
+                // Decorates the app's existing messaging registrations with recording
+                services.AddMessagingTestHarness();
             });
+        });
 
         using var client = factory.CreateClient();
         var harness = factory.Services.GetRequiredService<MessagingTestHarness>();
@@ -228,8 +226,7 @@ public sealed class OrderApiTests : TestBase
 
         // Then — the harness observes the message through the app's own pipeline
         var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
-        recorded.Message.Should().BeOfType<OrderCreated>()
-            .Which.OrderId.Should().Be("ORD-1");
+        recorded.Message.Should().BeOfType<OrderCreated>().Which.OrderId.Should().Be("ORD-1");
     }
 }
 ```
@@ -242,8 +239,7 @@ public sealed class OrderApiTests : TestBase
     [Fact]
     public async Task Post_order_should_publish_event()
     {
-        var builder = WebApplication.CreateBuilder(
-            new WebApplicationOptions { EnvironmentName = "Test" });
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
         builder.WebHost.UseUrls("http://127.0.0.1:0");
 
         builder.Services.AddHeadlessMessaging(options =>
@@ -268,8 +264,7 @@ public sealed class OrderApiTests : TestBase
         await client.PostAsJsonAsync("/orders", new { Id = "ORD-1" }, AbortToken);
 
         var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
-        recorded.Message.Should().BeOfType<OrderCreated>()
-            .Which.OrderId.Should().Be("ORD-1");
+        recorded.Message.Should().BeOfType<OrderCreated>().Which.OrderId.Should().Be("ORD-1");
     }
 }
 ```

@@ -51,11 +51,13 @@ builder.Services.AddHeadlessCaching(setup =>
     setup.UseRedis(options => options.ConnectionMultiplexer = mux);
     setup.UseOutputCache(
         options => options.CacheName = "output-cache",
-        instance => instance.UseRedis(options =>
-        {
-            options.ConnectionMultiplexer = mux;
-            options.KeyPrefix = "output-cache:";
-        }));
+        instance =>
+            instance.UseRedis(options =>
+            {
+                options.ConnectionMultiplexer = mux;
+                options.KeyPrefix = "output-cache:";
+            })
+    );
 });
 ```
 

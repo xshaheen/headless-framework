@@ -83,11 +83,15 @@ Named instances (independent multiplexer, prefix, and scripts loader per name; t
 builder.Services.AddHeadlessCaching(setup =>
 {
     setup.UseRedis(options => options.ConnectionMultiplexer = redis);
-    setup.AddNamed("sessions", i => i.UseRedis(options =>
-    {
-        options.ConnectionMultiplexer = sessionsRedis;
-        options.KeyPrefix = "sessions:";
-    }));
+    setup.AddNamed(
+        "sessions",
+        i =>
+            i.UseRedis(options =>
+            {
+                options.ConnectionMultiplexer = sessionsRedis;
+                options.KeyPrefix = "sessions:";
+            })
+    );
 });
 
 public sealed class SessionService(ICacheProvider cacheProvider)
@@ -104,11 +108,14 @@ A named Redis instance can override its value serializer without affecting the d
 builder.Services.AddHeadlessCaching(setup =>
 {
     setup.UseRedis(options => options.ConnectionMultiplexer = redis);
-    setup.AddNamed("binary-values", instance =>
-    {
-        instance.WithSerializer<MyBinarySerializer>();
-        instance.UseRedis(options => options.ConnectionMultiplexer = redis);
-    });
+    setup.AddNamed(
+        "binary-values",
+        instance =>
+        {
+            instance.WithSerializer<MyBinarySerializer>();
+            instance.UseRedis(options => options.ConnectionMultiplexer = redis);
+        }
+    );
 });
 ```
 

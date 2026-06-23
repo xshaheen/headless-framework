@@ -45,8 +45,7 @@ options.UseKafka(kafka =>
 
     // Per-consume header augmentation. Receives the raw ConsumeResult and the live DI scope,
     // returns extra headers to attach before the framework dispatches to handlers.
-    kafka.CustomHeadersBuilder = (consumeResult, services) =>
-        [new KeyValuePair<string, string>("app", "myapp")];
+    kafka.CustomHeadersBuilder = (consumeResult, services) => [new KeyValuePair<string, string>("app", "myapp")];
 
     // Kafka-specific producer/consumer settings via the raw librdkafka config dictionary.
     kafka.MainConfig["enable.idempotence"] = "true";
@@ -58,9 +57,8 @@ Message-level Kafka knobs attach to `ForMessage<TMessage>(...)`:
 
 ```csharp
 options.ForMessage<OrderEvent>(message =>
-    message
-        .MessageName("orders.events")
-        .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString())));
+    message.MessageName("orders.events").UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
+);
 ```
 
 `PartitionBy(...)` stamps `KafkaHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
@@ -70,9 +68,9 @@ Consumer-side Kafka knobs attach to the consumer registration:
 ```csharp
 options.ForMessage<OrderEvent>(message =>
     message.OnQueue<OrderWorker>(consumer =>
-        consumer
-            .Group("orders")
-            .UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))));
+        consumer.Group("orders").UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))
+    )
+);
 ```
 
 ## Message Ordering
@@ -85,9 +83,8 @@ Messages sent to the same partition are delivered in order. Use `UseKafka(...).P
 
 ```csharp
 options.ForMessage<OrderEvent>(message =>
-    message
-        .MessageName("orders.events")
-        .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString())));
+    message.MessageName("orders.events").UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
+);
 ```
 
 ### Configuration for Strict Ordering

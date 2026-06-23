@@ -49,14 +49,17 @@ public sealed class SearchIndexer(IEnumerable<IMediaFileTextProvider> providers)
         var provider = mimeType switch
         {
             "application/pdf" => providers.OfType<PdfMediaFileTextProvider>().FirstOrDefault(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                => providers.OfType<WordDocumentMediaFileTextProvider>().FirstOrDefault(),
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                => providers.OfType<PresentationDocumentMediaFileTextProvider>().FirstOrDefault(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => providers
+                .OfType<WordDocumentMediaFileTextProvider>()
+                .FirstOrDefault(),
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => providers
+                .OfType<PresentationDocumentMediaFileTextProvider>()
+                .FirstOrDefault(),
             _ => null,
         };
 
-        if (provider is null) return string.Empty;
+        if (provider is null)
+            return string.Empty;
 
         return await provider.GetTextAsync(fileStream).ConfigureAwait(false);
     }

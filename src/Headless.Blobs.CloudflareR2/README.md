@@ -38,12 +38,16 @@ builder.Services.AddHeadlessBlobs(blobs =>
     });
 
     // Named store — keyed IPresignedUrlBlobStorage("media") registered automatically.
-    blobs.AddNamed("media", instance => instance.UseCloudflareR2(options =>
-    {
-        options.AccountId = builder.Configuration["R2Media:AccountId"]!;
-        options.AccessKeyId = builder.Configuration["R2Media:AccessKeyId"]!;
-        options.SecretAccessKey = builder.Configuration["R2Media:SecretAccessKey"]!;
-    }));
+    blobs.AddNamed(
+        "media",
+        instance =>
+            instance.UseCloudflareR2(options =>
+            {
+                options.AccountId = builder.Configuration["R2Media:AccountId"]!;
+                options.AccessKeyId = builder.Configuration["R2Media:AccessKeyId"]!;
+                options.SecretAccessKey = builder.Configuration["R2Media:SecretAccessKey"]!;
+            })
+    );
 });
 ```
 
@@ -76,7 +80,7 @@ if (storage is IPresignedUrlBlobStorage presigned)
 
 Bind with `blobs.UseCloudflareR2(builder.Configuration.GetSection("R2"))`.
 
-## Behavior Notes
+## Design Notes
 
 - **Buckets are not auto-created.** R2 object-scoped tokens cannot create buckets, so `AutoCreateContainer` defaults to `false`. Pre-create buckets out of band or use a bucket-create-capable token with `CreateContainerAsync`.
 - **No ACLs / public access.** `CannedAcl` is `null`. Use presigned URLs for time-limited private access; public serving (custom domains / `r2.dev`) is out of scope.
