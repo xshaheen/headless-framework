@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
+
 namespace Headless.Serializer.Converters;
 
 /// <summary>
@@ -23,6 +25,10 @@ public sealed class CollectionItemJsonConverter<
 {
     public override bool HandleNull => true;
 
+    // Cache the derived options (source options with only TConverterType as converter) per source options
+    // instance, so Read/Write don't clone JsonSerializerOptions + Activator.CreateInstance on every call.
+    private static readonly ConditionalWeakTable<JsonSerializerOptions, JsonSerializerOptions> _ItemOptions = [];
+
     public override IEnumerable<TDatatype>? Read(
         ref Utf8JsonReader reader,
         Type typeToConvert,
@@ -34,9 +40,7 @@ public sealed class CollectionItemJsonConverter<
             return null;
         }
 
-        JsonSerializerOptions serializerOptions = new(options);
-        serializerOptions.Converters.Clear();
-        serializerOptions.Converters.Add(Activator.CreateInstance<TConverterType>());
+        var serializerOptions = _ItemOptions.GetValue(options, _CreateItemOptions);
 
         List<TDatatype> returnValue = [];
 
@@ -62,9 +66,7 @@ public sealed class CollectionItemJsonConverter<
             return;
         }
 
-        JsonSerializerOptions serializerOptions = new(options);
-        serializerOptions.Converters.Clear();
-        serializerOptions.Converters.Add(Activator.CreateInstance<TConverterType>());
+        var serializerOptions = _ItemOptions.GetValue(options, _CreateItemOptions);
 
         writer.WriteStartArray();
 
@@ -74,5 +76,14 @@ public sealed class CollectionItemJsonConverter<
         }
 
         writer.WriteEndArray();
+    }
+
+    private static JsonSerializerOptions _CreateItemOptions(JsonSerializerOptions source)
+    {
+        var clone = new JsonSerializerOptions(source);
+        clone.Converters.Clear();
+        clone.Converters.Add(Activator.CreateInstance<TConverterType>());
+
+        return clone;
     }
 }
