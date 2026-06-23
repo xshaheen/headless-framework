@@ -4,7 +4,6 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
@@ -2253,10 +2252,9 @@ public sealed class RedisCache(
     private RedisValue _ToFramedRedisValue<T>(T? value, TimeSpan? expiresIn, DateTimeOffset now)
     {
         var expiresAt = _GetExpirationDateTime(expiresIn, now);
-        var valueSegment = value is null ? RedisValue.EmptyString : _ToRedisValue(value);
 
-        return RedisCacheEntryFrame.Encode(
-            valueSegment,
+        return _EncodeFramedValue(
+            value,
             isNull: value is null,
             logicalExpiresAt: expiresAt,
             physicalExpiresAt: expiresAt,
@@ -2264,6 +2262,74 @@ public sealed class RedisCache(
             // Direct upsert path stamps the birth time so a prior tag/clear marker does not invalidate the new
             // value (Family-2 version-pinning compares CreatedAt against the newest applicable marker).
             createdAt: now.UtcDateTime
+        );
+    }
+
+    // Encodes a framed entry, choosing the lowest-allocation value-segment path. string/byte[] (and the null
+    // sentinel) keep their verbatim RedisValue fast path through _ToRedisValue, so encode/decode and the CAS
+    // `expected` operand stay byte-consistent. Other types serialize straight into a pooled buffer that Encode
+    // copies once into the frame — eliminating the intermediate exact-size byte[] that SerializeToBytes allocates.
+    private byte[] _EncodeFramedValue<T>(
+        T? value,
+        bool isNull,
+        DateTime? logicalExpiresAt,
+        DateTime? physicalExpiresAt,
+        TimeSpan? slidingExpiration,
+        DateTime? eagerRefreshAt = null,
+        string? etag = null,
+        DateTime? lastModifiedAt = null,
+        IReadOnlyCollection<string>? tags = null,
+        DateTime? createdAt = null
+    )
+    {
+        if (isNull)
+        {
+            return RedisCacheEntryFrame.Encode(
+                RedisValue.EmptyString,
+                isNull: true,
+                logicalExpiresAt,
+                physicalExpiresAt,
+                slidingExpiration,
+                eagerRefreshAt,
+                etag,
+                lastModifiedAt,
+                tags,
+                createdAt
+            );
+        }
+
+        // A null value here (with isNull == false) routes through _ToRedisValue to preserve the legacy null-sentinel
+        // encoding; string/byte[] take their verbatim fast path. Both go through the RedisValue overload unchanged.
+        if (value is null or string or byte[])
+        {
+            return RedisCacheEntryFrame.Encode(
+                _ToRedisValue(value),
+                isNull: false,
+                logicalExpiresAt,
+                physicalExpiresAt,
+                slidingExpiration,
+                eagerRefreshAt,
+                etag,
+                lastModifiedAt,
+                tags,
+                createdAt
+            );
+        }
+
+        using var buffer = new PooledByteBufferWriter();
+        serializer.Serialize(value, buffer);
+
+        return RedisCacheEntryFrame.Encode(
+            new ReadOnlySequence<byte>(buffer.WrittenMemory),
+            isNull: false,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            slidingExpiration,
+            eagerRefreshAt,
+            etag,
+            lastModifiedAt,
+            tags,
+            createdAt
         );
     }
 
@@ -2325,9 +2391,8 @@ public sealed class RedisCache(
             return true;
         }
 
-        var valueSegment = entry.IsNull ? RedisValue.EmptyString : _ToRedisValue(entry.Value);
-        var redisValue = RedisCacheEntryFrame.Encode(
-            valueSegment,
+        var redisValue = _EncodeFramedValue(
+            entry.Value,
             entry.IsNull,
             entry.LogicalExpiresAt,
             entry.PhysicalExpiresAt,
@@ -2656,22 +2721,10 @@ public sealed class RedisCache(
             return (T?)(object)segment.ToArray();
         }
 
-        // Avoid copying segment into a new byte[] via ToArray(). If the backing store is a managed array
-        // (the common path — RedisValue is decoded into byte[] by StackExchange.Redis), wrap it directly
-        // in a non-writable MemoryStream at the right offset and length. Fall back to the copy path for
-        // exotic memory types where TryGetArray returns false (e.g. NativeMemoryManager).
-        if (MemoryMarshal.TryGetArray(segment, out var arraySegment))
-        {
-            var stream = new MemoryStream(
-                arraySegment.Array!,
-                arraySegment.Offset,
-                arraySegment.Count,
-                writable: false
-            );
-            return serializer.Deserialize<T>(stream);
-        }
-
-        return serializer.Deserialize<T>(segment.ToArray());
+        // The buffer-first serializer reads the framed value segment in place — no MemoryStream wrapper and no
+        // intermediate byte[] copy. (RedisValue is decoded into a managed array by StackExchange.Redis, so the
+        // ReadOnlyMemory<byte> here is already contiguous.)
+        return serializer.Deserialize<T>(segment);
     }
 
     private async Task<int> _SetAllInternalAsync(KeyValuePair<RedisKey, RedisValue>[] pairs, TimeSpan? expiresIn)

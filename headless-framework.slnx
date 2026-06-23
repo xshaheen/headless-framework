@@ -370,6 +370,7 @@
         <Project Path="tests\Headless.Slugs.Tests.Unit\Headless.Slugs.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Serializers/">
+        <Project Path="benchmarks\Headless.Serializer.Benchmarks\Headless.Serializer.Benchmarks.csproj" />
         <Project Path="src\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
         <Project Path="src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
         <Project Path="src\Headless.Serializer.MessagePack\Headless.Serializer.MessagePack.csproj" />

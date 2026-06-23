@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
+
 namespace Headless.Serializer;
 
 /// <summary>
@@ -9,6 +11,11 @@ namespace Headless.Serializer;
 /// Serialization and deserialization options are provided by the injected <see cref="IJsonOptionsProvider"/>.
 /// When no provider is supplied the <see cref="DefaultJsonOptionsProvider"/> is used, which delegates to
 /// <see cref="JsonConstants.DefaultWebJsonOptions"/>.
+/// <para>
+/// Writes go through a <see cref="Utf8JsonWriter"/> over the caller's <see cref="IBufferWriter{T}"/> and reads
+/// through <see cref="System.Text.Json.JsonSerializer"/>'s span/reader overloads, so no intermediate
+/// <c>byte[]</c> or <see cref="Stream"/> is materialized on the hot path.
+/// </para>
 /// <para>
 /// This class is annotated with <see cref="RequiresUnreferencedCodeAttribute"/> and
 /// <see cref="RequiresDynamicCodeAttribute"/> because the reflection-based <c>System.Text.Json</c> path is
@@ -25,28 +32,92 @@ public sealed class SystemJsonSerializer(IJsonOptionsProvider? optionsProvider =
 {
     private readonly IJsonOptionsProvider _optionsProvider = optionsProvider ?? new DefaultJsonOptionsProvider();
 
-    public T? Deserialize<T>(Stream data)
+    public void Serialize<T>(T value, IBufferWriter<byte> output)
     {
-        return JsonSerializer.Deserialize<T>(data, _optionsProvider.GetDeserializeOptions());
+        var options = _optionsProvider.GetSerializeOptions();
+        using var writer = new Utf8JsonWriter(output, _WriterOptionsFor(options));
+        JsonSerializer.Serialize(writer, value, options);
     }
 
-    public object? Deserialize(Stream data, Type objectType)
+    public void Serialize(object? value, IBufferWriter<byte> output)
     {
-        return JsonSerializer.Deserialize(data, objectType, _optionsProvider.GetDeserializeOptions());
+        var options = _optionsProvider.GetSerializeOptions();
+        using var writer = new Utf8JsonWriter(output, _WriterOptionsFor(options));
+        // Mirror the non-generic contract: a null value encodes the JSON literal `null` as `typeof(object)`.
+        JsonSerializer.Serialize(writer, value, value?.GetType() ?? typeof(object), options);
     }
 
-    public void Serialize<T>(T? value, Stream output)
+    public T? Deserialize<T>(ReadOnlyMemory<byte> data)
     {
-        JsonSerializer.Serialize(output, value, _optionsProvider.GetSerializeOptions());
+        return JsonSerializer.Deserialize<T>(data.Span, _optionsProvider.GetDeserializeOptions());
     }
 
-    public void Serialize(object? value, Stream output)
+    public T? Deserialize<T>(in ReadOnlySequence<byte> data)
     {
-        JsonSerializer.Serialize(
-            output,
-            value,
-            value is null ? typeof(object) : value.GetType(),
-            _optionsProvider.GetSerializeOptions()
-        );
+        var options = _optionsProvider.GetDeserializeOptions();
+        var reader = new Utf8JsonReader(data, _ReaderOptionsFor(options));
+        var result = JsonSerializer.Deserialize<T>(ref reader, options);
+        _ThrowIfTrailingContent(ref reader);
+
+        return result;
+    }
+
+    public object? Deserialize(ReadOnlyMemory<byte> data, Type type)
+    {
+        return JsonSerializer.Deserialize(data.Span, type, _optionsProvider.GetDeserializeOptions());
+    }
+
+    public object? Deserialize(in ReadOnlySequence<byte> data, Type type)
+    {
+        var options = _optionsProvider.GetDeserializeOptions();
+        var reader = new Utf8JsonReader(data, _ReaderOptionsFor(options));
+        var result = JsonSerializer.Deserialize(ref reader, type, options);
+        _ThrowIfTrailingContent(ref reader);
+
+        return result;
+    }
+
+    // A pre-made Utf8JsonWriter governs its OWN formatting and limits (indentation, encoder, depth) independently of
+    // the JsonSerializerOptions passed to JsonSerializer.Serialize — so the writer must inherit those settings from
+    // the options or indented/escaping configuration and the configured depth limit would be silently ignored.
+    // Validation is left on (the default) so a buggy custom converter that emits malformed token sequences is
+    // caught rather than producing structurally invalid JSON.
+    private static JsonWriterOptions _WriterOptionsFor(JsonSerializerOptions options)
+    {
+        return new JsonWriterOptions
+        {
+            Encoder = options.Encoder,
+            Indented = options.WriteIndented,
+            IndentCharacter = options.IndentCharacter,
+            IndentSize = options.IndentSize,
+            NewLine = options.NewLine,
+            MaxDepth = options.MaxDepth,
+        };
+    }
+
+    // A Utf8JsonReader built from a sequence governs its OWN reading rules (trailing commas, comment handling, max
+    // depth) independently of the JsonSerializerOptions passed to JsonSerializer.Deserialize — so the reader must
+    // inherit them from the options or the sequence/Stream paths would silently reject payloads the span path
+    // (which derives the reader internally) accepts.
+    private static JsonReaderOptions _ReaderOptionsFor(JsonSerializerOptions options)
+    {
+        return new JsonReaderOptions
+        {
+            AllowTrailingCommas = options.AllowTrailingCommas,
+            CommentHandling = options.ReadCommentHandling,
+            MaxDepth = options.MaxDepth,
+        };
+    }
+
+    // JsonSerializer.Deserialize(ref reader) reads a single value and stops; unlike the span/byte[] overloads it
+    // does not reject trailing non-whitespace. Mirror those overloads — the whole input is exactly one value — so
+    // the sequence/Stream path cannot silently accept a corrupt "{...}<garbage>" payload. Trailing whitespace is
+    // skipped by the reader and leaves nothing to read.
+    private static void _ThrowIfTrailingContent(ref Utf8JsonReader reader)
+    {
+        if (reader.Read())
+        {
+            throw new JsonException("The input contains trailing content after the top-level JSON value.");
+        }
     }
 }

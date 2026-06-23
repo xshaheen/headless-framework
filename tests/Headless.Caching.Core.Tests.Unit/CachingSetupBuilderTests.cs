@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using Headless.Caching;
 using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;
@@ -323,12 +324,16 @@ public sealed class CachingSetupBuilderTests
 
     private sealed class TestSerializer : ISerializer
     {
-        public T? Deserialize<T>(Stream data) => throw new NotSupportedException();
+        public void Serialize<T>(T value, IBufferWriter<byte> output) => throw new NotSupportedException();
 
-        public void Serialize<T>(T value, Stream output) => throw new NotSupportedException();
+        public void Serialize(object? value, IBufferWriter<byte> output) => throw new NotSupportedException();
 
-        public object? Deserialize(Stream data, Type objectType) => throw new NotSupportedException();
+        public T? Deserialize<T>(ReadOnlyMemory<byte> data) => throw new NotSupportedException();
 
-        public void Serialize(object? value, Stream output) => throw new NotSupportedException();
+        public T? Deserialize<T>(in ReadOnlySequence<byte> data) => throw new NotSupportedException();
+
+        public object? Deserialize(ReadOnlyMemory<byte> data, Type type) => throw new NotSupportedException();
+
+        public object? Deserialize(in ReadOnlySequence<byte> data, Type type) => throw new NotSupportedException();
     }
 }

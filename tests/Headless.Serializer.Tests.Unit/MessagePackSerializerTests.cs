@@ -1,7 +1,9 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Buffers;
+using Headless.Serializer;
 using MessagePack;
 using MessagePackSerializer = Headless.Serializer.MessagePackSerializer;
-
-// ReSharper disable AccessToDisposedClosure
 
 namespace Tests;
 
@@ -52,46 +54,31 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void serialize_valid_object_should_write_to_stream()
+    public void serialize_valid_object_should_write_to_buffer()
     {
         // given
         var person = new Person { Name = "Alice", Age = 30 };
-        using var memoryStream = new MemoryStream();
+        var writer = new ArrayBufferWriter<byte>();
 
         // when
-        _serializer.Serialize(person, memoryStream);
+        _serializer.Serialize(person, writer);
 
         // then
-        memoryStream.ToArray().Should().NotBeEmpty();
+        writer.WrittenSpan.ToArray().Should().NotBeEmpty();
     }
 
     [Fact]
-    public void serialize_valid_object_value_should_write_to_stream()
+    public void serialize_object_typed_value_should_write_to_buffer()
     {
         // given
         var person = new Person { Name = "Bob", Age = 40 };
-        using var memoryStream = new MemoryStream();
+        var writer = new ArrayBufferWriter<byte>();
 
         // when
-        _serializer.Serialize((object)person, memoryStream);
+        _serializer.Serialize((object)person, writer);
 
         // then
-        memoryStream.ToArray().Should().NotBeEmpty();
-    }
-
-    [Fact]
-    public void serialize_to_closed_stream_should_throw_exception()
-    {
-        // given
-        var person = new Person { Name = "Alice", Age = 30 };
-        using var memoryStream = new MemoryStream();
-        memoryStream.Close();
-
-        // when
-        var act = () => _serializer.Serialize(person, memoryStream);
-
-        // then
-        act.Should().Throw<MessagePackSerializationException>();
+        writer.WrittenSpan.ToArray().Should().NotBeEmpty();
     }
 
     [Fact]
@@ -99,40 +86,24 @@ public sealed class MessagePackSerializerTests
     {
         // given
         var nonSerializable = new NonSerializable { Action = () => Console.WriteLine("Test") };
-        using var memoryStream = new MemoryStream();
+        var writer = new ArrayBufferWriter<byte>();
 
         // when
-        var act = () => _serializer.Serialize(nonSerializable, memoryStream);
+        var act = () => _serializer.Serialize(nonSerializable, writer);
 
         // then
         act.Should().Throw<MessagePackSerializationException>();
     }
 
     [Fact]
-    public void serialize_to_null_stream_should_throw_exception()
+    public void roundtrip_via_bytes_should_return_object()
     {
         // given
         var person = new Person { Name = "Alice", Age = 30 };
-        Stream? nullStream = null;
 
         // when
-        var act = () => _serializer.Serialize(person, nullStream!);
-
-        // then
-        act.Should().Throw<MessagePackSerializationException>();
-    }
-
-    [Fact]
-    public void deserialize_valid_steam_should_return_object()
-    {
-        // given
-        var person = new Person { Name = "Alice", Age = 30 };
-        using var memoryStream = new MemoryStream();
-        _serializer.Serialize(person, memoryStream);
-        memoryStream.Position = 0;
-
-        // when
-        var result = _serializer.Deserialize<Person>(memoryStream);
+        var bytes = _serializer.SerializeToBytes(person);
+        var result = _serializer.Deserialize<Person>(bytes!);
 
         // then
         result.Should().NotBeNull();
@@ -141,16 +112,15 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void deserialize_valid_generic_object_from_stream_should_return_object()
+    public void roundtrip_via_buffer_and_memory_should_return_object()
     {
         // given
         var person = new Person { Name = "Bob", Age = 40 };
-        using var memoryStream = new MemoryStream();
-        _serializer.Serialize(person, memoryStream);
-        memoryStream.Position = 0;
+        var writer = new ArrayBufferWriter<byte>();
 
         // when
-        var result = _serializer.Deserialize<Person>(memoryStream);
+        _serializer.Serialize(person, writer);
+        var result = _serializer.Deserialize<Person>(writer.WrittenMemory);
 
         // then
         result.Should().NotBeNull();
@@ -159,47 +129,30 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
-    public void deserialize_closed_stream_should_throw_exception()
+    public void deserialize_from_read_only_sequence_should_return_object()
     {
-        // given
-        var person = new Person { Name = "Alice", Age = 30 };
-        using var memoryStream = new MemoryStream();
-        _serializer.Serialize(person, memoryStream);
-        memoryStream.Close();
+        // given — a multi-segment sequence exercises the non-contiguous read path.
+        var person = new Person { Name = "Seq", Age = 7 };
+        var bytes = _serializer.SerializeToBytes(person)!;
+        var sequence = _CreateMultiSegmentSequence(bytes);
 
         // when
-        Action act = () => _serializer.Deserialize<Person>(memoryStream);
-
-        // then
-        act.Should().Throw<ObjectDisposedException>();
-    }
-
-    [Fact]
-    public void deserialize_valid_typed_object_from_stream_should_return_object()
-    {
-        // given
-        var person = new Person { Name = "Bob", Age = 40 };
-        using var memoryStream = new MemoryStream();
-        _serializer.Serialize(person, memoryStream);
-        memoryStream.Position = 0;
-
-        // when
-        var result = _serializer.Deserialize<Person>(memoryStream);
+        var result = _serializer.Deserialize<Person>(in sequence);
 
         // then
         result.Should().NotBeNull();
-        result.Name.Should().Be("Bob");
-        result.Age.Should().Be(40);
+        result.Name.Should().Be("Seq");
+        result.Age.Should().Be(7);
     }
 
     [Fact]
     public void deserialize_invalid_data_should_throw_exception()
     {
         // given
-        using var memoryStream = new MemoryStream([0x01, 0x02, 0x03]);
+        byte[] invalid = [0x01, 0x02, 0x03];
 
         // when
-        Action act = () => _serializer.Deserialize<Person>(memoryStream);
+        var act = () => _serializer.Deserialize<Person>(invalid);
 
         // then
         act.Should().Throw<MessagePackSerializationException>();
@@ -217,12 +170,10 @@ public sealed class MessagePackSerializerTests
             Metadata = new Dictionary<string, int>(StringComparer.Ordinal) { ["key1"] = 100, ["key2"] = 200 },
             Nested = new NestedObject { Value = "nested-value", Count = 42 },
         };
-        using var memoryStream = new MemoryStream();
 
         // when
-        _serializer.Serialize(complex, memoryStream);
-        memoryStream.Position = 0;
-        var result = _serializer.Deserialize<ComplexObject>(memoryStream);
+        var bytes = _serializer.SerializeToBytes(complex);
+        var result = _serializer.Deserialize<ComplexObject>(bytes!);
 
         // then
         result.Should().NotBeNull();
@@ -240,12 +191,11 @@ public sealed class MessagePackSerializerTests
     {
         // given
         Person? nullPerson = null;
-        using var memoryStream = new MemoryStream();
+        var writer = new ArrayBufferWriter<byte>();
 
         // when
-        _serializer.Serialize(nullPerson, memoryStream);
-        memoryStream.Position = 0;
-        var result = _serializer.Deserialize<Person>(memoryStream);
+        _serializer.Serialize(nullPerson, writer);
+        var result = _serializer.Deserialize<Person>(writer.WrittenMemory);
 
         // then
         result.Should().BeNull();
@@ -256,11 +206,9 @@ public sealed class MessagePackSerializerTests
     {
         // given
         var person = new Person { Name = "Test Person With A Longer Name", Age = 12345 };
-        using var msgpackStream = new MemoryStream();
 
         // when
-        _serializer.Serialize(person, msgpackStream);
-        var msgpackSize = msgpackStream.ToArray().Length;
+        var msgpackSize = _serializer.SerializeToBytes(person)!.Length;
         var jsonSize = JsonSerializer.SerializeToUtf8Bytes(person).Length;
 
         // then
@@ -273,12 +221,10 @@ public sealed class MessagePackSerializerTests
         // given
         var timestamp = new DateTime(2025, 6, 15, 10, 30, 45, DateTimeKind.Utc);
         var container = new DateTimeContainer { Timestamp = timestamp };
-        using var memoryStream = new MemoryStream();
 
         // when
-        _serializer.Serialize(container, memoryStream);
-        memoryStream.Position = 0;
-        var result = _serializer.Deserialize<DateTimeContainer>(memoryStream);
+        var bytes = _serializer.SerializeToBytes(container);
+        var result = _serializer.Deserialize<DateTimeContainer>(bytes!);
 
         // then
         result.Should().NotBeNull();
@@ -291,12 +237,10 @@ public sealed class MessagePackSerializerTests
         // given
         var guid = Guid.Parse("550e8400-e29b-41d4-a716-446655440000");
         var container = new GuidContainer { Id = guid };
-        using var memoryStream = new MemoryStream();
 
         // when
-        _serializer.Serialize(container, memoryStream);
-        memoryStream.Position = 0;
-        var result = _serializer.Deserialize<GuidContainer>(memoryStream);
+        var bytes = _serializer.SerializeToBytes(container);
+        var result = _serializer.Deserialize<GuidContainer>(bytes!);
 
         // then
         result.Should().NotBeNull();
@@ -304,17 +248,32 @@ public sealed class MessagePackSerializerTests
     }
 
     [Fact]
+    public void untrusted_data_serializer_roundtrips()
+    {
+        // given — the untrustedData opt-in hardens deserialization; it must not change round-trip correctness.
+        var serializer = new MessagePackSerializer(untrustedData: true);
+        var person = new Person { Name = "Trusted", Age = 21 };
+
+        // when
+        var bytes = serializer.SerializeToBytes(person);
+        var result = serializer.Deserialize<Person>(bytes!);
+
+        // then
+        result.Should().NotBeNull();
+        result.Name.Should().Be("Trusted");
+        result.Age.Should().Be(21);
+    }
+
+    [Fact]
     public void should_deserialize_with_type_parameter()
     {
         // given
         var person = new Person { Name = "TypeTest", Age = 99 };
-        using var memoryStream = new MemoryStream();
-        _serializer.Serialize(person, memoryStream);
-        memoryStream.Position = 0;
+        var bytes = _serializer.SerializeToBytes(person)!;
 
         // when
 #pragma warning disable CA2263 // Prefer generic
-        var result = _serializer.Deserialize(memoryStream, typeof(Person));
+        var result = _serializer.Deserialize(bytes.AsMemory(), typeof(Person));
 #pragma warning restore CA2263
 
         // then
@@ -323,5 +282,36 @@ public sealed class MessagePackSerializerTests
         var typedResult = (Person)result!;
         typedResult.Name.Should().Be("TypeTest");
         typedResult.Age.Should().Be(99);
+    }
+
+    // Splits the payload across two segments so deserialization runs against a genuinely non-contiguous sequence.
+    private static ReadOnlySequence<byte> _CreateMultiSegmentSequence(byte[] data)
+    {
+        if (data.Length < 2)
+        {
+            return new ReadOnlySequence<byte>(data);
+        }
+
+        var mid = data.Length / 2;
+        var first = new BufferSegment(data.AsMemory(0, mid));
+        var second = first.Append(data.AsMemory(mid));
+
+        return new ReadOnlySequence<byte>(first, 0, second, second.Memory.Length);
+    }
+
+    private sealed class BufferSegment : ReadOnlySequenceSegment<byte>
+    {
+        public BufferSegment(ReadOnlyMemory<byte> memory)
+        {
+            Memory = memory;
+        }
+
+        public BufferSegment Append(ReadOnlyMemory<byte> memory)
+        {
+            var segment = new BufferSegment(memory) { RunningIndex = RunningIndex + Memory.Length };
+            Next = segment;
+
+            return segment;
+        }
     }
 }
