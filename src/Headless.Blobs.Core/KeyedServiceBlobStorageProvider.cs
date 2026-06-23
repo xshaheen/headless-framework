@@ -13,7 +13,7 @@ internal sealed class KeyedServiceBlobStorageProvider(IServiceProvider servicePr
 {
     public IBlobStorage GetStorage(string name)
     {
-        Argument.IsNotNullOrEmpty(name);
+        Argument.IsNotNullOrWhiteSpace(name);
 
         return serviceProvider.GetKeyedService<IBlobStorage>(name)
             ?? throw new InvalidOperationException(
@@ -25,7 +25,7 @@ internal sealed class KeyedServiceBlobStorageProvider(IServiceProvider servicePr
 
     public IBlobStorage? GetStorageOrNull(string name)
     {
-        Argument.IsNotNullOrEmpty(name);
+        Argument.IsNotNullOrWhiteSpace(name);
 
         return serviceProvider.GetKeyedService<IBlobStorage>(name);
     }
