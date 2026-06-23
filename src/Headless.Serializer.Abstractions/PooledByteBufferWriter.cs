@@ -14,24 +14,11 @@ namespace Headless.Serializer;
 /// span/memory is only valid until the next write or <see cref="Dispose"/>.
 /// </summary>
 /// <remarks>
-/// Two contract caveats for direct consumers, both deliberate trade-offs for the buffer-first hot path:
-/// <list type="bullet">
-/// <item>
-/// <description>
-/// <see cref="Advance"/> does <b>not</b> validate <c>count</c> (unlike <see cref="System.Buffers.ArrayBufferWriter{T}"/>):
-/// the caller must honor the <see cref="IBufferWriter{T}"/> contract and advance only by what
-/// <see cref="GetSpan"/>/<see cref="GetMemory"/> granted. Over-advancing corrupts the write index and surfaces later
-/// as an exception at <see cref="WrittenSpan"/>/<see cref="WrittenMemory"/> rather than at the offending call.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// The pooled buffer is <b>not</b> zeroed when returned to the shared pool. Residual serialized bytes remain in the
-/// rented array until the next renter overwrites them. If you serialize sensitive payloads (tokens, PII) and require
-/// defense against in-process cross-pool disclosure, clear <see cref="WrittenSpan"/> before <see cref="Dispose"/>.
-/// </description>
-/// </item>
-/// </list>
+/// The written portion of the rental is zeroed before it returns to the shared pool (on <see cref="Dispose"/> and on
+/// growth), so serialized payloads — which may hold tokens or PII — do not linger in pool memory for the next renter
+/// to over-read. <see cref="Advance"/> validates <c>count</c> against the granted span (matching
+/// <see cref="System.Buffers.ArrayBufferWriter{T}"/>) and throws <see cref="InvalidOperationException"/> on
+/// over-advance instead of silently corrupting the write index.
 /// </remarks>
 [PublicAPI]
 public sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable
@@ -58,8 +45,14 @@ public sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable
 
     public void Advance(int count)
     {
-        // The buffer-first serializers never advance past what GetSpan/GetMemory granted, so a defensive guard
-        // here would only add a branch on the hot path; rely on the IBufferWriter contract instead.
+        // Validate the IBufferWriter contract in one predicted-not-taken branch: the unsigned comparison rejects a
+        // negative count and any advance past what GetSpan/GetMemory granted (matching ArrayBufferWriter<T>). Without
+        // it, over-advancing silently corrupts _index and only surfaces later at WrittenSpan/WrittenMemory.
+        if ((uint)count > (uint)(_buffer.Length - _index))
+        {
+            throw new InvalidOperationException("Cannot advance past the end of the buffer.");
+        }
+
         _index += count;
     }
 
@@ -78,11 +71,15 @@ public sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable
     public void Dispose()
     {
         var toReturn = _buffer;
+        var written = _index;
         _buffer = [];
         _index = 0;
 
         if (toReturn.Length > 0)
         {
+            // Zero the serialized payload (possibly tokens/PII) before the rental rejoins the shared pool so a later
+            // renter cannot over-read residual bytes. Clears only the written span, like STJ's PooledByteBufferWriter.
+            toReturn.AsSpan(0, written).Clear();
             ArrayPool<byte>.Shared.Return(toReturn);
         }
     }
@@ -104,6 +101,8 @@ public sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable
         var newBuffer = ArrayPool<byte>.Shared.Rent(newSize);
 
         Array.Copy(_buffer, newBuffer, _index);
+        // Zero the copied-out payload before the old rental rejoins the shared pool (same rationale as Dispose).
+        _buffer.AsSpan(0, _index).Clear();
         ArrayPool<byte>.Shared.Return(_buffer);
         _buffer = newBuffer;
     }

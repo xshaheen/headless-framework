@@ -62,7 +62,8 @@ public static class SerializerExtensions
             }
             finally
             {
-                ArrayPool<byte>.Shared.Return(rented);
+                // Clear the transcoded payload before the rental rejoins the shared pool (see PooledByteBufferWriter).
+                ArrayPool<byte>.Shared.Return(rented, clearArray: true);
             }
         }
 
