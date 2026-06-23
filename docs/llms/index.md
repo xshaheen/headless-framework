@@ -107,10 +107,12 @@ builder.AddHeadlessInfrastructure();
 
 // Pick exactly one provider per feature; code only against the abstractions.
 builder.Services.AddFileSystemBlobStorage(options =>
-    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage"));
+    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+);
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddHeadlessJobs(options =>
-    options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc));
+    options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc)
+);
 
 builder.Services.AddScoped<DocumentService>();
 
@@ -118,12 +120,15 @@ var app = builder.Build();
 
 app.UseHeadlessDefaults(); // StatusCodePages before ExceptionHandler, then auth/tenant, then endpoints
 
-app.MapPost("/documents", async (UploadRequest request, DocumentService documents, CancellationToken ct) =>
-{
-    var id = await documents.StoreAsync(request, ct);
-    return Results.Created($"/documents/{id}", new { id });
-})
-.Validate<UploadRequest>(); // FluentValidation filter — returns 422 ProblemDetails on failure
+app.MapPost(
+        "/documents",
+        async (UploadRequest request, DocumentService documents, CancellationToken ct) =>
+        {
+            var id = await documents.StoreAsync(request, ct);
+            return Results.Created($"/documents/{id}", new { id });
+        }
+    )
+    .Validate<UploadRequest>(); // FluentValidation filter — returns 422 ProblemDetails on failure
 
 app.Run();
 ```
@@ -155,7 +160,8 @@ public sealed class DocumentService(
     IBlobStorage storage,
     ICache cache,
     ITimeJobManager<TimeJobEntity> jobs,
-    IDocumentRepository repository)
+    IDocumentRepository repository
+)
 {
     public async Task<string> StoreAsync(UploadRequest request, CancellationToken ct)
     {
@@ -167,18 +173,22 @@ public sealed class DocumentService(
             blobName: id,
             stream: stream,
             metadata: new Dictionary<string, string?> { ["file-name"] = request.FileName },
-            cancellationToken: ct);
+            cancellationToken: ct
+        );
 
         // Hand processing (virus scan, thumbnailing, ...) to a background job.
-        await jobs.AddAsync(new TimeJobEntity
-        {
-            Function = "ProcessDocument",
-            Description = $"process-{id}",
-            ExecutionTime = DateTime.UtcNow,
-            Request = JobsHelper.SerializeRequest(new { DocumentId = id }),
-            Retries = 3,
-            RetryIntervals = [30, 60, 120],
-        }, ct);
+        await jobs.AddAsync(
+            new TimeJobEntity
+            {
+                Function = "ProcessDocument",
+                Description = $"process-{id}",
+                ExecutionTime = DateTime.UtcNow,
+                Request = JobsHelper.SerializeRequest(new { DocumentId = id }),
+                Retries = 3,
+                RetryIntervals = [30, 60, 120],
+            },
+            ct
+        );
 
         return id;
     }
@@ -190,7 +200,8 @@ public sealed class DocumentService(
             $"doc:{id}",
             token => repository.FindAsync(id, token),
             TimeSpan.FromHours(1),
-            ct);
+            ct
+        );
 
         return cached.HasValue ? cached.Value : null;
     }
