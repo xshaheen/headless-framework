@@ -1,6 +1,6 @@
 # Headless.Blobs.Core
 
-Unified setup builder for registering one or more named blob storages in a single dependency-injection container.
+Unified setup builder for composing one or more named blob stores in a single DI container.
 
 ## Problem Solved
 
@@ -8,15 +8,19 @@ A single application often needs several blob stores at once — images on one b
 
 ## Key Features
 
-- `AddHeadlessBlobs(Action<HeadlessBlobsSetupBuilder>)` — the single registration entry point for all blob stores.
-- Optional default store (at most one), injectable as a plain `IBlobStorage`.
+- `AddHeadlessBlobs(Action<HeadlessBlobsSetupBuilder>)` — single registration entry point for all blob stores.
+- Optional default store (at most one), injectable as plain `IBlobStorage`.
 - Unlimited named stores with unique names; the same provider may back several.
-- `IBlobStorageProvider.GetStorage(name)` / `GetStorageOrNull(name)` plus keyed `IBlobStorage` resolution.
-- Deferred, gate-validated registration: a misconfigured setup throws before mutating the service collection.
+- `IBlobStorageProvider` — resolves named stores by name; exposes `RegisteredNames` for safe pre-validation.
+- Keyed `IBlobStorage` resolution via `[FromKeyedServices("name")]` or `GetRequiredKeyedService<IBlobStorage>("name")`.
+- Deferred, gate-validated registration: a misconfigured setup (duplicate default, duplicate name, zero providers for a named store) throws before mutating the service collection.
 
 ## Design Notes
 
-Each provider package contributes `Use{Provider}` members on the builder — default overloads on `HeadlessBlobsSetupBuilder` and named overloads on `HeadlessBlobInstanceBuilder`. Named stores register as keyed `IBlobStorage` services, never touching the default (unkeyed) registration, so a named-only configuration leaves plain `IBlobStorage` unregistered. Each store is fully isolated: its own options (bound as named options), its own provider client, and its own `IBlobNamingNormalizer`. Presigned support is a per-store capability — the resolved store implements `IPresignedUrlBlobStorage` only when its provider supports it (AWS, Azure, Cloudflare R2).
+- Each provider package contributes `Use{Provider}` extension members on `HeadlessBlobsSetupBuilder` (default) and `HeadlessBlobInstanceBuilder` (named). Named stores register as keyed `IBlobStorage` services, never touching the default (unkeyed) registration, so a named-only configuration leaves plain `IBlobStorage` unregistered.
+- Each store is fully isolated: its own named options, its own provider client, and its own `IBlobNamingNormalizer`. Ambient services (`IMimeTypeProvider`, `IClock`) are shared across stores.
+- Presigned support is a per-store capability. For named stores, AWS, Azure, and CloudflareR2 also register a keyed `IPresignedUrlBlobStorage` forward for direct injection. For the default store, feature-detect by casting (`storage is IPresignedUrlBlobStorage`).
+- `IBlobStorageProvider.RegisteredNames` contains only **named** instance names; the default/unnamed store is excluded. Use it to validate an externally-supplied name before calling `GetStorage` rather than probe-and-catch.
 
 ## Installation
 
@@ -33,19 +37,51 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessBlobs(blobs =>
 {
-    blobs.UseCloudflareR2(options => { /* ... */ });               // default store
-    blobs.AddNamed("docs", instance => instance.UseAzure(options => { /* ... */ }));
-    blobs.AddNamed("scratch", instance => instance.UseFileSystem(options => options.BaseDirectoryPath = "/tmp/blobs"));
+    // Default store — injected as plain IBlobStorage.
+    blobs.UseCloudflareR2(options =>
+    {
+        options.AccountId = builder.Configuration["R2:AccountId"]!;
+        options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
+        options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
+    });
+
+    // Named store — injected as keyed IBlobStorage("docs").
+    blobs.AddNamed("docs", instance => instance.UseAzure(
+        setupAction: options => { },
+        clientFactory: _ => new BlobServiceClient(builder.Configuration["Azure:Docs:ConnectionString"])));
+
+    // Two named instances of the same provider, each with independent config.
+    blobs.AddNamed("scratch", instance => instance.UseFileSystem(
+        options => options.BaseDirectoryPath = "/tmp/blobs"));
+
+    blobs.AddNamed("archive", instance => instance.UseAws(
+        options => { },
+        awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive")));
 });
 ```
 
 Resolve stores:
 
 ```csharp
-public sealed class FileService(IBlobStorage defaultStorage, IBlobStorageProvider provider)
+// Default store — plain injection.
+public sealed class UploadService(IBlobStorage storage) { }
+
+// Named store — keyed injection.
+public sealed class DocsService([FromKeyedServices("docs")] IBlobStorage docsStorage) { }
+
+// Named store — via IBlobStorageProvider.
+public sealed class MultiStoreService(IBlobStorageProvider provider)
 {
-    public IBlobStorage Docs => provider.GetStorage("docs");
-    // or inject directly: [FromKeyedServices("docs")] IBlobStorage docs
+    public IBlobStorage GetDocs() => provider.GetStorage("docs");
+    public bool HasStore(string name) => provider.RegisteredNames.Contains(name);
+}
+
+// Named presigned URL (AWS/Azure/R2 only).
+public sealed class PresignedService(
+    [FromKeyedServices("docs")] IPresignedUrlBlobStorage presigned)
+{
+    public Task<Uri> GetDownloadUrl(string[] container, string blob) =>
+        presigned.GetPresignedDownloadUrlAsync(container, blob, TimeSpan.FromHours(1));
 }
 ```
 
@@ -60,6 +96,8 @@ No options of its own. Each store's options are configured through its provider'
 
 ## Side Effects
 
-- Registers `IBlobStorageProvider` as a singleton.
-- Registers a marker that rejects a second `AddHeadlessBlobs` call on the same service collection.
-- Applies each provider contribution (default unkeyed `IBlobStorage`, named keyed `IBlobStorage`) only after setup gates pass.
+- Registers `IBlobStorageProvider` as singleton (backed by the container's keyed `IBlobStorage` registrations).
+- Registers a called-once marker that rejects a second `AddHeadlessBlobs` call on the same service collection.
+- Default `Use{Provider}`: registers `IBlobStorage` as unkeyed singleton.
+- `AddNamed(... Use{Provider})`: registers `IBlobStorage` as keyed singleton (`name`). For AWS, Azure, and CloudflareR2 also registers `IPresignedUrlBlobStorage` as keyed singleton (`name`). For SshNet, also registers a keyed `SftpClientPool` singleton (`name`).
+- There is no global (unkeyed) `IPresignedUrlBlobStorage` registration.

@@ -1,18 +1,18 @@
 # Headless.Blobs.FileSystem
 
-Local file system implementation of the `IBlobStorage` interface for development and on-premises scenarios.
+Local file system implementation of `IBlobStorage` for development and on-premises scenarios.
 
 ## Problem Solved
 
-Provides local file system storage using the unified `IBlobStorage` abstraction, ideal for development, testing, and on-premises deployments without cloud dependencies.
+Provides local file system storage using the unified `IBlobStorage` abstraction, for development, testing, and on-premises deployments without cloud dependencies.
 
 ## Key Features
 
-- Full `IBlobStorage` implementation using local file system
-- Container mapping to directories
-- Metadata stored as companion JSON files
-- No external service dependencies
-- Cross-platform path handling
+- Full `IBlobStorage` implementation using local file system.
+- Container mapping to directories.
+- Metadata stored as companion JSON files.
+- No external service dependencies.
+- Cross-platform path handling.
 
 ## Installation
 
@@ -45,7 +45,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ### Options
 
 ```csharp
-options.BaseDirectoryPath = "/path/to/storage";
+options.BaseDirectoryPath = "/path/to/storage";  // required; the root directory for all containers
 ```
 
 ## Dependencies
@@ -55,5 +55,8 @@ options.BaseDirectoryPath = "/path/to/storage";
 
 ## Side Effects
 
-- Registers `IBlobStorage` as singleton
-- Creates the base directory if it doesn't exist
+Registered via `AddHeadlessBlobs(b => b.UseFileSystem(...))` or `AddNamed("name", i => i.UseFileSystem(...))`:
+
+- Default (`UseFileSystem`): registers `IBlobStorage` as unkeyed singleton.
+- Named (`AddNamed ... UseFileSystem`): registers `IBlobStorage` as keyed singleton (`name`).
+- No presigned URL support — `IPresignedUrlBlobStorage` is never registered for FileSystem stores.
