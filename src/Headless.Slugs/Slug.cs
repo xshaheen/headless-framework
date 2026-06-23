@@ -34,11 +34,22 @@ public static class Slug
         }
 
         options ??= new();
-        text = text.Normalize(NormalizationForm.FormD);
+
+        // Normalizing to NFD lets diacritic marks be stripped as non-spacing marks below. Skip the allocation
+        // when the input is already NFD (the common ASCII case) — IsNormalized is much cheaper than Normalize.
+        if (!text.IsNormalized(NormalizationForm.FormD))
+        {
+            text = text.Normalize(NormalizationForm.FormD);
+        }
 
         foreach (var (value, replacement) in options.Replacements)
         {
-            text = text.Replace(value, replacement, StringComparison.Ordinal);
+            // string.Replace allocates a new string even when the token is absent; most inputs contain none
+            // of the replacement tokens, so guard the (cheaper) Contains scan first.
+            if (text.Contains(value, StringComparison.Ordinal))
+            {
+                text = text.Replace(value, replacement, StringComparison.Ordinal);
+            }
         }
 
         var textLength = options.MaximumLength > 0 ? Math.Min(text.Length, options.MaximumLength) : text.Length;
@@ -47,8 +58,6 @@ public static class Slug
 
         foreach (var rune in text.EnumerateRunes())
         {
-            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(rune.Value);
-
             if (options.IsAllowed(rune))
             {
                 var transformed = options.CasingTransformation switch
@@ -64,8 +73,9 @@ public static class Slug
                 sb.Append(transformed);
                 hasPreviousDash = false;
             }
+            // GetUnicodeCategory is only needed for disallowed runes, so compute it lazily here (not per rune).
             else if (
-                unicodeCategory != UnicodeCategory.NonSpacingMark
+                CharUnicodeInfo.GetUnicodeCategory(rune.Value) != UnicodeCategory.NonSpacingMark
                 && options.Separator is not null
                 && !_EndsWith(sb, options.Separator)
             )
@@ -93,7 +103,9 @@ public static class Slug
             }
         }
 
-        return text.Normalize(NormalizationForm.FormC);
+        // Skip the final NFC allocation when the result is already NFC (the common case once disallowed
+        // characters have been collapsed); IsNormalized short-circuits to the identical result.
+        return text.IsNormalized(NormalizationForm.FormC) ? text : text.Normalize(NormalizationForm.FormC);
     }
 
     private static bool _EndsWith(StringBuilder stringBuilder, string suffix)
