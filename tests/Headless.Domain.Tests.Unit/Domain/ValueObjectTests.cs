@@ -6,18 +6,13 @@ namespace Tests.Domain;
 
 public sealed class ValueObjectTests
 {
-    private sealed class Address : ValueObject
+    private sealed class Address : ValueObject<Address>
     {
         public required string Street { get; init; }
 
         public required string City { get; init; }
 
-        protected override bool EqualityComponentsEqual(ValueObject other)
-        {
-            var o = (Address)other;
-
-            return Street == o.Street && City == o.City;
-        }
+        protected override bool EqualityComponentsEqual(Address other) => Street == other.Street && City == other.City;
 
         protected override void BuildHashCode(ref HashCode hash)
         {
@@ -31,7 +26,7 @@ public sealed class ValueObjectTests
     {
         var address = new Address { Street = "123 Main St", City = "Springfield" };
 
-        address.Should().BeAssignableTo<EqualityBase<ValueObject>>();
+        address.Should().BeAssignableTo<EqualityBase<Address>>();
     }
 
     [Fact]

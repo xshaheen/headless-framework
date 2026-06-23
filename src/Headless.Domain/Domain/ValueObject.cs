@@ -16,5 +16,12 @@ public interface IValueObject;
 /// (declared via <c>EqualityComponentsEqual</c> / <c>BuildHashCode</c>) are equal; neither instance needs a
 /// dedicated identity field.
 /// </summary>
+/// <remarks>
+/// Self-typed (<c>TSelf</c>) so the equality hooks receive the concrete type directly, e.g.
+/// <c>class Money : ValueObject&lt;Money&gt;</c> overrides <c>EqualityComponentsEqual(Money other)</c> with no
+/// cast. Use the non-generic <see cref="IValueObject"/> marker to reference value objects heterogeneously.
+/// </remarks>
+/// <typeparam name="TSelf">The concrete value-object type.</typeparam>
 [PublicAPI]
-public abstract class ValueObject : EqualityBase<ValueObject>, IValueObject;
+public abstract class ValueObject<TSelf> : EqualityBase<TSelf>, IValueObject
+    where TSelf : ValueObject<TSelf>;
