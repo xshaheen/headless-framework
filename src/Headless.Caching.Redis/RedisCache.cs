@@ -2282,29 +2282,14 @@ public sealed class RedisCache(
         DateTime? createdAt = null
     )
     {
-        if (isNull)
+        // isNull and the string/byte[]/null fast paths both encode through the RedisValue overload, so resolve the
+        // segment first and keep the 9-arg Encode tail at a single call site. isNull selects the empty sentinel;
+        // otherwise _ToRedisValue preserves the legacy null-sentinel encoding and takes string/byte[] verbatim.
+        if (isNull || value is null or string or byte[])
         {
             return RedisCacheEntryFrame.Encode(
-                RedisValue.EmptyString,
-                isNull: true,
-                logicalExpiresAt,
-                physicalExpiresAt,
-                slidingExpiration,
-                eagerRefreshAt,
-                etag,
-                lastModifiedAt,
-                tags,
-                createdAt
-            );
-        }
-
-        // A null value here (with isNull == false) routes through _ToRedisValue to preserve the legacy null-sentinel
-        // encoding; string/byte[] take their verbatim fast path. Both go through the RedisValue overload unchanged.
-        if (value is null or string or byte[])
-        {
-            return RedisCacheEntryFrame.Encode(
-                _ToRedisValue(value),
-                isNull: false,
+                isNull ? RedisValue.EmptyString : _ToRedisValue(value),
+                isNull,
                 logicalExpiresAt,
                 physicalExpiresAt,
                 slidingExpiration,
