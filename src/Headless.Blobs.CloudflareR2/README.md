@@ -1,18 +1,19 @@
 # Headless.Blobs.CloudflareR2
 
-Cloudflare R2 implementation of the `IBlobStorage` interface, running R2 as a private, S3-compatible blob backend.
+Cloudflare R2 implementation of `IBlobStorage`, running R2 as a private, S3-compatible blob backend on the reused AWS S3 engine.
 
 ## Problem Solved
 
-R2 speaks the S3 API, but the AWS provider cannot be pointed at it directly: the endpoint, path-style addressing, and AWS SDK v4 checksum defaults all need R2-specific configuration, and R2 has no ACL concept. This package reuses the AWS S3 engine behind an R2-tuned client so R2 works as a drop-in, cost-saving replacement for S3.
+R2 speaks the S3 API but cannot use the AWS provider as-is: the endpoint, path-style addressing, and AWS SDK v4 checksum defaults need R2-specific configuration, and R2 has no ACL concept. This package configures an R2-tuned `IAmazonS3` via `R2ClientFactory` and reuses `AwsBlobStorage`, making R2 a drop-in, cost-saving S3 replacement.
 
 ## Key Features
 
-- Full `IBlobStorage` implementation for Cloudflare R2 (reuses the AWS S3 engine)
-- Presigned download/upload URLs via `IPresignedUrlBlobStorage`
-- R2-correct client config: path-style addressing, `auto` region, and SDK v4 checksum settings R2 accepts
-- R2 bucket naming normalization (no dots)
-- Jurisdiction-aware endpoints (default, EU, FedRAMP)
+- Full `IBlobStorage` implementation for Cloudflare R2 (reuses the AWS S3 engine).
+- Presigned download/upload URLs via `IPresignedUrlBlobStorage` (named stores only — feature-detect via cast for the default store).
+- R2-correct client config: path-style addressing, `auto` region, SDK v4 checksum settings R2 accepts.
+- R2 bucket naming normalization (no dots).
+- Jurisdiction-aware endpoints (default, EU, FedRAMP).
+- R2-safe defaults applied per named instance (`AwsBlobStorageOptions`): `CannedAcl = null`, `UseChunkEncoding = false`, `DisablePayloadSigning = true`, `AutoCreateContainer = false`.
 
 ## Installation
 
@@ -25,21 +26,33 @@ dotnet add package Headless.Blobs.CloudflareR2
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddCloudflareR2BlobStorage(options =>
+builder.Services.AddHeadlessBlobs(blobs =>
 {
-    options.AccountId = builder.Configuration["R2:AccountId"]!;
-    options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
-    options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
-    // options.Jurisdiction = R2Jurisdiction.EuropeanUnion; // optional
+    // Default store.
+    blobs.UseCloudflareR2(options =>
+    {
+        options.AccountId = builder.Configuration["R2:AccountId"]!;
+        options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
+        options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
+        // options.Jurisdiction = R2Jurisdiction.EuropeanUnion; // optional
+    });
+
+    // Named store — keyed IPresignedUrlBlobStorage("media") registered automatically.
+    blobs.AddNamed("media", instance => instance.UseCloudflareR2(options =>
+    {
+        options.AccountId = builder.Configuration["R2Media:AccountId"]!;
+        options.AccessKeyId = builder.Configuration["R2Media:AccessKeyId"]!;
+        options.SecretAccessKey = builder.Configuration["R2Media:SecretAccessKey"]!;
+    }));
 });
 ```
 
-Container and blob names are passed per operation, not configured here:
+Container and blob names are passed per operation:
 
 ```csharp
 await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 
-// Time-limited delegated access to a private object:
+// Feature-detect presigned on the default store:
 if (storage is IPresignedUrlBlobStorage presigned)
 {
     var url = await presigned.GetPresignedDownloadUrlAsync(["my-bucket"], "reports/q1.pdf", TimeSpan.FromMinutes(15));
@@ -61,12 +74,12 @@ if (storage is IPresignedUrlBlobStorage presigned)
 }
 ```
 
-Bind with `builder.Services.AddCloudflareR2BlobStorage(builder.Configuration.GetSection("R2"))`.
+Bind with `blobs.UseCloudflareR2(builder.Configuration.GetSection("R2"))`.
 
 ## Behavior Notes
 
-- **Buckets are not auto-created.** R2 API tokens are commonly scoped to object operations and cannot create buckets, so `AutoCreateContainer` defaults to `false`. Pre-create buckets out of band (the Cloudflare dashboard or an account-scoped token), or call `CreateContainerAsync` with a token that has bucket-create permission.
-- **No ACLs / public access.** R2 has no per-object ACLs (`CannedAcl` is `null`). Public serving is a custom-domain / `r2.dev` concern and is out of scope for this provider; use presigned URLs for time-limited private access.
+- **Buckets are not auto-created.** R2 object-scoped tokens cannot create buckets, so `AutoCreateContainer` defaults to `false`. Pre-create buckets out of band or use a bucket-create-capable token with `CreateContainerAsync`.
+- **No ACLs / public access.** `CannedAcl` is `null`. Use presigned URLs for time-limited private access; public serving (custom domains / `r2.dev`) is out of scope.
 - **Single PUT is capped at ~5 GiB**, the same as S3.
 
 ## Dependencies
@@ -79,7 +92,7 @@ Bind with `builder.Services.AddCloudflareR2BlobStorage(builder.Configuration.Get
 
 ## Side Effects
 
-- Registers `IAmazonS3` (configured for R2) if not already registered
-- Configures the shared `AwsBlobStorageOptions` with R2-safe defaults
-- Registers `IBlobStorage` (the AWS S3 engine) as singleton
-- Registers `IBlobNamingNormalizer` (R2 rules) as singleton
+Registered via `AddHeadlessBlobs(b => b.UseCloudflareR2(...))` or `AddNamed("name", i => i.UseCloudflareR2(...))`:
+
+- Default (`UseCloudflareR2`): registers `IBlobStorage` as unkeyed singleton. The per-store `IAmazonS3` (R2-tuned) is constructed inline; it is not registered in the DI container.
+- Named (`AddNamed ... UseCloudflareR2`): configures named `AwsBlobStorageOptions` with R2 forced defaults; registers `IBlobStorage` as keyed singleton (`name`); registers `IPresignedUrlBlobStorage` as keyed singleton (`name`, forwarded from the keyed `IBlobStorage`). The per-store `IAmazonS3` is constructed inline.

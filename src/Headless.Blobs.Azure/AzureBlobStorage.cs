@@ -1026,8 +1026,18 @@ public sealed class AzureBlobStorage(
 
     #region Dispose
 
+    private bool _disposed;
+
     public ValueTask DisposeAsync()
     {
+        // The keyed IPresignedUrlBlobStorage forward and the keyed IBlobStorage resolve to this same instance, so
+        // the DI container tracks it twice and disposes it twice — guard so the dispose path stays idempotent.
+        if (_disposed)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        _disposed = true;
         _ensureContainerLock.Dispose();
 
         return ValueTask.CompletedTask;

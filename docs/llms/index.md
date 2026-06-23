@@ -166,6 +166,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Blob Storage
 - `Headless.Blobs.Abstractions` — `IBlobStorage` interface.
+- `Headless.Blobs.Core` — `AddHeadlessBlobs` setup builder and named `IBlobStorageProvider` resolution.
 - `Headless.Blobs.Aws` — AWS S3 implementation.
 - `Headless.Blobs.Azure` — Azure Blob Storage implementation.
 - `Headless.Blobs.FileSystem` — Local file system implementation.

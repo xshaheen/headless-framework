@@ -1,0 +1,20 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Blobs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Blobs.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Blobs.Aws" />
+    <InternalsVisibleTo Include="Headless.Blobs.Azure" />
+    <InternalsVisibleTo Include="Headless.Blobs.CloudflareR2" />
+    <InternalsVisibleTo Include="Headless.Blobs.FileSystem" />
+    <InternalsVisibleTo Include="Headless.Blobs.Redis" />
+    <InternalsVisibleTo Include="Headless.Blobs.SshNet" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+  </ItemGroup>
+</Project>
