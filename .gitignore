@@ -132,6 +132,9 @@ orleans.codegen.cs
 node_modules/
 typings/
 .ntvs_analysis.dat
+# Dashboards are npm-only (CI runs `npm ci`); keep package-lock.json as the single
+# source of truth and ignore bun's lockfile so it can't drift out of sync.
+bun.lock
 
 # Python tooling
 __pycache__/
