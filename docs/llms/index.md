@@ -92,6 +92,129 @@ public sealed class OrderServiceTests : TestBase
 - All Headless package versions are managed centrally in `Directory.Packages.props`. Never add a `Version` attribute on a `<PackageReference>` in a `.csproj` file.
 - When adding a new Headless package, add it to `Directory.Packages.props` first, then reference it from the consuming project without a version.
 
+## End-to-End Example
+
+A small document service that shows how the pieces fit: validate the request, store the file through `IBlobStorage`, read it back through a read-through `ICache`, and schedule background processing through `Headless.Jobs`. Every feature is wired once at the composition root; application code depends only on the abstractions.
+
+Packages: `Headless.Api.MinimalApi`, `Headless.Blobs.FileSystem`, `Headless.Caching.InMemory`, `Headless.Jobs.Core` (+ `Headless.Jobs.SourceGenerator`), `Headless.FluentValidation`. Swap a provider (e.g. `Headless.Blobs.Aws`, `Headless.Caching.Redis`) without touching the service code.
+
+```csharp
+// Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+// One-shot API bootstrap: problem details, compression, security headers, validation.
+builder.AddHeadlessInfrastructure();
+
+// Pick exactly one provider per feature; code only against the abstractions.
+builder.Services.AddFileSystemBlobStorage(options =>
+    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage"));
+builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
+builder.Services.AddHeadlessJobs(options =>
+    options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc));
+
+builder.Services.AddScoped<DocumentService>();
+
+var app = builder.Build();
+
+app.UseHeadlessDefaults(); // StatusCodePages before ExceptionHandler, then auth/tenant, then endpoints
+
+app.MapPost("/documents", async (UploadRequest request, DocumentService documents, CancellationToken ct) =>
+{
+    var id = await documents.StoreAsync(request, ct);
+    return Results.Created($"/documents/{id}", new { id });
+})
+.Validate<UploadRequest>(); // FluentValidation filter — returns 422 ProblemDetails on failure
+
+app.Run();
+```
+
+```csharp
+// Request contract + validator (the validator lives beside the type it validates).
+public sealed record UploadRequest(string FileName, byte[] Content);
+
+internal sealed class UploadRequestValidator : AbstractValidator<UploadRequest>
+{
+    public UploadRequestValidator()
+    {
+        RuleFor(x => x.FileName).NotEmpty().MaximumLength(260);
+        RuleFor(x => x.Content).NotEmpty();
+    }
+}
+```
+
+```csharp
+// Application service — depends only on Headless abstractions.
+public sealed record DocumentInfo(string Id, string FileName, long Size);
+
+public interface IDocumentRepository
+{
+    ValueTask<DocumentInfo?> FindAsync(string id, CancellationToken ct);
+}
+
+public sealed class DocumentService(
+    IBlobStorage storage,
+    ICache cache,
+    ITimeJobManager<TimeJobEntity> jobs,
+    IDocumentRepository repository)
+{
+    public async Task<string> StoreAsync(UploadRequest request, CancellationToken ct)
+    {
+        var id = Guid.NewGuid().ToString("N");
+
+        await using var stream = new MemoryStream(request.Content);
+        await storage.UploadAsync(
+            container: ["documents"],
+            blobName: id,
+            stream: stream,
+            metadata: new Dictionary<string, string?> { ["file-name"] = request.FileName },
+            cancellationToken: ct);
+
+        // Hand processing (virus scan, thumbnailing, ...) to a background job.
+        await jobs.AddAsync(new TimeJobEntity
+        {
+            Function = "ProcessDocument",
+            Description = $"process-{id}",
+            ExecutionTime = DateTime.UtcNow,
+            Request = JobsHelper.SerializeRequest(new { DocumentId = id }),
+            Retries = 3,
+            RetryIntervals = [30, 60, 120],
+        }, ct);
+
+        return id;
+    }
+
+    // Read-through cache: the factory runs only on a miss.
+    public async Task<DocumentInfo?> GetInfoAsync(string id, CancellationToken ct)
+    {
+        var cached = await cache.GetOrAddAsync(
+            $"doc:{id}",
+            token => repository.FindAsync(id, token),
+            TimeSpan.FromHours(1),
+            ct);
+
+        return cached.HasValue ? cached.Value : null;
+    }
+}
+```
+
+```csharp
+// Background job — registered at compile time by Headless.Jobs.SourceGenerator.
+public sealed record ProcessDocumentRequest(string DocumentId);
+
+public static class DocumentJobs
+{
+    [JobFunction("ProcessDocument")]
+    public static Task ProcessAsync(JobFunctionContext<ProcessDocumentRequest> context, CancellationToken ct)
+    {
+        var id = context.Request.DocumentId;
+        // ... process the stored document; context.RetryCount and context.ScheduledFor are available ...
+        return Task.CompletedTask;
+    }
+}
+```
+
+For each feature's options, providers, and trade-offs, fetch the matching domain doc: [api.md](api.md), [blobs.md](blobs.md), [caching.md](caching.md), [jobs.md](jobs.md), [utilities.md](utilities.md).
+
 ## Domain documentation
 
 Fetch only what's relevant to the task. Each file documents the domain's packages, quick orientation, setup, and domain-specific agent rules.
