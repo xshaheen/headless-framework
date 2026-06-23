@@ -256,6 +256,21 @@ public static class SitemapUrls
         }
     }
 
+    // Returns the interned lowercase sitemap token (no allocation), versus ToString().ToLowerInvariant()
+    // which allocates a new lowercased string per URL.
+    private static string _ToChangeFreqValue(ChangeFrequency frequency) =>
+        frequency switch
+        {
+            ChangeFrequency.Always => "always",
+            ChangeFrequency.Hourly => "hourly",
+            ChangeFrequency.Daily => "daily",
+            ChangeFrequency.Weekly => "weekly",
+            ChangeFrequency.Monthly => "monthly",
+            ChangeFrequency.Yearly => "yearly",
+            ChangeFrequency.Never => "never",
+            _ => frequency.ToString().ToLowerInvariant(),
+        };
+
     private static async Task _WriteOtherNodesAsync(XmlWriter writer, SitemapUrl sitemapUrl)
     {
         if (sitemapUrl.Priority is not null)
@@ -268,7 +283,7 @@ public static class SitemapUrls
 
         if (sitemapUrl.ChangeFrequency is not null)
         {
-            var value = sitemapUrl.ChangeFrequency.Value.ToString().ToLowerInvariant();
+            var value = _ToChangeFreqValue(sitemapUrl.ChangeFrequency.Value);
             await writer
                 .WriteElementStringAsync(prefix: null, localName: "changefreq", ns: null, value)
                 .ConfigureAwait(false);
