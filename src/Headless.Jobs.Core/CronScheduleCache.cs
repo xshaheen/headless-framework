@@ -31,7 +31,9 @@ internal static partial class CronScheduleCache
 
     public static DateTime? GetNextOccurrenceOrDefault(string expression, DateTime dateTime)
     {
-        var parsed = Get(_Normalize(expression));
+        // Get(...) already normalizes its argument, so passing the raw expression normalizes once instead of
+        // twice (the regex replace + Trim ran an extra time on the already-normalized string).
+        var parsed = Get(expression);
 
         if (parsed == null)
         {
