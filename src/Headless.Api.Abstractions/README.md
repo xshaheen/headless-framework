@@ -19,7 +19,7 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 dotnet add package Headless.Api.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 Inject `IRequestContext` to access request-scoped information:
 

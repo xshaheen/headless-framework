@@ -24,7 +24,7 @@ Provides a storage-independent API for managing application settings with suppor
 dotnet add package Headless.Settings.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class NotificationService(ISettingManager settingManager)

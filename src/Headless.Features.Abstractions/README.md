@@ -26,7 +26,7 @@ Provides a provider-agnostic feature management API, enabling dynamic feature to
 dotnet add package Headless.Features.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class BillingService(IFeatureManager features)

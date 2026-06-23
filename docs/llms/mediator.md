@@ -10,18 +10,18 @@ packages: Mediator
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
-  - [Pipeline and Behavior Model](#pipeline-and-behavior-model)
-  - [Request and Handler Contract](#request-and-handler-contract)
-  - [Boundary vs. Cross-Cut Distinction](#boundary-vs-cross-cut-distinction)
+    - [Pipeline and Behavior Model](#pipeline-and-behavior-model)
+    - [Request and Handler Contract](#request-and-handler-contract)
+    - [Boundary vs. Cross-Cut Distinction](#boundary-vs-cross-cut-distinction)
 - [Headless.Mediator](#headlessmediator)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 
 > HTTP-agnostic Mediator pipeline behaviors — validation, logging, and slow-request alerting — without coupling to ASP.NET Core.
 
@@ -98,13 +98,13 @@ The four concerns commonly proposed as pipeline behaviors that this framework re
 
 ---
 
-# Headless.Mediator
+## Headless.Mediator
 
-## Problem Solved
+### Problem Solved
 
 Adds pipeline behaviors for FluentValidation pre-processing and structured request/response/slow-request logging to any Mediator pipeline. These behaviors are transport-agnostic: the same registrations work in ASP.NET Core API hosts, background workers, message consumers, and console applications.
 
-## Key Features
+### Key Features
 
 - `ValidationRequestPreProcessor<TMessage, TResponse>` — runs all registered `IValidator<TMessage>` concurrently before the handler; throws `ValidationException` on any failure.
 - `RequestLoggingBehavior<TMessage, TResponse>` — logs the message name and payload at Debug level before handler execution.
@@ -114,19 +114,19 @@ Adds pipeline behaviors for FluentValidation pre-processing and structured reque
 - Fine-grained split: `AddMediatorRequestResponseLoggingBehaviors()` (request + response only) and `AddMediatorSlowRequestsLoggingBehaviors()` (slow-request only).
 - Every setup extension accepts an optional `ServiceLifetime` parameter (default `Scoped`).
 
-## Design Notes
+### Design Notes
 
 **`ICurrentUser` instead of `IHttpContextAccessor`** — all logging behaviors resolve the current user through `ICurrentUser` from `Headless.Core` rather than reading `HttpContext`. This preserves host-agnosticism: the same handler and behavior registrations run identically from a web host and a worker service. Callers that have no real user (background processes) should register `NullCurrentUser`.
 
 **`TryAddEnumerable` for idempotency** — all setup extensions use `TryAddEnumerable` to register the open-generic `IPipelineBehavior<,>` descriptor. Calling the same extension twice does not produce duplicate behaviors in the pipeline.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Mediator
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.Mediator;
@@ -174,7 +174,7 @@ public sealed class CreateOrderValidator : AbstractValidator<CreateOrder>
 }
 ```
 
-## Configuration
+### Configuration
 
 All setup extensions accept an optional `ServiceLifetime` parameter:
 
@@ -216,7 +216,7 @@ using (currentTenant.Change(tenantId))
 }
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Core`
 - `Headless.Extensions`
@@ -225,6 +225,6 @@ using (currentTenant.Change(tenantId))
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 
-## Side Effects
+### Side Effects
 
 Registers open-generic `IPipelineBehavior<,>` descriptors when the setup extensions are called. Descriptor lifetime is `Scoped` by default; pass `ServiceLifetime.Transient` or `ServiceLifetime.Singleton` to override per registration. All registrations are idempotent — calling the same extension multiple times does not duplicate behaviors in the pipeline.

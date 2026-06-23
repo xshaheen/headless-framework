@@ -22,7 +22,7 @@ Converts arbitrary text into URL-safe slugs with proper Unicode normalization, c
 dotnet add package Headless.Slugs
 ```
 
-## Usage
+## Quick Start
 
 ### Basic Usage
 

@@ -6,35 +6,39 @@ packages: Serializer.Abstractions, Serializer.Json, Serializer.MessagePack
 # Serialization
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
+    - [The `ISerializer` contract](#the-iserializer-contract)
+    - [Interface hierarchy](#interface-hierarchy)
+    - [Text vs binary trade-off](#text-vs-binary-trade-off)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Serializer.Abstractions](#headlessserializerabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Serializer.Json](#headlessserializerjson)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Serializer.MessagePack](#headlessserializermessagepack)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 
 > Provider-agnostic serialization contracts with System.Text.Json and MessagePack implementations for text and binary formats.
 
@@ -121,15 +125,15 @@ ISerializer
 Both providers can coexist — register `IJsonSerializer` and `IBinarySerializer` independently. Components declare the specific interface they need.
 
 ---
-# Headless.Serializer.Abstractions
+## Headless.Serializer.Abstractions
 
 Defines unified interfaces and extension methods for serialization and deserialization.
 
-## Problem Solved
+### Problem Solved
 
 Provides provider-agnostic serialization contracts for both text (JSON) and binary formats, enabling consistent serialization patterns across application layers without coupling to a specific implementation.
 
-## Key Features
+### Key Features
 
 - `ISerializer` — core Stream-based interface with generic and non-generic overloads
 - `ITextSerializer` — marker interface for text-format implementations
@@ -141,13 +145,13 @@ Provides provider-agnostic serialization contracts for both text (JSON) and bina
   - `SerializeToBytes<T>(T?)` — serialize to `byte[]`, null-safe
   - `SerializeToString<T>(T?)` — serialize to string (UTF-8 for text, Base64 for binary), null-safe
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Serializer.Abstractions
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Depend only on the abstraction in domain/application code:
@@ -164,28 +168,28 @@ public sealed class DataService(IJsonSerializer serializer)
 }
 ```
 
-## Configuration
+### Configuration
 
 None. Abstractions-only package.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
-# Headless.Serializer.Json
+## Headless.Serializer.Json
 
 System.Text.Json implementation of `IJsonSerializer` with opinionated defaults and a rich built-in converter library.
 
-## Problem Solved
+### Problem Solved
 
 Provides JSON serialization via System.Text.Json with a battle-tested default configuration (camelCase, enum strings, cycle-safe, nullable-aware) and a set of reusable converters for common edge cases — all wired through the `IJsonSerializer` abstraction.
 
-## Key Features
+### Key Features
 
 - `SystemJsonSerializer` — `IJsonSerializer` implementation; accepts an optional `IJsonOptionsProvider`
 - `IJsonOptionsProvider` / `DefaultJsonOptionsProvider` — injectable options split into separate serialize and deserialize `JsonSerializerOptions`
@@ -212,19 +216,19 @@ Provides JSON serialization via System.Text.Json with a battle-tested default co
   - `JsonPropertiesModifiers<TClass>.CreateIncludeNonPublicPropertiesModifyAction` — enable non-public setter deserialization
 - `ToObjectExtensions.To<T>(this object?, JsonSerializerOptions?)` — extension on `object?` that converts via `Convert.ChangeType`, `TypeDescriptor`, enum parse, or STJ deserialization depending on the input type
 
-## Design Notes
+### Design Notes
 
 `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` because it uses reflection-based STJ APIs. This means it is **not AOT-safe** out of the box. The annotation propagates to call sites — you will see trim warnings in NativeAOT or PublishTrimmed builds. For AOT scenarios, write a source-generated `IJsonSerializer` wrapper using `JsonSerializerContext` and register it instead.
 
 `DefaultWebJsonOptions` adds `JsonStringEnumConverter(CamelCase)` and `IpAddressJsonConverter` automatically. Creating a custom `IJsonOptionsProvider` that calls `JsonConstants.ConfigureWebJsonOptions` inherits these converters without duplication.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Serializer.Json
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Minimal registration — uses DefaultWebJsonOptions for both serialize and deserialize:
@@ -245,7 +249,7 @@ public sealed class ApiClient(IJsonSerializer serializer)
 }
 ```
 
-## Configuration
+### Configuration
 
 Implement `IJsonOptionsProvider` to override the default options:
 
@@ -271,24 +275,24 @@ var modifier = JsonPropertiesModifiers<MyModel>.CreateIgnorePropertyModifyAction
 // Pass via SystemJsonTypeInfoResolver -> JsonSerializerModifiersOptions -> JsonSerializerOptions.TypeInfoResolver
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Serializer.Abstractions`
 
-## Side Effects
+### Side Effects
 
 None. Registration is fully explicit.
 
 ---
-# Headless.Serializer.MessagePack
+## Headless.Serializer.MessagePack
 
 MessagePack binary serialization implementation of `IBinarySerializer`.
 
-## Problem Solved
+### Problem Solved
 
 Provides compact binary serialization for high-throughput scenarios (cache entries, internal message envelopes) where JSON text overhead is a bottleneck. Contractless by default — no `[MessagePackObject]` or `[Key]` attributes required.
 
-## Key Features
+### Key Features
 
 - `MessagePackSerializer` — `IBinarySerializer` implementation
 - Contractless by default: uses `ContractlessStandardResolver`, so plain POCOs serialize without any attributes
@@ -296,13 +300,13 @@ Provides compact binary serialization for high-throughput scenarios (cache entri
 - Built-in LZ4 compression available via `WithCompression(MessagePackCompression.Lz4BlockArray)`
 - Full `ISerializer` surface: generic `Serialize<T>` / `Deserialize<T>`, non-generic `Serialize(object?)` / `Deserialize(Stream, Type)`
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Serializer.MessagePack
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Default: contractless, no compression:
@@ -324,7 +328,7 @@ public sealed class CacheWriter(IBinarySerializer serializer)
 }
 ```
 
-## Configuration
+### Configuration
 
 All configuration is passed via `MessagePackSerializerOptions` at construction time:
 
@@ -338,11 +342,11 @@ var options = MessagePackSerializerOptions.Standard
     .WithSecurity(MessagePackSecurity.UntrustedData);
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Serializer.Abstractions`
 - `MessagePack`
 
-## Side Effects
+### Side Effects
 
 None. Registration is fully explicit.

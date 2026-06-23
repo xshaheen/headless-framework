@@ -6,96 +6,78 @@ packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstracti
 # Utilities
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.FluentValidation](#headlessfluentvalidation)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Usage](#usage)
-    - [Phone Number Validation](#phone-number-validation)
-    - [Error Descriptor Integration](#error-descriptor-integration)
-    - [Processing Validation Results](#processing-validation-results)
-  - [Available Validators](#available-validators)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Quick Start](#quick-start-1)
+    - [Available Validators](#available-validators)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Generator.Primitives](#headlessgeneratorprimitives)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-    - [Entity Framework Integration](#entity-framework-integration)
-  - [Configuration](#configuration-1)
-    - [MSBuild Properties](#msbuild-properties)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Generator.Primitives.Abstractions](#headlessgeneratorprimitivesabstractions)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-    - [With Supported Operations](#with-supported-operations)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Hosting](#headlesshosting)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-3)
-  - [Usage](#usage-1)
-    - [Conditional Service Registration](#conditional-service-registration)
-    - [Options with Validation](#options-with-validation)
-    - [Database Seeders](#database-seeders)
-    - [Service Replacement](#service-replacement)
-  - [Configuration](#configuration-3)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-4)
+    - [Quick Start](#quick-start-5)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.NetTopologySuite](#headlessnettopologysuite)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-4)
-  - [Usage](#usage-2)
-    - [Permissive Operations](#permissive-operations)
-    - [Ring Orientation](#ring-orientation)
-  - [Configuration](#configuration-4)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-6)
+    - [Quick Start](#quick-start-7)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 - [Headless.Redis](#headlessredis)
-  - [Problem Solved](#problem-solved-5)
-  - [Key Features](#key-features-5)
-  - [Installation](#installation-5)
-  - [Quick Start](#quick-start-5)
-  - [Usage](#usage-3)
-    - [Script Execution](#script-execution)
-  - [Configuration](#configuration-5)
-  - [Dependencies](#dependencies-5)
-  - [Side Effects](#side-effects-5)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-8)
+    - [Quick Start](#quick-start-9)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
 - [Headless.Sitemaps](#headlesssitemaps)
-  - [Problem Solved](#problem-solved-6)
-  - [Key Features](#key-features-6)
-  - [Installation](#installation-6)
-  - [Usage](#usage-4)
-    - [Basic Sitemap](#basic-sitemap)
-    - [Localized URLs](#localized-urls)
-    - [Sitemap Index](#sitemap-index)
-  - [Configuration](#configuration-6)
-  - [Dependencies](#dependencies-6)
-  - [Side Effects](#side-effects-6)
+    - [Problem Solved](#problem-solved-6)
+    - [Key Features](#key-features-6)
+    - [Installation](#installation-6)
+    - [Quick Start](#quick-start-10)
+    - [Configuration](#configuration-6)
+    - [Dependencies](#dependencies-6)
+    - [Side Effects](#side-effects-6)
 - [Headless.Slugs](#headlessslugs)
-  - [Problem Solved](#problem-solved-7)
-  - [Key Features](#key-features-7)
-  - [Installation](#installation-7)
-  - [Usage](#usage-5)
-    - [Basic Usage](#basic-usage)
-    - [Custom Options](#custom-options)
-    - [Character Replacements](#character-replacements)
-  - [Configuration](#configuration-7)
-  - [Dependencies](#dependencies-7)
-  - [Side Effects](#side-effects-7)
+    - [Problem Solved](#problem-solved-7)
+    - [Key Features](#key-features-7)
+    - [Installation](#installation-7)
+    - [Quick Start](#quick-start-11)
+    - [Configuration](#configuration-7)
+    - [Dependencies](#dependencies-7)
+    - [Side Effects](#side-effects-7)
 
 > Standalone utility packages for validation, strongly-typed IDs, hosting helpers, geospatial ops, Redis scripts, sitemaps, and slug generation.
 
@@ -126,15 +108,15 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of
 - Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
 
 ---
-# Headless.FluentValidation
+## Headless.FluentValidation
 
-Extension library for FluentValidation providing enterprise-grade validators and utilities.
+Extension library for FluentValidation providing additional validators and utilities.
 
-## Problem Solved
+### Problem Solved
 
 Provides a comprehensive suite of common validators (phone numbers, national IDs, URLs, pagination) and standardized error handling, eliminating the need to rewrite common validation logic across projects.
 
-## Key Features
+### Key Features
 
 - Phone number validation (international, country-specific) via `libphonenumber-csharp`
 - Egyptian National ID validation with checksum verification
@@ -145,13 +127,13 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.FluentValidation
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using FluentValidation;
@@ -167,9 +149,9 @@ public sealed class UserValidator : AbstractValidator<User>
 }
 ```
 
-## Usage
+### Quick Start
 
-### Phone Number Validation
+#### Phone Number Validation
 
 ```csharp
 RuleFor(x => x.Phone).BasicPhoneNumber();                    // DataAnnotations check
@@ -177,20 +159,20 @@ RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode);       // Country-specific
 RuleFor(x => x.Phone).InternationalPhoneNumber();            // International format
 ```
 
-### Error Descriptor Integration
+#### Error Descriptor Integration
 
 ```csharp
 RuleFor(x => x.Total).GreaterThan(0)
     .WithErrorDescriptor(new ErrorDescriptor("ORDER_TOTAL_INVALID", "Total must be positive."));
 ```
 
-### Processing Validation Results
+#### Processing Validation Results
 
 ```csharp
 var errors = result.Errors.ToErrorDescriptors(); // Dictionary<string, List<ErrorDescriptor>>
 ```
 
-## Available Validators
+### Available Validators
 
 | Category | Validators |
 |----------|-----------|
@@ -202,29 +184,29 @@ var errors = result.Errors.ToErrorDescriptors(); // Dictionary<string, List<Erro
 | URL | `Url`, `HttpUrl` |
 | ID | `Id` (validates non-empty Guid, positive int/long) |
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - `FluentValidation`
 - `libphonenumber-csharp`
 - `Headless.Extensions`
 
-## Side Effects
+### Side Effects
 
 None.
 ---
-# Headless.Generator.Primitives
+## Headless.Generator.Primitives
 
 Roslyn source generator for creating strongly-typed domain primitives.
 
-## Problem Solved
+### Problem Solved
 
 Automatically generates boilerplate code for domain primitives including constructors, equality, comparison, JSON serialization, Entity Framework value converters, TypeConverters, and OpenAPI schema mappings.
 
-## Key Features
+### Key Features
 
 - Roslyn incremental source generator
 - Generates for types implementing `IPrimitive<T>`
@@ -237,13 +219,13 @@ Automatically generates boilerplate code for domain primitives including constru
   - Dapper type handlers
   - NSwag/Swashbuckle schema mappings
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Generator.Primitives
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Define your primitive
@@ -265,7 +247,7 @@ var value = email.Value;                      // Underlying value
 var json = JsonSerializer.Serialize(email);   // JSON: "user@example.com"
 ```
 
-### Entity Framework Integration
+#### Entity Framework Integration
 
 ```csharp
 // Auto-generated value converter is registered via:
@@ -274,9 +256,9 @@ modelBuilder.Entity<User>()
     .HasConversion<EmailValueConverter>();
 ```
 
-## Configuration
+### Configuration
 
-### MSBuild Properties
+#### MSBuild Properties
 
 ```xml
 <PropertyGroup>
@@ -290,25 +272,25 @@ modelBuilder.Entity<User>()
 </PropertyGroup>
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Generator.Primitives.Abstractions`
 - `Microsoft.CodeAnalysis.CSharp` (compile-time only)
 
-## Side Effects
+### Side Effects
 
 - Generates source files at compile time
 - No runtime dependencies added
 ---
-# Headless.Generator.Primitives.Abstractions
+## Headless.Generator.Primitives.Abstractions
 
 Abstractions and attributes for the domain primitives source generator.
 
-## Problem Solved
+### Problem Solved
 
 Provides the runtime contracts and attributes needed to define strongly-typed domain primitives that work with the source generator, ensuring type safety and domain constraints at compile time.
 
-## Key Features
+### Key Features
 
 - `IPrimitive<T>` - Core interface for domain primitives
 - `PrimitiveValidationResult` - Validation result model
@@ -319,13 +301,13 @@ Provides the runtime contracts and attributes needed to define strongly-typed do
   - `UnderlyingPrimitiveTypeAttribute` - Specify underlying type
 - Helper extensions for DateOnly, XML serialization
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Generator.Primitives.Abstractions
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.Generator.Primitives;
@@ -343,7 +325,7 @@ public readonly partial struct ProductName : IPrimitive<string>
 }
 ```
 
-### With Supported Operations
+#### With Supported Operations
 
 ```csharp
 [SupportedOperations(Comparison = true, Math = true)]
@@ -358,27 +340,27 @@ public readonly partial struct Quantity : IPrimitive<int>
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required. This is an abstractions-only package.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 ---
-# Headless.Hosting
+## Headless.Hosting
 
 Core hosting utilities and extensions for ASP.NET Core applications.
 
-## Problem Solved
+### Problem Solved
 
 Provides essential DI extensions, configuration helpers, options validation, and seeder infrastructure to reduce boilerplate in application startup and configuration.
 
-## Key Features
+### Key Features
 
 - DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
 - Options validation with FluentValidation
@@ -389,13 +371,13 @@ Provides essential DI extensions, configuration helpers, options validation, and
 - Hosted service management
 - Background startup processes can expose readiness signals so dependent flows can wait for initialization completion.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Hosting
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -413,22 +395,22 @@ builder.Services.Configure<MyOptions, MyOptionsValidator>(builder.Configuration.
 builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
 ```
 
-## Usage
+### Quick Start
 
-### Conditional Service Registration
+#### Conditional Service Registration
 
 ```csharp
 services.AddIf(condition, s => s.AddSingleton<IService, Impl>());
 services.AddIfElse(condition, ifAction, elseAction);
 ```
 
-### Options with Validation
+#### Options with Validation
 
 ```csharp
 services.Configure<AppOptions, AppOptionsValidator>(configuration.GetSection("App"));
 ```
 
-### Database Seeders
+#### Database Seeders
 
 Implement `ISeeder` and register with `AddSeeder<T>()`. All seeders run via a single
 `SeedAsync()` ascending by `[SeederPriority(n)]` (default `0`; lower runs first — EF migrations
@@ -449,7 +431,7 @@ builder.Services.AddDbMigrationSeeder<AppDbContext>(); // runs first (SeederPrio
 await app.Services.SeedAsync();
 ```
 
-### Service Replacement
+#### Service Replacement
 
 ```csharp
 services.AddOrReplaceScoped<IService, NewImpl>();
@@ -461,29 +443,29 @@ services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()))
 services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - `Headless.FluentValidation`
 - `Microsoft.Extensions.Hosting`
 - `Microsoft.Extensions.Options`
 
-## Side Effects
+### Side Effects
 
 None directly. Utilities for managing service registration.
 ---
-# Headless.NetTopologySuite
+## Headless.NetTopologySuite
 
 NetTopologySuite extensions for geospatial operations and SQL Server geography compatibility.
 
-## Problem Solved
+### Problem Solved
 
-Provides robust geometry manipulation utilities, precision handling, and SQL Server geography sanitization, solving common issues with geometry validity, coordinate orientation, and precision when working with geospatial data.
+Provides geometry manipulation utilities, precision handling, and SQL Server geography sanitization, solving common issues with geometry validity, coordinate orientation, and precision when working with geospatial data.
 
-## Key Features
+### Key Features
 
 - Geometry precision reduction and management
 - Permissive geometry operations (intersection, union, difference)
@@ -493,13 +475,13 @@ Provides robust geometry manipulation utilities, precision handling, and SQL Ser
 - Coordinate range validation
 - Feature collection conversion
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.NetTopologySuite
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.NetTopologySuite.Constants;
@@ -524,9 +506,9 @@ var sanitized = polygon.SanitizeForSqlGeography();
 var simplified = polygon.Simplify(GeoConstants.Around1MDegrees);
 ```
 
-## Usage
+### Quick Start
 
-### Permissive Operations
+#### Permissive Operations
 
 ```csharp
 var intersection = geom1.PermissiveIntersection(geom2);
@@ -534,53 +516,53 @@ var union = geom1.PermissiveUnion(geom2);
 var overlap = geom1.ComputeOverlap(geom2);
 ```
 
-### Ring Orientation
+#### Ring Orientation
 
 ```csharp
 var fixed = polygon.EnsureIsOrientedCounterClockwise();
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - `NetTopologySuite`
 - `NetTopologySuite.IO.GeoJSON4STJ`
 - `Headless.Extensions`
 
-## Side Effects
+### Side Effects
 
 None.
 ---
-# Headless.Redis
+## Headless.Redis
 
 Redis utilities and Lua script management for StackExchange.Redis.
 
-## Problem Solved
+### Problem Solved
 
 Provides Redis helper extensions plus definition-first Lua script loading/execution for StackExchange.Redis. Scripts are loaded on demand by default; provider packages can warm their own script bundles through hosted initializers.
 
-## Key Features
+### Key Features
 
 - `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
 
-### Design Notes
+#### Design Notes
 
 `Headless.Redis` owns script definitions and generic loading only. Provider packages own script grouping, hosted warmup, typed parameters, and result decoding so consumers load only the script definitions they need.
 
 Each concrete `RedisScriptDefinition` type is a singleton contract. Reuse the exposed `Instance` member; the loader rejects multiple instances of the same concrete type because it caches loaded scripts by definition type.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Redis
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -591,9 +573,9 @@ var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
 ```
 
-## Usage
+### Quick Start
 
-### Script Execution
+#### Script Execution
 
 ```csharp
 var db = redis.GetDatabase();
@@ -609,27 +591,27 @@ var result = await scriptsLoader.EvaluateAsync(
 );
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - `StackExchange.Redis`
 
-## Side Effects
+### Side Effects
 
 None.
 ---
-# Headless.Sitemaps
+## Headless.Sitemaps
 
 XML sitemap generation utilities for SEO.
 
-## Problem Solved
+### Problem Solved
 
 Provides builders and models for generating XML sitemaps and sitemap indexes compliant with the sitemap protocol, supporting localized URLs, images, change frequency, and priority metadata.
 
-## Key Features
+### Key Features
 
 - `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
 - `SitemapUrls` - Extension methods to write sitemap URLs to streams
@@ -638,15 +620,15 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 - `SitemapImage` - Image sitemap support
 - `ChangeFrequency` - Standard frequency values (always, hourly, daily, weekly, etc.)
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sitemaps
 ```
 
-## Quick Start
+### Quick Start
 
-### Basic Sitemap
+#### Basic Sitemap
 
 ```csharp
 var urls = new List<SitemapUrl>
@@ -672,7 +654,7 @@ await urls.WriteToAsync(stream);
 var streams = await urls.WriteAsync();
 ```
 
-### Localized URLs
+#### Localized URLs
 
 ```csharp
 var urls = new List<SitemapUrl>
@@ -691,7 +673,7 @@ await using var stream = new MemoryStream();
 await urls.WriteToAsync(stream);
 ```
 
-### Sitemap Index
+#### Sitemap Index
 
 ```csharp
 var references = new List<SitemapReference>
@@ -704,27 +686,27 @@ await using var stream = new MemoryStream();
 await references.WriteToAsync(stream);
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - Headless.Extensions
 
-## Side Effects
+### Side Effects
 
 None.
 ---
-# Headless.Slugs
+## Headless.Slugs
 
 URL-friendly slug generation from text.
 
-## Problem Solved
+### Problem Solved
 
 Converts arbitrary text into URL-safe slugs with proper Unicode normalization, configurable separators, character replacements, and length limits for SEO-friendly URLs.
 
-## Key Features
+### Key Features
 
 - `Slug.Create()` - Static slug generation method
 - Unicode normalization (NFC/NFD)
@@ -734,15 +716,15 @@ Converts arbitrary text into URL-safe slugs with proper Unicode normalization, c
 - Case transformation options
 - Handles non-ASCII characters properly
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Slugs
 ```
 
-## Usage
+### Quick Start
 
-### Basic Usage
+#### Basic Usage
 
 ```csharp
 var slug = Slug.Create("Hello World!");
@@ -752,7 +734,7 @@ var slug2 = Slug.Create("مرحبا بالعالم");
 // Result: "مرحبا-بالعالم"
 ```
 
-### Custom Options
+#### Custom Options
 
 ```csharp
 var options = new SlugOptions
@@ -766,7 +748,7 @@ var options = new SlugOptions
 var slug = Slug.Create("Long Title That Needs Truncation", options);
 ```
 
-### Character Replacements
+#### Character Replacements
 
 ```csharp
 var options = new SlugOptions
@@ -783,7 +765,7 @@ var slug = Slug.Create("Tom & Jerry @ Home", options);
 // Result: "tom-and-jerry-at-home"
 ```
 
-## Configuration
+### Configuration
 
 ```csharp
 var options = new SlugOptions
@@ -795,10 +777,10 @@ var options = new SlugOptions
 };
 ```
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.

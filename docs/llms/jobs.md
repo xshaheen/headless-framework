@@ -6,72 +6,66 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 # Jobs (Background Jobs)
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
-  - [Job Types](#job-types)
-  - [The `[JobFunction]` Attribute and Source Generator](#the-jobfunction-attribute-and-source-generator)
-  - [Lease Model and Sliding Renewal](#lease-model-and-sliding-renewal)
-  - [Distributed Coordination and Node Identity](#distributed-coordination-and-node-identity)
-  - [Commit-Coordinated Enqueue (Atomic Enqueue)](#commit-coordinated-enqueue-atomic-enqueue)
+    - [Job Types](#job-types)
+    - [The `[JobFunction]` Attribute and Source Generator](#the-jobfunction-attribute-and-source-generator)
+    - [Lease Model and Sliding Renewal](#lease-model-and-sliding-renewal)
+    - [Distributed Coordination and Node Identity](#distributed-coordination-and-node-identity)
+    - [Commit-Coordinated Enqueue (Atomic Enqueue)](#commit-coordinated-enqueue-atomic-enqueue)
 - [Headless.Jobs.Abstractions](#headlessjobsabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Jobs.Core](#headlessjobscore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Jobs.Dashboard](#headlessjobsdashboard)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Jobs.SourceGenerator](#headlessjobssourcegenerator)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-3)
-  - [Configuration](#configuration-3)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Jobs.OpenTelemetry](#headlessjobsopentelemetry)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-4)
-  - [Configuration](#configuration-4)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 - [Headless.Jobs.EntityFramework](#headlessjobsentityframework)
-  - [Problem Solved](#problem-solved-5)
-  - [Key Features](#key-features-5)
-  - [Design Notes](#design-notes-1)
-  - [Installation](#installation-5)
-  - [Quick Start](#quick-start-5)
-  - [Configuration](#configuration-5)
-  - [Dependencies](#dependencies-5)
-  - [Side Effects](#side-effects-5)
-- [Error Handling and Retries](#error-handling-and-retries)
-  - [Retry Configuration](#retry-configuration)
-  - [Global Exception Handler](#global-exception-handler)
-  - [Job-Level Error Handling](#job-level-error-handling)
-  - [TerminateExecutionException and Status Control](#terminateexecutionexception-and-status-control)
-  - [Cron Occurrence Skipping](#cron-occurrence-skipping)
-  - [Job Status Reference](#job-status-reference)
-  - [Node-Death Policy (OnNodeDeath)](#node-death-policy-onnodedeath)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-5)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
+    - [Error Handling and Retries](#error-handling-and-retries)
 
 > High-performance background job scheduler for .NET with cron expressions, time-based scheduling, compile-time source-generated registration, and distributed coordination.
 
@@ -213,15 +207,15 @@ await db.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
 
 ---
 
-# Headless.Jobs.Abstractions
+## Headless.Jobs.Abstractions
 
 Contracts, entity types, manager interfaces, and execution primitives for the Jobs system.
 
-## Problem Solved
+### Problem Solved
 
 Provides the shared contracts — `ITimeJobManager<TTimeJob>`, `ICronJobManager<TCronJob>`, entity types, enums, exception types, and execution context — that decouple job enqueueing code from any specific Jobs persistence provider or scheduler implementation. All consumer code can target these abstractions without referencing `Jobs.Core` or `Jobs.EntityFramework`.
 
-## Key Features
+### Key Features
 
 - **Manager interfaces**: `ITimeJobManager<TTimeJob>` and `ICronJobManager<TCronJob>` with `AddAsync`, `AddBatchAsync`, `UpdateAsync`, `UpdateBatchAsync`, `DeleteAsync`, `DeleteBatchAsync`.
 - **Entity types**: `TimeJobEntity` / `TimeJobEntity<TTicker>` (parent–child chains), `CronJobEntity`, `CronJobOccurrenceEntity`, and `BaseJobEntity`.
@@ -234,7 +228,7 @@ Provides the shared contracts — `ITimeJobManager<TTimeJob>`, `ICronJobManager<
 - **Global exception handler**: `IJobExceptionHandler` with `HandleExceptionAsync` and `HandleCanceledExceptionAsync`.
 - **Job status**: `JobStatus` enum: `Idle`, `Queued`, `InProgress`, `Succeeded`, `DueDone`, `Failed`, `Cancelled`, `Skipped`.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Jobs.Abstractions
@@ -242,7 +236,7 @@ dotnet add package Headless.Jobs.Abstractions
 
 Pulled in transitively by `Headless.Jobs.Core`. Install directly only when building a library that targets Jobs interfaces without depending on the Core implementation.
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.Jobs.Base;
@@ -276,29 +270,29 @@ public static async Task ExecuteAsync(
 }
 ```
 
-## Configuration
+### Configuration
 
 None at the abstractions layer. All configuration is done in `Headless.Jobs.Core` via `AddHeadlessJobs(options => ...)`.
 
-## Dependencies
+### Dependencies
 
 None. Zero external NuGet dependencies.
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Jobs.Core
+## Headless.Jobs.Core
 
 Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, custom thread pool, and the `AddHeadlessJobs` DI extension.
 
-## Problem Solved
+### Problem Solved
 
 Provides reliable background job scheduling with cron expressions, delayed execution, custom task scheduling, retry logic, and an in-process thread pool without any external job scheduler dependencies (Hangfire, Quartz, etc.). The in-memory path works standalone; the durable path composes with `Jobs.EntityFramework`.
 
-## Key Features
+### Key Features
 
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
@@ -311,19 +305,19 @@ Provides reliable background job scheduling with cron expressions, delayed execu
 - **Node-death policy enforcement**: claim predicate gates the lease-expiry re-claim arm on `OnNodeDeath == Retry`; clock skew cannot speculatively re-run `Skip` or `MarkFailed` jobs.
 - **Startup mode**: `SchedulerOptionsBuilder.StartMode` (`JobsStartMode.Immediate` default / `JobsStartMode.Manual`).
 
-## Design Notes
+### Design Notes
 
 The pickup lease (`LockedUntil`) uses the injected `TimeProvider` (application clock) for the claim predicate, matching `Headless.Messaging`'s in-memory/SQL parity so fake clocks in tests stay honest. The EF operational store separately anchors lease comparison to the **database clock** for renewals — this is an intentional divergence: in-memory stays under the application clock (no DB), EF renewals use the DB clock to defeat cross-node skew on real clusters.
 
 `SchedulerOptionsBuilder.NodeId` is used as the row owner only on the in-memory single-process path (defaults to `Environment.MachineName`). On the durable path this value is overridden by `JobsOwnerIdentityAdapter` which reads the `node@incarnation` string from `Headless.Coordination`; `NodeId` becomes a pre-registration display fallback only.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Jobs.Core
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.Jobs.Base;
@@ -362,7 +356,7 @@ public sealed class OrderProcessor(IOrderService orders)
 // The scheduler starts via IHostedService — no app.UseJobs() call needed.
 ```
 
-## Configuration
+### Configuration
 
 ```csharp
 builder.Services.AddHeadlessJobs(options =>
@@ -395,12 +389,12 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Jobs.Abstractions`
 - `Headless.Extensions`
 
-## Side Effects
+### Side Effects
 
 - Registers `ITimeJobManager<TimeJobEntity>` and `ICronJobManager<CronJobEntity>` as singletons.
 - Registers background hosted services: `JobsInitializationHostedService` (always), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
@@ -409,15 +403,15 @@ builder.Services.AddHeadlessJobs(options =>
 
 ---
 
-# Headless.Jobs.Dashboard
+## Headless.Jobs.Dashboard
 
 Embedded web monitoring UI for `Headless.Jobs` with pluggable authentication and real-time cluster updates.
 
-## Problem Solved
+### Problem Solved
 
 Provides operational visibility into the Jobs scheduler — job queues, execution history, live cluster nodes, retry/failure details — without requiring a separate monitoring service. The dashboard is embedded in the host application and mounted under a configurable URL path.
 
-## Key Features
+### Key Features
 
 - **Embedded SPA**: served from the host process, no separate deployment.
 - **Authentication options**: `WithBasicAuth(username, password)`, `WithApiKey(apiKey)`, `WithHostAuthentication(policy?)` (delegates to host app's auth), or no auth for public dashboards.
@@ -426,13 +420,13 @@ Provides operational visibility into the Jobs scheduler — job queues, executio
 - **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsPolicy(policy)`.
 - **Pair with OpenTelemetry**: Dashboard for operational triage; `Jobs.OpenTelemetry` for trace-level diagnostics.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Jobs.Dashboard
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.Jobs.DependencyInjection;
@@ -450,7 +444,7 @@ var app = builder.Build();
 app.Run();
 ```
 
-## Configuration
+### Configuration
 
 ```csharp
 builder.Services
@@ -473,13 +467,13 @@ builder.Services
 
 Auth detection is automatic: no auth → public; basic auth → username/password login UI; API key → bearer token; host auth → delegates to the host's authentication middleware.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Jobs.Abstractions`
 - `Headless.Jobs.Core`
 - `Headless.Dashboard.Authentication` (shared with `Headless.Messaging.Dashboard`)
 
-## Side Effects
+### Side Effects
 
 - Mounts dashboard HTTP API and SignalR hub under `SetBasePath` path via `IStartupFilter` (no explicit `app.Use…` call needed).
 - Subscribes to `Headless.Coordination` membership events for live-node push updates.
@@ -487,15 +481,15 @@ Auth detection is automatic: no auth → public; basic auth → username/passwor
 
 ---
 
-# Headless.Jobs.SourceGenerator
+## Headless.Jobs.SourceGenerator
 
 Roslyn incremental source generator that eliminates reflection and manual job registration for the Jobs scheduler.
 
-## Problem Solved
+### Problem Solved
 
 Without the source generator, every job class or method must be manually registered with the Jobs runtime at startup, and job dispatch uses reflection to invoke methods. The source generator scans for `[JobFunction]` attributes at compile time and emits a module initializer that auto-registers all discovered jobs before `Main` runs, with zero reflection at runtime.
 
-## Key Features
+### Key Features
 
 - **Zero reflection**: all dispatch delegates are generated as strongly-typed lambdas.
 - **Auto-registration**: a `[ModuleInitializer]` in the generated file (`JobsInstanceFactory.g.cs`) registers job delegates before any host startup code runs.
@@ -504,13 +498,13 @@ Without the source generator, every job class or method must be manually registe
 - **Incremental**: only re-generates when marked methods change (fast on large solutions).
 - **Rich diagnostics**: compile-time errors for unknown function names, ambiguous constructors, invalid cron expressions, and mismatched context types.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Jobs.SourceGenerator
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.Jobs.Base;
@@ -549,15 +543,15 @@ public sealed class ComplexJob
 public static Task ExecuteAsync(IServiceProvider sp, CancellationToken ct) => Task.CompletedTask;
 ```
 
-## Configuration
+### Configuration
 
 No runtime configuration. Attributes are the sole interface. Generated output file: `JobsInstanceFactory.g.cs` (a `[ModuleInitializer]` in the consuming assembly).
 
-## Dependencies
+### Dependencies
 
 - `Microsoft.CodeAnalysis.CSharp` (build-time Roslyn API; not a runtime dependency)
 
-## Side Effects
+### Side Effects
 
 Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
 - Contains a `[ModuleInitializer]` that registers job delegates and request-type mappings with the Jobs runtime.
@@ -566,15 +560,15 @@ Emits `JobsInstanceFactory.g.cs` at compile time. The generated file:
 
 ---
 
-# Headless.Jobs.OpenTelemetry
+## Headless.Jobs.OpenTelemetry
 
 OpenTelemetry instrumentation for `Headless.Jobs` — activity tracing for the full job execution lifecycle plus structured logging.
 
-## Problem Solved
+### Problem Solved
 
 Provides distributed tracing (OpenTelemetry activities/spans), structured log events, and execution metrics for every Jobs job execution without modifying job code. Replaces the default `LoggerInstrumentation` with a full `ActivitySource`-based implementation.
 
-## Key Features
+### Key Features
 
 - **Activity tracing**: spans for job execution, enqueue, completion, failure, cancellation, skip, and data seeding.
 - **Retry tracking**: activity tags for `current_attempt` and `final_retry_count`.
@@ -583,13 +577,13 @@ Provides distributed tracing (OpenTelemetry activities/spans), structured log ev
 - **Parent–child trace linking**: `parent_id` tag links child job spans to their parent.
 - **Structured log events**: correlated with trace context for Serilog, NLog, and any `ILogger`-backed sink.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Jobs.OpenTelemetry
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using OpenTelemetry.Trace;
@@ -609,7 +603,7 @@ builder.Services.AddOpenTelemetry()
     });
 ```
 
-## Configuration
+### Configuration
 
 `AddOpenTelemetryInstrumentation()` takes no options — it replaces the default `LoggerInstrumentation` singleton with `OpenTelemetryInstrumentation`. The `ActivitySource` name is `"Headless.Jobs"`. Add it to your tracing pipeline's `AddSource(...)` call to activate spans.
 
@@ -633,26 +627,26 @@ Activity tag reference:
 
 Note: `headless.jobs.job.final_status` emits `Succeeded` (not the former `Done` value). Update dashboards or alerts that matched the literal `Done`.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Jobs.Abstractions`
 - `OpenTelemetry` (≥ 1.7.0 recommended)
 
-## Side Effects
+### Side Effects
 
 Registers `OpenTelemetryInstrumentation` as the singleton `IJobsInstrumentation`, replacing the default `LoggerInstrumentation`. No other registrations.
 
 ---
 
-# Headless.Jobs.EntityFramework
+## Headless.Jobs.EntityFramework
 
 Entity Framework Core persistence provider for `Headless.Jobs` — durable, distributed, multi-node job storage with database-clock lease authority.
 
-## Problem Solved
+### Problem Solved
 
 Provides persistence of time jobs and cron occurrences across restarts and across multiple nodes, using EF Core-mapped tables. Integrates with `Headless.Coordination` for distributed node identity (`node@incarnation`), dead-node recovery, and fail-stop on membership loss.
 
-## Key Features
+### Key Features
 
 - **Durable storage**: persists `TimeJobEntity`, `CronJobEntity`, and `CronJobOccurrenceEntity` in EF Core-mapped tables (default schema: `jobs`).
 - **`AddOperationalStore(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
@@ -665,19 +659,19 @@ Provides persistence of time jobs and cron occurrences across restarts and acros
 - **DbContext pool**: configurable via `SetDbContextPoolSize(n)` (default 1024).
 - **Custom schema**: `SetSchema("custom_schema")` or the `schema` parameter on `UseJobsDbContext`.
 
-## Design Notes
+### Design Notes
 
 Lease renewal on the EF path anchors `LockedUntil` comparison to the **database clock** (`now()` on PostgreSQL, `GETUTCDATE()` on SQL Server), not the node's injected `TimeProvider`. This is an intentional divergence from the in-memory path: in-memory has no DB server, so it must use the application clock. On EF, using the DB clock is the only way to guarantee that cross-node clock skew cannot falsely reclaim a renewing job on a cluster where nodes differ by seconds. Callers should not assume the two paths are semantically identical when writing tests that assert precise lease timing.
 
 The `JobsDbContext<TTimeJob, TCronJob>.DbContextOptions` constructor must be `public` for the EF pool to resolve it at startup. Validation fails fast at DI build time.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Jobs.EntityFramework
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 using Headless.Jobs.DbContextFactory;
@@ -710,7 +704,7 @@ InvalidOperationException: The durable Jobs operational store requires a coordin
 Register one with AddHeadlessCoordination(...) before AddHeadlessJobs(... AddOperationalStore(...)).
 ```
 
-## Configuration
+### Configuration
 
 ```csharp
 builder.Services
@@ -730,14 +724,14 @@ builder.Services
     });
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Jobs.Abstractions`
 - `Headless.Jobs.Core`
 - `Headless.Coordination.Abstractions`
 - `Microsoft.EntityFrameworkCore`
 
-## Side Effects
+### Side Effects
 
 - Replaces the in-memory `IJobPersistenceProvider` with `JobsEFCorePersistenceProvider`.
 - Registers `JobsOwnerIdentityAdapter` (overrides the default `DefaultJobsOwnerIdentity`).
@@ -748,9 +742,9 @@ builder.Services
 
 ---
 
-## Error Handling and Retries
+### Error Handling and Retries
 
-### Retry Configuration
+#### Retry Configuration
 
 Set `Retries` and `RetryIntervals` (seconds between attempts) on the entity:
 
@@ -771,7 +765,7 @@ await timeJobManager.AddAsync(new TimeJobEntity
 - If `RetryIntervals` is shorter than `Retries`, the last interval is reused.
 - If `RetryIntervals` is null or empty, default is 30 seconds.
 
-### Global Exception Handler
+#### Global Exception Handler
 
 ```csharp
 public sealed class MyJobExceptionHandler(ILogger<MyJobExceptionHandler> logger)
@@ -797,7 +791,7 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-### Job-Level Error Handling
+#### Job-Level Error Handling
 
 ```csharp
 [JobFunction("ProcessOrder")]
@@ -823,7 +817,7 @@ public sealed class ProcessOrderJob(ILogger<ProcessOrderJob> logger)
 }
 ```
 
-### TerminateExecutionException and Status Control
+#### TerminateExecutionException and Status Control
 
 Throw `TerminateExecutionException` to stop execution immediately without consuming retry budget:
 
@@ -849,7 +843,7 @@ Overloads:
 - `TerminateExecutionException(JobStatus status, "message")` → explicit status
 - Both overloads have a variant accepting an `innerException` for diagnostic details
 
-### Cron Occurrence Skipping
+#### Cron Occurrence Skipping
 
 Prevent overlapping cron runs:
 
@@ -867,7 +861,7 @@ public sealed class LongRunningCronJob
 
 `SkipIfAlreadyRunning()` transitions the occurrence to `Skipped` status if another occurrence of the same cron job is currently `InProgress`.
 
-### Job Status Reference
+#### Job Status Reference
 
 | Status | Meaning |
 |--------|---------|
@@ -880,7 +874,7 @@ public sealed class LongRunningCronJob
 | `Cancelled` | Token cancelled or `context.RequestCancellation()` called |
 | `Skipped` | `TerminateExecutionException` or `SkipIfAlreadyRunning()` |
 
-### Node-Death Policy (OnNodeDeath)
+#### Node-Death Policy (OnNodeDeath)
 
 When the owning node dies mid-execution, `NodeDeathPolicy` determines the row's fate (default `Retry`):
 

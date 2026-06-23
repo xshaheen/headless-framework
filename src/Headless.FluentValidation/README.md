@@ -1,6 +1,6 @@
 # Headless.FluentValidation
 
-Extension library for FluentValidation providing enterprise-grade validators and utilities.
+Extension library for FluentValidation providing additional validators and utilities.
 
 ## Problem Solved
 
@@ -38,8 +38,6 @@ public sealed class UserValidator : AbstractValidator<User>
     }
 }
 ```
-
-## Usage
 
 ### Phone Number Validation
 

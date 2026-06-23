@@ -10,6 +10,9 @@ packages: Media.Indexing.Abstractions, Media.Indexing
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
+    - [Text Extraction vs. OCR](#text-extraction-vs-ocr)
+    - [Provider per Format](#provider-per-format)
+    - [Stream Ownership](#stream-ownership)
 - [Headless.Media.Indexing.Abstractions](#headlessmediaindexingabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -72,27 +75,27 @@ The providers **do not dispose** the stream passed to `GetTextAsync`. The caller
 
 ---
 
-# Headless.Media.Indexing.Abstractions
+## Headless.Media.Indexing.Abstractions
 
 Defines the interface for extracting text from media files for indexing.
 
-## Problem Solved
+### Problem Solved
 
 Provides a single, format-agnostic contract (`IMediaFileTextProvider`) for extracting textual content from document streams. Application code depends on this interface only; concrete format implementations are provided by `Headless.Media.Indexing` or custom implementations.
 
-## Key Features
+### Key Features
 
 - `IMediaFileTextProvider` — single-method interface: `Task<string> GetTextAsync(Stream fileStream)`
 - Stream-based API keeps format-parsing details out of application code
 - No MIME-type coupling in the interface — format selection is the caller's responsibility
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Media.Indexing.Abstractions
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Application service depending only on the abstraction
@@ -120,36 +123,36 @@ public sealed class DocumentIndexer(IEnumerable<IMediaFileTextProvider> provider
 }
 ```
 
-## Configuration
+### Configuration
 
 None. This is an abstractions-only package with no configuration.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Media.Indexing
+## Headless.Media.Indexing
 
 Concrete text extraction implementations for PDF, Word (.docx), and PowerPoint (.pptx) documents.
 
-## Problem Solved
+### Problem Solved
 
 Provides text extraction from common document formats for full-text search indexing, using `PdfPig` for PDFs and `DocumentFormat.OpenXml` for Office formats.
 
-## Key Features
+### Key Features
 
 - `PdfMediaFileTextProvider` — PDF text extraction via PdfPig; handles non-seekable streams transparently by buffering to `MemoryStream`
 - `WordDocumentMediaFileTextProvider` — DOCX body text extraction via Open XML (paragraphs from `MainDocumentPart`)
 - `PresentationDocumentMediaFileTextProvider` — PPTX slide text extraction via Open XML (all text frames across all slides)
 - Stream-based API — providers do not dispose the caller's stream
 
-## Design Notes
+### Design Notes
 
 **PdfPig instead of iText**: PDF extraction uses [PdfPig](https://github.com/UglyToad/PdfPig) (`UglyToad.PdfPig`), an MIT-licensed pure .NET PDF reader. iText7 is AGPL-licensed, which imposes copyleft obligations on commercial applications; PdfPig avoids that constraint at no functional cost for text-extraction use cases.
 
@@ -157,13 +160,13 @@ Provides text extraction from common document formats for full-text search index
 
 **Synchronous Open XML wrappers**: `WordDocumentMediaFileTextProvider` and `PresentationDocumentMediaFileTextProvider` call synchronous Open XML APIs internally and return `Task.FromResult(...)`. The `async`-shaped signature satisfies the interface contract without adding overhead for formats that have no async parsing path.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Media.Indexing
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -199,17 +202,17 @@ public sealed class SearchIndexer(IEnumerable<IMediaFileTextProvider> providers)
 }
 ```
 
-## Configuration
+### Configuration
 
 None. Providers have no configuration options; they are stateless singletons.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Media.Indexing.Abstractions`
 - `Headless.Hosting`
 - `PdfPig` (PDF extraction)
 - `DocumentFormat.OpenXml` (Word and PowerPoint extraction)
 
-## Side Effects
+### Side Effects
 
 None. No DI registrations are performed automatically; all registrations are explicit `AddSingleton` calls.

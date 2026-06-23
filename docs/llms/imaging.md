@@ -10,6 +10,10 @@ packages: Imaging.Abstractions, Imaging.Core, Imaging.ImageSharp
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
+    - [Abstraction layer](#abstraction-layer)
+    - [Contributor pipeline](#contributor-pipeline)
+    - [Result model](#result-model)
+    - [Resize modes](#resize-modes)
 - [Headless.Imaging.Abstractions](#headlessimagingabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -121,15 +125,15 @@ All results derive from `ImageProcessResult<T>` with three states:
 
 ---
 
-# Headless.Imaging.Abstractions
+## Headless.Imaging.Abstractions
 
 Defines the provider-agnostic contracts for image processing operations.
 
-## Problem Solved
+### Problem Solved
 
 Decouples application code from any specific image-processing library. Services that inject `IImageResizer` or `IImageCompressor` have no compile-time dependency on SixLabors.ImageSharp or any other backend.
 
-## Key Features
+### Key Features
 
 - `IImageResizer` — resize interface: `ResizeAsync(Stream, ImageResizeArgs, CancellationToken)`
 - `IImageCompressor` — compression interface: `CompressAsync(Stream, ImageCompressArgs, CancellationToken)`
@@ -141,13 +145,13 @@ Decouples application code from any specific image-processing library. Services 
 - `ImageProcessState` — `Done`, `Unsupported`, `Failed`
 - `ImageResizeContent<TContent>` — carries `Content`, `MimeType`, `Width`, `Height` for resize results
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Imaging.Abstractions
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class ImageService(IImageResizer resizer, IImageCompressor compressor)
@@ -179,29 +183,29 @@ public sealed class ImageService(IImageResizer resizer, IImageCompressor compres
 }
 ```
 
-## Configuration
+### Configuration
 
 None. This package defines only interfaces and data types — no DI registration, no options.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Imaging.Core
+## Headless.Imaging.Core
 
 Orchestration layer that routes image processing calls to registered contributors.
 
-## Problem Solved
+### Problem Solved
 
 Provides the `IImageResizer` and `IImageCompressor` implementations that dispatch to one or more backend contributors, buffers non-seekable streams transparently, and applies the configured default resize mode.
 
-## Key Features
+### Key Features
 
 - `ImageResizer` — iterates `IImageResizerContributor` registrations (in reverse order) until one succeeds
 - `ImageCompressor` — iterates `IImageCompressorContributor` registrations (in reverse order) until one succeeds
@@ -212,17 +216,17 @@ Provides the `IImageResizer` and `IImageCompressor` implementations that dispatc
 - Automatic MemoryStream buffering for non-seekable input streams
 - Options validation via FluentValidation at startup
 
-## Design Notes
+### Design Notes
 
 Contributors are enumerated in reverse order of DI registration. This mirrors the last-in-wins overriding model: a contributor added after `AddImageSharpContributors()` takes precedence over ImageSharp without requiring any removal. A contributor signals non-support by returning `ImageProcessState.Unsupported`; the orchestrator seeks the stream back to the start and tries the next contributor.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Imaging.Core
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 builder.Services
@@ -246,7 +250,7 @@ services.AddImaging(options => options.DefaultResizeMode = ImageResizeMode.Crop)
 services.AddImaging((options, sp) => options.DefaultResizeMode = ImageResizeMode.Max);
 ```
 
-## Configuration
+### Configuration
 
 `ImagingOptions` (one property):
 
@@ -254,27 +258,27 @@ services.AddImaging((options, sp) => options.DefaultResizeMode = ImageResizeMode
 |---|---|---|---|
 | `DefaultResizeMode` | `ImageResizeMode` | `None` | Applied when `ImageResizeArgs.Mode` is `Default`. `None` means no resize fallback. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Imaging.Abstractions`
 - `Headless.Hosting`
 
-## Side Effects
+### Side Effects
 
 - Registers `IImageResizer` as singleton (`ImageResizer`)
 - Registers `IImageCompressor` as singleton (`ImageCompressor`)
 
 ---
 
-# Headless.Imaging.ImageSharp
+## Headless.Imaging.ImageSharp
 
 SixLabors.ImageSharp-backed contributors for image resizing and compression.
 
-## Problem Solved
+### Problem Solved
 
 Provides the actual image-processing implementation wired into the contributor pipeline. Supports JPEG, PNG, WebP, GIF, BMP, and TIFF for resize; JPEG, PNG, and WebP for compression.
 
-## Key Features
+### Key Features
 
 - `ImageSharpImageResizerContributor` — resize via `SixLabors.ImageSharp`; supports JPEG, PNG, GIF, BMP, TIFF, WebP
 - `ImageSharpImageCompressorContributor` — compression via configurable `IImageEncoder` per format; supports JPEG, PNG, WebP
@@ -282,17 +286,17 @@ Provides the actual image-processing implementation wired into the contributor p
 - Compression skips output if compressed size exceeds original (returns `Failed`)
 - Format is auto-detected from stream metadata when `args.MimeType` is not provided
 
-## Design Notes
+### Design Notes
 
 `ImageSharpOptions` exposes full `IImageEncoder` instances (`JpegCompressEncoder`, `PngCompressEncoder`, `WebpCompressEncoder`) rather than simple quality integers. This gives callers full control over encoder-specific settings (chroma subsampling, interlacing, filter type, etc.). The `DefaultCompressQuality` property initializes the default JPEG and WebP encoders in the constructor; changing it after construction has no effect unless the encoder instances are also replaced.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Imaging.ImageSharp
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 builder.Services
@@ -326,7 +330,7 @@ builder.AddImageSharpContributors(options => options.DefaultCompressQuality = 85
 builder.AddImageSharpContributors((options, sp) => options.DefaultCompressQuality = 85);
 ```
 
-## Configuration
+### Configuration
 
 `ImageSharpOptions`:
 
@@ -339,12 +343,12 @@ builder.AddImageSharpContributors((options, sp) => options.DefaultCompressQualit
 
 Validation (applied at startup): `DefaultCompressQuality` must be between 1 and 100; all three encoder properties must be non-null.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Imaging.Core`
 - `SixLabors.ImageSharp`
 
-## Side Effects
+### Side Effects
 
 - Registers `IImageResizerContributor` as singleton (`ImageSharpImageResizerContributor`)
 - Registers `IImageCompressorContributor` as singleton (`ImageSharpImageCompressorContributor`)

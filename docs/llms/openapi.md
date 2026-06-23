@@ -6,35 +6,36 @@ packages: OpenApi.Nswag, OpenApi.Nswag.OData, OpenApi.Scalar
 # OpenAPI
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
 - [Headless.OpenApi.Nswag](#headlessopenapinswag)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.OpenApi.Nswag.OData](#headlessopenapinswagodata)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.OpenApi.Scalar](#headlessopenapiscalar)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Design Notes](#design-notes-1)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 
 > OpenAPI document generation via NSwag (with FluentValidation schema integration and framework processors) plus OData query-parameter documentation and Scalar UI rendering.
 
@@ -92,15 +93,15 @@ For versioned APIs, replace `app.MapNswagOpenApi()` with `app.MapNswagOpenApiVer
 **FluentValidation schema integration.** `FluentValidationSchemaProcessor` resolves `IValidator<T>` from DI at document-generation time (using a scoped service provider) and applies validation rules (min/max length, range, required, pattern, etc.) as JSON Schema constraints. If a type has no registered validator, it is skipped silently (or throws if `ThrowOnSchemaProcessingError = true`). Include-rule chains are traversed recursively.
 
 ---
-# Headless.OpenApi.Nswag
+## Headless.OpenApi.Nswag
 
 NSwag OpenAPI document generation with framework processors, FluentValidation schema integration, security schemes, and primitive type mappings.
 
-## Problem Solved
+### Problem Solved
 
 Configuring NSwag from scratch requires wiring multiple schema and operation processors, handling nullable generics, reflecting FluentValidation rules into JSON Schema, and adding standard security/error response shapes — all in the correct order. This package does all of that behind a single `AddNswagOpenApi()` call.
 
-## Key Features
+### Key Features
 
 - `AddNswagOpenApi(Action<HeadlessNswagOptions>?, Action<AspNetCoreOpenApiDocumentGeneratorSettings>?)` — registers NSwag with all framework processors; accepts optional per-doc generator customisation
 - `AddNswagOpenApi(Action<HeadlessNswagOptions>?, Action<AspNetCoreOpenApiDocumentGeneratorSettings, IServiceProvider>?)` — same with service-provider access in the generator callback
@@ -112,7 +113,7 @@ Configuring NSwag from scratch requires wiring multiple schema and operation pro
 - Schema processors: `FluentValidationSchemaProcessor`, `GenericNullabilitySchemaProcessor`, `NullabilityAsRequiredSchemaProcessor`
 - Operation processors: `ApiExtraInformationOperationProcessor`, `CamelCaseQueryParameterOperationProcessor`, `UnauthorizedResponseOperationProcessor`, `ForbiddenResponseOperationProcessor`, `ProblemDetailsOperationProcessor`
 
-## Design Notes
+### Design Notes
 
 **Schema processor ordering is load-bearing.** `GenericNullabilitySchemaProcessor` must run before `NullabilityAsRequiredSchemaProcessor`. The generic nullability processor writes `IsNullableRaw = true` on properties whose generic type argument is annotated `T?`; the required processor then reads that flag to determine which properties are required. Reversing the order causes non-nullable generic type properties to be incorrectly marked required when the instantiation uses a nullable argument (e.g., `DataEnvelope<string?>`).
 
@@ -120,13 +121,13 @@ Configuring NSwag from scratch requires wiring multiple schema and operation pro
 
 **`MapNswagOpenApi` also mounts Swagger UI.** If you call `MapScalarOpenApi()` from `Headless.OpenApi.Scalar` on the same app, both UIs are served. This is intentional (you may want Swagger UI for internal tooling and Scalar for external docs), but if you want only Scalar, you can use NSwag's lower-level `app.UseOpenApi(...)` to expose only the JSON endpoint without the Swagger UI.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.OpenApi.Nswag
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -162,7 +163,7 @@ builder.Services.AddNswagOpenApi(
 );
 ```
 
-## Configuration
+### Configuration
 
 `HeadlessNswagOptions` properties (all have defaults — only set what differs):
 
@@ -174,7 +175,7 @@ builder.Services.AddNswagOpenApi(
 | `AddPrimitiveMappings` | `true` | Maps `Money`, `Month`, `AccountId`, `UserId` to primitive OpenAPI types |
 | `ThrowOnSchemaProcessingError` | `false` | Throw on FluentValidation schema errors instead of logging |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Api.Core` (transitive: `FluentValidation`, `Headless.Api.Abstractions`, `Headless.Core`, and others)
 - `Headless.Core`
@@ -182,34 +183,34 @@ builder.Services.AddNswagOpenApi(
 - `NSwag.Annotations`
 - `Asp.Versioning.Mvc.ApiExplorer`
 
-## Side Effects
+### Side Effects
 
 - Registers NSwag OpenAPI document generator via `services.AddOpenApiDocument(...)`
 - `MapNswagOpenApi()` mounts the OpenAPI JSON endpoint at `/openapi/{documentName}.json` and Swagger UI at `/swagger`
 - `MapNswagOpenApiVersions()` mounts one OpenAPI JSON endpoint per API version at `/openapi/{groupName}.json` and a single Swagger UI at `/swagger`
 
 ---
-# Headless.OpenApi.Nswag.OData
+## Headless.OpenApi.Nswag.OData
 
 NSwag operation filter that injects OData query parameters into the OpenAPI spec for endpoints that support OData queries.
 
-## Problem Solved
+### Problem Solved
 
 When ASP.NET Core OData endpoints accept `ODataQueryOptions` or carry `[EnableQuery]`, NSwag does not automatically document the OData query string parameters. This package detects those endpoints and injects the seven standard OData parameters into their OpenAPI operation objects.
 
-## Key Features
+### Key Features
 
 - `ODataOperationFilter : IOperationProcessor` — detects endpoints via `ODataQueryOptions` parameter type or `[EnableQuery]` attribute and injects seven OData parameters: `$select`, `$expand`, `$filter`, `$search`, `$top`, `$skip`, `$orderby`
 - The raw `ODataQueryOptions` parameter is removed from the operation so it does not appear as an undocumented parameter alongside the injected ones
 - Detection works on both the method and the declaring controller type for `[EnableQuery]`
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.OpenApi.Nswag.OData
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 builder.Services.AddNswagOpenApi(
@@ -233,29 +234,29 @@ builder.Services.AddNswagOpenApi(
 );
 ```
 
-## Configuration
+### Configuration
 
 None.
 
-## Dependencies
+### Dependencies
 
 - `Headless.OpenApi.Nswag`
 - `Microsoft.AspNetCore.OData`
 
-## Side Effects
+### Side Effects
 
 None. `ODataOperationFilter` is instantiated and registered manually inside `setupGeneratorActions`; no DI registrations are made.
 
 ---
-# Headless.OpenApi.Scalar
+## Headless.OpenApi.Scalar
 
 Scalar API documentation UI integration — renders the OpenAPI document generated by `Headless.OpenApi.Nswag` as an interactive browser-based UI.
 
-## Problem Solved
+### Problem Solved
 
 NSwag's bundled Swagger UI is functional but dated. This package mounts Scalar as a modern alternative at a configurable endpoint, pre-configured with sensible defaults (dark mode, alphabetical tag sorting, method-based operation sorting, and a curated set of code generation targets and HTTP clients).
 
-## Key Features
+### Key Features
 
 - `MapScalarOpenApi(Action<ScalarOptions>?, string endpointPrefix)` — mounts Scalar at the given prefix (default `/scalar`), connected to the NSwag JSON endpoint pattern `/openapi/{documentName}.json`
 - Dark mode enabled by default with toggle visible
@@ -266,19 +267,19 @@ NSwag's bundled Swagger UI is functional but dated. This package mounts Scalar a
 - HTTP client targets: `HttpClient`, `Curl`, `Axios`, `Fetch`, `XHR`, `WebRequest`, `Wget`, `HTTPie`
 - All Scalar options are overridable via the `setupAction` callback
 
-## Design Notes
+### Design Notes
 
 **Route pattern coupling.** `MapScalarOpenApi` hard-codes `options.OpenApiRoutePattern = "/openapi/{documentName}.json"` before passing control to the user callback. This matches what `MapNswagOpenApi` and `MapNswagOpenApiVersions` expose. If you change the NSwag JSON path (via `documentSettings` on those methods), you must override `OpenApiRoutePattern` in the Scalar `setupAction` or the UI will point at a 404.
 
 **No `AddNswagOpenApi` dependency at runtime.** The `Headless.OpenApi.Scalar` package does not reference `Headless.OpenApi.Nswag`. It calls `Scalar.AspNetCore`'s `MapScalarApiReference` which works with any OpenAPI JSON source. You can pair it with a different generator as long as the JSON endpoint path matches.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.OpenApi.Scalar
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var app = builder.Build();
@@ -303,7 +304,7 @@ app.MapScalarOpenApi(
 );
 ```
 
-## Configuration
+### Configuration
 
 `MapScalarOpenApi` accepts an optional `Action<ScalarOptions>` and an `endpointPrefix` string. The framework pre-sets the following before invoking the callback (override any of them inside `setupAction`):
 
@@ -320,10 +321,10 @@ app.MapScalarOpenApi(
 
 The `endpointPrefix` parameter (default `"/scalar"`) controls where Scalar is mounted.
 
-## Dependencies
+### Dependencies
 
 - `Scalar.AspNetCore`
 
-## Side Effects
+### Side Effects
 
 - Mounts Scalar UI at `{endpointPrefix}` (default `/scalar`) via `MapScalarApiReference`

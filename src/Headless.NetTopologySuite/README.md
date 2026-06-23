@@ -4,7 +4,7 @@ NetTopologySuite extensions for geospatial operations and SQL Server geography c
 
 ## Problem Solved
 
-Provides robust geometry manipulation utilities, precision handling, and SQL Server geography sanitization, solving common issues with geometry validity, coordinate orientation, and precision when working with geospatial data.
+Provides geometry manipulation utilities, precision handling, and SQL Server geography sanitization, solving common issues with geometry validity, coordinate orientation, and precision when working with geospatial data.
 
 ## Key Features
 
@@ -46,8 +46,6 @@ var sanitized = polygon.SanitizeForSqlGeography();
 // Simplify polygon
 var simplified = polygon.Simplify(GeoConstants.Around1MDegrees);
 ```
-
-## Usage
 
 ### Permissive Operations
 

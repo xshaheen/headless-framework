@@ -10,79 +10,85 @@ packages: Sms.Abstractions, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.Dev, Sms.Inf
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
+    - [Message model](#message-model)
+    - [Result model](#result-model)
+    - [Retry safety](#retry-safety)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Sms.Abstractions](#headlesssmsabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Sms.Aws](#headlesssmsaws)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Sms.Cequens](#headlesssmscequens)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Sms.Connekio](#headlesssmsconnekio)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-3)
-  - [Configuration](#configuration-3)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Sms.Dev](#headlesssmsdev)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-4)
-  - [Configuration](#configuration-4)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 - [Headless.Sms.Infobip](#headlesssmsinfobip)
-  - [Problem Solved](#problem-solved-5)
-  - [Key Features](#key-features-5)
-  - [Installation](#installation-5)
-  - [Quick Start](#quick-start-5)
-  - [Configuration](#configuration-5)
-  - [Dependencies](#dependencies-5)
-  - [Side Effects](#side-effects-5)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-5)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
 - [Headless.Sms.Twilio](#headlesssmstwilio)
-  - [Problem Solved](#problem-solved-6)
-  - [Key Features](#key-features-6)
-  - [Installation](#installation-6)
-  - [Quick Start](#quick-start-6)
-  - [Configuration](#configuration-6)
-  - [Dependencies](#dependencies-6)
-  - [Side Effects](#side-effects-6)
+    - [Problem Solved](#problem-solved-6)
+    - [Key Features](#key-features-6)
+    - [Installation](#installation-6)
+    - [Quick Start](#quick-start-6)
+    - [Configuration](#configuration-6)
+    - [Dependencies](#dependencies-6)
+    - [Side Effects](#side-effects-6)
 - [Headless.Sms.VictoryLink](#headlesssmsvictorylink)
-  - [Problem Solved](#problem-solved-7)
-  - [Key Features](#key-features-7)
-  - [Installation](#installation-7)
-  - [Quick Start](#quick-start-7)
-  - [Configuration](#configuration-7)
-  - [Dependencies](#dependencies-7)
-  - [Side Effects](#side-effects-7)
+    - [Problem Solved](#problem-solved-7)
+    - [Key Features](#key-features-7)
+    - [Installation](#installation-7)
+    - [Quick Start](#quick-start-7)
+    - [Configuration](#configuration-7)
+    - [Dependencies](#dependencies-7)
+    - [Side Effects](#side-effects-7)
 - [Headless.Sms.Vodafone](#headlesssmsvodafone)
-  - [Problem Solved](#problem-solved-8)
-  - [Key Features](#key-features-8)
-  - [Installation](#installation-8)
-  - [Quick Start](#quick-start-8)
-  - [Configuration](#configuration-8)
-  - [Dependencies](#dependencies-8)
-  - [Side Effects](#side-effects-8)
+    - [Problem Solved](#problem-solved-8)
+    - [Key Features](#key-features-8)
+    - [Design Notes](#design-notes-2)
+    - [Installation](#installation-8)
+    - [Quick Start](#quick-start-8)
+    - [Configuration](#configuration-8)
+    - [Dependencies](#dependencies-8)
+    - [Side Effects](#side-effects-8)
 
 > Provider-agnostic SMS sending with pluggable backends for international (Twilio, AWS SNS, Infobip) and regional MENA providers (Cequens, Connekio, VictoryLink, Vodafone).
 
@@ -165,15 +171,15 @@ SMS sends are not idempotent by default. Re-sending on transient failure can cau
 
 ---
 
-# Headless.Sms.Abstractions
+## Headless.Sms.Abstractions
 
 Defines the unified interface and message contract for SMS sending.
 
-## Problem Solved
+### Problem Solved
 
 Provides a provider-agnostic SMS sending API so application code stays decoupled from the underlying gateway (Twilio, AWS SNS, Cequens, etc.). Provider selection is a DI registration concern only.
 
-## Key Features
+### Key Features
 
 - `ISmsSender` — single method `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
 - `SendSingleSmsRequest` — message contract with `Destinations` (list of `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
@@ -182,13 +188,13 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 - `AddHeadlessSms(setup => setup.Use{Provider}(...))` — root registration entry with an exactly-one-provider gate; each provider package contributes a `Use{Provider}` builder member.
 - Never throws for provider errors — only `OperationCanceledException` propagates.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.Abstractions
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class OtpService(ISmsSender smsSender)
@@ -211,42 +217,42 @@ public sealed class OtpService(ISmsSender smsSender)
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required. This is an abstractions-only package.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None. This is an abstractions package.
 
 ---
 
-# Headless.Sms.Aws
+## Headless.Sms.Aws
 
 AWS SNS SMS implementation of `ISmsSender`.
 
-## Problem Solved
+### Problem Solved
 
 Provides SMS sending via Amazon Simple Notification Service (SNS), reusing existing AWS SDK credentials and IAM-based access control already present in AWS-hosted applications.
 
-## Key Features
+### Key Features
 
 - `AwsSnsSmsSender` — `ISmsSender` implementation backed by AWS SNS.
 - `SenderId` — alphanumeric sender ID displayed to recipients (support varies by country).
 - `MaxPrice` — optional per-message USD price cap; SNS rejects sends that would exceed it.
 - Accepts any AWS credential source: environment, instance metadata, `appsettings.json` via `AWSOptions`, or explicit `BasicAWSCredentials`.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.Aws
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -266,9 +272,9 @@ builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(options =>
 }, awsOptions));
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -284,7 +290,7 @@ builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(options =>
 }
 ```
 
-### Options
+#### Options
 
 | Option | Type | Required | Description |
 |---|---|---|---|
@@ -293,28 +299,28 @@ builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(options =>
 
 AWS credentials are sourced from `AWSOptions` passed to the registration method (or the default credential chain if `null`).
 
-## Dependencies
+### Dependencies
 
 - `Headless.Sms.Abstractions`
 - `AWSSDK.SimpleNotificationService`
 - `AWSSDK.Extensions.NETCore.Setup`
 
-## Side Effects
+### Side Effects
 
 - Registers `IAmazonSimpleNotificationService` if not already registered.
 - Registers `ISmsSender` as singleton (`AwsSnsSmsSender`).
 
 ---
 
-# Headless.Sms.Cequens
+## Headless.Sms.Cequens
 
 Cequens SMS gateway implementation of `ISmsSender`.
 
-## Problem Solved
+### Problem Solved
 
 Provides SMS sending via the Cequens API, a regional MENA gateway that authenticates via JWT token (obtained from API key + username).
 
-## Key Features
+### Key Features
 
 - `CequensSmsSender` — `ISmsSender` implementation backed by the Cequens REST API.
 - JWT token-based auth with automatic token acquisition from `TokenEndpoint`.
@@ -323,17 +329,17 @@ Provides SMS sending via the Cequens API, a regional MENA gateway that authentic
 - Standard resilience pipeline with auto-retry **disabled** by default to prevent duplicate SMS.
 - Optional `configureClient` and `configureResilience` hooks for fine-grained HttpClient control.
 
-## Design Notes
+### Design Notes
 
 The HTTP resilience handler is wired with `options.Retry.ShouldHandle = static _ => PredicateResult.False()` — no retries by default. SMS sends are not idempotent, and retrying a failed send without an idempotency key can deliver duplicate messages. Pass `configureResilience` to opt back in if Cequens provides idempotency support for your account.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.Cequens
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -351,9 +357,9 @@ builder.Services.AddHeadlessSms(setup => setup.UseCequens(options =>
 }));
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -369,7 +375,7 @@ builder.Services.AddHeadlessSms(setup => setup.UseCequens(options =>
 }
 ```
 
-### Options
+#### Options
 
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -380,27 +386,27 @@ builder.Services.AddHeadlessSms(setup => setup.UseCequens(options =>
 | `TokenEndpoint` | `string` | No | `https://apis.cequens.com/auth/v1/tokens` | Override for non-default environments. |
 | `Token` | `string?` | No | `null` | Pre-issued JWT; skips sign-in if set. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Sms.Abstractions`
 - `Microsoft.Extensions.Http.Resilience`
 
-## Side Effects
+### Side Effects
 
 - Registers `ISmsSender` as singleton (`CequensSmsSender`).
 - Registers a named `HttpClient` (`Headless:CequensSms`) with a standard resilience handler (retry disabled).
 
 ---
 
-# Headless.Sms.Connekio
+## Headless.Sms.Connekio
 
 Connekio SMS gateway implementation of `ISmsSender`.
 
-## Problem Solved
+### Problem Solved
 
 Provides SMS sending via the Connekio API using basic username/password/accountId authentication, supporting both single-message and batch delivery.
 
-## Key Features
+### Key Features
 
 - `ConnekioSmsSender` — `ISmsSender` implementation backed by the Connekio REST API.
 - Separate `SingleSmsEndpoint` and `BatchSmsEndpoint` (auto-selected based on `IsBatch`).
@@ -408,17 +414,17 @@ Provides SMS sending via the Connekio API using basic username/password/accountI
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-## Design Notes
+### Design Notes
 
 Retry is disabled by default for the same reason as all HTTP SMS providers: sending the same message twice can cause duplicate delivery. Pass `configureResilience` to opt back in if Connekio assigns idempotency keys for your account tier.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.Connekio
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -437,9 +443,9 @@ builder.Services.AddHeadlessSms(setup => setup.UseConnekio(options =>
 }));
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -456,7 +462,7 @@ builder.Services.AddHeadlessSms(setup => setup.UseConnekio(options =>
 }
 ```
 
-### Options
+#### Options
 
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -467,41 +473,41 @@ builder.Services.AddHeadlessSms(setup => setup.UseConnekio(options =>
 | `SingleSmsEndpoint` | `string` | No | `https://api.connekio.com/sms/single` | Override for non-default environments. |
 | `BatchSmsEndpoint` | `string` | No | `https://api.connekio.com/sms/batch` | Override for non-default environments. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Sms.Abstractions`
 - `Microsoft.Extensions.Http.Resilience`
 
-## Side Effects
+### Side Effects
 
 - Registers `ISmsSender` as singleton (`ConnekioSmsSender`).
 - Registers a named `HttpClient` (`Headless:ConnekioSms`) with a standard resilience handler (retry disabled).
 
 ---
 
-# Headless.Sms.Dev
+## Headless.Sms.Dev
 
 Development SMS implementations that avoid real sends.
 
-## Problem Solved
+### Problem Solved
 
 Provides no-op and file-logging SMS senders for development and test environments, enabling full SMS workflow testing without requiring vendor credentials or sending actual messages.
 
-## Key Features
+### Key Features
 
 - `DevSmsSender` — appends formatted SMS details to a local file for inspection.
 - `NoopSmsSender` — silently discards all messages and returns `SendSingleSmsResponse.Succeeded()`.
 - No external dependencies, no HTTP calls, no API credentials needed.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.Dev
 ```
 
-## Quick Start
+### Quick Start
 
-### File-based logging
+#### File-based logging
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -512,7 +518,7 @@ if (builder.Environment.IsDevelopment())
 }
 ```
 
-### Silent discard
+#### Silent discard
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -523,30 +529,30 @@ if (builder.Environment.IsDevelopment())
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required. The file path is passed directly to `UseDev`.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Sms.Abstractions`
 
-## Side Effects
+### Side Effects
 
 - Registers `ISmsSender` as singleton.
 - `DevSmsSender` appends to the specified file on each send.
 
 ---
 
-# Headless.Sms.Infobip
+## Headless.Sms.Infobip
 
 Infobip global SMS platform implementation of `ISmsSender`.
 
-## Problem Solved
+### Problem Solved
 
 Provides SMS sending via Infobip's REST API, a global messaging platform with delivery reporting and per-account regional base paths.
 
-## Key Features
+### Key Features
 
 - `InfobipSmsSender` — `ISmsSender` implementation backed by the Infobip REST API.
 - API key authentication via HTTP `Authorization` header.
@@ -555,13 +561,13 @@ Provides SMS sending via Infobip's REST API, a global messaging platform with de
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.Infobip
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -579,9 +585,9 @@ builder.Services.AddHeadlessSms(setup => setup.UseInfobip(options =>
 }));
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -595,7 +601,7 @@ builder.Services.AddHeadlessSms(setup => setup.UseInfobip(options =>
 }
 ```
 
-### Options
+#### Options
 
 | Option | Type | Required | Description |
 |---|---|---|---|
@@ -603,27 +609,27 @@ builder.Services.AddHeadlessSms(setup => setup.UseInfobip(options =>
 | `BasePath` | `string` | Yes | Account-specific Infobip base URL (must be HTTPS). |
 | `Sender` | `string` | Yes | Sender name or number shown to recipients. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Sms.Abstractions`
 - `Microsoft.Extensions.Http.Resilience`
 
-## Side Effects
+### Side Effects
 
 - Registers `ISmsSender` as singleton (`InfobipSmsSender`).
 - Registers a named `HttpClient` (`Headless:InfobipSms`) with a standard resilience handler (retry disabled).
 
 ---
 
-# Headless.Sms.Twilio
+## Headless.Sms.Twilio
 
 Twilio SMS implementation of `ISmsSender`.
 
-## Problem Solved
+### Problem Solved
 
 Provides SMS sending via Twilio's REST API, the most widely supported international SMS platform, with configurable sender number and optional per-message price cap.
 
-## Key Features
+### Key Features
 
 - `TwilioSmsSender` — `ISmsSender` implementation using `ITwilioRestClient`.
 - `Sid` + `AuthToken` — Twilio account credentials.
@@ -633,13 +639,13 @@ Provides SMS sending via Twilio's REST API, the most widely supported internatio
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.Twilio
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -657,9 +663,9 @@ builder.Services.AddHeadlessSms(setup => setup.UseTwilio(options =>
 }));
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -676,7 +682,7 @@ builder.Services.AddHeadlessSms(setup => setup.UseTwilio(options =>
 }
 ```
 
-### Options
+#### Options
 
 | Option | Type | Required | Description |
 |---|---|---|---|
@@ -687,13 +693,13 @@ builder.Services.AddHeadlessSms(setup => setup.UseTwilio(options =>
 | `Region` | `string?` | No | Twilio region for data residency (e.g. `au1`, `ie1`). |
 | `Edge` | `string?` | No | Twilio edge node (e.g. `sydney`, `dublin`). |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Sms.Abstractions`
 - `Twilio`
 - `Microsoft.Extensions.Http.Resilience`
 
-## Side Effects
+### Side Effects
 
 - Registers `ITwilioRestClient` as singleton (backed by the named `HttpClient`).
 - Registers `ISmsSender` as singleton (`TwilioSmsSender`).
@@ -701,15 +707,15 @@ builder.Services.AddHeadlessSms(setup => setup.UseTwilio(options =>
 
 ---
 
-# Headless.Sms.VictoryLink
+## Headless.Sms.VictoryLink
 
 VictoryLink SMS gateway implementation of `ISmsSender`.
 
-## Problem Solved
+### Problem Solved
 
 Provides SMS sending via the VictoryLink API, a regional gateway serving the Middle East market with username/password authentication.
 
-## Key Features
+### Key Features
 
 - `VictoryLinkSmsSender` — `ISmsSender` implementation backed by the VictoryLink REST API.
 - Username + password authentication.
@@ -718,13 +724,13 @@ Provides SMS sending via the VictoryLink API, a regional gateway serving the Mid
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.VictoryLink
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -742,9 +748,9 @@ builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(options =>
 }));
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -759,7 +765,7 @@ builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(options =>
 }
 ```
 
-### Options
+#### Options
 
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -768,27 +774,27 @@ builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(options =>
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
 | `Endpoint` | `string` | No | VictoryLink production URL | Override for non-default environments. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Sms.Abstractions`
 - `Microsoft.Extensions.Http.Resilience`
 
-## Side Effects
+### Side Effects
 
 - Registers `ISmsSender` as singleton (`VictoryLinkSmsSender`).
 - Registers a named `HttpClient` (`Headless:VictoryLinkSms`) with a standard resilience handler (retry disabled).
 
 ---
 
-# Headless.Sms.Vodafone
+## Headless.Sms.Vodafone
 
 Vodafone Egypt enterprise SMS gateway implementation of `ISmsSender`.
 
-## Problem Solved
+### Problem Solved
 
 Provides SMS sending via the Vodafone Egypt enterprise messaging API, which uses a shared-secret (`SecureHash`) authentication model alongside account credentials.
 
-## Key Features
+### Key Features
 
 - `VodafoneSmsSender` — `ISmsSender` implementation backed by the Vodafone Egypt REST API.
 - Account credentials: `AccountId` + `Password` + `SecureHash`.
@@ -796,17 +802,17 @@ Provides SMS sending via the Vodafone Egypt enterprise messaging API, which uses
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
 
-## Design Notes
+### Design Notes
 
 Vodafone Egypt's API requires a `SecureHash` in addition to account credentials — this is not an OAuth2 or JWT flow. The hash is issued by Vodafone at account provisioning and must be stored as a secret. Do not confuse this provider with a generic Vodafone API; the endpoint defaults to `https://e3len.vodafone.com.eg/web2sms/sms/submit/`.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Sms.Vodafone
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -825,9 +831,9 @@ builder.Services.AddHeadlessSms(setup => setup.UseVodafone(options =>
 }));
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -843,7 +849,7 @@ builder.Services.AddHeadlessSms(setup => setup.UseVodafone(options =>
 }
 ```
 
-### Options
+#### Options
 
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -853,12 +859,12 @@ builder.Services.AddHeadlessSms(setup => setup.UseVodafone(options =>
 | `Sender` | `string` | Yes | — | Sender name shown to recipients. |
 | `SendSmsEndpoint` | `string` | No | `https://e3len.vodafone.com.eg/web2sms/sms/submit/` | Override for non-default environments. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Sms.Abstractions`
 - `Microsoft.Extensions.Http.Resilience`
 
-## Side Effects
+### Side Effects
 
 - Registers `ISmsSender` as singleton (`VodafoneSmsSender`).
 - Registers a named `HttpClient` (`Headless:VodafoneSms`) with a standard resilience handler (retry disabled).

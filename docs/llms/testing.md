@@ -6,57 +6,45 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, Messaging.Testing
 # Testing
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Testing](#headlesstesting)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Usage](#usage)
-    - [Test Lifecycle](#test-lifecycle)
-    - [Controllable Time](#controllable-time)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Testing.AspNetCore](#headlesstestingaspnetcore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Usage](#usage-1)
-    - [Deferred Initialization](#deferred-initialization)
-    - [Test Fixture Composition](#test-fixture-composition)
-    - [Wrapping `HeadlessTestServer`](#wrapping-headlesstestserver)
-    - [Resolving `FakeTimeProvider` and `TestClock`](#resolving-faketimeprovider-and-testclock)
-    - [Auto-Applied EF Query Filters in Tests](#auto-applied-ef-query-filters-in-tests)
-    - [State That DB Reset Doesn't Clear](#state-that-db-reset-doesnt-clear)
-    - [Time Advancement](#time-advancement)
-    - [DB Round-Trip Precision](#db-round-trip-precision)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-2)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Testing.Testcontainers](#headlesstestingtestcontainers)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-  - [Prerequisites](#prerequisites)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-4)
+    - [Prerequisites](#prerequisites)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Messaging.Testing](#headlessmessagingtesting)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-3)
-  - [Usage](#usage-2)
-    - [Choosing the Right Wait Method](#choosing-the-right-wait-method)
-    - [Why Not Query the Outbox Directly](#why-not-query-the-outbox-directly)
-    - [Isolation Between Tests](#isolation-between-tests)
-  - [Configuration](#configuration-3)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-5)
+    - [Quick Start](#quick-start-6)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 
 > Base classes and Docker-backed fixtures for xUnit unit and integration tests.
 
@@ -89,15 +77,15 @@ Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, an
 - The project uses `xunit.v3`, `AwesomeAssertions` (fork of FluentAssertions), `NSubstitute`, and `Bogus`. Use these, not alternatives.
 
 ---
-# Headless.Testing
+## Headless.Testing
 
 Core testing utilities and base classes for xUnit tests.
 
-## Problem Solved
+### Problem Solved
 
 Provides reusable test infrastructure including base classes, retry attributes, test ordering, fake helpers, and assertion extensions for consistent, reliable testing across the framework.
 
-## Key Features
+### Key Features
 
 - `TestBase` - Abstract base class with lifecycle, logging, and Faker
 - `RetryFactAttribute` / `RetryTheoryAttribute` - Automatic test retry on failure
@@ -107,13 +95,13 @@ Provides reusable test infrastructure including base classes, retry attributes, 
 - `TestClock` - Controllable time provider for tests
 - Assertion extensions for async operations
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Testing
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class OrderServiceTests : TestBase
@@ -146,9 +134,9 @@ public sealed class OrderServiceTests : TestBase
 }
 ```
 
-## Usage
+### Quick Start
 
-### Test Lifecycle
+#### Test Lifecycle
 
 ```csharp
 public sealed class MyTests : TestBase
@@ -167,7 +155,7 @@ public sealed class MyTests : TestBase
 }
 ```
 
-### Controllable Time
+#### Controllable Time
 
 ```csharp
 var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
@@ -178,29 +166,29 @@ timeProvider.Advance(TimeSpan.FromDays(30)); // advance via the FakeTimeProvider
 var isExpired = service.IsExpired(); // true
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - `xunit.v3`
 - `Bogus`
 - `Microsoft.Extensions.Logging`
 
-## Side Effects
+### Side Effects
 
 None.
 ---
-# Headless.Testing.AspNetCore
+## Headless.Testing.AspNetCore
 
 ASP.NET Core integration-test host wrapper with controllable time, DI-scope helpers, readiness polling, database reset, and messaging-harness reset.
 
-## Problem Solved
+### Problem Solved
 
 `WebApplicationFactory<TProgram>` is the standard ASP.NET integration-test host, but it leaves the consumer to wire deterministic time, scoped DI execution with a principal, database reset, readiness polling, and messaging-harness teardown by hand. `HeadlessTestServer<TProgram>` owns the WAF lifecycle and exposes those helpers as a single surface, so every integration suite starts from the same deterministic baseline.
 
-## Key Features
+### Key Features
 
 - `HeadlessTestServer<TProgram>` -- owns the `WebApplicationFactory<TProgram>` and lifts its surface to a deterministic-by-default API.
 - Replaces `TimeProvider` and `IClock` with `FakeTimeProvider` + `TestClock` so tests control time end-to-end.
@@ -210,13 +198,13 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
 - `ConfigureDatabaseReset(...)` + `ResetDatabaseAsync()` integrate Respawner with retry.
 - `ResetMessagingHarness()` clears `MessagingTestHarness` observation buffers between tests.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Testing.AspNetCore
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 [CollectionDefinition(nameof(IntegrationTestCollection))]
@@ -263,20 +251,20 @@ public abstract class IntegrationTestBase(TestFixture fixture) : TestBase
 }
 ```
 
-## Usage
+### Quick Start
 
-### Deferred Initialization
+#### Deferred Initialization
 
 `HeadlessTestServer<TProgram>` follows xUnit v3 `IAsyncLifetime` semantics -- the host starts inside `InitializeAsync()`, not the constructor. Fixture types should call `App.InitializeAsync()` from their own `InitializeAsync()` so the WAF, time provider, readiness checks, and DI scope are wired before the first test runs. Resolving from `App.Services` before `InitializeAsync()` completes throws.
 
-### Test Fixture Composition
+#### Test Fixture Composition
 
 - Use an xUnit **collection fixture** (`ICollectionFixture<TFixture>` + `[CollectionDefinition]`) rather than a class fixture. The integration host is expensive to construct, so sharing it across an entire test collection (often the whole assembly) is the right unit of reuse.
 - Expose a `Fixture.ResetStateAsync()` hook from the fixture that resets every piece of state that crosses tests: DB rows via `App.ResetDatabaseAsync()`, messaging observations via `App.ResetMessagingHarness()`, ambient `ICurrentTenant`/`ICurrentUser` scopes, time, and any test-owned WireMock servers.
 - Call `Fixture.ResetStateAsync()` from `IntegrationTestBase.InitializeAsync()` so tests run in any order without ordering coupling. Avoid relying on xUnit test ordering or `[Trait("Order", ...)]` for state setup.
 - Tag every integration class with `[Trait("Category", "Integration")]` so CI can run integration and unit lanes on different runners (only the integration lane needs Docker).
 
-### Wrapping `HeadlessTestServer`
+#### Wrapping `HeadlessTestServer`
 
 Most projects benefit from a thin app-specific wrapper that adds project-shaped helpers on top of the framework type. When you wrap:
 
@@ -284,7 +272,7 @@ Most projects benefit from a thin app-specific wrapper that adds project-shaped 
 - **Add only** project-shaped helpers: typed scoped resolvers (e.g., `GetDbExecutor<T>()`), default-argument overloads (e.g., `AdvanceTime()` defaulting to one hour), or app-specific service factories.
 - **Do not** reimplement `ExecuteScopeAsync`, time advancement, or database reset. Duplicating the lifecycle is the most common source of drift between the wrapper and the framework type.
 
-### Resolving `FakeTimeProvider` and `TestClock`
+#### Resolving `FakeTimeProvider` and `TestClock`
 
 `AddTestTimeProvider()` (called internally during host setup) replaces `TimeProvider` and `IClock` registrations with `FakeTimeProvider` and `TestClock`. The registrations target the abstract service types only:
 
@@ -300,7 +288,7 @@ var clock = serviceProvider.GetRequiredService<TestClock>();
 
 `TestClock.UtcNow` delegates to the underlying `FakeTimeProvider`, so a single `FakeTimeProvider.SetUtcNow()` or `FakeTimeProvider.Advance()` call moves both forward together. Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into either provider directly.
 
-### Auto-Applied EF Query Filters in Tests
+#### Auto-Applied EF Query Filters in Tests
 
 `HeadlessEntityModelProcessor` (from `Headless.Orm.EntityFramework`) auto-applies global query filters for three interfaces. They apply in integration tests exactly as in production:
 
@@ -327,7 +315,7 @@ using (tenant.Change(tenantId, "Test Tenant"))
 
 `ICurrentTenant.Change(...)` returns a disposable that restores the previous tenant on exit. See [multi-tenancy.md](multi-tenancy.md) for the full ownership and bypass model, including the `// MULTI-TENANCY-BYPASS:` comment convention for legitimate `IgnoreMultiTenancyFilter()` use.
 
-### State That DB Reset Doesn't Clear
+#### State That DB Reset Doesn't Clear
 
 `App.ResetDatabaseAsync()` (Respawner) truncates configured database tables only. Tests that touch state outside the database must clear it themselves, otherwise observations from a previous test bleed into the next:
 
@@ -337,7 +325,7 @@ using (tenant.Change(tenantId, "Test Tenant"))
 - **Ambient `ICurrentTenant` / `ICurrentUser` scopes.** Disposable scopes opened by one test must not leak into the next; close them inside the test's own `using` block or reset them in `ResetStateAsync()`.
 - **External fakes** (WireMock, Stripe test server, etc.). Reset their recorded requests and reconfigure their stubs as part of `ResetStateAsync()`.
 
-### Time Advancement
+#### Time Advancement
 
 Advance time before seeding so timestamps have a known reference point. The framework helpers move `TimeProvider` and `IClock` together:
 
@@ -352,7 +340,7 @@ now = App.AdvanceTime(TimeSpan.FromMinutes(30));
 App.SetTime(now.AddSeconds(5));
 ```
 
-### DB Round-Trip Precision
+#### DB Round-Trip Precision
 
 PostgreSQL `timestamptz` stores microsecond precision (6 digits), while .NET `DateTimeOffset` ticks at 100 ns (7 digits). Exact equality across a DB round-trip will intermittently fail on the trailing tick. Assert with microsecond tolerance:
 
@@ -366,7 +354,7 @@ result.DateCreated.Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1));
 
 The same caveat applies to other databases with sub-tick storage precision (MySQL `DATETIME(6)`, SQL Server `datetime2(N)` for `N < 7`). Match the assertion tolerance to the column precision.
 
-## Configuration
+### Configuration
 
 `HeadlessTestServer<TProgram>` is configured through its constructor and fluent pre-initialization methods — there is no options class bound from `appsettings.json`.
 
@@ -386,40 +374,40 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 | `TablesToIgnore` | `List<Table>` | `[]` | Additional tables to skip during reset. `__EFMigrationsHistory` is always excluded automatically. |
 | `ConnectionProvider` | `Func<IServiceProvider, DbConnection>?` | `null` | **Required** when using `ResetDatabaseAsync()`. Factory for an unopened `DbConnection` to the test database. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Testing`
 - `Microsoft.AspNetCore.Mvc.Testing`
 - `Microsoft.Extensions.Time.Testing`
 
-## Side Effects
+### Side Effects
 
 - Starts the application host under test for the lifetime of the fixture.
 - Replaces `TimeProvider` and `IClock` in DI with deterministic test doubles.
 - (Optional) Truncates configured database tables between tests when `ConfigureDatabaseReset(...)` is wired.
 ---
-# Headless.Testing.Testcontainers
+## Headless.Testing.Testcontainers
 
 Testcontainers fixtures for integration testing.
 
-## Problem Solved
+### Problem Solved
 
 Provides pre-configured Testcontainers fixtures for common infrastructure (Redis, databases) enabling reliable integration tests with real dependencies running in Docker.
 
-## Key Features
+### Key Features
 
 - `HeadlessRedisFixture` - Redis 7 Alpine container fixture
 - `TestContextMessageSink` - xUnit output integration
 - Automatic container lifecycle management
 - Clean test isolation
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Testing.Testcontainers
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class CacheIntegrationTests : IClassFixture<HeadlessRedisFixture>
@@ -447,35 +435,35 @@ public sealed class CacheIntegrationTests : IClassFixture<HeadlessRedisFixture>
 }
 ```
 
-## Prerequisites
+### Prerequisites
 
 - Docker must be running
 
-## Configuration
+### Configuration
 
 No configuration required. Containers use sensible defaults.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Testing`
 - `Testcontainers`
 - `Testcontainers.Redis`
 - `Testcontainers.Xunit`
 
-## Side Effects
+### Side Effects
 
 - Starts Docker containers during test execution
 - Containers are automatically stopped after tests complete
 ---
-# Headless.Messaging.Testing
+## Headless.Messaging.Testing
 
 Transport-level test harness for asserting on published, consumed, faulted, and exhausted messages without binding tests to a specific broker.
 
-## Problem Solved
+### Problem Solved
 
 Asserting on messaging by querying the outbox table covers only messages that flow through the outbox -- direct publishes bypass it and leave assertions blind. `MessagingTestHarness` records every message at the transport boundary, including typed `IBusTransport` and `IQueueTransport` sends, so tests can wait on and assert against outboxed and direct-published messages through one API.
 
-## Key Features
+### Key Features
 
 - `MessagingTestHarness` records messages at the bus/queue transport layer (covers outbox + direct publish).
 - `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, `WaitForExhausted<T>(...)` block until a match arrives or the configured timeout elapses (`MessageObservationTimeoutException`).
@@ -484,13 +472,13 @@ Asserting on messaging by querying the outbox table covers only messages that fl
 - `Published`, `Consumed`, `Faulted`, `Exhausted` collections for non-blocking assertions.
 - `Clear()` for clean test isolation; integrates with `HeadlessTestServer.ResetMessagingHarness()`.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Messaging.Testing
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Setup (typically inside a collection fixture)
@@ -511,9 +499,9 @@ var message = (UserCreatedMessage)recorded.Message;
 message.UserId.Should().Be(userId);
 ```
 
-## Usage
+### Quick Start
 
-### Choosing the Right Wait Method
+#### Choosing the Right Wait Method
 
 | Method | Use when |
 |--------|----------|
@@ -524,23 +512,23 @@ message.UserId.Should().Be(userId);
 
 Each method has a no-predicate overload (matches by type only) and a predicate overload (matches by type + payload shape). All four return a `RecordedMessage` whose `.Message` is the deserialized payload.
 
-### Why Not Query the Outbox Directly
+#### Why Not Query the Outbox Directly
 
 A common reflex is to assert by selecting from the outbox table (`outbox.published` or the configured equivalent). That only works when the producer goes through the outbox pipeline. Code paths that call `IBus` directly -- system messages, retries that opt out of the outbox, framework internals -- never write a row there. `MessagingTestHarness` records at the transport boundary, so the assertion is single-source-of-truth regardless of how the message was produced.
 
-### Isolation Between Tests
+#### Isolation Between Tests
 
 Call `harness.Clear()` (or `App.ResetMessagingHarness()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both methods drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections without re-creating the transport decorators. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since transport and consume observations can arrive on background processing threads.
 
-## Configuration
+### Configuration
 
 None. `MessagingTestHarness` has no configuration class or options object. The only tuneable is the per-call `timeout` parameter on `WaitFor*` methods; when omitted it defaults to `MessagingTestHarness.DefaultTimeout` (5 seconds). Transport parallelism is intentionally disabled by the harness (`EnablePublishParallelSend = false`, `EnableSubscriberParallelExecute = false`) to guarantee deterministic single-threaded test execution — this is a fixed internal choice and cannot be overridden.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Messaging.Abstractions`
 - `Headless.Messaging.Core`
 
-## Side Effects
+### Side Effects
 
 - Decorates configured `ITransport`, `IBusTransport`, and `IQueueTransport` services with recording wrappers. Tests using the harness should register `UseInMemory()` and `UseInMemoryStorage()` unless they intentionally supply a custom in-process transport.

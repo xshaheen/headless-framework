@@ -38,8 +38,6 @@ var response = await client.GetAsync("/health", AbortToken);
 response.EnsureSuccessStatusCode();
 ```
 
-## Usage
-
 ### Collection fixture with time control and DB reset
 
 ```csharp

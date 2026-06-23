@@ -43,8 +43,6 @@ builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
 builder.Services.Decorate<IMyService, AuditedMyService>();
 ```
 
-## Usage
-
 ### Conditional Service Registration
 
 ```csharp
