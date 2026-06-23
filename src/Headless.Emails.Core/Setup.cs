@@ -19,8 +19,9 @@ public static class SetupEmailsCore
         /// default (unkeyed) sender through <c>Use*</c> extensions on <see cref="HeadlessEmailsSetupBuilder"/>
         /// (for example <c>UseAzure</c>, <c>UseAwsSes</c>, <c>UseMailkit</c>, <c>UseDevelopment</c>,
         /// <c>UseNoop</c>) and named senders through <c>setup.AddNamed(name, i =&gt; i.Use*(…))</c>. Exactly one
-        /// default sender is required; named senders are optional and unbounded. All contributions are deferred
-        /// until the setup gates pass, so a failed setup leaves the service collection unchanged.
+        /// default sender is required; named senders are optional and unbounded. Contributions are queued and
+        /// not run until the setup gates pass, so a setup that fails a gate leaves the service collection
+        /// unchanged (provider <c>Use*</c> members also validate their inputs synchronously before queuing).
         /// </summary>
         /// <param name="configure">Delegate that selects the default sender and any named senders.</param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
