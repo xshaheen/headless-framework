@@ -59,6 +59,7 @@ public static class FactoryCacheStoreExtensions
             SkipDistributedCacheWrite = options.SkipDistributedCacheWrite,
         };
 
-        await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+        // Result discarded: unconditional upsert, no CAS guard.
+        _ = await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
     }
 }

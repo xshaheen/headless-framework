@@ -41,9 +41,9 @@ internal sealed class MailkitEmailSender(
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when both <see cref="SendSingleEmailRequest.MessageText"/> and
-    /// <see cref="SendSingleEmailRequest.MessageHtml"/> are <see langword="null"/>.
+    /// <see cref="SendSingleEmailRequest.MessageHtml"/> are <see langword="null"/> or whitespace-only.
     /// </exception>
-    /// <exception cref="System.Security.Authentication.AuthenticationException">
+    /// <exception cref="MailKit.Security.AuthenticationException">
     /// Thrown when the SMTP server rejects the configured credentials.
     /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
@@ -51,10 +51,7 @@ internal sealed class MailkitEmailSender(
         CancellationToken cancellationToken = default
     )
     {
-        if (request.MessageText is null && request.MessageHtml is null)
-        {
-            throw new InvalidOperationException("At least one of plainMessage or htmlMessage must be provided.");
-        }
+        request.EnsureHasBody();
 
         // Read the snapshot for this instance's options name (null = the default/unkeyed sender). Keyed senders
         // must not read CurrentValue, which always binds the default options.
@@ -96,9 +93,21 @@ internal sealed class MailkitEmailSender(
         CancellationToken cancellationToken
     )
     {
-        if (client.IsConnected)
+        // A pooled client that is already connected and (when required) authenticated is reusable.
+        if (client.IsConnected && (!options.HasCredentials || client.IsAuthenticated))
         {
             return;
+        }
+
+        // Bound the connect/authenticate phase by the configured timeout. SmtpClient.Timeout only
+        // governs subsequent read/write operations, not the initial TCP/TLS connect.
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(options.Timeout);
+
+        // A connected-but-unauthenticated client (credentials required) must be reset before re-auth.
+        if (client.IsConnected)
+        {
+            await client.DisconnectAsync(quit: true, timeoutCts.Token).ConfigureAwait(false);
         }
 
         await client
@@ -106,13 +115,13 @@ internal sealed class MailkitEmailSender(
                 host: options.Server,
                 port: options.Port,
                 options: options.SocketOptions,
-                cancellationToken: cancellationToken
+                cancellationToken: timeoutCts.Token
             )
             .ConfigureAwait(false);
 
         if (options.HasCredentials)
         {
-            await client.AuthenticateAsync(options.User!, options.Password!, cancellationToken).ConfigureAwait(false);
+            await client.AuthenticateAsync(options.User!, options.Password!, timeoutCts.Token).ConfigureAwait(false);
         }
     }
 }

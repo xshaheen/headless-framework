@@ -46,7 +46,8 @@ public sealed class MailkitSmtpOptions
 
     /// <summary>
     /// Maximum number of SMTP connections retained in the pool. Defaults to <c>10</c>.
-    /// Set to <c>0</c> to disable pooling (each send creates and tears down its own connection).
+    /// The underlying object pool always keeps one fast-path slot, so <c>0</c> retains at most a
+    /// single connection rather than disabling pooling entirely.
     /// </summary>
     public int MaxPoolSize { get; set; } = 10;
 
@@ -68,7 +69,8 @@ internal sealed class MailkitSmtpOptionsValidator : AbstractValidator<MailkitSmt
         RuleFor(x => x.Server).NotEmpty();
         RuleFor(x => x.Port).GreaterThan(0);
         RuleFor(x => x.SocketOptions).IsInEnum();
-        RuleFor(x => x.Timeout).GreaterThan(TimeSpan.Zero);
+        // SmtpClient.Timeout is set from (int)Timeout.TotalMilliseconds; cap it to avoid int overflow.
+        RuleFor(x => x.Timeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromMilliseconds(int.MaxValue));
         RuleFor(x => x.MaxPoolSize).GreaterThanOrEqualTo(0);
     }
 }

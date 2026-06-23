@@ -34,7 +34,7 @@ public static class SetupDevEmail
             Argument.IsNotNullOrEmpty(filePath);
 
             setup.RegisterDefaultProvider(services =>
-                services.AddSingleton<IEmailSender>(new DevEmailSender(filePath))
+                services.AddSingleton<IEmailSender>(_ => new DevEmailSender(filePath))
             );
 
             return setup;
@@ -74,7 +74,7 @@ public static class SetupDevEmail
             var name = instance.Name;
 
             instance.RegisterProvider(services =>
-                services.AddKeyedSingleton<IEmailSender>(name, new DevEmailSender(filePath))
+                services.AddKeyedSingleton<IEmailSender>(name, (_, _) => new DevEmailSender(filePath))
             );
 
             return instance;

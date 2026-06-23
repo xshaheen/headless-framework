@@ -1,6 +1,6 @@
 # Headless.Tus
 
-Base dependency that wires `tusdotnet` into the ASP.NET Core pipeline. Contains no store; exists to share the `tusdotnet` dependency and Headless hosting infrastructure across TUS packages.
+Base dependency shared by all Headless TUS store packages. Contains no code and no store; it exists only to pin and share the `tusdotnet` and `Headless.Hosting` package references so every TUS provider aligns on one version.
 
 ## Problem Solved
 
@@ -9,7 +9,7 @@ Provides a consistent `tusdotnet` integration point for all TUS store packages s
 ## Key Features
 
 - Shared `tusdotnet` dependency (all TUS packages reference this one)
-- `Headless.Hosting` wiring for ASP.NET Core middleware
+- Shared `Headless.Hosting` reference so TUS providers align on one hosting baseline
 
 ## Installation
 

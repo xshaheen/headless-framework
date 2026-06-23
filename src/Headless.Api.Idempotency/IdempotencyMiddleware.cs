@@ -19,7 +19,7 @@ using Microsoft.Extensions.Primitives;
 namespace Headless.Api;
 
 internal sealed partial class IdempotencyMiddleware(
-    IOptionsSnapshot<IdempotencyOptions> optionsSnapshot,
+    IOptionsMonitor<IdempotencyOptions> optionsMonitor,
     ICache cache,
     ICurrentTenant currentTenant,
     ICurrentUser currentUser,
@@ -59,7 +59,9 @@ internal sealed partial class IdempotencyMiddleware(
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
         var ct = cancellationTokenProvider.Token;
-        var appOptions = optionsSnapshot.Value;
+        // IOptionsMonitor.CurrentValue is a cached singleton read that still observes reloads, avoiding the
+        // per-request options rebuild + FluentValidation pass that IOptionsSnapshot.Value forces per scope.
+        var appOptions = optionsMonitor.CurrentValue;
 
         // Read the idempotency-key header using the app-level HeaderName *before* resolving
         // endpoint metadata. HeaderName overrides via WithIdempotency are deliberately ignored —
@@ -682,7 +684,7 @@ internal sealed partial class IdempotencyMiddleware(
         }
 
         // Clone + merge per request. A static cache keyed by metadata captured `appOptions` from
-        // the first observation, which silently ignored subsequent IOptionsSnapshot reloads for
+        // the first observation, which silently ignored subsequent IOptionsMonitor reloads for
         // endpoints with WithIdempotency(...) while plain endpoints honored reloads — an
         // asymmetric drift that was very hard to debug. Cloning per request costs a struct copy
         // plus two HashSet allocations (Methods, ReplayHeaderAllowlist), well below request-flow

@@ -9,8 +9,10 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Emails.Aws.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Emails.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Emails.Core\Headless.Emails.Core.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
 </Project>

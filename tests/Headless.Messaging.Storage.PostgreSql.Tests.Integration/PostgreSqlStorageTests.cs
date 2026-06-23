@@ -154,7 +154,8 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
-            NodeMembership
+            NodeMembership,
+            NullLogger<PostgreSqlDataStorage>.Instance
         );
     }
 

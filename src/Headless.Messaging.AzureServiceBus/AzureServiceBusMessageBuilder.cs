@@ -8,7 +8,9 @@ internal static class AzureServiceBusMessageBuilder
 {
     public static ServiceBusMessage Build(TransportMessage transportMessage, bool enableSessions)
     {
-        var message = new ServiceBusMessage(transportMessage.Body.ToArray())
+        // BinaryData.FromBytes wraps the ReadOnlyMemory without copying; ServiceBusMessage(byte[]) would force a
+        // full payload copy via Body.ToArray() on every publish.
+        var message = new ServiceBusMessage(BinaryData.FromBytes(transportMessage.Body))
         {
             MessageId = transportMessage.GetId(),
             Subject = transportMessage.GetName(),

@@ -229,6 +229,9 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
+- `Version` is validated non-empty and at most 20 characters: the SQL storage providers persist it as a literal into a `VARCHAR(20)`/`nvarchar(20)` column, so an over-long value is rejected at startup instead of failing every outbox insert.
+- `RetryBatchSize` (default 200) caps the retry-pickup batch; `SchedulerBatchSize` (default 1,000) caps the delayed/queued scheduler batch.
+
 ## Middleware
 
 Both sides of the pipeline support cross-cutting middleware via `IConsumeMiddleware<TContext>` and `IPublishMiddleware<TContext>`. Middleware composes russian-doll style around the handler or publisher: code before `await next()` runs before the inner ring, and code after it runs after successful inner work.

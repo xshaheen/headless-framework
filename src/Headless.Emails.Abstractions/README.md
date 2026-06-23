@@ -4,16 +4,16 @@ Defines the unified interface for sending emails across different providers (Azu
 
 ## Problem Solved
 
-Provides a provider-agnostic email sending API, enabling switching between email providers without changing application code.
+Provides a provider-agnostic email sending API for switching email providers without changing application code.
 
 ## Key Features
 
 - `IEmailSender` — core interface with a single `SendAsync(SendSingleEmailRequest, CancellationToken)` method returning `ValueTask<SendSingleEmailResponse>`
 - `IEmailSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)`. Backed by the container's keyed `IEmailSender` registrations
-- `SendSingleEmailRequest` — immutable record with required `From`, `Destination`, `Subject`; optional `MessageHtml`, `MessageText`, `Attachments`
-- `EmailRequestAddress` — wraps email address + optional display name; supports implicit conversion from `string`
-- `EmailRequestDestination` — groups `ToAddresses` (required), `CcAddresses`, `BccAddresses`
-- `EmailRequestAttachment` — `Name` + `File` (byte array)
+- `SendSingleEmailRequest` — immutable record with required `From`, `Destination`, `Subject`; optional `MessageHtml`, `MessageText`, `Attachments`. `EnsureHasBody()` throws `InvalidOperationException` when neither body is set (called by every sender)
+- `EmailRequestAddress` — sealed record wrapping email address + optional display name; supports implicit conversion from `string`
+- `EmailRequestDestination` — sealed record grouping `ToAddresses` (required), `CcAddresses`, `BccAddresses`
+- `EmailRequestAttachment` — sealed record: `Name` + `File` (`ReadOnlyMemory<byte>`) + optional `ContentType`
 - `SendSingleEmailResponse` — closed result type with `Success` bool and nullable `FailureError` string
 
 ## Installation

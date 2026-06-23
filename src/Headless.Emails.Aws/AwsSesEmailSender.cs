@@ -3,6 +3,7 @@
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using Microsoft.Extensions.Logging;
+using MimeKit;
 
 namespace Headless.Emails.Aws;
 
@@ -64,6 +65,8 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
         CancellationToken cancellationToken = default
     )
     {
+        request.EnsureHasBody();
+
         if (request.Attachments.Count == 0)
         {
             var simpleRequest = _MapToSendEmailRequest(request);
@@ -72,11 +75,20 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
         }
 
         using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).ConfigureAwait(false);
+
+        // SES delivers a raw message to the envelope recipients in Destination. Set them explicitly
+        // (To/Cc/Bcc) and hide the Bcc header from the serialized MIME so BCC recipients are never
+        // disclosed to the other recipients regardless of how SES treats raw Bcc headers.
+        var formatOptions = FormatOptions.Default.Clone();
+        formatOptions.HiddenHeaders.Add(HeaderId.Bcc);
+
         await using var memoryStream = new MemoryStream();
-        await mimeMessage.WriteToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
+        await mimeMessage.WriteToAsync(formatOptions, memoryStream, cancellationToken).ConfigureAwait(false);
 
         var rawRequest = new SendEmailRequest
         {
+            FromEmailAddress = request.From.ToString(),
+            Destination = _MapToDestination(request),
             Content = new EmailContent { Raw = new RawMessage { Data = memoryStream } },
         };
 
@@ -90,26 +102,11 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
         CancellationToken cancellationToken
     )
     {
-        SendEmailResponse response;
-
-        try
-        {
-            response = await ses.SendEmailAsync(request, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-            when (ex
-                    is MessageRejectedException
-                        or BadRequestException
-                        or NotFoundException
-                        or AccountSuspendedException
-                        or MailFromDomainNotVerifiedException
-                        or LimitExceededException
-                        or TooManyRequestsException
-                        or SendingPausedException
-            )
-        {
-            throw;
-        }
+        // The SES SDK throws strongly-typed exceptions (MessageRejectedException, BadRequestException,
+        // NotFoundException, AccountSuspendedException, MailFromDomainNotVerifiedException,
+        // LimitExceededException, TooManyRequestsException, SendingPausedException) for error
+        // responses; those propagate to the caller as documented on SendAsync.
+        var response = await ses.SendEmailAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (response.HttpStatusCode.IsSuccessStatusCode())
         {
@@ -131,16 +128,8 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
     {
         return new SendEmailRequest
         {
-            ConfigurationSetName = null,
-            ReplyToAddresses = null,
-            FeedbackForwardingEmailAddress = null,
             FromEmailAddress = request.From.ToString(),
-            Destination = new Destination
-            {
-                ToAddresses = request.Destination.ToAddresses.Select(address => address.ToString()).ToList(),
-                CcAddresses = request.Destination.CcAddresses.Select(address => address.ToString()).ToList(),
-                BccAddresses = request.Destination.BccAddresses.Select(address => address.ToString()).ToList(),
-            },
+            Destination = _MapToDestination(request),
             Content = new EmailContent
             {
                 Simple = new Message
@@ -157,6 +146,16 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
                     },
                 },
             },
+        };
+    }
+
+    private static Destination _MapToDestination(SendSingleEmailRequest request)
+    {
+        return new Destination
+        {
+            ToAddresses = request.Destination.ToAddresses.Select(address => address.ToString()).ToList(),
+            CcAddresses = request.Destination.CcAddresses.Select(address => address.ToString()).ToList(),
+            BccAddresses = request.Destination.BccAddresses.Select(address => address.ToString()).ToList(),
         };
     }
 

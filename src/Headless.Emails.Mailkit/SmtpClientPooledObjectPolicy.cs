@@ -18,8 +18,10 @@ internal sealed class SmtpClientPooledObjectPolicy(IOptionsMonitor<MailkitSmtpOp
 
     public bool Return(SmtpClient client)
     {
-        // Discard disconnected or faulted clients
-        if (!client.IsConnected)
+        // Discard disconnected, faulted, or connected-but-unauthenticated clients so a pooled
+        // connection is never reused in a state that would skip authentication on the next send
+        // (e.g. after an AuthenticationException leaves the client connected but not authenticated).
+        if (!client.IsConnected || (options.CurrentValue.HasCredentials && !client.IsAuthenticated))
         {
             client.Dispose();
             return false;

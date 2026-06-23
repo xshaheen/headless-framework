@@ -40,7 +40,7 @@ internal sealed class CacheRemoveIfEqualScriptDefinition : RedisScriptDefinition
               local currentIsNull = flags % 2 == 1
               local len = string.len(currentVal)
 
-              -- Skip the optional v2 sections in frame layout order (sliding 0x08, eager-refresh 0x10,
+              -- Skip the optional v3 sections in frame layout order (sliding 0x08, eager-refresh 0x10,
               -- last-modified 0x40 fixed 8B each, then etag 0x20 and tags 0x80 as u16le-length-prefixed
               -- UTF-8) to find where the value segment starts.
               local valueStart = headerLen

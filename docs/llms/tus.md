@@ -73,12 +73,12 @@ app.MapTus("/files", async _ => new DefaultTusConfiguration
 - `TusAzureStore` must be constructed manually (`new TusAzureStore(blobServiceClient, options)`); it is not registered automatically in DI. Construct it where you build `DefaultTusConfiguration`.
 - For multi-instance deployments, always add `Headless.Tus.DistributedLocks` and call `services.AddDistributedLockTusLockProvider()`. Without it, concurrent PATCH requests for the same file from different nodes can corrupt block lists.
 - The distributed lock add-on requires `IDistributedLock` in DI. Register a Headless distributed lock provider first, for example: `services.AddHeadlessDistributedLocks(setup => setup.UseRedis())`.
-- Set `FileLockProvider` in your `DefaultTusConfiguration` factory to the `ITusFileLockProvider` resolved from DI — it is not wired automatically.
-- `TusAzureStore` also ships `AzureBlobFileLockProvider` (Azure Blob lease-based locking). Use it only for single-region, single-storage-account deployments. Prefer `Headless.Tus.DistributedLocks` for cross-region or multi-store scenarios.
-- `TusAzureStoreOptions.LeaseDuration` must be `Timeout.InfiniteTimeSpan` or between 15 seconds and 60 minutes — anything else fails validation.
-- `BlobMaxChunkSize` must be ≤ 100 MB (Azure block blob limit). The store auto-selects chunk size from `BlobDefaultChunkSize` vs `BlobMaxChunkSize` based on declared upload length.
+- Set `FileLockProvider` in your `DefaultTusConfiguration` factory to the `ITusFileLockProvider` resolved from DI — it is not wired automatically. A single-node deployment can omit it and use tusdotnet's in-process lock.
+- `BlobMaxChunkSize` must be ≤ 100 MB (Azure block blob limit), and `BlobDefaultChunkSize` must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. The store auto-selects chunk size from `BlobDefaultChunkSize` vs `BlobMaxChunkSize` based on declared upload length.
+- An upload is capped at Azure's 50,000 committed blocks; a too-small chunk size on a very large upload throws a `TusStoreException` at commit time. Increase `BlobDefaultChunkSize`/`BlobMaxChunkSize` to use fewer, larger blocks.
+- User `Upload-Metadata` keys are normalized to Azure's letter/digit/underscore charset. Keys that collide after normalization, or that collide with reserved `tus_*` keys, are rejected with a `TusStoreException`.
 - Checksum verification (SHA1, SHA256, SHA512, MD5) is handled automatically when the TUS client sends `Upload-Checksum` headers. Blocks are staged but not committed until checksum passes; mismatched blocks are left uncommitted (Azure auto-removes them after 7 days).
-- The concatenation extension uses server-side block copy (`StageBlockFromUri`) when available, falling back to streaming on emulators (Azurite returns HTTP 501).
+- The concatenation extension uses server-side block copy (`StageBlockFromUri`) when available, falling back to streaming when it is not — Azurite returns HTTP 501, and a private container returns HTTP 403 for the bare source URI (no SAS).
 - `CreateContainerIfNotExists = true` calls `CreateIfNotExists` synchronously in the `TusAzureStore` constructor — ensure the `BlobServiceClient` has container-create permissions before constructing the store.
 - `ITusAzureBlobHttpHeadersProvider` lets you inject custom `Content-Type` / cache headers per file. Default sets `application/octet-stream`.
 
@@ -107,12 +107,11 @@ This is why `GetUploadOffsetAsync` sums committed block sizes, not the blob's `C
 
 ### Concurrent PATCH Safety
 
-The TUS protocol allows only one concurrent PATCH for a given file, but enforcing this across multiple app instances requires explicit locking. Two lock strategies are available:
+The TUS protocol allows only one concurrent PATCH for a given file, but enforcing this across multiple app instances requires explicit locking. Use **`DistributedLockTusLockProvider`** (from `Headless.Tus.DistributedLocks`): it wraps `IDistributedLock` with `AcquireTimeout = TimeSpan.Zero` and auto-extending leases. Non-blocking — tusdotnet receives `false` from `Lock()` and returns `409 Conflict` immediately, and a crashed holder's lease expires so the file is not stuck.
 
-- **`AzureBlobFileLockProvider`** (included in `Headless.Tus.Azure`): acquires an Azure Blob Lease (15 s–60 min or infinite) on the upload blob. Requires the lease-holder to renew; fails if the blob does not yet exist.
-- **`DistributedLockTusLockProvider`** (from `Headless.Tus.DistributedLocks`): wraps `IDistributedLock` with `AcquireTimeout = TimeSpan.Zero` and `TimeUntilExpires = Timeout.InfiniteTimeSpan`. Non-blocking — tusdotnet receives `false` from `Lock()` and returns `409 Conflict` immediately.
+Register it with `services.AddDistributedLockTusLockProvider()` after registering an `IDistributedLock` backend (Redis, SQL Server, …). A single-node deployment can omit it and rely on tusdotnet's in-process lock.
 
-Use `DistributedLockTusLockProvider` when you need provider-agnostic locking (Redis, in-memory, etc.) or cannot guarantee the blob exists before the first PATCH.
+> The store writes blocks to the upload blob without holding an Azure blob lease on it, so do **not** lock that blob directly — a lease on the upload blob would make the store's own writes fail with `412`. Coordinate PATCHes through `DistributedLockTusLockProvider` (a separate lock resource) instead.
 
 ---
 
@@ -173,7 +172,6 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
   - **Checksum** (`ITusChecksumStore`) — SHA1, SHA256, SHA512, MD5; constant-time comparison; deferred block commit
   - **Termination** (`ITusTerminationStore`) — `DeleteFileAsync`
   - **Readable** (`ITusReadableStore`) — `GetFileAsync` returns `ITusFile`
-- `AzureBlobFileLockProvider` / `AzureBlobFileLock` — Azure Blob Lease-based `ITusFileLockProvider` for single-region deployments
 - `ITusAzureBlobHttpHeadersProvider` / `DefaultTusAzureBlobHttpHeadersProvider` — per-file HTTP header customization (Content-Type, cache control)
 - Adaptive chunk sizing: automatic selection between `BlobDefaultChunkSize` (4 MB) and `BlobMaxChunkSize` (100 MB) based on declared upload size
 - Pooled buffer stream splitting via `ArrayPool<byte>` to minimize allocations during PATCH ingestion
@@ -182,7 +180,7 @@ Provides `TusAzureStore`, a complete `ITusStore` implementation that backs resum
 
 **Block blob chunking and checksum deferral.** TUS Checksum verification happens _after_ all PATCH data is staged. `TusAzureStore` stages blocks during `AppendDataAsync` but defers the commit list until `VerifyChecksumAsync` succeeds. The staged block IDs and pre-calculated checksum are written to blob metadata (`tus_last_chunk_blocks`, `tus_last_chunk_checksum`). On success, blocks are committed atomically together with metadata update. On mismatch, blocks are left uncommitted and Azure auto-purges them within 7 days. This means `GetUploadOffsetAsync` reads committed block sizes — not the blob `ContentLength` property — to report accurate offset to resuming clients.
 
-**Server-side concatenation.** Final-file creation uses `StageBlockFromUri` to copy block ranges across blobs without moving data through the application server. Azurite returns HTTP 501 for this API; the store detects this and falls back to download-then-re-upload streaming automatically.
+**Server-side concatenation.** Final-file creation uses `StageBlockFromUri` to copy block ranges across blobs without moving data through the application server. When server-side copy is unavailable — Azurite returns HTTP 501, and a private container returns HTTP 403 because the source blob is not readable via its bare URI (no SAS) — the store falls back to download-then-re-upload streaming automatically.
 
 **Constructor-time container init.** When `CreateContainerIfNotExists = true`, `_containerClient.CreateIfNotExists(ContainerPublicAccessType)` is called synchronously in the constructor. If the `BlobServiceClient` lacks container-create permission, construction fails.
 
@@ -227,29 +225,24 @@ app.MapTus("/files", async _ => new DefaultTusConfiguration
 app.Run();
 ```
 
-With Azure Blob file locking (single-region):
+Serializing concurrent PATCHes across nodes (multi-node deployments) with `Headless.Tus.DistributedLocks`:
 
 ```csharp
-using Headless.Tus.Locks;
-using Headless.Tus.Options;
+using Headless.Tus;            // AddDistributedLockTusLockProvider
 using tusdotnet.Interfaces;
 
-var options = new TusAzureStoreOptions
-{
-    ContainerName = "uploads",
-    BlobPrefix = "tus/",
-    LeaseDuration = Timeout.InfiniteTimeSpan   // infinite or 15 s–60 min
-};
+// Register an IDistributedLock backend (Redis, SQL Server, …) first, then the TUS lock adapter:
+builder.Services.AddDistributedLockTusLockProvider();
 
-var lockProvider = new AzureBlobFileLockProvider(blobServiceClient, options);
-
-app.MapTus("/files", async _ => new DefaultTusConfiguration
+app.MapTus("/files", httpContext => Task.FromResult(new DefaultTusConfiguration
 {
     Store = tusStore,
     UrlPath = "/files",
-    FileLockProvider = lockProvider
-});
+    FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>()
+}));
 ```
+
+A single-node deployment can omit the lock provider and rely on tusdotnet's in-process lock.
 
 With custom HTTP headers per upload:
 
@@ -288,9 +281,8 @@ var store = new TusAzureStore(
 | `CreateContainerIfNotExists` | `true` | Calls `CreateIfNotExists` in the constructor. |
 | `ContainerPublicAccessType` | `PublicAccessType.None` | Access type used when creating the container. |
 | `EnableChunkSplitting` | `true` | Splits large PATCH bodies into multiple Azure blocks. |
-| `BlobDefaultChunkSize` | `4 MB` | Default block size for medium uploads. |
+| `BlobDefaultChunkSize` | `4 MB` | Default block size for medium uploads. Must be 1 byte–100 MB and not exceed `BlobMaxChunkSize`. |
 | `BlobMaxChunkSize` | `100 MB` | Block size used for uploads ≥ 100 MB. |
-| `LeaseDuration` | `Timeout.InfiniteTimeSpan` | Used by `AzureBlobFileLockProvider`. Must be infinite or 15 s–60 min. |
 
 Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileSize)`; uploads 10–100 MB use `BlobDefaultChunkSize`; uploads ≥ 100 MB use `BlobMaxChunkSize`.
 
@@ -305,7 +297,7 @@ Chunk size selection logic: uploads < 10 MB use `min(BlobDefaultChunkSize, fileS
 ## Side Effects
 
 - Synchronously calls `BlobContainerClient.CreateIfNotExists` during `TusAzureStore` construction when `CreateContainerIfNotExists = true`.
-- No DI registrations — `TusAzureStore` and `AzureBlobFileLockProvider` are constructed manually.
+- No DI registrations — `TusAzureStore` is constructed manually. For cross-node PATCH locking, register `Headless.Tus.DistributedLocks`.
 
 ---
 

@@ -15,6 +15,7 @@ namespace Headless.Tus;
 /// PATCH requests across multiple application nodes. Use
 /// <c>SetupTusDistributedLock.AddDistributedLockTusLockProvider</c> for convenient registration.
 /// </remarks>
+[PublicAPI]
 public sealed class DistributedLockTusLockProvider(IDistributedLock distributedLockProvider) : ITusFileLockProvider
 {
     /// <summary>

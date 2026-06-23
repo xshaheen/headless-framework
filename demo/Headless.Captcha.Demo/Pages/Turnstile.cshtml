@@ -1,0 +1,24 @@
+@page
+@model TurnstileModel
+@{
+    ViewData["Title"] = "Turnstile";
+}
+
+<h1>Cloudflare Turnstile (default provider)</h1>
+
+<pre>@Model.Result</pre>
+
+<form method="POST">
+    <input id="token" name="token" type="hidden"/>
+    <turnstile-widget callback="onToken" theme="auto"/>
+    <button id="submit" type="submit" disabled="disabled">Verify</button>
+</form>
+
+<turnstile-script/>
+
+<script>
+    function onToken(token) {
+        document.getElementById("token").value = token;
+        document.getElementById("submit").disabled = false;
+    }
+</script>

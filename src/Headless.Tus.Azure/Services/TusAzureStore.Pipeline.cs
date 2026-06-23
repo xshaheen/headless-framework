@@ -56,7 +56,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         // Get checksum info if provided (from request headers via tusdotnet extension method)
         var checksumInfo = pipeReader.GetUploadChecksumInfo();
-        using var hasher = checksumInfo is not null ? _CreateHashAlgorithm(checksumInfo.Algorithm) : null;
+        using var hasher = checksumInfo is not null ? _CreateHasher(checksumInfo.Algorithm) : null;
 
         if (checksumInfo is not null && hasher is null)
         {
@@ -69,6 +69,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         var optimalChunkSize = _CalculateOptimalChunkSize(azureFile.Metadata.UploadLength);
         var nextBlockNumber = committedBlocks.Count;
+        var blockToken = _NewBlockToken();
         var bytesWrittenThisRequest = 0L;
         var chunkBlockIds = new List<string>();
 
@@ -106,7 +107,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                     }
 
                     // Stage the block
-                    var blockId = _GenerateBlockId(nextBlockNumber++);
+                    var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
                     await using var chunkStream = new ReadOnlySequenceStream(chunk);
                     await blockBlobClient
                         .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)
@@ -129,14 +130,12 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
             await pipeReader.CompleteAsync().ConfigureAwait(false);
 
-            // Finalize hash if checksum verification is needed
-            hasher?.TransformFinalBlock([], 0, 0);
-
             // ATOMIC: Commit blocks + update metadata
             if (hasher is null)
             {
                 // No checksum - commit immediately
                 List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
+                _EnsureWithinBlockLimit(allBlockIds.Count);
                 var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
                 await blockBlobClient
                     .CommitBlockListAsync(allBlockIds, options, cancellationToken)
@@ -144,9 +143,11 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             }
             else
             {
-                // With checksum - store chunk info for later verification
+                // With checksum - store chunk info for later verification. The digest is prefixed with the
+                // algorithm so VerifyChecksumAsync can confirm the requested algorithm matches the staged one.
                 azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
-                azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.Hash ?? []);
+                azureFile.Metadata.LastChunkChecksum =
+                    $"{checksumInfo!.Algorithm}:{Convert.ToBase64String(hasher.GetHashAndReset())}";
                 await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
                 _logger.StoredPipelineChunkMetadata(fileId, chunkBlockIds.Count);
@@ -168,29 +169,33 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             }
 #pragma warning restore ERP022
 
-            if (e is OperationCanceledException or TaskCanceledException)
-            {
-                _logger.UploadOperationCanceled(fileId);
-            }
-            else
+            if (e is not OperationCanceledException and not TaskCanceledException)
             {
                 throw;
             }
-#pragma warning disable ERP022 // Justification: Swallowing exceptions from cleanup code to not hide the original exception.
-        }
+
+            _logger.UploadOperationCanceled(fileId);
+
+            // CommitBlockListAsync / SetMetadata run only AFTER the read loop, so a cancellation mid-PATCH
+            // committed nothing durable. Report 0 rather than the staged-but-uncommitted byte count, which
+            // would otherwise tell the caller that bytes were persisted when GetUploadOffsetAsync (committed
+            // blocks only) will report the old offset. The staged blocks are discarded by Azure's block GC.
+#pragma warning disable ERP022 // Cancellation is intentionally observed and handled here, not swallowed silently.
+            return 0;
 #pragma warning restore ERP022
+        }
 
         return bytesWrittenThisRequest;
     }
 
     /// <summary>
-    /// Hashes a <see cref="ReadOnlySequence{T}"/> by processing each segment.
+    /// Hashes a <see cref="ReadOnlySequence{T}"/> by feeding each segment's span to the incremental hash.
     /// </summary>
-    private static void _HashSequence(HashAlgorithm hasher, ReadOnlySequence<byte> sequence)
+    private static void _HashSequence(IncrementalHash hasher, ReadOnlySequence<byte> sequence)
     {
         foreach (var segment in sequence)
         {
-            hasher.TransformBlock(segment.ToArray(), 0, segment.Length, outputBuffer: null, 0);
+            hasher.AppendData(segment.Span);
         }
     }
 

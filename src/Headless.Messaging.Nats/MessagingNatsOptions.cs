@@ -73,6 +73,12 @@ public sealed class MessagingNatsOptions
     >? CustomHeadersBuilder { get; set; }
 
     /// <summary>
+    /// The maximum time to wait for a JetStream stream create-or-update during consumer startup
+    /// (in <c>FetchMessageNamesAsync</c>). Defaults to <c>30 seconds</c>.
+    /// </summary>
+    public TimeSpan StreamCreateTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// A function that derives the JetStream stream name from a NATS subject. The default
     /// implementation takes the first dot-separated segment (for example <c>"orders"</c> from
     /// <c>"orders.created"</c>). Override this when your stream naming convention differs.
@@ -92,5 +98,6 @@ internal sealed class MessagingNatsOptionsValidator : AbstractValidator<Messagin
     {
         RuleFor(x => x.Servers).NotEmpty();
         RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
+        RuleFor(x => x.StreamCreateTimeout).GreaterThan(TimeSpan.Zero);
     }
 }

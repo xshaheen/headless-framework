@@ -27,13 +27,18 @@ internal sealed class AmazonSqsQueueTransport(
             var queueName = message.GetName().NormalizeForSqsQueueName();
             var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
             var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
-            var attributes = message
-                .Headers.Where(x => x.Value != null)
-                .ToDictionary(
-                    x => x.Key,
-                    x => new MessageAttributeValue { StringValue = x.Value, DataType = "String" },
-                    StringComparer.Ordinal
-                );
+            var attributes = new Dictionary<string, MessageAttributeValue>(
+                message.Headers.Count,
+                StringComparer.Ordinal
+            );
+
+            foreach (var (key, value) in message.Headers)
+            {
+                if (value is not null)
+                {
+                    attributes[key] = new MessageAttributeValue { StringValue = value, DataType = "String" };
+                }
+            }
 
             if (attributes.Count > _MaxMessageAttributes)
             {

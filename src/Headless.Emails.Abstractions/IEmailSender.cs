@@ -12,6 +12,7 @@ namespace Headless.Emails;
 /// (for example SMTP authentication failure or AWS SES hard rejections) — see each
 /// implementation for the specific exceptions that propagate.
 /// </remarks>
+[PublicAPI]
 public interface IEmailSender
 {
     /// <summary>
