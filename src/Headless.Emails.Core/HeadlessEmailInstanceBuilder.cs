@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -28,6 +29,7 @@ public sealed class HeadlessEmailInstanceBuilder
     /// <param name="action">The provider's deferred service registration action.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">Thrown when a provider is already registered for this instance.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
     public void RegisterProvider(Action<IServiceCollection> action)
     {
         Argument.IsNotNull(action);

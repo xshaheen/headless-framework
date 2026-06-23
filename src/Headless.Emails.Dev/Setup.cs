@@ -47,7 +47,7 @@ public static class SetupDevEmail
         /// <returns>The same builder for chaining.</returns>
         public HeadlessEmailsSetupBuilder UseNoop()
         {
-            setup.RegisterDefaultProvider(services => services.AddSingleton<IEmailSender, NoopEmailSender>());
+            setup.RegisterDefaultProvider(static services => services.AddSingleton<IEmailSender, NoopEmailSender>());
 
             return setup;
         }

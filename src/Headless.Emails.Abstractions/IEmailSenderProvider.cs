@@ -13,13 +13,13 @@ public interface IEmailSenderProvider
     /// <summary>Gets the email sender registered under <paramref name="name"/>.</summary>
     /// <param name="name">The sender instance name.</param>
     /// <returns>The resolved email sender.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/> or empty.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/>, empty, or whitespace.</exception>
     /// <exception cref="InvalidOperationException">Thrown when no sender is registered under <paramref name="name"/>.</exception>
     IEmailSender GetSender(string name);
 
     /// <summary>Gets the email sender registered under <paramref name="name"/>, or <see langword="null"/> when none is registered.</summary>
     /// <param name="name">The sender instance name.</param>
     /// <returns>The resolved email sender, or <see langword="null"/>.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/> or empty.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/>, empty, or whitespace.</exception>
     IEmailSender? GetSenderOrNull(string name);
 }

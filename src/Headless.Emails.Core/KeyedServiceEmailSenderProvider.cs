@@ -13,7 +13,7 @@ internal sealed class KeyedServiceEmailSenderProvider(IServiceProvider servicePr
 {
     public IEmailSender GetSender(string name)
     {
-        Argument.IsNotNullOrEmpty(name);
+        Argument.IsNotNullOrWhiteSpace(name);
 
         return serviceProvider.GetKeyedService<IEmailSender>(name)
             ?? throw new InvalidOperationException(
@@ -25,7 +25,7 @@ internal sealed class KeyedServiceEmailSenderProvider(IServiceProvider servicePr
 
     public IEmailSender? GetSenderOrNull(string name)
     {
-        Argument.IsNotNullOrEmpty(name);
+        Argument.IsNotNullOrWhiteSpace(name);
 
         return serviceProvider.GetKeyedService<IEmailSender>(name);
     }

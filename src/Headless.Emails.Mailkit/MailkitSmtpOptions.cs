@@ -8,6 +8,11 @@ namespace Headless.Emails.Mailkit;
 /// <summary>
 /// Configuration options for the MailKit SMTP email sender.
 /// </summary>
+/// <remarks>
+/// Properties use <c>set</c> rather than <c>init</c> deliberately: the <c>UseMailkit(Action&lt;MailkitSmtpOptions&gt;)</c>
+/// overloads mutate an already-constructed instance inside the options delegate, which <c>init</c>-only setters
+/// disallow. Do not change these back to <c>init</c>.
+/// </remarks>
 public sealed class MailkitSmtpOptions
 {
     /// <summary>The SMTP server hostname or IP address.</summary>
