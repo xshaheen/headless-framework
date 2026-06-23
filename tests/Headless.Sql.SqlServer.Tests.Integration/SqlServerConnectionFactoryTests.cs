@@ -54,6 +54,11 @@ public sealed class SqlServerConnectionFactoryTests(SqlServerTestFixture fixture
         var sut = GetCurrent();
         var connection = await sut.GetOpenConnectionAsync(AbortToken);
         await using var command = connection.CreateCommand();
+        // Drop first so the test is idempotent against a reused container (the SQL Server fixture enables
+        // Testcontainers reuse). Mirrors the Postgres sibling's `DROP TABLE IF EXISTS test`.
+        command.CommandText = "DROP TABLE IF EXISTS test";
+        await command.ExecuteNonQueryAsync(AbortToken);
+
         command.CommandText = "CREATE TABLE test (id INT PRIMARY KEY, Name NVARCHAR(50))";
         await command.ExecuteNonQueryAsync(AbortToken);
 
