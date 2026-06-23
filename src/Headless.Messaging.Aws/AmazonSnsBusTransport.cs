@@ -35,13 +35,18 @@ internal sealed class AmazonSnsBusTransport(
                 // SNS requires a non-null message body; use empty string for empty bodies
                 var bodyJson = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
 
-                var attributes = message
-                    .Headers.Where(x => x.Value != null)
-                    .ToDictionary(
-                        x => x.Key,
-                        x => new MessageAttributeValue { StringValue = x.Value, DataType = "String" },
-                        StringComparer.Ordinal
-                    );
+                var attributes = new Dictionary<string, MessageAttributeValue>(
+                    message.Headers.Count,
+                    StringComparer.Ordinal
+                );
+
+                foreach (var (key, value) in message.Headers)
+                {
+                    if (value is not null)
+                    {
+                        attributes[key] = new MessageAttributeValue { StringValue = value, DataType = "String" };
+                    }
+                }
 
                 var request = new PublishRequest(arn, bodyJson) { MessageAttributes = attributes };
 
