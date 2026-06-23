@@ -13,6 +13,26 @@ namespace Headless.Serializer;
 /// intermediate array. Always use inside a <c>using</c> block so the rented array returns to the pool; the written
 /// span/memory is only valid until the next write or <see cref="Dispose"/>.
 /// </summary>
+/// <remarks>
+/// Two contract caveats for direct consumers, both deliberate trade-offs for the buffer-first hot path:
+/// <list type="bullet">
+/// <item>
+/// <description>
+/// <see cref="Advance"/> does <b>not</b> validate <c>count</c> (unlike <see cref="System.Buffers.ArrayBufferWriter{T}"/>):
+/// the caller must honor the <see cref="IBufferWriter{T}"/> contract and advance only by what
+/// <see cref="GetSpan"/>/<see cref="GetMemory"/> granted. Over-advancing corrupts the write index and surfaces later
+/// as an exception at <see cref="WrittenSpan"/>/<see cref="WrittenMemory"/> rather than at the offending call.
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// The pooled buffer is <b>not</b> zeroed when returned to the shared pool. Residual serialized bytes remain in the
+/// rented array until the next renter overwrites them. If you serialize sensitive payloads (tokens, PII) and require
+/// defense against in-process cross-pool disclosure, clear <see cref="WrittenSpan"/> before <see cref="Dispose"/>.
+/// </description>
+/// </item>
+/// </list>
+/// </remarks>
 [PublicAPI]
 public sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable
 {
