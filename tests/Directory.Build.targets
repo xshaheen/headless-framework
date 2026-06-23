@@ -4,4 +4,14 @@
     <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
     <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
   </PropertyGroup>
+
+  <!--
+    GitHubActionsTestLogger is injected by Headless.NET.Sdk.Test for the VSTest path.
+    Its 3.x package also self-registers an MTP hook, but the net10.0 package has no
+    compile asset, so CI builds generate SelfRegisteredExtensions.cs with an unresolved
+    GitHubActionsTestLogger.MtpIntegration reference. MTP already emits GitHub annotations.
+  -->
+  <ItemGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <TestingPlatformBuilderHook Remove="708E03CB-DB8B-4A7B-98A0-477BADDFEFBE" />
+  </ItemGroup>
 </Project>
