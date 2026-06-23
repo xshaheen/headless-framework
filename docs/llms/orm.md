@@ -241,27 +241,36 @@ If an entity emits domain events but `.AddDomainEvents()` was not called, or emi
 
 ```csharp
 // No-return form
-await dbContext.ExecuteTransactionAsync(async (ctx, ct) =>
-{
-    ctx.Products.Add(new Product { Name = "Widget" });
-    await ctx.SaveChangesAsync(ct);
-}, cancellationToken: ct);
+await dbContext.ExecuteTransactionAsync(
+    async (ctx, ct) =>
+    {
+        ctx.Products.Add(new Product { Name = "Widget" });
+        await ctx.SaveChangesAsync(ct);
+    },
+    cancellationToken: ct
+);
 
 // Return-value form
-var productId = await dbContext.ExecuteTransactionAsync(async (ctx, ct) =>
-{
-    var product = new Product { Name = "Widget" };
-    ctx.Products.Add(product);
-    await ctx.SaveChangesAsync(ct);
-    return product.Id;
-}, cancellationToken: ct);
+var productId = await dbContext.ExecuteTransactionAsync(
+    async (ctx, ct) =>
+    {
+        var product = new Product { Name = "Widget" };
+        ctx.Products.Add(product);
+        await ctx.SaveChangesAsync(ct);
+        return product.Id;
+    },
+    cancellationToken: ct
+);
 
 // Commit-coordinated (outbox/jobs drain atomically on commit)
-await dbContext.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
-{
-    ctx.Products.Add(new Product { Name = "Widget" });
-    await ctx.SaveChangesAsync(ct);
-}, cancellationToken: ct);
+await dbContext.ExecuteCoordinatedTransactionAsync(
+    async (ctx, ct) =>
+    {
+        ctx.Products.Add(new Product { Name = "Widget" });
+        await ctx.SaveChangesAsync(ct);
+    },
+    cancellationToken: ct
+);
 ```
 
 ### Configuration
@@ -272,15 +281,10 @@ Three named filters are applied automatically when entities implement the corres
 
 ```csharp
 // Read soft-deleted entities for admin purposes
-var all = await dbContext.Products
-    .IgnoreNotDeletedFilter()
-    .ToListAsync(ct);
+var all = await dbContext.Products.IgnoreNotDeletedFilter().ToListAsync(ct);
 
 // Read across tenants (host/admin path only)
-var allTenants = await dbContext.Products
-    .IgnoreMultiTenancyFilter()
-    .IgnoreNotDeletedFilter()
-    .ToListAsync(ct);
+var allTenants = await dbContext.Products.IgnoreMultiTenancyFilter().IgnoreNotDeletedFilter().ToListAsync(ct);
 ```
 
 Each bypass emits a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with caller member + file.
@@ -290,8 +294,7 @@ Each bypass emits a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with call
 Disabled by default. Opt in to scope writes to the current tenant:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .EntityFramework(ef => ef.GuardTenantWrites()));
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
 When enabled:
@@ -356,13 +359,10 @@ Custom processors are inserted before the terminal lifecycle and message-collect
 #### Value Converters
 
 ```csharp
-modelBuilder.Entity<Order>()
-    .Property(o => o.Total)
-    .HasConversion<MoneyValueConverter>();
+modelBuilder.Entity<Order>().Property(o => o.Total).HasConversion<MoneyValueConverter>();
 
 // Or apply globally across all matching CLR types:
-configurationBuilder.Properties<Money>()
-    .HaveConversion<MoneyValueConverter>();
+configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>();
 ```
 
 ### Dependencies
@@ -421,14 +421,15 @@ dotnet add package Headless.Orm.EntityFramework.Messaging
 
 ```csharp
 // Chain after AddHeadlessDbContextServices:
-builder.Services.AddHeadlessDbContextServices()
-    .AddDomainEvents()             // ILocalEventBus for in-process domain events
-    .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher — this package
+builder
+    .Services.AddHeadlessDbContextServices()
+    .AddDomainEvents() // ILocalEventBus for in-process domain events
+    .AddIntegrationEventOutbox(); // IHeadlessOutboxDispatcher — this package
 
 // A messaging setup with an outbox storage provider is required:
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.UseInMemory();           // broker
+    setup.UseInMemory(); // broker
     setup.UsePostgreSql(connectionString); // outbox storage
 });
 ```

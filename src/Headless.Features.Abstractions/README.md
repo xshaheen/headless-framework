@@ -53,11 +53,9 @@ public sealed class BillingService(IFeatureManager features)
 // Shorter form using scoped extension members
 public sealed class TenantOnboardingService(IFeatureManager features)
 {
-    public Task GrantPremiumAsync(string tenantId)
-        => features.GrantToTenantAsync("EnableReports", tenantId);
+    public Task GrantPremiumAsync(string tenantId) => features.GrantToTenantAsync("EnableReports", tenantId);
 
-    public Task RevokeAsync(string tenantId)
-        => features.RevokeFromTenantAsync("EnableReports", tenantId);
+    public Task RevokeAsync(string tenantId) => features.RevokeFromTenantAsync("EnableReports", tenantId);
 }
 ```
 

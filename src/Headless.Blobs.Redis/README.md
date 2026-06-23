@@ -30,8 +30,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // The IConnectionMultiplexer must be set in code — it cannot be bound from appsettings.json.
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseRedis(options =>
-        options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379")));
+    blobs.UseRedis(options => options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379"))
+);
 ```
 
 ## Configuration

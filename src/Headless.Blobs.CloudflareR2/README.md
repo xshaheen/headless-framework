@@ -38,12 +38,16 @@ builder.Services.AddHeadlessBlobs(blobs =>
     });
 
     // Named store — keyed IPresignedUrlBlobStorage("media") registered automatically.
-    blobs.AddNamed("media", instance => instance.UseCloudflareR2(options =>
-    {
-        options.AccountId = builder.Configuration["R2Media:AccountId"]!;
-        options.AccessKeyId = builder.Configuration["R2Media:AccessKeyId"]!;
-        options.SecretAccessKey = builder.Configuration["R2Media:SecretAccessKey"]!;
-    }));
+    blobs.AddNamed(
+        "media",
+        instance =>
+            instance.UseCloudflareR2(options =>
+            {
+                options.AccountId = builder.Configuration["R2Media:AccountId"]!;
+                options.AccessKeyId = builder.Configuration["R2Media:AccessKeyId"]!;
+                options.SecretAccessKey = builder.Configuration["R2Media:SecretAccessKey"]!;
+            })
+    );
 });
 ```
 

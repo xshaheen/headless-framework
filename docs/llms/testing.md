@@ -422,9 +422,7 @@ public sealed class CacheIntegrationTests : IClassFixture<HeadlessRedisFixture>
     [Fact]
     public async Task should_cache_value()
     {
-        var multiplexer = await ConnectionMultiplexer.ConnectAsync(
-            _redis.Container.GetConnectionString()
-        );
+        var multiplexer = await ConnectionMultiplexer.ConnectAsync(_redis.Container.GetConnectionString());
         var db = multiplexer.GetDatabase();
 
         await db.StringSetAsync("key", "value");
@@ -493,7 +491,8 @@ await sut.HandleAsync(input, AbortToken);
 // Wait for a specific message type, optionally filtered by predicate
 var recorded = await harness.WaitForPublished<UserCreatedMessage>(
     m => m.UserId == userId,
-    cancellationToken: AbortToken);
+    cancellationToken: AbortToken
+);
 
 var message = (UserCreatedMessage)recorded.Message;
 message.UserId.Should().Be(userId);

@@ -76,14 +76,21 @@ Start a card payment (legacy iframe flow):
 public sealed class CheckoutService(IPaymobCashInService cashIn)
 {
     public async Task<string> GetIframeUrlAsync(
-        decimal amount, PaymobCashInCustomerData customer, int cardIntegrationId, string iframeId, CancellationToken ct)
+        decimal amount,
+        PaymobCashInCustomerData customer,
+        int cardIntegrationId,
+        string iframeId,
+        CancellationToken ct
+    )
     {
-        var response = await cashIn.StartAsync(new PaymobCardCashInRequest(
-            Amount: amount,
-            Customer: customer,
-            CardIntegrationId: cardIntegrationId,
-            IframeSrc: iframeId
-        ));
+        var response = await cashIn.StartAsync(
+            new PaymobCardCashInRequest(
+                Amount: amount,
+                Customer: customer,
+                CardIntegrationId: cardIntegrationId,
+                IframeSrc: iframeId
+            )
+        );
         return response.IframeSrc;
     }
 }
@@ -96,13 +103,15 @@ public sealed class PayoutService(ICashOutService cashOut)
 {
     public async Task PayoutAsync(decimal amount, string accountNumber, string bankCode, CancellationToken ct)
     {
-        var result = await cashOut.DisburseAsync(new BankAccountCashOutRequest(
-            Amount: amount,
-            AccountNumber: accountNumber,
-            BankCode: bankCode,
-            Type: BankTransactionType.CashTransfer,
-            FullName: "Ahmed Ali"
-        ));
+        var result = await cashOut.DisburseAsync(
+            new BankAccountCashOutRequest(
+                Amount: amount,
+                AccountNumber: accountNumber,
+                BankCode: bankCode,
+                Type: BankTransactionType.CashTransfer,
+                FullName: "Ahmed Ali"
+            )
+        );
 
         if (!result.Succeeded)
         {

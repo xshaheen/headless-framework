@@ -29,18 +29,18 @@ dotnet add package Headless.Sms.Vodafone
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseVodafone(
-    builder.Configuration.GetSection("Sms:Vodafone")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseVodafone(builder.Configuration.GetSection("Sms:Vodafone")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseVodafone(options =>
-{
-    options.AccountId = "your-account-id";
-    options.Password = "your-password";
-    options.SecureHash = "your-secure-hash";
-    options.Sender = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseVodafone(options =>
+    {
+        options.AccountId = "your-account-id";
+        options.Password = "your-password";
+        options.SecureHash = "your-secure-hash";
+        options.Sender = "MyApp";
+    })
+);
 ```
 
 ## Configuration

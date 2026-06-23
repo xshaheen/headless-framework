@@ -85,8 +85,7 @@ Three named filters apply automatically when entities implement the correspondin
 ### Tenant Write Guard
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .EntityFramework(ef => ef.GuardTenantWrites()));
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 
 // Intentional host/admin writes bypass:
 var bypass = serviceProvider.GetRequiredService<ITenantWriteGuardBypass>();
@@ -104,18 +103,24 @@ Known gaps: attach-then-modify and raw SQL (`ExecuteSql`, stored procedures) are
 ### Resilient Transactions
 
 ```csharp
-await dbContext.ExecuteTransactionAsync(async (ctx, ct) =>
-{
-    ctx.Products.Add(new Product { Name = "Widget" });
-    await ctx.SaveChangesAsync(ct);
-}, cancellationToken: ct);
+await dbContext.ExecuteTransactionAsync(
+    async (ctx, ct) =>
+    {
+        ctx.Products.Add(new Product { Name = "Widget" });
+        await ctx.SaveChangesAsync(ct);
+    },
+    cancellationToken: ct
+);
 
 // Commit-coordinated (outbox/jobs drain atomically on commit)
-await dbContext.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
-{
-    ctx.Products.Add(new Product { Name = "Widget" });
-    await ctx.SaveChangesAsync(ct);
-}, cancellationToken: ct);
+await dbContext.ExecuteCoordinatedTransactionAsync(
+    async (ctx, ct) =>
+    {
+        ctx.Products.Add(new Product { Name = "Widget" });
+        await ctx.SaveChangesAsync(ct);
+    },
+    cancellationToken: ct
+);
 ```
 
 ### Custom Save Processors

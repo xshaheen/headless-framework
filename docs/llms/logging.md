@@ -36,8 +36,10 @@ Log.Logger = SerilogFactory.CreateBootstrapLoggerConfiguration().CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((ctx, services, cfg) =>
-    cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment));
+builder.Host.UseSerilog(
+    (ctx, services, cfg) =>
+        cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment)
+);
 ```
 
 ## Agent Instructions
@@ -105,12 +107,10 @@ try
     var builder = WebApplication.CreateBuilder(args);
 
     // 2. Replace with reloadable production logger
-    builder.Host.UseSerilog((ctx, services, cfg) =>
-        cfg.ConfigureReloadableLoggerConfiguration(
-            services,
-            ctx.Configuration,
-            ctx.HostingEnvironment
-        ));
+    builder.Host.UseSerilog(
+        (ctx, services, cfg) =>
+            cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment)
+    );
 
     var app = builder.Build();
     app.Run();
@@ -132,13 +132,10 @@ var serilogOptions = new SerilogOptions { WriteToFiles = false };
 
 Log.Logger = SerilogFactory.CreateBootstrapLoggerConfiguration(serilogOptions).CreateLogger();
 
-builder.Host.UseSerilog((ctx, services, cfg) =>
-    cfg.ConfigureReloadableLoggerConfiguration(
-        services,
-        ctx.Configuration,
-        ctx.HostingEnvironment,
-        serilogOptions
-    ));
+builder.Host.UseSerilog(
+    (ctx, services, cfg) =>
+        cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment, serilogOptions)
+);
 ```
 
 ### Configuration

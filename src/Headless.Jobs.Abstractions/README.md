@@ -78,20 +78,27 @@ None.
 When a `Headless.CommitCoordination` provider is registered (`services.AddPostgreSqlCommitCoordination()` or `services.AddSqlServerCommitCoordination()`), `ITimeJobManager.AddAsync` / `AddBatchAsync` and `ICronJobManager.AddAsync` / `AddBatchAsync` write the job row inside the caller's ambient transaction and defer dispatch, scheduler restart, notifications, and cron-cache invalidation to post-commit.
 
 ```csharp
-await db.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
-{
-    ctx.Orders.Add(order);
-    await ctx.SaveChangesAsync(ct);
-
-    await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct);
-
-    await timeJobManager.AddAsync(new TimeJobEntity
+await db.ExecuteCoordinatedTransactionAsync(
+    async (ctx, ct) =>
     {
-        Function = "SendOrderReminder",
-        ExecutionTime = DateTime.UtcNow.AddHours(24),
-        Request = JobsHelper.SerializeRequest(new { order.Id }),
-    }, ct);
-}, services, ct);
+        ctx.Orders.Add(order);
+        await ctx.SaveChangesAsync(ct);
+
+        await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct);
+
+        await timeJobManager.AddAsync(
+            new TimeJobEntity
+            {
+                Function = "SendOrderReminder",
+                ExecutionTime = DateTime.UtcNow.AddHours(24),
+                Request = JobsHelper.SerializeRequest(new { order.Id }),
+            },
+            ct
+        );
+    },
+    services,
+    ct
+);
 ```
 
 The coordinated path needs **two** separate registrations: `AddHeadlessCoordination(...)` (the `Headless.Coordination` distributed-lock/membership subsystem for the operational store) AND `Add{Provider}CommitCoordination()` (the `Headless.CommitCoordination` transactional scope subsystem). Similar names, different systems.

@@ -28,6 +28,7 @@ dotnet add package Headless.Slugs
 
 ```csharp
 var slug = Slug.Create("Hello World!");
+
 // Result: "hello-world"
 
 var slug2 = Slug.Create("مرحبا بالعالم");
@@ -42,7 +43,7 @@ var options = new SlugOptions
     Separator = "_",
     MaximumLength = 50,
     CasingTransformation = CasingTransformation.ToLowerCase,
-    CanEndWithSeparator = false
+    CanEndWithSeparator = false,
 };
 
 var slug = Slug.Create("Long Title That Needs Truncation", options);
@@ -57,8 +58,8 @@ var options = new SlugOptions
     {
         ["&"] = "and",
         ["@"] = "at",
-        ["+"] = "plus"
-    }
+        ["+"] = "plus",
+    },
 };
 
 var slug = Slug.Create("Tom & Jerry @ Home", options);
@@ -70,10 +71,10 @@ var slug = Slug.Create("Tom & Jerry @ Home", options);
 ```csharp
 var options = new SlugOptions
 {
-    Separator = "-",              // Default: "-"
-    MaximumLength = 100,          // Default: 80
-    CanEndWithSeparator = false,  // Default: false
-    CasingTransformation = CasingTransformation.ToLowerCase
+    Separator = "-", // Default: "-"
+    MaximumLength = 100, // Default: 80
+    CanEndWithSeparator = false, // Default: false
+    CasingTransformation = CasingTransformation.ToLowerCase,
 };
 ```
 

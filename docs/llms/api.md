@@ -215,12 +215,17 @@ public sealed class OrderService(IRequestContext context)
         var tenantId = context.Tenant.Id;
         var correlationId = context.CorrelationId;
 
-        return await _repository.CreateAsync(new Order
-        {
-            UserId = userId,
-            TenantId = tenantId,
-            CreatedAt = context.DateStarted
-        }, ct).ConfigureAwait(false);
+        return await _repository
+            .CreateAsync(
+                new Order
+                {
+                    UserId = userId,
+                    TenantId = tenantId,
+                    CreatedAt = context.DateStarted,
+                },
+                ct
+            )
+            .ConfigureAwait(false);
     }
 }
 ```
@@ -277,13 +282,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessProblemDetails();
 builder.Services.AddHeadlessApiResponseCompression();
-builder.Services.ConfigureHeadlessDefaultApi();   // Kestrel limits + HSTS + health check + routing
+builder.Services.ConfigureHeadlessDefaultApi(); // Kestrel limits + HSTS + health check + routing
 builder.Services.AddStatusCodesRewriterMiddleware();
 builder.Services.AddServerTimingMiddleware();
 
 var app = builder.Build();
 app.UseResponseCompression();
-app.UseStatusCodesRewriter();   // before UseExceptionHandler
+app.UseStatusCodesRewriter(); // before UseExceptionHandler
 app.UseExceptionHandler();
 app.UseServerTiming();
 app.MapHealthChecks("/health");
@@ -293,9 +298,9 @@ app.Run();
 HTTP tenant resolution (used internally by ServiceDefaults via `ResolveFromClaims()`):
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims())
-    .Authorization(auth => auth.RequireTenant()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Http(http => http.ResolveFromClaims()).Authorization(auth => auth.RequireTenant())
+);
 
 builder.Services.AddAuthorization(options =>
 {
@@ -311,9 +316,7 @@ app.UseHeadlessTenancy();
 app.UseAuthorization();
 
 // Opt out of tenant claim extraction for a single endpoint
-app.MapGet("/webhook", handler)
-   .SkipTenantResolution()
-   .AllowMissingTenant();
+app.MapGet("/webhook", handler).SkipTenantResolution().AllowMissingTenant();
 ```
 
 ### Configuration
@@ -440,7 +443,7 @@ Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register 
 builder.AddHeadless(configureServices: options =>
 {
     options.OpenTelemetry.Enabled = true;
-    options.OpenTelemetry.RecordException = true;         // record exceptions on spans (default: true)
+    options.OpenTelemetry.RecordException = true; // record exceptions on spans (default: true)
     // Tracing filter: null (default) skips /health and /alive via SkipOperationalEndpointFunc.
     // Set to a custom predicate to fully replace — compose SkipOperationalEndpointFunc to keep the default skip:
     //   options.OpenTelemetry.Filter = ctx => !options.OpenTelemetry.SkipOperationalEndpointFunc(ctx) && ...;
@@ -543,16 +546,13 @@ dotnet add package Headless.Api.DataProtection
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDataProtection()
-    .PersistKeysToBlobStorage();
+builder.Services.AddDataProtection().PersistKeysToBlobStorage();
 
 // Or with explicit storage instance
-builder.Services.AddDataProtection()
-    .PersistKeysToBlobStorage(storageInstance);
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(storageInstance);
 
 // Or with factory
-builder.Services.AddDataProtection()
-    .PersistKeysToBlobStorage(sp => sp.GetRequiredService<IBlobStorage>());
+builder.Services.AddDataProtection().PersistKeysToBlobStorage(sp => sp.GetRequiredService<IBlobStorage>());
 ```
 
 ### Configuration
@@ -598,10 +598,10 @@ dotnet add package Headless.Api.FluentValidation
 ### Quick Start
 
 ```csharp
-using FluentValidation;
-using Headless.FluentValidation;
 using FileSignatures;
 using FileSignatures.Formats;
+using FluentValidation;
+using Headless.FluentValidation;
 
 public sealed class UploadRequestValidator : AbstractValidator<UploadRequest>
 {
@@ -687,10 +687,10 @@ builder.Services.AddIdempotency(o =>
 var app = builder.Build();
 
 app.UseAuthentication();
-app.UseHeadlessTenancy();       // tenant must be resolved before idempotency
+app.UseHeadlessTenancy(); // tenant must be resolved before idempotency
 app.UseAuthorization();
-app.UseResponseCompression();   // must be OUTSIDE (before) UseIdempotency
-app.UseIdempotency();           // installs response-capture stream; place AFTER auth and tenancy
+app.UseResponseCompression(); // must be OUTSIDE (before) UseIdempotency
+app.UseIdempotency(); // installs response-capture stream; place AFTER auth and tenancy
 
 app.MapPost("/disbursements", CreateDisbursement);
 app.Run();
@@ -700,11 +700,11 @@ Per-endpoint overrides:
 
 ```csharp
 app.MapPost("/webhooks", HandleWebhook)
-   .WithIdempotency(o =>
-   {
-       o.IdempotencyKeyExpiration = TimeSpan.FromDays(7);
-       o.MismatchStatusCode = StatusCodes.Status409Conflict;
-   });
+    .WithIdempotency(o =>
+    {
+        o.IdempotencyKeyExpiration = TimeSpan.FromDays(7);
+        o.MismatchStatusCode = StatusCodes.Status409Conflict;
+    });
 ```
 
 ### Configuration
@@ -834,8 +834,7 @@ builder.AddHeadless().ConfigureMinimalApi();
 
 var app = builder.Build();
 
-app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id }))
-   .Validate<GetOrderRequest>();
+app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id })).Validate<GetOrderRequest>();
 
 app.Run();
 ```

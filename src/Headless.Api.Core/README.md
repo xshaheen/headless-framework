@@ -38,13 +38,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessProblemDetails();
 builder.Services.AddHeadlessApiResponseCompression();
-builder.Services.ConfigureHeadlessDefaultApi();   // Kestrel limits + HSTS + health check + routing
+builder.Services.ConfigureHeadlessDefaultApi(); // Kestrel limits + HSTS + health check + routing
 builder.Services.AddStatusCodesRewriterMiddleware();
 builder.Services.AddServerTimingMiddleware();
 
 var app = builder.Build();
 app.UseResponseCompression();
-app.UseStatusCodesRewriter();   // before UseExceptionHandler
+app.UseStatusCodesRewriter(); // before UseExceptionHandler
 app.UseExceptionHandler();
 app.UseServerTiming();
 app.MapHealthChecks("/health");
@@ -54,9 +54,9 @@ app.Run();
 HTTP tenant resolution and authorization:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims())
-    .Authorization(auth => auth.RequireTenant()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Http(http => http.ResolveFromClaims()).Authorization(auth => auth.RequireTenant())
+);
 
 builder.Services.AddAuthorization(options =>
 {
@@ -67,13 +67,11 @@ builder.Services.AddAuthorization(options =>
 });
 
 app.UseAuthentication();
-app.UseHeadlessTenancy();   // between auth and authz
+app.UseHeadlessTenancy(); // between auth and authz
 app.UseAuthorization();
 
 // Opt out of tenant claim extraction for a specific endpoint
-app.MapGet("/webhook", handler)
-   .SkipTenantResolution()
-   .AllowMissingTenant();
+app.MapGet("/webhook", handler).SkipTenantResolution().AllowMissingTenant();
 ```
 
 ## Configuration

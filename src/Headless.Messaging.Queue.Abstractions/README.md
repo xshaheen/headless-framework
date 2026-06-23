@@ -26,10 +26,7 @@ public sealed class ImportJobs(IOutboxQueue queue)
 {
     public Task EnqueueAsync(ImportRequested message, CancellationToken cancellationToken)
     {
-        return queue.EnqueueAsync(
-            message,
-            new EnqueueOptions { MessageName = "imports.requested" },
-            cancellationToken);
+        return queue.EnqueueAsync(message, new EnqueueOptions { MessageName = "imports.requested" }, cancellationToken);
     }
 }
 ```

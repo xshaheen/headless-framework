@@ -34,7 +34,10 @@ With access to the service provider:
 
 ```csharp
 builder.Services.AddNswagOpenApi(
-    setupHeadlessAction: options => { options.AddBearerSecurity = true; },
+    setupHeadlessAction: options =>
+    {
+        options.AddBearerSecurity = true;
+    },
     setupGeneratorActions: (settings, serviceProvider) =>
     {
         settings.OperationProcessors.Add(new ODataOperationFilter());

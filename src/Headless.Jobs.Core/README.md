@@ -76,22 +76,22 @@ builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
     {
-        scheduler.NodeId = "my-node";                               // in-memory path only
-        scheduler.MaxConcurrency = 10;                              // default: processor count
-        scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(1);      // default: 1 min
-        scheduler.LeaseDuration = TimeSpan.FromMinutes(5);          // default: 5 min
-        scheduler.LeaseRenewalInterval = null;                      // null → LeaseDuration / 3
+        scheduler.NodeId = "my-node"; // in-memory path only
+        scheduler.MaxConcurrency = 10; // default: processor count
+        scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(1); // default: 1 min
+        scheduler.LeaseDuration = TimeSpan.FromMinutes(5); // default: 5 min
+        scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
-        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;             // default: local
+        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
-        scheduler.StartMode = JobsStartMode.Immediate;              // or Manual
+        scheduler.StartMode = JobsStartMode.Immediate; // or Manual
     });
 
     options.SetExceptionHandler<MyJobExceptionHandler>();
-    options.DisableBackgroundServices();        // test / enqueue-only nodes
-    options.UseGZipCompression();               // compress request payloads
-    options.IgnoreSeedDefinedCronJobs();        // skip auto-seeding of attribute cron jobs
-    options.UseJobsSeeder(async manager =>      // startup time-job seeder
+    options.DisableBackgroundServices(); // test / enqueue-only nodes
+    options.UseGZipCompression(); // compress request payloads
+    options.IgnoreSeedDefinedCronJobs(); // skip auto-seeding of attribute cron jobs
+    options.UseJobsSeeder(async manager => // startup time-job seeder
     {
         await manager.AddAsync(new TimeJobEntity { Function = "Init", ExecutionTime = DateTime.UtcNow });
     });

@@ -48,7 +48,12 @@ public sealed class ContactFormService(ITurnstileVerifier verifier)
     public async Task<bool> IsHumanAsync(string token, string? remoteIp, CancellationToken ct)
     {
         var result = await verifier.VerifyAsync(
-            new TurnstileVerifyRequest { Response = token, RemoteIp = remoteIp, IdempotencyKey = Guid.NewGuid().ToString() },
+            new TurnstileVerifyRequest
+            {
+                Response = token,
+                RemoteIp = remoteIp,
+                IdempotencyKey = Guid.NewGuid().ToString(),
+            },
             ct
         );
 
@@ -67,11 +72,14 @@ builder.Services.AddHeadlessCaptcha(captcha =>
             o.SiteKey = builder.Configuration["Headless:Captcha:Turnstile:SiteKey"]!;
             o.SiteSecret = builder.Configuration["Headless:Captcha:Turnstile:SiteSecret"]!;
         })
-        .UseReCaptchaV3("recaptcha", o =>
-        {
-            o.SiteKey = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteKey"]!;
-            o.SiteSecret = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteSecret"]!;
-        })
+        .UseReCaptchaV3(
+            "recaptcha",
+            o =>
+            {
+                o.SiteKey = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteKey"]!;
+                o.SiteSecret = builder.Configuration["Headless:Captcha:ReCaptchaV3:SiteSecret"]!;
+            }
+        )
 );
 
 // Default (Turnstile) injects directly; the named "recaptcha" resolves through ICaptchaProvider.
@@ -88,8 +96,8 @@ Razor tag helpers (the default provider's widget/script):
 
 ```csharp
 options.VerifyBaseUrl = "https://challenges.cloudflare.com/"; // base URL for siteverify and the client script (default)
-options.SiteKey = "your-site-key";                            // required — rendered into the client widget
-options.SiteSecret = "your-secret-key";                       // required — used for server-side verification
+options.SiteKey = "your-site-key"; // required — rendered into the client widget
+options.SiteSecret = "your-secret-key"; // required — used for server-side verification
 ```
 
 Bound from `Headless:Captcha:Turnstile` when using the `IConfiguration` overload. `TurnstileOptionsValidator` requires `SiteKey` and `SiteSecret` to be non-empty and `VerifyBaseUrl` to be an HTTP(S) URL, validated at startup.

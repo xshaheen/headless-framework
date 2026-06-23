@@ -47,9 +47,7 @@ using tusdotnet.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var blobServiceClient = new BlobServiceClient(
-    builder.Configuration["Azure:Storage:ConnectionString"]
-);
+var blobServiceClient = new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]);
 
 var tusStore = new TusAzureStore(
     blobServiceClient,
@@ -57,17 +55,13 @@ var tusStore = new TusAzureStore(
     {
         ContainerName = "uploads",
         BlobPrefix = "tus/",
-        CreateContainerIfNotExists = true
+        CreateContainerIfNotExists = true,
     }
 );
 
 var app = builder.Build();
 
-app.MapTus("/files", async _ => new DefaultTusConfiguration
-{
-    Store = tusStore,
-    UrlPath = "/files"
-});
+app.MapTus("/files", async _ => new DefaultTusConfiguration { Store = tusStore, UrlPath = "/files" });
 
 app.Run();
 ```
@@ -77,18 +71,24 @@ Serializing concurrent PATCHes across nodes (multi-node deployments): register
 `IDistributedLock` backend (Redis, SQL Server, …) to tusdotnet's `ITusFileLockProvider`:
 
 ```csharp
-using Headless.Tus;            // AddDistributedLockTusLockProvider
+using Headless.Tus; // AddDistributedLockTusLockProvider
 using tusdotnet.Interfaces;
 
 // Register an IDistributedLock backend (Redis, SQL Server, …) first, then the TUS lock adapter:
 builder.Services.AddDistributedLockTusLockProvider();
 
-app.MapTus("/files", httpContext => Task.FromResult(new DefaultTusConfiguration
-{
-    Store = tusStore,
-    UrlPath = "/files",
-    FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>()
-}));
+app.MapTus(
+    "/files",
+    httpContext =>
+        Task.FromResult(
+            new DefaultTusConfiguration
+            {
+                Store = tusStore,
+                UrlPath = "/files",
+                FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>(),
+            }
+        )
+);
 ```
 
 A single-node deployment can omit the lock provider entirely and rely on tusdotnet's in-process lock.

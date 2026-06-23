@@ -162,10 +162,7 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id)
 #### Collection Extensions
 
 ```csharp
-await users.ParallelForEachAsync(
-    async user => await ProcessUserAsync(user),
-    maxDegreeOfParallelism: 5
-);
+await users.ParallelForEachAsync(async user => await ProcessUserAsync(user), maxDegreeOfParallelism: 5);
 ```
 
 #### Egyptian National ID Validator
@@ -254,7 +251,7 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
             UserId = user.UserId!.Value,
             TenantId = tenant.Id,
             CreatedAt = clock.UtcNow,
-            Total = new Money(request.Amount, request.Currency)
+            Total = new Money(request.Amount, request.Currency),
         };
     }
 }
@@ -263,11 +260,7 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
 #### Structured Logging
 
 ```csharp
-logger.LogInformation(
-    s => s.Tag("orders").Property("orderId", orderId),
-    "Order {OrderId} created",
-    orderId
-);
+logger.LogInformation(s => s.Tag("orders").Property("orderId", orderId), "Order {OrderId} created", orderId);
 ```
 
 #### Retry and Deferred Execution
@@ -276,15 +269,17 @@ For retries and delayed execution, use `Polly.Core` directly — it ships zero t
 
 ```csharp
 private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
-    .AddRetry(new RetryStrategyOptions
-    {
-        ShouldHandle = new PredicateBuilder().Handle<HttpRequestException>(),
-        MaxRetryAttempts = 3,
-        BackoffType = DelayBackoffType.Exponential,
-        Delay = TimeSpan.FromMilliseconds(100),
-        MaxDelay = TimeSpan.FromSeconds(1),
-        UseJitter = true,
-    })
+    .AddRetry(
+        new RetryStrategyOptions
+        {
+            ShouldHandle = new PredicateBuilder().Handle<HttpRequestException>(),
+            MaxRetryAttempts = 3,
+            BackoffType = DelayBackoffType.Exponential,
+            Delay = TimeSpan.FromMilliseconds(100),
+            MaxDelay = TimeSpan.FromSeconds(1),
+            UseJitter = true,
+        }
+    )
     .Build();
 
 var result = await _RetryPipeline.ExecuteAsync(
@@ -597,9 +592,7 @@ dotnet add package Headless.Security.Abstractions
 
 ```csharp
 // Inject the contract; the implementation is registered by Headless.Security.
-public sealed class SecureSettingService(
-    IStringEncryptionService encryption,
-    IStringHashService hashing)
+public sealed class SecureSettingService(IStringEncryptionService encryption, IStringHashService hashing)
 {
     // Encrypt a sensitive value (e.g. before writing to the database).
     public string Protect(string value) => encryption.Encrypt(value)!;
@@ -660,15 +653,13 @@ dotnet add package Headless.Security
 
 ```csharp
 // appsettings.json section: "Headless:StringEncryption"
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetSection("Headless:StringEncryption"));
 
 // Or configure inline (useful in tests / single-file apps).
 builder.Services.AddStringEncryptionService(options =>
 {
     options.DefaultPassPhrase = "your-secret-pass-phrase";
-    options.DefaultSalt      = "your-salt-bytes"u8.ToArray();
+    options.DefaultSalt = "your-salt-bytes"u8.ToArray();
     // options.KeySize     = 256;   // default
     // options.Iterations  = 600_000; // default
 });

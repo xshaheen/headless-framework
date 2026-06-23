@@ -146,20 +146,23 @@ public sealed class PaymentService(IPaymobCashInBroker broker)
 {
     public async Task<string> CreatePaymentAsync(decimal amountCents, int integrationId, CancellationToken ct)
     {
-        var response = await broker.CreateIntentionAsync(new CashInCreateIntentionRequest
-        {
-            Amount = amountCents,           // in cents, e.g. 10000 = 100 EGP
-            Currency = "EGP",
-            PaymentMethods = [integrationId],
-            BillingData = new CashInCreateIntentionRequestBillingData
+        var response = await broker.CreateIntentionAsync(
+            new CashInCreateIntentionRequest
             {
-                FirstName = "Ahmed",
-                LastName = "Ali",
-                PhoneNumber = "+201001234567",
-                Email = "ahmed@example.com",
+                Amount = amountCents, // in cents, e.g. 10000 = 100 EGP
+                Currency = "EGP",
+                PaymentMethods = [integrationId],
+                BillingData = new CashInCreateIntentionRequestBillingData
+                {
+                    FirstName = "Ahmed",
+                    LastName = "Ali",
+                    PhoneNumber = "+201001234567",
+                    Email = "ahmed@example.com",
+                },
+                Items = [],
             },
-            Items = [],
-        }, ct);
+            ct
+        );
 
         return response!.ClientSecret; // pass to your frontend Paymob.js
     }
@@ -170,9 +173,7 @@ Validate an incoming callback:
 
 ```csharp
 [HttpPost("paymob/callback")]
-public IActionResult HandleCallback(
-    [FromBody] CashInCallbackTransaction transaction,
-    [FromQuery] string hmac)
+public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transaction, [FromQuery] string hmac)
 {
     if (!_broker.Validate(transaction, hmac))
         return BadRequest("Invalid HMAC");
@@ -291,7 +292,10 @@ Disburse to a mobile wallet:
 public sealed class DisbursementService(IPaymobCashOutBroker broker)
 {
     public async Task<CashOutTransaction> DisburseToVodafoneAsync(
-        decimal amount, string phoneNumber, CancellationToken ct)
+        decimal amount,
+        string phoneNumber,
+        CancellationToken ct
+    )
     {
         var request = CashOutDisburseRequest.Vodafone(amount, phoneNumber);
         var result = await broker.Disburse(request, ct);
@@ -299,7 +303,8 @@ public sealed class DisbursementService(IPaymobCashOutBroker broker)
         if (result.IsFailed())
         {
             throw new InvalidOperationException(
-                $"Disbursement failed: {result.DisbursementStatus} ({result.StatusCode})");
+                $"Disbursement failed: {result.DisbursementStatus} ({result.StatusCode})"
+            );
         }
 
         return result;
@@ -443,14 +448,21 @@ Start a card payment (legacy iframe flow):
 public sealed class CheckoutService(IPaymobCashInService cashIn)
 {
     public async Task<string> GetIframeUrlAsync(
-        decimal amount, PaymobCashInCustomerData customer, int cardIntegrationId, string iframeId, CancellationToken ct)
+        decimal amount,
+        PaymobCashInCustomerData customer,
+        int cardIntegrationId,
+        string iframeId,
+        CancellationToken ct
+    )
     {
-        var response = await cashIn.StartAsync(new PaymobCardCashInRequest(
-            Amount: amount,
-            Customer: customer,
-            CardIntegrationId: cardIntegrationId,
-            IframeSrc: iframeId
-        ));
+        var response = await cashIn.StartAsync(
+            new PaymobCardCashInRequest(
+                Amount: amount,
+                Customer: customer,
+                CardIntegrationId: cardIntegrationId,
+                IframeSrc: iframeId
+            )
+        );
         return response.IframeSrc;
     }
 }
@@ -463,13 +475,15 @@ public sealed class PayoutService(ICashOutService cashOut)
 {
     public async Task PayoutAsync(decimal amount, string accountNumber, string bankCode, CancellationToken ct)
     {
-        var result = await cashOut.DisburseAsync(new BankAccountCashOutRequest(
-            Amount: amount,
-            AccountNumber: accountNumber,
-            BankCode: bankCode,
-            Type: BankTransactionType.CashTransfer,
-            FullName: "Ahmed Ali"
-        ));
+        var result = await cashOut.DisburseAsync(
+            new BankAccountCashOutRequest(
+                Amount: amount,
+                AccountNumber: accountNumber,
+                BankCode: bankCode,
+                Type: BankTransactionType.CashTransfer,
+                FullName: "Ahmed Ali"
+            )
+        );
 
         if (!result.Succeeded)
         {

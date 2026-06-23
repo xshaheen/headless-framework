@@ -38,17 +38,20 @@ builder.Services.AddDistributedLockTusLockProvider();
 var app = builder.Build();
 
 // 3. Wire the lock provider into the TUS configuration
-app.MapTus("/files", async ctx =>
-{
-    var lockProvider = ctx.RequestServices.GetRequiredService<ITusFileLockProvider>();
-
-    return new DefaultTusConfiguration
+app.MapTus(
+    "/files",
+    async ctx =>
     {
-        Store = tusStore,       // your TusAzureStore instance
-        UrlPath = "/files",
-        FileLockProvider = lockProvider
-    };
-});
+        var lockProvider = ctx.RequestServices.GetRequiredService<ITusFileLockProvider>();
+
+        return new DefaultTusConfiguration
+        {
+            Store = tusStore, // your TusAzureStore instance
+            UrlPath = "/files",
+            FileLockProvider = lockProvider,
+        };
+    }
+);
 
 app.Run();
 ```

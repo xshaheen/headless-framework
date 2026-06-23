@@ -154,15 +154,16 @@ public sealed class UserValidator : AbstractValidator<User>
 #### Phone Number Validation
 
 ```csharp
-RuleFor(x => x.Phone).BasicPhoneNumber();                    // DataAnnotations check
-RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode);       // Country-specific
-RuleFor(x => x.Phone).InternationalPhoneNumber();            // International format
+RuleFor(x => x.Phone).BasicPhoneNumber(); // DataAnnotations check
+RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode); // Country-specific
+RuleFor(x => x.Phone).InternationalPhoneNumber(); // International format
 ```
 
 #### Error Descriptor Integration
 
 ```csharp
-RuleFor(x => x.Total).GreaterThan(0)
+RuleFor(x => x.Total)
+    .GreaterThan(0)
     .WithErrorDescriptor(new ErrorDescriptor("ORDER_TOTAL_INVALID", "Total must be positive."));
 ```
 
@@ -242,18 +243,16 @@ public readonly partial struct Email : IPrimitive<string>
 }
 
 // Generated code provides:
-var email = Email.From("user@example.com");  // Factory method
-var value = email.Value;                      // Underlying value
-var json = JsonSerializer.Serialize(email);   // JSON: "user@example.com"
+var email = Email.From("user@example.com"); // Factory method
+var value = email.Value; // Underlying value
+var json = JsonSerializer.Serialize(email); // JSON: "user@example.com"
 ```
 
 #### Entity Framework Integration
 
 ```csharp
 // Auto-generated value converter is registered via:
-modelBuilder.Entity<User>()
-    .Property(u => u.Email)
-    .HasConversion<EmailValueConverter>();
+modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConverter>();
 ```
 
 ### Configuration
@@ -490,14 +489,16 @@ using NetTopologySuite.Geometries;
 var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);
 
 // Create a polygon from coordinates
-var polygon = factory.CreatePolygon(new[]
-{
-    new Coordinate(0, 0),
-    new Coordinate(10, 0),
-    new Coordinate(10, 10),
-    new Coordinate(0, 10),
-    new Coordinate(0, 0)
-});
+var polygon = factory.CreatePolygon(
+    new[]
+    {
+        new Coordinate(0, 0),
+        new Coordinate(10, 0),
+        new Coordinate(10, 10),
+        new Coordinate(0, 10),
+        new Coordinate(0, 0),
+    }
+);
 
 // Sanitize for SQL Server geography
 var sanitized = polygon.SanitizeForSqlGeography();
@@ -639,11 +640,7 @@ var urls = new List<SitemapUrl>
         changeFrequency: ChangeFrequency.Daily,
         priority: 1.0f
     ),
-    new(
-        location: new Uri("https://example.com/about"),
-        changeFrequency: ChangeFrequency.Monthly,
-        priority: 0.8f
-    ),
+    new(location: new Uri("https://example.com/about"), changeFrequency: ChangeFrequency.Monthly, priority: 0.8f),
 };
 
 // Write to stream
@@ -728,6 +725,7 @@ dotnet add package Headless.Slugs
 
 ```csharp
 var slug = Slug.Create("Hello World!");
+
 // Result: "hello-world"
 
 var slug2 = Slug.Create("مرحبا بالعالم");
@@ -742,7 +740,7 @@ var options = new SlugOptions
     Separator = "_",
     MaximumLength = 50,
     CasingTransformation = CasingTransformation.ToLowerCase,
-    CanEndWithSeparator = false
+    CanEndWithSeparator = false,
 };
 
 var slug = Slug.Create("Long Title That Needs Truncation", options);
@@ -757,8 +755,8 @@ var options = new SlugOptions
     {
         ["&"] = "and",
         ["@"] = "at",
-        ["+"] = "plus"
-    }
+        ["+"] = "plus",
+    },
 };
 
 var slug = Slug.Create("Tom & Jerry @ Home", options);
@@ -770,10 +768,10 @@ var slug = Slug.Create("Tom & Jerry @ Home", options);
 ```csharp
 var options = new SlugOptions
 {
-    Separator = "-",              // Default: "-"
-    MaximumLength = 100,          // Default: 80
-    CanEndWithSeparator = false,  // Default: false
-    CasingTransformation = CasingTransformation.ToLowerCase
+    Separator = "-", // Default: "-"
+    MaximumLength = 100, // Default: 80
+    CanEndWithSeparator = false, // Default: false
+    CasingTransformation = CasingTransformation.ToLowerCase,
 };
 ```
 

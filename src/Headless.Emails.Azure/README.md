@@ -33,27 +33,30 @@ dotnet add package Headless.Emails.Azure
 var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: connection string or endpoint + access key, bound from configuration
-builder.Services.AddHeadlessEmails(setup =>
-    setup.UseAzure(builder.Configuration.GetSection("AzureEmail")));
+builder.Services.AddHeadlessEmails(setup => setup.UseAzure(builder.Configuration.GetSection("AzureEmail")));
 
 // Option 2: endpoint + access key (delegate)
-builder.Services.AddHeadlessEmails(setup => setup.UseAzure(options =>
-{
-    options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
-    options.AccessKey = builder.Configuration["AzureEmail:AccessKey"]!;
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAzure(options =>
+    {
+        options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
+        options.AccessKey = builder.Configuration["AzureEmail:AccessKey"]!;
+    })
+);
 
 // Option 3: managed identity (TokenCredential — delegate only; requires the Azure.Identity package)
-builder.Services.AddHeadlessEmails(setup => setup.UseAzure(options =>
-{
-    options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
-    options.TokenCredential = new DefaultAzureCredential();
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAzure(options =>
+    {
+        options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
+        options.TokenCredential = new DefaultAzureCredential();
+    })
+);
 
 // Named instance (keyed IEmailSender + keyed EmailClient, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop();                                                            // default (required)
+    setup.UseNoop(); // default (required)
     setup.AddNamed("alerts", i => i.UseAzure(builder.Configuration.GetSection("AlertsEmail")));
 });
 ```

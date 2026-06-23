@@ -72,8 +72,8 @@ Razor tag helpers (the widget/script for the default provider):
 
 ```csharp
 options.VerifyBaseUrl = "https://www.google.com/"; // base URL of the reCAPTCHA API (default)
-options.SiteKey = "your-site-key";                 // required — rendered into the client widget/script
-options.SiteSecret = "your-secret-key";            // required — used for server-side verification
+options.SiteKey = "your-site-key"; // required — rendered into the client widget/script
+options.SiteSecret = "your-secret-key"; // required — used for server-side verification
 ```
 
 Bound from `Headless:Captcha:ReCaptchaV2` / `Headless:Captcha:ReCaptchaV3` when using the `IConfiguration` overload. `ReCaptchaOptionsValidator` requires `SiteKey` and `SiteSecret` to be non-empty and `VerifyBaseUrl` to be an HTTP(S) URL, validated at startup.

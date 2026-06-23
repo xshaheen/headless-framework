@@ -45,17 +45,15 @@ options.UseNats(nats =>
     };
 
     // Customize NATS connection
-    nats.ConfigureConnection = opts => opts with
-    {
-        ConnectTimeout = TimeSpan.FromSeconds(10),
-    };
+    nats.ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) };
 });
 
 options.ForMessage<OrderEvent>(message =>
     message
         .MessageName("orders.events")
         .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString()))
-        .OnBus<OrderEventConsumer>(consumer => consumer.UseNats(nats => nats.Sharded())));
+        .OnBus<OrderEventConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
+);
 ```
 
 `SubjectShard(...)` stamps `NatsMessagingHeaders.SubjectShard` (`headless-nats-subject-shard`) during publish. The provider appends it as one safe subject token, producing subjects such as `orders.events.42`; `.`/`*`/`>`/whitespace/control characters are rejected. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.

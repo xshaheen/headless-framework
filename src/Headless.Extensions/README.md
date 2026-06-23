@@ -75,27 +75,19 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id)
 ### Collection Extensions
 
 ```csharp
-await users.ParallelForEachAsync(
-    async user => await ProcessUserAsync(user),
-    maxDegreeOfParallelism: 5
-);
+await users.ParallelForEachAsync(async user => await ProcessUserAsync(user), maxDegreeOfParallelism: 5);
 ```
 
 ### Change Detection
 
 ```csharp
-var (added, removed, existing) = oldItems.DetectChanges(
-    newItems,
-    areSameEntity: (old, @new) => old.Id == @new.Id
-);
+var (added, removed, existing) = oldItems.DetectChanges(newItems, areSameEntity: (old, @new) => old.Id == @new.Id);
 ```
 
 ### Expression Composition
 
 ```csharp
-var filter = PredicateBuilder.True<Product>()
-    .And(p => p.Price > 0)
-    .And(p => p.IsActive);
+var filter = PredicateBuilder.True<Product>().And(p => p.Price > 0).And(p => p.IsActive);
 
 var products = await dbContext.Products.Where(filter).ToListAsync();
 ```

@@ -26,8 +26,8 @@ dotnet add package Headless.Jobs.Dashboard
 ```csharp
 using Headless.Jobs.DependencyInjection;
 
-builder.Services
-    .AddHeadlessJobs()
+builder
+    .Services.AddHeadlessJobs()
     .AddDashboard(dashboard =>
     {
         dashboard.SetBasePath("/jobs-dashboard");
@@ -42,8 +42,8 @@ app.Run();
 ## Configuration
 
 ```csharp
-builder.Services
-    .AddHeadlessJobs()
+builder
+    .Services.AddHeadlessJobs()
     .AddDashboard(dashboard =>
     {
         dashboard.SetBasePath("/jobs");

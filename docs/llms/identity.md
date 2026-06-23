@@ -119,10 +119,15 @@ dotnet add package Headless.Identity.Storage.EntityFramework
 // 9-type-parameter form — recommended for .NET 10 passkey-aware stores
 public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<AppDbContext> options)
     : HeadlessIdentityDbContext<
-        AppUser, AppRole, Guid,
-        IdentityUserClaim<Guid>, IdentityUserRole<Guid>,
-        IdentityUserLogin<Guid>, IdentityRoleClaim<Guid>,
-        IdentityUserToken<Guid>, IdentityUserPasskey<Guid>
+        AppUser,
+        AppRole,
+        Guid,
+        IdentityUserClaim<Guid>,
+        IdentityUserRole<Guid>,
+        IdentityUserLogin<Guid>,
+        IdentityRoleClaim<Guid>,
+        IdentityUserToken<Guid>,
+        IdentityUserPasskey<Guid>
     >(services, options)
 {
     // Return null to use the database default schema, or a string to namespace Identity tables.
@@ -136,17 +141,19 @@ public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<A
 // Registration — all 9 type parameters are required for the explicit-passkey form
 builder.Services.AddHeadlessDbContext<
     AppDbContext,
-    AppUser, AppRole, Guid,
-    IdentityUserClaim<Guid>, IdentityUserRole<Guid>,
-    IdentityUserLogin<Guid>, IdentityRoleClaim<Guid>,
-    IdentityUserToken<Guid>, IdentityUserPasskey<Guid>
+    AppUser,
+    AppRole,
+    Guid,
+    IdentityUserClaim<Guid>,
+    IdentityUserRole<Guid>,
+    IdentityUserLogin<Guid>,
+    IdentityRoleClaim<Guid>,
+    IdentityUserToken<Guid>,
+    IdentityUserPasskey<Guid>
 >(options => options.UseNpgsql(connectionString));
 
 // Wire ASP.NET Core Identity stores separately — AddHeadlessDbContext does not register UserManager/RoleManager
-builder.Services
-    .AddIdentityCore<AppUser>()
-    .AddRoles<AppRole>()
-    .AddEntityFrameworkStores<AppDbContext>();
+builder.Services.AddIdentityCore<AppUser>().AddRoles<AppRole>().AddEntityFrameworkStores<AppDbContext>();
 ```
 
 #### 8-type-parameter convenience form
@@ -187,8 +194,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext, /* ... */>(
 `IdentityOptions.Stores.SchemaVersion` defaults to `IdentitySchemaVersions.Version3`. To target an older schema:
 
 ```csharp
-builder.Services.Configure<IdentityOptions>(o =>
-    o.Stores.SchemaVersion = IdentitySchemaVersions.Version1);
+builder.Services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = IdentitySchemaVersions.Version1);
 ```
 
 Service lifetimes default to `ServiceLifetime.Scoped` for both the context and its options. Override via the `contextLifetime` / `optionsLifetime` parameters when needed.

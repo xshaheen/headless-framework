@@ -27,7 +27,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseFileSystem(options =>
-        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")));
+        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+    )
+);
 ```
 
 ## Configuration
@@ -45,7 +47,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 ### Options
 
 ```csharp
-options.BaseDirectoryPath = "/path/to/storage";  // required; the root directory for all containers
+options.BaseDirectoryPath = "/path/to/storage"; // required; the root directory for all containers
 ```
 
 ## Dependencies

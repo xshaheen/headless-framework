@@ -29,18 +29,18 @@ dotnet add package Headless.Sms.Connekio
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseConnekio(
-    builder.Configuration.GetSection("Sms:Connekio")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseConnekio(builder.Configuration.GetSection("Sms:Connekio")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseConnekio(options =>
-{
-    options.UserName = "your-username";
-    options.Password = "your-password";
-    options.AccountId = "your-account-id";
-    options.Sender = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseConnekio(options =>
+    {
+        options.UserName = "your-username";
+        options.Password = "your-password";
+        options.AccountId = "your-account-id";
+        options.Sender = "MyApp";
+    })
+);
 ```
 
 ## Configuration

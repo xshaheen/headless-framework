@@ -104,8 +104,10 @@ public sealed class DocumentIndexer(IEnumerable<IMediaFileTextProvider> provider
     private static readonly Dictionary<string, Type> _mimeMap = new(StringComparer.OrdinalIgnoreCase)
     {
         ["application/pdf"] = typeof(PdfMediaFileTextProvider),
-        ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = typeof(WordDocumentMediaFileTextProvider),
-        ["application/vnd.openxmlformats-officedocument.presentationml.presentation"] = typeof(PresentationDocumentMediaFileTextProvider),
+        ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] =
+            typeof(WordDocumentMediaFileTextProvider),
+        ["application/vnd.openxmlformats-officedocument.presentationml.presentation"] =
+            typeof(PresentationDocumentMediaFileTextProvider),
     };
 
     public async Task<string?> ExtractTextAsync(Stream fileStream, string mimeType, CancellationToken ct = default)
@@ -116,7 +118,8 @@ public sealed class DocumentIndexer(IEnumerable<IMediaFileTextProvider> provider
         }
 
         var provider = providers.FirstOrDefault(p => p.GetType() == providerType);
-        if (provider is null) return null;
+        if (provider is null)
+            return null;
 
         return await provider.GetTextAsync(fileStream).ConfigureAwait(false);
     }
@@ -188,14 +191,17 @@ public sealed class SearchIndexer(IEnumerable<IMediaFileTextProvider> providers)
         var provider = mimeType switch
         {
             "application/pdf" => providers.OfType<PdfMediaFileTextProvider>().FirstOrDefault(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                => providers.OfType<WordDocumentMediaFileTextProvider>().FirstOrDefault(),
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                => providers.OfType<PresentationDocumentMediaFileTextProvider>().FirstOrDefault(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => providers
+                .OfType<WordDocumentMediaFileTextProvider>()
+                .FirstOrDefault(),
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => providers
+                .OfType<PresentationDocumentMediaFileTextProvider>()
+                .FirstOrDefault(),
             _ => null,
         };
 
-        if (provider is null) return string.Empty;
+        if (provider is null)
+            return string.Empty;
 
         return await provider.GetTextAsync(fileStream).ConfigureAwait(false);
     }

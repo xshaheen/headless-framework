@@ -29,17 +29,19 @@ public sealed class NotificationService(IEmailSender emailSender)
 {
     public async Task SendWelcomeEmailAsync(string to, string name, CancellationToken ct)
     {
-        var response = await emailSender.SendAsync(new SendSingleEmailRequest
-        {
-            From = "noreply@example.com",
-            Destination = new EmailRequestDestination
-            {
-                ToAddresses = [new EmailRequestAddress(to)],
-            },
-            Subject = "Welcome!",
-            MessageHtml = $"<h1>Hello {name}!</h1>",
-            MessageText = $"Hello {name}!",
-        }, ct).ConfigureAwait(false);
+        var response = await emailSender
+            .SendAsync(
+                new SendSingleEmailRequest
+                {
+                    From = "noreply@example.com",
+                    Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress(to)] },
+                    Subject = "Welcome!",
+                    MessageHtml = $"<h1>Hello {name}!</h1>",
+                    MessageText = $"Hello {name}!",
+                },
+                ct
+            )
+            .ConfigureAwait(false);
 
         if (!response.Success)
         {

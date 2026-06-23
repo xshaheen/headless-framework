@@ -43,8 +43,8 @@ var conn = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddHeadlessCoordination(c => c.UseSqlServer(conn));
 
 // 2. Register Jobs with the durable operational store
-builder.Services
-    .AddHeadlessJobs(options =>
+builder
+    .Services.AddHeadlessJobs(options =>
     {
         options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc);
     })
@@ -55,7 +55,8 @@ builder.Services
 
 // Optional: cron-expression caching via ICache
 builder.Services.AddHeadlessCaching(setup =>
-    setup.UseRedis(o => o.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379")));
+    setup.UseRedis(o => o.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379"))
+);
 ```
 
 Without a registered coordination provider the durable path throws at startup.
@@ -63,8 +64,8 @@ Without a registered coordination provider the durable path throws at startup.
 ## Configuration
 
 ```csharp
-builder.Services
-    .AddHeadlessJobs(options =>
+builder
+    .Services.AddHeadlessJobs(options =>
     {
         options.ConfigureScheduler(scheduler =>
         {
@@ -75,8 +76,8 @@ builder.Services
     .AddOperationalStore(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
-        ef.SetDbContextPoolSize(512);   // default: 1024
-        ef.SetSchema("background");     // default: "jobs"
+        ef.SetDbContextPoolSize(512); // default: 1024
+        ef.SetSchema("background"); // default: "jobs"
     });
 ```
 

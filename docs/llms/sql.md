@@ -62,9 +62,7 @@ Install `Headless.Sql.Abstractions` plus one provider package:
 There are no `AddSql*()` convenience methods. Register the factory manually:
 
 ```csharp
-builder.Services.AddSingleton<ISqlConnectionFactory>(
-    new NpgsqlConnectionFactory(connectionString)
-);
+builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
 ```
 
 Inject `ISqlConnectionFactory` and call `CreateNewConnectionAsync()` to get an already-open `DbConnection`. Pair with Dapper or raw ADO.NET — this layer does not provide query helpers.
@@ -152,9 +150,7 @@ dotnet add package Headless.Sql.Abstractions
 
 ```csharp
 // Register a concrete factory (provider package required):
-builder.Services.AddSingleton<ISqlConnectionFactory>(
-    new NpgsqlConnectionFactory(connectionString)
-);
+builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
 
 // Inject and use in a repository:
 public sealed class OrderRepository(ISqlConnectionFactory connectionFactory)
@@ -222,9 +218,7 @@ dotnet add package Headless.Sql.PostgreSql
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddSingleton<ISqlConnectionFactory>(
-    new NpgsqlConnectionFactory(connectionString)
-);
+builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
 
 // Optional: register the health-check helper
 builder.Services.AddSingleton<IConnectionStringChecker, NpgsqlConnectionStringChecker>();
@@ -294,9 +288,7 @@ dotnet add package Headless.Sql.SqlServer
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddSingleton<ISqlConnectionFactory>(
-    new SqlServerConnectionFactory(connectionString)
-);
+builder.Services.AddSingleton<ISqlConnectionFactory>(new SqlServerConnectionFactory(connectionString));
 
 // Optional: register the health-check helper
 builder.Services.AddSingleton<IConnectionStringChecker, SqlServerConnectionStringChecker>();
@@ -370,14 +362,10 @@ dotnet add package Headless.Sql.Sqlite
 
 ```csharp
 // In-process tests (no server required):
-services.AddSingleton<ISqlConnectionFactory>(
-    new SqliteConnectionFactory("Data Source=:memory:")
-);
+services.AddSingleton<ISqlConnectionFactory>(new SqliteConnectionFactory("Data Source=:memory:"));
 
 // File-based embedded database:
-services.AddSingleton<ISqlConnectionFactory>(
-    new SqliteConnectionFactory("Data Source=app.db")
-);
+services.AddSingleton<ISqlConnectionFactory>(new SqliteConnectionFactory("Data Source=app.db"));
 
 // Optional: register the health-check helper
 services.AddSingleton<IConnectionStringChecker, SqliteConnectionStringChecker>();

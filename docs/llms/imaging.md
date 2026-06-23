@@ -54,8 +54,8 @@ Install all three packages for a complete imaging pipeline:
 Typical registration:
 
 ```csharp
-builder.Services
-    .AddImaging(options =>
+builder
+    .Services.AddImaging(options =>
     {
         options.DefaultResizeMode = ImageResizeMode.Max;
     })
@@ -229,8 +229,8 @@ dotnet add package Headless.Imaging.Core
 ### Quick Start
 
 ```csharp
-builder.Services
-    .AddImaging(options =>
+builder
+    .Services.AddImaging(options =>
     {
         options.DefaultResizeMode = ImageResizeMode.Max;
     })
@@ -299,8 +299,8 @@ dotnet add package Headless.Imaging.ImageSharp
 ### Quick Start
 
 ```csharp
-builder.Services
-    .AddImaging()
+builder
+    .Services.AddImaging()
     .AddImageSharpContributors(options =>
     {
         options.DefaultCompressQuality = 80; // sets JPEG + WebP encoder quality

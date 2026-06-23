@@ -332,18 +332,17 @@ There is no `[HasPermission]` attribute. Wire permissions into ASP.NET Core poli
 // Single-permission policy
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("CanEditOrders", policy =>
-        policy.Requirements.Add(new PermissionRequirement("Orders.Edit")));
+    options.AddPolicy("CanEditOrders", policy => policy.Requirements.Add(new PermissionRequirement("Orders.Edit")));
 });
 
 // Multi-permission policy (AND)
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("CanManageOrders", policy =>
-        policy.Requirements.Add(new PermissionsRequirement(
-            ["Orders.Create", "Orders.Edit"],
-            requiresAll: true
-        )));
+    options.AddPolicy(
+        "CanManageOrders",
+        policy =>
+            policy.Requirements.Add(new PermissionsRequirement(["Orders.Create", "Orders.Edit"], requiresAll: true))
+    );
 });
 ```
 
@@ -424,11 +423,11 @@ builder.Services.AddHeadlessPermissions(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "permissions";                                     // default
-        o.PermissionGrantsTableName = "PermissionGrants";             // default
-        o.PermissionDefinitionsTableName = "PermissionDefinitions";   // default
+        o.Schema = "permissions"; // default
+        o.PermissionGrantsTableName = "PermissionGrants"; // default
+        o.PermissionDefinitionsTableName = "PermissionDefinitions"; // default
         o.PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"; // default
-        o.InitializeOnStartup = true;                                 // default
+        o.InitializeOnStartup = true; // default
     });
     setup.UseEntityFramework<AppDbContext>();
 });

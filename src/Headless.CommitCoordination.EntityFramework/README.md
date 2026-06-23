@@ -39,7 +39,8 @@ services.AddEntityFrameworkCommitCoordination();
 // services.AddDiRegisteredInterceptorsConfiguration<MyDbContext>() (both from Headless.Orm.EntityFramework).
 // AddHeadlessDbContext / AddHeadlessIdentityDbContext and the messaging EF storage path do this for you.
 services.AddDbContext<MyDbContext>(
-    (sp, options) => options.UseNpgsql(connectionString).AddDiRegisteredInterceptors(sp));
+    (sp, options) => options.UseNpgsql(connectionString).AddDiRegisteredInterceptors(sp)
+);
 
 // Open + enlist + commit in one call; publishes inside the operation drain atomically on commit.
 await db.ExecuteCoordinatedTransactionAsync(
@@ -48,7 +49,8 @@ await db.ExecuteCoordinatedTransactionAsync(
         await context.SaveChangesAsync(ct);
         await bus.PublishAsync(new OrderPlaced(orderId), ct);
     },
-    services: requestServiceProvider);
+    services: requestServiceProvider
+);
 ```
 
 ## Configuration

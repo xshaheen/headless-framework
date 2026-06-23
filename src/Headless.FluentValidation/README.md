@@ -42,15 +42,16 @@ public sealed class UserValidator : AbstractValidator<User>
 ### Phone Number Validation
 
 ```csharp
-RuleFor(x => x.Phone).BasicPhoneNumber();                    // DataAnnotations check
-RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode);       // Country-specific
-RuleFor(x => x.Phone).InternationalPhoneNumber();            // International format
+RuleFor(x => x.Phone).BasicPhoneNumber(); // DataAnnotations check
+RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode); // Country-specific
+RuleFor(x => x.Phone).InternationalPhoneNumber(); // International format
 ```
 
 ### Error Descriptor Integration
 
 ```csharp
-RuleFor(x => x.Total).GreaterThan(0)
+RuleFor(x => x.Total)
+    .GreaterThan(0)
     .WithErrorDescriptor(new ErrorDescriptor("ORDER_TOTAL_INVALID", "Total must be positive."));
 ```
 

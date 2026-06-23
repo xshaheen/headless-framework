@@ -141,6 +141,7 @@ builder.Services.AddNswagOpenApi(options =>
 var app = builder.Build();
 
 app.MapNswagOpenApi();
+
 // or for versioned APIs:
 app.MapNswagOpenApiVersions();
 ```
@@ -226,7 +227,10 @@ With access to the service provider:
 
 ```csharp
 builder.Services.AddNswagOpenApi(
-    setupHeadlessAction: options => { options.AddBearerSecurity = true; },
+    setupHeadlessAction: options =>
+    {
+        options.AddBearerSecurity = true;
+    },
     setupGeneratorActions: (settings, serviceProvider) =>
     {
         settings.OperationProcessors.Add(new ODataOperationFilter());

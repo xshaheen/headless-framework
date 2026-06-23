@@ -139,9 +139,9 @@ A host can register one **default** sender plus any number of **named** senders 
 ```csharp
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseAwsSes(awsOptions);                                   // default (required)
-    setup.AddNamed("marketing", i => i.UseMailkit(smtpSection));   // named, keyed "marketing"
-    setup.AddNamed("alerts", i => i.UseAzure(acsSection));         // named, keyed "alerts"
+    setup.UseAwsSes(awsOptions); // default (required)
+    setup.AddNamed("marketing", i => i.UseMailkit(smtpSection)); // named, keyed "marketing"
+    setup.AddNamed("alerts", i => i.UseAzure(acsSection)); // named, keyed "alerts"
 });
 ```
 
@@ -192,17 +192,19 @@ public sealed class NotificationService(IEmailSender emailSender)
 {
     public async Task SendWelcomeEmailAsync(string to, string name, CancellationToken ct)
     {
-        var response = await emailSender.SendAsync(new SendSingleEmailRequest
-        {
-            From = "noreply@example.com",
-            Destination = new EmailRequestDestination
-            {
-                ToAddresses = [new EmailRequestAddress(to)],
-            },
-            Subject = "Welcome!",
-            MessageHtml = $"<h1>Hello {name}!</h1>",
-            MessageText = $"Hello {name}!",
-        }, ct).ConfigureAwait(false);
+        var response = await emailSender
+            .SendAsync(
+                new SendSingleEmailRequest
+                {
+                    From = "noreply@example.com",
+                    Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress(to)] },
+                    Subject = "Welcome!",
+                    MessageHtml = $"<h1>Hello {name}!</h1>",
+                    MessageText = $"Hello {name}!",
+                },
+                ct
+            )
+            .ConfigureAwait(false);
 
         if (!response.Success)
         {
@@ -260,8 +262,8 @@ dotnet add package Headless.Emails.Core
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop();                                       // default (required)
-    setup.AddNamed("marketing", i => i.UseNoop());         // optional named sender, keyed "marketing"
+    setup.UseNoop(); // default (required)
+    setup.AddNamed("marketing", i => i.UseNoop()); // optional named sender, keyed "marketing"
 });
 
 // Resolve a named sender:
@@ -321,11 +323,15 @@ var awsOptions = builder.Configuration.GetAWSOptions();
 builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(awsOptions));
 
 // Option 2: explicit credentials
-builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(new AWSOptions
-{
-    Region = RegionEndpoint.USEast1,
-    Credentials = new BasicAWSCredentials("accessKey", "secretKey"),
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAwsSes(
+        new AWSOptions
+        {
+            Region = RegionEndpoint.USEast1,
+            Credentials = new BasicAWSCredentials("accessKey", "secretKey"),
+        }
+    )
+);
 
 // Option 3: use default AWSOptions already registered in DI (pass null)
 builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(null));
@@ -333,8 +339,8 @@ builder.Services.AddHeadlessEmails(setup => setup.UseAwsSes(null));
 // Named instance (keyed IEmailSender, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop();                                       // default (required)
-    setup.AddNamed("ses", i => i.UseAwsSes(awsOptions));   // keyed "ses"
+    setup.UseNoop(); // default (required)
+    setup.AddNamed("ses", i => i.UseAwsSes(awsOptions)); // keyed "ses"
 });
 ```
 
@@ -399,27 +405,30 @@ dotnet add package Headless.Emails.Azure
 var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: connection string or endpoint + access key, bound from configuration
-builder.Services.AddHeadlessEmails(setup =>
-    setup.UseAzure(builder.Configuration.GetSection("AzureEmail")));
+builder.Services.AddHeadlessEmails(setup => setup.UseAzure(builder.Configuration.GetSection("AzureEmail")));
 
 // Option 2: endpoint + access key (delegate)
-builder.Services.AddHeadlessEmails(setup => setup.UseAzure(options =>
-{
-    options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
-    options.AccessKey = builder.Configuration["AzureEmail:AccessKey"]!;
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAzure(options =>
+    {
+        options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
+        options.AccessKey = builder.Configuration["AzureEmail:AccessKey"]!;
+    })
+);
 
 // Option 3: managed identity (TokenCredential — delegate only; requires the Azure.Identity package)
-builder.Services.AddHeadlessEmails(setup => setup.UseAzure(options =>
-{
-    options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
-    options.TokenCredential = new DefaultAzureCredential();
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAzure(options =>
+    {
+        options.Endpoint = new Uri("https://my-resource.communication.azure.com/");
+        options.TokenCredential = new DefaultAzureCredential();
+    })
+);
 
 // Named instance (keyed IEmailSender + keyed EmailClient, resolvable via IEmailSenderProvider):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseNoop();                                                            // default (required)
+    setup.UseNoop(); // default (required)
     setup.AddNamed("alerts", i => i.UseAzure(builder.Configuration.GetSection("AlertsEmail")));
 });
 ```
@@ -493,7 +502,7 @@ if (builder.Environment.IsDevelopment())
 // As a named instance alongside a real default sender (keyed IEmailSender "audit"):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseAwsSes(awsOptions);                              // default (required)
+    setup.UseAwsSes(awsOptions); // default (required)
     setup.AddNamed("audit", i => i.UseDevelopment("audit-emails.txt"));
 });
 ```
@@ -565,27 +574,33 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(builder.Configuration.GetSection("Smtp")));
 
 // Option 2: action
-builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(options =>
-{
-    options.Server = "smtp.example.com";
-    options.Port = 587;
-    options.User = "user@example.com";
-    options.Password = "securepassword";
-    options.SocketOptions = SecureSocketOptions.StartTls;
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseMailkit(options =>
+    {
+        options.Server = "smtp.example.com";
+        options.Port = 587;
+        options.User = "user@example.com";
+        options.Password = "securepassword";
+        options.SocketOptions = SecureSocketOptions.StartTls;
+    })
+);
 
 // Option 3: action with IServiceProvider
-builder.Services.AddHeadlessEmails(setup => setup.UseMailkit((options, sp) =>
-{
-    var cfg = sp.GetRequiredService<IConfiguration>();
-    options.Server = cfg["Smtp:Server"]!;
-    options.Port = int.Parse(cfg["Smtp:Port"]!);
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseMailkit(
+        (options, sp) =>
+        {
+            var cfg = sp.GetRequiredService<IConfiguration>();
+            options.Server = cfg["Smtp:Server"]!;
+            options.Port = int.Parse(cfg["Smtp:Port"]!);
+        }
+    )
+);
 
 // Named instance — each named SMTP sender owns an isolated connection pool (keyed "marketing"):
 builder.Services.AddHeadlessEmails(setup =>
 {
-    setup.UseMailkit(builder.Configuration.GetSection("Smtp"));                         // default (required)
+    setup.UseMailkit(builder.Configuration.GetSection("Smtp")); // default (required)
     setup.AddNamed("marketing", i => i.UseMailkit(builder.Configuration.GetSection("MarketingSmtp")));
 });
 ```

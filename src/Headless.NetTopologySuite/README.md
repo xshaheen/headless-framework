@@ -31,14 +31,16 @@ using NetTopologySuite.Geometries;
 var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);
 
 // Create a polygon from coordinates
-var polygon = factory.CreatePolygon(new[]
-{
-    new Coordinate(0, 0),
-    new Coordinate(10, 0),
-    new Coordinate(10, 10),
-    new Coordinate(0, 10),
-    new Coordinate(0, 0)
-});
+var polygon = factory.CreatePolygon(
+    new[]
+    {
+        new Coordinate(0, 0),
+        new Coordinate(10, 0),
+        new Coordinate(10, 10),
+        new Coordinate(0, 10),
+        new Coordinate(0, 0),
+    }
+);
 
 // Sanitize for SQL Server geography
 var sanitized = polygon.SanitizeForSqlGeography();

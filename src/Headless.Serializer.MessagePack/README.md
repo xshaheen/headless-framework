@@ -27,8 +27,8 @@ dotnet add package Headless.Serializer.MessagePack
 builder.Services.AddSingleton<IBinarySerializer, MessagePackSerializer>();
 
 // With LZ4 compression:
-var options = MessagePackSerializerOptions.Standard
-    .WithResolver(ContractlessStandardResolver.Instance)
+var options = MessagePackSerializerOptions
+    .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithCompression(MessagePackCompression.Lz4BlockArray);
 
 builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(options));
@@ -51,8 +51,8 @@ All configuration is passed via `MessagePackSerializerOptions` at construction t
 var options = MessagePackSerializerOptions.Standard; // requires [MessagePackObject]/[Key] attributes
 
 // Security: disallow deserialization of arbitrary types via typeless API:
-var options = MessagePackSerializerOptions.Standard
-    .WithResolver(ContractlessStandardResolver.Instance)
+var options = MessagePackSerializerOptions
+    .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithSecurity(MessagePackSecurity.UntrustedData);
 ```
 

@@ -30,8 +30,8 @@ dotnet add package Headless.Imaging.Core
 ## Quick Start
 
 ```csharp
-builder.Services
-    .AddImaging(options =>
+builder
+    .Services.AddImaging(options =>
     {
         options.DefaultResizeMode = ImageResizeMode.Max;
     })

@@ -40,7 +40,8 @@ public sealed class FileService(IBlobStorage storage)
     {
         // Dispose result promptly — holding it may exhaust connection pools.
         await using var result = await storage.OpenReadStreamAsync(["uploads", "images"], fileName, ct);
-        if (result is null) return null;
+        if (result is null)
+            return null;
 
         using var reader = new StreamReader(result.Stream);
         return await reader.ReadToEndAsync(ct);
@@ -53,13 +54,15 @@ Resolve a named store or check for presigned support:
 ```csharp
 public sealed class StorageService(
     IBlobStorageProvider provider,
-    [FromKeyedServices("archive")] IBlobStorage archiveStorage)
+    [FromKeyedServices("archive")] IBlobStorage archiveStorage
+)
 {
     // Validate an externally-supplied name before resolving:
     public bool IsKnownStore(string name) => provider.RegisteredNames.Contains(name);
 
     // Resolve by name:
     public IBlobStorage GetByName(string name) => provider.GetStorage(name); // throws if not found
+
     public IBlobStorage? TryGetByName(string name) => provider.GetStorageOrNull(name); // null if not found
 
     // Feature-detect presigned on the default store:

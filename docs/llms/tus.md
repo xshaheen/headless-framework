@@ -56,18 +56,17 @@ Three packages compose the TUS domain:
 Minimal Azure setup:
 
 ```csharp
-var store = new TusAzureStore(blobServiceClient, new TusAzureStoreOptions
-{
-    ContainerName = "uploads",
-    BlobPrefix = "tus/",
-    CreateContainerIfNotExists = true
-});
+var store = new TusAzureStore(
+    blobServiceClient,
+    new TusAzureStoreOptions
+    {
+        ContainerName = "uploads",
+        BlobPrefix = "tus/",
+        CreateContainerIfNotExists = true,
+    }
+);
 
-app.MapTus("/files", async _ => new DefaultTusConfiguration
-{
-    Store = store,
-    UrlPath = "/files"
-});
+app.MapTus("/files", async _ => new DefaultTusConfiguration { Store = store, UrlPath = "/files" });
 ```
 
 ## Agent Instructions
@@ -203,9 +202,7 @@ using tusdotnet.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var blobServiceClient = new BlobServiceClient(
-    builder.Configuration["Azure:Storage:ConnectionString"]
-);
+var blobServiceClient = new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]);
 
 var tusStore = new TusAzureStore(
     blobServiceClient,
@@ -213,17 +210,13 @@ var tusStore = new TusAzureStore(
     {
         ContainerName = "uploads",
         BlobPrefix = "tus/",
-        CreateContainerIfNotExists = true
+        CreateContainerIfNotExists = true,
     }
 );
 
 var app = builder.Build();
 
-app.MapTus("/files", async _ => new DefaultTusConfiguration
-{
-    Store = tusStore,
-    UrlPath = "/files"
-});
+app.MapTus("/files", async _ => new DefaultTusConfiguration { Store = tusStore, UrlPath = "/files" });
 
 app.Run();
 ```
@@ -231,18 +224,24 @@ app.Run();
 Serializing concurrent PATCHes across nodes (multi-node deployments) with `Headless.Tus.DistributedLocks`:
 
 ```csharp
-using Headless.Tus;            // AddDistributedLockTusLockProvider
+using Headless.Tus; // AddDistributedLockTusLockProvider
 using tusdotnet.Interfaces;
 
 // Register an IDistributedLock backend (Redis, SQL Server, …) first, then the TUS lock adapter:
 builder.Services.AddDistributedLockTusLockProvider();
 
-app.MapTus("/files", httpContext => Task.FromResult(new DefaultTusConfiguration
-{
-    Store = tusStore,
-    UrlPath = "/files",
-    FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>()
-}));
+app.MapTus(
+    "/files",
+    httpContext =>
+        Task.FromResult(
+            new DefaultTusConfiguration
+            {
+                Store = tusStore,
+                UrlPath = "/files",
+                FileLockProvider = httpContext.RequestServices.GetRequiredService<ITusFileLockProvider>(),
+            }
+        )
+);
 ```
 
 A single-node deployment can omit the lock provider and rely on tusdotnet's in-process lock.
@@ -344,17 +343,20 @@ builder.Services.AddDistributedLockTusLockProvider();
 var app = builder.Build();
 
 // 3. Wire the lock provider into the TUS configuration
-app.MapTus("/files", async ctx =>
-{
-    var lockProvider = ctx.RequestServices.GetRequiredService<ITusFileLockProvider>();
-
-    return new DefaultTusConfiguration
+app.MapTus(
+    "/files",
+    async ctx =>
     {
-        Store = tusStore,       // your TusAzureStore instance
-        UrlPath = "/files",
-        FileLockProvider = lockProvider
-    };
-});
+        var lockProvider = ctx.RequestServices.GetRequiredService<ITusFileLockProvider>();
+
+        return new DefaultTusConfiguration
+        {
+            Store = tusStore, // your TusAzureStore instance
+            UrlPath = "/files",
+            FileLockProvider = lockProvider,
+        };
+    }
+);
 
 app.Run();
 ```

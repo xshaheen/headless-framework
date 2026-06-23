@@ -204,7 +204,7 @@ public sealed class OtpService(ISmsSender smsSender)
         var request = new SendSingleSmsRequest
         {
             Destinations = [new SmsRequestDestination(20, phoneNumber)], // 20 = Egypt calling code
-            Text = $"Your verification code is: {code}"
+            Text = $"Your verification code is: {code}",
         };
 
         var response = await smsSender.SendAsync(request, ct);
@@ -259,17 +259,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: bind from appsettings (recommended)
 var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(
-    builder.Configuration.GetSection("Sms:Aws"),
-    awsOptions
-));
+builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(builder.Configuration.GetSection("Sms:Aws"), awsOptions));
 
 // Option 2: configure in code
-builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(options =>
-{
-    options.SenderId = "MyApp";
-    // options.MaxPrice = 0.05m; // optional per-message USD cap
-}, awsOptions));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseAwsSns(
+        options =>
+        {
+            options.SenderId = "MyApp";
+            // options.MaxPrice = 0.05m; // optional per-message USD cap
+        },
+        awsOptions
+    )
+);
 ```
 
 ### Configuration
@@ -344,17 +346,17 @@ dotnet add package Headless.Sms.Cequens
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseCequens(
-    builder.Configuration.GetSection("Sms:Cequens")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseCequens(builder.Configuration.GetSection("Sms:Cequens")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseCequens(options =>
-{
-    options.ApiKey = "your-api-key";
-    options.UserName = "your-username";
-    options.SenderName = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseCequens(options =>
+    {
+        options.ApiKey = "your-api-key";
+        options.UserName = "your-username";
+        options.SenderName = "MyApp";
+    })
+);
 ```
 
 ### Configuration
@@ -429,18 +431,18 @@ dotnet add package Headless.Sms.Connekio
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseConnekio(
-    builder.Configuration.GetSection("Sms:Connekio")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseConnekio(builder.Configuration.GetSection("Sms:Connekio")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseConnekio(options =>
-{
-    options.UserName = "your-username";
-    options.Password = "your-password";
-    options.AccountId = "your-account-id";
-    options.Sender = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseConnekio(options =>
+    {
+        options.UserName = "your-username";
+        options.Password = "your-password";
+        options.AccountId = "your-account-id";
+        options.Sender = "MyApp";
+    })
+);
 ```
 
 ### Configuration
@@ -572,17 +574,17 @@ dotnet add package Headless.Sms.Infobip
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseInfobip(
-    builder.Configuration.GetSection("Sms:Infobip")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseInfobip(builder.Configuration.GetSection("Sms:Infobip")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseInfobip(options =>
-{
-    options.ApiKey = "your-api-key";
-    options.BasePath = "https://XXXXXXXX.api.infobip.com"; // account-specific URL
-    options.Sender = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseInfobip(options =>
+    {
+        options.ApiKey = "your-api-key";
+        options.BasePath = "https://XXXXXXXX.api.infobip.com"; // account-specific URL
+        options.Sender = "MyApp";
+    })
+);
 ```
 
 ### Configuration
@@ -650,17 +652,17 @@ dotnet add package Headless.Sms.Twilio
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseTwilio(
-    builder.Configuration.GetSection("Sms:Twilio")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseTwilio(options =>
-{
-    options.Sid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-    options.AuthToken = "your-auth-token";
-    options.PhoneNumber = "+12025551234";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseTwilio(options =>
+    {
+        options.Sid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        options.AuthToken = "your-auth-token";
+        options.PhoneNumber = "+12025551234";
+    })
+);
 ```
 
 ### Configuration
@@ -735,17 +737,17 @@ dotnet add package Headless.Sms.VictoryLink
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(
-    builder.Configuration.GetSection("Sms:VictoryLink")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLink")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(options =>
-{
-    options.UserName = "your-username";
-    options.Password = "your-password";
-    options.Sender = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseVictoryLink(options =>
+    {
+        options.UserName = "your-username";
+        options.Password = "your-password";
+        options.Sender = "MyApp";
+    })
+);
 ```
 
 ### Configuration
@@ -817,18 +819,18 @@ dotnet add package Headless.Sms.Vodafone
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseVodafone(
-    builder.Configuration.GetSection("Sms:Vodafone")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseVodafone(builder.Configuration.GetSection("Sms:Vodafone")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseVodafone(options =>
-{
-    options.AccountId = "your-account-id";
-    options.Password = "your-password";
-    options.SecureHash = "your-secure-hash";
-    options.Sender = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseVodafone(options =>
+    {
+        options.AccountId = "your-account-id";
+        options.Password = "your-password";
+        options.SecureHash = "your-secure-hash";
+        options.Sender = "MyApp";
+    })
+);
 ```
 
 ### Configuration

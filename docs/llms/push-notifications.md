@@ -48,8 +48,7 @@ Install `Headless.PushNotifications.Abstractions` to depend on the interface onl
 
 ```csharp
 // Production — Firebase Cloud Messaging
-builder.Services.AddHeadlessPushNotifications(setup =>
-    setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+builder.Services.AddHeadlessPushNotifications(setup => setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
 
 // Development / testing — no-op, always succeeds
 builder.Services.AddHeadlessPushNotifications(setup => setup.UseNoop());
@@ -220,7 +219,8 @@ if (builder.Environment.IsDevelopment())
 else
 {
     builder.Services.AddHeadlessPushNotifications(setup =>
-        setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+        setup.UseFirebase(builder.Configuration.GetSection("Firebase"))
+    );
 }
 ```
 
@@ -277,8 +277,7 @@ dotnet add package Headless.PushNotifications.Firebase
 var builder = WebApplication.CreateBuilder(args);
 
 // Recommended: bind from configuration so the options validator runs at startup.
-builder.Services.AddHeadlessPushNotifications(setup =>
-    setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+builder.Services.AddHeadlessPushNotifications(setup => setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
 ```
 
 Sending:
@@ -339,11 +338,11 @@ builder.Services.AddHeadlessPushNotifications(setup =>
     {
         options.Json = configuration["Firebase:Json"]!;
         options.Retry = new FirebaseRetryOptions { MaxAttempts = 3 };
-    }));
+    })
+);
 
 // Or with a pre-built instance:
-builder.Services.AddHeadlessPushNotifications(setup =>
-    setup.UseFirebase(new FirebaseOptions { Json = json }));
+builder.Services.AddHeadlessPushNotifications(setup => setup.UseFirebase(new FirebaseOptions { Json = json }));
 
 // Disable retry:
 builder.Services.AddHeadlessPushNotifications(setup =>
@@ -351,7 +350,8 @@ builder.Services.AddHeadlessPushNotifications(setup =>
     {
         options.Json = json;
         options.Retry = new FirebaseRetryOptions { MaxAttempts = 0 };
-    }));
+    })
+);
 ```
 
 #### Transient Errors (Retried)

@@ -53,11 +53,15 @@ var redis = ConnectionMultiplexer.Connect("localhost:6379");
 services.AddHeadlessCaching(setup =>
 {
     setup.UseRedis(options => options.ConnectionMultiplexer = redis); // default slot: exactly one Use* required
-    setup.AddNamed("sessions", i => i.UseRedis(options =>
-    {
-        options.ConnectionMultiplexer = redis;
-        options.KeyPrefix = "sessions:";
-    }));
+    setup.AddNamed(
+        "sessions",
+        i =>
+            i.UseRedis(options =>
+            {
+                options.ConnectionMultiplexer = redis;
+                options.KeyPrefix = "sessions:";
+            })
+    );
     setup.UseDistributedFactoryLock(); // cross-cutting opt-in (Headless.Caching.DistributedLocks)
 });
 ```

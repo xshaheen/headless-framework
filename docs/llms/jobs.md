@@ -96,8 +96,8 @@ For durable persistence register a coordination provider first, then add the EF 
 
 ```csharp
 builder.Services.AddHeadlessCoordination(c => c.UseSqlServer(conn));
-builder.Services
-    .AddHeadlessJobs()
+builder
+    .Services.AddHeadlessJobs()
     .AddOperationalStore(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn)));
 ```
 
@@ -180,20 +180,27 @@ When a `Headless.CommitCoordination` provider is registered (`services.AddPostgr
 
 ```csharp
 // db is a relational DbContext; services is the DI scope; both are enlisted by the helper.
-await db.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
-{
-    ctx.Orders.Add(order);
-    await ctx.SaveChangesAsync(ct);
-
-    await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct); // outbox publish
-
-    await timeJobManager.AddAsync(new TimeJobEntity              // enlists in same transaction
+await db.ExecuteCoordinatedTransactionAsync(
+    async (ctx, ct) =>
     {
-        Function = "SendOrderReminder",
-        ExecutionTime = DateTime.UtcNow.AddHours(24),
-        Request = JobsHelper.SerializeRequest(new { order.Id }),
-    }, ct);
-}, services, ct);
+        ctx.Orders.Add(order);
+        await ctx.SaveChangesAsync(ct);
+
+        await outboxBus.PublishAsync(new OrderPlaced(order.Id), ct); // outbox publish
+
+        await timeJobManager.AddAsync(
+            new TimeJobEntity // enlists in same transaction
+            {
+                Function = "SendOrderReminder",
+                ExecutionTime = DateTime.UtcNow.AddHours(24),
+                Request = JobsHelper.SerializeRequest(new { order.Id }),
+            },
+            ct
+        );
+    },
+    services,
+    ct
+);
 // On commit: order row + outbox message + job row all persist; dispatch fires post-commit.
 // On rollback: none persist, no dispatch.
 ```
@@ -363,22 +370,22 @@ builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
     {
-        scheduler.NodeId = "my-node";                          // in-memory path only
-        scheduler.MaxConcurrency = 10;                         // default: processor count
+        scheduler.NodeId = "my-node"; // in-memory path only
+        scheduler.MaxConcurrency = 10; // default: processor count
         scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(1); // default: 1 min
-        scheduler.LeaseDuration = TimeSpan.FromMinutes(5);     // default: 5 min
-        scheduler.LeaseRenewalInterval = null;                 // null → LeaseDuration / 3
+        scheduler.LeaseDuration = TimeSpan.FromMinutes(5); // default: 5 min
+        scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
-        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;        // default: local
+        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: local
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
-        scheduler.StartMode = JobsStartMode.Immediate;         // or Manual
+        scheduler.StartMode = JobsStartMode.Immediate; // or Manual
     });
 
     options.SetExceptionHandler<MyJobExceptionHandler>();
-    options.DisableBackgroundServices();       // test / enqueue-only nodes
-    options.UseGZipCompression();              // compress request payloads
-    options.IgnoreSeedDefinedCronJobs();       // skip auto-seeding of attribute cron jobs
-    options.UseJobsSeeder(async manager =>     // startup time-job seeder
+    options.DisableBackgroundServices(); // test / enqueue-only nodes
+    options.UseGZipCompression(); // compress request payloads
+    options.IgnoreSeedDefinedCronJobs(); // skip auto-seeding of attribute cron jobs
+    options.UseJobsSeeder(async manager => // startup time-job seeder
     {
         await manager.AddAsync(new TimeJobEntity { Function = "Init", ExecutionTime = DateTime.UtcNow });
     });
@@ -431,8 +438,8 @@ dotnet add package Headless.Jobs.Dashboard
 ```csharp
 using Headless.Jobs.DependencyInjection;
 
-builder.Services
-    .AddHeadlessJobs()
+builder
+    .Services.AddHeadlessJobs()
     .AddDashboard(dashboard =>
     {
         dashboard.SetBasePath("/jobs-dashboard");
@@ -447,8 +454,8 @@ app.Run();
 ### Configuration
 
 ```csharp
-builder.Services
-    .AddHeadlessJobs()
+builder
+    .Services.AddHeadlessJobs()
     .AddDashboard(dashboard =>
     {
         // Path and domain
@@ -457,10 +464,10 @@ builder.Services
         dashboard.SetCorsPolicy("MyPolicy");
 
         // Authentication — pick one:
-        dashboard.WithBasicAuth("admin", "secret");           // username/password
-        dashboard.WithApiKey("my-api-key");                   // Bearer token / query param
-        dashboard.WithHostAuthentication();                   // delegate to host auth
-        dashboard.WithHostAuthentication("AdminPolicy");      // host auth + policy
+        dashboard.WithBasicAuth("admin", "secret"); // username/password
+        dashboard.WithApiKey("my-api-key"); // Bearer token / query param
+        dashboard.WithHostAuthentication(); // delegate to host auth
+        dashboard.WithHostAuthentication("AdminPolicy"); // host auth + policy
         // Omitting auth = public dashboard
     });
 ```
@@ -589,17 +596,16 @@ dotnet add package Headless.Jobs.OpenTelemetry
 using OpenTelemetry.Trace;
 
 // 1. Add Jobs with OpenTelemetry instrumentation
-builder.Services
-    .AddHeadlessJobs()
-    .AddOpenTelemetryInstrumentation(); // replaces LoggerInstrumentation with OTel
+builder.Services.AddHeadlessJobs().AddOpenTelemetryInstrumentation(); // replaces LoggerInstrumentation with OTel
 
 // 2. Configure the OpenTelemetry pipeline to include the Jobs ActivitySource
-builder.Services.AddOpenTelemetry()
+builder
+    .Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
         tracing
             .AddSource("Headless.Jobs") // the Jobs ActivitySource name
-            .AddConsoleExporter();      // or Jaeger, OTLP, Azure Monitor, etc.
+            .AddConsoleExporter(); // or Jaeger, OTLP, Azure Monitor, etc.
     });
 ```
 
@@ -683,8 +689,8 @@ var conn = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddHeadlessCoordination(c => c.UseSqlServer(conn));
 
 // 2. Register Jobs with the durable operational store
-builder.Services
-    .AddHeadlessJobs(options =>
+builder
+    .Services.AddHeadlessJobs(options =>
     {
         options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc);
     })
@@ -695,7 +701,8 @@ builder.Services
 
 // Optional: cron-expression caching via ICache
 builder.Services.AddHeadlessCaching(setup =>
-    setup.UseRedis(o => o.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379")));
+    setup.UseRedis(o => o.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379"))
+);
 ```
 
 Without a registered coordination provider the durable path throws at startup:
@@ -707,8 +714,8 @@ Register one with AddHeadlessCoordination(...) before AddHeadlessJobs(... AddOpe
 ### Configuration
 
 ```csharp
-builder.Services
-    .AddHeadlessJobs(options =>
+builder
+    .Services.AddHeadlessJobs(options =>
     {
         options.ConfigureScheduler(scheduler =>
         {
@@ -719,8 +726,8 @@ builder.Services
     .AddOperationalStore(ef =>
     {
         ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
-        ef.SetDbContextPoolSize(512);   // default: 1024
-        ef.SetSchema("background");     // default: "jobs"
+        ef.SetDbContextPoolSize(512); // default: 1024
+        ef.SetSchema("background"); // default: "jobs"
     });
 ```
 
@@ -749,14 +756,17 @@ builder.Services
 Set `Retries` and `RetryIntervals` (seconds between attempts) on the entity:
 
 ```csharp
-await timeJobManager.AddAsync(new TimeJobEntity
-{
-    Function = "ProcessPayment",
-    ExecutionTime = DateTime.UtcNow,
-    Request = JobsHelper.SerializeRequest(new { PaymentId = "pay_123" }),
-    Retries = 3,
-    RetryIntervals = [30, 60, 120], // seconds between attempts
-}, ct);
+await timeJobManager.AddAsync(
+    new TimeJobEntity
+    {
+        Function = "ProcessPayment",
+        ExecutionTime = DateTime.UtcNow,
+        Request = JobsHelper.SerializeRequest(new { PaymentId = "pay_123" }),
+        Retries = 3,
+        RetryIntervals = [30, 60, 120], // seconds between attempts
+    },
+    ct
+);
 ```
 
 - Retries run automatically when a job method throws.
@@ -888,28 +898,32 @@ Set it on the entity or via the fluent builder:
 
 ```csharp
 // On the entity directly
-await timeJobManager.AddAsync(new TimeJobEntity
-{
-    Function = "ChargeCard",
-    OnNodeDeath = NodeDeathPolicy.MarkFailed,
-    ExecutionTime = DateTime.UtcNow,
-}, ct);
+await timeJobManager.AddAsync(
+    new TimeJobEntity
+    {
+        Function = "ChargeCard",
+        OnNodeDeath = NodeDeathPolicy.MarkFailed,
+        ExecutionTime = DateTime.UtcNow,
+    },
+    ct
+);
 
 // Via FluentChainJobBuilder
-var job = FluentChainJobBuilder<TimeJobEntity>
-    .BeginWith(p => p
-        .SetFunction("ChargeCard")
-        .SetOnNodeDeath(NodeDeathPolicy.MarkFailed)
-        .SetExecutionTime(DateTime.UtcNow));
+var job = FluentChainJobBuilder<TimeJobEntity>.BeginWith(p =>
+    p.SetFunction("ChargeCard").SetOnNodeDeath(NodeDeathPolicy.MarkFailed).SetExecutionTime(DateTime.UtcNow)
+);
 await timeJobManager.AddAsync(job, ct);
 
 // On a cron job (propagates to all occurrences)
-await cronJobManager.AddAsync(new CronJobEntity
-{
-    Function = "NightlyReport",
-    Expression = "0 2 * * *",
-    OnNodeDeath = NodeDeathPolicy.Skip,
-}, ct);
+await cronJobManager.AddAsync(
+    new CronJobEntity
+    {
+        Function = "NightlyReport",
+        Expression = "0 2 * * *",
+        OnNodeDeath = NodeDeathPolicy.Skip,
+    },
+    ct
+);
 ```
 
 The claim predicate's lease-expiry re-claim arm is gated on `OnNodeDeath == Retry`, so clock skew cannot speculatively re-run `Skip` or `MarkFailed` jobs.
