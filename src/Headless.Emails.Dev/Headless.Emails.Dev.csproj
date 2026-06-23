@@ -3,6 +3,12 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Emails.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Azure.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Aws.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Mailkit.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Emails.Core\Headless.Emails.Core.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />

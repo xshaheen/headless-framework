@@ -23,7 +23,7 @@ namespace Headless.Emails.Mailkit;
 /// Authentication failures are logged at critical level and rethrown.
 /// </para>
 /// </remarks>
-public sealed class MailkitEmailSender(
+internal sealed class MailkitEmailSender(
     ObjectPool<SmtpClient> pool,
     IOptionsMonitor<MailkitSmtpOptions> options,
     string? optionsName,

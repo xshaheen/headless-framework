@@ -7,6 +7,10 @@
     <PackageReference Include="AWSSDK.SimpleEmailV2" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Emails.Aws.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Emails.Core.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Emails.Core\Headless.Emails.Core.csproj" />
   </ItemGroup>
 </Project>
