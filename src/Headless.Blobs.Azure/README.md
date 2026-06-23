@@ -1,28 +1,19 @@
 # Headless.Blobs.Azure
 
-Azure Blob Storage implementation of the `IBlobStorage` interface for storing files in Azure.
+Azure Blob Storage implementation of `IBlobStorage` for storing files in Azure.
 
 ## Problem Solved
 
-Provides Azure Blob Storage integration using the unified `IBlobStorage` abstraction.
+Provides integration with Azure Blob Storage using the unified `IBlobStorage` abstraction, with `BlobServiceClient` resolution from DI or a per-store factory, presigned SAS URL support, and opt-in container auto-create.
 
 ## Key Features
 
-- Full `IBlobStorage` implementation for Azure Blob Storage
-- Bulk operations with Azure Batch API
-- Opt-in, cached container auto-create (`AutoCreateContainer`)
-- Metadata support
-- Presigned download/upload URLs via `IPresignedUrlBlobStorage` (SAS-based)
-- Integration with Azure.Identity for authentication
-
-> Presigned URLs need a `BlobServiceClient` that can sign. Account-key clients sign locally; AAD /
-> `DefaultAzureCredential` clients fall back to a user-delegation SAS (the identity needs the `Storage Blob
-> Delegator` role plus a data role, and the URL is capped at 7 days). A bare SAS-token or anonymous client
-> cannot sign and throws `InvalidOperationException` at call time.
-
-> `AutoCreateContainer` (default `true`) creates the target container on upload/copy, at most once per
-> container per instance. Set it to `false` when the client's credentials cannot create containers; a missing
-> container then surfaces as an error. (Renamed from `CreateContainerIfNotExists`.)
+- Full `IBlobStorage` implementation for Azure Blob Storage.
+- Bulk operations with Azure Batch API.
+- Opt-in, cached container auto-create (`AutoCreateContainer`, default `true`).
+- Metadata support.
+- Presigned download/upload URLs via `IPresignedUrlBlobStorage` (SAS-based; named stores only — feature-detect via cast for the default store).
+- Per-store `BlobServiceClient` from an optional `clientFactory`; falls back to the ambient `BlobServiceClient` from DI.
 
 ## Installation
 
@@ -32,28 +23,26 @@ dotnet add package Headless.Blobs.Azure
 
 ## Quick Start
 
-Register a `BlobServiceClient` in DI first, then call `AddAzureBlobStorage`:
-
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Option 1: connection string
-builder.Services.AddSingleton(new BlobServiceClient(
-    builder.Configuration["Azure:Storage:ConnectionString"]));
+// Register a BlobServiceClient in DI (used when no clientFactory is supplied).
+builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
 
-// Option 2: Azure.Identity (DefaultAzureCredential)
-builder.Services.AddSingleton(new BlobServiceClient(
-    new Uri($"https://mystorageaccount.blob.core.windows.net"),
-    new DefaultAzureCredential()));
-
-// Option 3: Aspire integration
-// builder.AddAzureBlobClient("blobs");
-
-builder.Services.AddAzureBlobStorage(options =>
+builder.Services.AddHeadlessBlobs(blobs =>
 {
-    options.AutoCreateContainer = true; // default
+    // Default store — consumes the ambient BlobServiceClient from DI.
+    blobs.UseAzure(options => { });
+
+    // Named store on a different account — per-store clientFactory overrides the DI client.
+    // Also registers keyed IPresignedUrlBlobStorage("archive") automatically.
+    blobs.AddNamed("archive", instance => instance.UseAzure(
+        setupAction: options => { },
+        clientFactory: _ => new BlobServiceClient("<archive-connection-string>")));
 });
 ```
+
+When no `clientFactory` is supplied, the `BlobServiceClient` must be registered in DI before first use. Absence is detected at resolution time, not at startup.
 
 ## Configuration
 
@@ -80,6 +69,8 @@ builder.Services.AddAzureBlobStorage(options =>
 
 ## Side Effects
 
-- Requires a `BlobServiceClient` to be registered in DI before this call
-- Registers `IBlobStorage` as singleton
-- Registers `IBlobNamingNormalizer` as singleton
+Registered via `AddHeadlessBlobs(b => b.UseAzure(...))` or `AddNamed("name", i => i.UseAzure(...))`:
+
+- Default (`UseAzure`): registers `IBlobStorage` as unkeyed singleton. Consumes `BlobServiceClient` from DI (or `clientFactory`) at resolution time.
+- Named (`AddNamed ... UseAzure`): registers `IBlobStorage` as keyed singleton (`name`); registers `IPresignedUrlBlobStorage` as keyed singleton (`name`, forwarded from the keyed `IBlobStorage`).
+- Presigned URLs require a `BlobServiceClient` that can sign: account-key clients sign locally; AAD/`DefaultAzureCredential` clients fall back to user-delegation SAS (requires `Storage Blob Delegator` role, capped at 7 days). A bare SAS-token or anonymous client throws `InvalidOperationException` at call time.

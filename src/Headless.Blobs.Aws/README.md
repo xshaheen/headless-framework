@@ -1,20 +1,20 @@
 # Headless.Blobs.Aws
 
-AWS S3 implementation of the `IBlobStorage` interface for storing files in Amazon S3.
+AWS S3 implementation of `IBlobStorage` for storing files in Amazon S3.
 
 ## Problem Solved
 
-Provides AWS S3 integration for blob storage using the unified `IBlobStorage` abstraction.
+Provides integration with AWS S3 for blob storage using the unified `IBlobStorage` abstraction, with per-store S3 client construction, presigned URL support, and opt-in bucket auto-create.
 
 ## Key Features
 
-- Full `IBlobStorage` implementation for AWS S3
-- Bulk upload/delete with optimized batching
-- Two-tier name normalization: the bucket name is normalized to S3 rules; object-key path segments are validated and preserved
-- Metadata support
-- Presigned download/upload URLs via `IPresignedUrlBlobStorage`
-- Opt-in, cached bucket auto-create (`AutoCreateContainer`)
-- Integration with AWS SDK configuration
+- Full `IBlobStorage` implementation for AWS S3.
+- Bulk upload/delete with optimized batching.
+- Two-tier name normalization: bucket name normalized to S3 rules; object-key path segments validated and preserved.
+- Metadata support.
+- Presigned download/upload URLs via `IPresignedUrlBlobStorage` (named stores only; feature-detect via cast for the default store).
+- Opt-in, cached bucket auto-create (`AutoCreateContainer`, default `true`).
+- Per-store `IAmazonS3` constructed via `S3ClientFactory`; optional `AWSOptions` to override the SDK credential/region chain.
 
 ## Installation
 
@@ -27,22 +27,35 @@ dotnet add package Headless.Blobs.Aws
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Option 1: Use configuration-based AWS options
-var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddAwsS3BlobStorage(awsOptions);
+// Default store — AWS SDK credential/region chain applies unless overridden.
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions()));
 
-// Option 2: Manual configuration
-builder.Services.AddAwsS3BlobStorage(new AWSOptions
-{
-    Region = RegionEndpoint.USEast1,
-    Credentials = new BasicAWSCredentials("access-key", "secret-key")
-});
+// Explicit credentials:
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseAws(
+        options => { },
+        new AWSOptions
+        {
+            Region = RegionEndpoint.USEast1,
+            Credentials = new BasicAWSCredentials("access-key", "secret-key"),
+        }));
+
+// Named store with per-store credentials; keyed IPresignedUrlBlobStorage registered automatically.
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.AddNamed("archive", instance => instance.UseAws(
+        options => { },
+        awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive"))));
 ```
 
-Buckets and keys are passed per operation, not configured at registration:
+Buckets and keys are passed per operation:
 
 ```csharp
 await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
+
+// Feature-detect presigned on the default store:
+if (storage is IPresignedUrlBlobStorage presigned)
+    var url = await presigned.GetPresignedDownloadUrlAsync(["my-bucket"], "file.pdf", TimeSpan.FromHours(1));
 ```
 
 ## Configuration
@@ -62,7 +75,7 @@ await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 ### Options
 
 ```csharp
-options.AutoCreateContainer = true; // create buckets on upload/copy (default true)
+options.AutoCreateContainer = true;            // create buckets on upload/copy (default true)
 options.CannedAcl = S3CannedACL.Private;
 options.UseChunkEncoding = true;
 options.DisablePayloadSigning = false;
@@ -79,6 +92,7 @@ options.MaxBulkParallelism = 10;
 
 ## Side Effects
 
-- Registers `IAmazonS3` if not already registered
-- Registers `IBlobStorage` as singleton
-- Registers `IBlobNamingNormalizer` as singleton
+Registered via `AddHeadlessBlobs(b => b.UseAws(...))` or `AddNamed("name", i => i.UseAws(...))`:
+
+- Default (`UseAws`): registers `IBlobStorage` as unkeyed singleton. The per-store `IAmazonS3` is constructed inline; it is not registered in the DI container.
+- Named (`AddNamed ... UseAws`): registers `IBlobStorage` as keyed singleton (`name`); registers `IPresignedUrlBlobStorage` as keyed singleton (`name`, forwarded from the keyed `IBlobStorage`). The per-store `IAmazonS3` is constructed inline.

@@ -25,8 +25,6 @@ public sealed class HeadlessCacheInstanceBuilder
 
     internal Func<IServiceProvider, ISerializer>? SerializerFactory { get; private set; }
 
-    internal int RegistrationCount { get; private set; }
-
     internal void SetSerializerFactory(Func<IServiceProvider, ISerializer> serializerFactory)
     {
         Argument.IsNotNull(serializerFactory);
@@ -43,11 +41,18 @@ public sealed class HeadlessCacheInstanceBuilder
 
     /// <summary>Captures the provider contribution for this instance. Must be called exactly once.</summary>
     /// <param name="action">The provider's deferred service registration action.</param>
+    /// <exception cref="InvalidOperationException">Thrown when a provider is already registered for this instance.</exception>
     public void RegisterProvider(Action<IServiceCollection> action)
     {
         Argument.IsNotNull(action);
 
+        if (Action is not null)
+        {
+            throw new InvalidOperationException(
+                $"Multiple providers were configured for named cache instance '{Name}'."
+            );
+        }
+
         Action = action;
-        RegistrationCount++;
     }
 }

@@ -930,9 +930,23 @@ public sealed class AwsBlobStorage(
 
     #region Dispose
 
+    private bool _disposed;
+
     public ValueTask DisposeAsync()
     {
+        // The keyed IPresignedUrlBlobStorage forward and the keyed IBlobStorage resolve to this same instance, so
+        // the DI container tracks it twice and disposes it twice — guard so the dispose path stays idempotent.
+        if (_disposed)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        _disposed = true;
         _ensureBucketLock.Dispose();
+
+        // The S3 client is built per-store by the DI factory and handed to this engine to own (it is not a
+        // container-tracked service), so this instance is responsible for releasing its HTTP handler/sockets.
+        (s3 as IDisposable)?.Dispose();
 
         return ValueTask.CompletedTask;
     }

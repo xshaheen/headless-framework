@@ -35,9 +35,17 @@ public static class TestImages
     /// </summary>
     public const string LocalStack = "localstack/localstack:4.4.0";
 
-    /// <summary>SQL Server 2022 image tag (used on x86_64 hosts).</summary>
-    public const string MsSqlServer = "mcr.microsoft.com/mssql/server:2022-latest";
+    /// <summary>
+    /// SQL Server 2022 image tag (used on x86_64 hosts).
+    /// Pinned to an immutable CU tag rather than the rolling <c>2022-latest</c> so Docker does not
+    /// re-check the registry on every run and so a fresh pull cannot silently change the SQL Server build.
+    /// </summary>
+    public const string MsSqlServer = "mcr.microsoft.com/mssql/server:2022-CU19-ubuntu-22.04";
 
-    /// <summary>Azure SQL Edge image tag (used on ARM64 hosts; SQL Server doesn't ship ARM images).</summary>
-    public const string AzureSqlEdge = "mcr.microsoft.com/azure-sql-edge:latest";
+    /// <summary>
+    /// Azure SQL Edge image tag (used on ARM64 hosts; SQL Server doesn't ship ARM images).
+    /// Pinned to <c>1.0.7</c> (SQL engine 15.0.2000.x) rather than the rolling <c>latest</c>: the
+    /// <c>latest</c> tag moved on to the 2.0.x line, so an unpinned pull would change engine behavior on ARM.
+    /// </summary>
+    public const string AzureSqlEdge = "mcr.microsoft.com/azure-sql-edge:1.0.7";
 }

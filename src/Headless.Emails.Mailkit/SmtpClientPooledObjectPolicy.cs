@@ -6,12 +6,14 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Headless.Emails.Mailkit;
 
-internal sealed class SmtpClientPooledObjectPolicy(IOptionsMonitor<MailkitSmtpOptions> options)
+internal sealed class SmtpClientPooledObjectPolicy(IOptionsMonitor<MailkitSmtpOptions> options, string? optionsName)
     : IPooledObjectPolicy<SmtpClient>
 {
     public SmtpClient Create()
     {
-        return new SmtpClient { Timeout = (int)options.CurrentValue.Timeout.TotalMilliseconds };
+        // Read the snapshot for this instance's options name (null = the default pool). A keyed pool must not
+        // read CurrentValue, which always binds the default options.
+        return new SmtpClient { Timeout = (int)options.Get(optionsName).Timeout.TotalMilliseconds };
     }
 
     public bool Return(SmtpClient client)

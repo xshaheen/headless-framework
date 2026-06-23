@@ -20,6 +20,8 @@ TEST_PROJECT ?=
 TEST_FILTER ?=
 TEST_ARGS ?= --no-progress
 TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
+UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
+INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
 MSBUILD_ARGS ?=
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
@@ -192,20 +194,14 @@ test-timeout: ## Run all tests with an explicit MTP timeout. SDK defaults still 
 	$(MAKE) test TEST_ARGS='$(TEST_ARGS) --timeout $(TEST_TIMEOUT)'
 
 .PHONY: test-unit
-test-unit: build ## Run every *.Tests.Unit project.
+test-unit: build ## Run every *.Tests.Unit module in parallel (honors TEST_MAX_PARALLEL).
 	@mkdir -p "$(TEST_RESULTS_DIR)/unit"
-	@find tests -name '*.Tests.Unit.csproj' -print0 | while IFS= read -r -d '' project; do \
-		echo "Testing $$project"; \
-		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)/unit" $(TEST_ARGS) $(TEST_FILTER); \
-	done
+	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/unit" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-integration
-test-integration: build ## Run every *.Tests.Integration project. Requires Docker/Testcontainers where applicable.
+test-integration: build ## Run every *.Tests.Integration module (honors TEST_MAX_PARALLEL; needs Docker). Lower TEST_MAX_PARALLEL on memory-constrained hosts.
 	@mkdir -p "$(TEST_RESULTS_DIR)/integration"
-	@find tests -name '*.Tests.Integration.csproj' -print0 | while IFS= read -r -d '' project; do \
-		echo "Testing $$project"; \
-		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)/integration" $(TEST_ARGS) $(TEST_FILTER); \
-	done
+	$(DOTNET) test --test-modules "$(INTEGRATION_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/integration" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: coverage
 coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension. TEST_MAX_PARALLEL caps concurrent modules (default 3).

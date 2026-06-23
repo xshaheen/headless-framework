@@ -27,6 +27,20 @@ check the digest, even when the local image is current. Pinning each image in
 `TestImages` keeps the working set small and reproducible across CI and local runs.
 Bump versions in one place when you want a refresh.
 
+## Container reuse
+
+The fixtures create their containers with Testcontainers reuse enabled (except `HeadlessRabbitMqFixture` — see
+its remarks; the broker does not survive a warm reattach). When the host opts in —
+`testcontainers.reuse.enable=true` in `~/.testcontainers.properties`, or the `TESTCONTAINERS_REUSE_ENABLE=true`
+environment variable — repeated local runs reattach to the already-warm container instead of paying the
+cold-start boot each time (most impactful for the slow-booting SQL Server fixtures). CI leaves reuse disabled,
+so reuse becomes a no-op and Ryuk reaps containers as usual.
+
+Because a reused container keeps state between runs, tests must be idempotent across runs: drop-before-create
+(`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`),
+rather than assuming a clean database. Each integration project reuses its own container, keyed by the test
+assembly name, so projects never share state.
+
 ## Installation
 
 ```bash
@@ -79,4 +93,4 @@ No configuration required. Containers use sensible defaults.
 ## Side Effects
 
 - Starts Docker containers during test execution
-- Containers are automatically stopped after tests complete
+- Containers are stopped after tests complete; with reuse enabled on the host they are kept stopped for the next run to reattach

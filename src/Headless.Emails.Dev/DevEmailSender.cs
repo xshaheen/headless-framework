@@ -13,7 +13,7 @@ namespace Headless.Emails.Dev;
 /// attachment names) to the file at <paramref name="filePath"/>, separated by a dashed line.
 /// No email is ever sent to real recipients.
 /// </remarks>
-public sealed class DevEmailSender(string filePath) : IEmailSender, IDisposable
+internal sealed class DevEmailSender(string filePath) : IEmailSender, IDisposable
 {
     private const string _Separator = "--------------------";
     private readonly string _filePath = Argument.IsNotNullOrEmpty(filePath);

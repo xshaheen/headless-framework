@@ -203,7 +203,19 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     {
         Argument.IsNotNull(key);
 
-        return executeDescriptor.FirstOrDefault(x => x.MessageName.Equals(key, StringComparison.OrdinalIgnoreCase));
+        // Indexed scan instead of FirstOrDefault(closure): same first-match semantics with no per-message
+        // closure + iterator allocation (this runs per transport-dispatched message).
+        for (var i = 0; i < executeDescriptor.Count; i++)
+        {
+            var descriptor = executeDescriptor[i];
+
+            if (descriptor.MessageName.Equals(key, StringComparison.OrdinalIgnoreCase))
+            {
+                return descriptor;
+            }
+        }
+
+        return null;
     }
 
     private ConsumerExecutorDescriptor? _MatchWildcardUsingRegex(
