@@ -9,7 +9,7 @@ namespace Headless.Emails.Dev;
 /// Useful in test environments or feature flags where email sending should be disabled
 /// without changing application code. No I/O or network calls are made.
 /// </remarks>
-public sealed class NoopEmailSender : IEmailSender
+internal sealed class NoopEmailSender : IEmailSender
 {
     /// <summary>
     /// Discards the email and returns a successful response immediately.

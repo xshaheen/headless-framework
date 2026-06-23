@@ -111,7 +111,7 @@ public sealed class HeadlessCachingSetupBuilder
         var instance = new HeadlessCacheInstanceBuilder(name);
         configure(instance);
 
-        if (instance.RegistrationCount == 0)
+        if (instance.Action is null)
         {
             throw new InvalidOperationException(
                 $"Named cache instance '{name}' requires exactly one provider. "
@@ -119,14 +119,7 @@ public sealed class HeadlessCachingSetupBuilder
             );
         }
 
-        if (instance.RegistrationCount > 1)
-        {
-            throw new InvalidOperationException(
-                $"Multiple providers were configured for named cache instance '{name}'."
-            );
-        }
-
-        NamedExtensions.Add((name, instance.Action!));
+        NamedExtensions.Add((name, instance.Action));
 
         return this;
     }

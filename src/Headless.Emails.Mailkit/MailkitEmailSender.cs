@@ -23,9 +23,10 @@ namespace Headless.Emails.Mailkit;
 /// Authentication failures are logged at critical level and rethrown.
 /// </para>
 /// </remarks>
-public sealed class MailkitEmailSender(
+internal sealed class MailkitEmailSender(
     ObjectPool<SmtpClient> pool,
     IOptionsMonitor<MailkitSmtpOptions> options,
+    string? optionsName,
     ILogger<MailkitEmailSender> logger
 ) : IEmailSender
 {
@@ -52,7 +53,9 @@ public sealed class MailkitEmailSender(
     {
         request.EnsureHasBody();
 
-        var settings = options.CurrentValue;
+        // Read the snapshot for this instance's options name (null = the default/unkeyed sender). Keyed senders
+        // must not read CurrentValue, which always binds the default options.
+        var settings = options.Get(optionsName);
         using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).ConfigureAwait(false);
 
         var client = pool.Get();
