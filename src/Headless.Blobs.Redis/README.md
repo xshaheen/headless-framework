@@ -14,6 +14,10 @@ Provides high-speed blob storage for small files using Redis, suitable for tempo
 - Automatic key expiration support
 - Metadata stored alongside blobs
 
+## Design Notes
+
+- Designed for small, ephemeral blobs (cache data, session files, temporary uploads). The default `MaxBlobSizeBytes` is 10 MB to prevent memory exhaustion; uploads above the cap are rejected. For large files, use Azure Blob Storage or S3.
+
 ## Installation
 
 ```bash
@@ -43,10 +47,6 @@ builder.Services.AddRedisBlobStorage(options =>
 | `ConnectionMultiplexer` | *(required)* | `IConnectionMultiplexer` instance for Redis. |
 | `MaxBlobSizeBytes` | 10 MB | Maximum blob size in bytes. Set to 0 to disable. |
 | `MaxBulkParallelism` | 10 | Maximum parallelism for bulk operations. |
-
-## Usage Notes
-
-**Size Limits:** Redis blob storage is designed for small, ephemeral blobs (cache data, session files, temporary uploads). The default 10 MB limit prevents memory exhaustion. For large files, use Azure Blob Storage or S3.
 
 ## Dependencies
 

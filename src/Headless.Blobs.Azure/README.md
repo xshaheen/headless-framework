@@ -4,7 +4,7 @@ Azure Blob Storage implementation of the `IBlobStorage` interface for storing fi
 
 ## Problem Solved
 
-Provides seamless integration with Azure Blob Storage using the unified `IBlobStorage` abstraction.
+Provides Azure Blob Storage integration using the unified `IBlobStorage` abstraction.
 
 ## Key Features
 

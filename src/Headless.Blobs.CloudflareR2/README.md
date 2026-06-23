@@ -14,6 +14,12 @@ R2 speaks the S3 API, but the AWS provider cannot be pointed at it directly: the
 - R2 bucket naming normalization (no dots)
 - Jurisdiction-aware endpoints (default, EU, FedRAMP)
 
+## Design Notes
+
+- **Buckets are not auto-created.** R2 API tokens are commonly scoped to object operations and cannot create buckets, so `AutoCreateContainer` defaults to `false`. Pre-create buckets out of band (the Cloudflare dashboard or an account-scoped token), or call `CreateContainerAsync` with a token that has bucket-create permission.
+- **No ACLs / public access.** R2 has no per-object ACLs (`CannedAcl` is `null`). Public serving is a custom-domain / `r2.dev` concern and is out of scope for this provider; use presigned URLs for time-limited private access.
+- **Single PUT is capped at ~5 GiB**, the same as S3.
+
 ## Installation
 
 ```bash
@@ -62,12 +68,6 @@ if (storage is IPresignedUrlBlobStorage presigned)
 ```
 
 Bind with `builder.Services.AddCloudflareR2BlobStorage(builder.Configuration.GetSection("R2"))`.
-
-## Behavior Notes
-
-- **Buckets are not auto-created.** R2 API tokens are commonly scoped to object operations and cannot create buckets, so `AutoCreateContainer` defaults to `false`. Pre-create buckets out of band (the Cloudflare dashboard or an account-scoped token), or call `CreateContainerAsync` with a token that has bucket-create permission.
-- **No ACLs / public access.** R2 has no per-object ACLs (`CannedAcl` is `null`). Public serving is a custom-domain / `r2.dev` concern and is out of scope for this provider; use presigned URLs for time-limited private access.
-- **Single PUT is capped at ~5 GiB**, the same as S3.
 
 ## Dependencies
 

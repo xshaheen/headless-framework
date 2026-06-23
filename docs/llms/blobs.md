@@ -6,92 +6,74 @@ packages: Blobs.Abstractions, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.
 # Blob Storage
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
+- [Choosing a Provider](#choosing-a-provider)
 - [Headless.Blobs.Abstractions](#headlessblobsabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Blobs.Aws](#headlessblobsaws)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration-1)
-    - [appsettings.json](#appsettingsjson)
-    - [Options](#options)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Blobs.Azure](#headlessblobsazure)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-2)
-    - [appsettings.json](#appsettingsjson-1)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Blobs.FileSystem](#headlessblobsfilesystem)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-3)
-    - [appsettings.json](#appsettingsjson-2)
-    - [Options](#options-1)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Blobs.Redis](#headlessblobsredis)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-3)
-  - [Configuration](#configuration-4)
-    - [appsettings.json](#appsettingsjson-3)
-    - [Options](#options-2)
-  - [Usage Notes](#usage-notes)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 - [Headless.Blobs.SshNet](#headlessblobssshnet)
-  - [Problem Solved](#problem-solved-5)
-  - [Key Features](#key-features-5)
-  - [Installation](#installation-5)
-  - [Quick Start](#quick-start-4)
-  - [Configuration](#configuration-5)
-    - [appsettings.json](#appsettingsjson-4)
-    - [SSH Key Authentication](#ssh-key-authentication)
-  - [Dependencies](#dependencies-5)
-  - [Side Effects](#side-effects-5)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-5)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
 - [Headless.Blobs.CloudflareR2](#headlessblobscloudflarer2)
-  - [Problem Solved](#problem-solved-6)
-  - [Key Features](#key-features-6)
-  - [Installation](#installation-6)
-  - [Quick Start](#quick-start-5)
-  - [Configuration](#configuration-6)
-    - [appsettings.json](#appsettingsjson-4)
-  - [Behavior Notes](#behavior-notes)
-  - [Dependencies](#dependencies-6)
-  - [Side Effects](#side-effects-6)
+    - [Problem Solved](#problem-solved-6)
+    - [Key Features](#key-features-6)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-6)
+    - [Quick Start](#quick-start-6)
+    - [Configuration](#configuration-6)
+    - [Dependencies](#dependencies-6)
+    - [Side Effects](#side-effects-6)
 
-> Provider-agnostic file/blob storage with implementations for AWS S3, Azure Blob, local filesystem, Redis, and SFTP.
+> Provider-agnostic file/blob storage with implementations for AWS S3, Azure Blob, Cloudflare R2, local filesystem, Redis, and SFTP.
 
 ## Quick Orientation
 
-Install `Headless.Blobs.Abstractions` plus one provider package. Code against `IBlobStorage` — never reference concrete provider types in application code.
-
-Provider selection guide:
-- **Development/testing**: `Headless.Blobs.FileSystem` — no external dependencies, stores files on disk.
-- **Production (AWS)**: `Headless.Blobs.Aws` — full S3 integration with bulk operations and presigned URLs.
-- **Production (Azure)**: `Headless.Blobs.Azure` — Azure Blob Storage with Batch API and Azure.Identity support.
-- **Production (Cloudflare R2)**: `Headless.Blobs.CloudflareR2` — private, S3-compatible storage on the reused AWS engine; a cost-saving S3 replacement.
-- **SFTP/legacy**: `Headless.Blobs.SshNet` — SFTP protocol for remote servers and legacy system integration.
-- **Small cached blobs**: `Headless.Blobs.Redis` — Redis-backed storage for small, ephemeral blobs only (default 10 MB limit).
-
-All providers register `IBlobStorage` as singleton. Container paths are arrays of strings (e.g., `["uploads", "images"]`).
+Install `Headless.Blobs.Abstractions` plus exactly one provider package. Code against `IBlobStorage` — never reference concrete provider types in application code. See [Choosing a Provider](#choosing-a-provider) for the selection table. All providers register `IBlobStorage` as a singleton; container paths are arrays of strings (e.g., `["uploads", "images"]`), not slash-delimited strings.
 
 ## Agent Instructions
 
@@ -107,16 +89,30 @@ All providers register `IBlobStorage` as singleton. Container paths are arrays o
 - `SshNet` accepts a `ConnectionString` (SSH URI) for both password and key-based auth. For key-based auth, set `PrivateKey` (a `Stream`) and optionally `PrivateKeyPassPhrase`.
 - Only one provider can be the default `IBlobStorage` registration. If you need multiple providers, use keyed services or named registrations.
 
+## Choosing a Provider
+
+Pick one provider per `IBlobStorage` registration based on where the bytes must live and which capabilities you need.
+
+| Provider | Use when | Avoid when | Trade-off |
+| --- | --- | --- | --- |
+| `Headless.Blobs.FileSystem` | Local dev, testing, or single-node on-prem with no cloud dependency | Multi-node or horizontally-scaled deployments (no shared storage) | Not distributed; metadata kept as companion JSON files |
+| `Headless.Blobs.Aws` | Production on AWS; need presigned URLs and bulk operations | Not on AWS, or egress cost is a concern | Ties you to S3 pricing and the AWS SDK |
+| `Headless.Blobs.CloudflareR2` | S3-compatible storage with low egress cost and private buckets | You need public serving via ACLs, or bucket auto-create from the app | No ACL concept; buckets must be pre-created (no auto-create) |
+| `Headless.Blobs.Azure` | Production on Azure; want Entra ID auth and SAS presigned URLs | Not on Azure | Requires a pre-registered `BlobServiceClient`; extra SAS rules for AAD clients |
+| `Headless.Blobs.SshNet` | Files must land on a remote SFTP/SSH server or legacy system | High-throughput or presigned-URL workloads | Slower; no presigned URLs; opens live SSH connections |
+| `Headless.Blobs.Redis` | Small, ephemeral blobs (thumbnails, temp uploads) needing fast access | Large files (default 10 MB cap) or durable storage | In-memory cost; not for large or long-lived blobs |
+
 ---
-# Headless.Blobs.Abstractions
+
+## Headless.Blobs.Abstractions
 
 Defines the unified interface for blob/file storage operations across different providers (AWS S3, Azure Blob, FileSystem, Redis, SFTP).
 
-## Problem Solved
+### Problem Solved
 
-Provides a provider-agnostic API for file storage operations, enabling seamless switching between cloud providers or local storage without changing application code.
+Provides a provider-agnostic API for file storage operations, so application code can switch between cloud providers or local storage without changing.
 
-## Key Features
+### Key Features
 
 - `IBlobStorage` - Core interface for all storage operations:
   - Upload blobs with metadata
@@ -129,13 +125,13 @@ Provides a provider-agnostic API for file storage operations, enabling seamless 
 - Container/directory management
 - Metadata support
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Blobs.Abstractions
 ```
 
-## Usage
+### Quick Start
 
 ```csharp
 public sealed class FileService(IBlobStorage storage)
@@ -163,28 +159,30 @@ public sealed class FileService(IBlobStorage storage)
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required. This is an abstractions-only package.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Extensions`
 - `Headless.Serializer.Json`
 
-## Side Effects
+### Side Effects
 
 None. This is an abstractions package.
+
 ---
-# Headless.Blobs.Aws
+
+## Headless.Blobs.Aws
 
 AWS S3 implementation of the `IBlobStorage` interface for storing files in Amazon S3.
 
-## Problem Solved
+### Problem Solved
 
-Provides seamless integration with AWS S3 for blob storage using the unified `IBlobStorage` abstraction.
+Provides AWS S3 integration for blob storage using the unified `IBlobStorage` abstraction.
 
-## Key Features
+### Key Features
 
 - Full `IBlobStorage` implementation for AWS S3
 - Bulk upload/delete with optimized batching
@@ -194,13 +192,13 @@ Provides seamless integration with AWS S3 for blob storage using the unified `IB
 - Opt-in, cached bucket auto-create (`AutoCreateContainer`)
 - Integration with AWS SDK configuration
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Blobs.Aws
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -223,9 +221,9 @@ Buckets and keys are passed per operation, not configured at registration:
 await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -237,7 +235,7 @@ await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 }
 ```
 
-### Options
+#### Options
 
 ```csharp
 options.AutoCreateContainer = true; // create buckets on upload/copy (default true; set false for R2)
@@ -247,7 +245,7 @@ options.DisablePayloadSigning = false;
 options.MaxBulkParallelism = 10;
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Blobs.Abstractions`
 - `Headless.Core`
@@ -255,21 +253,23 @@ options.MaxBulkParallelism = 10;
 - `AWSSDK.S3`
 - `AWSSDK.Extensions.NETCore.Setup`
 
-## Side Effects
+### Side Effects
 
 - Registers `IAmazonS3` if not already registered
 - Registers `IBlobStorage` as singleton
 - Registers `IBlobNamingNormalizer` as singleton
+
 ---
-# Headless.Blobs.Azure
+
+## Headless.Blobs.Azure
 
 Azure Blob Storage implementation of the `IBlobStorage` interface for storing files in Azure.
 
-## Problem Solved
+### Problem Solved
 
-Provides seamless integration with Azure Blob Storage using the unified `IBlobStorage` abstraction.
+Provides Azure Blob Storage integration using the unified `IBlobStorage` abstraction.
 
-## Key Features
+### Key Features
 
 - Full `IBlobStorage` implementation for Azure Blob Storage
 - Bulk operations with Azure Batch API
@@ -278,13 +278,13 @@ Provides seamless integration with Azure Blob Storage using the unified `IBlobSt
 - Presigned download/upload URLs via `IPresignedUrlBlobStorage` (SAS-based)
 - Integration with Azure.Identity for authentication
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Blobs.Azure
 ```
 
-## Quick Start
+### Quick Start
 
 Register a `BlobServiceClient` in DI first, then call `AddAzureBlobStorage`:
 
@@ -309,9 +309,9 @@ builder.Services.AddAzureBlobStorage(options =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -323,7 +323,7 @@ builder.Services.AddAzureBlobStorage(options =>
 }
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Blobs.Abstractions`
 - `Headless.Core`
@@ -332,21 +332,23 @@ builder.Services.AddAzureBlobStorage(options =>
 - `Azure.Storage.Blobs.Batch`
 - `Microsoft.Extensions.Azure`
 
-## Side Effects
+### Side Effects
 
 - Requires a `BlobServiceClient` to be registered in DI before this call
 - Registers `IBlobStorage` as singleton
 - Registers `IBlobNamingNormalizer` as singleton
+
 ---
-# Headless.Blobs.FileSystem
+
+## Headless.Blobs.FileSystem
 
 Local file system implementation of the `IBlobStorage` interface for development and on-premises scenarios.
 
-## Problem Solved
+### Problem Solved
 
 Provides local file system storage using the unified `IBlobStorage` abstraction, ideal for development, testing, and on-premises deployments without cloud dependencies.
 
-## Key Features
+### Key Features
 
 - Full `IBlobStorage` implementation using local file system
 - Container mapping to directories
@@ -354,13 +356,13 @@ Provides local file system storage using the unified `IBlobStorage` abstraction,
 - No external service dependencies
 - Cross-platform path handling
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Blobs.FileSystem
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -371,9 +373,9 @@ builder.Services.AddFileSystemBlobStorage(options =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -383,31 +385,33 @@ builder.Services.AddFileSystemBlobStorage(options =>
 }
 ```
 
-### Options
+#### Options
 
 ```csharp
 options.BaseDirectoryPath = "/path/to/storage";
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Blobs.Abstractions`
 - `Headless.Hosting`
 
-## Side Effects
+### Side Effects
 
 - Registers `IBlobStorage` as singleton
 - Creates the base directory if it doesn't exist
+
 ---
-# Headless.Blobs.Redis
+
+## Headless.Blobs.Redis
 
 Redis implementation of the `IBlobStorage` interface for caching small blobs in Redis.
 
-## Problem Solved
+### Problem Solved
 
 Provides high-speed blob storage for small files using Redis, suitable for temporary files, cache data, or session-related binary content.
 
-## Key Features
+### Key Features
 
 - Full `IBlobStorage` implementation using Redis
 - Suitable for small-to-medium sized blobs
@@ -415,13 +419,17 @@ Provides high-speed blob storage for small files using Redis, suitable for tempo
 - Automatic key expiration support
 - Metadata stored alongside blobs
 
-## Installation
+### Design Notes
+
+- Designed for small, ephemeral blobs (cache data, session files, temporary uploads). The default `MaxBlobSizeBytes` is 10 MB to prevent memory exhaustion; uploads above the cap are rejected. For large files, use Azure Blob Storage or S3.
+
+### Installation
 
 ```bash
 dotnet add package Headless.Blobs.Redis
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -433,11 +441,9 @@ builder.Services.AddRedisBlobStorage(options =>
 });
 ```
 
-## Configuration
+### Configuration
 
 `RedisBlobStorageOptions` requires an `IConnectionMultiplexer` instance; the options cannot be bound from `appsettings.json` directly. Wire up the multiplexer in code as shown in Quick Start.
-
-### Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -445,31 +451,29 @@ builder.Services.AddRedisBlobStorage(options =>
 | `MaxBlobSizeBytes` | 10 MB | Maximum blob size in bytes. Set to 0 to disable. |
 | `MaxBulkParallelism` | 10 | Maximum parallelism for bulk operations. |
 
-## Usage Notes
-
-**Size Limits:** Redis blob storage is designed for small, ephemeral blobs (cache data, session files, temporary uploads). The default 10 MB limit prevents memory exhaustion. For large files, use Azure Blob Storage or S3.
-
-## Dependencies
+### Dependencies
 
 - `Headless.Blobs.Abstractions`
 - `Headless.Core`
 - `Headless.Hosting`
 - `StackExchange.Redis`
 
-## Side Effects
+### Side Effects
 
 - Registers `IBlobStorage` as singleton
 - Requires an `IConnectionMultiplexer` to be provided via `RedisBlobStorageOptions.ConnectionMultiplexer`
+
 ---
-# Headless.Blobs.SshNet
+
+## Headless.Blobs.SshNet
 
 SFTP/SSH implementation of the `IBlobStorage` interface for storing files on remote servers via SFTP.
 
-## Problem Solved
+### Problem Solved
 
 Provides blob storage via SFTP/SSH protocol for scenarios requiring file transfer to remote servers, legacy system integration, or secure file exchange.
 
-## Key Features
+### Key Features
 
 - Full `IBlobStorage` implementation using SFTP
 - SSH key and password authentication
@@ -477,13 +481,13 @@ Provides blob storage via SFTP/SSH protocol for scenarios requiring file transfe
 - Metadata support via companion files
 - Connection pooling
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Blobs.SshNet
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -495,9 +499,9 @@ builder.Services.AddSshBlobStorage(options =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -507,7 +511,7 @@ builder.Services.AddSshBlobStorage(options =>
 }
 ```
 
-### SSH Key Authentication
+#### SSH Key Authentication
 
 ```csharp
 // Key-based authentication: provide PrivateKey as a Stream
@@ -519,26 +523,28 @@ builder.Services.AddSshBlobStorage(options =>
 });
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Blobs.Abstractions`
 - `Headless.Hosting`
 - `SSH.NET`
 
-## Side Effects
+### Side Effects
 
 - Registers `IBlobStorage` as singleton
 - Opens SSH/SFTP connections to remote server
+
 ---
-# Headless.Blobs.CloudflareR2
+
+## Headless.Blobs.CloudflareR2
 
 Cloudflare R2 implementation of `IBlobStorage`, running R2 as a private, S3-compatible blob backend on the reused AWS S3 engine.
 
-## Problem Solved
+### Problem Solved
 
 R2 speaks the S3 API but cannot use the AWS provider as-is: the endpoint, path-style addressing, and AWS SDK v4 checksum defaults need R2-specific configuration, and R2 has no ACL concept. This package configures an R2-tuned `IAmazonS3` and reuses `AwsBlobStorage`, making R2 a drop-in, cost-saving S3 replacement.
 
-## Key Features
+### Key Features
 
 - Full `IBlobStorage` implementation for Cloudflare R2 (reuses the AWS S3 engine)
 - Presigned download/upload URLs via `IPresignedUrlBlobStorage`
@@ -546,13 +552,19 @@ R2 speaks the S3 API but cannot use the AWS provider as-is: the endpoint, path-s
 - R2 bucket naming normalization (no dots)
 - Jurisdiction-aware endpoints (default, EU, FedRAMP)
 
-## Installation
+### Design Notes
+
+- **Buckets are not auto-created.** R2 API tokens are commonly scoped to object operations and cannot create buckets, so `AutoCreateContainer` defaults to `false`. Pre-create buckets out of band (the Cloudflare dashboard or an account-scoped token), or call `CreateContainerAsync` with a token that has bucket-create permission.
+- **No ACLs / public access.** R2 has no per-object ACLs (`CannedAcl` is `null`). Public serving is a custom-domain / `r2.dev` concern and is out of scope for this provider; use presigned URLs for time-limited private access.
+- **Single PUT is capped at ~5 GiB**, the same as S3.
+
+### Installation
 
 ```bash
 dotnet add package Headless.Blobs.CloudflareR2
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -569,9 +581,9 @@ builder.Services.AddCloudflareR2BlobStorage(options =>
 await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 ```json
 {
@@ -584,13 +596,7 @@ await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 }
 ```
 
-## Behavior Notes
-
-- Buckets are not auto-created (`AutoCreateContainer` defaults to `false`): R2 object-scoped tokens cannot create buckets. Pre-create buckets out of band or use a bucket-create-capable token with `CreateContainerAsync`.
-- No ACLs / public access: `CannedAcl` is `null`. Use presigned URLs for time-limited private access; public serving (custom domains / `r2.dev`) is out of scope.
-- Single PUT is capped at ~5 GiB, the same as S3.
-
-## Dependencies
+### Dependencies
 
 - `Headless.Blobs.Aws`
 - `Headless.Blobs.Abstractions`
@@ -598,7 +604,7 @@ await storage.UploadAsync(["my-bucket"], "reports/q1.pdf", stream);
 - `Headless.Hosting`
 - `AWSSDK.S3`
 
-## Side Effects
+### Side Effects
 
 - Registers `IAmazonS3` (configured for R2) if not already registered
 - Configures the shared `AwsBlobStorageOptions` with R2-safe defaults

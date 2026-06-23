@@ -4,7 +4,7 @@ AWS S3 implementation of the `IBlobStorage` interface for storing files in Amazo
 
 ## Problem Solved
 
-Provides seamless integration with AWS S3 for blob storage using the unified `IBlobStorage` abstraction.
+Provides AWS S3 integration for blob storage using the unified `IBlobStorage` abstraction.
 
 ## Key Features
 

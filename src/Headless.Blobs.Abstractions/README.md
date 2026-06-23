@@ -4,7 +4,7 @@ Defines the unified interface for blob/file storage operations across different 
 
 ## Problem Solved
 
-Provides a provider-agnostic API for file storage operations, enabling seamless switching between cloud providers or local storage without changing application code.
+Provides a provider-agnostic API for file storage operations, so application code can switch between cloud providers or local storage without changing.
 
 ## Key Features
 
@@ -25,7 +25,7 @@ Provides a provider-agnostic API for file storage operations, enabling seamless 
 dotnet add package Headless.Blobs.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class FileService(IBlobStorage storage)
