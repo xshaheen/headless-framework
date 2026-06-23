@@ -72,7 +72,7 @@ public sealed class HeadlessEmailsSetupBuilder
         var instance = new HeadlessEmailInstanceBuilder(name);
         configure(instance);
 
-        if (instance.RegistrationCount == 0)
+        if (instance.Action is null)
         {
             throw new InvalidOperationException(
                 $"Named email sender '{name}' requires exactly one provider. "
@@ -80,12 +80,7 @@ public sealed class HeadlessEmailsSetupBuilder
             );
         }
 
-        if (instance.RegistrationCount > 1)
-        {
-            throw new InvalidOperationException($"Multiple providers were configured for named email sender '{name}'.");
-        }
-
-        NamedExtensions.Add((name, instance.Action!));
+        NamedExtensions.Add((name, instance.Action));
 
         return this;
     }

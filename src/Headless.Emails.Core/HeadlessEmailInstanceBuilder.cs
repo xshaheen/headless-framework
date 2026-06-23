@@ -24,16 +24,19 @@ public sealed class HeadlessEmailInstanceBuilder
 
     internal Action<IServiceCollection>? Action { get; private set; }
 
-    internal int RegistrationCount { get; private set; }
-
     /// <summary>Captures the provider contribution for this instance. Must be called exactly once.</summary>
     /// <param name="action">The provider's deferred service registration action.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when a provider is already registered for this instance.</exception>
     public void RegisterProvider(Action<IServiceCollection> action)
     {
         Argument.IsNotNull(action);
 
+        if (Action is not null)
+        {
+            throw new InvalidOperationException($"Multiple providers were configured for named email sender '{Name}'.");
+        }
+
         Action = action;
-        RegistrationCount++;
     }
 }
