@@ -269,6 +269,7 @@ Skip this shape when the feature has exactly one possible backend and zero confi
 | Coordination | `src/Headless.Coordination.Core/Setup.cs` | `HeadlessCoordinationSetupBuilder.cs` | `ICoordinationProviderOptionsExtension` | PostgreSql, SqlServer, Redis |
 | Caching | `src/Headless.Caching.Core/Setup.cs` (`SetupCachingCore`) | `HeadlessCachingSetupBuilder.cs` | `ICacheProviderOptionsExtension` | InMemory, Redis, Hybrid (+ DistributedLocks as cross-cutting) |
 | Captcha | `src/Headless.Captcha.Abstractions/Setup.cs` (`SetupCaptcha`) | `HeadlessCaptchaSetupBuilder.cs` | per-slot deferred actions + `ICaptchaProvider` by-name resolver | ReCaptcha (v2/v3), Turnstile |
+| Blobs | `src/Headless.Blobs.Core/Setup.cs` (`SetupBlobsCore`) | `HeadlessBlobsSetupBuilder.cs` | per-slot deferred actions + `IBlobStorageProvider` by-name resolver | Aws, Azure, CloudflareR2, FileSystem, Redis, SshNet |
 
 Consumer call site, audit-log:
 
@@ -288,6 +289,7 @@ To swap providers, change one line (`setup.UseSqlServer(...)`); nothing else mov
 - [Storage Initializer Lifecycle & Concurrent-Startup Safety](../best-practices/storage-initializer-lifecycle-correctness.md) — sibling doc covering runtime correctness of the `*StorageInitializer` and `HeadlessDbContext` dispose paths
 - [Writing a Headless Messaging Transport Provider](../guides/messaging-transport-provider-guide.md) — the original `IXOptionsExtension` + `Setup{Provider}` template this pattern generalizes
 - [Messaging keyed-DI lock isolation](messaging-keyed-di-lock-isolation.md) — `TryAdd*` shadowing trap applies to multi-feature storage hosts and to captcha's per-provider HttpClient/language-provider keying
+- [Named-instance keyed-provider registration](named-instance-keyed-provider-registration.md) — the per-instance implementation recipe (named-options + keyed-factory + per-instance dependencies) layered on this builder contract; used by Blobs
 - [HTTP-stub cross-provider conformance harness](../best-practices/http-stub-conformance-harness.md) — how the per-slot captcha providers are conformance-tested without a reachable backend
 - [Transport wrapper drift and doc sync](../messaging/transport-wrapper-drift-and-doc-sync.md) — greenfield rename rationale and the per-package README sync chore that follows refactors of this shape
 - Source-of-truth brainstorm and plan (on branch `xshaheen/refactor-storage-initialization-unification`):

@@ -45,6 +45,12 @@ public static class SetupRedisBlob
         }
 
         /// <summary>Uses Redis as the default (unkeyed) <see cref="IBlobStorage"/>, binding options from configuration.</summary>
+        /// <remarks>
+        /// Configuration binding cannot set the required <see cref="RedisBlobStorageOptions.ConnectionMultiplexer"/>
+        /// (an interface instance), so this overload alone leaves it unset and options validation fails at startup.
+        /// Use it for scalar options only, and supply the multiplexer through one of the
+        /// <c>Action&lt;RedisBlobStorageOptions&gt;</c> overloads.
+        /// </remarks>
         public HeadlessBlobsSetupBuilder UseRedis(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -94,6 +100,12 @@ public static class SetupRedisBlob
         }
 
         /// <summary>Uses Redis for this named instance, binding options from configuration.</summary>
+        /// <remarks>
+        /// Configuration binding cannot set the required <see cref="RedisBlobStorageOptions.ConnectionMultiplexer"/>
+        /// (an interface instance), so this overload alone leaves it unset and options validation fails at startup.
+        /// Use it for scalar options only, and supply the multiplexer through one of the
+        /// <c>Action&lt;RedisBlobStorageOptions&gt;</c> overloads.
+        /// </remarks>
         public HeadlessBlobInstanceBuilder UseRedis(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -114,7 +126,6 @@ public static class SetupRedisBlob
     {
         private IServiceCollection _AddBlobsDefaultCore()
         {
-            services.AddBlobStorageProvider();
             services._AddBlobsCoreShared();
 
             services.AddSingleton<IBlobStorage>(serviceProvider => new RedisBlobStorage(
@@ -129,7 +140,6 @@ public static class SetupRedisBlob
 
         private IServiceCollection _AddBlobsNamedCore(string name)
         {
-            services.AddBlobStorageProvider();
             services._AddBlobsCoreShared();
 
             services.AddKeyedSingleton<IBlobStorage>(

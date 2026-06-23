@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -16,8 +17,9 @@ public static class SetupBlobsCore
         /// <c>Use*</c> (default) and <c>AddNamed(…, i => i.Use*(…))</c> (named) extensions on
         /// <see cref="HeadlessBlobsSetupBuilder"/>. A default store is optional (at most one); named stores are
         /// unlimited with unique names. All contributions are deferred until the setup gates (at-most-one-default
-        /// and called-once) run, so a failed gate leaves the service collection unchanged. Once the gates pass the
-        /// queued contributions are applied in order.
+        /// and called-once) run; if a <em>gate</em> fails the service collection is left unchanged. Once the gates
+        /// pass the queued contributions are applied in order — a contribution that throws after the gates pass may
+        /// leave earlier registrations (including the called-once marker) in place.
         /// </summary>
         /// <param name="configure">The setup action selecting the providers.</param>
         /// <returns>The service collection for chaining.</returns>
@@ -29,19 +31,6 @@ public static class SetupBlobsCore
             configure(setup);
 
             return _AddBlobsCore(services, setup);
-        }
-
-        /// <summary>
-        /// Registers <see cref="IBlobStorageProvider"/> backed by the container's keyed
-        /// <see cref="IBlobStorage"/> registrations. Called by every blob provider setup, so the provider is
-        /// available whenever any blob storage is registered. Safe to call multiple times.
-        /// </summary>
-        /// <returns>The service collection for chaining.</returns>
-        internal IServiceCollection AddBlobStorageProvider()
-        {
-            services.TryAddSingleton<IBlobStorageProvider>(provider => new KeyedServiceBlobStorageProvider(provider));
-
-            return services;
         }
     }
 
@@ -65,7 +54,11 @@ public static class SetupBlobsCore
 
         services.AddSingleton(new BlobsProviderRegistration());
 
-        services.AddBlobStorageProvider();
+        var registeredNames = setup.InstanceNames.ToFrozenSet(StringComparer.Ordinal);
+        services.TryAddSingleton<IBlobStorageProvider>(provider => new KeyedServiceBlobStorageProvider(
+            provider,
+            registeredNames
+        ));
 
         foreach (var action in setup.DefaultExtensions)
         {

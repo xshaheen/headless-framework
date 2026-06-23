@@ -9,8 +9,13 @@ namespace Headless.Blobs;
 /// <see cref="IBlobStorageProvider"/> over the container's keyed <see cref="IBlobStorage"/> registrations —
 /// resolves named instances added through the <c>AddNamed</c> setup overloads.
 /// </summary>
-internal sealed class KeyedServiceBlobStorageProvider(IServiceProvider serviceProvider) : IBlobStorageProvider
+internal sealed class KeyedServiceBlobStorageProvider(
+    IServiceProvider serviceProvider,
+    IReadOnlySet<string> registeredNames
+) : IBlobStorageProvider
 {
+    public IReadOnlySet<string> RegisteredNames { get; } = registeredNames;
+
     public IBlobStorage GetStorage(string name)
     {
         Argument.IsNotNullOrWhiteSpace(name);

@@ -20,4 +20,11 @@ public interface IBlobStorageProvider
     /// <param name="name">The blob storage instance name.</param>
     /// <returns>The resolved blob storage, or <see langword="null"/>.</returns>
     IBlobStorage? GetStorageOrNull(string name);
+
+    /// <summary>
+    /// Gets the names of all registered named blob storage instances. Use this to validate an externally-supplied
+    /// name before resolving it, rather than probing <see cref="GetStorageOrNull"/> and handling
+    /// <see langword="null"/>. The default (unnamed) store is not included.
+    /// </summary>
+    IReadOnlySet<string> RegisteredNames { get; }
 }

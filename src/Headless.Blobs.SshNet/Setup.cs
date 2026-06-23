@@ -114,8 +114,6 @@ public static class SetupSsh
     {
         private IServiceCollection _AddBlobsDefaultCore()
         {
-            services.AddBlobStorageProvider();
-
             // Pool is registered as a DI singleton so the container owns its disposal. Built via a factory so a
             // missing ILogger (host without AddLogging) falls back to NullLogger instead of failing activation.
             services.AddSingleton(serviceProvider => new SftpClientPool(
@@ -135,8 +133,6 @@ public static class SetupSsh
 
         private IServiceCollection _AddBlobsNamedCore(string name)
         {
-            services.AddBlobStorageProvider();
-
             // Each named store gets its own pool bound to its named options. The pool is registered as a keyed
             // singleton so the DI container owns its lifecycle and calls Dispose when the provider is disposed.
             services.AddKeyedSingleton<SftpClientPool>(

@@ -29,6 +29,9 @@ public sealed class HeadlessBlobsSetupBuilder
 
     internal List<Action<IServiceCollection>> CrossCuttingExtensions { get; } = [];
 
+    /// <summary>The configured named instance names (excludes the default store).</summary>
+    internal IReadOnlySet<string> InstanceNames => _instanceNames;
+
     /// <summary>Queues the default (unkeyed) blob storage provider contribution.</summary>
     /// <param name="action">The provider's deferred service registration action.</param>
     public void RegisterDefaultProvider(Action<IServiceCollection> action)

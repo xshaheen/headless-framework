@@ -116,12 +116,9 @@ public static class SetupCloudflareR2Blob
     {
         private IServiceCollection _AddBlobsDefaultCore()
         {
-            services.AddBlobStorageProvider();
-
             services.AddSingleton<IBlobStorage>(serviceProvider =>
             {
                 var r2Options = serviceProvider.GetRequiredService<IOptions<R2BlobStorageOptions>>();
-                _ = r2Options.Value;
                 var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
                 var clock = serviceProvider.GetRequiredService<IClock>();
                 var awsOptions = new AwsBlobStorageOptions();
@@ -145,8 +142,6 @@ public static class SetupCloudflareR2Blob
 
         private IServiceCollection _AddBlobsNamedCore(string name)
         {
-            services.AddBlobStorageProvider();
-
             // R2-safe behavior bound per-instance (named AwsBlobStorageOptions) so coexisting AWS stores are
             // never affected by R2's forced defaults.
             services.Configure<AwsBlobStorageOptions>(name, _ApplyR2ForcedDefaults);

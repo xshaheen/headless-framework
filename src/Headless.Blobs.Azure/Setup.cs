@@ -17,8 +17,11 @@ namespace Headless.Blobs.Azure;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The <see cref="BlobServiceClient"/> is resolved from DI by default. If you need different Azure accounts
-/// for different named stores, supply a per-store <c>clientFactory</c> delegate:
+/// The <see cref="BlobServiceClient"/> is resolved from DI by default. When no <c>clientFactory</c> is supplied,
+/// a <see cref="BlobServiceClient"/> must be registered in DI before the store is resolved; otherwise resolution
+/// throws when the store is first used, not at startup (<c>ValidateOnStart</c> cannot detect a missing DI
+/// prerequisite). If you need different Azure accounts for different named stores, supply a per-store
+/// <c>clientFactory</c> delegate:
 /// </para>
 /// <code>
 /// services.AddHeadlessBlobs(blobs =>
@@ -209,14 +212,11 @@ public static class SetupAzureBlob
     {
         private IServiceCollection _AddBlobsDefaultCore(Func<IServiceProvider, BlobServiceClient>? clientFactory)
         {
-            services.AddBlobStorageProvider();
-
             services.AddSingleton<IBlobStorage>(sp =>
             {
                 var mimeTypeProvider = sp.GetRequiredService<IMimeTypeProvider>();
                 var clock = sp.GetRequiredService<IClock>();
                 var options = sp.GetRequiredService<IOptions<AzureStorageOptions>>();
-                _ = options.Value;
                 var logger = sp.GetService<ILogger<AzureBlobStorage>>() ?? NullLogger<AzureBlobStorage>.Instance;
                 var client = clientFactory is not null ? clientFactory(sp) : sp.GetRequiredService<BlobServiceClient>();
 
@@ -238,8 +238,6 @@ public static class SetupAzureBlob
             Func<IServiceProvider, BlobServiceClient>? clientFactory
         )
         {
-            services.AddBlobStorageProvider();
-
             services.AddKeyedSingleton<IBlobStorage>(
                 name,
                 (sp, _) =>

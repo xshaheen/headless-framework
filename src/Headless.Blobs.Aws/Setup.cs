@@ -176,14 +176,11 @@ public static class SetupAwsS3
     {
         private IServiceCollection _AddBlobsDefaultCore(AWSOptions? awsOptions)
         {
-            services.AddBlobStorageProvider();
-
             services.AddSingleton<IBlobStorage>(serviceProvider =>
             {
                 var mimeTypeProvider = serviceProvider.GetRequiredService<IMimeTypeProvider>();
                 var clock = serviceProvider.GetRequiredService<IClock>();
                 var options = serviceProvider.GetRequiredService<IOptions<AwsBlobStorageOptions>>();
-                _ = options.Value;
                 var logger =
                     serviceProvider.GetService<ILogger<AwsBlobStorage>>() ?? NullLogger<AwsBlobStorage>.Instance;
                 var s3Client = S3ClientFactory.Create(awsOptions);
@@ -203,8 +200,6 @@ public static class SetupAwsS3
 
         private IServiceCollection _AddBlobsNamedCore(string name, AWSOptions? awsOptions)
         {
-            services.AddBlobStorageProvider();
-
             services.AddKeyedSingleton<IBlobStorage>(
                 name,
                 (serviceProvider, _) =>

@@ -127,8 +127,6 @@ public static class SetupFileSystemBlob
     {
         private IServiceCollection _AddBlobsDefaultCore()
         {
-            services.AddBlobStorageProvider();
-
             services.AddSingleton<IBlobStorage>(serviceProvider => new FileSystemBlobStorage(
                 serviceProvider.GetRequiredService<IOptions<FileSystemBlobStorageOptions>>(),
                 new CrossOsNamingNormalizer(),
@@ -141,8 +139,6 @@ public static class SetupFileSystemBlob
 
         private IServiceCollection _AddBlobsNamedCore(string name)
         {
-            services.AddBlobStorageProvider();
-
             services.AddKeyedSingleton<IBlobStorage>(
                 name,
                 (serviceProvider, _) =>
