@@ -23,9 +23,7 @@ dotnet add package Headless.DistributedLocks.Redis
 ## Quick Start
 
 ```csharp
-builder.Services.AddSingleton<IConnectionMultiplexer>(
-    _ => ConnectionMultiplexer.Connect("localhost:6379")
-);
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 
 builder.Services.AddHeadlessDistributedLocks(setup =>
 {

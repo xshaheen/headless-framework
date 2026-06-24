@@ -55,8 +55,6 @@ public sealed class OrderServiceTests : TestBase
 }
 ```
 
-## Usage
-
 ### Test Lifecycle
 
 ```csharp

@@ -25,8 +25,7 @@ dotnet add package Headless.CommitCoordination.DurableWork
 ```csharp
 public sealed record JobRow(string Name);
 
-public sealed class JobWorkBuffer(ICommitCoordinator coordinator)
-    : DurableWorkBuffer<JobRow>(coordinator)
+public sealed class JobWorkBuffer(ICommitCoordinator coordinator) : DurableWorkBuffer<JobRow>(coordinator)
 {
     protected override ValueTask WriteRowAsync(JobRow row, IRelationalCommitContext context, CancellationToken ct)
     {

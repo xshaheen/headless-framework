@@ -33,11 +33,13 @@ dotnet add package Headless.DistributedLocks.PostgreSql
 ## Quick Start
 
 ```csharp
-builder.Services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
-{
-    options.ConnectionString = builder.Configuration.GetConnectionString("Postgres");
-    options.KeyPrefix = "distributed-lock:";
-}));
+builder.Services.AddHeadlessDistributedLocks(setup =>
+    setup.UsePostgreSql(options =>
+    {
+        options.ConnectionString = builder.Configuration.GetConnectionString("Postgres");
+        options.KeyPrefix = "distributed-lock:";
+    })
+);
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -69,8 +71,8 @@ await transaction.CommitAsync(ct);
 ## Configuration
 
 ```csharp
-options.ConnectionString = "...";        // required unless DataSource is set
-options.DataSource = dataSource;         // preferred when already registered
+options.ConnectionString = "..."; // required unless DataSource is set
+options.DataSource = dataSource; // preferred when already registered
 options.KeyPrefix = "distributed-lock:";
 options.PollingFallback = TimeSpan.FromMilliseconds(100);
 options.EnablePushWakeup = true;

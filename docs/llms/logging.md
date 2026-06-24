@@ -6,19 +6,18 @@ packages: Logging.Serilog
 # Logging
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Logging.Serilog](#headlessloggingserilog)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-    - [appsettings.json](#appsettingsjson)
-    - [Options](#options)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 
 > Serilog configuration factory with preconfigured sinks, enrichers, and structured logging defaults for ASP.NET Core applications.
 
@@ -37,8 +36,10 @@ Log.Logger = SerilogFactory.CreateBootstrapLoggerConfiguration().CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((ctx, services, cfg) =>
-    cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment));
+builder.Host.UseSerilog(
+    (ctx, services, cfg) =>
+        cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment)
+);
 ```
 
 ## Agent Instructions
@@ -58,13 +59,13 @@ builder.Host.UseSerilog((ctx, services, cfg) =>
 - The output template is exposed as `SerilogFactory.OutputTemplate` (a `public const string`) — reference it if you write a custom sink that must match the standard format.
 
 ---
-# Headless.Logging.Serilog
+## Headless.Logging.Serilog
 
-## Problem Solved
+### Problem Solved
 
 Setting up Serilog correctly for ASP.NET Core requires wiring a bootstrap logger (to catch startup failures), then replacing it with a reloadable production logger that reads from `IConfiguration`, applies enrichers, routes levels to separate files, and adjusts the console theme per environment. `SerilogFactory` encodes this two-phase setup as tested, opinionated extension methods so applications get correct defaults without repeating the configuration boilerplate.
 
-## Key Features
+### Key Features
 
 - `SerilogFactory.CreateBootstrapLoggerConfiguration()` / `ConfigureBootstrapLoggerConfiguration()` — early-startup logger covering console, debug (DEBUG builds), and an async file sink for Fatal/Error/Warning events.
 - `SerilogFactory.CreateReloadableLoggerConfiguration()` / `ConfigureReloadableLoggerConfiguration()` — production logger reading from `Serilog:` config section, enriched with application metadata, wiring three level-specific async file sinks and an environment-aware console sink.
@@ -75,7 +76,7 @@ Setting up Serilog correctly for ASP.NET Core requires wiring a bootstrap logger
 - Debug sink active only in `#DEBUG` builds — no production overhead.
 - Console theme switches automatically: `AnsiConsoleTheme.Code` (Development) vs `ConsoleTheme.None` (other environments).
 
-## Design Notes
+### Design Notes
 
 **Two-phase logger approach**: ASP.NET Core's host-building phase can throw before `IConfiguration` or DI is ready. The bootstrap logger captures those crashes. The reloadable logger replaces it once the host is built and can call `ReadFrom.Services(services)` to pick up any DI-registered sinks or enrichers.
 
@@ -87,13 +88,13 @@ Setting up Serilog correctly for ASP.NET Core requires wiring a bootstrap logger
 
 **`SerilogFactory.OutputTemplate`** is `public const` so custom downstream sinks or formatters can reference the canonical template without duplicating the string.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Logging.Serilog
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Program.cs
@@ -106,12 +107,10 @@ try
     var builder = WebApplication.CreateBuilder(args);
 
     // 2. Replace with reloadable production logger
-    builder.Host.UseSerilog((ctx, services, cfg) =>
-        cfg.ConfigureReloadableLoggerConfiguration(
-            services,
-            ctx.Configuration,
-            ctx.HostingEnvironment
-        ));
+    builder.Host.UseSerilog(
+        (ctx, services, cfg) =>
+            cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment)
+    );
 
     var app = builder.Build();
     app.Run();
@@ -133,18 +132,15 @@ var serilogOptions = new SerilogOptions { WriteToFiles = false };
 
 Log.Logger = SerilogFactory.CreateBootstrapLoggerConfiguration(serilogOptions).CreateLogger();
 
-builder.Host.UseSerilog((ctx, services, cfg) =>
-    cfg.ConfigureReloadableLoggerConfiguration(
-        services,
-        ctx.Configuration,
-        ctx.HostingEnvironment,
-        serilogOptions
-    ));
+builder.Host.UseSerilog(
+    (ctx, services, cfg) =>
+        cfg.ConfigureReloadableLoggerConfiguration(services, ctx.Configuration, ctx.HostingEnvironment, serilogOptions)
+);
 ```
 
-## Configuration
+### Configuration
 
-### appsettings.json
+#### appsettings.json
 
 Log level changes here take effect at runtime without restart (hot-reload via `ReadFrom.Configuration`):
 
@@ -163,7 +159,7 @@ Log level changes here take effect at runtime without restart (hot-reload via `R
 }
 ```
 
-### Options
+#### Options
 
 `SerilogOptions` controls file-sink behaviour. Pass an instance to either factory method.
 
@@ -177,7 +173,7 @@ Log level changes here take effect at runtime without restart (hot-reload via `R
 | `RetainedFileCountLimit` | `int` | `5` | How many rolled files to keep per log category. |
 | `MaxHeaderLength` | `int` | `512` | Reserved; not currently used by the file sinks. |
 
-## Dependencies
+### Dependencies
 
 - `Headless.Extensions` (project reference — provides `AssemblyInformation`)
 - `Serilog`
@@ -192,7 +188,7 @@ Log level changes here take effect at runtime without restart (hot-reload via `R
 - `Serilog.Sinks.Debug`
 - `Serilog.Sinks.File`
 
-## Side Effects
+### Side Effects
 
 - Creates `Logs/` directory and writes rolling log files (`fatal-.log`, `error-.log`, `warning-.log`) when `WriteToFiles = true` (default).
 - Writes `Logs/bootstrap-.log` for Fatal/Error/Warning events during the bootstrap phase.

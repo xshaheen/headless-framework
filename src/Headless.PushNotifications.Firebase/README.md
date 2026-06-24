@@ -39,8 +39,7 @@ dotnet add package Headless.PushNotifications.Firebase
 var builder = WebApplication.CreateBuilder(args);
 
 // Recommended: bind from configuration so the options validator runs at startup.
-builder.Services.AddHeadlessPushNotifications(setup =>
-    setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
+builder.Services.AddHeadlessPushNotifications(setup => setup.UseFirebase(builder.Configuration.GetSection("Firebase")));
 ```
 
 Sending:
@@ -101,7 +100,8 @@ builder.Services.AddHeadlessPushNotifications(setup =>
     {
         options.Json = configuration["Firebase:Json"]!;
         options.Retry = new FirebaseRetryOptions { MaxAttempts = 3 };
-    }));
+    })
+);
 
 // Disable retry:
 builder.Services.AddHeadlessPushNotifications(setup =>
@@ -109,7 +109,8 @@ builder.Services.AddHeadlessPushNotifications(setup =>
     {
         options.Json = json;
         options.Retry = new FirebaseRetryOptions { MaxAttempts = 0 };
-    }));
+    })
+);
 ```
 
 ### Transient Errors (Retried)

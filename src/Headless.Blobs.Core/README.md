@@ -46,17 +46,22 @@ builder.Services.AddHeadlessBlobs(blobs =>
     });
 
     // Named store — injected as keyed IBlobStorage("docs").
-    blobs.AddNamed("docs", instance => instance.UseAzure(
-        setupAction: options => { },
-        clientFactory: _ => new BlobServiceClient(builder.Configuration["Azure:Docs:ConnectionString"])));
+    blobs.AddNamed(
+        "docs",
+        instance =>
+            instance.UseAzure(
+                setupAction: options => { },
+                clientFactory: _ => new BlobServiceClient(builder.Configuration["Azure:Docs:ConnectionString"])
+            )
+    );
 
     // Two named instances of the same provider, each with independent config.
-    blobs.AddNamed("scratch", instance => instance.UseFileSystem(
-        options => options.BaseDirectoryPath = "/tmp/blobs"));
+    blobs.AddNamed("scratch", instance => instance.UseFileSystem(options => options.BaseDirectoryPath = "/tmp/blobs"));
 
-    blobs.AddNamed("archive", instance => instance.UseAws(
-        options => { },
-        awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive")));
+    blobs.AddNamed(
+        "archive",
+        instance => instance.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive"))
+    );
 });
 ```
 
@@ -73,12 +78,12 @@ public sealed class DocsService([FromKeyedServices("docs")] IBlobStorage docsSto
 public sealed class MultiStoreService(IBlobStorageProvider provider)
 {
     public IBlobStorage GetDocs() => provider.GetStorage("docs");
+
     public bool HasStore(string name) => provider.RegisteredNames.Contains(name);
 }
 
 // Named presigned URL (AWS/Azure/R2 only).
-public sealed class PresignedService(
-    [FromKeyedServices("docs")] IPresignedUrlBlobStorage presigned)
+public sealed class PresignedService([FromKeyedServices("docs")] IPresignedUrlBlobStorage presigned)
 {
     public Task<Uri> GetDownloadUrl(string[] container, string blob) =>
         presigned.GetPresignedDownloadUrlAsync(container, blob, TimeSpan.FromHours(1));

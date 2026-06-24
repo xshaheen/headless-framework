@@ -35,8 +35,8 @@ builder.Services.AddSingleton<IBinarySerializer, MessagePackSerializer>();
 builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(untrustedData: true));
 
 // With LZ4 compression:
-var options = MessagePackSerializerOptions.Standard
-    .WithResolver(ContractlessStandardResolver.Instance)
+var options = MessagePackSerializerOptions
+    .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithCompression(MessagePackCompression.Lz4BlockArray);
 
 builder.Services.AddSingleton<IBinarySerializer>(new MessagePackSerializer(options));
@@ -59,8 +59,8 @@ All configuration is passed via `MessagePackSerializerOptions` at construction t
 var options = MessagePackSerializerOptions.Standard; // requires [MessagePackObject]/[Key] attributes
 
 // Security for untrusted input — the untrustedData flag is the shortcut for this:
-var options = MessagePackSerializerOptions.Standard
-    .WithResolver(ContractlessStandardResolver.Instance)
+var options = MessagePackSerializerOptions
+    .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithSecurity(MessagePackSecurity.UntrustedData);
 
 // Equivalent, without hand-building options:

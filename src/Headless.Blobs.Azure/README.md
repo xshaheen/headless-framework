@@ -36,9 +36,14 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
     // Named store on a different account — per-store clientFactory overrides the DI client.
     // Also registers keyed IPresignedUrlBlobStorage("archive") automatically.
-    blobs.AddNamed("archive", instance => instance.UseAzure(
-        setupAction: options => { },
-        clientFactory: _ => new BlobServiceClient("<archive-connection-string>")));
+    blobs.AddNamed(
+        "archive",
+        instance =>
+            instance.UseAzure(
+                setupAction: options => { },
+                clientFactory: _ => new BlobServiceClient("<archive-connection-string>")
+            )
+    );
 });
 ```
 

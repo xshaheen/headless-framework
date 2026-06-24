@@ -30,7 +30,7 @@ public sealed class OtpService(ISmsSender smsSender)
         var request = new SendSingleSmsRequest
         {
             Destinations = [new SmsRequestDestination(20, phoneNumber)], // 20 = Egypt calling code
-            Text = $"Your verification code is: {code}"
+            Text = $"Your verification code is: {code}",
         };
 
         var response = await smsSender.SendAsync(request, ct);

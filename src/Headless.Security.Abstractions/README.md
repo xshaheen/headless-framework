@@ -26,9 +26,7 @@ dotnet add package Headless.Security.Abstractions
 
 ```csharp
 // Inject the contracts; the implementations are registered by Headless.Security.
-public sealed class SecureSettingService(
-    IStringEncryptionService encryption,
-    IStringHashService hashing)
+public sealed class SecureSettingService(IStringEncryptionService encryption, IStringHashService hashing)
 {
     // Encrypt a sensitive value before writing to the database.
     public string Protect(string value) => encryption.Encrypt(value)!;

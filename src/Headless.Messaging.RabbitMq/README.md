@@ -63,9 +63,9 @@ options.ForMessage<OrderEvent>(message =>
     message
         .MessageName("orders.events")
         .OnBus<OrderProjection>(consumer =>
-            consumer
-                .Group("orders-projection")
-                .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))));
+            consumer.Group("orders-projection").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
+        )
+);
 ```
 
 Consumer-side RabbitMQ knobs attach to the consumer registration:
@@ -73,9 +73,9 @@ Consumer-side RabbitMQ knobs attach to the consumer registration:
 ```csharp
 options.ForMessage<OrderEvent>(message =>
     message.OnBus<OrderProjection>(consumer =>
-        consumer
-            .Group("orders-projection")
-            .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))));
+        consumer.Group("orders-projection").UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
+    )
+);
 ```
 
 ### Security Best Practices

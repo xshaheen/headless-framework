@@ -19,7 +19,7 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 dotnet add package Headless.Api.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 Inject `IRequestContext` to access request-scoped information:
 
@@ -33,12 +33,17 @@ public sealed class OrderService(IRequestContext context)
         var correlationId = context.CorrelationId;
 
         // Use context information for auditing, logging, multi-tenancy
-        return await _repository.CreateAsync(new Order
-        {
-            UserId = userId,
-            TenantId = tenantId,
-            CreatedAt = context.DateStarted
-        }, ct).ConfigureAwait(false);
+        return await _repository
+            .CreateAsync(
+                new Order
+                {
+                    UserId = userId,
+                    TenantId = tenantId,
+                    CreatedAt = context.DateStarted,
+                },
+                ct
+            )
+            .ConfigureAwait(false);
     }
 }
 ```

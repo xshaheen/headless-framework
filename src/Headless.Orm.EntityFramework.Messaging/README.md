@@ -30,15 +30,16 @@ dotnet add package Headless.Orm.EntityFramework.Messaging
 
 ```csharp
 // Chain after AddHeadlessDbContextServices:
-builder.Services.AddHeadlessDbContextServices()
-    .AddDomainEvents()             // ILocalEventBus for in-process domain events
-    .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher — this package
+builder
+    .Services.AddHeadlessDbContextServices()
+    .AddDomainEvents() // ILocalEventBus for in-process domain events
+    .AddIntegrationEventOutbox(); // IHeadlessOutboxDispatcher — this package
 
 // A messaging setup with an outbox storage provider is required:
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.UseInMemory();                    // broker
-    setup.UsePostgreSql(connectionString);  // outbox storage
+    setup.UseInMemory(); // broker
+    setup.UsePostgreSql(connectionString); // outbox storage
 });
 ```
 

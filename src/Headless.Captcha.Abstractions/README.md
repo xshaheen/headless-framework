@@ -39,10 +39,7 @@ public sealed class SignupService(ICaptchaVerifier verifier)
 {
     public async Task<bool> IsHumanAsync(string token, string? remoteIp, CancellationToken ct)
     {
-        var result = await verifier.VerifyAsync(
-            new CaptchaVerifyRequest { Response = token, RemoteIp = remoteIp },
-            ct
-        );
+        var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = token, RemoteIp = remoteIp }, ct);
 
         return result.Success;
     }
@@ -74,8 +71,19 @@ Add at least one provider package and compose every provider in one call. At mos
 ```csharp
 builder.Services.AddHeadlessCaptcha(captcha =>
     captcha
-        .UseTurnstile(o => { o.SiteKey = "…"; o.SiteSecret = "…"; })          // default
-        .UseReCaptchaV3("recaptcha", o => { o.SiteKey = "…"; o.SiteSecret = "…"; }) // named
+        .UseTurnstile(o =>
+        {
+            o.SiteKey = "…";
+            o.SiteSecret = "…";
+        }) // default
+        .UseReCaptchaV3(
+            "recaptcha",
+            o =>
+            {
+                o.SiteKey = "…";
+                o.SiteSecret = "…";
+            }
+        ) // named
 );
 ```
 

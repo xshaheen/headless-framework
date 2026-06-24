@@ -26,17 +26,17 @@ dotnet add package Headless.Sms.Infobip
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseInfobip(
-    builder.Configuration.GetSection("Sms:Infobip")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseInfobip(builder.Configuration.GetSection("Sms:Infobip")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseInfobip(options =>
-{
-    options.ApiKey = "your-api-key";
-    options.BasePath = "https://XXXXXXXX.api.infobip.com"; // account-specific URL
-    options.Sender = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseInfobip(options =>
+    {
+        options.ApiKey = "your-api-key";
+        options.BasePath = "https://XXXXXXXX.api.infobip.com"; // account-specific URL
+        options.Sender = "MyApp";
+    })
+);
 ```
 
 ## Configuration

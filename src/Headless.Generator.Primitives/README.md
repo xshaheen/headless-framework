@@ -42,18 +42,16 @@ public readonly partial struct Email : IPrimitive<string>
 }
 
 // Generated code provides:
-var email = Email.From("user@example.com");  // Factory method
-var value = email.Value;                      // Underlying value
-var json = JsonSerializer.Serialize(email);   // JSON: "user@example.com"
+var email = Email.From("user@example.com"); // Factory method
+var value = email.Value; // Underlying value
+var json = JsonSerializer.Serialize(email); // JSON: "user@example.com"
 ```
 
 ### Entity Framework Integration
 
 ```csharp
 // Auto-generated value converter is registered via:
-modelBuilder.Entity<User>()
-    .Property(u => u.Email)
-    .HasConversion<EmailValueConverter>();
+modelBuilder.Entity<User>().Property(u => u.Email).HasConversion<EmailValueConverter>();
 ```
 
 ## Configuration

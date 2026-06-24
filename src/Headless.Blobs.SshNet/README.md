@@ -26,8 +26,8 @@ dotnet add package Headless.Blobs.SshNet
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseSsh(options =>
-        options.ConnectionString = "sftp://user:password@sftp.example.com:22/home/user/uploads"));
+    blobs.UseSsh(options => options.ConnectionString = "sftp://user:password@sftp.example.com:22/home/user/uploads")
+);
 ```
 
 ## Configuration
@@ -51,7 +51,8 @@ builder.Services.AddHeadlessBlobs(blobs =>
         options.ConnectionString = "sftp://user@sftp.example.com:22/home/user/uploads";
         options.PrivateKey = File.OpenRead("/path/to/key");
         options.PrivateKeyPassPhrase = "optional-passphrase"; // nullable
-    }));
+    })
+);
 ```
 
 ## Dependencies

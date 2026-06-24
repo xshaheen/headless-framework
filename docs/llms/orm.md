@@ -165,15 +165,15 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 
 ---
 
-# Headless.Orm.EntityFramework
+## Headless.Orm.EntityFramework
 
 Entity Framework Core integration with framework conventions and save pipeline orchestration.
 
-## Problem Solved
+### Problem Solved
 
 Provides a framework-aware base `DbContext` with conventions for auditing, soft delete, tenant filters, two-tier event dispatch (in-process domain events plus transactional integration-event outbox), and transaction-aware save behavior — so application contexts inherit a consistent, tested baseline without hand-wiring each concern.
 
-## Key Features
+### Key Features
 
 - `HeadlessDbContext` base context — requires `(HeadlessDbContextServices services, DbContextOptions options)` constructor parameters and `public abstract string? DefaultSchema { get; }` override
 - `IHeadlessDbContext` interface implemented by `HeadlessDbContext` and `HeadlessIdentityDbContext` — shared seam for coordinated-transaction helpers and the factory
@@ -192,20 +192,20 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - `DataGridExtensions` for pagination and ordering on `IQueryable<T>`
 - `IDbContextFactory<TDbContext>` auto-registered as singleton via `HeadlessDbContextFactory<TDbContext>`
 
-## Design Notes
+### Design Notes
 
 - **Not poolable by design.** `HeadlessDbContext` holds a private `HeadlessDbContextRuntime` that captures the request-scoped outbox dispatcher (`IHeadlessOutboxDispatcher`) and audit persistence (`IHeadlessAuditPersistence`). Pooling reuses a prior request's unit of work — a captive-dependency correctness bug. The two-argument constructor also violates EF's single-`DbContextOptions` pooling contract. For read-heavy hot paths that don't need the write pipeline, use a plain `DbContext` with `AddDbContextPool` alongside the write-side `HeadlessDbContext`.
 - **Client-side Guid generation is intentional.** The key is available before `SaveChanges`, so it can be used for foreign keys, outbox rows, and domain events in the same unit of work. The `Version7` (time-ordered) and `SqlServer` comb strategies ensure monotonic insertion order per provider, limiting index fragmentation.
 - **Synchronous enlist in commit coordination.** The save pipeline opens its transaction and synchronously enlists it in commit coordination so the ambient coordinator carries the live EF transaction. An `AsyncLocal` push inside an `async` helper does not flow back to the caller, making synchronous enlistment the only correct approach. This is why `AddHeadlessDbContextServices` always calls `AddEntityFrameworkCommitCoordination()` — the enlist is harmless when nothing is enlisted.
 - **Domain-event at-most-once guard.** The pipeline runs domain-event publication inside the EF execution strategy. A guard ensures handlers are invoked only on the first attempt and are not re-invoked on a replay. Because publication precedes commit, a handler can run on an attempt that ultimately fails to commit — keep domain-event side effects idempotent. Under a caller-managed transaction driven by your own retry loop, each `SaveChanges` is a fresh invocation with a fresh guard, so handlers can publish again; idempotency is the right defensive posture regardless.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Orm.EntityFramework
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class AppDbContext(
@@ -237,61 +237,64 @@ builder.Services.AddHeadlessDbContextServices()
 
 If an entity emits domain events but `.AddDomainEvents()` was not called, or emits integration events but `.AddIntegrationEventOutbox()` was not called, the save throws an `InvalidOperationException` naming the missing registration. Guards fire only when events are actually emitted.
 
-### Resilient Transactions
+#### Resilient Transactions
 
 ```csharp
 // No-return form
-await dbContext.ExecuteTransactionAsync(async (ctx, ct) =>
-{
-    ctx.Products.Add(new Product { Name = "Widget" });
-    await ctx.SaveChangesAsync(ct);
-}, cancellationToken: ct);
+await dbContext.ExecuteTransactionAsync(
+    async (ctx, ct) =>
+    {
+        ctx.Products.Add(new Product { Name = "Widget" });
+        await ctx.SaveChangesAsync(ct);
+    },
+    cancellationToken: ct
+);
 
 // Return-value form
-var productId = await dbContext.ExecuteTransactionAsync(async (ctx, ct) =>
-{
-    var product = new Product { Name = "Widget" };
-    ctx.Products.Add(product);
-    await ctx.SaveChangesAsync(ct);
-    return product.Id;
-}, cancellationToken: ct);
+var productId = await dbContext.ExecuteTransactionAsync(
+    async (ctx, ct) =>
+    {
+        var product = new Product { Name = "Widget" };
+        ctx.Products.Add(product);
+        await ctx.SaveChangesAsync(ct);
+        return product.Id;
+    },
+    cancellationToken: ct
+);
 
 // Commit-coordinated (outbox/jobs drain atomically on commit)
-await dbContext.ExecuteCoordinatedTransactionAsync(async (ctx, ct) =>
-{
-    ctx.Products.Add(new Product { Name = "Widget" });
-    await ctx.SaveChangesAsync(ct);
-}, cancellationToken: ct);
+await dbContext.ExecuteCoordinatedTransactionAsync(
+    async (ctx, ct) =>
+    {
+        ctx.Products.Add(new Product { Name = "Widget" });
+        await ctx.SaveChangesAsync(ct);
+    },
+    cancellationToken: ct
+);
 ```
 
-## Configuration
+### Configuration
 
-### Global Filters
+#### Global Filters
 
 Three named filters are applied automatically when entities implement the corresponding interface. Bypass per-query with the matching extension method:
 
 ```csharp
 // Read soft-deleted entities for admin purposes
-var all = await dbContext.Products
-    .IgnoreNotDeletedFilter()
-    .ToListAsync(ct);
+var all = await dbContext.Products.IgnoreNotDeletedFilter().ToListAsync(ct);
 
 // Read across tenants (host/admin path only)
-var allTenants = await dbContext.Products
-    .IgnoreMultiTenancyFilter()
-    .IgnoreNotDeletedFilter()
-    .ToListAsync(ct);
+var allTenants = await dbContext.Products.IgnoreMultiTenancyFilter().IgnoreNotDeletedFilter().ToListAsync(ct);
 ```
 
 Each bypass emits a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with caller member + file.
 
-### Tenant Write Guard
+#### Tenant Write Guard
 
 Disabled by default. Opt in to scope writes to the current tenant:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .EntityFramework(ef => ef.GuardTenantWrites()));
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
 When enabled:
@@ -316,7 +319,7 @@ Known gaps: attach-then-modify and raw SQL are out of scope for both layers (see
 
 For package-level wiring without the tenancy surface, `services.AddHeadlessTenantWriteGuard()` remains available.
 
-### Module Model Mapping
+#### Module Model Mapping
 
 Each feature-storage EF package exposes a `ModelBuilder` extension. Call them inside `OnModelCreating` after `base.OnModelCreating(modelBuilder)`:
 
@@ -333,7 +336,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 
 These read `Schema` and `*TableName` from validated `*StorageOptions` and apply them consistently across providers.
 
-### Custom Save Processors
+#### Custom Save Processors
 
 ```csharp
 public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
@@ -353,19 +356,16 @@ builder.Services.AddHeadlessDbContextServices(options =>
 
 Custom processors are inserted before the terminal lifecycle and message-collector processors.
 
-### Value Converters
+#### Value Converters
 
 ```csharp
-modelBuilder.Entity<Order>()
-    .Property(o => o.Total)
-    .HasConversion<MoneyValueConverter>();
+modelBuilder.Entity<Order>().Property(o => o.Total).HasConversion<MoneyValueConverter>();
 
 // Or apply globally across all matching CLR types:
-configurationBuilder.Properties<Money>()
-    .HaveConversion<MoneyValueConverter>();
+configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>();
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Domain`
 - `Headless.Core`
@@ -374,7 +374,7 @@ configurationBuilder.Properties<Money>()
 - `Headless.CommitCoordination.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
-## Side Effects
+### Side Effects
 
 - Registers `HeadlessDbContextServices`, `IHeadlessSaveChangesPipeline`, the default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`)
 - Registers `IDbContextFactory<TDbContext>` as singleton (`HeadlessDbContextFactory<TDbContext>`); creates a fresh service scope per factory call
@@ -389,79 +389,80 @@ configurationBuilder.Properties<Money>()
 
 ---
 
-# Headless.Orm.EntityFramework.Messaging
+## Headless.Orm.EntityFramework.Messaging
 
 Bridge package that supplies the real `IHeadlessOutboxDispatcher` for EF integration-event outbox dispatch.
 
-## Problem Solved
+### Problem Solved
 
 `Headless.Orm.EntityFramework` defines the `IHeadlessOutboxDispatcher` seam but ships no implementation, so it carries no messaging dependency. This package supplies the implementation: integration events emitted by entities during an EF `SaveChanges` are written to the messaging outbox atomically with the business data and delivered to the broker after commit — without the core ORM package depending on messaging.
 
-## Key Features
+### Key Features
 
 - Transactional outbox enlistment in the EF save transaction, so outbox rows commit atomically with the business data
 - Routes each concrete `IIntegrationEvent` to `IOutboxBus.PublishAsync<TConcrete>` through a cached compiled invoker (`IntegrationEventPublishInvokerCache`) — one compiled delegate per runtime event type for allocation efficiency
 - Both sync (`Dispatch`) and async (`DispatchAsync`) save paths via `OutboxIntegrationEventDispatcher`
 - `.AddIntegrationEventOutbox()` builder extension on `IHeadlessDbContextBuilder`
 
-## Design Notes
+### Design Notes
 
 - **Commit-coordinated enlistment.** The save pipeline opens its transaction and synchronously enlists it in commit coordination (`DatabaseFacade.EnlistCommitCoordination`), so the ambient commit coordinator carries the live transaction. The dispatcher publishes each integration event; the outbox writer buffers the rows inside the transaction — not sent to the broker in-band. The registered `IDbTransactionInterceptor` drains the buffered dispatch on commit and discards it on rollback. Outbox rows commit atomically with the business data.
 - **Post-commit delivery.** The interceptor triggers the buffered dispatch on commit; the background relay also sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path. Pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
 - **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. `Headless.Orm.EntityFramework` takes a dependency on `Headless.CommitCoordination.EntityFramework` (generic, datastore-agnostic transaction coordination — not messaging) to own the coordinated save scope. The messaging dependency is isolated to this bridge.
 - **CDC alternative.** Change Data Capture (e.g. Debezium reading the database transaction log) is an advanced alternative deployment for capturing integration events outside the application process; it bypasses this dispatcher entirely and is a host-infrastructure decision, not a package option.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Orm.EntityFramework.Messaging
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Chain after AddHeadlessDbContextServices:
-builder.Services.AddHeadlessDbContextServices()
-    .AddDomainEvents()             // ILocalEventBus for in-process domain events
-    .AddIntegrationEventOutbox();  // IHeadlessOutboxDispatcher — this package
+builder
+    .Services.AddHeadlessDbContextServices()
+    .AddDomainEvents() // ILocalEventBus for in-process domain events
+    .AddIntegrationEventOutbox(); // IHeadlessOutboxDispatcher — this package
 
 // A messaging setup with an outbox storage provider is required:
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.UseInMemory();           // broker
+    setup.UseInMemory(); // broker
     setup.UsePostgreSql(connectionString); // outbox storage
 });
 ```
 
 `.AddIntegrationEventOutbox()` is parameterless — the dispatcher has no options. Broker, storage, and retry behavior are configured on `AddHeadlessMessaging`. Once registered, integration events emitted by `IIntegrationEventEmitter` entities during a save are enqueued to the outbox before commit and delivered after commit.
 
-## Configuration
+### Configuration
 
 None. (Configured via `AddHeadlessMessaging`.)
 
-## Dependencies
+### Dependencies
 
 - `Headless.Orm.EntityFramework`
 - `Headless.Domain`
 - `Headless.Messaging.Bus.Abstractions`
 - `Headless.Messaging.Abstractions`
 
-## Side Effects
+### Side Effects
 
 - Registers `IHeadlessOutboxDispatcher` as scoped (`TryAdd`) — `OutboxIntegrationEventDispatcher`
 - Registers `IntegrationEventPublishInvokerCache` as singleton (`TryAdd`)
 
 ---
 
-# Headless.Orm.Couchbase
+## Headless.Orm.Couchbase
 
 Couchbase integration for bucket-context based document access, transactions, and collection management.
 
-## Problem Solved
+### Problem Solved
 
 Provides a typed context model over Couchbase buckets with helper APIs for document operations (KV, LookupIn, MutateIn, scan, transactions) and schema bootstrap (scope/collection/index lifecycle), following the same context-provider pattern as `Headless.Orm.EntityFramework` but for the document model.
 
-## Key Features
+### Key Features
 
 - `CouchbaseBucketContext` base context over Linq2Couchbase `BucketContext` — exposes typed `Query<T>(scope, collection)` for N1QL and `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` for Couchbase Transactions
 - `IBucketContextProvider` / `BucketContextProvider` — resolves typed contexts per cluster key + bucket name + default scope; wires cluster and transaction objects via `ICouchbaseClustersProvider`
@@ -472,13 +473,13 @@ Provides a typed context model over Couchbase buckets with helper APIs for docum
 - `ICouchbaseTransactionConfigProvider` — consumer-supplied transaction configuration per cluster key
 - `CouchbaseEventingFunctionsSeeder` — seeds eventing functions from embedded resources
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Orm.Couchbase
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Define a typed bucket context
@@ -515,7 +516,7 @@ await context.ExecuteTransactionAsync(async attempt =>
 });
 ```
 
-## Configuration
+### Configuration
 
 - Implement and register `ICouchbaseClusterOptionsProvider` to supply cluster options (connection string, credentials) per cluster key.
 - Implement and register `ICouchbaseTransactionConfigProvider` to supply transaction configuration per cluster key.
@@ -531,7 +532,7 @@ services.AddSingleton<ICouchbaseClustersProvider, CouchbaseClustersProvider>();
 services.AddSingleton<ICouchbaseManager, CouchbaseManager>();
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Domain`
 - `Headless.Hosting`
@@ -541,7 +542,7 @@ services.AddSingleton<ICouchbaseManager, CouchbaseManager>();
 - `Polly`
 - `Humanizer`
 
-## Side Effects
+### Side Effects
 
 - Cluster connections are lazily initialized and statically cached by `clusterKey` in `CouchbaseClustersProvider`. Each cluster waits up to 1 minute for readiness on first access; a readiness failure is logged but does not throw (operations fail at call time).
 - `CouchbaseManager` caches scope/collection specs per `clusterKey + bucketName` in-memory to reduce repeated `GetAllScopesAsync` calls; cache is invalidated on scope creation.

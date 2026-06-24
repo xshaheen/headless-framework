@@ -26,17 +26,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Option 1: bind from appsettings (recommended)
 var awsOptions = builder.Configuration.GetAWSOptions();
-builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(
-    builder.Configuration.GetSection("Sms:Aws"),
-    awsOptions
-));
+builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(builder.Configuration.GetSection("Sms:Aws"), awsOptions));
 
 // Option 2: configure in code
-builder.Services.AddHeadlessSms(setup => setup.UseAwsSns(options =>
-{
-    options.SenderId = "MyApp";
-    // options.MaxPrice = 0.05m; // optional per-message USD cap
-}, awsOptions));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseAwsSns(
+        options =>
+        {
+            options.SenderId = "MyApp";
+            // options.MaxPrice = 0.05m; // optional per-message USD cap
+        },
+        awsOptions
+    )
+);
 ```
 
 ## Configuration

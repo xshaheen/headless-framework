@@ -51,7 +51,10 @@ public sealed class OrderWorker(IDistributedLock lockProvider)
             ct
         );
 
-        using var lostRegistration = lease.LostToken.Register(() => { /* stop work */ });
+        using var lostRegistration = lease.LostToken.Register(
+            () => { /* stop work */
+            }
+        );
         lease.ThrowIfLost();
         // process the order while the lease is held
     }

@@ -9,6 +9,7 @@ packages: Blobs.Abstractions, Blobs.Core, Blobs.Aws, Blobs.Azure, Blobs.Cloudfla
 
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
+- [Choosing a Provider](#choosing-a-provider)
 - [Headless.Blobs.Abstractions](#headlessblobsabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -52,7 +53,7 @@ packages: Blobs.Abstractions, Blobs.Core, Blobs.Aws, Blobs.Azure, Blobs.Cloudfla
     - [Quick Start](#quick-start-4)
     - [Configuration](#configuration-4)
         - [appsettings.json](#appsettingsjson-2)
-    - [Behavior Notes](#behavior-notes)
+    - [Design Notes](#design-notes-1)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
 - [Headless.Blobs.FileSystem](#headlessblobsfilesystem)
@@ -115,6 +116,19 @@ The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named
 - `SshNet` supports both password and SSH key authentication. Use `PrivateKey` for key-based auth.
 - A default store is optional and there is at most one (injected as plain `IBlobStorage`); a named-only configuration is valid and leaves plain `IBlobStorage` unregistered. The same provider may back multiple named stores with isolated config. Resolve named stores with `IBlobStorageProvider.GetStorage("name")` or `[FromKeyedServices("name")] IBlobStorage`. Calling `AddHeadlessBlobs` more than once on the same service collection throws.
 
+## Choosing a Provider
+
+Pick one provider per store (default or named) based on where the bytes must live and which capabilities you need.
+
+| Provider | Use when | Avoid when | Trade-off |
+| --- | --- | --- | --- |
+| `Headless.Blobs.FileSystem` | Local dev, testing, or single-node on-prem with no cloud dependency | Multi-node or horizontally-scaled deployments (no shared storage) | Not distributed; metadata kept as companion JSON files |
+| `Headless.Blobs.Aws` | Production on AWS; need presigned URLs and bulk operations | Not on AWS, or egress cost is a concern | Ties you to S3 pricing and the AWS SDK |
+| `Headless.Blobs.CloudflareR2` | S3-compatible storage with low egress cost and private buckets | You need public serving via ACLs, or bucket auto-create from the app | No ACL concept; buckets must be pre-created (no auto-create) |
+| `Headless.Blobs.Azure` | Production on Azure; want Entra ID auth and SAS presigned URLs | Not on Azure | Requires a `BlobServiceClient`; extra SAS rules for AAD clients |
+| `Headless.Blobs.SshNet` | Files must land on a remote SFTP/SSH server or legacy system | High-throughput or presigned-URL workloads | Slower; no presigned URLs; opens live SSH connections |
+| `Headless.Blobs.Redis` | Small, ephemeral blobs (thumbnails, temp uploads) needing fast access | Large files (default 10 MB cap) or durable storage | In-memory cost; not for large or long-lived blobs |
+
 ---
 
 ## Headless.Blobs.Abstractions
@@ -159,7 +173,8 @@ public sealed class FileService(IBlobStorage storage)
     {
         // Dispose result promptly — holding it may exhaust connection pools.
         await using var result = await storage.OpenReadStreamAsync(["uploads", "images"], fileName, ct);
-        if (result is null) return null;
+        if (result is null)
+            return null;
 
         using var reader = new StreamReader(result.Stream);
         return await reader.ReadToEndAsync(ct);
@@ -172,13 +187,15 @@ Resolve a named store or check for presigned support:
 ```csharp
 public sealed class StorageService(
     IBlobStorageProvider provider,
-    [FromKeyedServices("archive")] IBlobStorage archiveStorage)
+    [FromKeyedServices("archive")] IBlobStorage archiveStorage
+)
 {
     // Validate an externally-supplied name before resolving:
     public bool IsKnownStore(string name) => provider.RegisteredNames.Contains(name);
 
     // Resolve by name:
     public IBlobStorage GetByName(string name) => provider.GetStorage(name); // throws if not found
+
     public IBlobStorage? TryGetByName(string name) => provider.GetStorageOrNull(name); // null if not found
 
     // Feature-detect presigned on the default store:
@@ -254,17 +271,22 @@ builder.Services.AddHeadlessBlobs(blobs =>
     });
 
     // Named store — injected as keyed IBlobStorage("docs").
-    blobs.AddNamed("docs", instance => instance.UseAzure(
-        setupAction: options => { },
-        clientFactory: _ => new BlobServiceClient(builder.Configuration["Azure:Docs:ConnectionString"])));
+    blobs.AddNamed(
+        "docs",
+        instance =>
+            instance.UseAzure(
+                setupAction: options => { },
+                clientFactory: _ => new BlobServiceClient(builder.Configuration["Azure:Docs:ConnectionString"])
+            )
+    );
 
     // Two named instances of the same provider, each with independent config.
-    blobs.AddNamed("scratch", instance => instance.UseFileSystem(
-        options => options.BaseDirectoryPath = "/tmp/blobs"));
+    blobs.AddNamed("scratch", instance => instance.UseFileSystem(options => options.BaseDirectoryPath = "/tmp/blobs"));
 
-    blobs.AddNamed("archive", instance => instance.UseAws(
-        options => { },
-        awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive")));
+    blobs.AddNamed(
+        "archive",
+        instance => instance.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive"))
+    );
 });
 ```
 
@@ -281,12 +303,12 @@ public sealed class DocsService([FromKeyedServices("docs")] IBlobStorage docsSto
 public sealed class MultiStoreService(IBlobStorageProvider provider)
 {
     public IBlobStorage GetDocs() => provider.GetStorage("docs");
+
     public bool HasStore(string name) => provider.RegisteredNames.Contains(name);
 }
 
 // Named presigned URL (AWS/Azure/R2 only).
-public sealed class PresignedService(
-    [FromKeyedServices("docs")] IPresignedUrlBlobStorage presigned)
+public sealed class PresignedService([FromKeyedServices("docs")] IPresignedUrlBlobStorage presigned)
 {
     public Task<Uri> GetDownloadUrl(string[] container, string blob) =>
         presigned.GetPresignedDownloadUrlAsync(container, blob, TimeSpan.FromHours(1));
@@ -343,7 +365,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Default store — AWS SDK credential/region chain applies unless overridden.
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions()));
+    blobs.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions())
+);
 
 // Explicit credentials:
 builder.Services.AddHeadlessBlobs(blobs =>
@@ -353,13 +376,17 @@ builder.Services.AddHeadlessBlobs(blobs =>
         {
             Region = RegionEndpoint.USEast1,
             Credentials = new BasicAWSCredentials("access-key", "secret-key"),
-        }));
+        }
+    )
+);
 
 // Named store with per-store credentials; keyed IPresignedUrlBlobStorage registered automatically.
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.AddNamed("archive", instance => instance.UseAws(
-        options => { },
-        awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive"))));
+    blobs.AddNamed(
+        "archive",
+        instance => instance.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive"))
+    )
+);
 ```
 
 Buckets and keys are passed per operation:
@@ -393,7 +420,7 @@ if (storage is IPresignedUrlBlobStorage presigned)
 #### Options
 
 ```csharp
-options.AutoCreateContainer = true;            // create buckets on upload/copy (default true; set false for R2)
+options.AutoCreateContainer = true; // create buckets on upload/copy (default true; set false for R2)
 options.CannedAcl = S3CannedACL.Private;
 options.UseChunkEncoding = true;
 options.DisablePayloadSigning = false;
@@ -455,9 +482,14 @@ builder.Services.AddHeadlessBlobs(blobs =>
 
     // Named store on a different account — per-store clientFactory overrides the DI client.
     // Also registers keyed IPresignedUrlBlobStorage("archive") automatically.
-    blobs.AddNamed("archive", instance => instance.UseAzure(
-        setupAction: options => { },
-        clientFactory: _ => new BlobServiceClient("<archive-connection-string>")));
+    blobs.AddNamed(
+        "archive",
+        instance =>
+            instance.UseAzure(
+                setupAction: options => { },
+                clientFactory: _ => new BlobServiceClient("<archive-connection-string>")
+            )
+    );
 });
 ```
 
@@ -536,12 +568,16 @@ builder.Services.AddHeadlessBlobs(blobs =>
     });
 
     // Named store — keyed IPresignedUrlBlobStorage("media") registered automatically.
-    blobs.AddNamed("media", instance => instance.UseCloudflareR2(options =>
-    {
-        options.AccountId = builder.Configuration["R2Media:AccountId"]!;
-        options.AccessKeyId = builder.Configuration["R2Media:AccessKeyId"]!;
-        options.SecretAccessKey = builder.Configuration["R2Media:SecretAccessKey"]!;
-    }));
+    blobs.AddNamed(
+        "media",
+        instance =>
+            instance.UseCloudflareR2(options =>
+            {
+                options.AccountId = builder.Configuration["R2Media:AccountId"]!;
+                options.AccessKeyId = builder.Configuration["R2Media:AccessKeyId"]!;
+                options.SecretAccessKey = builder.Configuration["R2Media:SecretAccessKey"]!;
+            })
+    );
 });
 ```
 
@@ -574,7 +610,7 @@ if (storage is IPresignedUrlBlobStorage presigned)
 
 Bind with `blobs.UseCloudflareR2(builder.Configuration.GetSection("R2"))`.
 
-### Behavior Notes
+### Design Notes
 
 - **Buckets are not auto-created.** R2 object-scoped tokens cannot create buckets, so `AutoCreateContainer` defaults to `false`. Pre-create buckets out of band or use a bucket-create-capable token with `CreateContainerAsync`.
 - **No ACLs / public access.** `CannedAcl` is `null`. Use presigned URLs for time-limited private access; public serving (custom domains / `r2.dev`) is out of scope.
@@ -626,7 +662,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseFileSystem(options =>
-        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")));
+        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+    )
+);
 ```
 
 ### Configuration
@@ -644,7 +682,7 @@ builder.Services.AddHeadlessBlobs(blobs =>
 #### Options
 
 ```csharp
-options.BaseDirectoryPath = "/path/to/storage";  // required; the root directory for all containers
+options.BaseDirectoryPath = "/path/to/storage"; // required; the root directory for all containers
 ```
 
 ### Dependencies
@@ -690,8 +728,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // The IConnectionMultiplexer must be set in code — it cannot be bound from appsettings.json.
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseRedis(options =>
-        options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379")));
+    blobs.UseRedis(options => options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379"))
+);
 ```
 
 ### Configuration
@@ -749,8 +787,8 @@ dotnet add package Headless.Blobs.SshNet
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseSsh(options =>
-        options.ConnectionString = "sftp://user:password@sftp.example.com:22/home/user/uploads"));
+    blobs.UseSsh(options => options.ConnectionString = "sftp://user:password@sftp.example.com:22/home/user/uploads")
+);
 ```
 
 ### Configuration
@@ -774,7 +812,8 @@ builder.Services.AddHeadlessBlobs(blobs =>
         options.ConnectionString = "sftp://user@sftp.example.com:22/home/user/uploads";
         options.PrivateKey = File.OpenRead("/path/to/key");
         options.PrivateKeyPassPhrase = "optional-passphrase"; // nullable
-    }));
+    })
+);
 ```
 
 ### Dependencies

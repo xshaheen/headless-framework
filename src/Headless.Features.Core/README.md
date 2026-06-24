@@ -88,11 +88,11 @@ services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "features";                               // default
-        o.FeatureValuesTableName = "FeatureValues";          // default
+        o.Schema = "features"; // default
+        o.FeatureValuesTableName = "FeatureValues"; // default
         o.FeatureDefinitionsTableName = "FeatureDefinitions"; // default
         o.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"; // default
-        o.InitializeOnStartup = true;                        // default; set false when schema is provisioned out-of-band
+        o.InitializeOnStartup = true; // default; set false when schema is provisioned out-of-band
     });
     setup.UseEntityFramework<AppDbContext>();
 });

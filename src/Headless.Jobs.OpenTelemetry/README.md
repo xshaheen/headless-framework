@@ -27,17 +27,16 @@ dotnet add package Headless.Jobs.OpenTelemetry
 using OpenTelemetry.Trace;
 
 // 1. Add Jobs with OpenTelemetry instrumentation
-builder.Services
-    .AddHeadlessJobs()
-    .AddOpenTelemetryInstrumentation(); // replaces LoggerInstrumentation with OTel
+builder.Services.AddHeadlessJobs().AddOpenTelemetryInstrumentation(); // replaces LoggerInstrumentation with OTel
 
 // 2. Configure the OpenTelemetry pipeline to include the Jobs ActivitySource
-builder.Services.AddOpenTelemetry()
+builder
+    .Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
         tracing
             .AddSource("Headless.Jobs") // the Jobs ActivitySource name
-            .AddConsoleExporter();      // or Jaeger, OTLP, Azure Monitor, etc.
+            .AddConsoleExporter(); // or Jaeger, OTLP, Azure Monitor, etc.
     });
 ```
 

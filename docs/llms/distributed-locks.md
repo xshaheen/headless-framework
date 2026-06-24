@@ -190,9 +190,7 @@ Writer-preference is intentional. When a writer queues behind active readers, Re
 Readers running `Monitoring = LockMonitoringMode.AutoExtend` may see `LostToken` fire when a writer queues — the extend-read script refuses to refresh while a writer-waiting marker is present, which the provider classifies as `Lost`. This is the contract that enforces the writer-preference guarantee at the per-reader level: a reader that wants to keep its lease through a writer queue must reacquire from scratch after the writer drains.
 
 ```csharp
-builder.Services.AddSingleton<IConnectionMultiplexer>(
-    _ => ConnectionMultiplexer.Connect("localhost:6379")
-);
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 
 builder.Services.AddHeadlessDistributedLocks(setup =>
 {
@@ -303,7 +301,10 @@ public sealed class OrderWorker(IDistributedLock lockProvider)
             ct
         );
 
-        using var lostRegistration = lease.LostToken.Register(() => { /* stop work */ });
+        using var lostRegistration = lease.LostToken.Register(
+            () => { /* stop work */
+            }
+        );
         lease.ThrowIfLost();
         // process the order while the lease is held
     }
@@ -585,11 +586,13 @@ dotnet add package Headless.DistributedLocks.PostgreSql
 ### Quick Start
 
 ```csharp
-builder.Services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
-{
-    options.ConnectionString = builder.Configuration.GetConnectionString("Postgres");
-    options.KeyPrefix = "distributed-lock:";
-}));
+builder.Services.AddHeadlessDistributedLocks(setup =>
+    setup.UsePostgreSql(options =>
+    {
+        options.ConnectionString = builder.Configuration.GetConnectionString("Postgres");
+        options.KeyPrefix = "distributed-lock:";
+    })
+);
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -621,8 +624,8 @@ await transaction.CommitAsync(ct);
 ### Configuration
 
 ```csharp
-options.ConnectionString = "...";        // required unless DataSource is set
-options.DataSource = dataSource;         // preferred when already registered
+options.ConnectionString = "..."; // required unless DataSource is set
+options.DataSource = dataSource; // preferred when already registered
 options.KeyPrefix = "distributed-lock:";
 options.PollingFallback = TimeSpan.FromMilliseconds(100);
 options.EnablePushWakeup = true;
@@ -669,9 +672,7 @@ dotnet add package Headless.DistributedLocks.Redis
 ### Quick Start
 
 ```csharp
-builder.Services.AddSingleton<IConnectionMultiplexer>(
-    _ => ConnectionMultiplexer.Connect("localhost:6379")
-);
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 
 builder.Services.AddHeadlessDistributedLocks(setup =>
 {
@@ -746,11 +747,13 @@ dotnet add package Headless.DistributedLocks.SqlServer
 ### Quick Start
 
 ```csharp
-builder.Services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(options =>
-{
-    options.ConnectionString = builder.Configuration.GetConnectionString("SqlServer");
-    options.KeyPrefix = "distributed-lock:";
-}));
+builder.Services.AddHeadlessDistributedLocks(setup =>
+    setup.UseSqlServer(options =>
+    {
+        options.ConnectionString = builder.Configuration.GetConnectionString("SqlServer");
+        options.KeyPrefix = "distributed-lock:";
+    })
+);
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -770,11 +773,7 @@ await using var connection = new SqlConnection(connectionString);
 await connection.OpenAsync(ct);
 await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(ct);
 
-await SqlServerDistributedLock.AcquireWithTransactionAsync(
-    "orders:123",
-    transaction,
-    cancellationToken: ct
-);
+await SqlServerDistributedLock.AcquireWithTransactionAsync("orders:123", transaction, cancellationToken: ct);
 
 // mutate protected rows, then commit or rollback to release the lock
 await transaction.CommitAsync(ct);
@@ -783,8 +782,8 @@ await transaction.CommitAsync(ct);
 ### Configuration
 
 ```csharp
-options.ConnectionString = "...";        // required
-options.Schema = "dbo";                  // fencing sequence schema
+options.ConnectionString = "..."; // required
+options.Schema = "dbo"; // fencing sequence schema
 options.KeyPrefix = "distributed-lock:";
 options.CommandTimeout = TimeSpan.FromSeconds(30);
 options.EnableFencing = true;

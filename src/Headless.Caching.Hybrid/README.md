@@ -101,8 +101,8 @@ services.AddHeadlessCaching(setup =>
     setup.AddNamed("hot-l2", i => i.UseRedis(options => options.ConnectionMultiplexer = redis));
     setup.UseHybrid(options =>
     {
-        options.LocalCacheName = "hot-l1";   // must implement IInMemoryCache
-        options.RemoteCacheName = "hot-l2";  // must implement IRemoteCache
+        options.LocalCacheName = "hot-l1"; // must implement IInMemoryCache
+        options.RemoteCacheName = "hot-l2"; // must implement IRemoteCache
     });
 });
 ```

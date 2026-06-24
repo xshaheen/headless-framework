@@ -43,8 +43,6 @@ builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
 builder.Services.Decorate<IMyService, AuditedMyService>();
 ```
 
-## Usage
-
 ### Conditional Service Registration
 
 ```csharp
@@ -93,8 +91,9 @@ services.AddOrReplaceFallbackSingleton<IService, NullService, DefaultService>();
 services.AddSingleton<IService, Service>();
 services.Decorate<IService, AuditedService>();
 
-services.Decorate<IService>((inner, serviceProvider) =>
-    new AuditedService(inner, serviceProvider.GetRequiredService<ILogger<AuditedService>>()));
+services.Decorate<IService>(
+    (inner, serviceProvider) => new AuditedService(inner, serviceProvider.GetRequiredService<ILogger<AuditedService>>())
+);
 ```
 
 `Decorate` wraps all existing unkeyed registrations for the service type and preserves each original lifetime. Use `TryDecorate` when the service may not be registered.

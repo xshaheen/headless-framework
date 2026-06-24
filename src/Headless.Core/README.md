@@ -47,7 +47,7 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
             UserId = user.UserId!.Value,
             TenantId = tenant.Id,
             CreatedAt = clock.UtcNow,
-            Total = new Money(request.Amount, request.Currency)
+            Total = new Money(request.Amount, request.Currency),
         };
     }
 }
@@ -56,11 +56,7 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
 ### Structured Logging
 
 ```csharp
-logger.LogInformation(
-    s => s.Tag("orders").Property("orderId", orderId),
-    "Order {OrderId} created",
-    orderId
-);
+logger.LogInformation(s => s.Tag("orders").Property("orderId", orderId), "Order {OrderId} created", orderId);
 ```
 
 ### Retry Logic

@@ -57,9 +57,7 @@ services.AddHeadlessAuditLog(setup =>
 ### DbContext setup
 
 ```csharp
-public AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<AuditLogStorageOptions> auditLogStorage)
+public AppDbContext(DbContextOptions<AppDbContext> options, IOptions<AuditLogStorageOptions> auditLogStorage)
     : base(options)
 {
     _auditLogStorage = auditLogStorage;
@@ -75,11 +73,7 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 ### Explicit event logging
 
 ```csharp
-await auditLog.LogAsync(
-    "pii.revealed",
-    entityType: typeof(Patient).FullName,
-    entityId: id.ToString()
-);
+await auditLog.LogAsync("pii.revealed", entityType: typeof(Patient).FullName, entityId: id.ToString());
 ```
 
 ### Query audit entries

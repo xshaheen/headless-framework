@@ -23,9 +23,7 @@ dotnet add package Headless.Sql.SqlServer
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddSingleton<ISqlConnectionFactory>(
-    new SqlServerConnectionFactory(connectionString)
-);
+builder.Services.AddSingleton<ISqlConnectionFactory>(new SqlServerConnectionFactory(connectionString));
 
 // Optional: register the health-check helper
 builder.Services.AddSingleton<IConnectionStringChecker, SqlServerConnectionStringChecker>();

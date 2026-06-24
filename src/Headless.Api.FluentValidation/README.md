@@ -24,10 +24,10 @@ dotnet add package Headless.Api.FluentValidation
 ## Quick Start
 
 ```csharp
-using FluentValidation;
-using Headless.FluentValidation;
 using FileSignatures;
 using FileSignatures.Formats;
+using FluentValidation;
+using Headless.FluentValidation;
 
 public sealed class UploadRequestValidator : AbstractValidator<UploadRequest>
 {

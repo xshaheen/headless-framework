@@ -13,6 +13,10 @@ Provides high-speed blob storage for small files using Redis, for temporary file
 - Metadata stored alongside blobs in Redis.
 - Fast read/write performance.
 
+## Design Notes
+
+- Designed for small, ephemeral blobs (cache data, session files, temporary uploads). The default `MaxBlobSizeBytes` is 10 MB to prevent memory exhaustion; uploads above the cap are rejected. For large files, use Azure Blob Storage or S3.
+
 ## Installation
 
 ```bash
@@ -26,8 +30,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // The IConnectionMultiplexer must be set in code — it cannot be bound from appsettings.json.
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseRedis(options =>
-        options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379")));
+    blobs.UseRedis(options => options.ConnectionMultiplexer = ConnectionMultiplexer.Connect("localhost:6379"))
+);
 ```
 
 ## Configuration

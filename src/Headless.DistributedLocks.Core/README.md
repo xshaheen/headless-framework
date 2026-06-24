@@ -52,7 +52,6 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     // setup.Use... storage and transport providers
 });
-
 ```
 
 ## Configuration

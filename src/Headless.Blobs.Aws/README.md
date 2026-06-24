@@ -29,7 +29,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Default store — AWS SDK credential/region chain applies unless overridden.
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions()));
+    blobs.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions())
+);
 
 // Explicit credentials:
 builder.Services.AddHeadlessBlobs(blobs =>
@@ -39,13 +40,17 @@ builder.Services.AddHeadlessBlobs(blobs =>
         {
             Region = RegionEndpoint.USEast1,
             Credentials = new BasicAWSCredentials("access-key", "secret-key"),
-        }));
+        }
+    )
+);
 
 // Named store with per-store credentials; keyed IPresignedUrlBlobStorage registered automatically.
 builder.Services.AddHeadlessBlobs(blobs =>
-    blobs.AddNamed("archive", instance => instance.UseAws(
-        options => { },
-        awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive"))));
+    blobs.AddNamed(
+        "archive",
+        instance => instance.UseAws(options => { }, awsOptions: builder.Configuration.GetAWSOptions("AWS:Archive"))
+    )
+);
 ```
 
 Buckets and keys are passed per operation:
@@ -75,7 +80,7 @@ if (storage is IPresignedUrlBlobStorage presigned)
 ### Options
 
 ```csharp
-options.AutoCreateContainer = true;            // create buckets on upload/copy (default true)
+options.AutoCreateContainer = true; // create buckets on upload/copy (default true)
 options.CannedAcl = S3CannedACL.Private;
 options.UseChunkEncoding = true;
 options.DisablePayloadSigning = false;
