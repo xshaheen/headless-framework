@@ -237,11 +237,11 @@ public static class FileHelper
     /// <exception cref="IOException">Thrown when an I/O error occurs while reading the file.</exception>
     /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to read the file.</exception>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
-    public static async Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
+    public static Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
     {
-        using var reader = File.OpenText(path);
-
-        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        // File.ReadAllTextAsync opens the file for asynchronous I/O internally; File.OpenText opened a synchronous
+        // FileStream, so ReadToEndAsync was async-over-sync (blocking a thread-pool thread on file I/O).
+        return File.ReadAllTextAsync(path, cancellationToken);
     }
 
     /// <summary>Opens a binary file, reads its entire content into a byte array, and then closes the file.</summary>
