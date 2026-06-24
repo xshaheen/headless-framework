@@ -3,9 +3,7 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.Domain;
 using Headless.Features.Definitions;
-using Headless.Features.Entities;
 using Headless.Features.Filters;
 using Headless.Features.Models;
 using Headless.Features.Repositories;
@@ -143,11 +141,6 @@ public static class SetupCore
     {
         services._AddCoreValueProviders();
         services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
-
-        services.AddTransient<
-            IDomainEventHandler<EntityChangedEventData<FeatureValueRecord>>,
-            FeatureValueCacheItemInvalidator
-        >();
 
         services.AddSingleton<IFeatureErrorsDescriptor, DefaultFeatureErrorsDescriptor>();
 

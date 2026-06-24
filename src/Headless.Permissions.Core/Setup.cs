@@ -3,10 +3,8 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.Domain;
 using Headless.Hosting.Initialization;
 using Headless.Permissions.Definitions;
-using Headless.Permissions.Entities;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
@@ -159,11 +157,6 @@ public static class SetupPermissions
         services._AddCoreValueProvider();
         services.AddInitializerHostedService<PermissionsInitializationBackgroundService>();
         services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
-
-        services.AddTransient<
-            IDomainEventHandler<EntityChangedEventData<PermissionGrantRecord>>,
-            PermissionGrantCacheItemInvalidator
-        >();
 
         services.TryAddSingleton<IPermissionErrorsDescriptor, DefaultPermissionErrorsDescriptor>();
 

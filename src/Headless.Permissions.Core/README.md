@@ -136,5 +136,4 @@ setup.ConfigureStorage(o =>
 - Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`)
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
-- Registers `PermissionGrantCacheItemInvalidator` as `IDomainEventHandler<EntityChangedEventData<PermissionGrantRecord>>`
 - Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton

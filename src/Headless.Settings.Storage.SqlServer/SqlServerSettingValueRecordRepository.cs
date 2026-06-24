@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.Domain;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Microsoft.Data.SqlClient;
@@ -166,7 +165,6 @@ internal sealed class SqlServerSettingValueRecordRepository(
                 _Param("DateUpdated", dateUpdated)
             )
             .ConfigureAwait(false);
-        await _PublishAsync(setting, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -187,11 +185,6 @@ internal sealed class SqlServerSettingValueRecordRepository(
 
         await _ExecuteAsync(sql, cancellationToken, _BuildIdListTvpParameter(settings.Select(setting => setting.Id)))
             .ConfigureAwait(false);
-
-        foreach (var setting in settings)
-        {
-            await _PublishAsync(setting, cancellationToken).ConfigureAwait(false);
-        }
     }
 
     /// <summary>Opens a new connection, executes <paramref name="sql"/> with <paramref name="parameters"/>, and maps each row to a <see cref="SettingValueRecord"/>.</summary>
@@ -239,20 +232,6 @@ internal sealed class SqlServerSettingValueRecordRepository(
         command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>Publishes an <see cref="Headless.Domain.EntityChangedEventData{T}"/> event for <paramref name="setting"/> when an <see cref="Headless.Domain.ILocalEventBus"/> is registered in the container.</summary>
-    private async ValueTask _PublishAsync(SettingValueRecord setting, CancellationToken cancellationToken)
-    {
-        await using var scope = services.CreateAsyncScope();
-        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
-
-        if (publisher is not null)
-        {
-            await publisher
-                .PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken)
-                .ConfigureAwait(false);
-        }
     }
 
     /// <summary>Returns <see cref="SqlServerSettingsOptions.CommandTimeout"/> expressed in whole seconds for use as <c>CommandTimeout</c>.</summary>

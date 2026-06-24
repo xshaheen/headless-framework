@@ -148,7 +148,7 @@ Each provider returns one of three states per permission:
 
 ### Grant Store and Caching
 
-`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, the framework publishes an event causing `PermissionGrantCacheItemInvalidator` to evict affected cache entries across the process. Writing directly to `IPermissionGrantRepository` bypasses this path and leaves stale cache entries.
+`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, `PermissionGrantStore` evicts the affected cache entries directly through `ICache`. Writing directly to `IPermissionGrantRepository` bypasses this path and leaves stale cache entries.
 
 ### Static vs. Dynamic Definition Store
 
@@ -452,7 +452,6 @@ builder.Services.AddHeadlessPermissions(setup =>
 - Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`)
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
-- Registers `PermissionGrantCacheItemInvalidator` as `IDomainEventHandler<EntityChangedEventData<PermissionGrantRecord>>`
 - Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton
 
 ---

@@ -116,7 +116,7 @@ The *static store* (`IStaticFeatureDefinitionStore`) builds the feature catalog 
 
 ### Feature Value Caching
 
-`FeatureValueStore` caches resolved feature values to avoid repeated database reads. The cache is backed by the registered `ICache` (or a named cache instance when `FeatureManagementOptions.FeatureValueCacheName` is set). When `IFeatureManager.SetAsync` writes a value, the framework publishes a `CacheInvalidationMessage` that causes `FeatureValueCacheItemInvalidator` to evict the affected entries across all nodes. Bypassing `IFeatureManager` to write values directly to the repository breaks this invalidation path.
+`FeatureValueStore` caches resolved feature values to avoid repeated database reads. The cache is backed by the registered `ICache` (or a named cache instance when `FeatureManagementOptions.FeatureValueCacheName` is set). When `IFeatureManager.SetAsync` writes a value, `FeatureValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Bypassing `IFeatureManager` to write values directly to the repository breaks this invalidation path.
 
 ### Startup Initialization
 
@@ -345,7 +345,6 @@ services.AddHeadlessFeatures(setup =>
 - Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
 - Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
 - Starts `FeaturesInitializationBackgroundService` as a hosted service
-- Registers `FeatureValueCacheItemInvalidator` as a `IDomainEventHandler<EntityChangedEventData<FeatureValueRecord>>`
 - Registers `IMethodInvocationFeatureCheckerService` as singleton
 
 ---

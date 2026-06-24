@@ -2,10 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Domain;
 using Headless.Hosting.Initialization;
 using Headless.Settings.Definitions;
-using Headless.Settings.Entities;
 using Headless.Settings.Helpers;
 using Headless.Settings.Models;
 using Headless.Settings.Resources;
@@ -144,11 +142,6 @@ public static class SetupCoreSettings
         services._AddCoreValueProvider();
 
         services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
-
-        services.TryAddTransient<
-            IDomainEventHandler<EntityChangedEventData<SettingValueRecord>>,
-            SettingValueCacheItemInvalidator
-        >();
 
         services.TryAddSingleton<ISettingsErrorsDescriptor, DefaultSettingsErrorsDescriptor>();
         services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();

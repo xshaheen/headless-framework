@@ -111,5 +111,4 @@ services.AddHeadlessFeatures(setup =>
 - Registers `IStaticFeatureDefinitionStore`, `IDynamicFeatureDefinitionStore`, `IFeatureDefinitionManager`, `IFeatureValueStore`, `IFeatureValueProviderManager` as singletons
 - Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
 - Starts `FeaturesInitializationBackgroundService` as a hosted service
-- Registers `FeatureValueCacheItemInvalidator` as a `IDomainEventHandler<EntityChangedEventData<FeatureValueRecord>>`
 - Registers `IMethodInvocationFeatureCheckerService` as singleton
