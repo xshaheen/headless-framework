@@ -1,0 +1,112 @@
+name: "Prune prerelease packages"
+
+# Deletes prerelease NuGet versions (SemVer strings containing a hyphen, e.g.
+# 1.2.3-preview.0.45+build.123) from the user's GitHub Packages registry once
+# they are older than the configured age. Stable releases (X.Y.Z) are never
+# touched. A configurable number of the most-recent prereleases per package is
+# always kept so an active prerelease feed is never fully emptied.
+#
+# Token: deleting *user-scoped* packages needs a PAT with the `delete:packages`
+# (and `read:packages`) scope. Add it as the repo secret `PACKAGES_PRUNE_TOKEN`.
+# The workflow falls back to GITHUB_TOKEN if the secret is absent, which only
+# works when the packages are repo-scoped — set the PAT to be safe.
+
+on:
+  schedule:
+    # Weekly, Sunday 04:00 UTC.
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      max-age-days:
+        description: "Delete prerelease versions older than this many days"
+        default: "60"
+      keep-latest:
+        description: "Always keep this many most-recent prereleases per package"
+        default: "3"
+      dry-run:
+        description: "List candidates without deleting"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Prune old prereleases
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Delete prerelease versions older than max-age-days"
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGES_PRUNE_TOKEN || secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          MAX_AGE_DAYS: ${{ github.event.inputs.max-age-days || '60' }}
+          KEEP_LATEST: ${{ github.event.inputs.keep-latest || '3' }}
+          DRY_RUN: ${{ github.event.inputs.dry-run || 'false' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          cutoff=$(date -u -d "${MAX_AGE_DAYS} days ago" +%s)
+          echo "Owner=$OWNER  max-age-days=$MAX_AGE_DAYS  keep-latest=$KEEP_LATEST  dry-run=$DRY_RUN"
+          echo "Cutoff (UTC): $(date -u -d "@$cutoff")"
+
+          deleted=0; kept=0; failed=0
+
+          del() {
+            local path="$1" tries=0
+            while :; do
+              if gh api -X DELETE "$path" >/dev/null 2>/tmp/err; then sleep 0.35; return 0; fi
+              if grep -qiE "rate limit|secondary rate|abuse" /tmp/err && [ "$tries" -lt 6 ]; then
+                tries=$((tries+1)); sleep $((tries*30)); continue
+              fi
+              echo "  FAIL $path :: $(tr '\n' ' ' </tmp/err)"; return 1
+            done
+          }
+
+          mapfile -t pkgs < <(gh api --paginate \
+            "/users/$OWNER/packages?package_type=nuget&per_page=100" --jq '.[].name')
+          echo "Scanning ${#pkgs[@]} nuget packages..."
+
+          for pkg in "${pkgs[@]}"; do
+            # created_at<TAB>id<TAB>name for prereleases only
+            mapfile -t pre < <(gh api --paginate \
+              "/users/$OWNER/packages/nuget/$pkg/versions?per_page=100" \
+              --jq '.[] | select(.name | contains("-")) | "\(.created_at)\t\(.id)\t\(.name)"')
+            [ "${#pre[@]}" -eq 0 ] && continue
+
+            # epoch<TAB>id<TAB>name, newest first
+            rows=()
+            for line in "${pre[@]}"; do
+              ts="${line%%$'\t'*}"; rest="${line#*$'\t'}"
+              epoch=$(date -u -d "$ts" +%s 2>/dev/null || echo 0)
+              rows+=("$epoch"$'\t'"$rest")
+            done
+            IFS=$'\n' rows=($(printf '%s\n' "${rows[@]}" | sort -rn)); unset IFS
+
+            idx=0
+            for line in "${rows[@]}"; do
+              epoch="${line%%$'\t'*}"; rest="${line#*$'\t'}"
+              id="${rest%%$'\t'*}"; name="${rest#*$'\t'}"
+              idx=$((idx+1))
+              if [ "$idx" -le "$KEEP_LATEST" ] || [ "$epoch" -ge "$cutoff" ]; then
+                kept=$((kept+1)); continue
+              fi
+              echo "DELETE $pkg $name ($(date -u -d "@$epoch" +%F))"
+              if [ "$DRY_RUN" = "true" ]; then
+                deleted=$((deleted+1))
+              elif del "/users/$OWNER/packages/nuget/$pkg/versions/$id"; then
+                deleted=$((deleted+1))
+              else
+                failed=$((failed+1))
+              fi
+            done
+          done
+
+          echo "==== SUMMARY ===="
+          echo "deleted=$deleted kept=$kept failed=$failed (dry-run=$DRY_RUN)"
