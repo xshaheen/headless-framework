@@ -19,6 +19,11 @@ namespace Headless.Threading;
 /// rather than a single process-wide monitor.
 /// </para>
 /// <para>
+/// <b>Locks are non-reentrant.</b> Acquisition tracks no owning thread or async context, so a caller that
+/// already holds the lock for a key and re-acquires the same key without first releasing will deadlock
+/// (<see cref="LockAsync(string,CancellationToken)"/>) or observe the key as held (<see cref="TryLock"/>).
+/// </para>
+/// <para>
 /// <b>Cache stampede protection example:</b>
 /// </para>
 /// <code>
@@ -75,7 +80,7 @@ public sealed class KeyedAsyncLock : IDisposable
 
         for (var i = 0; i < _shards.Length; i++)
         {
-            _shards[i] = new Shard();
+            _shards[i] = new Shard(this);
         }
     }
 
@@ -274,9 +279,10 @@ public sealed class KeyedAsyncLock : IDisposable
 
     private Shard _GetShard(string key)
     {
-        // StringComparer.Ordinal matches the per-shard dictionary comparer, ensuring the same key
-        // always maps to the same shard regardless of the calling context.
-        var hash = StringComparer.Ordinal.GetHashCode(key);
+        // Ordinal hashing (matching the per-shard dictionary comparer) so the same key always maps to the
+        // same shard. string.GetHashCode(StringComparison) is a direct instance call, avoiding the virtual
+        // StringComparer.Ordinal.GetHashCode dispatch on this acquire/release hot path.
+        var hash = key.GetHashCode(StringComparison.Ordinal);
         return _shards[hash & (_ShardCount - 1)];
     }
 
@@ -322,7 +328,7 @@ public sealed class KeyedAsyncLock : IDisposable
 
     // Each shard owns its lock and dictionary; all bookkeeping happens inside the shard so the monitor stays a
     // private field (never exposed), keeping lock-target analysis happy and scoping contention to the shard.
-    private sealed class Shard
+    private sealed class Shard(KeyedAsyncLock owner)
     {
         // Lock is .NET 9+ and performs better than lock(object) on uncontended paths.
         private readonly Lock _gate = new();
@@ -334,6 +340,11 @@ public sealed class KeyedAsyncLock : IDisposable
         {
             lock (_gate)
             {
+                // Re-check disposal under the shard lock: a caller can clear the outer NotDisposed gate and
+                // then race DisposeAll. Without this guard a post-DisposeAll insert would leak a semaphore
+                // that nothing will ever dispose. DisposeAll takes the same lock, so this read is ordered.
+                Ensure.NotDisposed(owner._disposed, owner);
+
                 if (_map.TryGetValue(key, out var item))
                 {
                     ++item.RefCount;

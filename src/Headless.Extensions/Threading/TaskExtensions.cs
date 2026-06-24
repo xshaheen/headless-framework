@@ -229,12 +229,17 @@ public static class HeadlessTaskExtensions
 
     private static async Task<T> _WithCancellationSlow<T>(Task<T> task, CancellationToken cancellationToken)
     {
-        var tcs = new TaskCompletionSource<bool>();
+        // RunContinuationsAsynchronously: cancelling the token must not resume this awaiter inline on the
+        // canceller's thread, which would risk re-entrancy/deadlock on the caller's stack.
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true), tcs))
         {
             if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(false))
             {
+                // Cancellation won the race: the wrapped task is now abandoned. Observe it so a later fault
+                // does not escalate as an unobserved-task exception, then surface the cancellation.
+                task.Forget();
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
@@ -259,12 +264,17 @@ public static class HeadlessTaskExtensions
         CancellationToken cancellationToken
     )
     {
-        var tcs = new TaskCompletionSource<bool>();
+        // RunContinuationsAsynchronously: cancelling the token must not resume this awaiter inline on the
+        // canceller's thread, which would risk re-entrancy/deadlock on the caller's stack.
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true), tcs))
         {
             if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(continueOnCapturedContext))
             {
+                // Cancellation won the race: the wrapped task is now abandoned. Observe it so a later fault
+                // does not escalate as an unobserved-task exception, then surface the cancellation.
+                task.Forget();
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
