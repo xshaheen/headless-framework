@@ -286,17 +286,29 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     }
 
     [Fact]
-    public async Task skip_async_should_return_empty_for_zero_count()
+    public async Task skip_async_should_return_all_for_zero_count()
     {
         // given
-        // Note: Implementation returns empty when count <= 0 (differs from standard Skip behavior)
         var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
 
-        // when
+        // when - Skip(0) skips nothing and yields every element, matching LINQ Skip
         var result = await source.SkipAsync(0, AbortToken).ToListAsync(AbortToken);
 
         // then
-        result.Should().BeEmpty();
+        result.Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task skip_async_should_return_all_for_negative_count()
+    {
+        // given
+        var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
+
+        // when - a negative skip count is clamped to zero, matching LINQ Skip
+        var result = await source.SkipAsync(-1, AbortToken).ToListAsync(AbortToken);
+
+        // then
+        result.Should().Equal(1, 2, 3);
     }
 
     // SkipWhileAsync tests

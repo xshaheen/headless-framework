@@ -32,6 +32,11 @@ public static class QueueExtensions
         /// <param name="items">The elements to enqueue.</param>
         public void EnqueueRange(IEnumerable<T> items)
         {
+            if (items is ICollection<T> collection)
+            {
+                queue.EnsureCapacity(queue.Count + collection.Count);
+            }
+
             foreach (var item in items)
             {
                 queue.Enqueue(item);

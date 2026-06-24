@@ -246,7 +246,7 @@ public static class ListExtensions
     }
 
     /// <summary>
-    /// Replaces the first element equal to <paramref name="item"/> (per <see cref="Comparer{T}.Default"/>) with
+    /// Replaces the first element equal to <paramref name="item"/> (per <see cref="EqualityComparer{T}.Default"/>) with
     /// <paramref name="replaceWith"/>.
     /// </summary>
     /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
@@ -257,7 +257,7 @@ public static class ListExtensions
     {
         for (var i = 0; i < source.Count; i++)
         {
-            if (Comparer<T>.Default.Compare(source[i], item) == 0)
+            if (EqualityComparer<T>.Default.Equals(source[i], item))
             {
                 source[i] = replaceWith;
 
@@ -285,6 +285,14 @@ public static class ListExtensions
         Argument.IsInclusiveBetween(targetIndex, 0, source.Count - 1);
 
         var currentIndex = source.FindIndex(0, selector);
+
+        if (currentIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(selector),
+                "No element in the list matches the given selector."
+            );
+        }
 
         if (currentIndex == targetIndex)
         {
@@ -330,14 +338,17 @@ public static class ListExtensions
     {
         Argument.IsNotNull(source);
 
-        var item = source.FirstOrDefault(selector);
-
-        if (item is not null)
+        // Scan by index instead of FirstOrDefault + "is not null": for value-type T, the latter never
+        // detects a default(T) match, so the element would always be re-created and appended.
+        for (var i = 0; i < source.Count; i++)
         {
-            return item;
+            if (selector(source[i]))
+            {
+                return source[i];
+            }
         }
 
-        item = factory();
+        var item = factory();
         source.Add(item);
 
         return item;

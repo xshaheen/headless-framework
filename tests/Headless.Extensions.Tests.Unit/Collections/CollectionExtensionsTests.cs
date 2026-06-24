@@ -147,6 +147,33 @@ public sealed class CollectionExtensionsTests
     }
 
     [Fact]
+    public void remove_all_with_predicate_returns_removed_items_for_list_path()
+    {
+        // given - List<T> runtime source takes the List<T>.RemoveAll fast path; the returned list must still hold removed
+        // items. Declared as ICollection<int> so the extension is invoked rather than List<T>.RemoveAll(Predicate<T>),
+        // which the instance method would otherwise shadow (returning an int count).
+        ICollection<int> list = new List<int> { 1, 2, 3, 4, 5, 6 };
+        // when
+        var removed = list.RemoveAll(x => x % 2 == 0);
+        // then
+        removed.Should().Equal(2, 4, 6);
+        list.Should().Equal(1, 3, 5);
+    }
+
+    [Fact]
+    public void add_if_not_contains_with_items_dedupes_against_large_list_and_within_items()
+    {
+        // given - exceed the HashSet fast-path threshold so the snapshot branch is exercised
+        var list = Enumerable.Range(1, 20).ToList();
+        // when - 5 and 6 already exist; 21 is new but duplicated in the input
+        var added = list.AddIfNotContains([5, 6, 21, 21]);
+        // then
+        added.Should().Equal(21);
+        list.Should().HaveCount(21);
+        list.Count(x => x == 21).Should().Be(1);
+    }
+
+    [Fact]
     public void remove_all_removes_specified_items()
     {
         // given

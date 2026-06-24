@@ -220,7 +220,7 @@ public static class AsyncEnumerableExtensions
     /// <summary>Bypasses the first <paramref name="count"/> elements of an async sequence and yields the remaining elements.</summary>
     /// <typeparam name="T">The type of the elements of <paramref name="enumerable"/>.</typeparam>
     /// <param name="enumerable">The async sequence to skip elements from.</param>
-    /// <param name="count">The number of elements to skip. Values less than or equal to zero yield an empty sequence.</param>
+    /// <param name="count">The number of elements to skip. Values less than or equal to zero skip nothing and yield every element, matching <see cref="Enumerable.Skip{TSource}"/>.</param>
     /// <param name="cancellationToken">A token that stops enumeration when cancelled.</param>
     /// <returns>An async sequence that contains the elements of <paramref name="enumerable"/> that occur after the skipped elements.</returns>
     /// <exception cref="OperationCanceledException">Thrown during enumeration when <paramref name="cancellationToken"/> is cancelled.</exception>
@@ -236,17 +236,14 @@ public static class AsyncEnumerableExtensions
         {
             enumerator = enumerable.GetAsyncEnumerator(cancellationToken);
 
-            if (count > 0)
+            while (count > 0 && await enumerator.MoveNextAsync().ConfigureAwait(false))
             {
-                while (count > 0 && await enumerator.MoveNextAsync().ConfigureAwait(false))
-                {
-                    count--;
-                }
+                count--;
+            }
 
-                while (await enumerator.MoveNextAsync().ConfigureAwait(false))
-                {
-                    yield return enumerator.Current;
-                }
+            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+            {
+                yield return enumerator.Current;
             }
         }
         finally
