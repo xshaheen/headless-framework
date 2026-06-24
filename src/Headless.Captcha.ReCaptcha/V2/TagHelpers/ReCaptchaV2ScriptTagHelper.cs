@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Urls;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
 
@@ -62,12 +63,11 @@ public sealed class ReCaptchaV2ScriptTagHelper(
             );
         }
 
-        var baseUrl = _options.VerifyBaseUrl.TrimEnd('/');
-        var langCode = Uri.EscapeDataString(reCaptchaLanguageCodeProvider.GetLanguageCode());
-        var onloadParam = string.IsNullOrWhiteSpace(Onload) ? "" : $"&onload={Uri.EscapeDataString(Onload)}";
-        var renderParam = string.IsNullOrWhiteSpace(Render) ? "" : $"&render={Uri.EscapeDataString(Render)}";
-
-        var src = $"{baseUrl}/recaptcha/api.js?hl={langCode}{onloadParam}{renderParam}";
+        var src = Url.Parse(_options.VerifyBaseUrl.TrimEnd('/') + "/recaptcha/api.js")
+            .SetQueryParam("hl", reCaptchaLanguageCodeProvider.GetLanguageCode())
+            .SetQueryParam("onload", string.IsNullOrWhiteSpace(Onload) ? null : Onload)
+            .SetQueryParam("render", string.IsNullOrWhiteSpace(Render) ? null : Render)
+            .ToString();
 
         // Emit through the tag-helper output API so the framework HTML-encodes the attribute value (no raw
         // SetHtmlContent string-concatenation of the URL into the <script> markup).
