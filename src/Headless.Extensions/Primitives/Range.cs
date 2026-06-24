@@ -254,9 +254,8 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     /// <returns>The formatted range string.</returns>
     public string ToString(IFormatProvider formatProvider)
     {
-        FormattableString format = $"{From}|{To}";
-
-        return format.ToString(formatProvider);
+        // string.Create formats the interpolated handler directly with the provider, avoiding the FormattableString allocation.
+        return string.Create(formatProvider, $"{From}|{To}");
     }
 
     /// <summary>Deconstructs the range into its lower and upper bounds.</summary>

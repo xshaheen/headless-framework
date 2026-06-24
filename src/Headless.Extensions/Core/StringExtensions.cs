@@ -192,10 +192,13 @@ public static class StringExtensions
         StringComparison comparisonType = StringComparison.Ordinal
     )
     {
+        // Compare via a single-char span to avoid allocating a one-char string for the non-ordinal path.
+        ReadOnlySpan<char> needle = [c];
+
         var startsWithChar =
             comparisonType == StringComparison.Ordinal
                 ? input.StartsWith(c)
-                : input.StartsWith(c.ToString(), comparisonType);
+                : input.AsSpan().StartsWith(needle, comparisonType);
 
         return startsWithChar ? input : c + input;
     }
@@ -229,10 +232,13 @@ public static class StringExtensions
         StringComparison comparisonType = StringComparison.Ordinal
     )
     {
+        // Compare via a single-char span to avoid allocating a one-char string for the non-ordinal path.
+        ReadOnlySpan<char> needle = stackalloc char[1] { suffix };
+
         var endsWithChar =
             comparisonType == StringComparison.Ordinal
                 ? input.EndsWith(suffix)
-                : input.EndsWith(suffix.ToString(), comparisonType);
+                : input.AsSpan().EndsWith(needle, comparisonType);
 
         return endsWithChar ? input : input + suffix;
     }
@@ -334,7 +340,23 @@ public static class StringExtensions
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemoveCharacter(this string? input, char character)
     {
-        return input is null ? null : string.Concat(input.Split(character));
+        if (input is null)
+        {
+            return null;
+        }
+
+        // Single-pass copy of the retained chars; Split+Concat would allocate an intermediate array and substrings.
+        var sb = new StringBuilder(input.Length);
+
+        foreach (var c in input)
+        {
+            if (c != character)
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>Removes every occurrence of the given characters from the string.</summary>
@@ -350,7 +372,28 @@ public static class StringExtensions
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemoveCharacters(this string? input, params ReadOnlySpan<char> unwantedCharacters)
     {
-        return input is null ? null : string.Concat(input.Split(unwantedCharacters));
+        if (input is null)
+        {
+            return null;
+        }
+
+        // Single-pass copy of the retained chars; Split+Concat would allocate an intermediate array and substrings.
+        var sb = new StringBuilder(input.Length);
+
+        // Matches string.Split(ReadOnlySpan<char>): an empty separator set strips whitespace instead.
+        var stripWhitespace = unwantedCharacters.IsEmpty;
+
+        foreach (var c in input)
+        {
+            var unwanted = stripWhitespace ? char.IsWhiteSpace(c) : unwantedCharacters.Contains(c);
+
+            if (!unwanted)
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>
@@ -731,9 +774,29 @@ public static class StringExtensions
             return false;
         }
 
-        var parts = s.Split('.');
+        var remaining = s.AsSpan();
+        var parts = 0;
 
-        return parts.Length == 4 && parts.All(x => byte.TryParse(x, CultureInfo.InvariantCulture, out _));
+        // Span tokenization on '.' avoids the substring array allocated by Split + the LINQ closure.
+        while (true)
+        {
+            var dot = remaining.IndexOf('.');
+            var part = dot < 0 ? remaining : remaining[..dot];
+
+            if (++parts > 4 || !byte.TryParse(part, CultureInfo.InvariantCulture, out _))
+            {
+                return false;
+            }
+
+            if (dot < 0)
+            {
+                break;
+            }
+
+            remaining = remaining[(dot + 1)..];
+        }
+
+        return parts == 4;
     }
 
     /// <summary>
@@ -759,13 +822,19 @@ public static class StringExtensions
             return input;
         }
 
-        var cs =
-            from c in input.Normalize(NormalizationForm.FormD)
-            let category = CharUnicodeInfo.GetUnicodeCategory(c)
-            where category is not UnicodeCategory.NonSpacingMark
-            select c;
+        // FormD splits accented letters into base char + combining marks; drop the non-spacing marks, then recompose with FormC.
+        var normalized = input.Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(normalized.Length);
 
-        return string.Concat(cs).Normalize(NormalizationForm.FormC);
+        foreach (var c in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(c) is not UnicodeCategory.NonSpacingMark)
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString().Normalize(NormalizationForm.FormC);
     }
 
     /// <summary>Checks whether the text contains any right-to-left (Arabic-script) characters.</summary>

@@ -53,8 +53,6 @@ public sealed class Currency(decimal amount, string currencyCode)
     /// <summary>The currency code (for example <c>"USD"</c>).</summary>
     public string CurrencyCode { get; private init; } = Argument.IsNotNullOrWhiteSpace(currencyCode);
 
-    private FormattableString Format => $"{Amount}{CurrencyCode}";
-
     #endregion
 
     #region IEquatable Implementation
@@ -459,13 +457,14 @@ public sealed class Currency(decimal amount, string currencyCode)
 
     /// <summary>Returns the <c>{amount}{code}</c> representation formatted with the invariant culture.</summary>
     /// <returns>The string representation of this currency.</returns>
-    public override string ToString() => Format.ToString(CultureInfo.InvariantCulture);
+    public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"{Amount}{CurrencyCode}");
 
     /// <summary>Returns the <c>{amount}{code}</c> representation formatted with the supplied provider.</summary>
     /// <param name="format">A format string (ignored; the fixed <c>{amount}{code}</c> layout is always used).</param>
     /// <param name="formatProvider">An optional format provider used to format the amount.</param>
     /// <returns>The string representation of this currency.</returns>
-    public string ToString(string? format, IFormatProvider? formatProvider) => Format.ToString(formatProvider);
+    public string ToString(string? format, IFormatProvider? formatProvider) =>
+        string.Create(formatProvider, $"{Amount}{CurrencyCode}");
 
     #endregion
 }

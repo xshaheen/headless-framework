@@ -1,7 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Headless.Checks;
 using Headless.Reflection;
 
@@ -15,6 +16,10 @@ namespace System;
 [PublicAPI]
 public static class TypeExtensions
 {
+    // The friendly name is a pure function of the type and is requested repeatedly (logging, diagnostics), so memoize
+    // it. Nested generics recurse through this same cached entry point.
+    private static readonly ConcurrentDictionary<Type, string> _FriendlyTypeNameCache = new();
+
     /// <summary>
     /// Gets a human-readable type name, rendering generic types with angle-bracket argument lists (for example
     /// <c>List&lt;Int32&gt;</c>) instead of the CLR backtick form.
@@ -22,6 +27,11 @@ public static class TypeExtensions
     /// <param name="type">The type to name.</param>
     /// <returns>The friendly type name.</returns>
     public static string GetFriendlyTypeName(this Type type)
+    {
+        return _FriendlyTypeNameCache.GetOrAdd(type, static t => _BuildFriendlyTypeName(t));
+    }
+
+    private static string _BuildFriendlyTypeName(Type type)
     {
         if (!type.IsGenericType)
         {
@@ -36,9 +46,22 @@ public static class TypeExtensions
             typeName = typeName[..backtickIndex];
         }
 
-        var genericArguments = type.GetGenericArguments().Select(t => t.GetFriendlyTypeName());
+        // Build the "Name<Arg1, Arg2>" form with a StringBuilder instead of Select + string.Join + interpolation to
+        // avoid the intermediate enumerator/array and joined-string allocations. Produces the identical string.
+        var builder = new StringBuilder(typeName).Append('<');
+        var genericArguments = type.GetGenericArguments();
 
-        return $"{typeName}<{string.Join(", ", genericArguments)}>";
+        for (var i = 0; i < genericArguments.Length; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(", ");
+            }
+
+            builder.Append(genericArguments[i].GetFriendlyTypeName());
+        }
+
+        return builder.Append('>').ToString();
     }
 
     /// <summary>Gets the type's full name combined with its (simple) assembly name, suitable for assembly-qualified lookups.</summary>
@@ -157,8 +180,10 @@ public static class TypeExtensions
     [MustUseReturnValue]
     public static bool IsAnonymousType(this Type type)
     {
+        // IsDefined is a presence check that avoids materializing the attribute array that GetCustomAttributes(...) +
+        // Length > 0 allocates; equivalent here since we only test for the attribute's presence.
         return type.Name.StartsWith("<>", StringComparison.Ordinal)
-            && type.GetCustomAttributes(typeof(CompilerGeneratedAttribute), inherit: false).Length > 0
+            && type.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false)
             && type.Name.Contains("AnonymousType", StringComparison.Ordinal);
     }
 
@@ -262,7 +287,7 @@ public static class TypeExtensions
     [MustUseReturnValue]
     public static bool IsTaskOfT(this Type type)
     {
-        return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>);
+        return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>);
     }
 
     /// <summary>Determines whether the type is <see cref="Task"/> or <see cref="Task{TResult}"/>.</summary>
@@ -280,7 +305,7 @@ public static class TypeExtensions
     [MustUseReturnValue]
     public static bool IsValueTaskOfT(this Type type)
     {
-        return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTask<>);
+        return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTask<>);
     }
 
     /// <summary>Determines whether the type is <see cref="ValueTask"/> or <see cref="ValueTask{TResult}"/>.</summary>

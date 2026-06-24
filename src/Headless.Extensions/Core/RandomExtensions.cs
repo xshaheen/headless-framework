@@ -408,15 +408,21 @@ public static class RandomExtensions
 
             var length = minLength + random.Next(0, maxLength - minLength + 1); // length of the string
 
-            var max = chars.Length; // number of available characters
-            var sb = new StringBuilder(length);
+            // Fill the result span directly (one allocation, no StringBuilder buffer churn).
+            return string.Create(
+                length,
+                (random, chars),
+                static (span, state) =>
+                {
+                    var (rnd, pool) = state;
+                    var max = pool.Length; // number of available characters
 
-            for (var i = 0; i < length; i++)
-            {
-                sb.Append(chars[random.Next(0, max)]);
-            }
-
-            return sb.ToString();
+                    for (var i = 0; i < span.Length; i++)
+                    {
+                        span[i] = pool[rnd.Next(0, max)];
+                    }
+                }
+            );
         }
 
         /// <summary>Returns a uniformly random element of <paramref name="objects"/>.</summary>

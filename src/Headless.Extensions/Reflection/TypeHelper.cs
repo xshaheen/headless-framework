@@ -50,7 +50,7 @@ public static class TypeHelper
 
         var type = obj.GetType();
 
-        return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Func<>);
+        return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Func<>);
     }
 
     /// <summary>Determines whether the object is a <see cref="Func{TResult}"/> returning <typeparamref name="TReturn"/>.</summary>

@@ -174,7 +174,8 @@ public static class DirectoryHelper
     {
         Argument.IsNotNull(directoryName);
 
-        return directoryName.All(c => !InvalidDirectoryNameChars.Contains(c));
+        // Vectorized scan over the whole span; the LINQ All(...Contains) form defeats SearchValues.
+        return !directoryName.AsSpan().ContainsAny(InvalidDirectoryNameChars);
     }
 
     #endregion

@@ -31,7 +31,8 @@ public static class DateTimeOffsetExtensions
     [JetBrainsPure]
     public static DateTimeOffset ClearTime(this DateTimeOffset dateTime)
     {
-        return new(dateTime.Year, dateTime.Month, dateTime.Day, 0, 0, 0, dateTime.Offset);
+        // Subtracting the time-of-day lands on midnight without re-validating calendar parts; subtraction preserves Offset.
+        return dateTime - dateTime.TimeOfDay;
     }
 
     /// <summary>Returns the start of the day (midnight) that contains <paramref name="dateTimeOffset"/> as seen at the given UTC <paramref name="offset"/>.</summary>
@@ -119,15 +120,15 @@ public static class DateTimeOffsetExtensions
     /// An object that is equivalent to <paramref name="date" /> up to millisecond precision, and empty beyond milliseconds.
     /// </returns>
     /// <remarks>
-    /// Note that the end result might be in the future relative to the original <paramref name="date" />. <see cref="DateTimeOffset.Millisecond" /> represents
-    /// a rounded value for ticks—so 10 milliseconds might internally be 9.6 milliseconds. However, this information is lost after this method, and
-    /// the value would be replaced with 10 milliseconds.
+    /// Sub-millisecond ticks are floored (truncated toward the millisecond boundary), so the result is never later than the
+    /// original <paramref name="date" />.
     /// </remarks>
     [SystemPure]
     [JetBrainsPure]
     public static DateTimeOffset TruncateToMilliseconds(this DateTimeOffset date)
     {
-        return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second, date.Millisecond, date.Offset);
+        // Floor the ticks to the millisecond boundary; AddTicks preserves Offset and avoids re-validating calendar parts.
+        return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerMillisecond));
     }
 
     /// <summary>
@@ -141,7 +142,8 @@ public static class DateTimeOffsetExtensions
     [JetBrainsPure]
     public static DateTimeOffset TruncateToSeconds(this DateTimeOffset date)
     {
-        return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second, 0, date.Offset);
+        // Floor the ticks to the second boundary; AddTicks preserves Offset and avoids re-validating calendar parts.
+        return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerSecond));
     }
 
     /// <summary>
@@ -155,7 +157,8 @@ public static class DateTimeOffsetExtensions
     [JetBrainsPure]
     public static DateTimeOffset TruncateToMinutes(this DateTimeOffset date)
     {
-        return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, 0, 0, date.Offset);
+        // Floor the ticks to the minute boundary; AddTicks preserves Offset and avoids re-validating calendar parts.
+        return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerMinute));
     }
 
     /// <summary>
@@ -169,7 +172,8 @@ public static class DateTimeOffsetExtensions
     [JetBrainsPure]
     public static DateTimeOffset TruncateToHours(this DateTimeOffset date)
     {
-        return new(date.Year, date.Month, date.Day, date.Hour, 0, 0, 0, date.Offset);
+        // Floor the ticks to the hour boundary; AddTicks preserves Offset and avoids re-validating calendar parts.
+        return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerHour));
     }
 
     /// <summary>

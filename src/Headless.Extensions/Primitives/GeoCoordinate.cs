@@ -46,9 +46,8 @@ public sealed class GeoCoordinate : IEquatable<GeoCoordinate>
     /// <summary>Returns the coordinate formatted as <c>(lat={Latitude}, long={Longitude})</c> using the invariant culture.</summary>
     public override string ToString()
     {
-        FormattableString format = $"(lat={Latitude}, long={Longitude})";
-
-        return format.ToString(CultureInfo.InvariantCulture);
+        // string.Create formats the interpolated handler directly with the provider, avoiding the FormattableString allocation.
+        return string.Create(CultureInfo.InvariantCulture, $"(lat={Latitude}, long={Longitude})");
     }
 
     /// <summary>Determines whether two coordinates are equal.</summary>

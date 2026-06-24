@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Checks;
 
@@ -51,11 +52,7 @@ public static class ReflectionHelper
         // TAttribute is constrained to `class` (not `Attribute`), so the typed GetCustomAttributes<T>
         // overload is unavailable here; use the object[] overload + OfType to preserve that flexibility.
         return memberInfo.GetCustomAttributes(inherit).OfType<TAttribute>().FirstOrDefault()
-            ?? memberInfo
-                .DeclaringType?.GetTypeInfo()
-                .GetCustomAttributes(inherit)
-                .OfType<TAttribute>()
-                .FirstOrDefault()
+            ?? memberInfo.DeclaringType?.GetCustomAttributes(inherit).OfType<TAttribute>().FirstOrDefault()
             ?? defaultValue;
     }
 
@@ -76,10 +73,7 @@ public static class ReflectionHelper
         // TAttribute is constrained to `class` (not `Attribute`); use the object[] overload + OfType.
         var customAttributes = memberInfo.GetCustomAttributes(inherit).OfType<TAttribute>();
 
-        var declaringTypeCustomAttributes = memberInfo
-            .DeclaringType?.GetTypeInfo()
-            .GetCustomAttributes(inherit)
-            .OfType<TAttribute>();
+        var declaringTypeCustomAttributes = memberInfo.DeclaringType?.GetCustomAttributes(inherit).OfType<TAttribute>();
 
         return declaringTypeCustomAttributes is not null
             ? customAttributes.Concat(declaringTypeCustomAttributes).Distinct()
@@ -116,6 +110,10 @@ public static class ReflectionHelper
         return type.IsEnum && type.IsDefined(typeof(FlagsAttribute), inherit: true);
     }
 
+    // Pure function of (child, parent): the generic-inheritance relationship between two types never changes for the
+    // lifetime of the process, so memoizing the result avoids re-walking the base-type/interface chain on every call.
+    private static readonly ConcurrentDictionary<(Type Child, Type Parent), bool> _IsSubClassOfGenericCache = new();
+
     /// <summary>
     /// Determines whether <paramref name="child"/> derives from (or implements) the generic type
     /// <paramref name="parent"/>, matching against open generic definitions where applicable.
@@ -126,6 +124,18 @@ public static class ReflectionHelper
     [RequiresUnreferencedCode("Uses Type.GetInterfaces() which is not compatible with trimming.")]
     public static bool IsSubClassOfGeneric(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type child,
+        Type parent
+    )
+    {
+        return _IsSubClassOfGenericCache.GetOrAdd(
+            (child, parent),
+            static key => _IsSubClassOfGenericCore(key.Child, key.Parent)
+        );
+    }
+
+    [RequiresUnreferencedCode("Uses Type.GetInterfaces() which is not compatible with trimming.")]
+    private static bool _IsSubClassOfGenericCore(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type child,
         Type parent
     )
     {
@@ -146,26 +156,36 @@ public static class ReflectionHelper
             && (parameters[0].Attributes & TypeAttributes.BeforeFieldInit) == TypeAttributes.BeforeFieldInit
         );
 
+        // Hoisted once per base-type-chain iteration: the full generic definition of `parent` is loop-invariant, so we
+        // compute it a single time instead of inside the inner LINQ/loops below.
+        var parentFullDefinition = _GetFullTypeDefinition(parent);
+
         while (child is not null && child != typeof(object))
         {
             var cur = _GetFullTypeDefinition(child);
 
-            if (
-                parent == cur
-                || (
-                    isParameterLessGeneric
-                    && cur.GetInterfaces().Select(_GetFullTypeDefinition).Contains(_GetFullTypeDefinition(parent))
-                )
-            )
+            if (parent == cur)
             {
                 return true;
             }
 
-            if (!isParameterLessGeneric)
+            if (isParameterLessGeneric)
             {
-                if (_GetFullTypeDefinition(parent) == cur && !cur.IsInterface)
+                // Replaces `cur.GetInterfaces().Select(_GetFullTypeDefinition).Contains(...)`: hoist the interface
+                // array (was re-fetched and re-enumerated) and compare full generic definitions in a manual loop.
+                foreach (var interfaceType in cur.GetInterfaces())
                 {
-                    if (_VerifyGenericArguments(_GetFullTypeDefinition(parent), cur))
+                    if (_GetFullTypeDefinition(interfaceType) == parentFullDefinition)
+                    {
+                        return true;
+                    }
+                }
+            }
+            else
+            {
+                if (parentFullDefinition == cur && !cur.IsInterface)
+                {
+                    if (_VerifyGenericArguments(parentFullDefinition, cur))
                     {
                         if (_VerifyGenericArguments(parent, child))
                         {
@@ -175,12 +195,14 @@ public static class ReflectionHelper
                 }
                 else
                 {
-                    foreach (
-                        var item in child
-                            .GetInterfaces()
-                            .Where(i => _GetFullTypeDefinition(parent) == _GetFullTypeDefinition(i))
-                    )
+                    // Note: this walks `child.GetInterfaces()` (constructed type), distinct from `cur` above.
+                    foreach (var item in child.GetInterfaces())
                     {
+                        if (parentFullDefinition != _GetFullTypeDefinition(item))
+                        {
+                            continue;
+                        }
+
                         if (_VerifyGenericArguments(parent, item))
                         {
                             return true;
@@ -230,6 +252,11 @@ public static class ReflectionHelper
         return true;
     }
 
+    // Pure function of (type, genericType): assignability to an open generic type is stable for the process lifetime,
+    // so memoize to avoid re-walking interfaces and the base-type chain on every call.
+    private static readonly ConcurrentDictionary<(Type Type, Type GenericType), bool> _IsAssignableToGenericTypeCache =
+        new();
+
     /// <summary>
     /// Determines whether the type is assignable to the open generic type <paramref name="genericType"/>, walking the
     /// type's implemented interfaces and base-type chain.
@@ -243,32 +270,41 @@ public static class ReflectionHelper
         Type genericType
     )
     {
+        return _IsAssignableToGenericTypeCache.GetOrAdd(
+            (type, genericType),
+            static key => _IsAssignableToGenericTypeCore(key.Type, key.GenericType)
+        );
+    }
+
+    [RequiresUnreferencedCode("Uses Type.GetInterfaces() which is not compatible with trimming.")]
+    private static bool _IsAssignableToGenericTypeCore(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type type,
+        Type genericType
+    )
+    {
         while (true)
         {
-            var info = type.GetTypeInfo();
-
-            if (info.IsGenericType && type.GetGenericTypeDefinition() == genericType)
+            // Use Type members directly instead of the redundant GetTypeInfo() round-trip; TypeInfo derives from Type
+            // and exposes the same IsGenericType/BaseType/GetInterfaces/GetGenericTypeDefinition surface.
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == genericType)
             {
                 return true;
             }
 
-            foreach (var interfaceType in info.GetInterfaces())
+            foreach (var interfaceType in type.GetInterfaces())
             {
-                if (
-                    interfaceType.GetTypeInfo().IsGenericType
-                    && interfaceType.GetGenericTypeDefinition() == genericType
-                )
+                if (interfaceType.IsGenericType && interfaceType.GetGenericTypeDefinition() == genericType)
                 {
                     return true;
                 }
             }
 
-            if (info.BaseType == null)
+            if (type.BaseType == null)
             {
                 return false;
             }
 
-            type = info.BaseType;
+            type = type.BaseType;
         }
     }
 }

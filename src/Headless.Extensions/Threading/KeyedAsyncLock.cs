@@ -95,7 +95,10 @@ public sealed class KeyedAsyncLock : IDisposable
         Argument.IsNotNullOrEmpty(key);
         Ensure.NotDisposed(_disposed, this);
 
-        var semaphore = _GetOrCreate(key);
+        // Resolve the owning shard once (hashing the key) and reuse it for create + release, so the
+        // acquire/release cycle hashes the key a single time instead of re-hashing in the releaser.
+        var shard = _GetShard(key);
+        var semaphore = shard.GetOrCreate(key);
 
         try
         {
@@ -103,11 +106,11 @@ public sealed class KeyedAsyncLock : IDisposable
         }
         catch
         {
-            _DecrementRefCount(key);
+            shard.DecrementRefCount(key);
             throw;
         }
 
-        return new Releaser(this, key);
+        return new Releaser(shard, key);
     }
 
     /// <summary>
@@ -125,15 +128,17 @@ public sealed class KeyedAsyncLock : IDisposable
         Argument.IsNotNullOrEmpty(key);
         Ensure.NotDisposed(_disposed, this);
 
-        var semaphore = _GetOrCreate(key);
+        // Resolve the owning shard once and reuse it for create + release (single hash per cycle).
+        var shard = _GetShard(key);
+        var semaphore = shard.GetOrCreate(key);
 
         if (!semaphore.Wait(0))
         {
-            _DecrementRefCount(key);
+            shard.DecrementRefCount(key);
             return null;
         }
 
-        return new Releaser(this, key);
+        return new Releaser(shard, key);
     }
 
     /// <summary>
@@ -169,7 +174,9 @@ public sealed class KeyedAsyncLock : IDisposable
 
         Argument.IsPositive(timeout);
 
-        var semaphore = _GetOrCreate(key);
+        // Resolve the owning shard once and reuse it for create + release (single hash per cycle).
+        var shard = _GetShard(key);
+        var semaphore = shard.GetOrCreate(key);
 
         // When the caller token cannot be cancelled, skip the linked CTS — one allocation instead of two.
         if (!cancellationToken.CanBeCanceled)
@@ -188,12 +195,12 @@ public sealed class KeyedAsyncLock : IDisposable
                 catch
                 {
                     await delayCts.CancelAsync().ConfigureAwait(false);
-                    _DecrementRefCount(key);
+                    shard.DecrementRefCount(key);
                     throw;
                 }
 
                 await delayCts.CancelAsync().ConfigureAwait(false);
-                return new Releaser(this, key);
+                return new Releaser(shard, key);
             }
 
             // Timeout elapsed: cancel the semaphore wait and clean up.
@@ -203,16 +210,16 @@ public sealed class KeyedAsyncLock : IDisposable
             {
                 await waitTask.ConfigureAwait(false);
                 // The wait completed in the window between the race and our cancel — treat as acquired then released.
-                _Release(key);
+                shard.Release(key);
             }
             catch (OperationCanceledException)
             {
                 // Our own delayCts triggered this; the caller did not cancel (CanBeCanceled was false).
-                _DecrementRefCount(key);
+                shard.DecrementRefCount(key);
             }
             catch
             {
-                _DecrementRefCount(key);
+                shard.DecrementRefCount(key);
                 throw;
             }
 
@@ -235,12 +242,12 @@ public sealed class KeyedAsyncLock : IDisposable
             catch
             {
                 await delayCts2.CancelAsync().ConfigureAwait(false);
-                _DecrementRefCount(key);
+                shard.DecrementRefCount(key);
                 throw;
             }
 
             await delayCts2.CancelAsync().ConfigureAwait(false);
-            return new Releaser(this, key);
+            return new Releaser(shard, key);
         }
 
         await waitCts.CancelAsync().ConfigureAwait(false);
@@ -248,16 +255,16 @@ public sealed class KeyedAsyncLock : IDisposable
         try
         {
             await waitTask2.ConfigureAwait(false);
-            _Release(key);
+            shard.Release(key);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // Cancelled by waitCts (timeout path), not by the caller.
-            _DecrementRefCount(key);
+            shard.DecrementRefCount(key);
         }
         catch
         {
-            _DecrementRefCount(key);
+            shard.DecrementRefCount(key);
             throw;
         }
 
@@ -272,12 +279,6 @@ public sealed class KeyedAsyncLock : IDisposable
         var hash = StringComparer.Ordinal.GetHashCode(key);
         return _shards[hash & (_ShardCount - 1)];
     }
-
-    private SemaphoreSlim _GetOrCreate(string key) => _GetShard(key).GetOrCreate(key);
-
-    private void _DecrementRefCount(string key) => _GetShard(key).DecrementRefCount(key);
-
-    private void _Release(string key) => _GetShard(key).Release(key);
 
     /// <summary>
     /// Disposes all semaphores held by this instance.
@@ -297,7 +298,8 @@ public sealed class KeyedAsyncLock : IDisposable
         }
     }
 
-    private sealed class Releaser(KeyedAsyncLock owner, string key) : IDisposable
+    // Holds the already-resolved shard (not the owner + key) so Dispose releases directly without re-hashing the key.
+    private sealed class Releaser(Shard shard, string key) : IDisposable
     {
         private int _disposed;
 
@@ -308,7 +310,7 @@ public sealed class KeyedAsyncLock : IDisposable
                 return;
             }
 
-            owner._Release(key);
+            shard.Release(key);
         }
     }
 

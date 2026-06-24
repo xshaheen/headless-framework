@@ -287,7 +287,9 @@ public static partial class EnumerableExtensions
     [JetBrainsPure]
     public static bool HasDuplicates<T, TProp>(this IEnumerable<T> list, Func<T, TProp> selector)
     {
-        var d = new HashSet<TProp>();
+        // Pre-size the set when the count is cheaply known to avoid incremental rehashing.
+        // Uses the default comparer for TProp, exactly as before.
+        var d = list.TryGetNonEnumeratedCount(out var n) ? new HashSet<TProp>(n) : new HashSet<TProp>();
 
         return list.Any(t => !d.Add(selector(t)));
     }

@@ -181,26 +181,25 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
         }
     }
 
+    // Cached method-group delegate so the recursive SelectMany call does not allocate a new
+    // Func<object?, IEnumerable<object?>> on every level of nesting.
+    private static readonly Func<object?, IEnumerable<object?>> _SplitCollectionDelegate = _SplitCollection;
+
     private static IEnumerable<object?> _SplitCollection(object? value)
     {
-        if (value is null)
+        // Scalar fast-path: null, string, and any non-IEnumerable value are not split, so yield
+        // them directly. This mirrors the original branch order (null/string before IEnumerable)
+        // and only the non-null, non-string IEnumerable case is recursively split below.
+        if (value is null or string || value is not IEnumerable en)
         {
-            yield return null;
-        }
-        else if (value is string s)
-        {
-            yield return s;
-        }
-        else if (value is IEnumerable en)
-        {
-            foreach (var item in en.Cast<object?>().SelectMany(_SplitCollection))
-            {
-                yield return item;
-            }
+            yield return value;
         }
         else
         {
-            yield return value;
+            foreach (var item in en.Cast<object?>().SelectMany(_SplitCollectionDelegate))
+            {
+                yield return item;
+            }
         }
     }
 

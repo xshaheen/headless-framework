@@ -50,14 +50,14 @@ public static class TimeUnit
 
     private static TimeSpan? _ParseTime(string value)
     {
-        // compare using the original value as uppercase M could mean months.
-        var normalized = value.ToLowerInvariant().Trim();
+        // Trim a span instead of allocating a lowercased string. Suffix checks are case-insensitive (the original
+        // lowercased before matching); the numeric portion is sliced off before parsing, so case never affects parsing.
+        var trimmed = value.AsSpan().Trim();
 
+        // The minutes branch stays case-sensitive against the ORIGINAL untrimmed value: uppercase 'M' could mean months.
         if (value.EndsWith('m'))
         {
-            if (
-                int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var minutes)
-            )
+            if (int.TryParse(trimmed[..^1], CultureInfo.InvariantCulture, out var minutes))
             {
                 return new TimeSpan(0, minutes, 0);
             }
@@ -65,9 +65,9 @@ public static class TimeUnit
             return null;
         }
 
-        if (normalized.EndsWith('h'))
+        if (trimmed.EndsWith("h", StringComparison.OrdinalIgnoreCase))
         {
-            if (int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var hours))
+            if (int.TryParse(trimmed[..^1], CultureInfo.InvariantCulture, out var hours))
             {
                 return new TimeSpan(hours, 0, 0);
             }
@@ -75,9 +75,9 @@ public static class TimeUnit
             return null;
         }
 
-        if (normalized.EndsWith('d'))
+        if (trimmed.EndsWith("d", StringComparison.OrdinalIgnoreCase))
         {
-            if (int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var days))
+            if (int.TryParse(trimmed[..^1], CultureInfo.InvariantCulture, out var days))
             {
                 return new TimeSpan(days, 0, 0, 0);
             }
@@ -85,15 +85,9 @@ public static class TimeUnit
             return null;
         }
 
-        if (normalized.EndsWith("nanos", StringComparison.Ordinal))
+        if (trimmed.EndsWith("nanos", StringComparison.OrdinalIgnoreCase))
         {
-            if (
-                long.TryParse(
-                    normalized.AsSpan(0, normalized.Length - 5),
-                    CultureInfo.InvariantCulture,
-                    out var nanoseconds
-                )
-            )
+            if (long.TryParse(trimmed[..^5], CultureInfo.InvariantCulture, out var nanoseconds))
             {
                 return new TimeSpan((int)Math.Round(nanoseconds / 100d));
             }
@@ -101,15 +95,9 @@ public static class TimeUnit
             return null;
         }
 
-        if (normalized.EndsWith("micros", StringComparison.Ordinal))
+        if (trimmed.EndsWith("micros", StringComparison.OrdinalIgnoreCase))
         {
-            if (
-                long.TryParse(
-                    normalized.AsSpan(0, normalized.Length - 6),
-                    CultureInfo.InvariantCulture,
-                    out var microseconds
-                )
-            )
+            if (long.TryParse(trimmed[..^6], CultureInfo.InvariantCulture, out var microseconds))
             {
                 return new TimeSpan(microseconds * 10);
             }
@@ -117,15 +105,9 @@ public static class TimeUnit
             return null;
         }
 
-        if (normalized.EndsWith("ms", StringComparison.Ordinal))
+        if (trimmed.EndsWith("ms", StringComparison.OrdinalIgnoreCase))
         {
-            if (
-                int.TryParse(
-                    normalized.AsSpan(0, normalized.Length - 2),
-                    CultureInfo.InvariantCulture,
-                    out var milliseconds
-                )
-            )
+            if (int.TryParse(trimmed[..^2], CultureInfo.InvariantCulture, out var milliseconds))
             {
                 return new TimeSpan(0, 0, 0, 0, milliseconds);
             }
@@ -133,11 +115,9 @@ public static class TimeUnit
             return null;
         }
 
-        if (normalized.EndsWith('s'))
+        if (trimmed.EndsWith("s", StringComparison.OrdinalIgnoreCase))
         {
-            if (
-                int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var seconds)
-            )
+            if (int.TryParse(trimmed[..^1], CultureInfo.InvariantCulture, out var seconds))
             {
                 return new TimeSpan(0, 0, seconds);
             }

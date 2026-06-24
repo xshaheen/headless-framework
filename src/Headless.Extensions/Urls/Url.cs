@@ -234,8 +234,13 @@ public sealed class Url
             _scheme = uri.Scheme;
             _userInfo = uri.UserInfo;
             _host = uri.Host;
+
+            // Root excludes the port here because _port is still null at this point.
+            var rootWithoutPort = Root;
             _port =
-                _originalString?.OrdinalStartsWith($"{Root}:{uri.Port}", ignoreCase: true) == true ? uri.Port : null; // don't default Port if not included explicitly
+                _originalString?.OrdinalStartsWith($"{rootWithoutPort}:{uri.Port}", ignoreCase: true) == true
+                    ? uri.Port
+                    : null; // don't default Port if not included explicitly
             _pathSegments = [];
             if (uri.AbsolutePath.Length > 0 && uri.AbsolutePath != "/")
             {
@@ -245,23 +250,33 @@ public sealed class Url
             _queryParams = new QueryParamCollection(uri.Query);
             _fragment = uri.Fragment.TrimStart('#'); // quirk - formal def of fragment does not include the #
 
-            _leadingSlash = uri.OriginalString.OrdinalStartsWith(Root + "/", ignoreCase: true);
+            // _port is final now; materialize Authority/Root once (mirrors the Root property) and reuse below
+            // instead of recomputing these string.Concat results 4-5 times on the parse hot path.
+            var authority = Authority;
+            var root = string.Concat(
+                _scheme,
+                _scheme.Length > 0 ? ":" : "",
+                authority.Length > 0 ? "//" : "",
+                authority
+            );
+
+            _leadingSlash = uri.OriginalString.OrdinalStartsWith(root + "/", ignoreCase: true);
             _trailingSlash = _pathSegments.Count > 0 && uri.AbsolutePath.OrdinalEndsWith("/");
             _trailingQmark = string.Equals(uri.Query, "?", StringComparison.Ordinal);
             _trailingHash = string.Equals(uri.Fragment, "#", StringComparison.Ordinal);
 
             // more quirk fixes
-            var hasAuthority = uri.OriginalString.OrdinalStartsWith($"{Scheme}://", ignoreCase: true);
-            if (hasAuthority && Authority.Length == 0 && PathSegments.Any())
+            var hasAuthority = uri.OriginalString.OrdinalStartsWith(_scheme + "://", ignoreCase: true);
+            if (hasAuthority && authority.Length == 0 && _pathSegments.Count != 0)
             {
                 // Uri didn't parse Authority when it should have
                 _host = _pathSegments[0];
                 _pathSegments.RemoveAt(0);
             }
-            else if (!hasAuthority && Authority.Length > 0)
+            else if (!hasAuthority && authority.Length > 0)
             {
                 // Uri parsed Authority when it should not have
-                _pathSegments.Insert(0, Authority);
+                _pathSegments.Insert(0, authority);
                 _userInfo = "";
                 _host = "";
                 _port = null;
@@ -702,7 +717,29 @@ public sealed class Url
     /// <summary>
     /// Creates a copy of this Url.
     /// </summary>
-    public Url Clone() => new(ToString());
+    public Url Clone()
+    {
+        _EnsureParsed();
+
+        // Copy the already-parsed state instead of serializing to a string and re-parsing it through new Uri(...).
+        var clone = new Url
+        {
+            _scheme = _scheme,
+            _userInfo = _userInfo,
+            _host = _host,
+            _port = _port,
+            _pathSegments = [.. _pathSegments],
+            _queryParams = new QueryParamCollection(_queryParams.ToString()),
+            _fragment = _fragment,
+            _leadingSlash = _leadingSlash,
+            _trailingSlash = _trailingSlash,
+            _trailingQmark = _trailingQmark,
+            _trailingHash = _trailingHash,
+            _parsed = true,
+        };
+
+        return clone;
+    }
 
     #endregion
 
