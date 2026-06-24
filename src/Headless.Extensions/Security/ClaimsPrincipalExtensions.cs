@@ -190,7 +190,9 @@ public static class ClaimsPrincipalExtensions
             }
 
             return principal
-                .Claims.Where(claim => string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.Ordinal))
+                .Claims.Where(claim =>
+                    string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.OrdinalIgnoreCase)
+                )
                 .Select(claim => claim.Value)
                 .ToImmutableHashSet(StringComparer.Ordinal);
         }

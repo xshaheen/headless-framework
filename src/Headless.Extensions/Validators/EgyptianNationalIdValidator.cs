@@ -20,6 +20,47 @@ public static class EgyptianNationalIdValidator
     /// </returns>
     public static bool IsValid(string nationalId)
     {
+        return _TryParse(nationalId, out _, out _, out _, out _);
+    }
+
+    /// <summary>Validates <paramref name="nationalId"/> and, when valid, extracts the encoded birth date and governorate.</summary>
+    /// <param name="nationalId">The national ID string to parse.</param>
+    /// <param name="year">When this method returns <see langword="true"/>, the encoded birth year; otherwise <c>0</c>.</param>
+    /// <param name="month">When this method returns <see langword="true"/>, the encoded birth month; otherwise <c>0</c>.</param>
+    /// <param name="day">When this method returns <see langword="true"/>, the encoded birth day; otherwise <c>0</c>.</param>
+    /// <param name="governorateName">When this method returns <see langword="true"/>, the Arabic governorate name; otherwise <see cref="string.Empty"/>.</param>
+    /// <returns><see langword="true"/> when <paramref name="nationalId"/> is valid and was parsed; otherwise <see langword="false"/>.</returns>
+    public static bool TryParse(string nationalId, out int year, out int month, out int day, out string governorateName)
+    {
+        if (_TryParse(nationalId, out year, out month, out day, out var governorateKey))
+        {
+            governorateName = GovernorateIdMap[governorateKey];
+
+            return true;
+        }
+
+        governorateName = string.Empty;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Validates the structural rules of <paramref name="nationalId"/> and, when valid, extracts the encoded birth date
+    /// and the raw governorate key. Shared by <see cref="IsValid"/> and <see cref="TryParse"/> to avoid re-parsing.
+    /// </summary>
+    private static bool _TryParse(
+        string nationalId,
+        out int year,
+        out int month,
+        out int day,
+        out string governorateKey
+    )
+    {
+        year = 0;
+        month = 0;
+        day = 0;
+        governorateKey = string.Empty;
+
         if (string.IsNullOrEmpty(nationalId))
         {
             return false;
@@ -47,26 +88,32 @@ public static class EgyptianNationalIdValidator
             return false;
         }
 
+        // The century digit must be 2 (1900s) or 3 (2000s); any other value encodes an impossible century.
+        if (yearCenturyIndicator is not (2 or 3))
+        {
+            return false;
+        }
+
         if (!int.TryParse(nationalId[1..3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var yearNumber))
         {
             return false;
         }
 
-        var year = ((17 + yearCenturyIndicator) * 100) + yearNumber;
+        var parsedYear = ((17 + yearCenturyIndicator) * 100) + yearNumber;
 
-        if (!int.TryParse(nationalId[3..5], NumberStyles.Integer, CultureInfo.InvariantCulture, out var month))
+        if (!int.TryParse(nationalId[3..5], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMonth))
         {
             return false;
         }
 
-        if (!int.TryParse(nationalId[5..7], NumberStyles.Integer, CultureInfo.InvariantCulture, out var day))
+        if (!int.TryParse(nationalId[5..7], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedDay))
         {
             return false;
         }
 
         try
         {
-            _ = new DateOnly(year, month, day);
+            _ = new DateOnly(parsedYear, parsedMonth, parsedDay);
         }
         catch
         {
@@ -75,37 +122,17 @@ public static class EgyptianNationalIdValidator
 #pragma warning restore ERP022
         }
 
-        var governorateKey = nationalId[7..9];
+        var key = nationalId[7..9];
 
-        return GovernorateIdMap.ContainsKey(governorateKey);
-    }
-
-    /// <summary>Validates <paramref name="nationalId"/> and, when valid, extracts the encoded birth date and governorate.</summary>
-    /// <param name="nationalId">The national ID string to parse.</param>
-    /// <param name="year">When this method returns <see langword="true"/>, the encoded birth year; otherwise <c>0</c>.</param>
-    /// <param name="month">When this method returns <see langword="true"/>, the encoded birth month; otherwise <c>0</c>.</param>
-    /// <param name="day">When this method returns <see langword="true"/>, the encoded birth day; otherwise <c>0</c>.</param>
-    /// <param name="governorateName">When this method returns <see langword="true"/>, the Arabic governorate name; otherwise <see cref="string.Empty"/>.</param>
-    /// <returns><see langword="true"/> when <paramref name="nationalId"/> is valid and was parsed; otherwise <see langword="false"/>.</returns>
-    public static bool TryParse(string nationalId, out int year, out int month, out int day, out string governorateName)
-    {
-        if (!IsValid(nationalId))
+        if (!GovernorateIdMap.ContainsKey(key))
         {
-            year = 0;
-            month = 0;
-            day = 0;
-            governorateName = string.Empty;
-
             return false;
         }
 
-        var yearCenturyIndicator = int.Parse(nationalId[..1], NumberStyles.Integer, CultureInfo.InvariantCulture);
-        var yearNumber = int.Parse(nationalId[1..3], NumberStyles.Integer, CultureInfo.InvariantCulture);
-
-        year = ((17 + yearCenturyIndicator) * 100) + yearNumber;
-        month = int.Parse(nationalId[3..5], NumberStyles.Integer, CultureInfo.InvariantCulture);
-        day = int.Parse(nationalId[5..7], NumberStyles.Integer, CultureInfo.InvariantCulture);
-        governorateName = GovernorateIdMap[nationalId[7..9]];
+        year = parsedYear;
+        month = parsedMonth;
+        day = parsedDay;
+        governorateKey = key;
 
         return true;
     }

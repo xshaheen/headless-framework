@@ -146,7 +146,7 @@ public static partial class RegexPatterns
 
     /// <summary>Matches a URL with an optional protocol prefix (<c>http://</c>, <c>https://</c>, <c>ftp://</c>, <c>file://</c>).</summary>
     [GeneratedRegex(
-        pattern: @"^((https?|ftp|file):\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$",
+        pattern: @"^((https?|ftp|file):\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})[\/\w \.-]*\/?$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
@@ -195,7 +195,7 @@ public static partial class RegexPatterns
 
     /// <summary>Matches a complete XML or HTML tag, capturing the tag name in group 1.</summary>
     [GeneratedRegex(
-        pattern: @"^<(?<1>[a-z1-6]+)([^<]+)*(?:>(.*)<\/\1>| *\/>)$",
+        pattern: @"^<(?<1>[a-z1-6]+)[^<]*(?:>(.*)<\/\1>| *\/>)$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
@@ -240,7 +240,7 @@ public static partial class RegexPatterns
 
     /// <summary>Matches an integer number, with an optional leading minus sign.</summary>
     [GeneratedRegex(
-        pattern: "^((-?[1-9]+)|[0-9]+)$",
+        pattern: "^-?[0-9]+$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
@@ -248,7 +248,7 @@ public static partial class RegexPatterns
 
     /// <summary>Matches a decimal number, accepting an optional leading minus sign and an optional fractional part separated by <c>.</c> or <c>,</c>.</summary>
     [GeneratedRegex(
-        pattern: @"^((-?[1-9]+)|[0-9]+)(\.?|\,?)([0-9]*)$",
+        pattern: @"^-?[0-9]+([.,][0-9]+)?$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]

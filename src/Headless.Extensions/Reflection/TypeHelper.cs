@@ -14,8 +14,8 @@ public static class TypeHelper
 {
     /// <summary>
     /// Determines whether the type is one of the supported non-nullable primitive-like types (integral and floating
-    /// numerics, <see cref="bool"/>, <see cref="decimal"/>, <see cref="DateTime"/>, <see cref="DateTimeOffset"/>,
-    /// <see cref="TimeSpan"/>, and <see cref="Guid"/>).
+    /// numerics, <see cref="char"/>, <see cref="bool"/>, <see cref="decimal"/>, <see cref="DateTime"/>,
+    /// <see cref="DateTimeOffset"/>, <see cref="TimeSpan"/>, and <see cref="Guid"/>).
     /// </summary>
     /// <param name="type">The type to inspect.</param>
     /// <returns><see langword="true"/> if <paramref name="type"/> is one of the supported non-nullable primitive-like types; otherwise <see langword="false"/>.</returns>
@@ -29,8 +29,10 @@ public static class TypeHelper
             || type == typeof(ushort)
             || type == typeof(uint)
             || type == typeof(ulong)
+            || type == typeof(char)
             || type == typeof(bool)
             || type == typeof(float)
+            || type == typeof(double)
             || type == typeof(decimal)
             || type == typeof(DateTime)
             || type == typeof(DateTimeOffset)
