@@ -56,20 +56,34 @@ public static class FileHelper
 
         Directory.CreateDirectory(directoryPath);
 
-        var results = blobs.Select(async blob =>
-        {
-            try
-            {
-                await _BaseSaveFileAsync(blob.BlobStream, blob.BlobName, directoryPath, token).ConfigureAwait(false);
-                return Result<Exception>.Ok();
-            }
-            catch (Exception e)
-            {
-                return Result<Exception>.Fail(e);
-            }
-        });
+        var items = blobs as IReadOnlyList<(Stream BlobStream, string BlobName)> ?? blobs.ToList();
+        var results = new Result<Exception>[items.Count];
 
-        return await Task.WhenAll(results).WithAggregatedExceptions().ConfigureAwait(false);
+        // Bound concurrency so a large batch does not open unbounded FileStreams at once (amplified by the
+        // per-file retry pipeline). Each blob's outcome is captured independently into its slot, preserving the
+        // one-result-per-input contract and the input ordering.
+        await Parallel
+            .ForEachAsync(
+                Enumerable.Range(0, items.Count),
+                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+                async (index, _) =>
+                {
+                    var (blobStream, blobName) = items[index];
+
+                    try
+                    {
+                        await _BaseSaveFileAsync(blobStream, blobName, directoryPath, token).ConfigureAwait(false);
+                        results[index] = Result<Exception>.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        results[index] = Result<Exception>.Fail(e);
+                    }
+                }
+            )
+            .ConfigureAwait(false);
+
+        return results;
     }
 
     /// <summary>

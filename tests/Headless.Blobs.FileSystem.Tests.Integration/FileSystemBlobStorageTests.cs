@@ -222,6 +222,122 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         return base.can_call_get_paged_list_with_empty_container();
     }
 
+    [Fact]
+    public override Task can_create_container_idempotently()
+    {
+        return base.can_create_container_idempotently();
+    }
+
+    [Fact]
+    public override Task bulk_upload_reports_per_blob_results()
+    {
+        return base.bulk_upload_reports_per_blob_results();
+    }
+
+    [Fact]
+    public override Task bulk_delete_reports_per_entry_results()
+    {
+        return base.bulk_delete_reports_per_entry_results();
+    }
+
+    [Fact]
+    public async Task bulk_upload_reports_failure_for_invalid_blob_name()
+    {
+        var container = Container;
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        await using var ok1 = new MemoryStream("a"u8.ToArray());
+        await using var bad = new MemoryStream("b"u8.ToArray());
+        await using var ok2 = new MemoryStream("c"u8.ToArray());
+
+        IReadOnlyCollection<BlobUploadRequest> blobs =
+        [
+            new BlobUploadRequest(ok1, "good-1.txt"),
+            new BlobUploadRequest(bad, "../escape.txt"),
+            new BlobUploadRequest(ok2, "good-2.txt"),
+        ];
+
+        var results = await storage.BulkUploadAsync(container, blobs, AbortToken);
+
+        results.Should().HaveCount(3);
+        results[0].IsSuccess.Should().BeTrue();
+        results[1].IsFailure.Should().BeTrue("a path-traversal blob name must fail without failing the batch");
+        results[2].IsSuccess.Should().BeTrue();
+        (await storage.GetBlobContentAsync(container, "good-1.txt")).Should().Be("a");
+        (await storage.GetBlobContentAsync(container, "good-2.txt")).Should().Be("c");
+    }
+
+    [Fact]
+    public async Task delete_all_preserves_container_directory()
+    {
+        var containerName = ContainerName;
+        var container = Container;
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        await storage.UploadContentAsync([containerName, "sub"], "a.txt", "a");
+        var containerDirectory = Path.Combine(_baseDirectoryPath, containerName);
+        Directory.Exists(containerDirectory).Should().BeTrue();
+
+        await storage.DeleteAllAsync(container, cancellationToken: AbortToken);
+
+        // The container directory itself survives a delete-all (matching the SshNet provider); only its contents go.
+        Directory.Exists(containerDirectory).Should().BeTrue();
+        Directory.Exists(Path.Combine(containerDirectory, "sub")).Should().BeFalse();
+        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("../../../etc")]
+    [InlineData("..\\..\\secret")]
+    public async Task should_throw_when_delete_all_search_pattern_has_path_traversal(string pattern)
+    {
+        var container = Container;
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        var act = FluentActions.Awaiting(() => storage.DeleteAllAsync(container, pattern, AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
+    }
+
+    [Theory]
+    [InlineData("../../../etc")]
+    [InlineData("..\\..\\secret")]
+    public async Task should_throw_when_get_blobs_search_pattern_has_path_traversal(string pattern)
+    {
+        var container = Container;
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        var act = FluentActions.Awaiting(async () =>
+        {
+            await foreach (var _ in storage.GetBlobsAsync(container, pattern, AbortToken))
+            {
+                // Enumeration validates the pattern before yielding; the loop body is never reached.
+            }
+        });
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
+    }
+
+    [Theory]
+    [InlineData("../../../etc")]
+    [InlineData("..\\..\\secret")]
+    public async Task should_throw_when_get_paged_list_search_pattern_has_path_traversal(string pattern)
+    {
+        var container = Container;
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        var act = FluentActions.Awaiting(() =>
+            storage.GetPagedListAsync(container, pattern, cancellationToken: AbortToken).AsTask()
+        );
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
+    }
+
     #region Path Traversal Security Tests
 
     [Theory]

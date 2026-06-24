@@ -699,6 +699,67 @@ public abstract class BlobStorageTestsBase : TestBase
         await action.Should().NotThrowAsync();
     }
 
+    public virtual async Task can_create_container_idempotently()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        string[] container = [ContainerName, "created"];
+
+        // Creating the same container twice must not throw, and the container must be usable afterwards.
+        await storage.CreateContainerAsync(container);
+        await storage.CreateContainerAsync(container);
+
+        await storage.UploadContentAsync(container, "hello.txt", "hello");
+        (await storage.GetBlobContentAsync(container, "hello.txt")).Should().Be("hello");
+    }
+
+    public virtual async Task bulk_upload_reports_per_blob_results()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        var container = Container;
+
+        await using var stream1 = new MemoryStream("one"u8.ToArray());
+        await using var stream2 = new MemoryStream("two"u8.ToArray());
+
+        IReadOnlyCollection<BlobUploadRequest> blobs =
+        [
+            new BlobUploadRequest(stream1, "one.txt"),
+            new BlobUploadRequest(stream2, "two.txt"),
+        ];
+
+        var results = await storage.BulkUploadAsync(container, blobs);
+
+        results.Should().HaveCount(2);
+        results.Should().OnlyContain(r => r.IsSuccess);
+        (await storage.GetBlobContentAsync(container, "one.txt")).Should().Be("one");
+        (await storage.GetBlobContentAsync(container, "two.txt")).Should().Be("two");
+    }
+
+    public virtual async Task bulk_delete_reports_per_entry_results()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        var container = Container;
+
+        await storage.UploadContentAsync(container, "present.txt", "present");
+
+        var results = await storage.BulkDeleteAsync(container, ["present.txt", "absent.txt"]);
+
+        results.Should().HaveCount(2);
+        results[0].IsSuccess.Should().BeTrue();
+        results[0].Value.Should().BeTrue("the blob existed and was deleted");
+        results[1].IsSuccess.Should().BeTrue();
+        results[1].Value.Should().BeFalse("the blob did not exist");
+        (await storage.ExistsAsync(container, "present.txt")).Should().BeFalse();
+    }
+
     #region Path Traversal Security Tests
 
     public virtual async Task should_throw_when_blob_name_has_path_traversal(string blobName)
