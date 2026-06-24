@@ -135,8 +135,11 @@ public sealed class SshBlobStorage(
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var results = new Result<Exception>[blobs.Count];
-        var index = 0;
+        // Index results by input position, not execution-start order: Parallel.ForEachAsync does not run bodies in
+        // enumeration order, so an Interlocked counter would misalign results with their inputs. Honors the
+        // "one Result per input blob, in original order" contract.
+        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? blobs.ToList();
+        var results = new Result<Exception>[items.Count];
 
         var parallelOptions = new ParallelOptions
         {
@@ -146,11 +149,11 @@ public sealed class SshBlobStorage(
 
         await Parallel
             .ForEachAsync(
-                blobs,
+                Enumerable.Range(0, items.Count),
                 parallelOptions,
-                async (blob, ct) =>
+                async (i, ct) =>
                 {
-                    var i = Interlocked.Increment(ref index) - 1;
+                    var blob = items[i];
 
                     try
                     {
@@ -226,8 +229,9 @@ public sealed class SshBlobStorage(
             return [];
         }
 
-        var results = new Result<bool, Exception>[blobNames.Count];
-        var index = 0;
+        // Index results by input position (see BulkUploadAsync) so each entry matches its blob name in original order.
+        var names = blobNames as IReadOnlyList<string> ?? blobNames.ToList();
+        var results = new Result<bool, Exception>[names.Count];
 
         var parallelOptions = new ParallelOptions
         {
@@ -237,15 +241,13 @@ public sealed class SshBlobStorage(
 
         await Parallel
             .ForEachAsync(
-                blobNames,
+                Enumerable.Range(0, names.Count),
                 parallelOptions,
-                async (fileName, ct) =>
+                async (i, ct) =>
                 {
-                    var i = Interlocked.Increment(ref index) - 1;
-
                     try
                     {
-                        results[i] = await DeleteAsync(container, fileName, ct).ConfigureAwait(false);
+                        results[i] = await DeleteAsync(container, names[i], ct).ConfigureAwait(false);
                     }
                     catch (Exception e)
                     {
@@ -264,6 +266,10 @@ public sealed class SshBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // Guard before building the path: _BuildContainerPath returns "" for an empty container, which would
+        // otherwise target the connection root and (with a null/"*" pattern) delete everything under it.
+        Argument.IsNotNullOrEmpty(container);
+
         var containerPath = _BuildContainerPath(container);
         blobSearchPattern = _NormalizePath(blobSearchPattern);
 

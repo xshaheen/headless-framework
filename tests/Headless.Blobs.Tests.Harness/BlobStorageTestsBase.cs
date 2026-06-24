@@ -760,6 +760,96 @@ public abstract class BlobStorageTestsBase : TestBase
         (await storage.ExistsAsync(container, "present.txt")).Should().BeFalse();
     }
 
+    public virtual async Task bulk_upload_aligns_results_to_input_order_under_failures()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        var container = Container;
+        const int count = 12;
+
+        // Even indices are valid; odd indices use a path-traversal name that fails per-blob validation without
+        // aborting the batch. results[i] must describe blobs[i] — an execution-order index would scatter the
+        // failures to the wrong slots once parallelism > 1.
+        var streams = new List<MemoryStream>(count);
+        var blobs = new List<BlobUploadRequest>(count);
+
+        for (var i = 0; i < count; i++)
+        {
+            var stream = new MemoryStream("x"u8.ToArray());
+            streams.Add(stream);
+
+            var suffix = i.ToString("00", CultureInfo.InvariantCulture);
+            var name = i % 2 == 0 ? $"ok-{suffix}.txt" : $"../bad-{suffix}.txt";
+            blobs.Add(new BlobUploadRequest(stream, name));
+        }
+
+        try
+        {
+            var results = await storage.BulkUploadAsync(container, blobs);
+
+            results.Should().HaveCount(count);
+
+            for (var i = 0; i < count; i++)
+            {
+                results[i].IsSuccess.Should().Be(i % 2 == 0, "result {0} must describe blobs[{0}]", i);
+            }
+        }
+        finally
+        {
+            foreach (var stream in streams)
+            {
+                await stream.DisposeAsync();
+            }
+        }
+    }
+
+    public virtual async Task bulk_delete_aligns_results_to_input_order()
+    {
+        await using var storage = GetStorage();
+
+        await ResetAsync(storage);
+
+        var container = Container;
+        const int count = 12;
+
+        // Upload only the even-indexed entries; the odd ones are never created. Each result must match its input
+        // position: even -> Ok(true) (deleted), odd -> Ok(false) (not found).
+        var names = new string[count];
+
+        for (var i = 0; i < count; i++)
+        {
+            names[i] = $"entry-{i.ToString("00", CultureInfo.InvariantCulture)}.txt";
+
+            if (i % 2 == 0)
+            {
+                await storage.UploadContentAsync(container, names[i], "x");
+            }
+        }
+
+        var results = await storage.BulkDeleteAsync(container, names);
+
+        results.Should().HaveCount(count);
+
+        for (var i = 0; i < count; i++)
+        {
+            results[i].IsSuccess.Should().BeTrue("entry {0} delete should not error", i);
+            results[i].Value.Should().Be(i % 2 == 0, "result {0} must describe names[{0}]", i);
+        }
+    }
+
+    public virtual async Task delete_all_with_empty_container_array_throws()
+    {
+        await using var storage = GetStorage();
+
+        // An empty container array is invalid input; every provider must reject it with ArgumentException rather
+        // than dereferencing container[0] (or, on SshNet, building an empty root path).
+        var act = () => storage.DeleteAllAsync([]).AsTask();
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("container");
+    }
+
     #region Path Traversal Security Tests
 
     public virtual async Task should_throw_when_blob_name_has_path_traversal(string blobName)

@@ -124,6 +124,15 @@ public interface IBlobStorage : IAsyncDisposable
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of blobs successfully deleted.</returns>
+    /// <remarks>
+    /// Best-effort bulk deletion: the returned count reflects only blobs confirmed deleted. The intended contract is
+    /// that an individual blob which fails to delete does not abort the operation and is excluded from the count,
+    /// while a failure that prevents the operation as a whole (authentication, connectivity, or container access)
+    /// propagates as an exception. Callers needing a per-blob outcome should use <see cref="BulkDeleteAsync"/>.
+    /// NOTE: providers do not yet uniformly honor this — some currently throw on any per-blob failure and others
+    /// swallow all errors; that divergence is tracked for reconciliation.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="container"/> is null or empty.</exception>
     ValueTask<int> DeleteAllAsync(
         string[] container,
         string? blobSearchPattern = null,

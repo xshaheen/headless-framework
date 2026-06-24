@@ -338,6 +338,24 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
     }
 
+    [Fact]
+    public override Task bulk_upload_aligns_results_to_input_order_under_failures()
+    {
+        return base.bulk_upload_aligns_results_to_input_order_under_failures();
+    }
+
+    [Fact]
+    public override Task bulk_delete_aligns_results_to_input_order()
+    {
+        return base.bulk_delete_aligns_results_to_input_order();
+    }
+
+    [Fact]
+    public override Task delete_all_with_empty_container_array_throws()
+    {
+        return base.delete_all_with_empty_container_array_throws();
+    }
+
     #region Path Traversal Security Tests
 
     [Theory]
