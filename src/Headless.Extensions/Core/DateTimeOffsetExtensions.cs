@@ -190,14 +190,16 @@ public static class DateTimeOffsetExtensions
     [JetBrainsPure]
     public static DateTimeOffset SafeAdd(this DateTimeOffset date, TimeSpan value)
     {
-        if (date.Ticks + value.Ticks < DateTimeOffset.MinValue.Ticks)
-        {
-            return DateTimeOffset.MinValue;
-        }
-
-        if (date.Ticks + value.Ticks > DateTimeOffset.MaxValue.Ticks)
+        // Compare against the bounds without computing date.Ticks + value.Ticks, which can overflow long
+        // (TimeSpan.Ticks spans the full long range) before the clamp would ever run.
+        if (value.Ticks > 0 && date.Ticks > DateTimeOffset.MaxValue.Ticks - value.Ticks)
         {
             return DateTimeOffset.MaxValue;
+        }
+
+        if (value.Ticks < 0 && date.Ticks < DateTimeOffset.MinValue.Ticks - value.Ticks)
+        {
+            return DateTimeOffset.MinValue;
         }
 
         return date.Add(value);

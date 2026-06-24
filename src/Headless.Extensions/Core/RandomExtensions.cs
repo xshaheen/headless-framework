@@ -312,7 +312,9 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return min == max ? min : (long)((random.NextDouble() * (max - min)) + min);
+            // Delegate to the built-in generator: it is exact over the full long span (no (max - min)
+            // overflow, no double quantization) and yields a uniform value in [min, max).
+            return min == max ? min : random.NextInt64(min, max);
         }
 
         /// <summary>Returns a random <see cref="float"/> in the range <c>[<paramref name="min"/>, <paramref name="max"/>)</c>.</summary>
@@ -361,10 +363,19 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
+            if (min == max)
+            {
+                return min;
+            }
+
             Span<byte> buffer = stackalloc byte[sizeof(ulong)];
             random.NextBytes(buffer);
 
-            return (MemoryMarshal.Read<ulong>(buffer) * (max - min) / ulong.MaxValue) + min;
+            // Lemire-style scaling: the high 64 bits of the 128-bit product map a uniform ulong into
+            // [0, max - min) without the overflow a direct (value * (max - min)) multiply would hit.
+            var hi = Math.BigMul(MemoryMarshal.Read<ulong>(buffer), max - min, out _);
+
+            return hi + min;
         }
 
         /// <summary>Returns a random <see cref="decimal"/> in the range <c>[<paramref name="min"/>, <paramref name="max"/>)</c>.</summary>
