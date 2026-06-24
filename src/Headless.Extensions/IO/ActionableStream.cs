@@ -14,11 +14,12 @@ namespace Headless.IO;
 /// An action invoked once during disposal, before the inner stream is disposed. Any exception it raises is
 /// swallowed so the inner stream is still disposed.
 /// </param>
-/// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is <see langword="null"/>.</exception>
+/// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> or <paramref name="disposeAction"/> is <see langword="null"/>.</exception>
 [PublicAPI]
 public sealed class ActionableStream(Stream stream, Action disposeAction) : Stream
 {
     private readonly Stream _stream = Argument.IsNotNull(stream);
+    private readonly Action _disposeAction = Argument.IsNotNull(disposeAction);
     private bool _disposed;
 
     /// <summary>
@@ -54,7 +55,7 @@ public sealed class ActionableStream(Stream stream, Action disposeAction) : Stre
 
         try
         {
-            disposeAction.Invoke();
+            _disposeAction.Invoke();
         }
 #pragma warning disable ERP022
         catch
@@ -66,6 +67,36 @@ public sealed class ActionableStream(Stream stream, Action disposeAction) : Stre
         _stream.Dispose();
 
         base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// Asynchronously releases the resources used by the stream. On first disposal, invokes <c>disposeAction</c>
+    /// (ignoring any exception it raises) and then asynchronously disposes the inner stream. Subsequent calls are
+    /// no-ops, so the action fires exactly once across <see cref="Stream.Dispose()"/>, <see cref="Stream.Close()"/>,
+    /// and <see cref="DisposeAsync"/>.
+    /// </summary>
+    /// <returns>A <see cref="ValueTask"/> that represents the asynchronous dispose operation.</returns>
+    public override async ValueTask DisposeAsync()
+    {
+        if (!_disposed)
+        {
+            _disposed = true;
+
+            try
+            {
+                _disposeAction.Invoke();
+            }
+#pragma warning disable ERP022
+            catch
+            {
+                /* ignore if these are already disposed; this is to make sure they are */
+            }
+#pragma warning restore ERP022
+
+            await _stream.DisposeAsync().ConfigureAwait(false);
+        }
+
+        await base.DisposeAsync().ConfigureAwait(false);
     }
 
     /// <summary>Gets a value indicating whether the inner stream supports reading.</summary>

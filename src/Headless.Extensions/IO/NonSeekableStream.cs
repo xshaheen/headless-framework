@@ -33,12 +33,12 @@ public sealed class NonSeekableStream(Stream stream) : Stream, IHasIsDisposed
     /// <exception cref="NotSupportedException">Thrown when this stream has not been disposed (seeking is never supported).</exception>
     public override long Length => throw _ThrowDisposedOrNotSupported();
 
-    /// <summary>Gets the position within the inner stream. The setter is not supported because the stream is non-seekable.</summary>
-    /// <exception cref="ObjectDisposedException">Thrown by the setter when this stream has been disposed.</exception>
-    /// <exception cref="NotSupportedException">Thrown by the setter when this stream has not been disposed (seeking is never supported).</exception>
+    /// <summary>This member is not supported because the stream is non-seekable.</summary>
+    /// <exception cref="ObjectDisposedException">Thrown when this stream has been disposed.</exception>
+    /// <exception cref="NotSupportedException">Thrown when this stream has not been disposed (seeking is never supported).</exception>
     public override long Position
     {
-        get => stream.Position;
+        get => throw _ThrowDisposedOrNotSupported();
         set => throw _ThrowDisposedOrNotSupported();
     }
 
@@ -46,6 +46,14 @@ public sealed class NonSeekableStream(Stream stream) : Stream, IHasIsDisposed
     public override void Flush()
     {
         stream.Flush();
+    }
+
+    /// <summary>Asynchronously flushes any buffered data of the inner stream to its backing store.</summary>
+    /// <param name="cancellationToken">A token to observe while waiting for the flush to complete.</param>
+    /// <returns>A task that represents the asynchronous flush operation.</returns>
+    public override Task FlushAsync(CancellationToken cancellationToken)
+    {
+        return stream.FlushAsync(cancellationToken);
     }
 
     /// <summary>Reads a sequence of bytes from the inner stream into <paramref name="buffer"/>.</summary>
@@ -58,6 +66,34 @@ public sealed class NonSeekableStream(Stream stream) : Stream, IHasIsDisposed
         return stream.Read(buffer, offset, count);
     }
 
+    /// <summary>Reads a sequence of bytes from the inner stream into <paramref name="buffer"/>.</summary>
+    /// <param name="buffer">The region of memory into which the data is read.</param>
+    /// <returns>The number of bytes read, or <c>0</c> at the end of the stream.</returns>
+    public override int Read(Span<byte> buffer)
+    {
+        return stream.Read(buffer);
+    }
+
+    /// <summary>Asynchronously reads a sequence of bytes from the inner stream into <paramref name="buffer"/>.</summary>
+    /// <param name="buffer">The buffer into which the data is read.</param>
+    /// <param name="offset">The zero-based offset in <paramref name="buffer"/> at which to begin storing data.</param>
+    /// <param name="count">The maximum number of bytes to read.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the read to complete.</param>
+    /// <returns>A task whose result is the number of bytes read, or <c>0</c> at the end of the stream.</returns>
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        return stream.ReadAsync(buffer, offset, count, cancellationToken);
+    }
+
+    /// <summary>Asynchronously reads a sequence of bytes from the inner stream into <paramref name="buffer"/>.</summary>
+    /// <param name="buffer">The region of memory into which the data is read.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the read to complete.</param>
+    /// <returns>A task whose result is the number of bytes read, or <c>0</c> at the end of the stream.</returns>
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        return stream.ReadAsync(buffer, cancellationToken);
+    }
+
     /// <summary>Writes a sequence of bytes from <paramref name="buffer"/> to the inner stream.</summary>
     /// <param name="buffer">The buffer containing the data to write.</param>
     /// <param name="offset">The zero-based offset in <paramref name="buffer"/> at which to begin copying bytes.</param>
@@ -67,12 +103,35 @@ public sealed class NonSeekableStream(Stream stream) : Stream, IHasIsDisposed
         stream.Write(buffer, offset, count);
     }
 
-    /// <summary>Closes the inner stream and then this stream, releasing all associated resources.</summary>
-    public override void Close()
+    /// <summary>Writes a sequence of bytes from <paramref name="buffer"/> to the inner stream.</summary>
+    /// <param name="buffer">The region of memory containing the data to write.</param>
+    public override void Write(ReadOnlySpan<byte> buffer)
     {
-        stream.Close();
-        base.Close();
+        stream.Write(buffer);
     }
+
+    /// <summary>Asynchronously writes a sequence of bytes from <paramref name="buffer"/> to the inner stream.</summary>
+    /// <param name="buffer">The buffer containing the data to write.</param>
+    /// <param name="offset">The zero-based offset in <paramref name="buffer"/> at which to begin copying bytes.</param>
+    /// <param name="count">The number of bytes to write.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the write to complete.</param>
+    /// <returns>A task that represents the asynchronous write operation.</returns>
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        return stream.WriteAsync(buffer, offset, count, cancellationToken);
+    }
+
+    /// <summary>Asynchronously writes a sequence of bytes from <paramref name="buffer"/> to the inner stream.</summary>
+    /// <param name="buffer">The region of memory containing the data to write.</param>
+    /// <param name="cancellationToken">A token to observe while waiting for the write to complete.</param>
+    /// <returns>A task that represents the asynchronous write operation.</returns>
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        return stream.WriteAsync(buffer, cancellationToken);
+    }
+
+    // No Close() override: the base Stream.Close() routes to Dispose() -> Dispose(true), which disposes the inner
+    // stream exactly once. Forwarding to stream.Close() here as well would dispose the inner stream twice.
 
     /// <summary>
     /// Releases the resources used by the stream. On first disposal, marks the stream as disposed and disposes the

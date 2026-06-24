@@ -21,6 +21,19 @@ public sealed class ActionableStreamTests
     }
 
     [Fact]
+    public void should_throw_when_disposeAction_null()
+    {
+        // given
+        Action? disposeAction = null;
+
+        // when - a null action must fail fast at construction, not be swallowed inside the dispose catch.
+        var act = () => new ActionableStream(new MemoryStream(), disposeAction!);
+
+        // then
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
     public void should_delegate_CanRead_to_inner_stream()
     {
         // given
@@ -308,5 +321,70 @@ public sealed class ActionableStreamTests
 
         // then
         inner.Length.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task should_invoke_disposeAction_on_DisposeAsync()
+    {
+        // given
+        var actionInvoked = false;
+        var inner = new MemoryStream();
+        var sut = new ActionableStream(inner, () => actionInvoked = true);
+
+        // when
+        await sut.DisposeAsync();
+
+        // then
+        actionInvoked.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_dispose_inner_stream_on_DisposeAsync()
+    {
+        // given
+        var inner = new MemoryStream();
+        var sut = new ActionableStream(inner, () => { });
+
+        // when
+        await sut.DisposeAsync();
+
+        // then - inner stream should be disposed (accessing it throws)
+        var act = () => inner.ReadByte();
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_invoke_disposeAction_exactly_once_across_DisposeAsync_and_Dispose()
+    {
+        // given
+        var invocationCount = 0;
+        var inner = new MemoryStream();
+        var sut = new ActionableStream(inner, () => invocationCount++);
+
+        // when - dispose via both the async and sync surfaces
+        await sut.DisposeAsync();
+        await sut.DisposeAsync();
+#pragma warning disable VSTHRD103 // Deliberately exercising the synchronous Dispose surface for idempotency.
+        sut.Dispose();
+#pragma warning restore VSTHRD103
+
+        // then - the action fired exactly once (idempotent disposal)
+        invocationCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_throw_if_disposeAction_throws_on_DisposeAsync()
+    {
+        // given
+        var inner = new MemoryStream();
+        var sut = new ActionableStream(inner, () => throw new InvalidOperationException("test"));
+
+        // when
+        var act = async () => await sut.DisposeAsync();
+
+        // then - the inner stream is still disposed despite the action throwing
+        await act.Should().NotThrowAsync();
+        var read = () => inner.ReadByte();
+        read.Should().Throw<ObjectDisposedException>();
     }
 }

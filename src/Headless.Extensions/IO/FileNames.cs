@@ -81,10 +81,28 @@ public static class FileNames
     {
         var extension = Path.GetExtension(untrustedName);
         var stringBuilder = new StringBuilder();
+
+        // First pass: remove invalid chars and normalize spaces in the name (without encoding).
+        _AppendSanitized(untrustedName[..^extension.Length], stringBuilder);
+
+        // The extension is run through the same invalid-char filter so chars like ':', '*', '?', or '|' that
+        // fall after the final '.' cannot survive verbatim into the result.
+        var validFileName = string.Concat(stringBuilder.ToString().AsSpan().Trim(), _SanitizeExtension(extension));
+
+        // HTML encode the final result to prevent script injection attacks
+        return WebUtility.HtmlEncode(validFileName);
+    }
+
+    /// <summary>
+    /// Appends <paramref name="input"/> to <paramref name="builder"/>, dropping characters in
+    /// <see cref="InvalidFileNameChars"/> (replacing path separators and colons with a single space) and
+    /// collapsing runs of whitespace into a single space.
+    /// </summary>
+    private static void _AppendSanitized(ReadOnlySpan<char> input, StringBuilder builder)
+    {
         var spaceCount = 0;
 
-        // First pass: remove invalid chars and normalize spaces (without encoding)
-        foreach (var value in untrustedName[..^extension.Length])
+        foreach (var value in input)
         {
             // The next part ensures that multiple consecutive spaces are reduced to a single space
             var isWhiteSpace = char.IsWhiteSpace(value);
@@ -93,7 +111,7 @@ public static class FileNames
             {
                 if (spaceCount == 0)
                 {
-                    stringBuilder.Append(' ');
+                    builder.Append(' ');
                 }
 
                 spaceCount++;
@@ -104,21 +122,34 @@ public static class FileNames
 
             if (!InvalidFileNameChars.Contains(value))
             {
-                stringBuilder.Append(value);
+                builder.Append(value);
             }
             else if (value is '/' or '\\' or ':')
             {
                 // Replace path separators with space (spaceCount is always 0 here since we reset it above)
-                stringBuilder.Append(' ');
+                builder.Append(' ');
                 spaceCount = 1;
             }
             // else: skip other invalid characters (they're removed)
         }
+    }
 
-        var validFileName = string.Concat(stringBuilder.ToString().AsSpan().Trim(), extension);
+    /// <summary>
+    /// Sanitizes a file extension (including its leading dot) with the same invalid-char filter used for the
+    /// name. A clean extension is returned unchanged; otherwise invalid characters are stripped.
+    /// </summary>
+    private static string _SanitizeExtension(ReadOnlySpan<char> extension)
+    {
+        // Fast path: a clean extension carries no invalid chars, so keep it verbatim and avoid allocating.
+        if (extension.IsEmpty || !extension.ContainsAny(InvalidFileNameChars))
+        {
+            return extension.ToString();
+        }
 
-        // HTML encode the final result to prevent script injection attacks
-        return WebUtility.HtmlEncode(validFileName);
+        var builder = new StringBuilder(extension.Length);
+        _AppendSanitized(extension, builder);
+
+        return builder.ToString().AsSpan().Trim().ToString();
     }
 
     #endregion
@@ -165,12 +196,16 @@ public static class FileNames
         var extension = Path.GetExtension(untrustedName); // includes the dot, e.g., ".png"
         var sanitizedName = SanitizeFileName(untrustedName[..^extension.Length]);
 
+        // Run the extension through the same invalid-char filter so ':', '*', '?', or '|' after the final '.'
+        // cannot survive verbatim into either derived name.
+        var sanitizedExtension = _SanitizeExtension(extension);
+
         // Trusted display name (sanitized but without random suffix)
-        var trustedDisplayName = string.Concat(sanitizedName, extension);
+        var trustedDisplayName = string.Concat(sanitizedName, sanitizedExtension);
 
         // Normalize for unique save name (with random suffix)
         var normalizeFileName = _NormalizeFileName(sanitizedName);
-        var uniqueSaveName = string.Concat(normalizeFileName, randomSuffix, extension);
+        var uniqueSaveName = string.Concat(normalizeFileName, randomSuffix, sanitizedExtension);
 
         return (trustedDisplayName, uniqueSaveName);
     }

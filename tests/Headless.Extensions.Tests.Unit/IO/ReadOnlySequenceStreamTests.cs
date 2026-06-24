@@ -196,10 +196,27 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
         Assert.Equal(stream.Position + 1, stream.ReadByte());
 
         Assert.Throws<ArgumentOutOfRangeException>(() => stream.Seek(1, SeekOrigin.End));
-        Assert.Throws<ArgumentOutOfRangeException>(() => stream.Seek(-1, SeekOrigin.Begin));
+        // Seeking before the beginning now surfaces as an IOException (was ArgumentOutOfRangeException).
+        Assert.Throws<IOException>(() => stream.Seek(-1, SeekOrigin.Begin));
 
         stream.Dispose();
         Assert.Throws<ObjectDisposedException>(() => stream.Seek(0, SeekOrigin.Begin));
+    }
+
+    [Fact]
+    public void Seek_BeforeBegin_ThrowsIOException()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+
+        // Begin with a negative offset.
+        Assert.Throws<IOException>(() => stream.Seek(-1, SeekOrigin.Begin));
+
+        // Current that underflows past the start.
+        stream.Position = 2;
+        Assert.Throws<IOException>(() => stream.Seek(-5, SeekOrigin.Current));
+
+        // End that underflows past the start.
+        Assert.Throws<IOException>(() => stream.Seek(-(_MultiBlockSequence.Length + 1), SeekOrigin.End));
     }
 
     [Fact]
@@ -286,6 +303,22 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
         var ms = new MemoryStream();
         await stream.CopyToAsync(ms, AbortToken);
         Assert.Equal(_MultiBlockSequence.ToArray(), ms.ToArray());
+    }
+
+    [Fact]
+    public async Task CopyToAsync_AfterPartialRead_CopiesOnlyRemainder()
+    {
+        var stream = _MultiBlockSequence.ToStream();
+        var head = new byte[3];
+        Assert.Equal(3, await stream.ReadAsync(head.AsMemory(0, 3), AbortToken));
+        Assert.Equal(3, stream.Position);
+
+        var ms = new MemoryStream();
+        await stream.CopyToAsync(ms, AbortToken);
+
+        // Only the unread remainder is copied, and the stream is drained to the end.
+        Assert.Equal(new byte[] { 4, 5, 6, 7, 8, 9 }, ms.ToArray());
+        Assert.Equal(_MultiBlockSequence.Length, stream.Position);
     }
 
     [Fact]
