@@ -1300,13 +1300,17 @@ public sealed class InMemoryCache
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
-        if (existingEntry.IsExpired)
+        // Fetch the clock once for the whole hit path (expiry, logical expiry, sliding re-arm) instead of three
+        // virtual TimeProvider dispatches. Misses above never reach here, so a miss still pays zero clock reads.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (existingEntry.IsExpiredAt(now))
         {
             _TryRemoveExpiredEntry(key, existingEntry);
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
-        if (existingEntry.IsLogicallyExpired)
+        if (existingEntry.IsLogicallyExpiredAt(now))
         {
             if (existingEntry.SlidingExpiration.HasValue)
             {
@@ -1326,7 +1330,7 @@ public sealed class InMemoryCache
         try
         {
             var value = existingEntry.GetValue<T>();
-            _TryRearmSlidingEntry(key, existingEntry, _timeProvider.GetUtcNow().UtcDateTime);
+            _TryRearmSlidingEntry(key, existingEntry, now);
 
             return new ValueTask<CacheValue<T>>(new CacheValue<T>(value, hasValue: true));
         }
@@ -1389,8 +1393,12 @@ public sealed class InMemoryCache
             return new ValueTask<bool>(false);
         }
 
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
         return new ValueTask<bool>(
-            !existingEntry.IsExpired && !existingEntry.IsLogicallyExpired && !_IsTagInvalidated(existingEntry)
+            !existingEntry.IsExpiredAt(now)
+                && !existingEntry.IsLogicallyExpiredAt(now)
+                && !_IsTagInvalidated(existingEntry)
         );
     }
 
@@ -1563,13 +1571,16 @@ public sealed class InMemoryCache
             return new ValueTask<bool>(false);
         }
 
-        if (existingEntry.IsExpired)
+        // Single clock read for the whole hit path; misses above pay none. Mirrors GetAsync.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (existingEntry.IsExpiredAt(now))
         {
             _TryRemoveExpiredEntry(key, existingEntry);
             return new ValueTask<bool>(false);
         }
 
-        if (existingEntry.IsLogicallyExpired)
+        if (existingEntry.IsLogicallyExpiredAt(now))
         {
             if (existingEntry.SlidingExpiration.HasValue)
             {
@@ -1589,7 +1600,7 @@ public sealed class InMemoryCache
         try
         {
             var value = existingEntry.GetValue<byte[]>();
-            _TryRearmSlidingEntry(key, existingEntry, _timeProvider.GetUtcNow().UtcDateTime);
+            _TryRearmSlidingEntry(key, existingEntry, now);
 
             // Parity with the byte[] fallback (CacheValue<byte[]>.Value is null -> false): a null-sentinel hit
             // reads as a miss for the buffer path. Nothing is written.
@@ -2889,16 +2900,18 @@ public sealed class InMemoryCache
             PhysicalExpiresAt = physicalExpiresAt;
             SlidingExpiration = slidingExpiration;
             LastFactoryError = lastFactoryError;
-            Tags = tags is { Count: > 0 } ? tags.ToFrozenSet(StringComparer.Ordinal) : null;
+            // Tags are only ever enumerated (_NewestMarkerFor) and Count-checked — never looked up by value —
+            // so a FrozenSet's lookup-optimized build is wasted work on every tagged write. A defensive array
+            // copy keeps the same immutability guarantee (no aliasing of the caller's collection) far cheaper to
+            // construct and faster to iterate. Duplicates, if any, are harmless: _NewestMarkerFor just re-reads
+            // the same marker, and the contract type is IReadOnlyCollection (no uniqueness guarantee).
+            Tags = tags is { Count: > 0 } ? tags.ToArray() : null;
             EagerRefreshAt = eagerRefreshAt;
             ETag = etag;
             LastModifiedAt = lastModifiedAt;
             CreatedAt = createdAt;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
-            // Precompute the immutable concurrency stamp once at construction so warm-hit reads and CAS
-            // comparisons reuse the same string instead of allocating on every non-miss read (#23).
-            ConcurrencyStamp = InstanceNumber.ToString(CultureInfo.InvariantCulture);
         }
 
         /// <summary>Private constructor used by <see cref="WithExpiration"/> to share the already-cloned
@@ -2928,14 +2941,15 @@ public sealed class InMemoryCache
             CreatedAt = prototype.CreatedAt;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
-            ConcurrencyStamp = InstanceNumber.ToString(CultureInfo.InvariantCulture);
         }
 
         internal long InstanceNumber { get; }
 
-        /// <summary>Immutable concurrency stamp (<see cref="InstanceNumber"/> formatted invariantly),
-        /// computed once at construction. Used for warm-hit reads and CAS comparisons.</summary>
-        internal string ConcurrencyStamp { get; }
+        /// <summary>Immutable concurrency stamp (<see cref="InstanceNumber"/> formatted invariantly), computed
+        /// lazily on first access and cached. Most entries are never CAS-compared or surfaced through the factory
+        /// store, so deferring the format keeps the allocation off the common write path (#23). The race between
+        /// concurrent first-readers is benign — every racer formats the same <see cref="InstanceNumber"/>.</summary>
+        internal string ConcurrencyStamp => field ??= InstanceNumber.ToString(CultureInfo.InvariantCulture);
 
         internal DateTime? LogicalExpiresAt { get; }
 
@@ -2947,7 +2961,7 @@ public sealed class InMemoryCache
 
         internal LastFactoryError? LastFactoryError { get; }
 
-        internal IReadOnlySet<string>? Tags { get; }
+        internal IReadOnlyCollection<string>? Tags { get; }
 
         internal DateTime? EagerRefreshAt { get; }
 
@@ -2960,11 +2974,16 @@ public sealed class InMemoryCache
         // Expired at the exact tick (expiresAt <= now): align with the Core (IsFresh/IsPhysicallyPresent),
         // Redis (_IsExpired), and the eviction maintenance loop conventions so every provider and the
         // coordinator agree on the boundary instant.
-        internal bool IsExpired =>
-            PhysicalExpiresAt.HasValue && PhysicalExpiresAt <= _timeProvider.GetUtcNow().UtcDateTime;
+        internal bool IsExpired => IsExpiredAt(_timeProvider.GetUtcNow().UtcDateTime);
 
-        internal bool IsLogicallyExpired =>
-            LogicalExpiresAt.HasValue && LogicalExpiresAt <= _timeProvider.GetUtcNow().UtcDateTime;
+        /// <summary>Physical-expiry check against a caller-supplied <paramref name="now"/>, so a hot read path can
+        /// fetch the clock once and reuse it across the expiry/logical-expiry/sliding-rearm checks.</summary>
+        internal bool IsExpiredAt(DateTime now) => PhysicalExpiresAt.HasValue && PhysicalExpiresAt.Value <= now;
+
+        internal bool IsLogicallyExpired => IsLogicallyExpiredAt(_timeProvider.GetUtcNow().UtcDateTime);
+
+        /// <summary>Logical-expiry check against a caller-supplied <paramref name="now"/> (see <see cref="IsExpiredAt"/>).</summary>
+        internal bool IsLogicallyExpiredAt(DateTime now) => LogicalExpiresAt.HasValue && LogicalExpiresAt.Value <= now;
 
         internal bool ShouldRemoveAt(long expiresAtTicks)
         {
@@ -3012,6 +3031,15 @@ public sealed class InMemoryCache
 
         private static T? _ConvertValue<T>(object? val)
         {
+            // Fast path: a same-type read (the dominant case — cache an int/string/POCO and read it back as the
+            // same type) returns directly, skipping Convert.ChangeType's IConvertible boxing + provider machinery.
+            // Only genuine cross-type reads (e.g. Increment stores a double, read back as long) fall through. A
+            // null val never matches `is T`, so the existing null handling below is preserved.
+            if (val is T typed)
+            {
+                return typed;
+            }
+
             var t = typeof(T);
 
             if (
