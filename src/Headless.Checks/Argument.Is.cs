@@ -36,4 +36,32 @@ public static partial class Argument
             );
         }
     }
+
+    /// <summary>
+    /// Throws an <see cref="ArgumentException"/> if <paramref name="condition"/> is <see langword="true"/>. The mirror of
+    /// <see cref="Is"/>; use it for argument preconditions expressed as a condition that must <em>not</em> hold.
+    /// </summary>
+    /// <param name="condition">The argument precondition that must not hold.</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="paramName">
+    /// The offending parameter name. Pass <c>nameof(arg)</c> explicitly; when omitted the captured text of
+    /// <paramref name="condition"/> is used.
+    /// </param>
+    /// <exception cref="ArgumentException">if <paramref name="condition"/> is <see langword="true"/>.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void IsFalse(
+        [DoesNotReturnIf(true)] bool condition,
+        string? message = null,
+        [CallerArgumentExpression(nameof(condition))] string? paramName = null
+    )
+    {
+        if (condition)
+        {
+            throw new ArgumentException(
+                message ?? $"The condition {paramName.ToAssertString()} must be false.",
+                paramName
+            );
+        }
+    }
 }
