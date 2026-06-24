@@ -154,4 +154,71 @@ public sealed class RangeTests
     }
 
     #endregion
+
+    #region CompareTo
+
+    [Fact]
+    public void compare_to_should_sort_unbounded_lower_bound_before_any_value()
+    {
+        // given - (-inf, "5"] vs ["3", "5"]; an unbounded lower bound must sort first.
+        // Range<T> bounds are T? with T : IComparable<T> and no struct/class constraint, so a null bound is only
+        // constructible for a reference type — use Range<string> (single-char values keep ordinal order intuitive).
+        var unboundedBelow = new Range<string>(null, "5");
+        var bounded = new Range<string>("3", "5");
+
+        // then
+        unboundedBelow.CompareTo(bounded).Should().BeLessThan(0);
+        bounded.CompareTo(unboundedBelow).Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void compare_to_should_sort_unbounded_upper_bound_after_any_value()
+    {
+        // given - ["3", +inf) vs ["3", "5"]; an unbounded upper bound must sort last
+        var unboundedAbove = new Range<string>("3", null);
+        var bounded = new Range<string>("3", "5");
+
+        // then
+        unboundedAbove.CompareTo(bounded).Should().BeGreaterThan(0);
+        bounded.CompareTo(unboundedAbove).Should().BeLessThan(0);
+    }
+
+    [Fact]
+    public void compare_to_should_be_consistent_with_equals_for_unbounded_ranges()
+    {
+        // given - the bug: (-inf, "5"] used to compare EQUAL to ["3", "5"] while Equals reported them different
+        var unboundedBelow = new Range<string>(null, "5");
+        var bounded = new Range<string>("3", "5");
+
+        // then - CompareTo == 0 must agree with Equals
+        unboundedBelow.Equals(bounded).Should().BeFalse();
+        unboundedBelow.CompareTo(bounded).Should().NotBe(0);
+
+        // and equal-bounds ranges agree the other way
+        var sameUnbounded = new Range<string>(null, "5");
+        unboundedBelow.Equals(sameUnbounded).Should().BeTrue();
+        unboundedBelow.CompareTo(sameUnbounded).Should().Be(0);
+    }
+
+    [Fact]
+    public void sort_should_order_unbounded_bounds_consistently()
+    {
+        // given
+        var ranges = new List<Range<string>> { new("3", "5"), new(null, "5"), new("3", null), new("1", "5") };
+
+        // when
+        ranges.Sort();
+
+        // then - null lower bound first, null upper bound last
+        ranges
+            .Should()
+            .ContainInOrder(
+                new Range<string>(null, "5"),
+                new Range<string>("1", "5"),
+                new Range<string>("3", "5"),
+                new Range<string>("3", null)
+            );
+    }
+
+    #endregion
 }

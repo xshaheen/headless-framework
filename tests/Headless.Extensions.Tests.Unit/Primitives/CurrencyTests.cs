@@ -209,17 +209,40 @@ public sealed class CurrencyTests
     }
 
     [Fact]
-    public void compare_to_should_throw_for_different_currency_codes()
+    public void compare_to_should_order_by_code_then_amount_across_currencies()
+    {
+        // given - EUR sorts before USD ordinally, regardless of amount
+        var eur = new Currency(1000m, "EUR");
+        var usd = new Currency(1m, "USD");
+
+        // then - total ordering: code first, so it never throws on a code mismatch
+        eur.CompareTo(usd).Should().BeLessThan(0);
+        usd.CompareTo(eur).Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void compare_to_should_order_by_amount_within_same_code()
     {
         // given
-        var currency1 = new Currency(100m, "USD");
-        var currency2 = new Currency(100m, "EUR");
-
-        // when
-        var action = () => currency1.CompareTo(currency2);
+        var small = new Currency(100m, "USD");
+        var large = new Currency(200m, "USD");
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*different currency codes*");
+        small.CompareTo(large).Should().BeLessThan(0);
+    }
+
+    [Fact]
+    public void sort_should_not_throw_for_mixed_currency_codes()
+    {
+        // given - the old behavior threw from List.Sort on a code mismatch
+        var list = new List<Currency> { new(5m, "USD"), new(10m, "EUR"), new(1m, "USD"), new(2m, "EUR") };
+
+        // when
+        var sort = () => list.Sort();
+
+        // then - total ordering keeps Sort safe; result is grouped by code then ascending amount
+        sort.Should().NotThrow();
+        list.Select(c => c.ToString()).Should().ContainInOrder("2EUR", "10EUR", "1USD", "5USD");
     }
 
     [Fact]
@@ -429,14 +452,13 @@ public sealed class CurrencyTests
     }
 
     [Fact]
-    public void multiplication_operator_should_multiply_amounts()
+    public void multiplication_operator_should_scale_amount_by_decimal()
     {
         // given
-        var currency1 = new Currency(10m, "USD");
-        var currency2 = new Currency(5m, "USD");
+        var currency = new Currency(10m, "USD");
 
         // when
-        var result = currency1 * currency2;
+        var result = currency * 5m;
 
         // then
         result.Amount.Should().Be(50m);
@@ -444,42 +466,40 @@ public sealed class CurrencyTests
     }
 
     [Fact]
-    public void multiplication_should_throw_for_different_currencies()
+    public void multiply_method_should_scale_amount_and_round_to_even()
     {
-        // given
-        var currency1 = new Currency(100m, "USD");
-        var currency2 = new Currency(50m, "EUR");
+        // given - 10.005 * 1 sits at the cent midpoint and rounds to even (10.00)
+        var currency = new Currency(10.005m, "USD");
 
         // when
-        var action = () => currency1 * currency2;
+        var result = Currency.Multiply(currency, 1m);
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*different currency codes*");
+        result.Amount.Should().Be(10.00m);
+        result.CurrencyCode.Should().Be("USD");
     }
 
     [Fact]
-    public void multiply_method_should_multiply_amounts()
+    public void multiply_method_should_honor_explicit_rounding_mode()
     {
         // given
-        var currency1 = new Currency(10m, "USD");
-        var currency2 = new Currency(5m, "USD");
+        var currency = new Currency(10.005m, "USD");
 
         // when
-        var result = Currency.Multiply(currency1, currency2);
+        var result = Currency.Multiply(currency, 1m, MidpointRounding.AwayFromZero);
 
-        // then
-        result.Amount.Should().Be(50m);
+        // then - away-from-zero rounds the cent up
+        result.Amount.Should().Be(10.01m);
     }
 
     [Fact]
-    public void division_operator_should_divide_amounts()
+    public void division_operator_should_scale_amount_by_decimal()
     {
         // given
-        var currency1 = new Currency(100m, "USD");
-        var currency2 = new Currency(4m, "USD");
+        var currency = new Currency(100m, "USD");
 
         // when
-        var result = currency1 / currency2;
+        var result = currency / 4m;
 
         // then
         result.Amount.Should().Be(25m);
@@ -487,74 +507,43 @@ public sealed class CurrencyTests
     }
 
     [Fact]
-    public void division_should_throw_for_different_currencies()
+    public void division_should_round_sub_cents_to_the_currency_scale()
     {
-        // given
-        var currency1 = new Currency(100m, "USD");
-        var currency2 = new Currency(50m, "EUR");
+        // given - 10 / 3 = 3.3333... rounds to two decimals
+        var currency = new Currency(10m, "USD");
 
         // when
-        var action = () => currency1 / currency2;
+        var result = currency / 3m;
 
         // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*different currency codes*");
-    }
-
-    [Fact]
-    public void divide_method_should_divide_amounts()
-    {
-        // given
-        var currency1 = new Currency(100m, "USD");
-        var currency2 = new Currency(4m, "USD");
-
-        // when
-        var result = Currency.Divide(currency1, currency2);
-
-        // then
-        result.Amount.Should().Be(25m);
-    }
-
-    [Fact]
-    public void modulus_operator_should_calculate_remainder()
-    {
-        // given
-        var currency1 = new Currency(10m, "USD");
-        var currency2 = new Currency(3m, "USD");
-
-        // when
-        var result = currency1 % currency2;
-
-        // then
-        result.Amount.Should().Be(1m);
+        result.Amount.Should().Be(3.33m);
         result.CurrencyCode.Should().Be("USD");
     }
 
     [Fact]
-    public void modulus_should_throw_for_different_currencies()
+    public void divide_method_should_honor_explicit_rounding_mode()
     {
-        // given
-        var currency1 = new Currency(100m, "USD");
-        var currency2 = new Currency(50m, "EUR");
+        // given - 2 / 3 = 0.6666...
+        var currency = new Currency(2m, "USD");
 
         // when
-        var action = () => currency1 % currency2;
+        var result = Currency.Divide(currency, 3m, MidpointRounding.ToZero);
 
-        // then
-        action.Should().Throw<InvalidOperationException>().WithMessage("*different currency codes*");
+        // then - truncates toward zero at the cent scale
+        result.Amount.Should().Be(0.66m);
     }
 
     [Fact]
-    public void mod_method_should_calculate_remainder()
+    public void division_by_zero_should_throw()
     {
         // given
-        var currency1 = new Currency(10m, "USD");
-        var currency2 = new Currency(3m, "USD");
+        var currency = new Currency(100m, "USD");
 
         // when
-        var result = Currency.Mod(currency1, currency2);
+        var action = () => currency / 0m;
 
         // then
-        result.Amount.Should().Be(1m);
+        action.Should().Throw<DivideByZeroException>();
     }
 
     #endregion
@@ -610,6 +599,29 @@ public sealed class CurrencyTests
         // then
         success.Should().BeTrue();
         parsed.Should().Be(original);
+    }
+
+    [Fact]
+    public void try_parse_should_scan_code_from_the_end_and_keep_exponent_in_amount()
+    {
+        // when - the trailing letter run "USD" is the code; the "1E5" prefix parses as the amount (100000)
+        var success = Currency.TryParse("1E5USD", CultureInfo.InvariantCulture, out var result);
+
+        // then
+        success.Should().BeTrue();
+        result!.Amount.Should().Be(100_000m);
+        result.CurrencyCode.Should().Be("USD");
+    }
+
+    [Fact]
+    public void try_parse_should_return_false_for_malformed_amount()
+    {
+        // when - "10.5.5" is not a valid decimal prefix
+        var success = Currency.TryParse("10.5.5USD", CultureInfo.InvariantCulture, out var result);
+
+        // then
+        success.Should().BeFalse();
+        result.Should().BeNull();
     }
 
     [Fact]

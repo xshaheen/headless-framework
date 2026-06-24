@@ -43,17 +43,21 @@ public sealed class MoneyTests
         result.Should().Be(PrimitiveValidationResult.Ok);
     }
 
-    [Fact]
-    public void should_round_to_positive_infinity()
+    [Theory]
+    // Banker's rounding (MidpointRounding.ToEven): a midpoint rounds to the nearest even last digit.
+    [InlineData(5.125, 5.12)] // preceding digit 2 is even -> stays 5.12
+    [InlineData(5.135, 5.14)] // preceding digit 3 is odd  -> rounds to even 5.14
+    [InlineData(2.675, 2.68)] // preceding digit 7 is odd  -> rounds to even 2.68
+    public void should_round_midpoints_to_even(decimal value, decimal expected)
     {
-        // given - value at midpoint
-        var money = new Money(5.125m);
+        // given - value at the two-decimal midpoint
+        var money = new Money(value);
 
         // when
         var result = money.GetRounded();
 
-        // then - rounds toward positive infinity (up)
-        result.Should().Be(new Money(5.13m));
+        // then - banker's rounding
+        result.Should().Be(new Money(expected));
     }
 
     [Fact]

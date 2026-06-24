@@ -281,9 +281,40 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
             return 0; // Same reference.
         }
 
-        var fromComparison = From?.CompareTo(other.From) ?? 0;
+        // Lower bound: an unbounded-below (`null`) `From` sorts before any concrete lower bound. Comparing the
+        // raw nullables would treat a null `From` as equal to every `other.From`, which contradicts Equals.
+        int fromComparison;
 
-        return fromComparison != 0 ? fromComparison : To?.CompareTo(other.To) ?? 0;
+        if (From is null)
+        {
+            fromComparison = other.From is null ? 0 : -1;
+        }
+        else if (other.From is null)
+        {
+            fromComparison = 1;
+        }
+        else
+        {
+            fromComparison = From.CompareTo(other.From);
+        }
+
+        if (fromComparison != 0)
+        {
+            return fromComparison;
+        }
+
+        // Upper bound: an unbounded-above (`null`) `To` sorts after any concrete upper bound.
+        if (To is null)
+        {
+            return other.To is null ? 0 : 1;
+        }
+
+        if (other.To is null)
+        {
+            return -1;
+        }
+
+        return To.CompareTo(other.To);
     }
 
     /// <summary>Determines whether this range equals <paramref name="other"/> by both bounds.</summary>

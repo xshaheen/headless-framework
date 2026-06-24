@@ -292,4 +292,50 @@ public sealed class PhoneNumberTests
         (phoneNumber1 == phoneNumber3).Should().BeFalse();
         (phoneNumber1 != phoneNumber3).Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("(555) 123-4567", "5551234567")]
+    [InlineData("555 123 4567", "5551234567")]
+    [InlineData("5551234567", "5551234567")]
+    public void should_canonicalize_number_to_digits_only(string input, string expected)
+    {
+        // when
+        var phoneNumber = new PhoneNumber(1, input);
+
+        // then
+        phoneNumber.Number.Should().Be(expected);
+    }
+
+    [Fact]
+    public void equality_should_ignore_formatting_differences_in_number()
+    {
+        // given - the bug: "555-1234" used to be unequal to "5551234"
+        var formatted = new PhoneNumber(1, "555-1234");
+        var plain = new PhoneNumber(1, "5551234");
+
+        // then
+        formatted.Equals(plain).Should().BeTrue();
+        (formatted == plain).Should().BeTrue();
+        formatted.GetHashCode().Should().Be(plain.GetHashCode());
+    }
+
+    [Fact]
+    public void object_initializer_should_not_bypass_country_code_validation()
+    {
+        // when - init accessors validate even when set via an object initializer
+        var act = () => new PhoneNumber(1, "1234567890") { CountryCode = -5 };
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void object_initializer_should_not_bypass_number_validation()
+    {
+        // when
+        var act = () => new PhoneNumber(1, "1234567890") { Number = "" };
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
 }

@@ -20,6 +20,7 @@ public sealed partial class AccountId : IPrimitive<string>
     /// </returns>
     public static PrimitiveValidationResult Validate(string value)
     {
-        return value.Length > 0 ? PrimitiveValidationResult.Ok : "Cannot be empty.";
+        // Null-safe: TryCreate(null) must return false, not throw an NRE on `value.Length`.
+        return value is { Length: > 0 } ? PrimitiveValidationResult.Ok : "Cannot be empty.";
     }
 }

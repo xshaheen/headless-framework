@@ -67,6 +67,57 @@ public sealed class GeoCoordinateTests
 
     #endregion
 
+    #region Validation
+
+    [Theory]
+    [InlineData(90.0001)]
+    [InlineData(-90.0001)]
+    [InlineData(91)]
+    [InlineData(-91)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void should_reject_invalid_latitude(double latitude)
+    {
+        // when
+        var act = () => new GeoCoordinate { Latitude = latitude, Longitude = 0 };
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(180.0001)]
+    [InlineData(-180.0001)]
+    [InlineData(181)]
+    [InlineData(-181)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void should_reject_invalid_longitude(double longitude)
+    {
+        // when
+        var act = () => new GeoCoordinate { Latitude = 0, Longitude = longitude };
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(90)]
+    [InlineData(-90)]
+    [InlineData(0)]
+    public void should_accept_boundary_latitude(double latitude)
+    {
+        // when
+        var coord = new GeoCoordinate { Latitude = latitude, Longitude = 0 };
+
+        // then
+        coord.Latitude.Should().Be(latitude);
+    }
+
+    #endregion
+
     #region Equality
 
     [Fact]
