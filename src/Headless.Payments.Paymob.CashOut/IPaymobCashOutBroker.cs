@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Headless.Checks;
 using Headless.Payments.Paymob.CashOut.Internals;
@@ -92,7 +93,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         requestMessage.Method = HttpMethod.Post;
         requestMessage.RequestUri = new Uri(requestUrl);
         requestMessage.Content = JsonContent.Create(request, options: CashOutJsonOptions.JsonOptions);
-        requestMessage.Headers.Add("Authorization", $"Bearer {accessToken}");
+        requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         using var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
 
@@ -118,7 +119,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
         request.Method = HttpMethod.Get;
         request.RequestUri = new Uri("budget/inquire/", UriKind.Relative);
-        request.Headers.Add("Authorization", $"Bearer {accessToken}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -147,11 +148,10 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         using var request = new HttpRequestMessage();
 
         request.Method = HttpMethod.Get;
-        request.RequestUri = new Uri(
-            $"transaction/inquire/?page={page.ToString(CultureInfo.InvariantCulture)}",
-            UriKind.Relative
-        );
-        request.Headers.Add("Authorization", $"Bearer {accessToken}");
+        request.RequestUri = "transaction/inquire/"
+            .SetQueryParam("page", page.ToString(CultureInfo.InvariantCulture))
+            .ToUri();
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         request.Content = JsonContent.Create(
             new CashOutGetTransactionsRequest

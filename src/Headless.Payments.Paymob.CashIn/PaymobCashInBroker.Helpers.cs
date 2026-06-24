@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Headless.Payments.Paymob.CashIn.Internals;
 using Headless.Payments.Paymob.CashIn.Models;
@@ -44,7 +45,7 @@ public partial class PaymobCashInBroker
         var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).ConfigureAwait(false);
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-        httpRequest.Headers.Add("Authorization", $"Bearer {authToken}");
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
         httpRequest.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
@@ -73,7 +74,7 @@ public partial class PaymobCashInBroker
     )
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-        httpRequest.Headers.Add("Authorization", $"Token {Options.SecretKey}");
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Token", Options.SecretKey);
         httpRequest.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
@@ -96,7 +97,7 @@ public partial class PaymobCashInBroker
         var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).ConfigureAwait(false);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Add("Authorization", $"Bearer {authToken}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
