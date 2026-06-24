@@ -271,7 +271,7 @@ public sealed class SshBlobStorage(
         Argument.IsNotNullOrEmpty(container);
 
         var containerPath = _BuildContainerPath(container);
-        blobSearchPattern = _NormalizePath(blobSearchPattern);
+        blobSearchPattern = BlobStorageHelpers.NormalizePath(blobSearchPattern);
 
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -1026,7 +1026,7 @@ public sealed class SshBlobStorage(
             return new(directoryPath);
         }
 
-        searchPattern = _NormalizePath($"{directoryPath}{searchPattern}");
+        searchPattern = BlobStorageHelpers.NormalizePath($"{directoryPath}{searchPattern}");
         var wildcardPos = searchPattern.IndexOf('*', StringComparison.Ordinal);
         var hasWildcard = wildcardPos >= 0;
 
@@ -1108,12 +1108,6 @@ public sealed class SshBlobStorage(
         }
 
         return $"{string.Join('/', normalizedSegments)}/";
-    }
-
-    [return: NotNullIfNotNull(nameof(path))]
-    private static string? _NormalizePath(string? path)
-    {
-        return path?.Replace('\\', '/');
     }
 
     private static BlobInfo _ToBlobInfo(ISftpFile file, string objectKey)

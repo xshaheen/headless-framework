@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Validators;
 using NetTopologySuite.Geometries;
 
 namespace Headless.NetTopologySuite.Constants;
@@ -18,16 +19,16 @@ public static class GeoConstants
     public const int GoogleMapsSrid = 4326;
 
     /// <summary>Minimum valid longitude (X) for WGS84 / SRID 4326.</summary>
-    public const double MinLongitude = -180d;
+    public const double MinLongitude = GeoCoordinateValidator.LongitudeMinValue;
 
     /// <summary>Maximum valid longitude (X) for WGS84 / SRID 4326.</summary>
-    public const double MaxLongitude = 180d;
+    public const double MaxLongitude = GeoCoordinateValidator.LongitudeMaxValue;
 
     /// <summary>Minimum valid latitude (Y) for WGS84 / SRID 4326.</summary>
-    public const double MinLatitude = -90d;
+    public const double MinLatitude = GeoCoordinateValidator.LatitudeMinValue;
 
     /// <summary>Maximum valid latitude (Y) for WGS84 / SRID 4326.</summary>
-    public const double MaxLatitude = 90d;
+    public const double MaxLatitude = GeoCoordinateValidator.LatitudeMaxValue;
 
     /// <summary>
     /// Full IEEE-754 double-precision floating model (Scale = 0, ~15-16 significant digits).

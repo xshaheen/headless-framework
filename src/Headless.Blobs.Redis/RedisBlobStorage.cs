@@ -827,7 +827,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         // Two-tier: directory segments use lenient path-segment normalization (matching stored keys); the search
         // pattern itself is only slash-normalized so wildcards survive.
         var normalizedDirectories = string.Join('/', directories.Select(_normalizer.NormalizeBlobName));
-        searchPattern = Url.Combine(normalizedDirectories, _NormalizePath(searchPattern));
+        searchPattern = Url.Combine(normalizedDirectories, BlobStorageHelpers.NormalizePath(searchPattern));
 
         if (string.IsNullOrEmpty(searchPattern))
         {
@@ -883,9 +883,6 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         return prefix.EnsureEndsWith('/') + normalizedBlobName;
     }
-
-    [return: NotNullIfNotNull(nameof(path))]
-    private static string? _NormalizePath(string? path) => path?.Replace('\\', '/');
 
     #endregion
 
