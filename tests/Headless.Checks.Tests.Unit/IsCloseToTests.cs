@@ -66,4 +66,14 @@ public sealed class IsCloseToTests
     {
         Argument.IsNotCloseTo(double.NaN, 1.0, 0.5).Should().Be(double.NaN);
     }
+
+    [Fact]
+    public void is_close_to_should_not_false_positive_at_integer_extremes()
+    {
+        // The true distance (~4.29e9) overflows int's signed range; it must NOT be reported as "close" to a small delta.
+        var closeAction = () => Argument.IsCloseTo(int.MaxValue, int.MinValue, 5);
+        closeAction.Should().ThrowExactly<ArgumentException>();
+
+        Argument.IsNotCloseTo(int.MaxValue, int.MinValue, 5).Should().Be(int.MaxValue);
+    }
 }

@@ -22,8 +22,9 @@ public static partial class Argument
     /// <returns><paramref name="value" /> if it is within <paramref name="delta"/> of <paramref name="target"/>.</returns>
     /// <remarks>
     /// Use this for floating-point comparisons instead of <see cref="IsEqualTo{T}(T,T,string?,string?)"/> to avoid exact-equality
-    /// pitfalls. Non-finite values (<see cref="double.NaN"/>, infinities) are treated as not close. For very large integral
-    /// operands the internal distance may overflow; keep operands within a sane range for the chosen <paramref name="delta"/>.
+    /// pitfalls. Non-finite values (<see cref="double.NaN"/>, infinities) are treated as not close. Integer operands whose
+    /// true distance exceeds the signed range of <typeparamref name="T"/> are also treated as not close (the wrapped distance
+    /// is rejected), so there are no false positives at the extremes.
     /// </remarks>
     /// <exception cref="ArgumentException">if <paramref name="value" /> is not within <paramref name="delta"/> of <paramref name="target"/>.</exception>
     [DebuggerStepThrough]
@@ -37,9 +38,9 @@ public static partial class Argument
     )
         where T : INumber<T>
     {
-        var difference = value >= target ? value - target : target - value;
-
-        return difference <= delta ? value : _ThrowNotCloseTo(value, target, delta, message, paramName);
+        return _IsWithinDelta(value, target, delta)
+            ? value
+            : _ThrowNotCloseTo(value, target, delta, message, paramName);
     }
 
     /// <summary>
@@ -66,9 +67,19 @@ public static partial class Argument
     )
         where T : INumber<T>
     {
+        return _IsWithinDelta(value, target, delta) ? _ThrowCloseTo(value, target, delta, message, paramName) : value;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool _IsWithinDelta<T>(T value, T target, T delta)
+        where T : INumber<T>
+    {
         var difference = value >= target ? value - target : target - value;
 
-        return difference <= delta ? _ThrowCloseTo(value, target, delta, message, paramName) : value;
+        // A negative result means the true distance overflowed T's signed range (e.g. int.MaxValue vs int.MinValue),
+        // so the operands are far apart; reject it instead of treating the wrapped value as a small distance. NaN
+        // differences also fail this comparison, so non-finite operands are treated as not close.
+        return difference >= T.Zero && difference <= delta;
     }
 
     [DoesNotReturn]

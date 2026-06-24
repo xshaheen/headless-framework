@@ -54,6 +54,14 @@ public static partial class Argument
                 return Unsafe.As<T, uint>(ref value) == Unsafe.As<T, uint>(ref target);
             case 8:
                 return Unsafe.As<T, ulong>(ref value) == Unsafe.As<T, ulong>(ref target);
+            case 16:
+            {
+                // Two 64-bit compares for 16-byte types (Guid, decimal, Int128) — avoids the SequenceEqual call.
+                ref var valueULong = ref Unsafe.As<T, ulong>(ref value);
+                ref var targetULong = ref Unsafe.As<T, ulong>(ref target);
+
+                return valueULong == targetULong && Unsafe.Add(ref valueULong, 1) == Unsafe.Add(ref targetULong, 1);
+            }
             default:
             {
                 var size = Unsafe.SizeOf<T>();
