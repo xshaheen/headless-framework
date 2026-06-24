@@ -71,22 +71,24 @@ public sealed class AwsBlobNamingNormalizerTests : TestBase
         result.Should().Be(expected);
     }
 
-    [Fact]
-    public void should_remove_leading_hyphen()
+    [Theory]
+    [InlineData("-mybucket", "mybucket")]
+    [InlineData("--mybucket", "mybucket")]
+    public void should_remove_leading_hyphens(string input, string expected)
     {
-        // Regex only removes single leading hyphen per application
-        var result = _sut.NormalizeContainerName("-mybucket");
+        var result = _sut.NormalizeContainerName(input);
 
-        result.Should().Be("mybucket");
+        result.Should().Be(expected);
     }
 
-    [Fact]
-    public void should_remove_trailing_hyphen()
+    [Theory]
+    [InlineData("mybucket-", "mybucket")]
+    [InlineData("mybucket--", "mybucket")]
+    public void should_remove_trailing_hyphens(string input, string expected)
     {
-        // Regex only removes single trailing hyphen per application
-        var result = _sut.NormalizeContainerName("mybucket-");
+        var result = _sut.NormalizeContainerName(input);
 
-        result.Should().Be("mybucket");
+        result.Should().Be(expected);
     }
 
     [Theory]
@@ -109,14 +111,16 @@ public sealed class AwsBlobNamingNormalizerTests : TestBase
         result.Should().Be(expected);
     }
 
-    [Fact]
-    public void should_preserve_ip_like_strings()
+    [Theory]
+    [InlineData("192.168.1.1", "19216811")]
+    [InlineData("10.0.0.1", "10001")]
+    public void should_strip_dots_from_ip_formatted_names(string input, string expected)
     {
-        // Note: The IP address regex is intentionally permissive;
-        // normal IP addresses pass through as-is since they are valid bucket names
-        var result = _sut.NormalizeContainerName("192.168.1.1");
+        // S3 rejects bucket names formatted as an IP address; the normalizer drops the dots so the
+        // resulting name is no longer dotted-quad shaped (and stays a valid S3 bucket name).
+        var result = _sut.NormalizeContainerName(input);
 
-        result.Should().Be("192.168.1.1");
+        result.Should().Be(expected);
     }
 
     [Theory]

@@ -65,6 +65,51 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task bulk_upload_returns_results_aligned_to_input_blob_order_under_failures()
+    {
+        // Blobs at even indices are configured to fail, odd indices to succeed. results[i] must describe
+        // blobs[i] regardless of the order the parallel upload bodies happen to start under MaxBulkParallelism.
+        _s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var key = ci.Arg<PutObjectRequest>().Key;
+
+                return key.StartsWith("fail-", StringComparison.Ordinal)
+                    ? Task.FromException<PutObjectResponse>(new AmazonS3Exception(key))
+                    : Task.FromResult(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+            });
+
+        var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
+
+        var blobs = Enumerable
+            .Range(0, 50)
+            .Select(i => new BlobUploadRequest(
+                new MemoryStream("x"u8.ToArray()),
+                $"{(i % 2 == 0 ? "fail" : "ok")}-{i:000}.txt"
+            ))
+            .ToList();
+
+        var results = await sut.BulkUploadAsync(["bucket"], blobs);
+
+        results.Should().HaveCount(blobs.Count);
+
+        for (var i = 0; i < blobs.Count; i++)
+        {
+            var expectedFailure = i % 2 == 0;
+
+            results[i]
+                .IsFailure.Should()
+                .Be(expectedFailure, "result at index {0} must describe blobs[{0}] ({1})", i, blobs[i].FileName);
+
+            if (expectedFailure)
+            {
+                // The carried error must be the one raised for *this* blob, proving slot alignment.
+                results[i].Error.Message.Should().Be(blobs[i].FileName);
+            }
+        }
+    }
+
+    [Fact]
     public async Task exists_returns_false_when_bucket_missing()
     {
         _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())

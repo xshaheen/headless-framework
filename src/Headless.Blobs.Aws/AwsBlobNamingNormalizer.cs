@@ -47,7 +47,13 @@ public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
             containerName = _HyphenAtTheEndRegex().Replace(containerName, string.Empty);
             containerName = _PeriodAtTheBeginningRegex().Replace(containerName, string.Empty);
             containerName = _PeriodAtTheEndRegex().Replace(containerName, string.Empty);
-            containerName = _IpAddressRegex().Replace(containerName, string.Empty);
+
+            // Bucket names must not be formatted as an IP address (e.g. 192.168.5.4). When the whole name is a
+            // dotted-quad, drop the dots so it is no longer IP-formatted (192.168.1.1 -> 19216811).
+            if (_IpAddressRegex().IsMatch(containerName))
+            {
+                containerName = containerName.Replace(".", string.Empty, StringComparison.Ordinal);
+            }
 
             if (containerName.Length >= 3)
             {
@@ -96,13 +102,13 @@ public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
     [GeneratedRegex(@"\.-", RegexOptions.None, 100)]
     private static partial Regex _PeriodHyphenRegex();
 
-    [GeneratedRegex("^-", RegexOptions.None, 100)]
+    [GeneratedRegex("^-+", RegexOptions.None, 100)]
     private static partial Regex _HyphenAtTheBeginningRegex();
 
-    [GeneratedRegex("-$", RegexOptions.None, 100)]
+    [GeneratedRegex("-+$", RegexOptions.None, 100)]
     private static partial Regex _HyphenAtTheEndRegex();
 
-    [GeneratedRegex(@"^(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d){4}$", RegexOptions.ExplicitCapture, 100)]
+    [GeneratedRegex(@"^(?:\d{1,3}\.){3}\d{1,3}$", RegexOptions.ExplicitCapture, 100)]
     private static partial Regex _IpAddressRegex();
 
     #endregion
