@@ -46,4 +46,19 @@ public interface IMembershipStore
         NodeIdentity identity,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Returns the identities of all nodes currently classified as <see cref="NodeLivenessState.Alive"/> in
+    /// the cluster, ordered ascending by the <c>node@incarnation</c> string — the targeted counterpart to
+    /// filtering <see cref="ReadLivenessAsync"/> down to the live set.
+    /// </summary>
+    /// <remarks>
+    /// The result MUST equal the set of <see cref="NodeLivenessState.Alive"/> identities
+    /// <see cref="ReadLivenessAsync"/> would yield at the same instant: current-generation only (a superseded
+    /// incarnation is excluded even while still within its alive window), store-clock classified with the same
+    /// suspicion threshold, and ordered ascending by identity. Implementations MAY serve it from a dedicated
+    /// live-node index (the Redis <c>:live</c> sorted set) instead of materializing the full snapshot, and
+    /// MUST be read-only — no prune, no backfill.
+    /// </remarks>
+    ValueTask<IReadOnlyList<NodeIdentity>> ReadLiveNodesAsync(CancellationToken cancellationToken = default);
 }

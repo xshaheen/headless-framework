@@ -74,6 +74,18 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options,
         return ReadCurrentNodeLivenessCoreAsync(ClusterName, identity, cancellationToken);
     }
 
+    public async ValueTask<IReadOnlyList<NodeIdentity>> ReadLiveNodesAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var identities = await ReadLiveNodesCoreAsync(ClusterName, cancellationToken).ConfigureAwait(false);
+
+        // Order ascending by identity string for parity with ReadLivenessAsync, which the live set filters.
+        return identities.OrderBy(static identity => identity.ToString(), StringComparer.Ordinal).ToArray();
+    }
+
     /// <summary>Allocates the next durable incarnation for <paramref name="nodeId"/>.</summary>
     protected abstract ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
@@ -128,6 +140,17 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options,
     protected abstract ValueTask<NodeLivenessState?> ReadCurrentNodeLivenessCoreAsync(
         string clusterName,
         NodeIdentity identity,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Reads the current-generation <see cref="NodeLivenessState.Alive"/> node identities (identities only —
+    /// no descriptor join). Implementations must join/filter against the generation authority and apply the
+    /// store-clock alive window (not left, and beat age below the suspicion threshold); the base orders the
+    /// result. Read-only: no prune, no backfill.
+    /// </summary>
+    protected abstract ValueTask<IReadOnlyList<NodeIdentity>> ReadLiveNodesCoreAsync(
+        string clusterName,
         CancellationToken cancellationToken
     );
 
