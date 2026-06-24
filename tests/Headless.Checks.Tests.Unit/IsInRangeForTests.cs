@@ -4,32 +4,32 @@ using Headless.Checks;
 
 namespace Tests;
 
-public sealed class IsValidIndexTests
+public sealed class IsInRangeForTests
 {
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
-    public void is_valid_index_should_return_index_when_in_range(int index)
+    public void is_in_range_for_should_return_index_when_in_range(int index)
     {
-        Argument.IsValidIndex(index, 3).Should().Be(index);
+        Argument.IsInRangeFor(index, 3).Should().Be(index);
     }
 
     [Theory]
     [InlineData(-1)]
     [InlineData(3)]
     [InlineData(100)]
-    public void is_valid_index_should_throw_when_out_of_range(int index)
+    public void is_in_range_for_should_throw_when_out_of_range(int index)
     {
-        var action = () => Argument.IsValidIndex(index, 3);
+        var action = () => Argument.IsInRangeFor(index, 3);
         action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
-    public void is_valid_index_should_format_message()
+    public void is_in_range_for_should_format_message()
     {
         var index = 5;
-        var action = () => Argument.IsValidIndex(index, 3);
+        var action = () => Argument.IsInRangeFor(index, 3);
 
         action
             .Should()
@@ -40,34 +40,34 @@ public sealed class IsValidIndexTests
     }
 
     [Fact]
-    public void is_valid_index_for_collection_should_validate_against_count()
+    public void is_in_range_for_collection_should_validate_against_count()
     {
         var collection = new[] { 10, 20, 30 };
 
-        Argument.IsValidIndex(2, collection).Should().Be(2);
+        Argument.IsInRangeFor(2, collection).Should().Be(2);
 
-        var action = () => Argument.IsValidIndex(3, collection);
+        var action = () => Argument.IsInRangeFor(3, collection);
         action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
-    public void is_valid_index_for_collection_should_throw_argument_null_when_null()
+    public void is_in_range_for_collection_should_throw_argument_null_when_null()
     {
-        var action = () => Argument.IsValidIndex(0, (IReadOnlyCollection<int>)null!);
+        var action = () => Argument.IsInRangeFor(0, (IReadOnlyCollection<int>)null!);
         action.Should().ThrowExactly<ArgumentNullException>();
     }
 
     [Fact]
-    public void is_valid_index_for_span_should_validate_against_length()
+    public void is_in_range_for_span_should_validate_against_length()
     {
         Span<int> span = [10, 20, 30];
 
-        Argument.IsValidIndex(1, (ReadOnlySpan<int>)span).Should().Be(1);
+        Argument.IsInRangeFor(1, (ReadOnlySpan<int>)span).Should().Be(1);
 
         var threw = false;
         try
         {
-            Argument.IsValidIndex(3, (ReadOnlySpan<int>)span);
+            Argument.IsInRangeFor(3, (ReadOnlySpan<int>)span);
         }
         catch (ArgumentOutOfRangeException)
         {

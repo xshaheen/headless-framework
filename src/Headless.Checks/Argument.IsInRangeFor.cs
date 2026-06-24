@@ -20,23 +20,14 @@ public static partial class Argument
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="index" /> is negative or not less than <paramref name="count"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int IsValidIndex(
+    public static int IsInRangeFor(
         int index,
         int count,
         string? message = null,
         [CallerArgumentExpression(nameof(index))] string? paramName = null
     )
     {
-        if ((uint)index < (uint)count)
-        {
-            return index;
-        }
-
-        throw new ArgumentOutOfRangeException(
-            paramName,
-            message
-                ?? $"The argument {paramName.ToAssertString()} = {index} must be a valid index for a collection of {count} item(s) (Valid range [0, {count - 1}])."
-        );
+        return (uint)index < (uint)count ? index : _ThrowIndexOutOfRangeFor(index, count, message, paramName);
     }
 
     /// <summary>
@@ -52,7 +43,7 @@ public static partial class Argument
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="index" /> is not a valid index into <paramref name="collection"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int IsValidIndex<T>(
+    public static int IsInRangeFor<T>(
         int index,
         IReadOnlyCollection<T> collection,
         string? message = null,
@@ -61,7 +52,9 @@ public static partial class Argument
     {
         IsNotNull(collection);
 
-        return IsValidIndex(index, collection.Count, message, paramName);
+        return (uint)index < (uint)collection.Count
+            ? index
+            : _ThrowIndexOutOfRangeFor(index, collection.Count, message, paramName);
     }
 
     /// <summary>
@@ -76,13 +69,25 @@ public static partial class Argument
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="index" /> is not a valid index into <paramref name="span"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int IsValidIndex<T>(
+    public static int IsInRangeFor<T>(
         int index,
         ReadOnlySpan<T> span,
         string? message = null,
         [CallerArgumentExpression(nameof(index))] string? paramName = null
     )
     {
-        return IsValidIndex(index, span.Length, message, paramName);
+        return (uint)index < (uint)span.Length
+            ? index
+            : _ThrowIndexOutOfRangeFor(index, span.Length, message, paramName);
+    }
+
+    [DoesNotReturn]
+    private static int _ThrowIndexOutOfRangeFor(int index, int count, string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} = {index} must be a valid index for a collection of {count} item(s) (Valid range [0, {count - 1}])."
+        );
     }
 }

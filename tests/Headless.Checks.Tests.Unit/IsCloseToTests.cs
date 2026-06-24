@@ -1,0 +1,69 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+
+namespace Tests;
+
+public sealed class IsCloseToTests
+{
+    [Theory]
+    [InlineData(5, 7, 3)]
+    [InlineData(5, 5, 0)]
+    [InlineData(10, 8, 2)]
+    public void is_close_to_should_return_value_when_within_delta(int value, int target, int delta)
+    {
+        Argument.IsCloseTo(value, target, delta).Should().Be(value);
+    }
+
+    [Fact]
+    public void is_close_to_should_work_for_floating_point()
+    {
+        Argument.IsCloseTo(0.1 + 0.2, 0.3, 1e-9).Should().BeApproximately(0.3, 1e-9);
+        Argument.IsCloseTo(1.0f, 1.05f, 0.1f).Should().Be(1.0f);
+    }
+
+    [Fact]
+    public void is_close_to_should_throw_when_outside_delta()
+    {
+        var value = 5;
+        var action = () => Argument.IsCloseTo(value, 10, 2);
+
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"value\" = 5 must be within 2 of 10. (Parameter 'value')");
+    }
+
+    [Fact]
+    public void is_close_to_should_treat_nan_as_not_close()
+    {
+        var action = () => Argument.IsCloseTo(double.NaN, 1.0, 0.5);
+        action.Should().ThrowExactly<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(5, 10, 2)]
+    [InlineData(0, 100, 50)]
+    public void is_not_close_to_should_return_value_when_outside_delta(int value, int target, int delta)
+    {
+        Argument.IsNotCloseTo(value, target, delta).Should().Be(value);
+    }
+
+    [Fact]
+    public void is_not_close_to_should_throw_when_within_delta()
+    {
+        var value = 5;
+        var action = () => Argument.IsNotCloseTo(value, 6, 2);
+
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"value\" = 5 must not be within 2 of 6. (Parameter 'value')");
+    }
+
+    [Fact]
+    public void is_not_close_to_should_treat_nan_as_not_close()
+    {
+        Argument.IsNotCloseTo(double.NaN, 1.0, 0.5).Should().Be(double.NaN);
+    }
+}
