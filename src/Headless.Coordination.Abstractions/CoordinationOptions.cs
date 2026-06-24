@@ -70,9 +70,13 @@ public sealed class CoordinationOptions
     public TimeSpan DeadThreshold { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// How long dead node records are retained in the backing store before being purged. Must be at least
-    /// twice <see cref="HeartbeatInterval"/> so that a reader is guaranteed to see the dead record at least
-    /// once before it disappears.
+    /// Minimum time dead node records are retained in the backing store before becoming eligible for purge.
+    /// Must be at least twice <see cref="HeartbeatInterval"/> so that a reader is guaranteed to see the dead
+    /// record at least once before it disappears. This is a floor, not a ceiling: a provider may retain dead
+    /// records longer — the relational providers prune shortly after <see cref="DeadThreshold"/>, while the
+    /// Redis store keeps them for its <c>RedisKnownNodeRetention</c> (7 days by default). Consumers must
+    /// classify by <see cref="NodeLivenessState"/> rather than assume dead records vanish exactly after this
+    /// window.
     /// </summary>
     public TimeSpan DeadRetentionWindow { get; set; } = TimeSpan.FromSeconds(30);
 
