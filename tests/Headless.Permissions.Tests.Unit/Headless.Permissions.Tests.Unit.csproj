@@ -17,6 +17,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />

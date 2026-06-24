@@ -4,16 +4,20 @@ using Headless.Domain;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Features;
 
 /// <summary>EF Core implementation of <see cref="IFeatureValueRecordRepository"/>.</summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type that owns the feature value entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-/// <param name="localPublisher">Local event bus used to publish <see cref="EntityChangedEventData{T}"/> after mutations.</param>
+/// <param name="services">
+/// Root service provider used to resolve a scoped <see cref="ILocalEventBus"/> per publish. The repository is a
+/// singleton, so it cannot capture the scoped bus directly; each publish opens a short-lived scope instead.
+/// </param>
 public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ILocalEventBus localPublisher
+    IServiceProvider services
 ) : IFeatureValueRecordRepository
     where TContext : DbContext
 {
@@ -85,9 +89,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         db.Set<FeatureValueRecord>().Add(featureValue);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await localPublisher
-            .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
-            .ConfigureAwait(false);
+        await _PublishAsync(featureValue, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -97,9 +99,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         db.Set<FeatureValueRecord>().Update(featureValue);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await localPublisher
-            .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
-            .ConfigureAwait(false);
+        await _PublishAsync(featureValue, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -114,7 +114,23 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
 
         foreach (var featureValue in featureValues)
         {
-            await localPublisher
+            await _PublishAsync(featureValue, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Publishes an <see cref="EntityChangedEventData{T}"/> event for <paramref name="featureValue"/> when an
+    /// <see cref="ILocalEventBus"/> is registered in the container. Resolved from a short-lived scope because
+    /// the repository is a singleton and the bus is scoped.
+    /// </summary>
+    private async ValueTask _PublishAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
+
+        if (publisher is not null)
+        {
+            await publisher
                 .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
                 .ConfigureAwait(false);
         }

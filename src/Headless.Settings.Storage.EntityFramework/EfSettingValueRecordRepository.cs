@@ -4,6 +4,7 @@ using Headless.Domain;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Settings;
 
@@ -14,10 +15,13 @@ namespace Headless.Settings;
 /// </summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type registered with the DI container.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-/// <param name="localPublisher">Local event bus used to publish change events after inserts, updates, and deletes.</param>
+/// <param name="services">
+/// Root service provider used to resolve a scoped <see cref="ILocalEventBus"/> per publish. The repository is a
+/// singleton, so it cannot capture the scoped bus directly; each publish opens a short-lived scope instead.
+/// </param>
 public sealed class EfSettingValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ILocalEventBus localPublisher
+    IServiceProvider services
 ) : ISettingValueRecordRepository
     where TContext : DbContext
 {
@@ -115,9 +119,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
         db.Set<SettingValueRecord>().Update(setting);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await localPublisher
-            .PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken)
-            .ConfigureAwait(false);
+        await _PublishAsync(setting, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -133,7 +135,23 @@ public sealed class EfSettingValueRecordRepository<TContext>(
 
         foreach (var setting in settings)
         {
-            await localPublisher
+            await _PublishAsync(setting, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Publishes an <see cref="EntityChangedEventData{T}"/> event for <paramref name="setting"/> when an
+    /// <see cref="ILocalEventBus"/> is registered in the container. Resolved from a short-lived scope because
+    /// the repository is a singleton and the bus is scoped.
+    /// </summary>
+    private async ValueTask _PublishAsync(SettingValueRecord setting, CancellationToken cancellationToken)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
+
+        if (publisher is not null)
+        {
+            await publisher
                 .PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken)
                 .ConfigureAwait(false);
         }

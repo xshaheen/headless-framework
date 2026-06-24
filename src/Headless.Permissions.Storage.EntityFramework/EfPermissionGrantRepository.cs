@@ -4,6 +4,7 @@ using Headless.Domain;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Permissions;
 
@@ -18,9 +19,14 @@ namespace Headless.Permissions;
 /// <see cref="ILocalEventBus"/> after the row is removed to trigger cache invalidation.
 /// </remarks>
 /// <typeparam name="TContext">The consumer's <see cref="DbContext"/> that maps the permissions entities.</typeparam>
+/// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
+/// <param name="services">
+/// Root service provider used to resolve a scoped <see cref="ILocalEventBus"/> per publish. The repository is a
+/// singleton, so it cannot capture the scoped bus directly; each publish opens a short-lived scope instead.
+/// </param>
 public sealed class EfPermissionGrantRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ILocalEventBus localPublisher
+    IServiceProvider services
 ) : IPermissionGrantRepository
     where TContext : DbContext
 {
@@ -113,9 +119,7 @@ public sealed class EfPermissionGrantRepository<TContext>(
         db.Set<PermissionGrantRecord>().Remove(permissionGrant);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await localPublisher
-            .PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken)
-            .ConfigureAwait(false);
+        await _PublishAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -134,7 +138,23 @@ public sealed class EfPermissionGrantRepository<TContext>(
 
         foreach (var permissionGrant in permissionGrants)
         {
-            await localPublisher
+            await _PublishAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Publishes an <see cref="EntityChangedEventData{T}"/> event for <paramref name="permissionGrant"/> when an
+    /// <see cref="ILocalEventBus"/> is registered in the container. Resolved from a short-lived scope because
+    /// the repository is a singleton and the bus is scoped.
+    /// </summary>
+    private async ValueTask _PublishAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
+
+        if (publisher is not null)
+        {
+            await publisher
                 .PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken)
                 .ConfigureAwait(false);
         }

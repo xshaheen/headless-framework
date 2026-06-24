@@ -10,6 +10,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
     <ProjectReference Include="..\..\src\Headless.Settings.Abstractions\Headless.Settings.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Settings.Core\Headless.Settings.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
