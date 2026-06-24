@@ -156,9 +156,14 @@ public sealed partial class StringPrimitive : global::System.IEquatable<StringPr
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public bool Equals(StringPrimitive? other)
     {
-        if (other is null || !_isInitialized || !other._isInitialized)
+        if (other is null)
         {
             return false;
+        }
+
+        if (!_isInitialized || !other._isInitialized)
+        {
+            return _isInitialized == other._isInitialized;
         }
 
         return _value.Equals(other._value);
@@ -196,14 +201,19 @@ public sealed partial class StringPrimitive : global::System.IEquatable<StringPr
     /// <inheritdoc/>
     public int CompareTo(StringPrimitive? other)
     {
-        if (other is null || !other._isInitialized)
+        if (other is null)
         {
             return 1;
         }
 
         if (!_isInitialized)
         {
-            return -1;
+            return other._isInitialized ? -1 : 0;
+        }
+
+        if (!other._isInitialized)
+        {
+            return 1;
         }
 
         return _value.CompareTo(other._value);
@@ -334,5 +344,5 @@ public sealed partial class StringPrimitive : global::System.IEquatable<StringPr
 
     /// <inheritdoc/>
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    public override int GetHashCode() => _valueOrThrow.GetHashCode(global::System.StringComparison.Ordinal);
+    public override int GetHashCode() => _isInitialized ? _value.GetHashCode(global::System.StringComparison.Ordinal) : 0;
 }

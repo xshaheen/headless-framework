@@ -581,17 +581,24 @@ internal static class MethodGeneratorEmitter
             .NewLine()
             .AppendInheritDoc()
             .AppendLine($"public int CompareTo({className}{nullable} other)")
-            .OpenBracket()
-            .Append("if (")
-            .AppendIf(!isValueType, "other is null || ")
-            .AppendLine("!other._isInitialized)")
-            .OpenBracket()
-            .AppendLine("return 1;")
-            .CloseBracket()
-            .NewLine()
+            .OpenBracket();
+
+        if (!isValueType)
+        {
+            builder.AppendLine("if (other is null)").OpenBracket().AppendLine("return 1;").CloseBracket().NewLine();
+        }
+
+        builder
+            // Two uninitialized values compare equal (0); an uninitialized value sorts before any
+            // initialized one. Keeps CompareTo consistent with Equals/GetHashCode.
             .AppendLine("if (!_isInitialized)")
             .OpenBracket()
-            .AppendLine("return -1;")
+            .AppendLine("return other._isInitialized ? -1 : 0;")
+            .CloseBracket()
+            .NewLine()
+            .AppendLine("if (!other._isInitialized)")
+            .OpenBracket()
+            .AppendLine("return 1;")
             .CloseBracket()
             .NewLine()
             .AppendLine("return _value.CompareTo(other._value);")
@@ -616,12 +623,19 @@ internal static class MethodGeneratorEmitter
             .AppendInheritDoc()
             .AppendMethodAggressiveInliningAttribute()
             .AppendLine($"public bool Equals({className}{nullable} other)")
+            .OpenBracket();
+
+        if (!isValueType)
+        {
+            builder.AppendLine("if (other is null)").OpenBracket().AppendLine("return false;").CloseBracket().NewLine();
+        }
+
+        builder
+            // Two uninitialized values are equal (keeps reflexivity for default(T)); exactly one
+            // uninitialized value is never equal to an initialized one.
+            .AppendLine("if (!_isInitialized || !other._isInitialized)")
             .OpenBracket()
-            .Append("if (")
-            .AppendIf(!isValueType, "other is null || ")
-            .AppendLine("!_isInitialized || !other._isInitialized)")
-            .OpenBracket()
-            .AppendLine("return false;")
+            .AppendLine("return _isInitialized == other._isInitialized;")
             .CloseBracket()
             .NewLine()
             .AppendLine("return _value.Equals(other._value);")

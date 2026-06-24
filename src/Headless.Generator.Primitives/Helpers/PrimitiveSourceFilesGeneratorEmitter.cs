@@ -281,10 +281,12 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             builder.AppendInheritDoc();
             builder.AppendMethodAggressiveInliningAttribute();
 
+            // Hash the raw field guarded by the initialization flag so default(T).GetHashCode() returns 0
+            // instead of throwing (consistent with Equals/CompareTo, which tolerate uninitialized values).
             builder.AppendLine(
                 data.IsPrimitiveUnderlyingTypString()
-                    ? $"public override int GetHashCode() => {data.FieldName}.GetHashCode({StaticValues.OrdinalStringComparison});"
-                    : $"public override int GetHashCode() => {data.FieldName}.GetHashCode();"
+                    ? $"public override int GetHashCode() => _isInitialized ? _value.GetHashCode({StaticValues.OrdinalStringComparison}) : 0;"
+                    : "public override int GetHashCode() => _isInitialized ? _value.GetHashCode() : 0;"
             );
         }
 

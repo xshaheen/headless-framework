@@ -125,7 +125,7 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
     {
         if (!_isInitialized || !other._isInitialized)
         {
-            return false;
+            return _isInitialized == other._isInitialized;
         }
 
         return _value.Equals(other._value);
@@ -155,14 +155,14 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
     /// <inheritdoc/>
     public int CompareTo(GuidPrimitive other)
     {
+        if (!_isInitialized)
+        {
+            return other._isInitialized ? -1 : 0;
+        }
+
         if (!other._isInitialized)
         {
             return 1;
-        }
-
-        if (!_isInitialized)
-        {
-            return -1;
         }
 
         return _value.CompareTo(other._value);
@@ -279,5 +279,5 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
 
     /// <inheritdoc/>
     [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    public override int GetHashCode() => _valueOrThrow.GetHashCode();
+    public override int GetHashCode() => _isInitialized ? _value.GetHashCode() : 0;
 }

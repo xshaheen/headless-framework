@@ -120,4 +120,52 @@ public sealed class MoneyTests
         // then
         money.Should().Be(new Money(123.45m));
     }
+
+    [Fact]
+    public void default_get_hash_code_should_not_throw_and_return_zero()
+    {
+        // given
+        var act = () => default(Money).GetHashCode();
+
+        // when & then
+        act.Should().NotThrow().Which.Should().Be(0);
+    }
+
+    [Fact]
+    public void default_should_equal_default_but_not_an_initialized_value()
+    {
+        // given
+        var uninitialized = default(Money);
+        var initialized = new Money(0m);
+
+        // when & then
+        uninitialized.Equals(default).Should().BeTrue();
+        (uninitialized == default).Should().BeTrue();
+        uninitialized.Equals(initialized).Should().BeFalse();
+        (uninitialized != initialized).Should().BeTrue();
+    }
+
+    [Fact]
+    public void default_should_compare_consistently_with_equals()
+    {
+        // given
+        var uninitialized = default(Money);
+        var initialized = new Money(0m);
+
+        // when & then
+        uninitialized.CompareTo(default).Should().Be(0); // both uninitialized => equal
+        uninitialized.CompareTo(initialized).Should().Be(-1); // uninitialized sorts first
+        initialized.CompareTo(uninitialized).Should().Be(1);
+    }
+
+    [Fact]
+    public void default_should_be_usable_as_a_hash_set_member()
+    {
+        // given & when
+        var set = new HashSet<Money> { default, default, new(0m) };
+
+        // then - two defaults collapse to one entry, distinct from the initialized zero value
+        set.Should().HaveCount(2);
+        set.Should().Contain(default(Money));
+    }
 }
