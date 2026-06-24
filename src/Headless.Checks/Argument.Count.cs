@@ -32,13 +32,12 @@ public static partial class Argument
     {
         IsNotNull(argument, message, paramName);
 
-        return argument.Count == count
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message
-                    ?? $"The argument {paramName.ToAssertString()} must contain exactly {count} item(s) (Actual count {argument.Count})."
-            );
+        if (argument.Count != count)
+        {
+            _ThrowForHasCount(count, argument.Count, message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="HasCount{T}(IReadOnlyCollection{T}?,int,string?,string?)"/>
@@ -56,13 +55,12 @@ public static partial class Argument
 
         var actual = _Count(argument);
 
-        return actual == count
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message
-                    ?? $"The argument {paramName.ToAssertString()} must contain exactly {count} item(s) (Actual count {actual})."
-            );
+        if (actual != count)
+        {
+            _ThrowForHasCount(count, actual, message, paramName);
+        }
+
+        return argument;
     }
 
     /// <summary>
@@ -88,13 +86,12 @@ public static partial class Argument
     {
         IsNotNull(argument, message, paramName);
 
-        return argument.Count >= minCount
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message
-                    ?? $"The argument {paramName.ToAssertString()} must contain at least {minCount} item(s) (Actual count {argument.Count})."
-            );
+        if (argument.Count < minCount)
+        {
+            _ThrowForHasMinCount(minCount, argument.Count, message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="HasMinCount{T}(IReadOnlyCollection{T}?,int,string?,string?)"/>
@@ -112,13 +109,12 @@ public static partial class Argument
 
         var actual = _Count(argument);
 
-        return actual >= minCount
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message
-                    ?? $"The argument {paramName.ToAssertString()} must contain at least {minCount} item(s) (Actual count {actual})."
-            );
+        if (actual < minCount)
+        {
+            _ThrowForHasMinCount(minCount, actual, message, paramName);
+        }
+
+        return argument;
     }
 
     /// <summary>
@@ -144,13 +140,12 @@ public static partial class Argument
     {
         IsNotNull(argument, message, paramName);
 
-        return argument.Count <= maxCount
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message
-                    ?? $"The argument {paramName.ToAssertString()} must contain at most {maxCount} item(s) (Actual count {argument.Count})."
-            );
+        if (argument.Count > maxCount)
+        {
+            _ThrowForHasMaxCount(maxCount, argument.Count, message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="HasMaxCount{T}(IReadOnlyCollection{T}?,int,string?,string?)"/>
@@ -168,13 +163,12 @@ public static partial class Argument
 
         var actual = _Count(argument);
 
-        return actual <= maxCount
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message
-                    ?? $"The argument {paramName.ToAssertString()} must contain at most {maxCount} item(s) (Actual count {actual})."
-            );
+        if (actual > maxCount)
+        {
+            _ThrowForHasMaxCount(maxCount, actual, message, paramName);
+        }
+
+        return argument;
     }
 
     /// <summary>
@@ -205,13 +199,12 @@ public static partial class Argument
         IsNotNull(argument, message, paramName);
         Range(minCount, maxCount);
 
-        return argument.Count >= minCount && argument.Count <= maxCount
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message
-                    ?? $"The argument {paramName.ToAssertString()} must contain between {minCount} and {maxCount} item(s) (Actual count {argument.Count})."
-            );
+        if (argument.Count < minCount || argument.Count > maxCount)
+        {
+            _ThrowForHasCountBetween(minCount, maxCount, argument.Count, message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="HasCountBetween{T}(IReadOnlyCollection{T}?,int,int,string?,string?)"/>
@@ -231,18 +224,63 @@ public static partial class Argument
 
         var actual = _Count(argument);
 
-        return actual >= minCount && actual <= maxCount
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message
-                    ?? $"The argument {paramName.ToAssertString()} must contain between {minCount} and {maxCount} item(s) (Actual count {actual})."
-            );
+        if (actual < minCount || actual > maxCount)
+        {
+            _ThrowForHasCountBetween(minCount, maxCount, actual, message, paramName);
+        }
+
+        return argument;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int _Count<T>(IEnumerable<T> source)
     {
         return source.TryGetNonEnumeratedCount(out var count) ? count : source.Count();
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasCount(int count, int actual, string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must contain exactly {count} item(s) (Actual count {actual})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasMinCount(int minCount, int actual, string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must contain at least {minCount} item(s) (Actual count {actual})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasMaxCount(int maxCount, int actual, string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must contain at most {maxCount} item(s) (Actual count {actual})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasCountBetween(
+        int minCount,
+        int maxCount,
+        int actual,
+        string? message,
+        string? paramName
+    )
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must contain between {minCount} and {maxCount} item(s) (Actual count {actual})."
+        );
     }
 }

@@ -28,16 +28,10 @@ public static partial class Argument
     )
         where T : class
     {
-        if (ReferenceEquals(argument, target))
+        if (!ReferenceEquals(argument, target))
         {
-            return;
+            _ThrowForIsReferenceEqualTo(message, argumentName, targetName);
         }
-
-        throw new ArgumentException(
-            message
-                ?? $"The argument {argumentName.ToAssertString()} must be the same instance as {targetName.ToAssertString()}.",
-            argumentName
-        );
     }
 
     /// <summary>Asserts that the input value must not be the same instance as the target value.</summary>
@@ -60,11 +54,25 @@ public static partial class Argument
     )
         where T : class
     {
-        if (!ReferenceEquals(argument, target))
+        if (ReferenceEquals(argument, target))
         {
-            return;
+            _ThrowForIsReferenceNotEqualTo(message, argumentName, targetName);
         }
+    }
 
+    [DoesNotReturn]
+    private static void _ThrowForIsReferenceEqualTo(string? message, string? argumentName, string? targetName)
+    {
+        throw new ArgumentException(
+            message
+                ?? $"The argument {argumentName.ToAssertString()} must be the same instance as {targetName.ToAssertString()}.",
+            argumentName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsReferenceNotEqualTo(string? message, string? argumentName, string? targetName)
+    {
         throw new ArgumentException(
             message
                 ?? $"The argument {argumentName.ToAssertString()} must not be the same instance as {targetName.ToAssertString()}.",

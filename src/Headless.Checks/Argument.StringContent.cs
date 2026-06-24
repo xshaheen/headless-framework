@@ -38,10 +38,8 @@ public static partial class Argument
             return argument;
         }
 
-        throw new ArgumentException(
-            message ?? $"The argument {paramName.ToAssertString()} must start with \"{prefix}\".",
-            paramName
-        );
+        _ThrowForStartsWith(message, paramName, prefix);
+        return argument;
     }
 
     /// <summary>
@@ -74,10 +72,8 @@ public static partial class Argument
             return argument;
         }
 
-        throw new ArgumentException(
-            message ?? $"The argument {paramName.ToAssertString()} must end with \"{suffix}\".",
-            paramName
-        );
+        _ThrowForEndsWith(message, paramName, suffix);
+        return argument;
     }
 
     /// <summary>
@@ -110,6 +106,31 @@ public static partial class Argument
             return argument;
         }
 
+        _ThrowForContains(message, paramName, substring);
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForStartsWith(string? message, string? paramName, string prefix)
+    {
+        throw new ArgumentException(
+            message ?? $"The argument {paramName.ToAssertString()} must start with \"{prefix}\".",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForEndsWith(string? message, string? paramName, string suffix)
+    {
+        throw new ArgumentException(
+            message ?? $"The argument {paramName.ToAssertString()} must end with \"{suffix}\".",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForContains(string? message, string? paramName, string substring)
+    {
         throw new ArgumentException(
             message ?? $"The argument {paramName.ToAssertString()} must contain \"{substring}\".",
             paramName

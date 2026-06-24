@@ -26,15 +26,12 @@ public static partial class Argument
     {
         IsNotNull(argument, message, paramName);
 
-        if (!argument.Any(e => e is null))
+        if (argument.Any(e => e is null))
         {
-            return argument!;
+            _ThrowForHasNoNulls(message, paramName);
         }
 
-        throw new ArgumentException(
-            message ?? $"The argument {paramName.ToAssertString()} cannot contains null elements.",
-            paramName
-        );
+        return argument!;
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> has any null or empty element.</summary>
@@ -56,10 +53,7 @@ public static partial class Argument
 
         if (argument.Any(string.IsNullOrEmpty))
         {
-            throw new ArgumentException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot contains empty elements.",
-                paramName
-            );
+            _ThrowForHasNoNullOrEmptyElements(message, paramName);
         }
 
         return argument!;
@@ -84,12 +78,36 @@ public static partial class Argument
 
         if (argument.Any(string.IsNullOrWhiteSpace))
         {
-            throw new ArgumentException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot contains empty or white space elements.",
-                paramName
-            );
+            _ThrowForHasNoNullOrWhiteSpaceElements(message, paramName);
         }
 
         return argument!;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasNoNulls(string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message ?? $"The argument {paramName.ToAssertString()} cannot contains null elements.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasNoNullOrEmptyElements(string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message ?? $"The argument {paramName.ToAssertString()} cannot contains empty elements.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasNoNullOrWhiteSpaceElements(string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message ?? $"The argument {paramName.ToAssertString()} cannot contains empty or white space elements.",
+            paramName
+        );
     }
 }

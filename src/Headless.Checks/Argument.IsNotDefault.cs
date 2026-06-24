@@ -23,14 +23,10 @@ public static partial class Argument
     )
         where T : struct
     {
-        if (EqualityComparer<T>.Default.Equals(argument, default))
+        if (!EqualityComparer<T>.Default.Equals(argument, default))
         {
-            return;
+            _ThrowForIsDefault(message, paramName);
         }
-
-        message ??= $"The argument {paramName.ToAssertString()} must be default.";
-
-        throw new ArgumentException(message, paramName);
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is default(T).</summary>
@@ -48,15 +44,12 @@ public static partial class Argument
     )
         where T : struct
     {
-        if (!EqualityComparer<T>.Default.Equals(argument, default))
+        if (EqualityComparer<T>.Default.Equals(argument, default))
         {
-            return argument;
+            _ThrowForIsNotDefault<T>(message, paramName);
         }
 
-        message ??=
-            $"The argument {paramName.ToAssertString()} can NOT be the default value of {typeof(T).ToAssertString()}.";
-
-        throw new ArgumentException(message, paramName);
+        return argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> has a value that is default(T).</summary>
@@ -82,13 +75,28 @@ public static partial class Argument
 
         if (EqualityComparer<T>.Default.Equals(argument.Value, default))
         {
-            throw new ArgumentException(
-                message
-                    ?? $"The argument {paramName.ToAssertString()} can NOT be the default value of {typeof(T).ToAssertString()}.",
-                paramName
-            );
+            _ThrowForIsNotDefault<T>(message, paramName);
         }
 
         return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsDefault(string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message ?? $"The argument {paramName.ToAssertString()} must be default.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNotDefault<T>(string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message
+                ?? $"The argument {paramName.ToAssertString()} can NOT be the default value of {typeof(T).ToAssertString()}.",
+            paramName
+        );
     }
 }

@@ -24,12 +24,12 @@ public static partial class Argument
     )
         where T : INumber<T>
     {
-        return T.IsZero(argument)
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must be zero."
-            );
+        if (!T.IsZero(argument))
+        {
+            _ThrowForIsZero(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="IsZero{T}(T,string?,string?)"/>
@@ -47,12 +47,12 @@ public static partial class Argument
             return null;
         }
 
-        return T.IsZero(argument.Value)
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must be zero."
-            );
+        if (!T.IsZero(argument.Value))
+        {
+            _ThrowForIsZero(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="IsZero{T}(T,string?,string?)"/>
@@ -64,12 +64,12 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        return argument == TimeSpan.Zero
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must be zero."
-            );
+        if (argument != TimeSpan.Zero)
+        {
+            _ThrowForIsZero(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="IsZero{T}(T,string?,string?)"/>
@@ -81,12 +81,17 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        return argument is null ? null
-            : argument.Value == TimeSpan.Zero ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must be zero."
-            );
+        if (argument is null)
+        {
+            return null;
+        }
+
+        if (argument.Value != TimeSpan.Zero)
+        {
+            _ThrowForIsZero(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is zero.</summary>
@@ -104,12 +109,12 @@ public static partial class Argument
     )
         where T : INumber<T>
     {
-        return T.IsZero(argument)
-            ? throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must not be zero."
-            )
-            : argument;
+        if (T.IsZero(argument))
+        {
+            _ThrowForIsNotZero(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="IsNotZero{T}(T,string?,string?)"/>
@@ -127,12 +132,12 @@ public static partial class Argument
             return null;
         }
 
-        return T.IsZero(argument.Value)
-            ? throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must not be zero."
-            )
-            : argument;
+        if (T.IsZero(argument.Value))
+        {
+            _ThrowForIsNotZero(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="IsNotZero{T}(T,string?,string?)"/>
@@ -144,12 +149,12 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        return argument == TimeSpan.Zero
-            ? throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must not be zero."
-            )
-            : argument;
+        if (argument == TimeSpan.Zero)
+        {
+            _ThrowForIsNotZero(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="IsNotZero{T}(T,string?,string?)"/>
@@ -161,12 +166,34 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        return argument is null ? null
-            : argument.Value == TimeSpan.Zero
-                ? throw new ArgumentOutOfRangeException(
-                    paramName,
-                    message ?? $"The argument {paramName.ToAssertString()} must not be zero."
-                )
-            : argument;
+        if (argument is null)
+        {
+            return null;
+        }
+
+        if (argument.Value == TimeSpan.Zero)
+        {
+            _ThrowForIsNotZero(message, paramName);
+        }
+
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsZero(string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} must be zero."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNotZero(string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} must not be zero."
+        );
     }
 }

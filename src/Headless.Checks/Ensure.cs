@@ -25,9 +25,7 @@ public static class Ensure
     {
         if (!condition)
         {
-            throw new InvalidOperationException(
-                message ?? $"The condition {expression.ToAssertString()} must be true."
-            );
+            _ThrowForTrue(message, expression);
         }
     }
 
@@ -46,9 +44,7 @@ public static class Ensure
     {
         if (condition)
         {
-            throw new InvalidOperationException(
-                message ?? $"The condition {expression.ToAssertString()} must be false."
-            );
+            _ThrowForFalse(message, expression);
         }
     }
 
@@ -71,9 +67,12 @@ public static class Ensure
         [CallerArgumentExpression(nameof(value))] string? expression = null
     )
     {
-        return value is null
-            ? throw new InvalidOperationException(message ?? $"Expected {expression.ToAssertString()} to not be null.")
-            : value;
+        if (value is null)
+        {
+            _ThrowForNotNull(message, expression);
+        }
+
+        return value;
     }
 
     /// <inheritdoc cref="NotNull{T}(T,string?,string?)"/>
@@ -86,10 +85,12 @@ public static class Ensure
     )
         where T : struct
     {
-        return value
-            ?? throw new InvalidOperationException(
-                message ?? $"Expected {expression.ToAssertString()} to not be null."
-            );
+        if (value is null)
+        {
+            _ThrowForNotNull(message, expression);
+        }
+
+        return value.Value;
     }
 
     /// <summary>Throws an <see cref="ObjectDisposedException"/> if <paramref name="disposed"/> is <see langword="true"/>.</summary>
@@ -102,13 +103,37 @@ public static class Ensure
     {
         if (disposed)
         {
-            var objectName = disposedValue != null ? (disposedValue.GetType().FullName ?? string.Empty) : string.Empty;
-            if (message != null)
-            {
-                throw new ObjectDisposedException(objectName, message);
-            }
-
-            throw new ObjectDisposedException(objectName);
+            _ThrowObjectDisposed(disposedValue, message);
         }
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForTrue(string? message, string? expression)
+    {
+        throw new InvalidOperationException(message ?? $"The condition {expression.ToAssertString()} must be true.");
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForFalse(string? message, string? expression)
+    {
+        throw new InvalidOperationException(message ?? $"The condition {expression.ToAssertString()} must be false.");
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForNotNull(string? message, string? expression)
+    {
+        throw new InvalidOperationException(message ?? $"Expected {expression.ToAssertString()} to not be null.");
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowObjectDisposed(object? disposedValue, string? message)
+    {
+        var objectName = disposedValue != null ? (disposedValue.GetType().FullName ?? string.Empty) : string.Empty;
+        if (message != null)
+        {
+            throw new ObjectDisposedException(objectName, message);
+        }
+
+        throw new ObjectDisposedException(objectName);
     }
 }

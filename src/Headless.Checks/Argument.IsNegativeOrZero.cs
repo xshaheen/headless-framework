@@ -25,15 +25,12 @@ public static partial class Argument
     )
         where T : INumber<T>
     {
-        if (T.IsFinite(argument) && argument <= T.Zero)
+        if (!T.IsFinite(argument) || argument > T.Zero)
         {
-            return argument;
+            _ThrowForIsNegativeOrZero(message, paramName);
         }
 
-        throw new ArgumentOutOfRangeException(
-            paramName,
-            message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
-        );
+        return argument;
     }
 
     /// <inheritdoc cref="IsNegativeOrZero{T}(T,string?,string?)"/>
@@ -51,15 +48,12 @@ public static partial class Argument
             return null;
         }
 
-        if (T.IsFinite(argument.Value) && argument.Value <= T.Zero)
+        if (!T.IsFinite(argument.Value) || argument.Value > T.Zero)
         {
-            return argument;
+            _ThrowForIsNegativeOrZero(message, paramName);
         }
 
-        throw new ArgumentOutOfRangeException(
-            paramName,
-            message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
-        );
+        return argument;
     }
 
     /// <inheritdoc cref="IsNegativeOrZero{T}(T,string?,string?)"/>
@@ -71,12 +65,12 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        return argument <= TimeSpan.Zero
-            ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
-            );
+        if (argument > TimeSpan.Zero)
+        {
+            _ThrowForIsNegativeOrZero(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <inheritdoc cref="IsNegativeOrZero{T}(T,string?,string?)"/>
@@ -88,11 +82,25 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        return argument is null ? null
-            : argument <= TimeSpan.Zero ? argument
-            : throw new ArgumentOutOfRangeException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
-            );
+        if (argument is null)
+        {
+            return null;
+        }
+
+        if (argument > TimeSpan.Zero)
+        {
+            _ThrowForIsNegativeOrZero(message, paramName);
+        }
+
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNegativeOrZero(string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
+        );
     }
 }

@@ -35,11 +35,8 @@ public static partial class Argument
             return argument;
         }
 
-        throw new ArgumentOutOfRangeException(
-            paramName,
-            message
-                ?? $"The argument {paramName.ToAssertString()} must have a length of {length} (Actual length {argument.Length})."
-        );
+        _ThrowForHasLength(message, paramName, length, argument.Length);
+        return argument;
     }
 
     /// <summary>
@@ -69,11 +66,8 @@ public static partial class Argument
             return argument;
         }
 
-        throw new ArgumentOutOfRangeException(
-            paramName,
-            message
-                ?? $"The argument {paramName.ToAssertString()} must have a length of at least {minLength} (Actual length {argument.Length})."
-        );
+        _ThrowForHasMinLength(message, paramName, minLength, argument.Length);
+        return argument;
     }
 
     /// <summary>
@@ -103,11 +97,8 @@ public static partial class Argument
             return argument;
         }
 
-        throw new ArgumentOutOfRangeException(
-            paramName,
-            message
-                ?? $"The argument {paramName.ToAssertString()} must have a length of at most {maxLength} (Actual length {argument.Length})."
-        );
+        _ThrowForHasMaxLength(message, paramName, maxLength, argument.Length);
+        return argument;
     }
 
     /// <summary>
@@ -142,10 +133,53 @@ public static partial class Argument
             return argument;
         }
 
+        _ThrowForHasLengthBetween(message, paramName, minLength, maxLength, argument.Length);
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasLength(string? message, string? paramName, int length, int actualLength)
+    {
         throw new ArgumentOutOfRangeException(
             paramName,
             message
-                ?? $"The argument {paramName.ToAssertString()} must have a length between {minLength} and {maxLength} (Actual length {argument.Length})."
+                ?? $"The argument {paramName.ToAssertString()} must have a length of {length} (Actual length {actualLength})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasMinLength(string? message, string? paramName, int minLength, int actualLength)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must have a length of at least {minLength} (Actual length {actualLength})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasMaxLength(string? message, string? paramName, int maxLength, int actualLength)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must have a length of at most {maxLength} (Actual length {actualLength})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasLengthBetween(
+        string? message,
+        string? paramName,
+        int minLength,
+        int maxLength,
+        int actualLength
+    )
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must have a length between {minLength} and {maxLength} (Actual length {actualLength})."
         );
     }
 }

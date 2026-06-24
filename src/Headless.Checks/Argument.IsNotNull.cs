@@ -23,12 +23,12 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        return argument is null
-            ? throw new ArgumentNullException(
-                paramName,
-                message ?? $"Required argument {paramName.ToAssertString()} was null."
-            )
-            : argument;
+        if (argument is null)
+        {
+            _ThrowForIsNotNull(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentNullException" /> if <paramref name="argument" /> is null.</summary>
@@ -46,10 +46,20 @@ public static partial class Argument
     )
         where T : struct
     {
-        return argument
-            ?? throw new ArgumentNullException(
-                paramName,
-                message ?? $"Required argument {paramName.ToAssertString()} was null."
-            );
+        if (argument is null)
+        {
+            _ThrowForIsNotNull(message, paramName);
+        }
+
+        return argument.Value;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNotNull(string? message, string? paramName)
+    {
+        throw new ArgumentNullException(
+            paramName,
+            message ?? $"Required argument {paramName.ToAssertString()} was null."
+        );
     }
 }

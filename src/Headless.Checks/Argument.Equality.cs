@@ -26,15 +26,12 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        if (EqualityComparer<T>.Default.Equals(argument, expected))
+        if (!EqualityComparer<T>.Default.Equals(argument, expected))
         {
-            return argument;
+            _ThrowForIsEqualTo(expected, message, paramName);
         }
 
-        throw new ArgumentException(
-            message ?? $"The argument {paramName.ToAssertString()} must be equal to {expected.ToAssertString()}.",
-            paramName
-        );
+        return argument;
     }
 
     /// <inheritdoc cref="IsEqualTo{T}(T,T,string?,string?)"/>
@@ -55,15 +52,12 @@ public static partial class Argument
     {
         IsNotNull(comparer);
 
-        if (comparer.Equals(argument, expected))
+        if (!comparer.Equals(argument, expected))
         {
-            return argument;
+            _ThrowForIsEqualTo(expected, message, paramName);
         }
 
-        throw new ArgumentException(
-            message ?? $"The argument {paramName.ToAssertString()} must be equal to {expected.ToAssertString()}.",
-            paramName
-        );
+        return argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is equal to <paramref name="other"/>.</summary>
@@ -84,15 +78,12 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        if (!EqualityComparer<T>.Default.Equals(argument, other))
+        if (EqualityComparer<T>.Default.Equals(argument, other))
         {
-            return argument;
+            _ThrowForIsNotEqualTo(other, message, paramName);
         }
 
-        throw new ArgumentException(
-            message ?? $"The argument {paramName.ToAssertString()} must not be equal to {other.ToAssertString()}.",
-            paramName
-        );
+        return argument;
     }
 
     /// <inheritdoc cref="IsNotEqualTo{T}(T,T,string?,string?)"/>
@@ -113,11 +104,26 @@ public static partial class Argument
     {
         IsNotNull(comparer);
 
-        if (!comparer.Equals(argument, other))
+        if (comparer.Equals(argument, other))
         {
-            return argument;
+            _ThrowForIsNotEqualTo(other, message, paramName);
         }
 
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsEqualTo<T>(T expected, string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message ?? $"The argument {paramName.ToAssertString()} must be equal to {expected.ToAssertString()}.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNotEqualTo<T>(T other, string? message, string? paramName)
+    {
         throw new ArgumentException(
             message ?? $"The argument {paramName.ToAssertString()} must not be equal to {other.ToAssertString()}.",
             paramName

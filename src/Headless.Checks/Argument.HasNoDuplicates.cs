@@ -56,14 +56,20 @@ public static partial class Argument
         {
             if (!seen.Add(item))
             {
-                throw new ArgumentException(
-                    message
-                        ?? $"The argument {paramName.ToAssertString()} must not contain duplicate items (Duplicate {item.ToAssertString()}).",
-                    paramName
-                );
+                _ThrowForHasNoDuplicates(item, message, paramName);
             }
         }
 
         return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHasNoDuplicates<T>(T item, string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message
+                ?? $"The argument {paramName.ToAssertString()} must not contain duplicate items (Duplicate {item.ToAssertString()}).",
+            paramName
+        );
     }
 }

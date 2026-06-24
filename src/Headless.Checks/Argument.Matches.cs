@@ -37,11 +37,17 @@ public static partial class Argument
         IsNotNull(argument, message, paramName);
         IsNotNull(pattern);
 
-        if (pattern.IsMatch(argument))
+        if (!pattern.IsMatch(argument))
         {
-            return argument;
+            _ThrowForMatches(message, paramName);
         }
 
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForMatches(string? message, string? paramName)
+    {
         throw new ArgumentException(
             message ?? $"Argument {paramName.ToAssertString()} was not in required format.",
             paramName

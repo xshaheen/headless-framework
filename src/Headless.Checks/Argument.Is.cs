@@ -30,10 +30,7 @@ public static partial class Argument
     {
         if (!condition)
         {
-            throw new ArgumentException(
-                message ?? $"The condition {paramName.ToAssertString()} must be true.",
-                paramName
-            );
+            _ThrowForIs(message, paramName);
         }
     }
 
@@ -58,10 +55,19 @@ public static partial class Argument
     {
         if (condition)
         {
-            throw new ArgumentException(
-                message ?? $"The condition {paramName.ToAssertString()} must be false.",
-                paramName
-            );
+            _ThrowForIsFalse(message, paramName);
         }
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIs(string? message, string? paramName)
+    {
+        throw new ArgumentException(message ?? $"The condition {paramName.ToAssertString()} must be true.", paramName);
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsFalse(string? message, string? paramName)
+    {
+        throw new ArgumentException(message ?? $"The condition {paramName.ToAssertString()} must be false.", paramName);
     }
 }
