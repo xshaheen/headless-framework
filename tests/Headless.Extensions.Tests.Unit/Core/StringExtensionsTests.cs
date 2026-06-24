@@ -6,6 +6,9 @@ namespace Tests.Core;
 
 public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposable
 {
+    // U+1F600 GRINNING FACE: a single code point encoded as the surrogate pair 😀 (two UTF-16 chars).
+    private const string _Emoji = "😀";
+
     private readonly IDisposable _cultureScope = CultureHelper.Use("en-US");
 
     public void Dispose()
@@ -299,5 +302,104 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
 
         // then
         result.Should().Be(expected);
+    }
+
+    // Regression: slicing at a UTF-16 index must not split a surrogate pair into a lone surrogate.
+    [Fact]
+    public void TruncateEnd_should_not_split_surrogate_pairs()
+    {
+        var input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars: a, b, high, low, c, d
+
+        // Cut at index 3 would orphan the high surrogate, so it backs off to 2.
+        input.TruncateEnd(3).Should().Be("ab");
+
+        // Cut at index 4 falls on a code-point boundary, keeping the whole emoji.
+        input.TruncateEnd(4).Should().Be("ab" + _Emoji);
+    }
+
+    [Fact]
+    public void TruncateEnd_with_suffix_should_not_split_surrogate_pairs()
+    {
+        var input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars
+
+        // cut = maxLength(4) - suffix(1) = 3 would orphan the high surrogate, so it backs off to 2.
+        input.TruncateEnd(4, "_").Should().Be("ab_");
+    }
+
+    [Fact]
+    public void TruncateStart_should_not_split_surrogate_pairs()
+    {
+        var input = "ab" + _Emoji + "cd"; // 6 UTF-16 chars
+
+        // Keeping the last 3 chars would start on the orphaned low surrogate, so the start advances by one.
+        input.TruncateStart(3).Should().Be("cd");
+
+        // Keeping the last 4 chars starts on a code-point boundary, keeping the whole emoji.
+        input.TruncateStart(4).Should().Be(_Emoji + "cd");
+    }
+
+    [Theory]
+    [InlineData("192.168.0.1")]
+    [InlineData("0.0.0.0")]
+    [InlineData("255.255.255.255")]
+    public void IsIp4_should_accept_valid_addresses(string value)
+    {
+        value.IsIp4().Should().BeTrue();
+    }
+
+    [Theory]
+    // Regression: NumberStyles.None must reject a leading sign and surrounding whitespace per octet.
+    [InlineData("+1.2.3.4")]
+    [InlineData("1.2.3.+4")]
+    [InlineData(" 1.2.3.4")]
+    [InlineData("1.2.3.4 ")]
+    [InlineData("1. 2.3.4")]
+    // Structurally invalid.
+    [InlineData("256.1.1.1")]
+    [InlineData("1.2.3")]
+    [InlineData("1.2.3.4.5")]
+    [InlineData("abc")]
+    [InlineData("")]
+    public void IsIp4_should_reject_invalid_addresses(string value)
+    {
+        value.IsIp4().Should().BeFalse();
+    }
+
+    [Fact]
+    public void RemoveCharacter_tests()
+    {
+        "a-b-c".RemoveCharacter('-').Should().Be("abc");
+        // Absent character returns the input unchanged.
+        "abc".RemoveCharacter('-').Should().Be("abc");
+        ((string?)null).RemoveCharacter('-').Should().BeNull();
+    }
+
+    [Fact]
+    public void RemoveCharacters_tests()
+    {
+        "a-b_c".RemoveCharacters('-', '_').Should().Be("abc");
+        // Absent characters return the input unchanged.
+        "abc".RemoveCharacters('-', '_').Should().Be("abc");
+        // Empty separator set strips whitespace (mirrors string.Split).
+        "a b\tc".RemoveCharacters().Should().Be("abc");
+        ((string?)null).RemoveCharacters('-').Should().BeNull();
+    }
+
+    [Fact]
+    public void NormalizeLineEndings_should_return_input_unchanged_when_no_line_breaks()
+    {
+        const string input = "no line breaks here";
+
+        input.NormalizeLineEndings().Should().Be(input);
+    }
+
+    [Fact]
+    public void NormalizeLineEndings_should_normalize_all_break_styles()
+    {
+        const string input = "a\r\nb\rc\nd";
+
+        var expected = string.Join(Environment.NewLine, "a", "b", "c", "d");
+
+        input.NormalizeLineEndings().Should().Be(expected);
     }
 }

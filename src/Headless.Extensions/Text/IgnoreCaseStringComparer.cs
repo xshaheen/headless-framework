@@ -113,7 +113,8 @@ public sealed class IgnoreCaseStringComparer : StringComparer
 
             while (_GetNextSymbol(obj, ref index, out var symbol))
             {
-                hash = (31 * hash) + char.ToUpperInvariant(symbol).GetHashCode();
+                // _GetNextSymbol already upper-cases the symbol; re-applying ToUpperInvariant is redundant.
+                hash = (31 * hash) + symbol.GetHashCode();
             }
 
             return hash;

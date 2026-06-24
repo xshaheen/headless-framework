@@ -26,9 +26,20 @@ public static class StringExtensions
     [return: NotNullIfNotNull(nameof(input))]
     public static string? TruncateEnd(this string? input, [NonNegativeValue] int maxLength)
     {
-        return input is null ? null
-            : input.Length <= maxLength ? input
-            : input[..maxLength];
+        if (input is null)
+        {
+            return null;
+        }
+
+        if (input.Length <= maxLength)
+        {
+            return input;
+        }
+
+        // Back off one char when the cut would split a surrogate pair, avoiding a trailing lone surrogate.
+        var end = _SplitsSurrogatePair(input, maxLength) ? maxLength - 1 : maxLength;
+
+        return input[..end];
     }
 
     /// <summary>
@@ -69,7 +80,15 @@ public static class StringExtensions
             return suffix[..maxLength];
         }
 
-        return input[..(maxLength - suffix.Length)] + suffix;
+        var cut = maxLength - suffix.Length;
+
+        // Back off one char when the cut would split a surrogate pair, avoiding a lone surrogate before the suffix.
+        if (_SplitsSurrogatePair(input, cut))
+        {
+            cut--;
+        }
+
+        return input[..cut] + suffix;
     }
 
     /// <summary>
@@ -92,7 +111,30 @@ public static class StringExtensions
             return null;
         }
 
-        return input.Length <= maxLength ? input : input.Substring(input.Length - maxLength, maxLength);
+        if (input.Length <= maxLength)
+        {
+            return input;
+        }
+
+        var start = input.Length - maxLength;
+
+        // Advance one char when the cut would split a surrogate pair, avoiding a leading lone low surrogate.
+        if (_SplitsSurrogatePair(input, start))
+        {
+            start++;
+        }
+
+        return input[start..];
+    }
+
+    // True when cutting input at the given index would split a UTF-16 surrogate pair
+    // (a high surrogate immediately before the cut and its low surrogate at the cut).
+    private static bool _SplitsSurrogatePair(string input, int index)
+    {
+        return index > 0
+            && index < input.Length
+            && char.IsHighSurrogate(input[index - 1])
+            && char.IsLowSurrogate(input[index]);
     }
 
     /// <summary>
@@ -162,10 +204,46 @@ public static class StringExtensions
     [JetBrainsPure]
     public static string NormalizeLineEndings(this string value)
     {
-        return value
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
-            .Replace("\n", Environment.NewLine, StringComparison.Ordinal);
+        var span = value.AsSpan();
+        var firstBreak = span.IndexOfAny('\r', '\n');
+
+        // No line breaks: nothing to normalize, return the original instance.
+        if (firstBreak < 0)
+        {
+            return value;
+        }
+
+        var newLine = Environment.NewLine;
+        var sb = new StringBuilder(value.Length);
+
+        // Copy the untouched prefix verbatim, then rewrite line breaks in a single pass.
+        sb.Append(span[..firstBreak]);
+
+        for (var i = firstBreak; i < value.Length; i++)
+        {
+            var c = value[i];
+
+            if (c == '\r')
+            {
+                sb.Append(newLine);
+
+                // Treat "\r\n" as a single line break.
+                if (i + 1 < value.Length && value[i + 1] == '\n')
+                {
+                    i++;
+                }
+            }
+            else if (c == '\n')
+            {
+                sb.Append(newLine);
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>Splits the string into lines using <see cref="Environment.NewLine"/> as the delimiter.</summary>
@@ -345,6 +423,12 @@ public static class StringExtensions
             return null;
         }
 
+        // Nothing to remove: return the original instance instead of rebuilding it.
+        if (!input.Contains(character, StringComparison.Ordinal))
+        {
+            return input;
+        }
+
         // Single-pass copy of the retained chars; Split+Concat would allocate an intermediate array and substrings.
         var sb = new StringBuilder(input.Length);
 
@@ -377,11 +461,17 @@ public static class StringExtensions
             return null;
         }
 
-        // Single-pass copy of the retained chars; Split+Concat would allocate an intermediate array and substrings.
-        var sb = new StringBuilder(input.Length);
-
         // Matches string.Split(ReadOnlySpan<char>): an empty separator set strips whitespace instead.
         var stripWhitespace = unwantedCharacters.IsEmpty;
+
+        // Nothing to remove: return the original instance instead of rebuilding it.
+        if (!stripWhitespace && !input.AsSpan().ContainsAny(unwantedCharacters))
+        {
+            return input;
+        }
+
+        // Single-pass copy of the retained chars; Split+Concat would allocate an intermediate array and substrings.
+        var sb = new StringBuilder(input.Length);
 
         foreach (var c in input)
         {
@@ -573,7 +663,7 @@ public static class StringExtensions
             return input;
         }
 
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(input.Length);
 
         foreach (var c in input)
         {
@@ -602,7 +692,8 @@ public static class StringExtensions
     [JetBrainsPure]
     public static string ToInvariantDigits(this IEnumerable<char> input)
     {
-        var sb = new StringBuilder();
+        // Pre-size when the source exposes a count (string, arrays, lists) without forcing enumeration.
+        var sb = input.TryGetNonEnumeratedCount(out var count) ? new StringBuilder(count) : new StringBuilder();
 
         foreach (var c in input)
         {
@@ -783,7 +874,8 @@ public static class StringExtensions
             var dot = remaining.IndexOf('.');
             var part = dot < 0 ? remaining : remaining[..dot];
 
-            if (++parts > 4 || !byte.TryParse(part, CultureInfo.InvariantCulture, out _))
+            // NumberStyles.None rejects leading/trailing whitespace and a leading sign (e.g. "+1", " 1", "1 ").
+            if (++parts > 4 || !byte.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out _))
             {
                 return false;
             }
@@ -987,31 +1079,62 @@ public static class StringExtensions
             return propertyName;
         }
 
-        var parts = propertyName.Split('.');
+        var source = propertyName.AsSpan();
 
-        // camelCase all the parts
-        var newSpan = new char[propertyName.Length];
-        var index = 0;
+        // Detect whether anything would change before allocating. A leading '.' is dropped by the build below, and
+        // any segment-leading character (index 0 or the char after a '.') may need lower-casing.
+        var changeNeeded = source[0] == '.';
 
-        foreach (var part in parts)
+        if (!changeNeeded)
         {
-            if (index > 0)
+            for (var i = 0; i < source.Length; i++)
             {
-                newSpan[index++] = '.';
-            }
+                if ((i == 0 || source[i - 1] == '.') && source[i] != char.ToLowerInvariant(source[i]))
+                {
+                    changeNeeded = true;
 
-            // Empty segment (consecutive, leading, or trailing dots) has no first char to camelize.
-            if (part.Length == 0)
-            {
-                continue;
+                    break;
+                }
             }
-
-            newSpan[index++] = char.ToLowerInvariant(part[0]);
-            part.AsSpan(1).CopyTo(newSpan.AsSpan(index));
-            index += part.Length - 1;
         }
 
-        return new string(newSpan, 0, index);
+        if (!changeNeeded)
+        {
+            return propertyName;
+        }
+
+        // Output is never longer than the input (per-char 1:1, dots only dropped). Build in a single span pass,
+        // emitting a '.' separator only once content exists — this preserves the leading-dot drop semantics.
+        var buffer = new char[source.Length];
+        var written = 0;
+        var start = 0;
+
+        while (true)
+        {
+            var dot = source[start..].IndexOf('.');
+            var segment = dot < 0 ? source[start..] : source.Slice(start, dot);
+
+            if (written > 0)
+            {
+                buffer[written++] = '.';
+            }
+
+            if (!segment.IsEmpty)
+            {
+                buffer[written++] = char.ToLowerInvariant(segment[0]);
+                segment[1..].CopyTo(buffer.AsSpan(written));
+                written += segment.Length - 1;
+            }
+
+            if (dot < 0)
+            {
+                break;
+            }
+
+            start += dot + 1;
+        }
+
+        return new string(buffer, 0, written);
     }
 
     /// <summary>Encodes the UTF-8 bytes of <paramref name="text"/> as a Base64 string.</summary>
