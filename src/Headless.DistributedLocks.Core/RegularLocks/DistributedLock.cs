@@ -547,10 +547,16 @@ public sealed class DistributedLock(
     #region Release
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The storage release runs under <see cref="CancellationToken.None"/> (bounded by
+    /// <see cref="DistributedLockOptions.DisposeTimeout"/>), so caller cancellation cannot abandon a
+    /// half-completed release and strand the lock until its TTL — matching the reader-writer provider.
+    /// The outbox publish uses <paramref name="cancellationToken"/>, but its failures (cancellation
+    /// included) are swallowed and waiters simply fall back to polling backoff. Consequently this
+    /// method never surfaces <see cref="OperationCanceledException"/>.
+    /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="resource"/> or <paramref name="leaseId"/> is empty or whitespace.</exception>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled during the outbox publish step
-    /// (the storage release is executed under <see cref="CancellationToken.None"/> and is not affected).</exception>
     public async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
@@ -591,10 +597,13 @@ public sealed class DistributedLock(
 
                         return result;
                     },
-                    cancellationToken
+                    // Release is a terminal-state write: pass CancellationToken.None so caller
+                    // cancellation cannot abandon a half-completed release and strand the lock until
+                    // its TTL. Matches the reader-writer provider's release convention.
+                    CancellationToken.None
                 )
                 .AsTask()
-                .WaitAsync(_disposeTimeout, timeProvider, cancellationToken)
+                .WaitAsync(_disposeTimeout, timeProvider, CancellationToken.None)
                 .ConfigureAwait(false);
 
             removed = observedAttemptSucceeded || lastResult;
