@@ -232,7 +232,8 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 
 - [api.md](api.md) — ASP.NET Core API infrastructure (JWT, middleware, Minimal API, MVC, FluentValidation, Data Protection).
 - [audit-log.md](audit-log.md) — Property-level audit logging for entity mutations and explicit business events with EF Core persistence.
-- [core.md](core.md) — Foundation utilities, DDD building blocks, guard clauses, domain events.
+- [core.md](core.md) — DDD building blocks, guard clauses, cross-cutting abstractions, string encryption/hashing, domain events.
+- [extensions.md](extensions.md) — Base utility library: result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers.
 - [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing.
 - [blobs.md](blobs.md) — Unified blob storage (AWS S3, Azure, file system, Redis, SFTP).
 - [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching with fail-safe, refresh, tagging, and distributed factory locks.
