@@ -174,4 +174,47 @@ public sealed class OpResultNonGenericTests
         result1.Should().NotBe(result2);
         (result1 != result2).Should().BeTrue();
     }
+
+    [Fact]
+    public void should_throw_invalid_operation_when_matching_failure_on_default_struct()
+    {
+        // given - a default-initialized struct is a failure state carrying no error
+        var result = default(ApiResult);
+
+        // when
+        var action = () => result.Match(() => "ok", _ => "err");
+
+        // then - a clear InvalidOperationException, not a NullReferenceException
+        result.IsFailure.Should().BeTrue();
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_throw_invalid_operation_when_on_failure_runs_on_default_struct()
+    {
+        // given
+        var result = default(ApiResult);
+
+        // when
+        var action = () => result.OnFailure(_ => { });
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_stay_equal_after_reading_error_members_on_carried_not_found_error()
+    {
+        // given - two failures carrying logically-equal NotFoundErrors
+        var result1 = ApiResult.NotFound("User", "123");
+        var result2 = ApiResult.NotFound("User", "123");
+
+        // when - reading the error's computed members on one (a field-backed cache here would poison ApiResult equality)
+        _ = ((NotFoundError)result1.Error!).Code;
+        _ = ((NotFoundError)result1.Error!).Metadata;
+
+        // then
+        result1.Should().Be(result2);
+        (result1 == result2).Should().BeTrue();
+    }
 }

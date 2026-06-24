@@ -102,4 +102,41 @@ public sealed class ResultErrorTests
         error.Message.Should().Be("Custom error message");
         error.Metadata.Should().BeNull();
     }
+
+    [Fact]
+    public void not_found_errors_should_stay_equal_after_reading_code_and_metadata()
+    {
+        // given - two logically-equal errors
+        var a = new NotFoundError { Entity = "User", Key = "123" };
+        var b = new NotFoundError { Entity = "User", Key = "123" };
+
+        // when - reading the computed members on one (a `field`-backed cache here would poison record equality)
+        _ = a.Code;
+        _ = a.Metadata;
+
+        // then - record equality and hashing remain stable
+        a.Should().Be(b);
+        (a == b).Should().BeTrue();
+        a.GetHashCode().Should().Be(b.GetHashCode());
+    }
+
+    [Fact]
+    public void validation_errors_should_stay_equal_after_reading_metadata()
+    {
+        // given - two errors sharing the same FieldErrors instance, so they are logically equal
+        var fieldErrors = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["email"] = ["Email is required"],
+        };
+        var a = new ValidationError { FieldErrors = fieldErrors };
+        var b = new ValidationError { FieldErrors = fieldErrors };
+
+        // when - reading Metadata on one (a `field`-backed cache here would poison record equality)
+        _ = a.Metadata;
+
+        // then - record equality and hashing remain stable
+        a.Should().Be(b);
+        (a == b).Should().BeTrue();
+        a.GetHashCode().Should().Be(b.GetHashCode());
+    }
 }

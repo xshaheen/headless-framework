@@ -51,9 +51,30 @@ public readonly struct Result<TValue, TError> : IEquatable<Result<TValue, TError
             : throw new InvalidOperationException($"Cannot access Value on failed result. Error: {_error}");
 
     /// <summary>The error describing the failure.</summary>
-    /// <exception cref="InvalidOperationException">Thrown when the result is a success (<see cref="IsSuccess"/> is <see langword="true"/>).</exception>
-    public TError Error =>
-        IsFailure ? _error! : throw new InvalidOperationException("Cannot access Error on successful result.");
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the result is a success (<see cref="IsSuccess"/> is <see langword="true"/>), or when accessed on a
+    /// default-initialized instance (which is a failure state carrying no error).
+    /// </exception>
+    public TError Error
+    {
+        get
+        {
+            if (IsSuccess)
+            {
+                throw new InvalidOperationException("Cannot access Error on successful result.");
+            }
+
+            // A default(Result<TValue, TError>) is a failure state with no error; throw clearly instead of a downstream NRE.
+            if (_error is null)
+            {
+                throw new InvalidOperationException(
+                    "Result<TValue, TError> was not properly initialized. Error was accessed on a default instance."
+                );
+            }
+
+            return _error;
+        }
+    }
 
     /// <summary>Tries to get the value without throwing.</summary>
     /// <param name="value">When this method returns <see langword="true"/>, the success value; otherwise <see langword="null"/>.</param>
@@ -84,7 +105,7 @@ public readonly struct Result<TValue, TError> : IEquatable<Result<TValue, TError
     /// <param name="failure">The function invoked on failure, receiving the error.</param>
     /// <returns>The value produced by the invoked branch.</returns>
     public TResult Match<TResult>(Func<TValue, TResult> success, Func<TError, TResult> failure) =>
-        IsFailure ? failure(_error!) : success(_value!);
+        IsFailure ? failure(Error) : success(_value!);
 
     /// <summary>Invokes <paramref name="success"/> (ignoring the value) or <paramref name="failure"/> with the error, returning its result.</summary>
     /// <typeparam name="TResult">The type produced by both branches.</typeparam>
@@ -92,7 +113,7 @@ public readonly struct Result<TValue, TError> : IEquatable<Result<TValue, TError
     /// <param name="failure">The function invoked on failure, receiving the error.</param>
     /// <returns>The value produced by the invoked branch.</returns>
     public TResult Match<TResult>(Func<TResult> success, Func<TError, TResult> failure) =>
-        IsFailure ? failure(_error!) : success();
+        IsFailure ? failure(Error) : success();
 
     /// <summary>Transforms the success value with <paramref name="mapper"/>, propagating the error unchanged on failure.</summary>
     /// <typeparam name="TOut">The mapped value type.</typeparam>
@@ -128,7 +149,7 @@ public readonly struct Result<TValue, TError> : IEquatable<Result<TValue, TError
     {
         if (IsFailure)
         {
-            action(_error!);
+            action(Error);
         }
 
         return this;

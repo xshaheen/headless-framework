@@ -68,14 +68,16 @@ public sealed record NotFoundError : ResultError
     public required string Key { get; init; }
 
     /// <inheritdoc/>
-    public override string Code => field ??= $"notfound:{Entity.ToLowerInvariant()}";
+    // Computed (not field-backed): a `field` backing store would participate in the record's
+    // auto-generated equality and flip two logically-equal errors to unequal once read. See ValidationError.Metadata.
+    public override string Code => $"notfound:{Entity.ToLowerInvariant()}";
 
     /// <inheritdoc/>
     public override string Message => $"{Entity} with key '{Key}' was not found.";
 
     /// <inheritdoc/>
     public override IReadOnlyDictionary<string, object?> Metadata =>
-        field ??= new Dictionary<string, object?>(StringComparer.Ordinal) { ["entity"] = Entity, ["key"] = Key };
+        new Dictionary<string, object?>(StringComparer.Ordinal) { ["entity"] = Entity, ["key"] = Key };
 }
 
 /// <summary>
@@ -143,10 +145,11 @@ public sealed record ValidationError : ResultError
     public override string Message => "One or more validation errors occurred.";
 
     /// <inheritdoc/>
-    public override IReadOnlyDictionary<string, object?> Metadata
-    {
-        get => field ??= FieldErrors.ToDictionary(kv => kv.Key, object? (kv) => kv.Value, StringComparer.Ordinal);
-    }
+    // Computed (not field-backed): a `field` backing store would participate in the record's
+    // auto-generated equality, so reading it would flip two logically-equal errors to unequal and
+    // change GetHashCode mid-lifetime. Build a fresh dictionary on each (cold) read instead.
+    public override IReadOnlyDictionary<string, object?> Metadata =>
+        FieldErrors.ToDictionary(kv => kv.Key, object? (kv) => kv.Value, StringComparer.Ordinal);
 
     /// <summary>Builds a <see cref="ValidationError"/> from field/error pairs, grouping repeated fields together.</summary>
     /// <param name="errors">The field-error pairs representing the validation issues.</param>

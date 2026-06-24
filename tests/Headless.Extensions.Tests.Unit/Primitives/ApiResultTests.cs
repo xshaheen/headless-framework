@@ -304,4 +304,44 @@ public sealed class ApiResultTests
         result1.Should().NotBe(result2);
         (result1 != result2).Should().BeTrue();
     }
+
+    [Fact]
+    public void should_throw_invalid_operation_not_nre_when_accessing_error_on_default_struct()
+    {
+        // given - a default-initialized struct is a failure state carrying no error
+        var result = default(ApiResult<int>);
+
+        // when
+        var action = () => result.Error;
+
+        // then - a clear InvalidOperationException, not a NullReferenceException
+        result.IsFailure.Should().BeTrue();
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_throw_invalid_operation_when_matching_failure_on_default_struct()
+    {
+        // given
+        var result = default(ApiResult<int>);
+
+        // when
+        var action = () => result.Match(value => value, _ => -1);
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_throw_invalid_operation_when_on_failure_runs_on_default_struct()
+    {
+        // given
+        var result = default(ApiResult<int>);
+
+        // when
+        var action = () => result.OnFailure(_ => { });
+
+        // then
+        action.Should().Throw<InvalidOperationException>();
+    }
 }
