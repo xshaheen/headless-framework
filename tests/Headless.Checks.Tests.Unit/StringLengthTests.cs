@@ -85,4 +85,52 @@ public sealed class StringLengthTests
         var action = () => Argument.HasLengthBetween("abc", 5, 2);
         action.Should().ThrowExactly<ArgumentException>();
     }
+
+    [Fact]
+    public void has_length_greater_than_should_validate_exclusive_lower_bound()
+    {
+        Argument.HasLengthGreaterThan("abcd", 3).Should().Be("abcd");
+
+        var value = "abc";
+        var equalAction = () => Argument.HasLengthGreaterThan(value, 3);
+        equalAction
+            .Should()
+            .ThrowExactly<ArgumentOutOfRangeException>()
+            .WithMessage(
+                "The argument \"value\" must have a length greater than 3 (Actual length 3). (Parameter 'value')"
+            );
+
+        var shorterAction = () => Argument.HasLengthGreaterThan("ab", 3);
+        shorterAction.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void has_length_less_than_should_validate_exclusive_upper_bound()
+    {
+        Argument.HasLengthLessThan("ab", 3).Should().Be("ab");
+
+        var equalAction = () => Argument.HasLengthLessThan("abc", 3);
+        equalAction.Should().ThrowExactly<ArgumentOutOfRangeException>().WithMessage("*less than 3*Actual length 3*");
+
+        var longerAction = () => Argument.HasLengthLessThan("abcd", 3);
+        longerAction.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void has_length_not_equal_to_should_reject_exact_length()
+    {
+        Argument.HasLengthNotEqualTo("abcd", 3).Should().Be("abcd");
+        Argument.HasLengthNotEqualTo("ab", 3).Should().Be("ab");
+
+        var action = () => Argument.HasLengthNotEqualTo("abc", 3);
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>().WithMessage("*must not have a length of 3*");
+    }
+
+    [Fact]
+    public void strict_length_guards_should_throw_argument_null_when_null()
+    {
+        ((Action)(() => Argument.HasLengthGreaterThan(null, 1))).Should().ThrowExactly<ArgumentNullException>();
+        ((Action)(() => Argument.HasLengthLessThan(null, 1))).Should().ThrowExactly<ArgumentNullException>();
+        ((Action)(() => Argument.HasLengthNotEqualTo(null, 1))).Should().ThrowExactly<ArgumentNullException>();
+    }
 }

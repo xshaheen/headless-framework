@@ -76,4 +76,38 @@ public sealed class IsCloseToTests
 
         Argument.IsNotCloseTo(int.MaxValue, int.MinValue, 5).Should().Be(int.MaxValue);
     }
+
+    [Fact]
+    public void is_close_to_unsigned_delta_can_express_full_int_distance()
+    {
+        // The full int span distance is uint.MaxValue (4_294_967_295) — not expressible with a signed int delta.
+        Argument.IsCloseTo(int.MaxValue, int.MinValue, uint.MaxValue).Should().Be(int.MaxValue);
+
+        // A delta below the true distance still rejects it (and stays overflow-safe).
+        var action = () => Argument.IsCloseTo(int.MaxValue, int.MinValue, 3_000_000_000u);
+        action.Should().ThrowExactly<ArgumentException>();
+    }
+
+    [Fact]
+    public void is_close_to_unsigned_delta_overloads_match_message_format()
+    {
+        var value = 5;
+        var action = () => Argument.IsCloseTo(value, 10, 2u);
+
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"value\" = 5 must be within 2 of 10. (Parameter 'value')");
+    }
+
+    [Fact]
+    public void is_close_to_unsigned_delta_works_for_long()
+    {
+        Argument.IsCloseTo(100L, 90L, 20UL).Should().Be(100L);
+
+        var action = () => Argument.IsCloseTo(100L, 50L, 10UL);
+        action.Should().ThrowExactly<ArgumentException>();
+
+        Argument.IsNotCloseTo(100L, 50L, 10UL).Should().Be(100L);
+    }
 }

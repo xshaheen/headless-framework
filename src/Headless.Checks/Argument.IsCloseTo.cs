@@ -70,6 +70,154 @@ public static partial class Argument
         return _IsWithinDelta(value, target, delta) ? _ThrowCloseTo(value, target, delta, message, paramName) : value;
     }
 
+    /// <summary>
+    /// Throws an <see cref="ArgumentException" /> if <paramref name="value"/> is not within <paramref name="delta"/> of
+    /// <paramref name="target"/>. The unsigned <paramref name="delta"/> can express the full <see cref="int"/> distance range
+    /// (up to <see cref="uint.MaxValue"/>) and is overflow-safe across the whole operand range.
+    /// </summary>
+    /// <param name="value">The argument to check.</param>
+    /// <param name="target">The value to compare against.</param>
+    /// <param name="delta">The maximum allowed (inclusive) absolute distance between <paramref name="value"/> and <paramref name="target"/>.</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <returns><paramref name="value" /> if it is within <paramref name="delta"/> of <paramref name="target"/>.</returns>
+    /// <exception cref="ArgumentException">if <paramref name="value" /> is not within <paramref name="delta"/> of <paramref name="target"/>.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int IsCloseTo(
+        int value,
+        int target,
+        uint delta,
+        string? message = null,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null
+    )
+    {
+        var difference = value >= target ? (uint)(value - target) : (uint)(target - value);
+
+        if (difference > delta)
+        {
+            _ThrowNotCloseToBoxed(value, target, delta, message, paramName);
+        }
+
+        return value;
+    }
+
+    /// <inheritdoc cref="IsCloseTo(int,int,uint,string?,string?)"/>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long IsCloseTo(
+        long value,
+        long target,
+        ulong delta,
+        string? message = null,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null
+    )
+    {
+        var difference = value >= target ? (ulong)(value - target) : (ulong)(target - value);
+
+        if (difference > delta)
+        {
+            _ThrowNotCloseToBoxed(value, target, delta, message, paramName);
+        }
+
+        return value;
+    }
+
+    /// <inheritdoc cref="IsCloseTo(int,int,uint,string?,string?)"/>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static nint IsCloseTo(
+        nint value,
+        nint target,
+        nuint delta,
+        string? message = null,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null
+    )
+    {
+        var difference = value >= target ? (nuint)(value - target) : (nuint)(target - value);
+
+        if (difference > delta)
+        {
+            _ThrowNotCloseToBoxed(value, target, delta, message, paramName);
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Throws an <see cref="ArgumentException" /> if <paramref name="value"/> is within <paramref name="delta"/> of
+    /// <paramref name="target"/>. The unsigned <paramref name="delta"/> can express the full <see cref="int"/> distance range
+    /// (up to <see cref="uint.MaxValue"/>) and is overflow-safe across the whole operand range.
+    /// </summary>
+    /// <param name="value">The argument to check.</param>
+    /// <param name="target">The value to compare against.</param>
+    /// <param name="delta">The (inclusive) absolute distance considered "close".</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <returns><paramref name="value" /> if it is not within <paramref name="delta"/> of <paramref name="target"/>.</returns>
+    /// <exception cref="ArgumentException">if <paramref name="value" /> is within <paramref name="delta"/> of <paramref name="target"/>.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int IsNotCloseTo(
+        int value,
+        int target,
+        uint delta,
+        string? message = null,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null
+    )
+    {
+        var difference = value >= target ? (uint)(value - target) : (uint)(target - value);
+
+        if (difference <= delta)
+        {
+            _ThrowCloseToBoxed(value, target, delta, message, paramName);
+        }
+
+        return value;
+    }
+
+    /// <inheritdoc cref="IsNotCloseTo(int,int,uint,string?,string?)"/>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long IsNotCloseTo(
+        long value,
+        long target,
+        ulong delta,
+        string? message = null,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null
+    )
+    {
+        var difference = value >= target ? (ulong)(value - target) : (ulong)(target - value);
+
+        if (difference <= delta)
+        {
+            _ThrowCloseToBoxed(value, target, delta, message, paramName);
+        }
+
+        return value;
+    }
+
+    /// <inheritdoc cref="IsNotCloseTo(int,int,uint,string?,string?)"/>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static nint IsNotCloseTo(
+        nint value,
+        nint target,
+        nuint delta,
+        string? message = null,
+        [CallerArgumentExpression(nameof(value))] string? paramName = null
+    )
+    {
+        var difference = value >= target ? (nuint)(value - target) : (nuint)(target - value);
+
+        if (difference <= delta)
+        {
+            _ThrowCloseToBoxed(value, target, delta, message, paramName);
+        }
+
+        return value;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool _IsWithinDelta<T>(T value, T target, T delta)
         where T : INumber<T>
@@ -96,6 +244,38 @@ public static partial class Argument
     [DoesNotReturn]
     private static T _ThrowCloseTo<T>(T value, T target, T delta, string? message, string? paramName)
         where T : INumber<T>
+    {
+        throw new ArgumentException(
+            message
+                ?? $"The argument {paramName.ToAssertString()} = {value.ToInvariantString()} must not be within {delta.ToInvariantString()} of {target.ToInvariantString()}.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowNotCloseToBoxed(
+        object value,
+        object target,
+        object delta,
+        string? message,
+        string? paramName
+    )
+    {
+        throw new ArgumentException(
+            message
+                ?? $"The argument {paramName.ToAssertString()} = {value.ToInvariantString()} must be within {delta.ToInvariantString()} of {target.ToInvariantString()}.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowCloseToBoxed(
+        object value,
+        object target,
+        object delta,
+        string? message,
+        string? paramName
+    )
     {
         throw new ArgumentException(
             message
