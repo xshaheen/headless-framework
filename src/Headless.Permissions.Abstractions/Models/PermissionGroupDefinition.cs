@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Primitives;
 
 namespace Headless.Permissions.Models;
 
@@ -8,7 +9,7 @@ namespace Headless.Permissions.Models;
 /// A named container that groups related permissions for display and organization. Permissions are added with
 /// <see cref="AddChild"/> and may themselves nest further children to form a tree.
 /// </summary>
-public sealed class PermissionGroupDefinition : ICanAddChildPermission
+public sealed class PermissionGroupDefinition : ICanAddChildPermission, IHasExtraProperties
 {
     private readonly List<PermissionDefinition> _permissions;
 
@@ -16,7 +17,6 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission
     {
         Name = name;
         DisplayName = displayName ?? name;
-        Properties = new(StringComparer.Ordinal);
         _permissions = [];
     }
 
@@ -31,22 +31,22 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission
         set => field = Argument.IsNotNull(value);
     }
 
-    /// <summary>A list of custom properties for this permission group.</summary>
-    public Dictionary<string, object?> Properties { get; }
+    /// <summary>Bag of custom properties for this permission group.</summary>
+    public ExtraProperties ExtraProperties { get; } = [];
 
     /// <summary>List of permissions in this group.</summary>
     public IReadOnlyList<PermissionDefinition> Permissions => _permissions;
 
-    /// <summary>Gets/sets a key-value on the <see cref="Properties"/>.</summary>
+    /// <summary>Gets/sets a key-value on the <see cref="ExtraProperties"/>.</summary>
     /// <param name="name">Name of the property</param>
     /// <returns>
-    /// Returns the value in the <see cref="Properties"/> dictionary by given <paramref name="name"/>.
-    /// Returns null if given <paramref name="name"/> is not present in the <see cref="Properties"/> dictionary.
+    /// Returns the value in the <see cref="ExtraProperties"/> dictionary by given <paramref name="name"/>.
+    /// Returns null if given <paramref name="name"/> is not present in the <see cref="ExtraProperties"/> dictionary.
     /// </returns>
     public object? this[string name]
     {
-        get => Properties.GetOrDefault(name);
-        set => Properties[name] = value;
+        get => ExtraProperties.GetOrDefault(name);
+        set => ExtraProperties[name] = value;
     }
 
     /// <summary>Returns every permission in this group, flattening nested children into a single pre-order list.</summary>

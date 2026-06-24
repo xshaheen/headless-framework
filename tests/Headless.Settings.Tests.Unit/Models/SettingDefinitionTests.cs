@@ -113,11 +113,11 @@ public sealed class SettingDefinitionTests
 
         // when
         definition["CustomKey"] = "CustomValue";
-        definition.Properties["AnotherKey"] = 123;
+        definition.ExtraProperties["AnotherKey"] = 123;
 
         // then
         definition["CustomKey"].Should().Be("CustomValue");
-        definition.Properties["AnotherKey"].Should().Be(123);
+        definition.ExtraProperties["AnotherKey"].Should().Be(123);
     }
 
     [Fact]

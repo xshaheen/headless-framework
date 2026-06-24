@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Primitives;
+
 namespace Headless.Settings.Models;
 
 /// <summary>Describes a named application setting, including its defaults, visibility, and storage options.</summary>
@@ -27,7 +29,7 @@ public sealed class SettingDefinition(
     bool isVisibleToClients = false,
     bool isInherited = true,
     bool isEncrypted = false
-)
+) : IHasExtraProperties
 {
     /// <summary>Unique name of the setting.</summary>
     public string Name { get; } = name;
@@ -62,18 +64,18 @@ public sealed class SettingDefinition(
     /// </summary>
     public List<string> Providers { get; } = [];
 
-    /// <summary>Can be used to get/set custom properties for this setting definition.</summary>
-    public Dictionary<string, object?> Properties { get; } = [];
+    /// <summary>Bag of custom properties for this setting definition.</summary>
+    public ExtraProperties ExtraProperties { get; } = [];
 
-    /// <summary>Gets or sets a custom property value by name on <see cref="Properties"/>.</summary>
+    /// <summary>Gets or sets a custom property value by name on <see cref="ExtraProperties"/>.</summary>
     /// <param name="name">Key of the property to get or set.</param>
     /// <returns>
-    /// The value stored under <paramref name="name"/> in <see cref="Properties"/>,
+    /// The value stored under <paramref name="name"/> in <see cref="ExtraProperties"/>,
     /// or <see langword="null"/> if <paramref name="name"/> is not present.
     /// </returns>
     public object? this[string name]
     {
-        get => Properties.GetOrDefault(name);
-        set => Properties[name] = value;
+        get => ExtraProperties.GetOrDefault(name);
+        set => ExtraProperties[name] = value;
     }
 }

@@ -62,7 +62,7 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
         {
             var record = new FeatureGroupDefinitionRecord(guidGenerator.Create(), group.Name, group.DisplayName);
 
-            foreach (var property in group.Properties)
+            foreach (var property in group.ExtraProperties)
             {
                 record.SetProperty(property.Key, property.Value);
             }
@@ -89,7 +89,7 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 _SerializeProviders(feature.Providers)
             );
 
-            foreach (var property in feature.Properties)
+            foreach (var property in feature.ExtraProperties)
             {
                 featureRecord.SetProperty(property.Key, property.Value);
             }
