@@ -112,6 +112,10 @@ internal sealed class CommitScope(CommitCoordinator coordinator, IServiceProvide
 
         if (_TryClaimSignal() && coordinator.TryClaimTerminal(CommitOutcome.RolledBack, out var claim))
         {
+            // Unlike the sync Dispose abandon path, AbandonCleanup is intentionally NOT invoked here. The sync path
+            // offloads the drain to the background and uses AbandonCleanup to hand owned-resource disposal to that
+            // off-thread drain; this path awaits the drain inline, so the async wrapper (TrackedCommitScope) disposes
+            // the owned DI scope itself once this completes. AbandonCleanup is therefore sync-Dispose-only by design.
             return _DrainAndDisposePromotedAsync(claim);
         }
 
