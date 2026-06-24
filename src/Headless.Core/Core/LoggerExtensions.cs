@@ -280,12 +280,9 @@ public static class HeadlessLoggerExtensions
     /// <returns>The same <paramref name="builder" /> instance, for chaining.</returns>
     public static LogState Tag(this LogState builder, params ReadOnlySpan<string> tags)
     {
-        var tagList = new List<string>();
-
-        if (builder.ContainsProperty("Tags") && builder["Tags"] is List<string> list)
-        {
-            tagList = list;
-        }
+        // Reuse the existing "Tags" list when present; only allocate a new one when this is the first tag,
+        // rather than allocating unconditionally and discarding it on the reuse path.
+        var tagList = builder.ContainsProperty("Tags") && builder["Tags"] is List<string> list ? list : [];
 
         foreach (var tag in tags)
         {

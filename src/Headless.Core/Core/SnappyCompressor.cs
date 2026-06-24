@@ -34,9 +34,17 @@ public static class SnappyCompressor
     public static IMemoryOwner<byte> Compress<T>(T? result, JsonSerializerOptions? options = null)
     {
         options ??= JsonConstants.DefaultInternalJsonOptions;
-        var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(result, options);
 
-        return Snappy.CompressToMemory(serializedBytes);
+        // Serialize straight into a pooled buffer and hand the written span to Snappy, avoiding the intermediate
+        // right-sized byte[] that SerializeToUtf8Bytes allocates and immediately discards.
+        using var buffer = new PooledByteBufferWriter();
+
+        using (var writer = new Utf8JsonWriter(buffer, _WriterOptionsFor(options)))
+        {
+            JsonSerializer.Serialize(writer, result, options);
+        }
+
+        return Snappy.CompressToMemory(buffer.WrittenSpan);
     }
 
     /// <summary>
@@ -56,9 +64,14 @@ public static class SnappyCompressor
     [MustDisposeResource]
     public static IMemoryOwner<byte> Compress<T>(T result, JsonTypeInfo<T> jsonTypeInfo)
     {
-        var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(result, jsonTypeInfo);
+        using var buffer = new PooledByteBufferWriter();
 
-        return Snappy.CompressToMemory(serializedBytes);
+        using (var writer = new Utf8JsonWriter(buffer, _WriterOptionsFor(jsonTypeInfo.Options)))
+        {
+            JsonSerializer.Serialize(writer, result, jsonTypeInfo);
+        }
+
+        return Snappy.CompressToMemory(buffer.WrittenSpan);
     }
 
     /// <summary>
@@ -106,5 +119,22 @@ public static class SnappyCompressor
         using var bytes = Snappy.DecompressToMemory(compressed.Span);
 
         return JsonSerializer.Deserialize(bytes.Memory.Span, jsonTypeInfo);
+    }
+
+    // A pre-made Utf8JsonWriter governs its own formatting and limits (indentation, encoder, depth) independently
+    // of the JsonSerializerOptions passed to JsonSerializer.Serialize, so the writer must inherit those settings or
+    // the configured escaping/indentation/depth limit would be silently ignored — keeping the output byte-identical
+    // to SerializeToUtf8Bytes. Mirrors Headless.Serializer's SystemJsonSerializer.
+    private static JsonWriterOptions _WriterOptionsFor(JsonSerializerOptions options)
+    {
+        return new JsonWriterOptions
+        {
+            Encoder = options.Encoder,
+            Indented = options.WriteIndented,
+            IndentCharacter = options.IndentCharacter,
+            IndentSize = options.IndentSize,
+            NewLine = options.NewLine,
+            MaxDepth = options.MaxDepth,
+        };
     }
 }

@@ -123,5 +123,11 @@ public sealed class PrincipalCurrentUser(ClaimsPrincipal? principal) : ICurrentU
     public AccountId? AccountId => principal.GetAccountId();
 
     /// <inheritdoc/>
-    public IReadOnlySet<string> Roles => principal.GetRoles();
+    // GetRoles() scans every claim and allocates a fresh ImmutableHashSet on each call, yet the principal is fixed
+    // for this instance's lifetime and ICurrentUser is hit repeatedly per request (authorization, audit, tenancy).
+    // Cache the result so the scan/allocation happens once. The `??=` race is benign: reference writes are atomic,
+    // so a concurrent reader sees either null (and recomputes the same value) or the completed set. The value-typed
+    // accessors above stay stateless — each is a single FindFirst with no heap allocation, and a cached nullable
+    // struct guarded by a separate `resolved` flag could be read torn under concurrent access.
+    public IReadOnlySet<string> Roles => field ??= principal.GetRoles();
 }
