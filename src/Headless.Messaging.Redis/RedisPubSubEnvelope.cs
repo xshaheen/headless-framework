@@ -6,7 +6,7 @@ internal static class RedisPubSubEnvelope
 {
     public static string Serialize(TransportMessage message)
     {
-        var envelope = new Envelope(message.Headers, Convert.ToBase64String(message.Body.Span));
+        var envelope = new Envelope(message.Headers, message.Body.Span.ToBase64());
         return JsonSerializer.Serialize(envelope);
     }
 

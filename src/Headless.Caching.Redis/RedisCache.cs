@@ -2427,8 +2427,7 @@ public sealed class RedisCache(
         return (int)result == 1;
     }
 
-    private static string _ToConcurrencyStamp(RedisValue value) =>
-        string.Concat("b64:", Convert.ToBase64String((byte[])value!));
+    private static string _ToConcurrencyStamp(RedisValue value) => string.Concat("b64:", ((byte[])value!).ToBase64());
 
     private static bool _TryDecodeConcurrencyStamp(string stamp, out RedisValue value)
     {

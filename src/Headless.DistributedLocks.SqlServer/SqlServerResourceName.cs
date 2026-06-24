@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Security.Cryptography;
 using Headless.Checks;
 
 namespace Headless.DistributedLocks.SqlServer;
@@ -42,8 +41,6 @@ public static class SqlServerResourceName
             return resource;
         }
 
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(resource));
-
-        return _HashPrefix + Convert.ToHexString(hash).ToLowerInvariant();
+        return _HashPrefix + resource.ToSha256();
     }
 }

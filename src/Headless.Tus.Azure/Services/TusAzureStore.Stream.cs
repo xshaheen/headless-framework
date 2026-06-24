@@ -83,7 +83,7 @@ public sealed partial class TusAzureStore
         // matches the one actually used to stage the data.
         var algorithm = stream.GetUploadChecksumInfo()!.Algorithm;
         azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
-        azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{Convert.ToBase64String(hasher.GetHashAndReset())}";
+        azureFile.Metadata.LastChunkChecksum = $"{algorithm}:{hasher.GetHashAndReset().ToBase64()}";
         await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
         _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);

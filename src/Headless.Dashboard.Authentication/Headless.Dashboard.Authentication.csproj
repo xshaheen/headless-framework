@@ -7,4 +7,7 @@
     <InternalsVisibleTo Include="Headless.Jobs.Dashboard" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+  </ItemGroup>
 </Project>
