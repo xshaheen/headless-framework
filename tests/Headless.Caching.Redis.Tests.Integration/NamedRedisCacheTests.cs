@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 using Headless.Caching;
@@ -200,19 +201,20 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
 
     private class PrefixIntSerializer(string prefix) : ISerializer
     {
-        public T? Deserialize<T>(Stream data)
+        public T? Deserialize<T>(ReadOnlyMemory<byte> data)
         {
             if (typeof(T) != typeof(int))
             {
                 throw new NotSupportedException();
             }
 
-            using var reader = new StreamReader(data, Encoding.UTF8, leaveOpen: true);
-            var stored = reader.ReadToEnd();
-            return (T?)(object?)int.Parse(stored[prefix.Length..], CultureInfo.InvariantCulture);
+            var stored = Encoding.UTF8.GetString(data.Span);
+            return (T?)(object?)int.Parse(stored.AsSpan(prefix.Length), CultureInfo.InvariantCulture);
         }
 
-        public void Serialize<T>(T value, Stream output)
+        public T? Deserialize<T>(in ReadOnlySequence<byte> data) => Deserialize<T>(data.ToArray());
+
+        public void Serialize<T>(T value, IBufferWriter<byte> output)
         {
             if (value is not int number)
             {
@@ -222,19 +224,7 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
             output.Write(Encoding.UTF8.GetBytes(prefix + number.ToString(CultureInfo.InvariantCulture)));
         }
 
-        public object? Deserialize(Stream data, Type objectType)
-        {
-            if (objectType != typeof(int))
-            {
-                throw new NotSupportedException();
-            }
-
-            using var reader = new StreamReader(data, Encoding.UTF8, leaveOpen: true);
-            var stored = reader.ReadToEnd();
-            return int.Parse(stored[prefix.Length..], CultureInfo.InvariantCulture);
-        }
-
-        public void Serialize(object? value, Stream output)
+        public void Serialize(object? value, IBufferWriter<byte> output)
         {
             if (value is not int number)
             {
@@ -243,5 +233,18 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
 
             output.Write(Encoding.UTF8.GetBytes(prefix + number.ToString(CultureInfo.InvariantCulture)));
         }
+
+        public object? Deserialize(ReadOnlyMemory<byte> data, Type type)
+        {
+            if (type != typeof(int))
+            {
+                throw new NotSupportedException();
+            }
+
+            var stored = Encoding.UTF8.GetString(data.Span);
+            return int.Parse(stored.AsSpan(prefix.Length), CultureInfo.InvariantCulture);
+        }
+
+        public object? Deserialize(in ReadOnlySequence<byte> data, Type type) => Deserialize(data.ToArray(), type);
     }
 }

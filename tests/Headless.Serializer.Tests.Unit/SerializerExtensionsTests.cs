@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using Headless.Serializer;
 
 namespace Tests;
@@ -15,13 +16,8 @@ public sealed class SerializerExtensionsTests
         // given
         var obj = new TestClass { Name = "Test", Value = 42 };
         _serializer
-            .When(s => s.Serialize(Arg.Any<TestClass>(), Arg.Any<Stream>()))
-            .Do(c =>
-            {
-                var stream = c.Arg<Stream>();
-                var bytes = Encoding.UTF8.GetBytes("{\"name\":\"Test\",\"value\":42}");
-                stream.Write(bytes);
-            });
+            .When(s => s.Serialize(Arg.Any<TestClass>(), Arg.Any<IBufferWriter<byte>>()))
+            .Do(c => c.Arg<IBufferWriter<byte>>().Write("{\"name\":\"Test\",\"value\":42}"u8));
 
         // when
         var result = _serializer.SerializeToBytes(obj);
@@ -39,7 +35,7 @@ public sealed class SerializerExtensionsTests
 
         // then
         result.Should().BeNull();
-        _serializer.DidNotReceive().Serialize(Arg.Any<TestClass>(), Arg.Any<Stream>());
+        _serializer.DidNotReceive().Serialize(Arg.Any<TestClass>(), Arg.Any<IBufferWriter<byte>>());
     }
 
     [Fact]
@@ -48,7 +44,7 @@ public sealed class SerializerExtensionsTests
         // given
         var expected = new TestClass { Name = "Test", Value = 42 };
         var bytes = Encoding.UTF8.GetBytes("{\"name\":\"Test\",\"value\":42}");
-        _serializer.Deserialize<TestClass>(Arg.Any<Stream>()).Returns(expected);
+        _serializer.Deserialize<TestClass>(Arg.Any<ReadOnlyMemory<byte>>()).Returns(expected);
 
         // when
         var result = _serializer.Deserialize<TestClass>(bytes);
@@ -65,13 +61,8 @@ public sealed class SerializerExtensionsTests
         // given
         var obj = new TestClass { Name = "Test", Value = 42 };
         _textSerializer
-            .When(s => s.Serialize(Arg.Any<TestClass>(), Arg.Any<Stream>()))
-            .Do(c =>
-            {
-                var stream = c.Arg<Stream>();
-                var bytes = Encoding.UTF8.GetBytes("{\"name\":\"Test\",\"value\":42}");
-                stream.Write(bytes);
-            });
+            .When(s => s.Serialize(Arg.Any<TestClass>(), Arg.Any<IBufferWriter<byte>>()))
+            .Do(c => c.Arg<IBufferWriter<byte>>().Write("{\"name\":\"Test\",\"value\":42}"u8));
 
         // when
         var result = _textSerializer.SerializeToString(obj);
@@ -98,12 +89,8 @@ public sealed class SerializerExtensionsTests
         var obj = new TestClass { Name = "Test", Value = 42 };
         byte[] binaryBytes = [0x01, 0x02, 0x03, 0x04];
         _serializer
-            .When(s => s.Serialize(Arg.Any<TestClass>(), Arg.Any<Stream>()))
-            .Do(c =>
-            {
-                var stream = c.Arg<Stream>();
-                stream.Write(binaryBytes);
-            });
+            .When(s => s.Serialize(Arg.Any<TestClass>(), Arg.Any<IBufferWriter<byte>>()))
+            .Do(c => c.Arg<IBufferWriter<byte>>().Write(binaryBytes));
 
         // when
         var result = _serializer.SerializeToString(obj);
@@ -119,7 +106,7 @@ public sealed class SerializerExtensionsTests
         // given
         const string json = "{\"name\":\"Test\",\"value\":42}";
         var expected = new TestClass { Name = "Test", Value = 42 };
-        _textSerializer.Deserialize<TestClass>(Arg.Any<Stream>()).Returns(expected);
+        _textSerializer.Deserialize<TestClass>(Arg.Any<ReadOnlyMemory<byte>>()).Returns(expected);
 
         // when
         var result = _textSerializer.Deserialize<TestClass>(json);
@@ -137,7 +124,7 @@ public sealed class SerializerExtensionsTests
         var binaryBytes = new byte[] { 0x01, 0x02, 0x03, 0x04 };
         var base64 = Convert.ToBase64String(binaryBytes);
         var expected = new TestClass { Name = "Test", Value = 42 };
-        _serializer.Deserialize<TestClass>(Arg.Any<Stream>()).Returns(expected);
+        _serializer.Deserialize<TestClass>(Arg.Any<ReadOnlyMemory<byte>>()).Returns(expected);
 
         // when
         var result = _serializer.Deserialize<TestClass>(base64);
@@ -148,16 +135,14 @@ public sealed class SerializerExtensionsTests
     }
 
     [Fact]
-    public void should_deserialize_from_null_string()
+    public void should_deserialize_from_null_string_returns_default_without_touching_serializer()
     {
-        // given
-        _serializer.Deserialize<TestClass>(Arg.Any<Stream>()).Returns((TestClass?)null);
-
         // when
         var result = _serializer.Deserialize<TestClass>((string?)null);
 
-        // then
-        _serializer.Received(1).Deserialize<TestClass>(Arg.Any<Stream>());
+        // then — a null payload short-circuits to default; the serializer is never invoked.
+        result.Should().BeNull();
+        _serializer.DidNotReceive().Deserialize<TestClass>(Arg.Any<ReadOnlyMemory<byte>>());
     }
 
     private sealed class TestClass

@@ -17,6 +17,7 @@ packages: Serializer.Abstractions, Serializer.Json, Serializer.MessagePack
 - [Headless.Serializer.Abstractions](#headlessserializerabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
+    - [Design Notes](#design-notes)
     - [Installation](#installation)
     - [Quick Start](#quick-start)
     - [Configuration](#configuration)
@@ -25,7 +26,7 @@ packages: Serializer.Abstractions, Serializer.Json, Serializer.MessagePack
 - [Headless.Serializer.Json](#headlessserializerjson)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
-    - [Design Notes](#design-notes)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
     - [Configuration](#configuration-1)
@@ -34,6 +35,7 @@ packages: Serializer.Abstractions, Serializer.Json, Serializer.MessagePack
 - [Headless.Serializer.MessagePack](#headlessserializermessagepack)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
@@ -58,10 +60,11 @@ Neither provider registers itself into DI automatically — you must call `servi
 - Always depend on `ISerializer`, `IJsonSerializer`, or `IBinarySerializer` from `Headless.Serializer.Abstractions`. Never reference `SystemJsonSerializer` or `MessagePackSerializer` in application code.
 - Default to `Headless.Serializer.Json` for general use. Switch to `Headless.Serializer.MessagePack` only when binary performance or payload size matters (e.g., cache entries, internal message envelopes, high-throughput pipelines).
 - Do not call `System.Text.Json.JsonSerializer` directly in application code — go through `IJsonSerializer` so the implementation can be swapped and options are centralized.
-- Register JSON: `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()`. Register a custom `IJsonOptionsProvider` before the serializer if you need non-default options.
+- Register JSON: `services.AddSingleton<IJsonSerializer, SystemJsonSerializer>()`. Also register a custom `IJsonOptionsProvider` if you need non-default options (registration order does not matter — it is resolved by constructor injection).
 - Register MessagePack: `services.AddSingleton<IBinarySerializer, MessagePackSerializer>()`. Pass custom `MessagePackSerializerOptions` via constructor for compression or resolver changes.
+- **MessagePack security**: the parameterless `MessagePackSerializer()` uses `MessagePackSecurity.TrustedData` — only safe when payloads originate inside your trust boundary (e.g. cache values the app itself wrote). When deserializing data from outside it (a cache other services or attackers can write to, external message producers), register `new MessagePackSerializer(untrustedData: true)` to apply `MessagePackSecurity.UntrustedData` (recursion-depth limit + collision-resistant hashing). When you supply your own `MessagePackSerializerOptions`, set `Security` there — the `untrustedData` switch is ignored and never relaxes a level you chose.
 - `SystemJsonSerializer` is annotated `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` — not AOT-safe as-is. For AOT/NativeAOT scenarios, implement a source-generated `IJsonSerializer` instead.
-- All serialization is Stream-based at the `ISerializer` level. Use extension methods (`SerializeToBytes<T>`, `SerializeToString<T>`, `Deserialize<T>(byte[])`, `Deserialize<T>(string?)`) from `SerializerExtensions` when you need byte arrays or strings.
+- The `ISerializer` contract is buffer-first: writes target an `IBufferWriter<byte>`, reads consume a `ReadOnlyMemory<byte>` or `ReadOnlySequence<byte>`. Use extension methods (`SerializeToBytes<T>`, `SerializeToString<T>`, `Deserialize<T>(byte[])`, `Deserialize<T>(string?)`, plus `Serialize<T>(T, Stream)` / `Deserialize<T>(Stream)`) from `SerializerExtensions` when you hold a `byte[]`, `string`, or `Stream` instead.
 - `SerializeToString` on a binary serializer (e.g., MessagePack) returns a Base64 string; on a text serializer it returns UTF-8. `Deserialize<T>(string?)` reverses this automatically.
 - Built-in JSON converters in `Headless.Serializer.Json` — add them to your `IJsonOptionsProvider` when needed: `UnixTimeJsonConverter`, `IpAddressJsonConverter` (included in default options), `EmptyStringAsNullJsonConverter<T>`, `StringToGuidJsonConverter`, `NullableStringToGuidJsonConverter`, `StringToBooleanJsonConverter`, `SingleOrListJsonConverter<TItem>`, `SingleOrHashsetJsonConverter<TItem>`, `ObjectToInferredTypesJsonConverter`, `CollectionItemJsonConverter<TDatatype, TConverterType>`.
 - The `DefaultWebJsonOptions` used by `DefaultJsonOptionsProvider` include `IpAddressJsonConverter` and `JsonStringEnumConverter(CamelCase)` automatically. Do not add them again in a custom provider — duplicate converters cause unexpected behavior.
@@ -76,21 +79,25 @@ Neither provider registers itself into DI automatically — you must call `servi
 ```csharp
 public interface ISerializer
 {
-    T? Deserialize<T>(Stream data);
-    void Serialize<T>(T value, Stream output);
-    object? Deserialize(Stream data, Type objectType);
-    void Serialize(object? value, Stream output);
+    void Serialize<T>(T value, IBufferWriter<byte> output);
+    void Serialize(object? value, IBufferWriter<byte> output);
+    T? Deserialize<T>(ReadOnlyMemory<byte> data);
+    T? Deserialize<T>(in ReadOnlySequence<byte> data);
+    object? Deserialize(ReadOnlyMemory<byte> data, Type type);
+    object? Deserialize(in ReadOnlySequence<byte> data, Type type);
 }
 ```
 
-The base contract is Stream-in / Stream-out. Extension methods in `SerializerExtensions` (C# 14 extension members) add convenience overloads:
+The base contract is buffer-first: writes target an `IBufferWriter<byte>`; reads consume a `ReadOnlyMemory<byte>` (contiguous — the common case: a `byte[]`, a cache value segment) or a `ReadOnlySequence<byte>` (possibly multi-segment, e.g. from a `PipeReader`). This lets each implementation reach its backend's lowest-allocation path — `System.Text.Json`'s `Utf8JsonWriter`/`Utf8JsonReader`, MessagePack's `IBufferWriter`/`ReadOnlySequence` APIs — with no intermediate `byte[]` or `Stream`. Extension methods in `SerializerExtensions` (C# 14 extension members) add adapters for the shapes consumers usually hold:
 
 | Method | Input | Output | Note |
 |--------|-------|--------|------|
-| `Deserialize<T>(byte[])` | `byte[]` | `T?` | wraps in `MemoryStream` |
-| `Deserialize<T>(string?)` | `string?` | `T?` | UTF-8 for text; Base64-decode for binary |
-| `SerializeToBytes<T>(T?)` | `T?` | `byte[]?` | null-safe |
+| `Deserialize<T>(byte[])` | `byte[]` | `T?` | wraps as `ReadOnlyMemory<byte>` — read in place, no copy |
+| `Deserialize<T>(string?)` | `string?` | `T?` | UTF-8 for text; Base64-decode for binary; `null` → `default` (serializer not invoked) |
+| `Deserialize<T>(Stream)` | `Stream` | `T?` | reads the stream into a pooled buffer first |
+| `SerializeToBytes<T>(T?)` | `T?` | `byte[]?` | null-safe; serializes through a pooled buffer writer |
 | `SerializeToString<T>(T?)` | `T?` | `string?` | UTF-8 for text; Base64 for binary |
+| `Serialize<T>(T, Stream)` | `T` | `Stream` | serializes through a pooled buffer, then writes to the stream |
 
 ### Interface hierarchy
 
@@ -135,15 +142,21 @@ Provides provider-agnostic serialization contracts for both text (JSON) and bina
 
 ### Key Features
 
-- `ISerializer` — core Stream-based interface with generic and non-generic overloads
+- `ISerializer` — core buffer-first interface: `Serialize<T>`/`Serialize` write to an `IBufferWriter<byte>`; `Deserialize<T>`/`Deserialize` read from a `ReadOnlyMemory<byte>` or `ReadOnlySequence<byte>`
 - `ITextSerializer` — marker interface for text-format implementations
 - `IJsonSerializer : ITextSerializer` — JSON-specific marker; register JSON providers against this
 - `IBinarySerializer : ISerializer` — marker interface for binary implementations
-- `SerializerExtensions` — C# 14 extension members on `ISerializer`:
-  - `Deserialize<T>(byte[])` — deserialize from a byte array
-  - `Deserialize<T>(string?)` — deserialize from a string (UTF-8 for text, Base64 for binary)
+- `SerializerExtensions` — C# 14 extension members on `ISerializer` adapting the core buffer contract to common shapes:
+  - `Deserialize<T>(byte[])` — deserialize from a byte array (read in place via `ReadOnlyMemory<byte>`)
+  - `Deserialize<T>(string?)` — deserialize from a string (UTF-8 for text, Base64 for binary); `null` returns `default`
+  - `Deserialize<T>(Stream)` — deserialize from a stream
   - `SerializeToBytes<T>(T?)` — serialize to `byte[]`, null-safe
   - `SerializeToString<T>(T?)` — serialize to string (UTF-8 for text, Base64 for binary), null-safe
+  - `Serialize<T>(T, Stream)` / `Serialize(object?, Stream)` — serialize to a stream
+
+### Design Notes
+
+The contract is **buffer-first, not Stream-first**. `IBufferWriter<byte>` and `ReadOnlyMemory<byte>` / `ReadOnlySequence<byte>` are the primitives both backends expose with the fewest copies (`System.Text.Json` via `Utf8JsonWriter`/`Utf8JsonReader`, MessagePack natively) — so a `SerializeToBytes` no longer pays for a `MemoryStream` plus its `ToArray()` copy, and a byte-array deserialize is read in place. `byte[]`, `string`, and `Stream` are provided as extension adapters because they are convenient at call sites, not because they are the fast path. When you already hold a contiguous buffer (a `byte[]`, a cache value segment), call the `ReadOnlyMemory<byte>` overload directly to avoid the adapter hop.
 
 ### Installation
 
@@ -222,6 +235,8 @@ Provides JSON serialization via System.Text.Json with a battle-tested default co
 
 `DefaultWebJsonOptions` adds `JsonStringEnumConverter(CamelCase)` and `IpAddressJsonConverter` automatically. Creating a custom `IJsonOptionsProvider` that calls `JsonConstants.ConfigureWebJsonOptions` inherits these converters without duplication.
 
+`SystemJsonSerializer` implements the buffer-first `ISerializer` contract over `System.Text.Json`'s lowest-allocation surface, with no intermediate `byte[]` or `Stream`. Writes go through a `Utf8JsonWriter` constructed over the caller's `IBufferWriter<byte>`; reads use `JsonSerializer.Deserialize(span)` for the contiguous `ReadOnlyMemory<byte>` path and a `Utf8JsonReader` for the `ReadOnlySequence<byte>` path. A pre-built `Utf8JsonWriter`/`Utf8JsonReader` governs its **own** formatting and reading rules independently of the `JsonSerializerOptions`, so the serializer derives them from the options — the writer inherits `WriteIndented`, `Encoder`, `IndentCharacter`/`IndentSize`, `NewLine`, and `MaxDepth`; the sequence reader inherits `AllowTrailingCommas`, `ReadCommentHandling`, and `MaxDepth`. Without that copy, indentation/escaping and the configured depth limit would be silently dropped on the buffer path. The sequence/`Stream` path also rejects trailing non-whitespace after the top-level value, matching the contiguous span/`byte[]` path, so a corrupt `"{...}<garbage>"` payload cannot deserialize silently. `byte[]`, `string`, and `Stream` remain available as `SerializerExtensions` adapters.
+
 ### Installation
 
 ```bash
@@ -297,8 +312,13 @@ Provides compact binary serialization for high-throughput scenarios (cache entri
 - `MessagePackSerializer` — `IBinarySerializer` implementation
 - Contractless by default: uses `ContractlessStandardResolver`, so plain POCOs serialize without any attributes
 - Accepts `MessagePackSerializerOptions` via constructor for compression, custom resolvers, or security settings
+- `untrustedData` constructor flag opts into `MessagePackSecurity.UntrustedData` (recursion-depth limit + collision-resistant hashing) without hand-building options
 - Built-in LZ4 compression available via `WithCompression(MessagePackCompression.Lz4BlockArray)`
-- Full `ISerializer` surface: generic `Serialize<T>` / `Deserialize<T>`, non-generic `Serialize(object?)` / `Deserialize(Stream, Type)`
+- Full `ISerializer` surface via MessagePack's native buffer APIs — `Serialize(IBufferWriter<byte>)`, `Deserialize(ReadOnlyMemory<byte>)` / `Deserialize(in ReadOnlySequence<byte>)` — avoiding the buffer-copy overhead of its `Stream` overloads
+
+### Design Notes
+
+The parameterless constructor uses MessagePack-CSharp's trusted-data security default (`MessagePackSecurity.TrustedData`) — the fast path, appropriate when payloads originate inside the trust boundary (e.g. cache values the app itself wrote). When deserializing data from outside the trust boundary (a cache other services or attackers can write to, message payloads from external producers), construct with `untrustedData: true` to apply `MessagePackSecurity.UntrustedData`, which defends against hash-flooding and stack-overflow DoS. For finer control, supply your own `MessagePackSerializerOptions`: the serializer uses them verbatim and you own the security level, so set a custom `Security` there rather than combining it with the `untrustedData` switch.
 
 ### Installation
 
@@ -336,10 +356,13 @@ All configuration is passed via `MessagePackSerializerOptions` at construction t
 // Switch to attribute-based (non-contractless) mode:
 var options = MessagePackSerializerOptions.Standard; // requires [MessagePackObject]/[Key] attributes
 
-// Security: disallow deserialization of arbitrary types via typeless API:
+// Harden for untrusted input — the untrustedData flag is the shortcut for this:
 var options = MessagePackSerializerOptions
     .Standard.WithResolver(ContractlessStandardResolver.Instance)
     .WithSecurity(MessagePackSecurity.UntrustedData);
+
+// Equivalent, without hand-building options:
+var serializer = new MessagePackSerializer(untrustedData: true);
 ```
 
 ### Dependencies

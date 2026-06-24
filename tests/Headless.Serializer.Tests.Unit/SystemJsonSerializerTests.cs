@@ -62,6 +62,71 @@ public sealed class SystemJsonSerializerTests
     }
 
     [Fact]
+    public void deserialize_stream_honors_reader_options_from_serializer_options()
+    {
+        // given — DefaultWebJsonOptions sets AllowTrailingCommas = true; the Stream/sequence path must honor the
+        // configured reader options, not fall back to Utf8JsonReader defaults.
+        const string json = "{\"name\":\"Test\",\"age\":30,}";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        // when
+        var result = _serializer.Deserialize<TestClass>(stream);
+
+        // then
+        result.Should().NotBeNull();
+        result.Name.Should().Be("Test");
+        result.Age.Should().Be(30);
+    }
+
+    [Fact]
+    public void deserialize_stream_reads_from_current_position()
+    {
+        // given — a payload preceded by a prefix the caller has already consumed; the stream is positioned at the
+        // payload start, so deserialization must read from Position, not from offset 0.
+        var prefix = "PREFIX"u8.ToArray();
+        var payload = Encoding.UTF8.GetBytes("{\"name\":\"Test\",\"age\":30}");
+        using var stream = new MemoryStream([.. prefix, .. payload]);
+        stream.Position = prefix.Length;
+
+        // when
+        var result = _serializer.Deserialize<TestClass>(stream);
+
+        // then
+        result.Should().NotBeNull();
+        result.Name.Should().Be("Test");
+        result.Age.Should().Be(30);
+    }
+
+    [Fact]
+    public void deserialize_stream_rejects_trailing_content()
+    {
+        // given — the sequence/Stream path must reject trailing non-whitespace just like the span/byte[] overloads,
+        // so a corrupt "{...}<garbage>" payload cannot deserialize silently.
+        const string json = "{\"name\":\"Test\",\"age\":30}garbage";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        // when
+        var act = () => _serializer.Deserialize<TestClass>(stream);
+
+        // then
+        act.Should().Throw<JsonException>();
+    }
+
+    [Fact]
+    public void deserialize_stream_consumes_the_stream()
+    {
+        // given
+        var payload = Encoding.UTF8.GetBytes("{\"name\":\"Test\",\"age\":30}");
+        using var stream = new MemoryStream(payload);
+
+        // when
+        _ = _serializer.Deserialize<TestClass>(stream);
+
+        // then — the stream is consumed (Position advanced to the end), matching the old Stream API.
+        stream.Position.Should().Be(stream.Length);
+    }
+
+    [Fact]
     public void serialize_null_object_should_handle_gracefully()
     {
         // given
@@ -128,6 +193,26 @@ public sealed class SystemJsonSerializerTests
         // then - PascalCase since PropertyNamingPolicy is null
         result.Should().Be("{\"Name\":\"Test\",\"Age\":25}");
         optionsProvider.Received(1).GetSerializeOptions();
+    }
+
+    [Fact]
+    public void serialize_honors_custom_indentation_options()
+    {
+        // given — a custom provider enabling indentation; the buffer write path must honor WriteIndented and the
+        // related formatting options, not fall back to the compact Utf8JsonWriter defaults.
+        var indentedOptions = JsonConstants.CreateWebJsonOptions();
+        indentedOptions.WriteIndented = true;
+        var provider = Substitute.For<IJsonOptionsProvider>();
+        provider.GetSerializeOptions().Returns(indentedOptions);
+        provider.GetDeserializeOptions().Returns(indentedOptions);
+        var serializer = new SystemJsonSerializer(provider);
+
+        // when
+        var json = serializer.SerializeToString(new TestClass { Name = "Test", Age = 30 });
+
+        // then — indented output spans multiple lines; compact output would be a single line.
+        json.Should().NotBeNull();
+        json!.Should().Contain("\n");
     }
 
     [Fact]

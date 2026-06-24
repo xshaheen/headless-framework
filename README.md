@@ -7,7 +7,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 
-116+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
+150+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
 
 [Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Architecture](#architecture) &bull; [Using with AI Agents](#using-headless-with-ai-agents) &bull; [Contributing](#contributing)
 
@@ -21,7 +21,7 @@ Most .NET frameworks force opinions on you — folder structures, ORM choices, m
 
 Every feature ships as a pair: a thin **abstraction** package (interfaces and contracts) and one or more **provider** packages (concrete implementations). You pick the pieces you need, wire them up, and own the result.
 
-- **Composable** — 116+ standalone packages. Use one or use fifty.
+- **Composable** — 150+ standalone packages. Use one or use fifty.
 - **Swappable** — Switch from Redis to in-memory caching, or AWS to Azure blob storage, by changing one line.
 - **Explicit** — No hidden conventions, no magic. Every behavior is visible in your code.
 - **Testable** — Every abstraction is mockable. Every provider is integration-tested with Testcontainers.
@@ -31,34 +31,42 @@ Every feature ships as a pair: a thin **abstraction** package (interfaces and co
 ```bash
 dotnet add package Headless.Api.ServiceDefaults
 dotnet add package Headless.Caching.Redis
-dotnet add package Headless.Orm.EntityFramework
+dotnet add package Headless.Blobs.Azure
+dotnet add package Headless.Emails.Aws
 ```
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Service defaults: OpenTelemetry, OpenAPI, problem details, JSON, health checks, and more.
+// Binds secrets from the "Headless:StringEncryption" and "Headless:StringHash" config sections.
 builder.AddHeadless();
 
-builder.Services.AddHeadlessRedisCache(options =>
-{
-    options.ConnectionString = "localhost:6379";
-});
+// Caching — pick a provider on the unified setup builder. Swap UseRedis for UseInMemory
+// (or add an L1/L2 tier) without touching call sites.
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+builder.Services.AddHeadlessCaching(setup =>
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis)
+);
 
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.ConnectionString = "your-connection-string";
-    options.ContainerName = "uploads";
-});
+// Blob storage — the Azure provider consumes a BlobServiceClient registered in DI.
+builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseAzure(options => options.AutoCreateContainer = true)
+);
 
-builder.Services.AddAwsSesEmail(options =>
-{
-    options.FromEmail = "noreply@example.com";
-});
+// Email — AWS SES reads region/credentials from AWSOptions (here, the "AWS:*" config section).
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAwsSes(builder.Configuration.GetAWSOptions())
+);
 
 var app = builder.Build();
-app.UseExceptionHandler();
-app.UseResponseCompression();
-app.UseHsts();
+
+// Applies the Headless middleware pipeline (forwarded headers, compression, exception handler,
+// HSTS, status-code pages) and maps the health/alive/OpenAPI endpoints.
+app.UseHeadless();
+app.MapHeadlessEndpoints();
+
 app.Run();
 ```
 
