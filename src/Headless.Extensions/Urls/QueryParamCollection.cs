@@ -35,6 +35,17 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     }
 
     /// <summary>
+    /// Creates a copy of this <see cref="QueryParamCollection"/>, preserving insertion order and each
+    /// parameter's original encoding state. Faster than rendering to a query string and re-parsing it.
+    /// </summary>
+    public QueryParamCollection Clone()
+    {
+        var clone = new QueryParamCollection();
+        clone._values.AddRange(_values);
+        return clone;
+    }
+
+    /// <summary>
     /// Returns serialized, encoded query string. Insertion order is preserved.
     /// </summary>
     public override string ToString() => ToString(false);
@@ -134,7 +145,10 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     {
         if (!Contains(name))
         {
+            // Simple append: no existing values to replace in place, so skip the ToArray/Clear/rebuild below
+            // (which is O(n) per call and allocates the backing array on every add).
             Add(name, value, isEncoded, nullValueHandling);
+            return;
         }
 
         // This covers some complex edge cases involving multiple values of the same name.
@@ -216,8 +230,15 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     /// <inheritdoc />
-    public IEnumerator<(string Name, object? Value)> GetEnumerator() =>
-        _values.Select(qp => (qp.Name, qp.Value.Value)).GetEnumerator();
+    public IEnumerator<(string Name, object? Value)> GetEnumerator()
+    {
+        // Indexed loop avoids allocating the Select iterator + closure on every enumeration.
+        for (var i = 0; i < _values.Count; i++)
+        {
+            var qp = _values[i];
+            yield return (qp.Name, qp.Value.Value);
+        }
+    }
 
     /// <inheritdoc />
     public int Count => _values.Count;
@@ -237,14 +258,38 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     }
 
     /// <inheritdoc />
-    public IEnumerable<object?> GetAll(string name) => _values.GetAll(name).Select(qv => qv.Value);
+    public IEnumerable<object?> GetAll(string name)
+    {
+        // Single indexed iterator mirroring NameValueList.GetAll (case-sensitive names here), instead of
+        // chaining GetAll(...) with a Select projection.
+        for (var i = 0; i < _values.Count; i++)
+        {
+            var qp = _values[i];
+            if (qp.Name.OrdinalEquals(name))
+            {
+                yield return qp.Value.Value;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public bool Contains(string name) => _values.Contains(name);
 
     /// <inheritdoc />
-    public bool Contains(string name, object? value) =>
-        _values.Any(qv => qv.Name == name && Equals(qv.Value.Value, value));
+    public bool Contains(string name, object? value)
+    {
+        // Indexed scan avoids the Any closure; compares the unwrapped value, not the QueryParamValue wrapper.
+        for (var i = 0; i < _values.Count; i++)
+        {
+            var qp = _values[i];
+            if (qp.Name == name && Equals(qp.Value.Value, value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 /// <summary>

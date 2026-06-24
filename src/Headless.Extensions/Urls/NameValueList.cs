@@ -179,5 +179,18 @@ public sealed class NameValueList<TValue>(bool caseSensitiveNames)
     }
 
     /// <inheritdoc />
-    public bool Contains(string name, TValue? value) => Contains((name, value)!);
+    public bool Contains(string name, TValue? value)
+    {
+        // Scan honoring caseSensitiveNames. The previous (name, value) tuple Contains used ordinal name
+        // equality, ignoring the case-insensitivity flag that every sibling method respects.
+        for (var i = 0; i < Count; i++)
+        {
+            if (this[i].Name.OrdinalEquals(name, !caseSensitiveNames) && Equals(this[i].Value, value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

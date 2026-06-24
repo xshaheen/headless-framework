@@ -478,4 +478,26 @@ public sealed class UrlBuildingTests
         var url = new Url("  https://www.site.com \t");
         url.ToString().Should().Be("https://www.site.com");
     }
+
+    [Fact]
+    public void should_build_from_uri_consistently_via_operator_and_factory()
+    {
+        // uri.ToString() drops the explicit default port ":443", but uri.OriginalString keeps it. The implicit
+        // operator and FromUri must agree with the Url(Uri) ctor (OriginalString-based), not with uri.ToString().
+        var uri = new Uri("https://someurl.net:443/api/somepath");
+
+        var fromCtor = new Url(uri).ToString();
+        fromCtor.Should().Be("https://someurl.net:443/api/somepath");
+        ((Url)uri).ToString().Should().Be(fromCtor);
+        Url.FromUri(uri).ToString().Should().Be(fromCtor);
+    }
+
+    [Fact]
+    public void should_keep_non_null_values_when_setting_new_param_to_collection_with_trailing_null()
+    {
+        // SetQueryParam on a not-yet-present key appends via the simple Add path; a trailing null in the
+        // collection must not wipe the non-null values that precede it.
+        var url = "http://www.mysite.com".SetQueryParam("x", new object?[] { 1, null });
+        url.ToString().Should().Be("http://www.mysite.com?x=1");
+    }
 }

@@ -24,15 +24,24 @@ internal static partial class UrlEncoder
 
         if (s.Length > _MaxUrlLength)
         {
-            // Uri.EscapeDataString is going to throw because the string is "too long", so break it into pieces and concat them
-            var parts = new string[(int)Math.Ceiling((double)s.Length / _MaxUrlLength)];
-            for (var i = 0; i < parts.Length; i++)
+            // Uri.EscapeDataString throws for very long strings, so escape it in chunks and concat. A chunk
+            // boundary must never split a UTF-16 surrogate pair, or EscapeDataString corrupts the non-BMP
+            // character straddling it, so pull the boundary back one char when it lands on a high surrogate.
+            var sb = new StringBuilder(s.Length);
+            var start = 0;
+            while (start < s.Length)
             {
-                var start = i * _MaxUrlLength;
                 var len = Math.Min(_MaxUrlLength, s.Length - start);
-                parts[i] = Uri.EscapeDataString(s.AsSpan(start, len));
+                if (start + len < s.Length && char.IsHighSurrogate(s[start + len - 1]))
+                {
+                    len--;
+                }
+
+                sb.Append(Uri.EscapeDataString(s.AsSpan(start, len)));
+                start += len;
             }
-            s = string.Concat(parts);
+
+            s = sb.ToString();
         }
         else
         {
