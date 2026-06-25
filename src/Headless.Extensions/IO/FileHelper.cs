@@ -228,23 +228,6 @@ public static class FileHelper
         return StringHelper.ConvertFromBytesWithoutBom(bytes);
     }
 
-    /// <summary>Opens a text file, reads its entire content as a string, and then closes the file.</summary>
-    /// <param name="path">The file to open for reading.</param>
-    /// <param name="cancellationToken">A token to observe while reading.</param>
-    /// <returns>A string containing the entire content of the file.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
-    /// <exception cref="FileNotFoundException">Thrown when the file at <paramref name="path"/> is not found.</exception>
-    /// <exception cref="DirectoryNotFoundException">Thrown when the directory in <paramref name="path"/> is not found.</exception>
-    /// <exception cref="IOException">Thrown when an I/O error occurs while reading the file.</exception>
-    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to read the file.</exception>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
-    public static Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
-    {
-        // File.ReadAllTextAsync opens the file for asynchronous I/O internally; File.OpenText opened a synchronous
-        // FileStream, so ReadToEndAsync was async-over-sync (blocking a thread-pool thread on file I/O).
-        return File.ReadAllTextAsync(path, cancellationToken);
-    }
-
     /// <summary>Opens a binary file, reads its entire content into a byte array, and then closes the file.</summary>
     /// <param name="path">The file to open for reading.</param>
     /// <param name="cancellationToken">A token to observe while reading.</param>
