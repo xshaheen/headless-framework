@@ -28,39 +28,39 @@ public sealed record EmailTrackingNotification
 
     /// <summary>Present only when <see cref="EventType"/> is <c>Send</c>. Always empty.</summary>
     [JsonPropertyName("send")]
-    public SendEvent? Send { get; init; }
+    public SesSendEvent? Send { get; init; }
 
     /// <summary>Present only when <see cref="EventType"/> is <c>Delivery</c>.</summary>
     [JsonPropertyName("delivery")]
-    public DeliveryEvent? Delivery { get; init; }
+    public SesDeliveryEvent? Delivery { get; init; }
 
     /// <summary>Present only when <see cref="EventType"/> is <c>DeliveryDelay</c>.</summary>
     [JsonPropertyName("deliveryDelay")]
-    public DeliveryDelayEvent? DeliveryDelay { get; init; }
+    public SesDeliveryDelayEvent? DeliveryDelay { get; init; }
 
     /// <summary>Present only when <see cref="EventType"/> is <c>Open</c>.</summary>
     [JsonPropertyName("open")]
-    public OpenEvent? Open { get; init; }
+    public SesOpenEvent? Open { get; init; }
 
     /// <summary>Present only when <see cref="EventType"/> is <c>Click</c>.</summary>
     [JsonPropertyName("click")]
-    public ClickEvent? Click { get; init; }
+    public SesClickEvent? Click { get; init; }
 
     /// <summary>Present only when <see cref="EventType"/> is <c>Bounce</c>.</summary>
     [JsonPropertyName("bounce")]
-    public BounceEvent? Bounce { get; init; }
+    public SesBounceEvent? Bounce { get; init; }
 
     /// <summary>Present only when <see cref="EventType"/> is <c>Complaint</c>.</summary>
     [JsonPropertyName("complaint")]
-    public ComplaintEvent? Complaint { get; init; }
+    public SesComplaintEvent? Complaint { get; init; }
 
     /// <summary>Present only when <see cref="EventType"/> is <c>Reject</c>.</summary>
     [JsonPropertyName("reject")]
-    public RejectEvent? Reject { get; init; }
+    public SesRejectEvent? Reject { get; init; }
 
     /// <summary>Present only when <see cref="EventType"/> is <c>Rendering Failure</c>.</summary>
     [JsonPropertyName("failure")]
-    public RenderingFailureEvent? Failure { get; init; }
+    public SesRenderingFailureEvent? Failure { get; init; }
 
     /// <summary>Captures any fields SES adds to the record that are not modeled above.</summary>
     [JsonExtensionData]

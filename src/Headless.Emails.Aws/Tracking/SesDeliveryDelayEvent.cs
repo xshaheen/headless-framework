@@ -4,7 +4,7 @@ namespace Headless.Emails.Aws.Tracking;
 
 /// <summary>Information about a <c>DeliveryDelay</c> event.</summary>
 [PublicAPI]
-public sealed record DeliveryDelayEvent
+public sealed record SesDeliveryDelayEvent
 {
     /// <summary>The type of delay. One of the <see cref="DelayTypes"/> values.</summary>
     [JsonPropertyName("delayType")]
@@ -27,7 +27,7 @@ public sealed record DeliveryDelayEvent
     public string? ReportingMta { get; init; }
 }
 
-/// <summary>A recipient whose delivery was delayed, as reported in <see cref="DeliveryDelayEvent.DelayedRecipients"/>.</summary>
+/// <summary>A recipient whose delivery was delayed, as reported in <see cref="SesDeliveryDelayEvent.DelayedRecipients"/>.</summary>
 [PublicAPI]
 public sealed record DelayedRecipient
 {
@@ -44,7 +44,7 @@ public sealed record DelayedRecipient
     public string DiagnosticCode { get; init; } = null!;
 }
 
-/// <summary>The possible values of <see cref="DeliveryDelayEvent.DelayType"/>.</summary>
+/// <summary>The possible values of <see cref="SesDeliveryDelayEvent.DelayType"/>.</summary>
 [PublicAPI]
 public static class DelayTypes
 {

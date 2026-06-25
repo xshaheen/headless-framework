@@ -4,7 +4,7 @@ namespace Headless.Emails.Aws.Tracking;
 
 /// <summary>Information about a <c>Click</c> event.</summary>
 [PublicAPI]
-public sealed record ClickEvent
+public sealed record SesClickEvent
 {
     /// <summary>The date and time when the click event occurred.</summary>
     [JsonPropertyName("timestamp")]

@@ -4,7 +4,7 @@ namespace Headless.Emails.Aws.Tracking;
 
 /// <summary>Information about a <c>Delivery</c> event.</summary>
 [PublicAPI]
-public sealed record DeliveryEvent
+public sealed record SesDeliveryEvent
 {
     /// <summary>The date and time when SES delivered the email to the recipient's mail server.</summary>
     [JsonPropertyName("timestamp")]

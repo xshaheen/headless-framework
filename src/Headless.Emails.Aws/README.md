@@ -103,9 +103,9 @@ switch (notification?.EventType)
 The message correlation ID is `notification.Mail.MessageId` (the ID SES returns from a send).
 
 Available types: `EmailTrackingNotification`, `MailDetails` (`EmailHeader`, `EmailCommonHeaders`),
-`SendEvent`, `DeliveryEvent`, `DeliveryDelayEvent` (`DelayedRecipient`), `OpenEvent`, `ClickEvent`,
-`BounceEvent` (`BouncedRecipient`), `ComplaintEvent` (`ComplainedRecipient`), `RejectEvent`,
-`RenderingFailureEvent`; plus the `EmailEventTypes`, `BounceTypes`, `BounceSubTypes`, `DelayTypes`, and
+`SesSendEvent`, `SesDeliveryEvent`, `SesDeliveryDelayEvent` (`DelayedRecipient`), `SesOpenEvent`, `SesClickEvent`,
+`SesBounceEvent` (`BouncedRecipient`), `SesComplaintEvent` (`ComplainedRecipient`), `SesRejectEvent`,
+`SesRenderingFailureEvent`; plus the `EmailEventTypes`, `BounceTypes`, `BounceSubTypes`, `DelayTypes`, and
 `ComplaintFeedbackTypes` constant holders.
 
 ## Configuration

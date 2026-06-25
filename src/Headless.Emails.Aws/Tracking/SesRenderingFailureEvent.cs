@@ -4,7 +4,7 @@ namespace Headless.Emails.Aws.Tracking;
 
 /// <summary>Information about a <c>Rendering Failure</c> event.</summary>
 [PublicAPI]
-public sealed record RenderingFailureEvent
+public sealed record SesRenderingFailureEvent
 {
     /// <summary>The name of the template used to send the email.</summary>
     [JsonPropertyName("templateName")]

@@ -4,7 +4,7 @@ namespace Headless.Emails.Aws.Tracking;
 
 /// <summary>Information about an <c>Open</c> event.</summary>
 [PublicAPI]
-public sealed record OpenEvent
+public sealed record SesOpenEvent
 {
     /// <summary>The date and time when the open event occurred.</summary>
     [JsonPropertyName("timestamp")]

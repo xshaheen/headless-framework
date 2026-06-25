@@ -4,7 +4,7 @@ namespace Headless.Emails.Aws.Tracking;
 
 /// <summary>Information about a <c>Complaint</c> event.</summary>
 [PublicAPI]
-public sealed record ComplaintEvent
+public sealed record SesComplaintEvent
 {
     /// <summary>The recipients that may have submitted the complaint.</summary>
     [JsonPropertyName("complainedRecipients")]
@@ -48,7 +48,7 @@ public sealed record ComplaintEvent
     public string? UserAgent { get; init; }
 }
 
-/// <summary>A recipient that may have submitted a complaint, as reported in <see cref="ComplaintEvent.ComplainedRecipients"/>.</summary>
+/// <summary>A recipient that may have submitted a complaint, as reported in <see cref="SesComplaintEvent.ComplainedRecipients"/>.</summary>
 [PublicAPI]
 public sealed record ComplainedRecipient
 {
@@ -62,7 +62,7 @@ public sealed record ComplainedRecipient
 }
 
 /// <summary>
-/// The known values of <see cref="ComplaintEvent.ComplaintFeedbackType"/>, as assigned by the reporting
+/// The known values of <see cref="SesComplaintEvent.ComplaintFeedbackType"/>, as assigned by the reporting
 /// ISP per the IANA MARF parameters registry.
 /// </summary>
 [PublicAPI]

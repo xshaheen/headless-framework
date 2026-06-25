@@ -8,7 +8,7 @@ namespace Headless.Emails.Aws.Tracking;
 /// recipient from your mailing list; <see cref="BounceTypes.Transient"/> may succeed on a later send.
 /// </summary>
 [PublicAPI]
-public sealed record BounceEvent
+public sealed record SesBounceEvent
 {
     /// <summary>The type of bounce, as determined by SES. One of the <see cref="BounceTypes"/> values.</summary>
     [JsonPropertyName("bounceType")]
@@ -38,7 +38,7 @@ public sealed record BounceEvent
     public BouncedRecipient[] BouncedRecipients { get; init; } = [];
 }
 
-/// <summary>A recipient whose email address produced a bounce, as reported in <see cref="BounceEvent.BouncedRecipients"/>.</summary>
+/// <summary>A recipient whose email address produced a bounce, as reported in <see cref="SesBounceEvent.BouncedRecipients"/>.</summary>
 [PublicAPI]
 public sealed record BouncedRecipient
 {
@@ -71,7 +71,7 @@ public sealed record BouncedRecipient
     public string? DiagnosticCode { get; init; }
 }
 
-/// <summary>The possible values of <see cref="BounceEvent.BounceType"/>.</summary>
+/// <summary>The possible values of <see cref="SesBounceEvent.BounceType"/>.</summary>
 [PublicAPI]
 public static class BounceTypes
 {
@@ -85,7 +85,7 @@ public static class BounceTypes
     public const string Transient = "Transient";
 }
 
-/// <summary>The possible values of <see cref="BounceEvent.BounceSubType"/>.</summary>
+/// <summary>The possible values of <see cref="SesBounceEvent.BounceSubType"/>.</summary>
 [PublicAPI]
 public static class BounceSubTypes
 {

@@ -7,4 +7,4 @@ namespace Headless.Emails.Aws.Tracking;
 /// its presence on <see cref="EmailTrackingNotification"/> indicates the event type.
 /// </summary>
 [PublicAPI]
-public sealed record SendEvent;
+public sealed record SesSendEvent;

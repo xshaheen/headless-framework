@@ -4,7 +4,7 @@ namespace Headless.Emails.Aws.Tracking;
 
 /// <summary>Information about a <c>Reject</c> event.</summary>
 [PublicAPI]
-public sealed record RejectEvent
+public sealed record SesRejectEvent
 {
     /// <summary>
     /// The reason the email was rejected. The only possible value is <c>Bad content</c>, which means SES
