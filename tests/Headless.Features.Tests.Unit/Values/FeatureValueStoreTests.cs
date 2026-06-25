@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
+using Headless.Features.Models;
 using Headless.Features.Repositories;
 using Headless.Features.Values;
 using Headless.Testing.Tests;
@@ -47,6 +48,77 @@ public sealed class FeatureValueStoreTests : TestBase
         await _repository
             .DidNotReceive()
             .GetListAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_load_from_repository_and_cache_all_defined_features_on_miss()
+    {
+        // given
+        const string providerName = "TestProvider";
+        const string? providerKey = "tenant-1";
+        const string requested = "FeatureA";
+        var requestedKey = FeatureValueCacheItem.CalculateCacheKey(requested, providerName, providerKey);
+        var otherKey = FeatureValueCacheItem.CalculateCacheKey("FeatureB", providerName, providerKey);
+
+        _cache
+            .GetAsync<FeatureValueCacheItem>(requestedKey, AbortToken)
+            .Returns(CacheValue<FeatureValueCacheItem>.NoValue);
+
+        IReadOnlyList<FeatureDefinition> definitions = [new("FeatureA"), new("FeatureB")];
+        _definitionManager.GetFeaturesAsync(AbortToken).Returns(definitions);
+
+        List<FeatureValueRecord> records =
+        [
+            new(Guid.NewGuid(), "FeatureA", "value-a", providerName, providerKey),
+            new(Guid.NewGuid(), "FeatureB", "value-b", providerName, providerKey),
+        ];
+        _repository.GetListAsync(providerName, providerKey, AbortToken).Returns(records);
+
+        // when
+        var result = await _sut.GetOrDefaultAsync(requested, providerName, providerKey, AbortToken);
+
+        // then — the requested value is returned, and *all* defined features for the scope are cached in one shot
+        result.Should().Be("value-a");
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(d =>
+                    d.Count == 2 && d[requestedKey].Value == "value-a" && d[otherKey].Value == "value-b"
+                ),
+                Arg.Any<TimeSpan?>(),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_cache_null_when_defined_feature_has_no_stored_value()
+    {
+        // given
+        const string name = "TestFeature";
+        const string providerName = "TestProvider";
+        const string? providerKey = null;
+        var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+
+        _cache.GetAsync<FeatureValueCacheItem>(cacheKey, AbortToken).Returns(CacheValue<FeatureValueCacheItem>.NoValue);
+
+        IReadOnlyList<FeatureDefinition> definitions = [new(name)];
+        _definitionManager.GetFeaturesAsync(AbortToken).Returns(definitions);
+        _repository.GetListAsync(providerName, providerKey, AbortToken).Returns([]);
+
+        // when
+        var result = await _sut.GetOrDefaultAsync(name, providerName, providerKey, AbortToken);
+
+        // then — a defined-but-unset feature caches a null marker so repeat reads stay cache-served
+        result.Should().BeNull();
+        await _cache
+            .Received(1)
+            .UpsertAllAsync(
+                Arg.Is<IDictionary<string, FeatureValueCacheItem>>(d =>
+                    d.ContainsKey(cacheKey) && d[cacheKey].Value == null
+                ),
+                Arg.Any<TimeSpan?>(),
+                AbortToken
+            );
     }
 
     #endregion
