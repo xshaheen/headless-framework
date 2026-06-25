@@ -22,7 +22,7 @@ public static partial class Argument
     /// <exception cref="ArgumentException">if <paramref name="condition"/> is <see langword="false"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Is(
+    public static void IsTrue(
         [DoesNotReturnIf(false)] bool condition,
         string? message = null,
         [CallerArgumentExpression(nameof(condition))] string? paramName = null
@@ -30,13 +30,13 @@ public static partial class Argument
     {
         if (!condition)
         {
-            _ThrowForIs(message, paramName);
+            _ThrowForIsTrue(message, paramName);
         }
     }
 
     /// <summary>
     /// Throws an <see cref="ArgumentException"/> if <paramref name="condition"/> is <see langword="true"/>. The mirror of
-    /// <see cref="Is"/>; use it for argument preconditions expressed as a condition that must <em>not</em> hold.
+    /// <see cref="IsTrue"/>; use it for argument preconditions expressed as a condition that must <em>not</em> hold.
     /// </summary>
     /// <param name="condition">The argument precondition that must not hold.</param>
     /// <param name="message">(Optional) Custom error message.</param>
@@ -60,7 +60,7 @@ public static partial class Argument
     }
 
     [DoesNotReturn]
-    private static void _ThrowForIs(string? message, string? paramName)
+    private static void _ThrowForIsTrue(string? message, string? paramName)
     {
         throw new ArgumentException(message ?? $"The condition {paramName.ToAssertString()} must be true.", paramName);
     }

@@ -254,7 +254,7 @@ public void CreateUser(string name, int age, List<string> roles)
 - `Argument.IsInRangeFor(index, count | collection | span)` — bounds-checks an index against a length/collection/span
 - `Argument.FileExists(path)` / `DirectoryExists(path)`
 - `Argument.Matches(string, regex)` — throws `ArgumentException` when the string does not match the pattern
-- `Argument.Is(condition, message, nameof(arg))` / `IsFalse(condition, …)` — custom argument precondition that must hold / must not hold; throws `ArgumentException`
+- `Argument.IsTrue(condition, message, nameof(arg))` / `IsFalse(condition, …)` — custom argument precondition that must hold / must not hold; throws `ArgumentException`
 
 #### Runtime Assertions
 

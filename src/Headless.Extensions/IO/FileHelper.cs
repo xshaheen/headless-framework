@@ -174,7 +174,7 @@ public static class FileHelper
             || Path.IsPathRooted(name)
         );
 
-        Argument.Is(
+        Argument.IsTrue(
             isSafePathSegment,
             "The file name must be a relative path segment without traversal sequences.",
             nameof(name)
