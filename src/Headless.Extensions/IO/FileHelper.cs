@@ -63,8 +63,9 @@ public static class FileHelper
         // per-file retry pipeline). Each blob's outcome is captured independently into its slot, preserving the
         // one-result-per-input contract and the input ordering.
         await Parallel
-            .ForEachAsync(
-                Enumerable.Range(0, items.Count),
+            .ForAsync(
+                0,
+                items.Count,
                 new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
                 async (index, _) =>
                 {

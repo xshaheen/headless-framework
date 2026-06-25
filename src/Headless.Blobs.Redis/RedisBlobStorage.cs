@@ -252,8 +252,9 @@ public sealed class RedisBlobStorage : IBlobStorage
         };
 
         await Parallel
-            .ForEachAsync(
-                Enumerable.Range(0, items.Count),
+            .ForAsync(
+                0,
+                items.Count,
                 options,
                 async (i, ct) =>
                 {
@@ -346,8 +347,9 @@ public sealed class RedisBlobStorage : IBlobStorage
         };
 
         await Parallel
-            .ForEachAsync(
-                Enumerable.Range(0, names.Count),
+            .ForAsync(
+                0,
+                names.Count,
                 options,
                 async (i, ct) =>
                 {

@@ -148,8 +148,9 @@ public sealed class SshBlobStorage(
         };
 
         await Parallel
-            .ForEachAsync(
-                Enumerable.Range(0, items.Count),
+            .ForAsync(
+                0,
+                items.Count,
                 parallelOptions,
                 async (i, ct) =>
                 {
@@ -240,8 +241,9 @@ public sealed class SshBlobStorage(
         };
 
         await Parallel
-            .ForEachAsync(
-                Enumerable.Range(0, names.Count),
+            .ForAsync(
+                0,
+                names.Count,
                 parallelOptions,
                 async (i, ct) =>
                 {
