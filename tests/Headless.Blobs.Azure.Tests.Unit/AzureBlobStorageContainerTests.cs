@@ -2,35 +2,26 @@
 
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Headless.Abstractions;
 using Headless.Blobs.Azure;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Tests;
 
-public sealed class AzureBlobStorageContainerTests : TestBase
+public sealed class AzureBlobContainerManagerTests : TestBase
 {
     [Fact]
-    public async Task create_container_ensures_at_most_once()
+    public async Task ensure_container_creates_at_most_once()
     {
         var containerClient = Substitute.For<BlobContainerClient>();
         var serviceClient = Substitute.For<BlobServiceClient>();
         serviceClient.GetBlobContainerClient(Arg.Any<string>()).Returns(containerClient);
 
-        await using var sut = new AzureBlobStorage(
-            serviceClient,
-            new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
-            new OptionsWrapper<AzureStorageOptions>(new AzureStorageOptions()),
-            new AzureBlobNamingNormalizer(),
-            NullLogger<AzureBlobStorage>.Instance
-        );
+        // Container lifecycle now lives on the separately-resolved manager, not on AzureBlobStorage.
+        var sut = new AzureBlobContainerManager(serviceClient, new AzureBlobNamingNormalizer(), PublicAccessType.None);
 
-        await sut.CreateContainerAsync(["mycontainer"]);
-        await sut.CreateContainerAsync(["mycontainer"]);
+        await sut.EnsureContainerAsync("mycontainer", AbortToken);
+        await sut.EnsureContainerAsync("mycontainer", AbortToken);
 
         // The second call is served from the per-instance cache; CreateIfNotExists runs once.
         await containerClient
