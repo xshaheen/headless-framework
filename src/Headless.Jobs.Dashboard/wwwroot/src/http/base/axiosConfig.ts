@@ -1,7 +1,7 @@
 import { useAuthStore } from '@/stores/authStore';
 import { useAlertStore } from '@/stores/alertStore';
-import axios, { AxiosError, type AxiosInstance, type AxiosResponse } from 'axios';
-import { getApiBaseUrl, getAuthMode } from '@/utilities/pathResolver';
+import axios, { AxiosError, type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
+import { getApiBaseUrl } from '@/utilities/pathResolver';
 
 const axiosInstance: AxiosInstance = axios.create({
   baseURL: getApiBaseUrl(),
@@ -9,7 +9,7 @@ const axiosInstance: AxiosInstance = axios.create({
 
 // Request Interceptor: Set Authorization header
 axiosInstance.interceptors.request.use(
-  (config: any) => {
+  (config: InternalAxiosRequestConfig) => {
     // Get auth headers from localStorage (using correct keys)
     const apiKey = localStorage.getItem('jobs_api_key');
     const basicAuth = localStorage.getItem('jobs_basic_auth');

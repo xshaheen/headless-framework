@@ -54,7 +54,7 @@ const formatJsonForDisplay = (json: string, isHtml: boolean = false) => {
   try {
     const formatted = JSON.stringify(JSON.parse(json), null, 2)
     return isHtml ? formatted.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : formatted
-  } catch (error) {
+  } catch {
     return undefined
   }
 }
@@ -144,7 +144,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
   }),
   onFieldUpdate: {
     executionTime: (value, update) => {
-      let cleaned = value.replace(/[^0-9]/g, '')
+      const cleaned = value.replace(/[^0-9]/g, '')
 
       if (!cleaned) {
         update('')
@@ -195,7 +195,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
     functionName: (value, update) => {
       setFieldValue(
         'exampleData',
-        functionNamesStore.data!.find((fn) => fn.functionName === value)?.functionRequestType!,
+        functionNamesStore.data!.find((fn) => fn.functionName === value)?.functionRequestType ?? '',
       )
 
       if (props.dialogProps.id == undefined || props.dialogProps.function != value)
@@ -203,7 +203,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
       else
         setFieldValue(
           'requestData',
-          formatJsonForDisplay(getJobRequestData.response.value?.result!, false)!,
+          formatJsonForDisplay(getJobRequestData.response.value?.result ?? '', false)!,
         )
 
       update(value)
@@ -270,7 +270,9 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
             executionTime: executionDateTime,
             retries: parseInt(`${values.retries}`),
             description: values.description,
-            intervals: comboBoxModel.value.map((item) => item.value),
+            intervals: comboBoxModel.value.map((item) =>
+              typeof item === 'string' ? parseInt(item) : (item.value ?? 0),
+            ),
           }, schedulingTimeZone)
           .then(() => {
             emit('confirm')
@@ -283,7 +285,9 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
             executionTime: executionDateTime,
             retries: parseInt(`${values.retries}`),
             description: values.description,
-            intervals: comboBoxModel.value.map((item) => item.value),
+            intervals: comboBoxModel.value.map((item) =>
+              typeof item === 'string' ? parseInt(item) : (item.value ?? 0),
+            ),
           }, schedulingTimeZone)
           .then(() => {
             emit('confirm')
@@ -292,7 +296,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
     }
   },
 })
-const comboBoxItems = [
+const comboBoxItems: ComboBoxOption[] = [
   { header: true, title: 'Select suggested intervals or create one' },
   {
     id: 1,
@@ -311,17 +315,28 @@ const comboBoxItems = [
   },
 ]
 
-const comboBoxFilter = (_: any, queryText: any, item: any) => {
-  const toLowerCaseString = (val: any) => String(val != null ? val : '').toLowerCase()
+const comboBoxFilter = (
+  _: string,
+  queryText: string,
+  item?: { raw: { header?: boolean; title?: string } },
+) => {
+  const toLowerCaseString = (val: unknown) => String(val != null ? val : '').toLowerCase()
   const query = toLowerCaseString(queryText)
 
-  if (item.raw.header) return true
+  if (item?.raw.header) return true
 
-  const text = toLowerCaseString(item.raw.title)
+  const text = toLowerCaseString(item?.raw.title)
   return text.includes(query)
 }
 
-const comboBoxModel = ref<any[]>([])
+interface ComboBoxOption {
+  id?: string | number
+  title: string
+  value?: number
+  header?: boolean
+}
+
+const comboBoxModel = ref<ComboBoxOption[]>([])
 const comboBoxSearch = ref<string | null>(null)
 
 watch(comboBoxSearch, () => {
@@ -339,14 +354,15 @@ watch(
     if (values.retries < comboBoxModel.value.length) {
       comboBoxModel.value.pop()
     } else {
-      let lastItem = comboBoxModel.value[comboBoxModel.value.length - 1]
+      const lastItem = comboBoxModel.value[comboBoxModel.value.length - 1]
       if (typeof lastItem === 'string') {
-        if (parseInt(lastItem) > 86400) lastItem = '86400'
-        else if (parseInt(lastItem) < 0) lastItem = '0'
+        let seconds = parseInt(lastItem)
+        if (seconds > 86400) seconds = 86400
+        else if (seconds < 0) seconds = 0
         comboBoxModel.value.splice(-1, 1, {
           id: Date.now(),
-          title: formatTime(parseInt(lastItem)),
-          value: parseInt(lastItem),
+          title: formatTime(seconds),
+          value: seconds,
         })
       }
     }
@@ -354,7 +370,7 @@ watch(
   { deep: true },
 )
 
-const removeSelection = (index: any) => {
+const removeSelection = (index: number) => {
   comboBoxModel.value.splice(index, 1)
 }
 
@@ -507,7 +523,7 @@ defineExpose({
                         ></v-list-subheader>
                         <v-list-item
                           v-if="!item.raw.header && comboBoxModel.length < values.retries"
-                          @click="props.onClick as any"
+                          @click="props.onClick as (() => void) | undefined"
                         >
                           <v-chip :text="item.raw.title" variant="flat" label></v-chip>
                         </v-list-item>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { jobsService } from '@/http/services/jobsService'
-import { computed, ref, toRef, watch, type PropType } from 'vue'
+import { computed, toRef, watch, type PropType } from 'vue'
 
 const getJobRequestData = jobsService.getRequestData()
 
@@ -18,9 +18,9 @@ const props = defineProps({
 
 const formattedJson = computed(() => {
   try {
-    const formatted = JSON.stringify(JSON.parse(getJobRequestData.response.value?.result!), null, 2);
+    const formatted = JSON.stringify(JSON.parse(getJobRequestData.response.value?.result ?? ''), null, 2);
     return formatted.replace(/\n/g, "<br>").replace(/ /g, "&nbsp;");
-  } catch (error) {
+  } catch {
     return "Invalid JSON";
   }
 });

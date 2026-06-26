@@ -24,7 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Computed properties
   const isLoggedIn = computed(() => {
-    forceUpdate.value; // Force reactivity
+    void forceUpdate.value; // Force reactivity
     if (!isInitialized.value) return false;
     return authStatus.value.authenticated;
   });

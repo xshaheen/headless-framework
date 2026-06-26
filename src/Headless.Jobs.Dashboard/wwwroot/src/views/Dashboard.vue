@@ -9,6 +9,8 @@ import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
 import LiveNodesPanel from '@/components/LiveNodesPanel.vue'
 
+defineOptions({ name: 'DashboardView' })
+
 const getNextPlannedJob = jobsService.getNextPlannedJob()
 const getOptions = jobsService.getOptions()
 const getMachineJobs = jobsService.getMachineJobs()
@@ -35,7 +37,7 @@ onMounted(async () => {
     const total = res.reduce((sum, item) => sum + item.item2, 0)
 
     res.forEach((item) => {
-      const status = statuses.value.find((x) => x.name === Status[item.item1 as any])
+      const status = statuses.value.find((x) => x.name === Status[Number(item.item1)])
 
       if (status) {
         status.count = item.item2
@@ -213,13 +215,9 @@ const functionHeaders = [
   { title: 'Priority', key: 'priority', sortable: true },
 ]
 
-// Computed properties for pagination
-const totalFunctionsPages = computed(() =>
-  Math.ceil(functionItems.value.length / functionsPerPage.value),
-)
 
 // Handle Vuetify table options update
-const handleTableOptionsUpdate = (options: any) => {
+const handleTableOptionsUpdate = (options: { page?: number; itemsPerPage?: number }) => {
   if (options.itemsPerPage !== undefined) {
     functionsPerPage.value = options.itemsPerPage
   }
@@ -228,31 +226,6 @@ const handleTableOptionsUpdate = (options: any) => {
   }
 }
 
-// Function to get visible page numbers for pagination
-const getVisiblePageNumbers = () => {
-  const total = totalFunctionsPages.value
-  const current = currentFunctionsPage.value
-  const delta = 2 // Number of pages to show on each side of current page
-
-  let start = Math.max(1, current - delta)
-  let end = Math.min(total, current + delta)
-
-  // Adjust start and end to always show delta*2 + 1 pages when possible
-  if (end - start < delta * 2) {
-    if (start === 1) {
-      end = Math.min(total, start + delta * 2)
-    } else {
-      start = Math.max(1, end - delta * 2)
-    }
-  }
-
-  const pages = []
-  for (let i = start; i <= end; i++) {
-    pages.push(i)
-  }
-
-  return pages
-}
 </script>
 <template>
   <div class="dashboard-container">
@@ -463,19 +436,19 @@ const getVisiblePageNumbers = () => {
               @update:options="handleTableOptionsUpdate"
             >
               <!-- Function Name Column -->
-              <template v-slot:item.function="{ item }">
+              <template #[`item.function`]="{ item }">
                 <span class="function-name">{{ item.function }}</span>
               </template>
 
               <!-- Request Namespace Column -->
-              <template v-slot:item.request="{ item }">
+              <template #[`item.request`]="{ item }">
                 <span class="namespace-text" :title="item.request">
                   {{ item.request }}
                 </span>
               </template>
 
               <!-- Priority Column -->
-              <template v-slot:item.priority="{ item }">
+              <template #[`item.priority`]="{ item }">
                 <div
                   class="priority-badge"
                   :class="`priority-${item.priority.toLowerCase().replace('longrunning', 'long')}`"

@@ -99,7 +99,7 @@ const addHubListeners = async () => {
         response.items[itemIndex] = {
           ...currentItem,
           ...val,
-          status: Status[val.status as any],
+          status: Status[val.status as number],
           executedAt: `${format(val.executedAt)} (took ${formatTime(val.elapsedTime as number, true)})`,
           retryIntervals: currentItem.retryIntervals,
           lockedAt: currentItem.lockedAt, // Preserve existing lockedAt
@@ -116,7 +116,7 @@ const addHubListeners = async () => {
     }
   });
 
-  props.jobNotificationHub.onReceiveAddCronJobOccurrence((val:GetCronJobOccurrenceResponse) => {
+  props.jobNotificationHub.onReceiveAddCronJobOccurrence(() => {
     // Reload current page when new item is added
     loadPageData();
   });
@@ -166,7 +166,7 @@ const requestCancel = async (id: string) => {
 const onSubmitConfirmDialog = async () => {
   confirmDialog.close()
   await deleteCronOccurrence
-    .requestAsync(confirmDialog.propData?.data!)
+    .requestAsync(confirmDialog.propData?.data ?? '')
     .then(async () => await sleep(100))
     .then(async () => {
       await loadPageData()
@@ -204,7 +204,7 @@ const getStatusIcon = (status: string | number) => {
   }
 }
 
-const formatRetryIntervals = (item: any) => {
+const formatRetryIntervals = (item: GetCronJobOccurrenceResponse) => {
   if (!item.retryIntervals || item.retryIntervals.length === 0) {
     return []
   }
@@ -235,7 +235,7 @@ const formatRetryIntervals = (item: any) => {
   return intervals
 }
 
-const setRowProp = (propContext: any) => {
+const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
   const status = propContext.item.status;
   const statusStr = typeof status === 'string' ? status : (status !== null && status !== undefined ? String(status) : 'Unknown');
   return { 
@@ -312,7 +312,7 @@ const setRowProp = (propContext: any) => {
             fixed-header
           >
             <!-- Status Column -->
-            <template v-slot:item.status="{ item }">
+            <template #[`item.status`]="{ item }">
               <div class="status-cell">
                 <div class="status-badge" :style="{ backgroundColor: getStatusColor(item.status) }">
                   <v-icon size="14" color="white">{{ getStatusIcon(item.status) }}</v-icon>
@@ -344,7 +344,7 @@ const setRowProp = (propContext: any) => {
             </template>
 
             <!-- Executed At Column -->
-            <template v-slot:item.ExecutedAt="{ item }">
+            <template #[`item.ExecutedAt`]="{ item }">
               <div class="executed-at-cell">
                 <div v-if="hasStatus(item.status, Status.InProgress)" class="executing-indicator">
                   <v-icon size="16" class="spinning">mdi-loading</v-icon>
@@ -360,7 +360,7 @@ const setRowProp = (propContext: any) => {
             </template>
 
             <!-- Retry Intervals Column -->
-            <template v-slot:item.retryIntervals="{ item }">
+            <template #[`item.retryIntervals`]="{ item }">
               <div class="retry-intervals-cell">
                 <div v-if="!item.retryIntervals || item.retryIntervals.length === 0" class="no-retries">
                   <span class="na-text">N/A</span>
@@ -405,7 +405,7 @@ const setRowProp = (propContext: any) => {
             </template>
 
             <!-- Actions Column -->
-            <template v-slot:item.actions="{ item }">
+            <template #[`item.actions`]="{ item }">
               <div class="actions-cell">
                 <v-btn
                   @click="requestCancel(item.id)"

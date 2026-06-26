@@ -2,7 +2,6 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useAuth } from '../../composables/useAuth'
 import { useAuthStore } from '@/stores/authStore'
-import { authService } from '@/services/auth'
 
 // Props
 interface Props {
@@ -11,7 +10,7 @@ interface Props {
   showLogout?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   showLoginForm: true,
   showUserInfo: true,
   showLogout: true
@@ -30,14 +29,12 @@ const {
   username,
   isLoading,
   errorMessage,
-  login,
-  logout,
   clearError
 } = useAuth()
 
 // Import alert composable for demonstration
 import { useAlert } from '@/composables/useAlert'
-const { showSuccess, showError, showWarning, showInfo } = useAlert()
+const { showSuccess, showError, showInfo } = useAlert()
 
 // Local state
 const isLoginFormVisible = ref(false)

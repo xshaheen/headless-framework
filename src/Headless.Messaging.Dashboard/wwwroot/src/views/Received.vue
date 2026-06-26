@@ -181,6 +181,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'ReceivedView' })
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { httpService } from '@/services/http'
@@ -342,7 +343,7 @@ async function viewMessage(storageId: string) {
     const dto = await httpService.get<MessageDetail>(`/received/message/${storageId}`)
     detailMessage.value = dto
     detailDialogOpen.value = true
-  } catch (error) {
+  } catch {
     alertStore.showError('Failed to load message detail')
   }
 }
@@ -353,7 +354,7 @@ function handleBatchReexecute() {
       await httpService.post('/received/reexecute', [...selectedIds.value])
       alertStore.showSuccess(`${selectedIds.value.length} messages re-executed`)
       await loadMessages()
-    } catch (error) {
+    } catch {
       alertStore.showError('Failed to re-execute messages')
     }
   }
@@ -373,7 +374,7 @@ function handleBatchDelete() {
       await httpService.post('/received/delete', [...selectedIds.value])
       alertStore.showSuccess(`${selectedIds.value.length} messages deleted`)
       await loadMessages()
-    } catch (error) {
+    } catch {
       alertStore.showError('Failed to delete messages')
     }
   }

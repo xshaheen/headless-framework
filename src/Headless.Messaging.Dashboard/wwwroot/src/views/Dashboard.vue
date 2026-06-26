@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'DashboardView' })
 import { onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMessagingStore } from '@/stores/messagingStore'

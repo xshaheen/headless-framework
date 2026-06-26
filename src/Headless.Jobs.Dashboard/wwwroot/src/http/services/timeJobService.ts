@@ -37,7 +37,7 @@ const getTimeJobs = () => {
             const processItem = (item: GetTimeJobResponse): GetTimeJobResponse => {
                 // Safely set status with null check
                 if (item.status !== undefined && item.status !== null) {
-                    item.status = Status[item.status as any];
+                    item.status = Status[item.status as number];
                 }
 
                 if (item.executedAt != null || item.executedAt != undefined)
@@ -49,7 +49,7 @@ const getTimeJobs = () => {
                 if (item.retryIntervals == null || item.retryIntervals.length == 0 && item.retries != null && (item.retries as number) > 0)
                     item.retryIntervals = Array(1).fill(`${30}s`);
                 else
-                    item.retryIntervals = (item.retryIntervals as string[]).map((x: any) => formatTime(x as number, false));
+                    item.retryIntervals = (item.retryIntervals as string[]).map((x: string) => formatTime(x as unknown as number, false));
 
                 item.lockHolder = item.lockHolder ?? '-';
 
@@ -109,7 +109,7 @@ const getTimeJobsPaginated = () => {
                 response.items = response.items.map((item: GetTimeJobResponse) => {
                     const processItem = (item: GetTimeJobResponse): GetTimeJobResponse => {
                         if (item.status !== undefined && item.status !== null) {
-                            item.status = Status[item.status as any];
+                            item.status = Status[item.status as number];
                         }
                         
                         if (item.executedAt != null || item.executedAt != undefined)
@@ -121,7 +121,7 @@ const getTimeJobsPaginated = () => {
                         if (item.retryIntervals == null || item.retryIntervals.length == 0 && item.retries != null && (item.retries as number) > 0)
                             item.retryIntervals = Array(1).fill(`${30}s`);
                         else
-                            item.retryIntervals = (item.retryIntervals as string[]).map((x: any) => formatTime(x as number, false));
+                            item.retryIntervals = (item.retryIntervals as string[]).map((x: string) => formatTime(x as unknown as number, false));
                         
                         item.lockHolder = item.lockHolder ?? '-';
                         
@@ -213,7 +213,7 @@ const addTimeJob = () => {
     const baseHttp = useBaseHttpService<AddTimeJobRequest, object>('single');
 
     const requestAsync = async (data: AddTimeJobRequest, timeZoneId?: string | null) => {
-        const paramData: Record<string, any> = {};
+        const paramData: Record<string, string> = {};
         if (timeZoneId) {
             paramData.timeZoneId = timeZoneId;
         }
@@ -230,7 +230,7 @@ const updateTimeJob = () => {
     const baseHttp = useBaseHttpService<UpdateTimeJobRequest, object>('single');
 
     const requestAsync = async (id: string, data: UpdateTimeJobRequest, timeZoneId?: string | null) => {
-        const paramData: Record<string, any> = { id };
+        const paramData: Record<string, string> = { id };
         if (timeZoneId) {
             paramData.timeZoneId = timeZoneId;
         }

@@ -135,6 +135,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'NodesView' })
 import { ref, reactive, onMounted } from 'vue'
 import { httpService } from '@/services/http'
 import { useAlertStore } from '@/stores/alertStore'

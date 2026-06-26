@@ -748,33 +748,61 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useFunctionNameStore } from '@/stores/functionNames'
-import { jobsService } from '@/http/services/jobsService'
 import { timeJobService } from '@/http/services/timeJobService'
+import type { AddChainJobsRequest } from '@/http/services/types/timeJobService.types'
+
+// Domain types
+interface RetryIntervalOption {
+  id?: number
+  title: string
+  value?: number
+  header?: boolean
+}
+
+interface WizardStep {
+  id: string
+  title: string
+  description: string
+  icon: string
+  completed: boolean
+}
+
+interface ScheduledJob {
+  ignoreDateTime: boolean
+  executionDate: Date | undefined
+  executionTime: string
+}
+
+interface ChainJobPayload {
+  function: string
+  description: string
+  runCondition?: number | null
+  executionTime: string | null | undefined
+  retries: number
+  request: string | null
+  intervals: Array<number | undefined>
+  children: ChainJobPayload[]
+}
 
 // Props
 interface Props {
   modelValue: boolean
-  functionNames?: string[]
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  functionNames: () => []
-})
+const props = defineProps<Props>()
 
 // Emits
 interface Emits {
   (e: 'update:modelValue', value: boolean): void
-  (e: 'created', data: any): void
+  (e: 'created', data: object): void
 }
 
 const emit = defineEmits<Emits>()
 
 // Store
 const functionNamesStore = useFunctionNameStore()
-const getJobRequestData = jobsService.getRequestData()
-const addChainJobs = timeJobService.addChainJobs()
 
 // Reactive state
 const isOpen = computed({
@@ -802,29 +830,29 @@ const parentJob = ref({
   ignoreDateTime: false,
   retries: 0,
   requestData: '',
-  retryIntervals: [] as any[]
+  retryIntervals: [] as RetryIntervalOption[]
 })
 
 const children = ref([] as Array<{
   functionName: string
   description: string
-  runCondition: string | null
+  runCondition: number | null
   executionDate: Date | undefined
   executionTime: string
   ignoreDateTime: boolean
   retries: number
   requestData: string
-  retryIntervals: any[]
+  retryIntervals: RetryIntervalOption[]
   grandChildren: Array<{
     functionName: string
     description: string
-    runCondition: string | null
+    runCondition: number | null
     executionDate: Date | undefined
     executionTime: string
     ignoreDateTime: boolean
     retries: number
     requestData: string
-    retryIntervals: any[]
+    retryIntervals: RetryIntervalOption[]
   }>
 }>)
 
@@ -843,7 +871,7 @@ const runConditions = computed(() => [
   { title: 'In Progress (Parallel)', value: 5 }
 ])
 
-const retryIntervalItems = [
+const retryIntervalItems: RetryIntervalOption[] = [
   { header: true, title: 'Select suggested intervals or create one' },
   { id: 1, title: '1 min', value: 60 },
   { id: 2, title: '5 min', value: 300 },
@@ -954,7 +982,7 @@ const navigateToStep = (stepId: string) => {
   }
 }
 
-const getStepIconColor = (step: any) => {
+const getStepIconColor = (step: WizardStep) => {
   if (step.completed) return 'success'
   if (currentStep.value === step.id) return 'primary'
   return 'grey'
@@ -1035,7 +1063,7 @@ const formatJsonForDisplay = (json: string | null, isHtml: boolean = false) => {
   try {
     const formatted = JSON.stringify(JSON.parse(json), null, 2)
     return isHtml ? formatted.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : formatted
-  } catch (error) {
+  } catch {
     return isHtml ? json.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : json
   }
 }
@@ -1075,17 +1103,17 @@ const createNewChild = () => ({
   ignoreDateTime: false,
   retries: 0,
   requestData: '',
-  retryIntervals: [] as any[],
+  retryIntervals: [] as RetryIntervalOption[],
   grandChildren: [] as Array<{
     functionName: string
     description: string
-    runCondition: string | null
+    runCondition: number | null
     executionDate: Date | undefined
     executionTime: string
     ignoreDateTime: boolean
     retries: number
     requestData: string
-    retryIntervals: any[]
+    retryIntervals: RetryIntervalOption[]
   }>
 })
 
@@ -1098,7 +1126,7 @@ const createNewGrandChild = () => ({
   ignoreDateTime: false,
   retries: 0,
   requestData: '',
-  retryIntervals: [] as any[]
+  retryIntervals: [] as RetryIntervalOption[]
 })
 
 // Add/Remove children methods
@@ -1153,7 +1181,7 @@ const getConfiguredChildren = () => {
     .filter(child => child.functionName)
 }
 
-const formatExecutionTime = (job: any) => {
+const formatExecutionTime = (job: ScheduledJob) => {
   if (job.ignoreDateTime) return 'Immediate'
   if (job.executionDate && job.executionTime) {
     return `${job.executionDate.toLocaleDateString()} at ${job.executionTime}`
@@ -1165,7 +1193,7 @@ const createChainJobs = async () => {
   isCreating.value = true
   
   try {
-    const getExecutionTime = (job: any) => {
+    const getExecutionTime = (job: ScheduledJob) => {
       if (job.ignoreDateTime) return undefined
       if (job.executionDate && job.executionTime) {
         const [hours, minutes, seconds = 0] = job.executionTime.split(':').map(Number)
@@ -1182,7 +1210,7 @@ const createChainJobs = async () => {
       retries: parentJob.value.retries,
       request: parentJob.value.requestData || null,
       intervals: parentJob.value.retryIntervals?.map(item => typeof item === 'object' ? item.value : item) || [],
-      children: [] as any[]
+      children: [] as ChainJobPayload[]
     }
 
     children.value.forEach((child) => {
@@ -1195,7 +1223,7 @@ const createChainJobs = async () => {
           retries: child.retries,
           request: child.requestData || null,
           intervals: child.retryIntervals?.map(item => typeof item === 'object' ? item.value : item) || [],
-          children: [] as any[]
+          children: [] as ChainJobPayload[]
         }
 
         child.grandChildren.forEach((grandChild) => {
@@ -1217,7 +1245,7 @@ const createChainJobs = async () => {
     })
 
     const addChainJobs = timeJobService.addChainJobs()
-    addChainJobs.requestAsync(chainRoot)
+    addChainJobs.requestAsync(chainRoot as AddChainJobsRequest)
         .then((result) => {
             emit('created', result)
             closeModal()

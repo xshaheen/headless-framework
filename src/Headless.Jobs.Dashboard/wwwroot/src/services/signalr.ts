@@ -14,10 +14,12 @@ export interface SignalRStatus {
   error?: string;
 }
 
+type EventCallback = (...args: unknown[]) => void;
+
 class SignalRService {
   private connection: signalR.HubConnection | null = null;
   private state: ConnectionState = 'disconnected';
-  private listeners: Map<string, Function[]> = new Map();
+  private listeners: Map<string, EventCallback[]> = new Map();
 
   /**
    * Initialize and start SignalR connection
@@ -99,7 +101,7 @@ class SignalRService {
   /**
    * Add event listener
    */
-  on(event: string, callback: Function): void {
+  on(event: string, callback: EventCallback): void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
@@ -109,7 +111,7 @@ class SignalRService {
   /**
    * Remove event listener
    */
-  off(event: string, callback?: Function): void {
+  off(event: string, callback?: EventCallback): void {
     if (!callback) {
       this.listeners.delete(event);
       return;
@@ -245,7 +247,7 @@ class SignalRService {
     }
   }
 
-  private emit(event: string, ...args: any[]): void {
+  private emit(event: string, ...args: unknown[]): void {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       callbacks.forEach(callback => {

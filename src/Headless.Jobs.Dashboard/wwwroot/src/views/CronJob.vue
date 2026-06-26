@@ -8,6 +8,9 @@ import PaginationFooter from '@/components/PaginationFooter.vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart, PieChart } from 'echarts/charts'
+import type { LineSeriesOption } from 'echarts/charts'
+import type { LegendComponentOption } from 'echarts/components'
+import type { CallbackDataParams } from 'echarts/types/dist/shared'
 import { sleep } from '@/utilities/sleep'
 import {
   GetCronJobGraphDataRangeResponse,
@@ -29,6 +32,12 @@ import { describeCron } from '@/utilities/cron'
 // Helper function to get readable cron expression (6-part format with seconds)
 const getReadableCronExpression = (expression: string): string =>
   describeCron(expression, 'Invalid cron expression')
+
+// Helper to detect aborted/cancelled HTTP request errors
+const isCanceledError = (error: unknown): boolean => {
+  const err = error as { name?: string; code?: string }
+  return err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED'
+}
 
 const getCronJobRangeGraphData = cronJobService.getTimeJobsGraphDataRange()
 const getCronJobsPaginated = cronJobService.getCronJobsPaginated()
@@ -90,20 +99,24 @@ const timeZoneStore = useTimeZoneStore()
 
 const onSubmitConfirmDialog = async () => {
   try {
-    const deletedId = confirmDialog.propData?.id!
+    const deletedId = confirmDialog.propData?.id
     confirmDialog.close()
-    
+
+    if (deletedId == undefined) {
+      return
+    }
+
     // Immediately remove from UI for better UX
     // Reload page after deletion
-    
+
     // Perform the actual deletion
     await deleteCronJob.requestAsync(deletedId)
     
     // Update charts to reflect the deletion
     await updateChartsAfterDeletion(deletedId)
     
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error: unknown) {
+    if (isCanceledError(error)) {
       return
     }
     // If deletion failed, we might want to refresh the data to restore the item
@@ -134,8 +147,8 @@ const updateChartsAfterDataChange = async (changedId?: string) => {
       const res = await getCronJobRangeGraphData.requestAsync(-3, 3)
       GetCronJobRangeGraphData(res)
     }
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error: unknown) {
+    if (isCanceledError(error)) {
       return
     }
     console.error('Error updating charts after data change:', error)
@@ -167,8 +180,8 @@ const updateChartsAfterDeletion = async (deletedId: string) => {
       const res = await getCronJobRangeGraphData.requestAsync(-3, 3)
       GetCronJobRangeGraphData(res)
     }
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error: unknown) {
+    if (isCanceledError(error)) {
       return
     }
     console.error('Error updating charts after deletion:', error)
@@ -205,8 +218,8 @@ const getTimeJobsGraphDataAndParseToGraph = async () => {
     // Force pie chart re-render by updating the key
     pieChartKey.value++
     
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error: unknown) {
+    if (isCanceledError(error)) {
       return
     }
   }
@@ -237,8 +250,8 @@ const updatePieChartForSelectedTicker = async (jobId: string, min: number, max: 
     
     // Convert to pie chart format
     const chartData = Array.from(statusCounts.entries())
-      .filter(([_, count]) => count > 0) // Only show statuses with data
-      .sort(([_, a], [__, b]) => b - a) // Sort by count descending
+      .filter(([, count]) => count > 0) // Only show statuses with data
+      .sort(([, a], [, b]) => b - a) // Sort by count descending
       .map(([statusId, count]) => {
         const statusName = Status[statusId] || `Status ${statusId}`
         const color = statusColors[statusId] || '#999999'
@@ -266,8 +279,8 @@ const updatePieChartForSelectedTicker = async (jobId: string, min: number, max: 
     // Force pie chart re-render by updating the key
     pieChartKey.value++
     
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error: unknown) {
+    if (isCanceledError(error)) {
       return
     }
   }
@@ -318,7 +331,7 @@ const GetCronJobRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) => {
     const composedData = Array.from(seriesMap.entries()).map(([item1, dataArray]) => ({
       data: dataArray,
       name: Status[item1] || `Unknown ${item1}`,
-      type: 'line',
+      type: 'line' as const,
       smooth: true,
       symbol: 'circle',
       symbolSize: 6,
@@ -339,7 +352,7 @@ const GetCronJobRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) => {
       },
       areaStyle: {
         color: {
-          type: 'linear',
+          type: 'linear' as const,
           x: 0,
           y: 0,
           x2: 0,
@@ -398,8 +411,8 @@ const GetCronJobRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) => {
     // Force chart re-render by updating the key
     chartKey.value++
     
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error: unknown) {
+    if (isCanceledError(error)) {
       return
     }
   }
@@ -420,8 +433,8 @@ const ShowCronJobOccurrenceGraphData = async (functionName: string, id: string, 
         
         // Refresh pie chart with all jobs data
         await getTimeJobsGraphDataAndParseToGraph()
-      } catch (error: any) {
-        if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+      } catch (error: unknown) {
+        if (isCanceledError(error)) {
           return
         }
       }
@@ -436,8 +449,8 @@ const ShowCronJobOccurrenceGraphData = async (functionName: string, id: string, 
         
         // Update pie chart with selected job's data
         await updatePieChartForSelectedTicker(id, min, max)
-      } catch (error: any) {
-        if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+      } catch (error: unknown) {
+        if (isCanceledError(error)) {
           return
         }
       }
@@ -450,7 +463,7 @@ const ShowCronJobOccurrenceGraphData = async (functionName: string, id: string, 
     setTimeout(() => {
     }, 100)
     
-  } catch (error: any) {
+  } catch {
   } finally {
     chartLoading.value = false
   }
@@ -471,8 +484,8 @@ onMounted(async () => {
       if (!connectionStore.isInitialized) {
         await connectionStore.initializeConnectionWithRetry()
       }
-    } 
-    catch (error: any) {}
+    }
+    catch {}
     
     // Check if still mounted before continuing
     if (!isMounted.value) return
@@ -480,7 +493,7 @@ onMounted(async () => {
     // Load cron jobs data
     try {
       await loadPageData()
-    } catch (error: any) {
+    } catch {
     }
     
     // Check if still mounted before continuing
@@ -490,8 +503,8 @@ onMounted(async () => {
     try {
       const res = await getCronJobRangeGraphData.requestAsync(-3, 3)
       GetCronJobRangeGraphData(res)
-    } catch (error: any) {
-      if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+    } catch (error: unknown) {
+      if (isCanceledError(error)) {
         return
       }
     }
@@ -502,7 +515,7 @@ onMounted(async () => {
     // Load status distribution data
     try {
       await getTimeJobsGraphDataAndParseToGraph()
-    } catch (error: any) {
+    } catch {
     }
     
     // Check if still mounted before continuing
@@ -511,10 +524,10 @@ onMounted(async () => {
     // Add hub listeners
     try {
       await addHubListeners()
-    } catch (error: any) {
+    } catch {
     }
-    
-  } catch (error: any) {
+
+  } catch {
   }
 })
 
@@ -602,8 +615,8 @@ provide(THEME_KEY, 'dark')
 
 const chartData = ref({
   xAxisData: [] as string[],
-  series: [] as any[],
-  legend: {} as any,
+  series: [] as LineSeriesOption[],
+  legend: {} as LegendComponentOption,
   title: 'Job statuses for all Cron Jobs'
 })
 
@@ -746,7 +759,7 @@ const totalOption = computed(() => ({
   },
   tooltip: {
     trigger: 'item',
-    formatter: function (params: any) {
+    formatter: function (params: CallbackDataParams) {
       const percentage = params.percent || 0
       const value = params.value || 0
       return `<div style="
@@ -811,7 +824,7 @@ const totalOption = computed(() => ({
         color: '#ffffff',
         fontSize: 12,
         fontWeight: 'bold',
-        formatter: function (params: any) {
+        formatter: function (params: CallbackDataParams) {
           const percentage = params.percent || 0
           return percentage > 5 ? `${params.name}\n${params.value}` : ''
         },
@@ -898,24 +911,10 @@ const safeRange = computed({
   },
 })
 
-const safeMin = computed({
-  get: () => safeRange.value[0],
-  set: (val) => {
-    safeRange.value = [val || -1, safeRange.value[1]]
-  },
-})
-
-const safeMax = computed({
-  get: () => safeRange.value[1],
-  set: (val) => {
-    safeRange.value = [safeRange.value[0], val || 1]
-  },
-})
-
 // ✅ Debounce utility
-function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+function debounce<T extends (...args: never[]) => void>(fn: T, delay: number): T {
   let timeout: ReturnType<typeof setTimeout>
-  return ((...args: any[]) => {
+  return ((...args: Parameters<T>) => {
     clearTimeout(timeout)
     timeout = setTimeout(() => fn(...args), delay)
   }) as T
@@ -934,8 +933,8 @@ const fetchGraphData = debounce(async ([min, max]: number[]) => {
       // Also update the pie chart for the selected job
       await updatePieChartForSelectedTicker(selectedCronJobGraphData.value!, min, max)
     }
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error: unknown) {
+    if (isCanceledError(error)) {
       return
     }
   }
@@ -956,7 +955,7 @@ watch(
 // Debug watcher for chart data changes
 watch(
   () => chartData.value,
-  (newData) => {
+  () => {
   },
   { deep: true }
 )
@@ -964,7 +963,7 @@ watch(
 // Debug watcher for pie chart data changes
 watch(
   () => pieChartData.value,
-  (newData) => {
+  () => {
   },
   { deep: true }
 )
@@ -1001,8 +1000,8 @@ const refreshData = async () => {
     
     // Update charts using the helper function
     await updateChartsAfterDataChange()
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error: unknown) {
+    if (isCanceledError(error)) {
       return
     }
   }
@@ -1202,7 +1201,7 @@ const refreshData = async () => {
             hide-default-footer
             class="enhanced-table"
           >
-            <template v-slot:item.expression="{ item }">
+            <template #[`item.expression`]="{ item }">
               <v-tooltip location="top">
                 <template #activator="{ props }">
                   <span v-bind="props" class="expression-tooltip">
@@ -1213,7 +1212,7 @@ const refreshData = async () => {
               </v-tooltip>
             </template>
 
-            <template v-slot:item.retryIntervals="{ item }">
+            <template #[`item.retryIntervals`]="{ item }">
               <div class="retry-display" v-if="item.retryIntervals?.length || (item.retries && item.retries > 0)">
                 <div class="retry-header" v-if="item.retries > 0">
                   <span class="retry-count-label">Max Retries: {{ item.retries }}</span>
@@ -1228,7 +1227,7 @@ const refreshData = async () => {
               <span v-else class="no-retries">—</span>
             </template>
 
-            <template v-slot:item.actions="{ item }">
+            <template #[`item.actions`]="{ item }">
               <div class="action-buttons-container">
                 <!-- Chart Button -->
                 <div class="action-btn-wrapper">

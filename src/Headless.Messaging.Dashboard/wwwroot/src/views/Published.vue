@@ -171,6 +171,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'PublishedView' })
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { httpService } from '@/services/http'
@@ -334,7 +335,7 @@ async function viewMessage(storageId: string) {
     const dto = await httpService.get<MessageDetail>(`/published/message/${storageId}`)
     detailMessage.value = dto
     detailDialogOpen.value = true
-  } catch (error) {
+  } catch {
     alertStore.showError('Failed to load message detail')
   }
 }
@@ -345,7 +346,7 @@ function handleBatchRequeue() {
       await httpService.post('/published/requeue', [...selectedIds.value])
       alertStore.showSuccess(`${selectedIds.value.length} messages requeued`)
       await loadMessages()
-    } catch (error) {
+    } catch {
       alertStore.showError('Failed to requeue messages')
     }
   }
@@ -365,7 +366,7 @@ function handleBatchDelete() {
       await httpService.post('/published/delete', [...selectedIds.value])
       alertStore.showSuccess(`${selectedIds.value.length} messages deleted`)
       await loadMessages()
-    } catch (error) {
+    } catch {
       alertStore.showError('Failed to delete messages')
     }
   }
