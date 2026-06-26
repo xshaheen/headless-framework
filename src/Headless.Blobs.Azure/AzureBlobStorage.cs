@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -10,7 +9,6 @@ using Headless.Abstractions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Primitives;
-using Headless.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,10 +19,17 @@ namespace Headless.Blobs.Azure;
 /// Also implements <see cref="IPresignedUrlBlobStorage"/> using Azure SAS (Shared Access Signature) tokens.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Requires a <see cref="BlobServiceClient"/> registered in DI before calling the setup extension. The client
 /// must be built with a <c>StorageSharedKeyCredential</c> or a user-delegation key to generate SAS URIs;
 /// a bare SAS-token or anonymous connection will throw <see cref="InvalidOperationException"/> on presigned URL
 /// calls.
+/// </para>
+/// <para>
+/// Container lifecycle (create/exists/delete) is intentionally <b>not</b> implemented here — it lives on the
+/// separately-registered <see cref="IBlobContainerManager"/> capability (<see cref="AzureBlobContainerManager"/>).
+/// <see cref="UploadAsync"/> never auto-creates a missing container; a missing container surfaces as an error.
+/// </para>
 /// </remarks>
 public sealed class AzureBlobStorage(
     BlobServiceClient blobServiceClient,
@@ -35,96 +40,51 @@ public sealed class AzureBlobStorage(
     ILogger<AzureBlobStorage> logger
 ) : IBlobStorage, IPresignedUrlBlobStorage
 {
+    // The Azure Blob Batch API caps a single batch at 256 sub-requests.
+    private const int _MaxBlobBatchSize = 256;
+
     private readonly AzureStorageOptions _option = optionAccessor.Value;
-
-    // Containers this instance has already ensured exist, so CreateIfNotExists runs at most once per container
-    // rather than on every upload/copy. A container is recorded only after a successful create, so a failed
-    // ensure is naturally retried. The per-container lock serializes concurrent first-time ensures of the same
-    // container into a single create while letting distinct containers be ensured in parallel.
-    private readonly ConcurrentDictionary<string, byte> _ensuredContainers = new(StringComparer.Ordinal);
-    private readonly KeyedAsyncLock _ensureContainerLock = new();
-
-    // De-dupes the container-name normalization warning so it is logged at most once per distinct caller input.
-    private readonly ConcurrentDictionary<string, byte> _loggedContainerNameChanges = new(StringComparer.Ordinal);
-
-    #region Create Container
-
-    public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
-    {
-        Argument.IsNotNullOrEmpty(container);
-
-        await _EnsureContainerOnceAsync(_GetContainer(container), cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task _EnsureContainerOnceAsync(string container, CancellationToken cancellationToken)
-    {
-        if (_ensuredContainers.ContainsKey(container))
-        {
-            return;
-        }
-
-        using (await _ensureContainerLock.LockAsync(container, cancellationToken).ConfigureAwait(false))
-        {
-            // Re-check under the lock: a concurrent caller may have ensured this container while we waited.
-            if (_ensuredContainers.ContainsKey(container))
-            {
-                return;
-            }
-
-            await blobServiceClient
-                .GetBlobContainerClient(container)
-                .CreateIfNotExistsAsync(_option.ContainerPublicAccessType, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-            // Record only after a successful create so a failed ensure is retried next time.
-            _ensuredContainers.TryAdd(container, 0);
-        }
-    }
-
-    #endregion
 
     #region Upload
 
     public async ValueTask UploadAsync(
-        string[] container,
-        string blobName,
-        Stream stream,
-        Dictionary<string, string?>? metadata = null,
+        BlobLocation location,
+        Stream content,
+        IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNull(content);
 
-        if (_option.AutoCreateContainer)
-        {
-            await CreateContainerAsync(container, cancellationToken).ConfigureAwait(false);
-        }
-
-        var blobClient = _GetBlobClient(container, blobName);
+        var (container, key) = BlobLocationResolver.Resolve(location, normalizer);
+        var blobClient = blobServiceClient.GetBlobContainerClient(container).GetBlobClient(key);
 
         var httpHeader = new BlobHttpHeaders
         {
-            ContentType = mimeTypeProvider.GetMimeType(blobName),
+            ContentType = mimeTypeProvider.GetMimeType(location.Path),
             CacheControl = _option.CacheControl,
         };
 
-        // Copy caller metadata before adding framework keys so we never mutate the caller's dictionary
-        // (which may be shared across BulkUploadAsync requests).
+        // Copy the caller's metadata before adding the framework keys so we never mutate the caller's dictionary
+        // (which may be shared across a BulkUploadAsync batch), then layer uploadDate/extension on top so they are
+        // always present regardless of what the caller supplied.
         var effectiveMetadata = metadata is null
-            ? new Dictionary<string, string?>(StringComparer.Ordinal)
-            : new Dictionary<string, string?>(metadata, StringComparer.Ordinal);
-        effectiveMetadata[BlobStorageHelpers.UploadDateMetadataKey] = clock.UtcNow.ToString("O");
-        effectiveMetadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(blobName);
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(metadata, StringComparer.Ordinal);
 
-        if (stream.CanSeek && stream.Position != 0)
+        effectiveMetadata[BlobStorageHelpers.UploadDateMetadataKey] = clock.UtcNow.ToString("O");
+        effectiveMetadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(location.Path);
+
+        // Seekable streams are rewound to position 0 before upload. Non-seekable streams are passed straight
+        // through to the Azure SDK, which streams them as-is — non-seekable handling is provider-specific and is
+        // not a uniform promise (folds M1).
+        if (content.CanSeek && content.Position != 0)
         {
-            logger.LogStreamPositionReset(stream.Position, blobName);
-            stream.Seek(0, SeekOrigin.Begin);
+            content.Seek(0, SeekOrigin.Begin);
         }
 
         await blobClient
-            .UploadAsync(stream, httpHeader, effectiveMetadata, cancellationToken: cancellationToken)
+            .UploadAsync(content, httpHeader, effectiveMetadata, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -132,20 +92,23 @@ public sealed class AzureBlobStorage(
 
     #region Bulk Upload
 
-    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        string[] container,
+    public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
+        string container,
         IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobs);
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrWhiteSpace(container);
+        Argument.IsNotNull(blobs);
 
-        // Materialize to an indexed list so each result lands in the slot matching its input position.
-        // Parallel.ForEachAsync does not run bodies in enumeration order, so deriving the index from execution
-        // order (e.g. via Interlocked) would misalign results with their inputs whenever parallelism > 1.
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? blobs.ToList();
-        var results = new Result<Exception>[items.Count];
+        if (blobs.Count == 0)
+        {
+            return [];
+        }
+
+        // Index results by enumeration position so results[i] describes items[i] (parallel bodies start out of order).
+        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? [.. blobs];
+        var results = new BlobBulkResult[items.Count];
 
         var options = new ParallelOptions
         {
@@ -162,15 +125,19 @@ public sealed class AzureBlobStorage(
                 {
                     var blob = items[i];
 
+                    // Build the per-item location inside the try so an unaddressable key (traversal, reserved
+                    // sidecar suffix, etc.) becomes a per-item failure instead of aborting the whole batch.
+                    var location = default(BlobLocation);
+
                     try
                     {
-                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct)
-                            .ConfigureAwait(false);
-                        results[i] = Result<Exception>.Ok();
+                        location = new BlobLocation(container, blob.Path);
+                        await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
+                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
                     catch (Exception e)
                     {
-                        results[i] = Result<Exception>.Fail(e);
+                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
                     }
                 }
             )
@@ -183,16 +150,10 @@ public sealed class AzureBlobStorage(
 
     #region Delete
 
-    public async ValueTask<bool> DeleteAsync(
-        string[] container,
-        string blobName,
-        CancellationToken cancellationToken = default
-    )
+    public async ValueTask<bool> DeleteAsync(BlobLocation location, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsNotNullOrEmpty(blobName);
-
-        var blobClient = _GetBlobClient(container, blobName);
+        var (container, key) = BlobLocationResolver.Resolve(location, normalizer);
+        var blobClient = blobServiceClient.GetBlobContainerClient(container).GetBlobClient(key);
 
         var response = await blobClient
             .DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken)
@@ -205,59 +166,89 @@ public sealed class AzureBlobStorage(
 
     #region Bulk Delete
 
-    public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
-        string[] container,
-        IReadOnlyCollection<string> blobNames,
+    public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkDeleteAsync(
+        string container,
+        IReadOnlyCollection<string> paths,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrWhiteSpace(container);
+        Argument.IsNotNull(paths);
 
-        if (blobNames.Count == 0)
+        if (paths.Count == 0)
         {
             return [];
         }
 
-        var batch = blobServiceClient.GetBlobBatchClient();
+        var items = paths as IReadOnlyList<string> ?? [.. paths];
+        var results = new BlobBulkResult[items.Count];
 
-        var blobUrls = _NormalizeBlobUrls(container, blobNames);
+        // First pass: build the location (validates) and resolve the container + key through the single seam, then
+        // materialize the blob URI for the batch API. An unaddressable key (traversal, reserved sidecar suffix,
+        // etc.) fails that one item here without aborting the batch; addressable items carry their input index and
+        // identity into the chunked batch-delete second pass.
+        var batchEntries = new List<(int Index, BlobLocation Location, Uri Uri)>(items.Count);
 
-        // The Azure Blob Batch API caps a single batch at 256 sub-requests, so chunk to stay within the limit.
-        // Results are appended in chunk + submission order, preserving the per-input-name ordering contract.
-        var results = new List<Result<bool, Exception>>(blobNames.Count);
-
-        try
+        for (var i = 0; i < items.Count; i++)
         {
-            foreach (var chunk in blobUrls.Chunk(_MaxBlobBatchSize))
+            try
             {
-                var responses = await batch
-                    .DeleteBlobsAsync(chunk, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken)
-                    .ConfigureAwait(false);
+                var location = new BlobLocation(container, items[i]);
+                var (azureContainer, key) = BlobLocationResolver.Resolve(location, normalizer);
+                var uri = blobServiceClient.GetBlobContainerClient(azureContainer).GetBlobClient(key).Uri;
+                batchEntries.Add((i, location, uri));
+            }
+            catch (Exception e)
+            {
+                results[i] = new BlobBulkResult(default, Result<bool, Exception>.Fail(e));
+            }
+        }
 
-                foreach (var response in responses)
+        if (batchEntries.Count > 0)
+        {
+            var batch = blobServiceClient.GetBlobBatchClient();
+
+            // Chunk to stay within the 256 sub-request batch limit. Each chunk's responses are positional, so
+            // responses[j] is the outcome for chunk[j].
+            foreach (var chunk in batchEntries.Chunk(_MaxBlobBatchSize))
+            {
+                var uris = Array.ConvertAll(chunk, entry => entry.Uri);
+
+                try
                 {
-                    results.Add(_MapDeleteResponse(response));
+                    var responses = await batch
+                        .DeleteBlobsAsync(uris, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    for (var j = 0; j < chunk.Length; j++)
+                    {
+                        results[chunk[j].Index] = new BlobBulkResult(
+                            chunk[j].Location,
+                            _MapDeleteResponse(responses[j])
+                        );
+                    }
+                }
+                catch (AggregateException e)
+                    when (e
+                            .InnerExceptions.OfType<RequestFailedException>()
+                            .Any(static inner =>
+                                inner.Status == 404
+                                && string.Equals(inner.ErrorCode, "ContainerNotFound", StringComparison.Ordinal)
+                            )
+                    )
+                {
+                    // The whole container is missing, so every blob in the chunk is simply "not found" -> Ok(false),
+                    // matching the per-blob not-found semantics of a single delete rather than an operation failure.
+                    foreach (var entry in chunk)
+                    {
+                        results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(false));
+                    }
                 }
             }
+        }
 
-            return results;
-        }
-        catch (AggregateException e)
-            when (e
-                    .InnerExceptions.OfType<RequestFailedException>()
-                    .Any(static inner =>
-                        inner.Status == 404
-                        && string.Equals(inner.ErrorCode, "ContainerNotFound", StringComparison.Ordinal)
-                    )
-            )
-        {
-            // The whole container is missing, so every requested blob is simply "not found" -> Ok(false), matching
-            // the per-blob not-found semantics of a single delete rather than reporting an operation failure.
-            return blobNames.Select(_ => Result<bool, Exception>.Ok(false)).ToList();
-        }
+        return results;
     }
-
-    private const int _MaxBlobBatchSize = 256;
 
     // Maps a single Azure batch sub-response to a per-blob result: success -> Ok(true); a 404 means the blob was
     // already gone -> Ok(false) ("not found"); any other error (403/429/5xx) -> Fail so callers see the real cause
@@ -277,87 +268,89 @@ public sealed class AzureBlobStorage(
         return Result<bool, Exception>.Fail(new RequestFailedException(response.Status, response.ReasonPhrase));
     }
 
-    public ValueTask<int> DeleteAllAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        CancellationToken cancellationToken = default
-    )
+    public async ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default)
     {
-        return DeleteAllAsync(container, blobSearchPattern, pageSize: 500, cancellationToken);
-    }
+        Argument.IsNotNull(query);
 
-    // pageSize is a test seam so the multi-page deletion path can be exercised without seeding 500+ blobs.
-    internal async ValueTask<int> DeleteAllAsync(
-        string[] container,
-        string? blobSearchPattern,
-        int pageSize,
-        CancellationToken cancellationToken
-    )
-    {
-        var files = await GetPagedListAsync(container, blobSearchPattern, pageSize, cancellationToken)
-            .ConfigureAwait(false);
+        // Resolve the container + prefix through the single seam (the prefix was already path-security validated at
+        // BlobQuery construction), so delete-by-prefix cannot escape into traversal or an un-normalized container.
+        var (azureContainer, prefix) = BlobLocationResolver.ResolveQuery(query, normalizer);
+        var containerClient = blobServiceClient.GetBlobContainerClient(azureContainer);
+
+        // Names only — DeleteAll does not need metadata, just the container-relative keys to bulk-delete.
+        var pages = containerClient
+            .GetBlobsAsync(
+                traits: BlobTraits.None,
+                states: BlobStates.None,
+                prefix: prefix,
+                cancellationToken: cancellationToken
+            )
+            .AsPages(pageSizeHint: query.PageSize);
+
         var count = 0;
 
-        // Listed BlobKeys are already container-relative paths (e.g. "subdir/file.txt"). Delete against only the
-        // Azure container (container[0]); passing the full multi-segment container would re-apply the sub-path
-        // prefix and target non-existent blobs (".../subdir/subdir/file.txt"), deleting nothing.
-        var azureContainer = new[] { container[0] };
+        await using var enumerator = pages.GetAsyncEnumerator(cancellationToken);
 
-        // Delete the currently-loaded page first, then advance. Advancing before deleting would drop the final
-        // page (the last NextPageAsync sets HasMore=false, exiting the loop with that page still undeleted).
-        while (true)
+        try
         {
-            var names = files.Blobs.Select(file => file.BlobKey).ToArray();
-
-            try
+            while (true)
             {
-                var results = await BulkDeleteAsync(azureContainer, names, cancellationToken).ConfigureAwait(false);
-                count += results.Count(x => x.IsSuccess && x.Value);
-            }
-            catch (Exception e)
-            {
-                // Surface the partial progress before propagating so a mid-enumeration failure is not silent.
-                logger.LogDeleteAllPartialFailure(e, count, container, blobSearchPattern);
-                throw;
-            }
+                try
+                {
+                    if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
+                    {
+                        break;
+                    }
+                }
+                catch (RequestFailedException e)
+                    when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
+                {
+                    // A missing container means there is nothing to delete.
+                    break;
+                }
 
-            if (!files.HasMore)
-            {
-                break;
-            }
+                var names = enumerator.Current.Values.Select(static blob => blob.Name).ToArray();
 
-            await files.NextPageAsync(cancellationToken).ConfigureAwait(false);
+                if (names.Length == 0)
+                {
+                    continue;
+                }
+
+                // Listed names are already container-relative keys; bulk-delete them against the same container.
+                var deleteResults = await BulkDeleteAsync(query.Container, names, cancellationToken)
+                    .ConfigureAwait(false);
+
+                count += deleteResults.Count(static result => result.Result is { IsSuccess: true, Value: true });
+            }
+        }
+        catch (Exception e)
+        {
+            // Surface the partial progress before propagating so a mid-enumeration failure is not silent.
+            logger.LogDeleteAllPartialFailure(e, count, azureContainer, prefix);
+
+            throw;
         }
 
-        logger.LogFinishedDeletingFiles(count, container, blobSearchPattern);
+        logger.LogFinishedDeletingFiles(count, azureContainer, prefix);
 
         return count;
     }
 
     #endregion
 
-    #region Copy
+    #region Move / Copy
 
     public async ValueTask<bool> CopyAsync(
-        string[] blobContainer,
-        string blobName,
-        string[] newBlobContainer,
-        string newBlobName,
+        BlobLocation source,
+        BlobLocation destination,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(blobContainer);
-        Argument.IsNotNullOrEmpty(newBlobName);
-        Argument.IsNotNullOrEmpty(newBlobContainer);
+        var (oldContainer, oldKey) = BlobLocationResolver.Resolve(source, normalizer);
+        var (newContainer, newKey) = BlobLocationResolver.Resolve(destination, normalizer);
 
-        if (_option.AutoCreateContainer)
-        {
-            await CreateContainerAsync(newBlobContainer, cancellationToken).ConfigureAwait(false);
-        }
-
-        var oldBlobClient = _GetBlobClient(blobContainer, blobName);
-        var newBlobClient = _GetBlobClient(newBlobContainer, newBlobName);
+        var oldBlobClient = blobServiceClient.GetBlobContainerClient(oldContainer).GetBlobClient(oldKey);
+        var newBlobClient = blobServiceClient.GetBlobContainerClient(newContainer).GetBlobClient(newKey);
 
         try
         {
@@ -365,65 +358,50 @@ public sealed class AzureBlobStorage(
                 .StartCopyFromUriAsync(oldBlobClient.Uri, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            await copyResult.WaitForCompletionAsync(cancellationToken).ConfigureAwait(false);
-
             // WaitForCompletionAsync returns only once the copy has completed (otherwise it throws), so reaching
             // here means the copy succeeded.
+            await copyResult.WaitForCompletionAsync(cancellationToken).ConfigureAwait(false);
+
             return true;
         }
         catch (RequestFailedException e) when (e.Status == 404)
         {
             // A missing source blob OR container yields a graceful failure (false), not an exception: the
-            // cross-provider conformance contract requires copy/rename against a missing container to not throw.
+            // cross-provider conformance contract requires copy/move against a missing source to not throw.
             return false;
         }
     }
 
-    #endregion
-
-    #region Rename
-
-    public async ValueTask<bool> RenameAsync(
-        string[] blobContainer,
-        string blobName,
-        string[] newBlobContainer,
-        string newBlobName,
+    public async ValueTask<bool> MoveAsync(
+        BlobLocation source,
+        BlobLocation destination,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(blobContainer);
-        Argument.IsNotNullOrEmpty(newBlobName);
-        Argument.IsNotNullOrEmpty(newBlobContainer);
-
-        var copyResult = await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!copyResult)
+        // Non-atomic copy-then-delete with best-effort destination rollback if deleting the source fails.
+        if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
         {
-            logger.LogUnableToCopyBlob(blobName, newBlobName);
-
             return false;
         }
 
-        bool deleteResult;
+        bool deleted;
 
         try
         {
-            deleteResult = await DeleteAsync(blobContainer, blobName, cancellationToken).ConfigureAwait(false);
+            deleted = await DeleteAsync(source, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
             // The copy already succeeded but deleting the source threw (e.g. cancellation or a transient error);
             // roll back the copy so we never leave both source and destination behind.
-            await _RollbackRenameCopyAsync(newBlobContainer, newBlobName, blobName).ConfigureAwait(false);
+            await _RollbackMoveCopyAsync(destination).ConfigureAwait(false);
 
             throw;
         }
 
-        if (!deleteResult)
+        if (!deleted)
         {
-            await _RollbackRenameCopyAsync(newBlobContainer, newBlobName, blobName).ConfigureAwait(false);
+            await _RollbackMoveCopyAsync(destination).ConfigureAwait(false);
 
             return false;
         }
@@ -431,19 +409,19 @@ public sealed class AzureBlobStorage(
         return true;
     }
 
-    // Best-effort rollback of a rename's copy. Uses CancellationToken.None so cleanup still runs even when the
-    // rename was cancelled, and swallows (logs) failures so the caller still observes the original outcome/exception
-    // rather than a rollback error.
-    private async Task _RollbackRenameCopyAsync(string[] newBlobContainer, string newBlobName, string blobName)
+    // Best-effort rollback of a move's copy. Uses CancellationToken.None so cleanup still runs even when the move
+    // was cancelled, and swallows (logs) failures so the caller still observes the original outcome/exception rather
+    // than a rollback error.
+    private async Task _RollbackMoveCopyAsync(BlobLocation destination)
     {
         try
         {
-            await DeleteAsync(newBlobContainer, newBlobName, CancellationToken.None).ConfigureAwait(false);
-            logger.LogRenameFailedRolledBack(blobName);
+            await DeleteAsync(destination, CancellationToken.None).ConfigureAwait(false);
+            logger.LogMoveFailedRolledBack(destination.ToString());
         }
         catch (Exception e)
         {
-            logger.LogRenameRollbackFailed(e, blobName, newBlobName);
+            logger.LogMoveRollbackFailed(e, destination.ToString());
         }
     }
 
@@ -451,16 +429,11 @@ public sealed class AzureBlobStorage(
 
     #region Exists
 
-    public async ValueTask<bool> ExistsAsync(
-        string[] container,
-        string blobName,
-        CancellationToken cancellationToken = default
-    )
+    public async ValueTask<bool> ExistsAsync(BlobLocation location, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsNotNullOrEmpty(blobName);
+        var (container, key) = BlobLocationResolver.Resolve(location, normalizer);
+        var blobClient = blobServiceClient.GetBlobContainerClient(container).GetBlobClient(key);
 
-        var blobClient = _GetBlobClient(container, blobName);
         var response = await blobClient.ExistsAsync(cancellationToken).ConfigureAwait(false);
 
         return response.Value;
@@ -468,28 +441,25 @@ public sealed class AzureBlobStorage(
 
     #endregion
 
-    #region Download
+    #region Download / Info
 
     public async ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
-        string[] container,
-        string blobName,
+        BlobLocation location,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsNotNullOrEmpty(blobName);
-
-        var blobClient = _GetBlobClient(container, blobName);
+        var (container, key) = BlobLocationResolver.Resolve(location, normalizer);
+        var blobClient = blobServiceClient.GetBlobContainerClient(container).GetBlobClient(key);
 
         try
         {
             // Stream lazily from the network instead of buffering the whole blob into a MemoryStream (which OOMs on
-            // large blobs). The caller owns the returned BlobDownloadResult and disposes the stream
-            // (see IBlobStorage.OpenReadStreamAsync). OpenReadAsync issues the initial request eagerly, so a missing
-            // blob/container still surfaces as RequestFailedException here and maps to null.
+            // large blobs). OpenReadAsync issues the initial request eagerly, so a missing blob/container still
+            // surfaces as RequestFailedException here and maps to null. The caller owns the returned result and
+            // disposes the stream (see IBlobStorage.OpenReadStreamAsync).
             var stream = await blobClient.OpenReadAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            return new(stream, blobName);
+            return new(stream, location.Path);
         }
         catch (RequestFailedException e)
             when (e.ErrorCode == BlobErrorCode.BlobNotFound || e.ErrorCode == BlobErrorCode.ContainerNotFound)
@@ -499,18 +469,14 @@ public sealed class AzureBlobStorage(
     }
 
     public async ValueTask<BlobInfo?> GetBlobInfoAsync(
-        string[] container,
-        string blobName,
+        BlobLocation location,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(container);
-
-        // Resolve the stored, normalized blob path so BlobKey matches what GetBlobsAsync/GetPagedListAsync return
-        // (the container-relative path, excluding the container name) rather than the raw caller-supplied input.
-        var (blobContainer, blobPath) = _NormalizeBlob(container, blobName);
-        var blobClient = blobServiceClient.GetBlobContainerClient(blobContainer).GetBlobClient(blobPath);
+        // M3 fold: argument validation is owned by the BlobLocation constructor, so there is no IsNotNull vs
+        // IsNotNullOrEmpty divergence between this method and the rest of the surface.
+        var (container, key) = BlobLocationResolver.Resolve(location, normalizer);
+        var blobClient = blobServiceClient.GetBlobContainerClient(container).GetBlobClient(key);
 
         Response<BlobProperties>? blobProperties;
 
@@ -530,12 +496,18 @@ public sealed class AzureBlobStorage(
             return null;
         }
 
+        var properties = blobProperties.Value;
+
         return new BlobInfo
         {
-            BlobKey = blobPath,
-            Size = blobProperties.Value.ContentLength,
-            Created = blobProperties.Value.CreatedOn,
-            Modified = blobProperties.Value.LastModified,
+            BlobKey = key,
+            Size = properties.ContentLength,
+            Created = properties.CreatedOn,
+            Modified = properties.LastModified,
+            // M2 fold: the GetProperties response carries the per-blob metadata (including the framework
+            // uploadDate/extension keys), so GetBlobInfoAsync surfaces it as non-null string values. The list API
+            // returns metadata too (requested via BlobTraits.Metadata), so the two stay consistent.
+            Metadata = _ToMetadata(properties.Metadata),
         };
     }
 
@@ -543,224 +515,56 @@ public sealed class AzureBlobStorage(
 
     #region List
 
-    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
-    )
+    public async ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default)
     {
-        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNull(query);
 
-        var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var normalizedDirs = container.Skip(1).Select(_NormalizeSegment);
-        var normalizedPattern = _NormalizeSearchPattern(blobSearchPattern);
-        var criteria = BlobStorageHelpers.GetRequestCriteria(normalizedDirs, normalizedPattern);
+        var (container, prefix) = BlobLocationResolver.ResolveQuery(query, normalizer);
+        var containerClient = blobServiceClient.GetBlobContainerClient(container);
 
-        var pageable = containerClient.GetBlobsAsync(
-            traits: BlobTraits.Metadata,
-            states: BlobStates.None,
-            prefix: criteria.Prefix,
-            cancellationToken: cancellationToken
-        );
-
-        // Iterate via an explicit enumerator so a missing container yields no items (matching GetPagedListAsync)
-        // rather than throwing — a try/catch cannot wrap a `yield return` directly.
-        await using var enumerator = pageable.GetAsyncEnumerator(cancellationToken);
-
-        while (true)
-        {
-            BlobItem blobItem;
-
-            try
-            {
-                if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
-                {
-                    break;
-                }
-
-                blobItem = enumerator.Current;
-            }
-            catch (RequestFailedException e)
-                when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
-            {
-                yield break;
-            }
-
-            if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
-            {
-                continue;
-            }
-
-            yield return _ToBlobInfo(blobItem);
-        }
-    }
-
-    public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
-        string? blobSearchPattern = null,
-        int pageSize = 100,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrEmpty(container);
-        Argument.IsPositive(pageSize);
-        Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
-
-        var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var normalizedDirs = container.Skip(1).Select(_NormalizeSegment);
-        var normalizedPattern = _NormalizeSearchPattern(blobSearchPattern);
-        var criteria = BlobStorageHelpers.GetRequestCriteria(normalizedDirs, normalizedPattern);
-
-        var result = new PagedFileListResult(
-            async (_, token) =>
-                await _GetFilesAsync(
-                        containerClient,
-                        criteria,
-                        pageSize,
-                        carryOverBlob: null,
-                        continuationToken: null,
-                        token
-                    )
-                    .ConfigureAwait(false)
-        );
-
-        await result.NextPageAsync(cancellationToken).ConfigureAwait(false);
-
-        return result;
-    }
-
-    // Fetches one page (up to pageSize blobs) and, when more remain, returns a continuation delegate that resumes
-    // from the captured carry-over blob + continuation token. A surplus "+1" blob is fetched to detect HasMore and is
-    // carried into the next page. carryOverBlob is non-null exactly on continuation calls, so null marks the first page.
-    private async Task<NextPageResult> _GetFilesAsync(
-        BlobContainerClient client,
-        SearchCriteria criteria,
-        int pageSize,
-        BlobInfo? carryOverBlob,
-        string? continuationToken,
-        CancellationToken cancellationToken
-    )
-    {
-        var blobs = new List<BlobInfo>();
-
-        if (carryOverBlob is not null)
-        {
-            blobs.Add(carryOverBlob);
-        }
-
-        // Fetch one extra blob beyond pageSize to detect whether another page follows (the "+1" probe).
-        var pageSizeToLoad = pageSize < int.MaxValue ? pageSize + 1 : pageSize;
-
-        // Fetch from Azure only when more blobs are needed and more are available (first page, or a non-empty token).
-        if (blobs.Count < pageSizeToLoad && (carryOverBlob is null || !string.IsNullOrEmpty(continuationToken)))
-        {
-            try
-            {
-                continuationToken = await _CollectBlobsAsync(
-                        client,
-                        criteria,
-                        pageSizeToLoad,
-                        continuationToken,
-                        blobs,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-            catch (RequestFailedException e)
-                when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
-            {
-                return new NextPageResult
-                {
-                    Success = true,
-                    HasMore = false,
-                    Blobs = [],
-                    NextPageFunc = null,
-                };
-            }
-            catch (Exception e)
-            {
-                logger.LogErrorGettingBlobs(e, pageSizeToLoad);
-                throw;
-            }
-        }
-
-        // If we collected more than pageSize, the surplus blob is the probe for the next page; carry it over.
-        var hasMore = blobs.Count > pageSize;
-        BlobInfo? nextCarryOver = null;
-
-        if (hasMore)
-        {
-            nextCarryOver = blobs[^1];
-            blobs.RemoveAt(blobs.Count - 1);
-        }
-
-        var nextContinuationToken = continuationToken;
-
-        return new NextPageResult
-        {
-            Success = true,
-            HasMore = hasMore,
-            Blobs = blobs,
-            NextPageFunc = hasMore
-                ? async (_, token) =>
-                    await _GetFilesAsync(client, criteria, pageSize, nextCarryOver, nextContinuationToken, token)
-                        .ConfigureAwait(false)
-                : null,
-        };
-    }
-
-    // Reads Azure list pages into <paramref name="blobs"/> until pageSizeToLoad entries are gathered or the service is
-    // exhausted, and returns the continuation token to resume from (empty/null when no more results remain).
-    private async Task<string?> _CollectBlobsAsync(
-        BlobContainerClient client,
-        SearchCriteria criteria,
-        int pageSizeToLoad,
-        string? continuationToken,
-        List<BlobInfo> blobs,
-        CancellationToken cancellationToken
-    )
-    {
-        var pages = client
+        // Request one native Azure page sized to PageSize, resuming from the opaque continuation token when present.
+        var pages = containerClient
             .GetBlobsAsync(
                 traits: BlobTraits.Metadata,
                 states: BlobStates.None,
-                prefix: criteria.Prefix,
+                prefix: prefix,
                 cancellationToken: cancellationToken
             )
-            .AsPages(continuationToken, pageSizeToLoad - blobs.Count);
+            .AsPages(query.ContinuationToken, query.PageSize);
 
-        // AsPages pageSizeHint is not guaranteed; the service may return fewer results due to partition boundaries.
-        await foreach (var page in pages.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await using var enumerator = pages.GetAsyncEnumerator(cancellationToken);
+
+        try
         {
-            continuationToken = page.ContinuationToken;
-
-            foreach (var blobItem in page.Values)
+            if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
             {
-                if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
-                {
-                    logger.LogSkippingPathPatternMismatch(blobItem.Name);
-                    continue;
-                }
-
-                blobs.Add(_ToBlobInfo(blobItem));
-
-                if (blobs.Count >= pageSizeToLoad)
-                {
-                    break;
-                }
-            }
-
-            if (string.IsNullOrEmpty(page.ContinuationToken) || blobs.Count >= pageSizeToLoad)
-            {
-                break;
+                return BlobPage.Empty;
             }
         }
+        catch (RequestFailedException e)
+            when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
+        {
+            // A missing container lists as empty rather than throwing.
+            return BlobPage.Empty;
+        }
 
-        return continuationToken;
+        var page = enumerator.Current;
+        var items = new List<BlobInfo>(page.Values.Count);
+
+        foreach (var blobItem in page.Values)
+        {
+            items.Add(_ToBlobInfo(blobItem));
+        }
+
+        // Pass Azure's native ContinuationToken straight through as the opaque BlobPage token; an empty/null token
+        // marks the last page. The token is round-tripped by callers into a new BlobQuery.
+        var continuationToken = string.IsNullOrEmpty(page.ContinuationToken) ? null : page.ContinuationToken;
+
+        return new BlobPage(items, continuationToken);
     }
 
     // Projects an Azure BlobItem into the provider-agnostic BlobInfo, including any list-returned metadata. Zero-byte
-    // blobs are intentionally NOT filtered out — an empty blob is a real, listable object.
+    // blobs are intentionally NOT filtered out — an empty blob is a real, listable object on Azure.
     private static BlobInfo _ToBlobInfo(BlobItem blobItem)
     {
         return new BlobInfo
@@ -769,17 +573,23 @@ public sealed class AzureBlobStorage(
             Size = blobItem.Properties.ContentLength ?? 0,
             Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
             Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
-            Metadata = blobItem.Metadata is { Count: > 0 }
-                ? blobItem.Metadata.ToDictionary(kvp => kvp.Key, kvp => (string?)kvp.Value, StringComparer.Ordinal)
-                : null,
+            Metadata = _ToMetadata(blobItem.Metadata),
         };
     }
 
+    // Converts an Azure metadata dictionary (non-null string values) into the contract's read-only shape, or null
+    // when empty so BlobInfo.Metadata stays absent rather than an empty dictionary.
+    private static IReadOnlyDictionary<string, string>? _ToMetadata(IDictionary<string, string>? metadata)
+    {
+        if (metadata is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        return new Dictionary<string, string>(metadata, StringComparer.Ordinal);
+    }
+
     #endregion
-
-
-    #region Build URLs
-
 
     #region Presigned Urls
 
@@ -832,11 +642,15 @@ public sealed class AzureBlobStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(expiry);
 
-        var blobClient = _GetBlobClient(container, blobName);
+        // The presigned capability still takes the legacy (container[], blobName) shape; route it through the same
+        // BlobLocation seam as the data plane so the container/key are validated and normalized identically.
+        var location = new BlobLocation(container[0], [.. container.Skip(1), blobName]);
+        var (azureContainer, key) = BlobLocationResolver.Resolve(location, normalizer);
+
+        var blobClient = blobServiceClient.GetBlobContainerClient(azureContainer).GetBlobClient(key);
 
         var builder = new BlobSasBuilder
         {
@@ -889,142 +703,6 @@ public sealed class AzureBlobStorage(
 
     #endregion
 
-    private BlobClient _GetBlobClient(string[] container, string blobName)
-    {
-        var (blobContainer, blobPath) = _NormalizeBlob(container, blobName);
-        var containerClient = blobServiceClient.GetBlobContainerClient(blobContainer);
-        var blobClient = containerClient.GetBlobClient(blobPath);
-
-        return blobClient;
-    }
-
-    private List<Uri> _NormalizeBlobUrls(string[] container, IReadOnlyCollection<string> blobNames)
-    {
-        PathValidation.ValidateContainer(container);
-        foreach (var blobName in blobNames)
-        {
-            PathValidation.ValidatePathSegment(blobName);
-        }
-
-        // Two-tier: the first segment is the Azure container (strict rules); the rest are blob-path segments.
-        var sb = new StringBuilder(blobServiceClient.Uri.AbsoluteUri);
-        if (sb[^1] != '/')
-        {
-            sb.Append('/');
-        }
-
-        sb.Append(_NormalizeContainerName(container[0]));
-
-        var subPath = _BuildSubPath(container);
-        if (subPath.Length > 0)
-        {
-            sb.Append('/').Append(subPath);
-        }
-
-        var prefix = sb.ToString();
-        var result = new List<Uri>(blobNames.Count);
-
-        foreach (var blobName in blobNames)
-        {
-            result.Add(new Uri($"{prefix}/{_NormalizeSlashes(normalizer.NormalizeBlobName(blobName))}"));
-        }
-
-        return result;
-    }
-
-    private (string Container, string Blob) _NormalizeBlob(string[] container, string blobName)
-    {
-        PathValidation.ValidateContainer(container);
-        PathValidation.ValidatePathSegment(blobName);
-
-        var normalizedBlobName = _NormalizeSlashes(normalizer.NormalizeBlobName(blobName));
-        var subPath = _BuildSubPath(container);
-        var blobPath = subPath.Length > 0 ? $"{subPath}/{normalizedBlobName}" : normalizedBlobName;
-
-        return (_GetContainer(container), blobPath);
-    }
-
-    // Normalizes and joins the sub-container path segments (everything after the first/Azure-container segment) with
-    // lenient path-segment rules (two-tier model). Returns an empty string when there are no sub-segments.
-    private string _BuildSubPath(string[] container)
-    {
-        return string.Join('/', container.Skip(1).Select(_NormalizeSegment));
-    }
-
-    private string _GetContainer(string[] container)
-    {
-        PathValidation.ValidateContainer(container);
-        return _NormalizeContainerName(container[0]);
-    }
-
-    private string _NormalizeContainerName(string containerName)
-    {
-        var normalized = _NormalizeSlashes(normalizer.NormalizeContainerName(containerName));
-
-        // Surface lossy normalization once per distinct input: two different caller names can normalize to the same
-        // Azure container and silently share storage. De-duped to avoid a warning on every operation.
-        if (
-            !string.Equals(normalized, containerName, StringComparison.Ordinal)
-            && _loggedContainerNameChanges.TryAdd(containerName, 0)
-        )
-        {
-            logger.LogContainerNameNormalized(containerName, normalized);
-        }
-
-        return normalized;
-    }
-
-    // Lenient path-segment normalization for sub-container path parts and blob names (two-tier model): the first
-    // container segment is the Azure container (strict rules); everything after is part of the blob path.
-    private string _NormalizeSegment(string segment)
-    {
-        return _NormalizeSlashes(normalizer.NormalizeBlobName(segment));
-    }
-
-    private static string _NormalizeSlashes(string x)
-    {
-        return BlobStorageHelpers.NormalizePath(x).RemovePostfix('/').RemovePrefix('/');
-    }
-
-    /// <summary>
-    /// Normalizes the search pattern's directory segments to match how they're stored.
-    /// Directory segments use the same lenient path-segment normalization as stored blob paths (two-tier model).
-    /// Only normalizes directory segments, not the final filename/pattern segment.
-    /// </summary>
-    private string? _NormalizeSearchPattern(string? pattern)
-    {
-        if (string.IsNullOrEmpty(pattern))
-        {
-            return pattern;
-        }
-
-        // First normalize slashes
-        pattern = BlobStorageHelpers.NormalizePath(pattern);
-
-        // Split by '/' and normalize directory segments only (not the last segment)
-        var segments = pattern.Split('/');
-        if (segments.Length <= 1)
-        {
-            // No directory segments, just a filename/pattern - don't normalize
-            return pattern;
-        }
-
-        // Normalize all segments except the last one (which is the filename/pattern)
-        for (var i = 0; i < segments.Length - 1; i++)
-        {
-            var segment = segments[i];
-            // Don't normalize segments containing wildcards
-            if (!segment.Contains('*', StringComparison.Ordinal))
-            {
-                segments[i] = normalizer.NormalizeBlobName(segment);
-            }
-        }
-
-        return string.Join('/', segments);
-    }
-
-    #endregion
-
     #region Dispose
 
     private bool _disposed;
@@ -1032,14 +710,14 @@ public sealed class AzureBlobStorage(
     public ValueTask DisposeAsync()
     {
         // The keyed IPresignedUrlBlobStorage forward and the keyed IBlobStorage resolve to this same instance, so
-        // the DI container tracks it twice and disposes it twice — guard so the dispose path stays idempotent.
+        // the DI container tracks it twice and disposes it twice — guard so the dispose path stays idempotent. The
+        // BlobServiceClient is owned by DI / the caller's clientFactory, not by this engine, so it is not disposed.
         if (_disposed)
         {
             return ValueTask.CompletedTask;
         }
 
         _disposed = true;
-        _ensureContainerLock.Dispose();
 
         return ValueTask.CompletedTask;
     }
@@ -1051,93 +729,44 @@ internal static partial class AzureBlobStorageLog
 {
     [LoggerMessage(
         EventId = 1,
-        EventName = "StreamPositionReset",
+        EventName = "MoveFailedRolledBack",
         Level = LogLevel.Warning,
-        Message = "Stream position was {Position}, resetting to 0 for blob {BlobName}"
+        Message = "Move failed for {Blob}, rolled back the destination copy"
     )]
-    public static partial void LogStreamPositionReset(this ILogger logger, long position, string blobName);
+    public static partial void LogMoveFailedRolledBack(this ILogger logger, string blob);
 
     [LoggerMessage(
         EventId = 2,
+        EventName = "MoveRollbackFailed",
+        Level = LogLevel.Error,
+        Message = "Move rollback failed for {Blob}: could not delete the copied blob; a duplicate may remain"
+    )]
+    public static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string blob);
+
+    [LoggerMessage(
+        EventId = 3,
         EventName = "FinishedDeletingFiles",
         Level = LogLevel.Trace,
-        Message = "Finished deleting {FileCount} files matching {@Container} {SearchPattern}"
+        Message = "Finished deleting {FileCount} files in {Container} under prefix {Prefix}"
     )]
     public static partial void LogFinishedDeletingFiles(
         this ILogger logger,
         int fileCount,
-        string[] container,
-        string? searchPattern
+        string container,
+        string? prefix
     );
-
-    [LoggerMessage(
-        EventId = 3,
-        EventName = "UnableToCopyBlob",
-        Level = LogLevel.Warning,
-        Message = "Unable to copy {BlobName} to {NewBlobName}"
-    )]
-    public static partial void LogUnableToCopyBlob(this ILogger logger, string blobName, string newBlobName);
 
     [LoggerMessage(
         EventId = 4,
-        EventName = "RenameFailedRolledBack",
-        Level = LogLevel.Warning,
-        Message = "Rename failed for {BlobName}, rolled back copy"
-    )]
-    public static partial void LogRenameFailedRolledBack(this ILogger logger, string blobName);
-
-    [LoggerMessage(
-        EventId = 7,
-        EventName = "RenameRollbackFailed",
-        Level = LogLevel.Error,
-        Message = "Rename rollback failed for {BlobName}: could not delete the copied blob {NewBlobName}; a duplicate may remain"
-    )]
-    public static partial void LogRenameRollbackFailed(
-        this ILogger logger,
-        Exception exception,
-        string blobName,
-        string newBlobName
-    );
-
-    [LoggerMessage(
-        EventId = 5,
-        EventName = "SkippingPathPatternMismatch",
-        Level = LogLevel.Trace,
-        Message = "Skipping {Path}: Doesn't match pattern"
-    )]
-    public static partial void LogSkippingPathPatternMismatch(this ILogger logger, string path);
-
-    [LoggerMessage(
-        EventId = 6,
-        EventName = "ErrorGettingBlobs",
-        Level = LogLevel.Error,
-        Message = "Error getting blobs from Azure Storage. PageSizeToLoad={PageSizeToLoad}"
-    )]
-    public static partial void LogErrorGettingBlobs(this ILogger logger, Exception exception, int pageSizeToLoad);
-
-    [LoggerMessage(
-        EventId = 8,
-        EventName = "ContainerNameNormalized",
-        Level = LogLevel.Warning,
-        Message = "Container name {RequestedContainer} was normalized to {NormalizedContainer} to satisfy Azure naming rules; distinct names that normalize to the same value share one container"
-    )]
-    public static partial void LogContainerNameNormalized(
-        this ILogger logger,
-        string requestedContainer,
-        string normalizedContainer
-    );
-
-    [LoggerMessage(
-        EventId = 9,
         EventName = "DeleteAllPartialFailure",
         Level = LogLevel.Error,
-        Message = "DeleteAllAsync failed after deleting {DeletedCount} blobs from {@Container} matching {SearchPattern}"
+        Message = "DeleteAllAsync failed after deleting {DeletedCount} files in {Container} under prefix {Prefix}"
     )]
     public static partial void LogDeleteAllPartialFailure(
         this ILogger logger,
         Exception exception,
         int deletedCount,
-        string[] container,
-        string? searchPattern
+        string container,
+        string? prefix
     );
 }
