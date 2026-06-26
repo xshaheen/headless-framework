@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Testing.Tests;
 using Headless.UI;
 using Microsoft.Extensions.Time.Testing;
@@ -122,19 +124,40 @@ public sealed class DebounceExtensionsTests : TestBase
     }
 
     [Fact]
-    public void debounce_surfaces_action_exception_on_the_timer_callback()
+    public void debounce_routes_action_exception_to_the_on_error_handler()
     {
-        // given — the wrapped action throws; this must not be silently swallowed
+        // given — the wrapped action throws; the exception must be routed to onError, never out of the
+        // thread-pool timer callback (where it would crash the process).
+        var clock = new FakeTimeProvider();
+        var boom = new InvalidOperationException("boom");
+        Action action = () => throw boom;
+        Exception? captured = null;
+        var debounced = action.Debounce(TimeSpan.FromMilliseconds(100), clock, onError: ex => captured = ex);
+
+        // when
+        debounced();
+        var act = () => clock.Advance(TimeSpan.FromMilliseconds(100));
+
+        // then — the callback does not propagate; onError receives the exception
+        act.Should().NotThrow();
+        captured.Should().BeSameAs(boom);
+    }
+
+    [Fact]
+    public void debounce_swallows_action_exception_when_no_on_error_handler_is_supplied()
+    {
+        // given — without an onError handler a faulting action must be swallowed, not propagated out of the
+        // timer callback onto the thread pool.
         var clock = new FakeTimeProvider();
         Action action = () => throw new InvalidOperationException("boom");
         var debounced = action.Debounce(TimeSpan.FromMilliseconds(100), clock);
 
         // when
         debounced();
-
-        // then — the exception surfaces on the timer callback (here, out of Advance)
         var act = () => clock.Advance(TimeSpan.FromMilliseconds(100));
-        act.Should().Throw<InvalidOperationException>().WithMessage("boom");
+
+        // then
+        act.Should().NotThrow();
     }
 
     [Fact]
