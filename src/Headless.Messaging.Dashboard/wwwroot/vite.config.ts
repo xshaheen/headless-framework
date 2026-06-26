@@ -1,5 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig, type PluginOption } from 'vite'
+import { defineConfig, type PluginOption, type ProxyOptions } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { dynamicBase } from 'vite-plugin-dynamic-base'
 
@@ -112,14 +112,14 @@ export default defineConfig(async ({ command, mode }) => {
           target: DEMO_BACKEND,
           changeOrigin: true,
           secure: false,
-          configure: (proxy: { on: Function }) => {
-            proxy.on('proxyReq', (proxyReq: { setHeader: Function }) => {
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
               if (devToken) {
                 proxyReq.setHeader('Authorization', `Bearer ${devToken}`)
               }
             })
           },
-        },
+        } satisfies ProxyOptions,
       },
     },
   }

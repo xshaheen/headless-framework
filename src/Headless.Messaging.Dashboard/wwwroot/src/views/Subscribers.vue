@@ -68,6 +68,7 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'SubscribersView' })
 import { ref, reactive, onMounted } from 'vue'
 import { httpService } from '@/services/http'
 import { useAlertStore } from '@/stores/alertStore'
