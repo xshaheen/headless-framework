@@ -112,15 +112,15 @@ public sealed class MultiProviderIsolationTests
         var provider = sp.GetRequiredService<IBlobStorageProvider>();
         var defaultStorage = sp.GetRequiredService<IBlobStorage>();
         var scratch = provider.GetStorage("scratch");
-        string[] container = ["bucket"];
+        var location = new BlobLocation("bucket", "a.txt");
 
         // when
-        await defaultStorage.UploadContentAsync(container, "a.txt", "hello");
+        await defaultStorage.UploadContentAsync(location, "hello");
 
         // then
-        (await defaultStorage.GetBlobContentAsync(container, "a.txt"))
+        (await defaultStorage.GetBlobContentAsync(location))
             .Should()
             .Be("hello");
-        (await scratch.GetBlobContentAsync(container, "a.txt")).Should().BeNull();
+        (await scratch.GetBlobContentAsync(location)).Should().BeNull();
     }
 }

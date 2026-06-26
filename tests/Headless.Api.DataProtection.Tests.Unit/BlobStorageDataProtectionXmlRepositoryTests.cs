@@ -120,7 +120,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     }
 
     [Fact]
-    public void should_filter_by_xml_extension()
+    public async Task should_filter_by_xml_extension()
     {
         // The *.xml filter is now a client-side glob over the listing; non-xml blobs are not loaded.
         var storage = Substitute.For<IBlobStorage>();
@@ -132,7 +132,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         var result = sut.GetAllElements();
 
         result.Should().ContainSingle();
-        storage
+        await storage
             .DidNotReceive()
             .OpenReadStreamAsync(Arg.Is<BlobLocation>(l => l.Path == "ignore.txt"), Arg.Any<CancellationToken>());
     }
