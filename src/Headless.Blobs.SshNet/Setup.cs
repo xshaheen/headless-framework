@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -114,6 +116,8 @@ public static class SetupSsh
     {
         private IServiceCollection _AddBlobsDefaultCore()
         {
+            services._AddSshSharedServices();
+
             // Pool is registered as a DI singleton so the container owns its disposal. Built via a factory so a
             // missing ILogger (host without AddLogging) falls back to NullLogger instead of failing activation.
             services.AddSingleton(serviceProvider => new SftpClientPool(
@@ -124,8 +128,19 @@ public static class SetupSsh
             services.AddSingleton<IBlobStorage>(serviceProvider => new SshBlobStorage(
                 serviceProvider.GetRequiredService<SftpClientPool>(),
                 new CrossOsNamingNormalizer(),
+                serviceProvider.GetRequiredService<IJsonSerializer>(),
                 serviceProvider.GetRequiredService<IOptionsMonitor<SshBlobStorageOptions>>(),
+                serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
                 serviceProvider.GetService<ILogger<SshBlobStorage>>() ?? NullLogger<SshBlobStorage>.Instance
+            ));
+
+            // Container lifecycle is a separately-resolved capability (not a cast from IBlobStorage), so the SSH
+            // provider registers a dedicated manager that shares the DI-owned pool with the storage (KTD5 / U12).
+            services.AddSingleton<IBlobContainerManager>(serviceProvider => new SshBlobContainerManager(
+                serviceProvider.GetRequiredService<SftpClientPool>(),
+                new CrossOsNamingNormalizer(),
+                serviceProvider.GetService<ILogger<SshBlobContainerManager>>()
+                    ?? NullLogger<SshBlobContainerManager>.Instance
             ));
 
             return services;
@@ -133,6 +148,8 @@ public static class SetupSsh
 
         private IServiceCollection _AddBlobsNamedCore(string name)
         {
+            services._AddSshSharedServices();
+
             // Each named store gets its own pool bound to its named options. The pool is registered as a keyed
             // singleton so the DI container owns its lifecycle and calls Dispose when the provider is disposed.
             services.AddKeyedSingleton<SftpClientPool>(
@@ -159,11 +176,39 @@ public static class SetupSsh
                     return new SshBlobStorage(
                         pool,
                         new CrossOsNamingNormalizer(),
+                        serviceProvider.GetRequiredService<IJsonSerializer>(),
                         namedMonitor,
+                        serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
                         serviceProvider.GetService<ILogger<SshBlobStorage>>() ?? NullLogger<SshBlobStorage>.Instance
                     );
                 }
             );
+
+            // Keyed container-management capability for this named instance, sharing the keyed pool (per-instance
+            // isolation). This is a separate registration, not a cast from the keyed storage.
+            services.AddKeyedSingleton<IBlobContainerManager>(
+                name,
+                (serviceProvider, _) =>
+                    new SshBlobContainerManager(
+                        serviceProvider.GetRequiredKeyedService<SftpClientPool>(name),
+                        new CrossOsNamingNormalizer(),
+                        serviceProvider.GetService<ILogger<SshBlobContainerManager>>()
+                            ?? NullLogger<SshBlobContainerManager>.Instance
+                    )
+            );
+
+            return services;
+        }
+
+        private IServiceCollection _AddSshSharedServices()
+        {
+            // Sidecar metadata is serialized through the buffer-first JSON serializer. Register a default if the host
+            // has not already supplied one (mirrors the Redis blob provider).
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
+            services.TryAddSingleton<IJsonSerializer>(serviceProvider => new SystemJsonSerializer(
+                serviceProvider.GetRequiredService<IJsonOptionsProvider>()
+            ));
 
             return services;
         }
