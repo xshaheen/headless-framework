@@ -31,12 +31,11 @@ public sealed class AwsBlobStorageOptions
     public int MaxBulkParallelism { get; set; } = 10;
 
     /// <summary>
-    /// When <see langword="true"/> (the default), uploads and copies create the target bucket if it does not
-    /// already exist. The check/create runs at most once per bucket per storage instance. Set to
-    /// <see langword="false"/> for backends whose credentials cannot create buckets (for example Cloudflare R2
-    /// object-scoped tokens); a missing bucket then surfaces as an error from the write operation. Explicit
-    /// <see cref="IBlobStorage.CreateContainerAsync"/> calls ensure the container regardless of this setting
-    /// (the result is cached per instance, so the bucket is not re-probed once ensured).
+    /// Legacy flag retained for provider option-shape compatibility (for example Cloudflare R2 forces it
+    /// <see langword="false"/>). It is no longer consulted by the data-plane write path: <see cref="IBlobStorage"/>
+    /// never auto-creates a missing bucket — a missing bucket surfaces as an error. Bucket lifecycle now lives on the
+    /// separately-registered <see cref="IBlobContainerManager"/> capability
+    /// (<c>EnsureContainerAsync</c> always creates regardless of this flag).
     /// </summary>
     public bool AutoCreateContainer { get; set; } = true;
 }
