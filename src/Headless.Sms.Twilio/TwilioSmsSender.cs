@@ -35,11 +35,18 @@ internal sealed class TwilioSmsSender(
 
         if (request.Destinations.Count > 1)
         {
-            return SendSingleSmsResponse.Failed("Twilio only supports sending to one destination at a time");
+            return SendSingleSmsResponse.Failed(
+                "Twilio only supports sending to one destination at a time",
+                SmsFailureKind.Unsupported
+            );
         }
 
         try
         {
+            // The Twilio SDK (7.x) does not accept a CancellationToken on its send path, so cancellation can
+            // only be honored up to the point of dispatch.
+            cancellationToken.ThrowIfCancellationRequested();
+
             var response = await MessageResource
                 .CreateAsync(
                     to: new PhoneNumber(request.Destinations[0].ToString(hasPlusPrefix: true)),
@@ -70,7 +77,7 @@ internal sealed class TwilioSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 }

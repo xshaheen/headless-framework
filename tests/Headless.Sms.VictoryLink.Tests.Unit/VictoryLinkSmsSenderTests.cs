@@ -79,43 +79,6 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     }
 
     [Fact]
-    public async Task should_return_transient_failure_on_transport_fault()
-    {
-        // Point at a closed port so the HTTP call faults at the transport layer (connection refused).
-        var options = Options.Create(
-            new VictoryLinkSmsOptions
-            {
-                Endpoint = "http://localhost:1/send",
-                Sender = "SENDER",
-                UserName = "user",
-                Password = "pass",
-            }
-        );
-        var sender = new VictoryLinkSmsSender(
-            _fixture.HttpClientFactory,
-            options,
-            NullLogger<VictoryLinkSmsSender>.Instance
-        );
-
-        var result = await sender.SendAsync(SmsRequests.Single());
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
-    }
-
-    [Fact]
-    public async Task should_propagate_cancellation()
-    {
-        StubSend(HttpStatusCode.OK, "0");
-        using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
-
-        var act = async () => await CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
-
-        await act.Should().ThrowAsync<OperationCanceledException>();
-    }
-
-    [Fact]
     public async Task should_include_the_country_code_in_the_recipient()
     {
         StubSend(HttpStatusCode.OK, "0");

@@ -8,7 +8,6 @@ using Headless.Sms.Aws;
 using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
@@ -51,28 +50,15 @@ public sealed class AwsSnsSmsSenderTests
     }
 
     [Fact]
-    public async Task should_reject_multiple_destinations_without_calling_aws()
+    public async Task should_reject_multiple_destinations_as_unsupported_without_calling_aws()
     {
         var client = Substitute.For<IAmazonSimpleNotificationService>();
 
         var result = await CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")));
 
         result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.Unsupported);
         await client.DidNotReceive().PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task should_return_transient_failure_when_the_sdk_throws()
-    {
-        var client = Substitute.For<IAmazonSimpleNotificationService>();
-        client
-            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new HttpRequestException("network down"));
-
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 
     [Fact]

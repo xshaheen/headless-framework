@@ -53,7 +53,7 @@ internal sealed class ConnekioSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 
@@ -71,7 +71,7 @@ internal sealed class ConnekioSmsSender(
         requestMessage.Headers.Authorization = _basicAuthHeader;
 
         using var httpClient = httpClientFactory.CreateClient(SetupConnekio.HttpClientName);
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
 
         // A success status code is authoritative; only read the body to explain a failure.
         if (response.IsSuccessStatusCode)
@@ -90,7 +90,9 @@ internal sealed class ConnekioSmsSender(
             logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
         }
 
-        return SendSingleSmsResponse.Failed("Failed to send.");
+        var error = string.IsNullOrWhiteSpace(rawContent) ? "Failed to send SMS using Connekio API" : rawContent;
+
+        return SendSingleSmsResponse.Failed(error, SmsFailureKinds.FromHttpStatusCode(response.StatusCode));
     }
 
     private string _BuildPayload(SendSingleSmsRequest request)

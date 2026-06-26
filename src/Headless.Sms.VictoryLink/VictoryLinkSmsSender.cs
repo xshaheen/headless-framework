@@ -45,7 +45,7 @@ internal sealed class VictoryLinkSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 
@@ -68,7 +68,7 @@ internal sealed class VictoryLinkSmsSender(
         };
 
         using var httpClient = httpClientFactory.CreateClient(SetupVictoryLink.HttpClientName);
-        var response = await httpClient
+        using var response = await httpClient
             .PostAsJsonAsync(_uri, victoryLinkRequest, _JsonOptions, cancellationToken)
             .ConfigureAwait(false);
         var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

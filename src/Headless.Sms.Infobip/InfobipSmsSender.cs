@@ -82,7 +82,7 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 }

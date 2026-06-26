@@ -51,7 +51,7 @@ internal sealed class CequensSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 
@@ -111,28 +111,28 @@ internal sealed class CequensSmsSender(
 
             var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var error = string.IsNullOrEmpty(rawContent) ? "Failed to send SMS using Cequens API" : rawContent;
-            var failureKind =
-                response.StatusCode == HttpStatusCode.Unauthorized
-                    ? SmsFailureKind.AuthFailure
-                    : SmsFailureKind.Unknown;
 
-            return SendSingleSmsResponse.Failed(error, failureKind);
+            return SendSingleSmsResponse.Failed(error, SmsFailureKinds.FromHttpStatusCode(response.StatusCode));
         }
     }
 
     #region Helpers
 
-    private string? _cachedToken;
-    private DateTime _tokenExpiration;
+    // A single immutable holder swapped atomically (reference assignment is atomic), so the fast-path read
+    // outside the lock can never observe a torn token/expiration pair.
+    private CachedToken? _cached;
+
+    private sealed record CachedToken(string Token, DateTime Expiration);
 
     private async Task<string?> _GetTokenRequestAsync(HttpClient httpClient, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         // Quick check before lock
-        if (_cachedToken != null && _tokenExpiration > now)
+        var cached = _cached;
+        if (cached is not null && cached.Expiration > now)
         {
-            return _cachedToken;
+            return cached.Token;
         }
 
         await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -140,9 +140,10 @@ internal sealed class CequensSmsSender(
         {
             // Double-check after acquiring lock
             now = timeProvider.GetUtcNow().UtcDateTime;
-            if (_cachedToken != null && _tokenExpiration > now)
+            cached = _cached;
+            if (cached is not null && cached.Expiration > now)
             {
-                return _cachedToken;
+                return cached.Token;
             }
 
             try
@@ -165,8 +166,7 @@ internal sealed class CequensSmsSender(
 
                 if (token != null)
                 {
-                    _cachedToken = token;
-                    _tokenExpiration = _ComputeTokenExpiration(token, now);
+                    _cached = new CachedToken(token, _ComputeTokenExpiration(token, now));
                 }
 
                 return token;
@@ -191,8 +191,7 @@ internal sealed class CequensSmsSender(
 
     private void _InvalidateToken()
     {
-        _cachedToken = null;
-        _tokenExpiration = default;
+        _cached = null;
     }
 
     /// <summary>

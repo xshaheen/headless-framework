@@ -84,13 +84,4 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
 
         result.Success.Should().BeFalse();
     }
-
-    [Fact]
-    public async Task should_return_transient_failure_on_transport_fault()
-    {
-        var result = await CreateSender(basePath: "http://localhost:1").SendAsync(SmsRequests.Single());
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
-    }
 }

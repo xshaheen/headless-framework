@@ -11,8 +11,9 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 - `ISmsSender` — single method `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
 - `SendSingleSmsRequest` — message contract with `Destinations` (list of `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
-- `SendSingleSmsResponse` — closed result type; `Success` (bool) and `FailureError` (string? non-null on failure).
-- Never throws for provider errors — only `OperationCanceledException` propagates.
+- `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`). Built via `Succeeded`, `Failed`, or `FromException`.
+- `SmsFailureKinds` — shared classifier (`FromHttpStatusCode`, `FromException`) so every provider maps transport signals to the same `SmsFailureKind` (`None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`, `Unsupported`).
+- Never throws for provider errors — only `OperationCanceledException` and argument-validation exceptions (malformed request) propagate.
 
 ## Installation
 

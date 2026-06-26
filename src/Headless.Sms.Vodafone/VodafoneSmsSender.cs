@@ -39,7 +39,7 @@ internal sealed class VodafoneSmsSender(
         {
             logger.LogSmsSendException(e, request.Destinations.Count);
 
-            return SendSingleSmsResponse.Failed(e.Message, SmsFailureKind.Transient);
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 
@@ -52,14 +52,14 @@ internal sealed class VodafoneSmsSender(
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/xml");
 
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
         var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
             logger.LogEmptyResponse();
 
-            return SendSingleSmsResponse.Failed("Failed to send.");
+            return SendSingleSmsResponse.Failed("Vodafone returned an empty response");
         }
 
         var isSuccess = rawContent.Contains("<Success>true</Success>", StringComparison.OrdinalIgnoreCase);
@@ -71,7 +71,9 @@ internal sealed class VodafoneSmsSender(
 
         logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
 
-        return SendSingleSmsResponse.Failed("Failed to send.");
+        // Vodafone reports logical failures inside a 200 body, so the HTTP status is not a reliable signal;
+        // surface the raw response so callers can see the provider's actual error.
+        return SendSingleSmsResponse.Failed(rawContent);
     }
 
     private string _BuildPayload(SendSingleSmsRequest request)

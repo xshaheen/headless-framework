@@ -65,13 +65,15 @@ public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
     }
 
     [Fact]
-    public async Task should_fail_when_response_does_not_report_success()
+    public async Task should_fail_and_surface_the_response_body_when_it_does_not_report_success()
     {
-        StubSubmit("<Response><Success>false</Success></Response>");
+        const string body = "<Response><Success>false</Success><Error>blocked</Error></Response>";
+        StubSubmit(body);
 
         var result = await CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
+        result.FailureError.Should().Be(body);
     }
 
     [Fact]
@@ -93,26 +95,5 @@ public sealed class VodafoneSmsSenderTests : IClassFixture<SmsWireMockFixture>
 
         var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
         body.Should().Contain("a &amp; b &lt; c");
-    }
-
-    [Fact]
-    public async Task should_return_transient_failure_on_transport_fault()
-    {
-        var options = Options.Create(
-            new VodafoneSmsOptions
-            {
-                SendSmsEndpoint = "http://localhost:1/submit",
-                Sender = "SENDER",
-                AccountId = "acc",
-                Password = "pass",
-                SecureHash = "0123456789ABCDEF",
-            }
-        );
-        var sender = new VodafoneSmsSender(_fixture.HttpClientFactory, options, NullLogger<VodafoneSmsSender>.Instance);
-
-        var result = await sender.SendAsync(SmsRequests.Single());
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }

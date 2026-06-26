@@ -109,7 +109,7 @@ Register exactly one provider via `AddHeadlessSms(setup => setup.Use{Provider}(.
 - Register exactly one provider with `services.AddHeadlessSms(setup => setup.Use{Provider}(...))` (for example `UseTwilio`, `UseAwsSns`, `UseCequens`, `UseDev`). The registration enforces an exactly-one-provider gate and throws on zero or multiple providers.
 - `SendSingleSmsRequest` uses `Destinations` (a list of `SmsRequestDestination`) and `Text` — not `To`/`Message`. Destination requires a country calling code (`Code`) and the local number (`Number`) as separate fields.
 - `SendSingleSmsResponse` exposes `Success` (bool), optional `ProviderMessageId` (string? — the backend's message id on success when it returns one), `FailureError` (string? — non-null when `Success` is false), and `FailureKind` (the `SmsFailureKind` enum classifying failures). It does NOT have `IsSuccess` or `ErrorMessage`.
-- `ISmsSender.SendAsync` returns `ValueTask<SendSingleSmsResponse>` and never throws for provider/transport failures — only `OperationCanceledException` propagates. Always check `response.Success`.
+- `ISmsSender.SendAsync` returns `ValueTask<SendSingleSmsResponse>` and never throws for provider/transport failures — only `OperationCanceledException` (on cancellation) and argument-validation exceptions (for a null request, no destinations, or an empty body) propagate. Always check `response.Success`.
 - HTTP-backed providers (Cequens, Connekio, Infobip, Twilio, VictoryLink, Vodafone) disable auto-retry by default to prevent duplicate SMS delivery. Opt back in via the `configureResilience` parameter if the provider supports idempotency keys.
 - Exactly one provider is allowed: `AddHeadlessSms` throws an `InvalidOperationException` if zero or multiple providers are selected, or if it is called more than once on the same service collection.
 - For Twilio, the option property for the sender number is `PhoneNumber` (not `From`) and the account identifier is `Sid` (not `AccountSid`). There is no `MessagingServiceSid` option in the current API.
@@ -146,9 +146,10 @@ SendSingleSmsResponse.Succeeded()                                 // Success = t
 SendSingleSmsResponse.Succeeded("provider-message-id")            // carries the backend's message id
 SendSingleSmsResponse.Failed("reason")                            // Success = false, FailureKind = Unknown
 SendSingleSmsResponse.Failed("reason", SmsFailureKind.Transient)  // classified failure
+SendSingleSmsResponse.FromException(exception)                    // failure with a non-empty message, classified via SmsFailureKinds.FromException
 ```
 
-Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`) classifies failures so callers can decide whether to retry or switch providers — transport/network faults are reported as `Transient`.
+Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`, `Unsupported`) classifies failures so callers can decide whether to retry or switch providers — transport/network faults are reported as `Transient`, and a request a provider cannot fulfill (for example a multi-destination batch on a single-recipient provider such as Twilio or AWS SNS) is `Unsupported`. Providers classify failures consistently with the shared `SmsFailureKinds` helper (`FromHttpStatusCode`, `FromException`); `SendSingleSmsResponse.FromException` pairs that classification with a guaranteed non-empty message.
 
 ### Retry safety
 
@@ -184,9 +185,10 @@ Provides a provider-agnostic SMS sending API so application code stays decoupled
 - `ISmsSender` — single method `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
 - `SendSingleSmsRequest` — message contract with `Destinations` (list of `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
-- `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`).
+- `SendSingleSmsResponse` — closed result type; `Success` (bool), optional `ProviderMessageId`, `FailureError` (string? non-null on failure), and `FailureKind` (`SmsFailureKind`). Built via `Succeeded`, `Failed`, or `FromException` (which guarantees a non-empty message and classifies the failure).
+- `SmsFailureKinds` — shared classifier (`FromHttpStatusCode`, `FromException`) so every provider maps transport signals to the same `SmsFailureKind`.
 - `AddHeadlessSms(setup => setup.Use{Provider}(...))` — root registration entry with an exactly-one-provider gate; each provider package contributes a `Use{Provider}` builder member.
-- Never throws for provider errors — only `OperationCanceledException` propagates.
+- Never throws for provider errors — only `OperationCanceledException` and argument-validation exceptions (malformed request) propagate.
 
 ### Installation
 
@@ -640,6 +642,7 @@ Provides SMS sending via Twilio's REST API, the most widely supported internatio
 - `Region` + `Edge` — optional Twilio region/edge node selection for data residency or latency.
 - Standard resilience pipeline with auto-retry **disabled** by default.
 - Optional `configureClient` and `configureResilience` hooks.
+- Cancellation is honored up to the point of dispatch only: the Twilio SDK (7.x) does not accept a `CancellationToken` on its send path, so an already-cancelled token throws before the call, but cancellation mid-flight cannot interrupt the in-progress request.
 
 ### Installation
 

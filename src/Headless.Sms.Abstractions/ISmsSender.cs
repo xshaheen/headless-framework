@@ -13,8 +13,18 @@ public interface ISmsSender
     /// A <see cref="SendSingleSmsResponse"/> describing the outcome. Implementations return
     /// <see cref="SendSingleSmsResponse.Failed"/> for every provider and transport failure
     /// (network errors, non-success status codes, vendor rejections, malformed responses) rather
-    /// than throwing. Only <see cref="OperationCanceledException"/> is allowed to propagate.
+    /// than throwing.
     /// </returns>
+    /// <remarks>
+    /// Only two categories of exception propagate instead of becoming a failed response: argument-validation
+    /// exceptions for a malformed <paramref name="request"/> (a caller bug), and
+    /// <see cref="OperationCanceledException"/> when the send is canceled. Every other failure is returned as
+    /// <see cref="SendSingleSmsResponse.Failed"/>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="request"/> has no destinations or an empty message body.
+    /// </exception>
     /// <exception cref="OperationCanceledException">
     /// The send was canceled through <paramref name="cancellationToken"/>.
     /// </exception>

@@ -57,6 +57,23 @@ public sealed class SendSingleSmsResponse
             FailureKind = failureKind,
         };
     }
+
+    /// <summary>
+    /// Creates a failed response from a caught exception, classifying the failure via
+    /// <see cref="SmsFailureKinds.FromException"/>. Used by provider <c>SendAsync</c> implementations to honor
+    /// the "return <see cref="Failed(string, SmsFailureKind)"/> rather than throw" contract without risking a
+    /// secondary throw when the exception carries an empty <see cref="Exception.Message"/>.
+    /// </summary>
+    /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
+    public static SendSingleSmsResponse FromException(Exception exception)
+    {
+        Argument.IsNotNull(exception);
+
+        var message = string.IsNullOrWhiteSpace(exception.Message) ? exception.GetType().Name : exception.Message;
+
+        return Failed(message, SmsFailureKinds.FromException(exception));
+    }
 }
 
 /// <summary>Classifies why an SMS send failed, to inform retry and provider-routing decisions.</summary>
@@ -83,4 +100,12 @@ public enum SmsFailureKind
 
     /// <summary>The provider account has insufficient credit or balance.</summary>
     OutOfCredit,
+
+    /// <summary>
+    /// The provider does not support the requested operation (for example a multi-destination batch send on a
+    /// provider that only sends to one recipient per call). Retrying or switching the same request to another
+    /// instance of the same provider will not help; the caller must change the request or route to a different
+    /// provider.
+    /// </summary>
+    Unsupported,
 }

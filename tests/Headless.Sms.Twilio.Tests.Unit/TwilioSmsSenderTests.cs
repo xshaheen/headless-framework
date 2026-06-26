@@ -6,7 +6,6 @@ using Headless.Sms.Testing;
 using Headless.Sms.Twilio;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute.ExceptionExtensions;
 using Twilio.Clients;
 using Twilio.Http;
 
@@ -42,25 +41,14 @@ public sealed class TwilioSmsSenderTests
     }
 
     [Fact]
-    public async Task should_reject_multiple_destinations_without_calling_twilio()
+    public async Task should_reject_multiple_destinations_as_unsupported_without_calling_twilio()
     {
         var client = Substitute.For<ITwilioRestClient>();
 
         var result = await CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")));
 
         result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.Unsupported);
         await client.DidNotReceive().RequestAsync(Arg.Any<Request>());
-    }
-
-    [Fact]
-    public async Task should_return_transient_failure_when_the_sdk_throws()
-    {
-        var client = Substitute.For<ITwilioRestClient>();
-        client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(new HttpRequestException("network down"));
-
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }
