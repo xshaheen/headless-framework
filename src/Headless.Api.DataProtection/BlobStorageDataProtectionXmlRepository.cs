@@ -31,7 +31,7 @@ namespace Headless.Api;
 /// </remarks>
 internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 {
-    private static readonly string[] _Containers = ["DataProtection"];
+    private const string _Container = "DataProtection";
     private readonly IBlobStorage _storage;
     private readonly ILogger _logger;
 
@@ -71,7 +71,11 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     {
         _logger.LogLoadingElements();
 
-        var files = (await _storage.GetBlobsListAsync(_Containers, "*.xml").ConfigureAwait(false)).ToList();
+        var files = new List<BlobInfo>();
+        await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery(_Container), "*.xml").ConfigureAwait(false))
+        {
+            files.Add(blob);
+        }
 
         if (files.Count == 0)
         {
@@ -88,7 +92,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         {
             _logger.LogLoadingElement(file.BlobKey);
             await using var downloadResult = await _storage
-                .OpenReadStreamAsync(_Containers, file.BlobKey)
+                .OpenReadStreamAsync(new BlobLocation(_Container, file.BlobKey))
                 .ConfigureAwait(false);
 
             if (downloadResult is null)
@@ -153,7 +157,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
             memoryStream.Seek(0, SeekOrigin.Begin);
 
             await storage
-                .UploadAsync(_Containers, new(memoryStream, fileName), cancellationToken)
+                .UploadAsync(new BlobLocation(_Container, fileName), memoryStream, metadata: null, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
