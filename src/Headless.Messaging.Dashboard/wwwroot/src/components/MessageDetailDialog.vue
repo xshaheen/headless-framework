@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import JSONBig from 'json-bigint'
+import { parseJsonSafe } from '@/utilities/jsonBig'
 import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
 export interface MessageDetail {
@@ -44,16 +44,6 @@ interface PlainText {
 
 type ContentKind = StructuredException | GenericException | PlainText
 
-const JSONBigParser = JSONBig({ storeAsString: true })
-
-function parseContent(raw: string): { parsed: unknown; isJson: boolean } {
-  try {
-    return { parsed: JSONBigParser.parse(raw), isJson: true }
-  } catch {
-    return { parsed: null, isJson: false }
-  }
-}
-
 function isExceptionObject(obj: unknown): boolean {
   if (!obj || typeof obj !== 'object') return false
   const o = obj as Record<string, unknown>
@@ -64,7 +54,7 @@ function isExceptionObject(obj: unknown): boolean {
 }
 
 function buildContentKind(raw: string): ContentKind {
-  const { parsed, isJson } = parseContent(raw)
+  const { parsed, isJson } = parseJsonSafe(raw)
 
   if (!isJson) return { type: 'plain', text: raw }
 
@@ -155,7 +145,7 @@ function highlightJson(jsonStr: string): string {
 
 const formattedJsonHtml = computed(() => {
   if (!props.message?.content) return ''
-  const { parsed, isJson } = parseContent(props.message.content)
+  const { parsed, isJson } = parseJsonSafe(props.message.content)
   if (!isJson) return props.message.content
   try {
     return highlightJson(JSON.stringify(parsed, null, 2))

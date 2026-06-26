@@ -58,3 +58,7 @@ jobs:
       - name: "Build dashboard (type-check + vite build)"
         working-directory: ${{ matrix.dashboard }}
         run: npm run build
+
+      - name: "Unit tests (vitest)"
+        working-directory: ${{ matrix.dashboard }}
+        run: npm run test:unit
