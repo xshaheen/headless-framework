@@ -6,7 +6,7 @@ import { jobsService } from '@/http/services/jobsService'
 import type { GetCronJobResponse } from '@/http/services/types/cronJobService.types'
 import { cronJobService } from '@/http/services/cronJobService'
 import { formatTime } from '@/utilities/dateTimeParser'
-import cronstrue from 'cronstrue'
+import { describeCron, isValidCronExpression } from '@/utilities/cron'
 const functionNamesStore = useFunctionNameStore()
 const getJobRequestData = jobsService.getRequestData()
 const updateCronJob = cronJobService.updateCronJob()
@@ -56,39 +56,13 @@ const formatJsonForDisplay = (json: string, isHtml: boolean = false) => {
   }
 }
 
-// Validate cron expression using cronstrue
-// Cronstrue will throw an error if the expression is invalid
-// We require 6-segment format (with seconds)
-const validateCronExpression = (value: string): boolean => {
-  if (!value) return false
-  
-  // Check if it has 6 segments (seconds included)
-  const segments = value.trim().split(/\s+/)
-  if (segments.length !== 6) {
-    return false
-  }
-  
-  try {
-    // Try to parse the expression with cronstrue
-    // If it's invalid, it will throw an error
-    cronstrue.toString(value)
-    return true
-  } catch (error) {
-    return false
-  }
-}
+// Validate cron expression: requires 6-segment (seconds) format that cronstrue can parse.
+const validateCronExpression = (value: string): boolean => isValidCronExpression(value)
 
 // Get readable expression for display
 const readableExpression = computed(() => {
   const expression = values.expression
-  if (!expression || !validateCronExpression(expression)) {
-    return ''
-  }
-  try {
-    return cronstrue.toString(expression)
-  } catch (error) {
-    return ''
-  }
+  return isValidCronExpression(expression) ? describeCron(expression) : ''
 })
 
 const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values } = useForm({

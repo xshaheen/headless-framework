@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "lint": "eslint . --fix",
     "format": "prettier --write src/"
   },
@@ -39,6 +41,7 @@
     "autoprefixer": "^10.5.0",
     "eslint": "^9.14.0",
     "eslint-plugin-vue": "^9.30.0",
+    "happy-dom": "^20.10.6",
     "npm-run-all2": "^7.0.2",
     "postcss": "^8.5.1",
     "prettier": "^3.8.4",
@@ -47,6 +50,7 @@
     "vite": "^6.4.3",
     "vite-plugin-dts": "^4.5.0",
     "vite-plugin-vue-devtools": "^7.6.8",
+    "vitest": "^3.2.6",
     "vue-tsc": "^3.3.5"
   },
   "overrides": {

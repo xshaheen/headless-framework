@@ -24,17 +24,11 @@ import {
   GridComponent,
 } from 'echarts/components'
 import VChart, { THEME_KEY } from 'vue-echarts'
-import cronstrue from 'cronstrue'
+import { describeCron } from '@/utilities/cron'
 
-// Helper function to get readable cron expression
-const getReadableCronExpression = (expression: string): string => {
-  try {
-    // cronstrue expects 6-part format with seconds
-    return cronstrue.toString(expression)
-  } catch (error) {
-    return 'Invalid cron expression'
-  }
-}
+// Helper function to get readable cron expression (6-part format with seconds)
+const getReadableCronExpression = (expression: string): string =>
+  describeCron(expression, 'Invalid cron expression')
 
 const getCronJobRangeGraphData = cronJobService.getTimeJobsGraphDataRange()
 const getCronJobsPaginated = cronJobService.getCronJobsPaginated()
