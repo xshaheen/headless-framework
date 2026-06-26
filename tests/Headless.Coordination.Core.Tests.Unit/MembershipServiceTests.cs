@@ -61,6 +61,8 @@ public sealed class MembershipServiceTests : TestBase
 
         // then
         liveNodes.Should().Equal(nodeA, nodeB);
+        store.ReadLiveNodesCalls.Should().Be(1);
+        store.ReadLivenessCalls.Should().Be(0);
     }
 
     [Fact]
