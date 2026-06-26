@@ -18,6 +18,7 @@ internal sealed class RedisCacheScriptsInitializer(
         CacheTaggedSetScriptDefinition.Instance,
         SetIfHigherScriptDefinition.Instance,
         SetIfLowerScriptDefinition.Instance,
+        SlidingRearmScriptDefinition.Instance,
     ];
 
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)

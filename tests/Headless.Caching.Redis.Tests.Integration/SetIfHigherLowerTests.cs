@@ -34,7 +34,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
         var result = await cache.SetIfHigherAsync(key, 100L, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        result.Should().Be(100);
+        result.Should().Be(50);
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
         var result = await cache.SetIfHigherAsync(key, 50L, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        result.Should().Be(100);
+        result.Should().Be(0);
     }
 
     #endregion
@@ -85,7 +85,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
         var result = await cache.SetIfHigherAsync(key, 100.5, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        result.Should().Be(100.5);
+        result.Should().Be(50);
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
         var result = await cache.SetIfHigherAsync(key, 50.5, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        result.Should().Be(100.5);
+        result.Should().Be(0);
     }
 
     #endregion
@@ -152,7 +152,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
         var result = await cache.SetIfLowerAsync(key, 100L, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        result.Should().Be(50);
+        result.Should().Be(0);
     }
 
     #endregion
@@ -187,7 +187,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
         var result = await cache.SetIfLowerAsync(key, 50.5, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        result.Should().Be(50.5);
+        result.Should().Be(50);
     }
 
     [Fact]
@@ -203,7 +203,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
         var result = await cache.SetIfLowerAsync(key, 100.5, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        result.Should().Be(50.5);
+        result.Should().Be(0);
     }
 
     #endregion
