@@ -102,13 +102,11 @@ public sealed class InMemoryCache
         _maxEvictionsPerCompaction = options.MaxEvictionsPerCompaction;
         _evictionSampleSize = options.EvictionSampleSize;
 
-        if ((_maxMemorySize.HasValue || _maxEntrySize.HasValue) && _sizeCalculator is null)
-        {
-            throw new ArgumentException(
-                "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
-                nameof(options)
-            );
-        }
+        Argument.IsTrue(
+            (!_maxMemorySize.HasValue && !_maxEntrySize.HasValue) || _sizeCalculator is not null,
+            "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
+            nameof(options)
+        );
     }
 
     /// <inheritdoc />
@@ -181,7 +179,7 @@ public sealed class InMemoryCache
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         key = _GetKey(key);
@@ -545,101 +543,126 @@ public sealed class InMemoryCache
         return wasExpectedValue;
     }
 
-    public async ValueTask<double> IncrementAsync(
+    public ValueTask<double> IncrementAsync(
         string key,
         double amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        key = _GetKey(key);
-
-        if (expiration is { Ticks: <= 0 })
-        {
-            _RemoveExpiredKey(key);
-            return 0;
-        }
-
-        var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
-            : (DateTime?)null;
-
-        long sizeDelta = 0;
-        double resultValue = 0;
-
-        _memory.AddOrUpdate(
+    ) =>
+        _RunNumericOpAsync<double>(
             key,
-            _ =>
+            amount,
+            expiration,
+            static (double? current, double input) =>
             {
-                var size = _CalculateEntrySize(amount);
-                sizeDelta = size;
-                resultValue = amount;
-
-                return new CacheEntry(
-                    amount,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
+                var total = current.HasValue ? current.Value + input : input;
+                return new NumericOpResult<double>(Replace: true, NewValue: total, Result: total);
             },
-            (_, existingEntry) =>
-            {
-                double? currentValue = null;
-
-                try
-                {
-                    currentValue = existingEntry.GetValue<double?>();
-                }
-                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
-                {
-                    // Type conversion failed - treat as new value
-                }
-
-                var computedValue = currentValue.HasValue ? currentValue.Value + amount : amount;
-                var computedSize = _CalculateEntrySize(computedValue);
-                sizeDelta = computedSize - existingEntry.Size;
-                resultValue = computedValue;
-
-                return new CacheEntry(
-                    computedValue,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    computedSize
-                );
-            }
+            cancellationToken
         );
 
-        if (sizeDelta != 0)
-        {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
-        }
-
-        _TrackUpdate(expiresAt);
-
-        await _StartMaintenanceAsync().ConfigureAwait(false);
-
-        return resultValue;
-    }
-
-    public async ValueTask<long> IncrementAsync(
+    public ValueTask<long> IncrementAsync(
         string key,
         long amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
+    ) =>
+        _RunNumericOpAsync<long>(
+            key,
+            amount,
+            expiration,
+            static (long? current, long input) =>
+            {
+                var total = current.HasValue ? current.Value + input : input;
+                return new NumericOpResult<long>(Replace: true, NewValue: total, Result: total);
+            },
+            cancellationToken
+        );
+
+    public ValueTask<double> SetIfHigherAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) =>
+        _RunNumericOpAsync<double>(
+            key,
+            value,
+            expiration,
+            static (double? current, double input) =>
+                current.HasValue && current.Value < input
+                    ? new NumericOpResult<double>(Replace: true, NewValue: input, Result: input - current.Value)
+                    : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
+            cancellationToken
+        );
+
+    public ValueTask<long> SetIfHigherAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) =>
+        _RunNumericOpAsync<long>(
+            key,
+            value,
+            expiration,
+            static (long? current, long input) =>
+                current.HasValue && current.Value < input
+                    ? new NumericOpResult<long>(Replace: true, NewValue: input, Result: input - current.Value)
+                    : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
+            cancellationToken
+        );
+
+    public ValueTask<double> SetIfLowerAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) =>
+        _RunNumericOpAsync<double>(
+            key,
+            value,
+            expiration,
+            static (double? current, double input) =>
+                current.HasValue && current.Value > input
+                    ? new NumericOpResult<double>(Replace: true, NewValue: input, Result: current.Value - input)
+                    : new NumericOpResult<double>(Replace: false, NewValue: default, Result: 0),
+            cancellationToken
+        );
+
+    public ValueTask<long> SetIfLowerAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) =>
+        _RunNumericOpAsync<long>(
+            key,
+            value,
+            expiration,
+            static (long? current, long input) =>
+                current.HasValue && current.Value > input
+                    ? new NumericOpResult<long>(Replace: true, NewValue: input, Result: current.Value - input)
+                    : new NumericOpResult<long>(Replace: false, NewValue: default, Result: 0),
+            cancellationToken
+        );
+
+    // Shared numeric mutation pipeline for the double/long Increment / SetIfHigher / SetIfLower overloads: it owns
+    // validation, zero-expiration eviction, the AddOrUpdate, size/expiry bookkeeping, and maintenance scheduling.
+    // Each overload supplies only the `apply` delegate describing, against the current value, whether to replace,
+    // the value to store, and the value to return (the new total for Increment, the delta for SetIfHigher/Lower).
+    private async ValueTask<TNumeric> _RunNumericOpAsync<TNumeric>(
+        string key,
+        TNumeric inputValue,
+        TimeSpan? expiration,
+        Func<TNumeric?, TNumeric, NumericOpResult<TNumeric>> apply,
+        CancellationToken cancellationToken
     )
+        where TNumeric : struct
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         key = _GetKey(key);
@@ -647,7 +670,7 @@ public sealed class InMemoryCache
         if (expiration is { Ticks: <= 0 })
         {
             _RemoveExpiredKey(key);
-            return 0;
+            return default;
         }
 
         var expiresAt = expiration.HasValue
@@ -655,18 +678,18 @@ public sealed class InMemoryCache
             : (DateTime?)null;
 
         long sizeDelta = 0;
-        long resultValue = 0;
+        TNumeric result = default;
 
         _memory.AddOrUpdate(
             key,
             _ =>
             {
-                var size = _CalculateEntrySize(amount);
+                var size = _CalculateEntrySize(inputValue);
                 sizeDelta = size;
-                resultValue = amount;
+                result = inputValue;
 
                 return new CacheEntry(
-                    amount,
+                    inputValue,
                     expiresAt,
                     _timeProvider,
                     _shouldClone,
@@ -676,24 +699,31 @@ public sealed class InMemoryCache
             },
             (_, existingEntry) =>
             {
-                long? currentValue = null;
+                TNumeric? currentValue = null;
 
                 try
                 {
-                    currentValue = existingEntry.GetValue<long?>();
+                    currentValue = existingEntry.GetValue<TNumeric?>();
                 }
                 catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
                 {
-                    // Type conversion failed - treat as new value
+                    // Type conversion failed - treat as if no current value
                 }
 
-                var computedValue = currentValue.HasValue ? currentValue.Value + amount : amount;
-                var computedSize = _CalculateEntrySize(computedValue);
+                var op = apply(currentValue, inputValue);
+                result = op.Result;
+
+                if (!op.Replace)
+                {
+                    sizeDelta = 0;
+                    return existingEntry.WithExpiration(expiresAt);
+                }
+
+                var computedSize = _CalculateEntrySize(op.NewValue);
                 sizeDelta = computedSize - existingEntry.Size;
-                resultValue = computedValue;
 
                 return new CacheEntry(
-                    computedValue,
+                    op.NewValue,
                     expiresAt,
                     _timeProvider,
                     _shouldClone,
@@ -712,376 +742,13 @@ public sealed class InMemoryCache
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
-        return resultValue;
+        return result;
     }
 
-    public async ValueTask<double> SetIfHigherAsync(
-        string key,
-        double value,
-        TimeSpan? expiration,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        key = _GetKey(key);
-
-        if (expiration is { Ticks: <= 0 })
-        {
-            _RemoveExpiredKey(key);
-            return 0;
-        }
-
-        var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
-            : (DateTime?)null;
-
-        long sizeDelta = 0;
-        double difference = 0;
-
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(value);
-                sizeDelta = size;
-                difference = value;
-
-                return new CacheEntry(
-                    value,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
-            {
-                double? currentValue = null;
-
-                try
-                {
-                    currentValue = existingEntry.GetValue<double?>();
-                }
-                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
-                {
-                    // Type conversion failed - treat as if no current value
-                }
-
-                if (currentValue.HasValue && currentValue.Value < value)
-                {
-                    difference = value - currentValue.Value;
-                    var computedSize = _CalculateEntrySize(value);
-                    sizeDelta = computedSize - existingEntry.Size;
-
-                    return new CacheEntry(
-                        value,
-                        expiresAt,
-                        _timeProvider,
-                        _shouldClone,
-                        _shouldThrowOnSerializationError,
-                        computedSize
-                    );
-                }
-
-                difference = 0;
-                sizeDelta = 0;
-
-                return existingEntry.WithExpiration(expiresAt);
-            }
-        );
-
-        if (sizeDelta != 0)
-        {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
-        }
-
-        _TrackUpdate(expiresAt);
-
-        await _StartMaintenanceAsync().ConfigureAwait(false);
-
-        return difference;
-    }
-
-    public async ValueTask<long> SetIfHigherAsync(
-        string key,
-        long value,
-        TimeSpan? expiration,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        key = _GetKey(key);
-
-        if (expiration is { Ticks: <= 0 })
-        {
-            _RemoveExpiredKey(key);
-            return 0;
-        }
-
-        var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
-            : (DateTime?)null;
-
-        long sizeDelta = 0;
-        long difference = 0;
-
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(value);
-                sizeDelta = size;
-                difference = value;
-
-                return new CacheEntry(
-                    value,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
-            {
-                long? currentValue = null;
-
-                try
-                {
-                    currentValue = existingEntry.GetValue<long?>();
-                }
-                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
-                {
-                    // Type conversion failed - treat as if no current value
-                }
-
-                if (currentValue.HasValue && currentValue.Value < value)
-                {
-                    difference = value - currentValue.Value;
-                    var computedSize = _CalculateEntrySize(value);
-                    sizeDelta = computedSize - existingEntry.Size;
-
-                    return new CacheEntry(
-                        value,
-                        expiresAt,
-                        _timeProvider,
-                        _shouldClone,
-                        _shouldThrowOnSerializationError,
-                        computedSize
-                    );
-                }
-
-                difference = 0;
-                sizeDelta = 0;
-
-                return existingEntry.WithExpiration(expiresAt);
-            }
-        );
-
-        if (sizeDelta != 0)
-        {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
-        }
-
-        _TrackUpdate(expiresAt);
-
-        await _StartMaintenanceAsync().ConfigureAwait(false);
-
-        return difference;
-    }
-
-    public async ValueTask<double> SetIfLowerAsync(
-        string key,
-        double value,
-        TimeSpan? expiration,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        key = _GetKey(key);
-
-        if (expiration is { Ticks: <= 0 })
-        {
-            _RemoveExpiredKey(key);
-            return 0;
-        }
-
-        var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
-            : (DateTime?)null;
-
-        long sizeDelta = 0;
-        double difference = 0;
-
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(value);
-                sizeDelta = size;
-                difference = value;
-
-                return new CacheEntry(
-                    value,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
-            {
-                double? currentValue = null;
-
-                try
-                {
-                    currentValue = existingEntry.GetValue<double?>();
-                }
-                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
-                {
-                    // Type conversion failed - treat as if no current value
-                }
-
-                if (currentValue.HasValue && currentValue.Value > value)
-                {
-                    difference = currentValue.Value - value;
-                    var computedSize = _CalculateEntrySize(value);
-                    sizeDelta = computedSize - existingEntry.Size;
-
-                    return new CacheEntry(
-                        value,
-                        expiresAt,
-                        _timeProvider,
-                        _shouldClone,
-                        _shouldThrowOnSerializationError,
-                        computedSize
-                    );
-                }
-
-                difference = 0;
-                sizeDelta = 0;
-
-                return existingEntry.WithExpiration(expiresAt);
-            }
-        );
-
-        if (sizeDelta != 0)
-        {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
-        }
-
-        _TrackUpdate(expiresAt);
-
-        await _StartMaintenanceAsync().ConfigureAwait(false);
-
-        return difference;
-    }
-
-    public async ValueTask<long> SetIfLowerAsync(
-        string key,
-        long value,
-        TimeSpan? expiration,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _ThrowIfDisposed();
-        Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        key = _GetKey(key);
-
-        if (expiration is { Ticks: <= 0 })
-        {
-            _RemoveExpiredKey(key);
-            return 0;
-        }
-
-        var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
-            : (DateTime?)null;
-
-        long sizeDelta = 0;
-        long difference = 0;
-
-        _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                var size = _CalculateEntrySize(value);
-                sizeDelta = size;
-                difference = value;
-
-                return new CacheEntry(
-                    value,
-                    expiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    size
-                );
-            },
-            (_, existingEntry) =>
-            {
-                long? currentValue = null;
-
-                try
-                {
-                    currentValue = existingEntry.GetValue<long?>();
-                }
-                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
-                {
-                    // Type conversion failed - treat as if no current value
-                }
-
-                if (currentValue.HasValue && currentValue.Value > value)
-                {
-                    difference = currentValue.Value - value;
-                    var computedSize = _CalculateEntrySize(value);
-                    sizeDelta = computedSize - existingEntry.Size;
-
-                    return new CacheEntry(
-                        value,
-                        expiresAt,
-                        _timeProvider,
-                        _shouldClone,
-                        _shouldThrowOnSerializationError,
-                        computedSize
-                    );
-                }
-
-                difference = 0;
-                sizeDelta = 0;
-
-                return existingEntry.WithExpiration(expiresAt);
-            }
-        );
-
-        if (sizeDelta != 0)
-        {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
-        }
-
-        _TrackUpdate(expiresAt);
-
-        await _StartMaintenanceAsync().ConfigureAwait(false);
-
-        return difference;
-    }
+    // Outcome of a numeric mutation: whether to replace the stored value, the value to store when replacing, and
+    // the value the public overload returns.
+    private readonly record struct NumericOpResult<TNumeric>(bool Replace, TNumeric NewValue, TNumeric Result)
+        where TNumeric : struct;
 
     public async ValueTask<long> SetAddAsync<T>(
         string key,
@@ -1121,7 +788,7 @@ public sealed class InMemoryCache
                 }
             }
 
-            result = _SetAddStringItems(key, newItems, expiresAt);
+            result = _SetAddItems(key, newItems, expiresAt, StringComparer.OrdinalIgnoreCase);
         }
         else
         {
@@ -1135,7 +802,7 @@ public sealed class InMemoryCache
                 }
             }
 
-            result = _SetAddObjectItems(key, newItems, expiresAt);
+            result = _SetAddItems<object>(key, newItems, expiresAt, comparer: null);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -1143,7 +810,16 @@ public sealed class InMemoryCache
         return result;
     }
 
-    private long _SetAddStringItems(string key, Dictionary<string, DateTime?> newItems, DateTime? expiresAt)
+    // Shared set-add path for both the string (case-insensitive) and object (default-comparer) member dictionaries.
+    // The caller picks TKey + comparer at the typeof(T) dispatch; everything below — merge, expiry recomputation,
+    // size bookkeeping, expiry tracking — is identical across both backings.
+    private long _SetAddItems<TKey>(
+        string key,
+        Dictionary<TKey, DateTime?> newItems,
+        DateTime? expiresAt,
+        IEqualityComparer<TKey>? comparer
+    )
+        where TKey : notnull
     {
         if (newItems.Count is 0)
         {
@@ -1170,84 +846,14 @@ public sealed class InMemoryCache
             },
             (existingKey, existingEntry) =>
             {
-                if (existingEntry.PeekValue() is not IDictionary<string, DateTime?> dictionary)
+                if (existingEntry.PeekValue() is not IDictionary<TKey, DateTime?> dictionary)
                 {
                     throw new InvalidOperationException(
                         $"Unable to add value for key: {existingKey}. Cache value does not contain a set"
                     );
                 }
 
-                var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
-                var currentMax = _ExpireAndGetMaxExpiration(updatedDict);
-
-                foreach (var kvp in newItems)
-                {
-                    updatedDict[kvp.Key] = kvp.Value;
-                }
-
-                var newExpiresAt =
-                    (expiresAt is null || currentMax is null) ? (DateTime?)null
-                    : expiresAt.Value > currentMax.Value ? expiresAt.Value
-                    : currentMax.Value;
-                var newSize = _CalculateEntrySize(updatedDict);
-                sizeDelta = newSize - existingEntry.Size;
-
-                return new CacheEntry(
-                    updatedDict,
-                    newExpiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    newSize
-                );
-            }
-        );
-
-        if (sizeDelta != 0)
-        {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
-        }
-
-        _TrackUpdate(committed.PhysicalExpiresAt);
-
-        return newItems.Count;
-    }
-
-    private long _SetAddObjectItems(string key, Dictionary<object, DateTime?> newItems, DateTime? expiresAt)
-    {
-        if (newItems.Count is 0)
-        {
-            return 0;
-        }
-
-        var entrySize = _CalculateEntrySize(newItems);
-        var entry = new CacheEntry(
-            newItems,
-            expiresAt,
-            _timeProvider,
-            _shouldClone,
-            _shouldThrowOnSerializationError,
-            entrySize
-        );
-        long sizeDelta = 0;
-
-        var committed = _memory.AddOrUpdate(
-            key,
-            _ =>
-            {
-                sizeDelta = entrySize;
-                return entry;
-            },
-            (existingKey, existingEntry) =>
-            {
-                if (existingEntry.PeekValue() is not IDictionary<object, DateTime?> dictionary)
-                {
-                    throw new InvalidOperationException(
-                        $"Unable to add value for key: {existingKey}. Cache value does not contain a set"
-                    );
-                }
-
-                var updatedDict = new Dictionary<object, DateTime?>(dictionary);
+                var updatedDict = new Dictionary<TKey, DateTime?>(dictionary, comparer);
                 var currentMax = _ExpireAndGetMaxExpiration(updatedDict);
 
                 foreach (var kvp in newItems)
@@ -1472,77 +1078,81 @@ public sealed class InMemoryCache
             var dictionaryCacheValue = await GetAsync<IDictionary<string, DateTime?>>(key, cancellationToken)
                 .ConfigureAwait(false);
 
-            return _GetSetStringItems<T>(dictionaryCacheValue, pageIndex, pageSize, utcNow);
+            return _GetSetItems<string, T>(dictionaryCacheValue, pageIndex, pageSize, utcNow);
         }
         else
         {
             var dictionaryCacheValue = await GetAsync<IDictionary<object, DateTime?>>(key, cancellationToken)
                 .ConfigureAwait(false);
 
-            return _GetSetObjectItems<T>(dictionaryCacheValue, pageIndex, pageSize, utcNow);
+            return _GetSetItems<object, T>(dictionaryCacheValue, pageIndex, pageSize, utcNow);
         }
     }
 
-    private static CacheValue<ICollection<T>> _GetSetStringItems<T>(
-        CacheValue<IDictionary<string, DateTime?>> dictionaryCacheValue,
+    // Shared set-read projection for both the string- and object-keyed member dictionaries (the cast
+    // (T)(object)kvp.Key handles both backings). A live member is one whose expiry is null or strictly after now
+    // (Redis Exclude.Start parity: a member expiring exactly at now is excluded). An absent key reads as NoValue;
+    // a present set whose members are all expired reads as an empty-but-present collection.
+    private static CacheValue<ICollection<T>> _GetSetItems<TKey, T>(
+        CacheValue<IDictionary<TKey, DateTime?>> dictionaryCacheValue,
         int? pageIndex,
         int pageSize,
         DateTime utcNow
     )
+        where TKey : notnull
     {
         if (!dictionaryCacheValue.HasValue)
         {
-            return new CacheValue<ICollection<T>>([], false);
+            return CacheValue<ICollection<T>>.NoValue;
         }
 
-        var nonExpiredKeys = dictionaryCacheValue
-            .Value!.Where(kvp => kvp.Value is null || kvp.Value >= utcNow)
-            .Select(kvp => (T)(object)kvp.Key)
-            .ToArray();
-
-        if (nonExpiredKeys.Length is 0)
-        {
-            return new CacheValue<ICollection<T>>([], false);
-        }
+        var dictionary = dictionaryCacheValue.Value!;
 
         if (!pageIndex.HasValue)
         {
-            return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
+            var liveMembers = dictionary
+                .Where(kvp => kvp.Value is null || kvp.Value > utcNow)
+                .Select(kvp => (T)(object)kvp.Key)
+                .ToArray();
+
+            return liveMembers.Length is 0
+                ? new CacheValue<ICollection<T>>([], false)
+                : new CacheValue<ICollection<T>>(liveMembers, true);
         }
 
+        // Paginated: stream a single pass instead of materializing the full set then Skip/Take-ing it. Skip the
+        // first (pageIndex-1)*pageSize live members, then take up to pageSize — tracking whether any live member
+        // exists at all so a present-but-all-expired set still reports the empty-but-present ([], false) sentinel
+        // (matching the unpaged branch), distinct from an empty page that simply ran past the last live member.
         var skip = (pageIndex.Value - 1) * pageSize;
-        return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), true);
-    }
+        var skipped = 0;
+        var anyLiveMember = false;
+        var page = new List<T>();
 
-    private static CacheValue<ICollection<T>> _GetSetObjectItems<T>(
-        CacheValue<IDictionary<object, DateTime?>> dictionaryCacheValue,
-        int? pageIndex,
-        int pageSize,
-        DateTime utcNow
-    )
-    {
-        if (!dictionaryCacheValue.HasValue)
+        foreach (var kvp in dictionary)
         {
-            return new CacheValue<ICollection<T>>([], false);
+            if (kvp.Value is not null && kvp.Value <= utcNow)
+            {
+                continue;
+            }
+
+            anyLiveMember = true;
+
+            if (skipped < skip)
+            {
+                skipped++;
+                continue;
+            }
+
+            page.Add((T)(object)kvp.Key);
+
+            if (page.Count >= pageSize)
+            {
+                break;
+            }
         }
 
-        var nonExpiredKeys = dictionaryCacheValue
-            .Value!.Where(kvp => kvp.Value is null || kvp.Value >= utcNow)
-            .Select(kvp => (T)kvp.Key)
-            .ToArray();
-
-        if (nonExpiredKeys.Length is 0)
-        {
-            return new CacheValue<ICollection<T>>([], false);
-        }
-
-        if (!pageIndex.HasValue)
-        {
-            return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
-        }
-
-        var skip = (pageIndex.Value - 1) * pageSize;
-        return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), true);
+        return anyLiveMember ? new CacheValue<ICollection<T>>(page, true) : new CacheValue<ICollection<T>>([], false);
     }
 
     /// <summary>
@@ -1980,72 +1590,20 @@ public sealed class InMemoryCache
         if (typeof(T) == typeof(string))
         {
             var stringsToRemove = value.Where(v => v is not null).Select(v => (string)(object)v!).ToList();
-            return new ValueTask<long>(_SetRemoveStringItems(key, stringsToRemove));
+            return new ValueTask<long>(_SetRemoveItems(key, stringsToRemove, StringComparer.OrdinalIgnoreCase));
         }
         else
         {
             var valuesToRemove = value.Where(v => v is not null).Select(v => (object)v!).ToList();
-            return new ValueTask<long>(_SetRemoveObjectItems(key, valuesToRemove));
+            return new ValueTask<long>(_SetRemoveItems<object>(key, valuesToRemove, comparer: null));
         }
     }
 
-    private long _SetRemoveStringItems(string key, List<string> stringsToRemove)
-    {
-        if (stringsToRemove.Count is 0)
-        {
-            return 0L;
-        }
-
-        long removed = 0;
-        long sizeDelta = 0;
-
-        _memory.TryUpdate(
-            key,
-            (_, existingEntry) =>
-            {
-                if (existingEntry.PeekValue() is not IDictionary<string, DateTime?> { Count: > 0 } dictionary)
-                {
-                    sizeDelta = 0;
-                    return existingEntry;
-                }
-
-                var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
-                long localRemoved = 0;
-
-                foreach (var v in stringsToRemove)
-                {
-                    if (updatedDict.Remove(v))
-                    {
-                        localRemoved++;
-                    }
-                }
-
-                removed = localRemoved;
-
-                var newExpiresAt = _ExpireAndGetMaxExpiration(updatedDict);
-                var newSize = _CalculateEntrySize(updatedDict);
-                sizeDelta = newSize - existingEntry.Size;
-
-                return new CacheEntry(
-                    updatedDict,
-                    newExpiresAt,
-                    _timeProvider,
-                    _shouldClone,
-                    _shouldThrowOnSerializationError,
-                    newSize
-                );
-            }
-        );
-
-        if (sizeDelta != 0)
-        {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
-        }
-
-        return removed;
-    }
-
-    private long _SetRemoveObjectItems(string key, List<object> valuesToRemove)
+    // Shared set-remove path for both the string (case-insensitive) and object (default-comparer) member
+    // dictionaries. The caller picks TKey + comparer at the typeof(T) dispatch; the copy-remove-recompute body is
+    // identical across both backings.
+    private long _SetRemoveItems<TKey>(string key, List<TKey> valuesToRemove, IEqualityComparer<TKey>? comparer)
+        where TKey : notnull
     {
         if (valuesToRemove.Count is 0)
         {
@@ -2059,13 +1617,13 @@ public sealed class InMemoryCache
             key,
             (_, existingEntry) =>
             {
-                if (existingEntry.PeekValue() is not IDictionary<object, DateTime?> { Count: > 0 } dictionary)
+                if (existingEntry.PeekValue() is not IDictionary<TKey, DateTime?> { Count: > 0 } dictionary)
                 {
                     sizeDelta = 0;
                     return existingEntry;
                 }
 
-                var updatedDict = new Dictionary<object, DateTime?>(dictionary);
+                var updatedDict = new Dictionary<TKey, DateTime?>(dictionary, comparer);
                 long localRemoved = 0;
 
                 foreach (var v in valuesToRemove)
@@ -2880,7 +2438,6 @@ public sealed class InMemoryCache
             bool shouldClone,
             bool shouldThrowOnSerializationError = true,
             long size = 0,
-            LastFactoryError? lastFactoryError = null,
             IReadOnlyCollection<string>? tags = null,
             DateTime? eagerRefreshAt = null,
             string? etag = null,
@@ -2899,7 +2456,6 @@ public sealed class InMemoryCache
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
             SlidingExpiration = slidingExpiration;
-            LastFactoryError = lastFactoryError;
             // Tags are only ever enumerated (_NewestMarkerFor) and Count-checked — never looked up by value —
             // so a FrozenSet's lookup-optimized build is wasted work on every tagged write. A defensive array
             // copy keeps the same immutability guarantee (no aliasing of the caller's collection) far cheaper to
@@ -2931,7 +2487,6 @@ public sealed class InMemoryCache
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
             SlidingExpiration = slidingExpiration;
-            LastFactoryError = prototype.LastFactoryError;
             Tags = prototype.Tags;
             EagerRefreshAt = prototype.EagerRefreshAt;
             ETag = prototype.ETag;
@@ -2958,8 +2513,6 @@ public sealed class InMemoryCache
         internal TimeSpan? SlidingExpiration { get; }
 
         internal DateTime? TrackedExpiresAt => SlidingExpiration.HasValue ? LogicalExpiresAt : PhysicalExpiresAt;
-
-        internal LastFactoryError? LastFactoryError { get; }
 
         internal IReadOnlyCollection<string>? Tags { get; }
 
@@ -3117,9 +2670,9 @@ public sealed class InMemoryCache
 
             try
             {
-                // Use System.Text.Json for deep cloning
-                var json = JsonSerializer.Serialize(value, value.GetType());
-                return JsonSerializer.Deserialize(json, value.GetType());
+                // Use System.Text.Json for deep cloning (UTF-8 bytes, skipping the intermediate UTF-16 string).
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(value, value.GetType());
+                return JsonSerializer.Deserialize(bytes, value.GetType());
             }
             catch (Exception) when (!_shouldThrowOnSerializationError)
             {
@@ -3129,8 +2682,6 @@ public sealed class InMemoryCache
             }
         }
     }
-
-    private sealed record LastFactoryError(Exception Error, DateTime DateCreated);
 
     private DateTime? _ExpireAndGetMaxExpiration<T>(IDictionary<T, DateTime?> dictionary)
         where T : notnull
@@ -3146,7 +2697,8 @@ public sealed class InMemoryCache
         {
             if (kvp.Value.HasValue)
             {
-                if (kvp.Value.Value < utcNow)
+                // Exclude.Start parity with Redis: a member whose expiry is exactly now counts as expired.
+                if (kvp.Value.Value <= utcNow)
                 {
                     keysToRemove ??= [];
                     keysToRemove.Add(kvp.Key);
