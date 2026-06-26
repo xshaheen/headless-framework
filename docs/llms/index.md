@@ -106,8 +106,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddHeadlessInfrastructure();
 
 // Pick exactly one provider per feature; code only against the abstractions.
-builder.Services.AddFileSystemBlobStorage(options =>
-    options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseFileSystem(options =>
+        options.BaseDirectoryPath = Path.Combine(builder.Environment.ContentRootPath, "storage")
+    )
 );
 builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
 builder.Services.AddHeadlessJobs(options =>
@@ -169,10 +171,9 @@ public sealed class DocumentService(
 
         await using var stream = new MemoryStream(request.Content);
         await storage.UploadAsync(
-            container: ["documents"],
-            blobName: id,
-            stream: stream,
-            metadata: new Dictionary<string, string?> { ["file-name"] = request.FileName },
+            new BlobLocation("documents", id),
+            stream,
+            metadata: new Dictionary<string, string> { ["file-name"] = request.FileName },
             cancellationToken: ct
         );
 
