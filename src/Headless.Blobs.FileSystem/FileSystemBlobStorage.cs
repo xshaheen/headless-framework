@@ -400,9 +400,17 @@ public sealed class FileSystemBlobStorage(
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
+        // Reject traversal blob names before they are combined with the container directory. This mirrors how
+        // the sibling read/write methods validate via _BuildBlobPath; without it a name like "../../etc/passwd"
+        // escapes the store and leaks existence/size/timestamps (and an absolute path via _ToBlobKey).
+        PathValidation.ValidatePathSegment(blobName);
+
         var baseDirectoryPath = Path.Combine(_basePath, container[0]).EnsureEndsWith(Path.DirectorySeparatorChar);
         var directoryPath = _GetDirectoryPath(container);
         var filePath = Path.Combine(directoryPath, blobName);
+
+        // Defense-in-depth: verify the resolved path stays under the base directory before touching the file.
+        _ThrowIfPathTraversal(filePath, nameof(blobName));
 
         _logger.LogGettingFileStream(filePath);
         var fileInfo = new FileInfo(filePath);
@@ -529,7 +537,10 @@ public sealed class FileSystemBlobStorage(
             (_, _) =>
                 ValueTask.FromResult<INextPageResult>(
                     _GetFiles(baseDirectoryPath, blobSearchPattern, pageSize, page: 1, enumerator, carryOver: null)
-                )
+                ),
+            // Deterministic cleanup: a caller that reads page 1 and stops while HasMore is still true can
+            // 'await using' the result to release the find handle, instead of waiting for finalization.
+            cleanup: () => enumerator.Dispose()
         );
 
         await result.NextPageAsync(cancellationToken).ConfigureAwait(false);
@@ -557,35 +568,43 @@ public sealed class FileSystemBlobStorage(
         }
 
         BlobInfo? lookahead = null;
+        bool hasMore;
 
-        while (list.Count <= pageSize && enumerator.MoveNext())
+        try
         {
-            var fileInfo = new FileInfo(enumerator.Current);
-
-            if (!fileInfo.Exists)
+            while (list.Count <= pageSize && enumerator.MoveNext())
             {
-                continue;
+                var fileInfo = new FileInfo(enumerator.Current);
+
+                if (!fileInfo.Exists)
+                {
+                    continue;
+                }
+
+                var info = _CreateBlobInfo(fileInfo, _ToBlobKey(fileInfo, baseDirectoryPath));
+
+                // Pull one entry past the page to detect a further page, then carry it over rather than re-reading it.
+                if (list.Count == pageSize)
+                {
+                    lookahead = info;
+
+                    break;
+                }
+
+                list.Add(info);
             }
 
-            var info = _CreateBlobInfo(fileInfo, _ToBlobKey(fileInfo, baseDirectoryPath));
-
-            // Pull one entry past the page to detect a further page, then carry it over rather than re-reading it.
-            if (list.Count == pageSize)
-            {
-                lookahead = info;
-
-                break;
-            }
-
-            list.Add(info);
+            hasMore = lookahead is not null;
         }
-
-        var hasMore = lookahead is not null;
-
-        if (!hasMore)
+        finally
         {
-            // Enumeration is exhausted; release the find handle now rather than waiting for finalization.
-            enumerator.Dispose();
+            // Release the find handle when the walk reaches its end (no further page) or throws mid-iteration;
+            // only an in-progress cursor with more pages keeps the enumerator alive for the next page. The
+            // abandoned-cursor case is covered by PagedFileListResult.DisposeAsync via the provider cleanup delegate.
+            if (lookahead is null)
+            {
+                enumerator.Dispose();
+            }
         }
 
         return new NextPageResult

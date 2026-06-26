@@ -914,6 +914,20 @@ public abstract class BlobStorageTestsBase : TestBase
         await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
     }
 
+    public virtual async Task should_throw_when_get_blob_info_blob_has_path_traversal()
+    {
+        // given
+        await using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(() =>
+            storage.GetBlobInfoAsync(Container, "../../../etc/passwd", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
     public virtual async Task should_throw_when_rename_source_blob_has_path_traversal()
     {
         // given
