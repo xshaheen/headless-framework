@@ -58,6 +58,7 @@ For strongly-typed primitives **you define yourself**, use the source generator 
 - Use `ClaimsPrincipalExtensions` (`GetUserId()`, `GetRoles()`, `GetTenantId()`, `AddOrReplace(...)`) for claim reads/writes. `GetRoles()` returns an empty `ImmutableHashSet<string>` (never null) and role values use an ordinal set; role *type* matching is `OrdinalIgnoreCase`.
 - Use the `Headless.IO` stream helpers (`stream.GetAllBytesAsync()`, `stream.GetAllText()`) rather than hand-rolling buffers — they avoid async-over-sync, pre-size buffers when the length is known, and retry transient `IOException`s.
 - `TimeUnit.Parse("5m")` is **case-sensitive** on the `m` suffix (`m` = minutes); this avoids month/minute ambiguity. Invalid magnitudes surface as `false` from `TryParse` / an exception from `Parse`, never a silent wrap.
+- `action.Debounce(interval, timeProvider?, onError?)` (`Headless.UI`) coalesces rapid calls into a single trailing-edge run with the **latest** arguments. The wrapped action runs on a thread-pool timer callback, so an exception it throws is routed to the optional `onError` handler — or **swallowed** when none is supplied — and never propagates (an unhandled throw on that callback would crash the process). A generation guard skips superseded schedules, so a call landing as a prior timer fires does not double-run with stale arguments.
 
 ## Core Concepts
 
