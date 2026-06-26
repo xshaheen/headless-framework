@@ -21,6 +21,56 @@ public sealed partial class HybridCache
         return current.Found ? current.PhysicalExpiresAt : null;
     }
 
+    /// <summary>
+    /// Builds the stamp-aware L1-staleness guard shared by <see cref="_QueueScalarUpsertRecovery{T}"/> and
+    /// <see cref="_QueueSetEntryRecovery{T}"/>: a queued write may replay only while L1 still holds an entry
+    /// carrying the exact physical stamp the write produced — a different stamp means a newer local write landed
+    /// and the queued write is obsolete. When L1 does not expose <see cref="IFactoryCacheStore"/> (or no stamp was
+    /// captured) it falls back to a presence-only check. Returns <see langword="true"/> when the write should still
+    /// replay.
+    /// </summary>
+    private Func<CancellationToken, ValueTask<bool>> _BuildL1StampGuard<T>(string key, DateTime? l1PhysicalStamp)
+    {
+        return async ct =>
+        {
+            if (LocalCache is IFactoryCacheStore l1Store && l1PhysicalStamp.HasValue)
+            {
+                var current = await l1Store.TryGetEntryAsync<T>(key, ct).ConfigureAwait(false);
+
+                return current.Found && current.PhysicalExpiresAt == l1PhysicalStamp;
+            }
+
+            var fallback = await LocalCache.GetAsync<T>(key, ct).ConfigureAwait(false);
+
+            return fallback.HasValue;
+        };
+    }
+
+    /// <summary>
+    /// Builds the presence-only L1-staleness guard shared by <see cref="_QueueRemoveRecovery"/> and
+    /// <see cref="_QueueExpireRecovery"/>: a queued remove/expire becomes obsolete once L1 holds an entry newer than
+    /// <paramref name="baseline"/> (a write landed during the outage), because replaying it would clobber that newer
+    /// write. Removes/expires produce no physical stamp to compare, so the guard is presence-only; when L1 does not
+    /// expose <see cref="IFactoryCacheStore"/> it falls back to a plain presence check. Returns
+    /// <see langword="true"/> when the queued operation should still replay.
+    /// </summary>
+    private Func<CancellationToken, ValueTask<bool>> _BuildL1PresenceGuard(string key, DateTimeOffset baseline)
+    {
+        return async ct =>
+        {
+            if (LocalCache is IFactoryCacheStore l1Store)
+            {
+                var current = await l1Store.TryGetEntryAsync<object>(key, ct).ConfigureAwait(false);
+
+                return !(current.Found && current.PhysicalExpiresAt > baseline);
+            }
+
+            var fallback = await LocalCache.GetAsync<object>(key, ct).ConfigureAwait(false);
+
+            return !fallback.HasValue;
+        };
+    }
+
     private void _QueueScalarUpsertRecovery<T>(string key, T? value, TimeSpan? expiration, DateTime? l1PhysicalStamp)
     {
         var queue = RecoveryQueue!;
@@ -28,6 +78,7 @@ public sealed partial class HybridCache
 
         // Values without a TTL have no natural item expiry; bound them by the generous fixed window.
         var deadline = expiration.HasValue ? now + expiration.Value : now + queue.DefaultRetention;
+        var l1Guard = _BuildL1StampGuard<T>(key, l1PhysicalStamp);
 
         queue.Enqueue(
             key,
@@ -35,27 +86,11 @@ public sealed partial class HybridCache
             deadline,
             async ct =>
             {
-                // L1 is the source of truth: only replay if the L1 entry still exists and carries the exact
-                // physical stamp this write produced — a different stamp means a newer local write landed and
-                // the queued write is obsolete. Mirrors _QueueSetEntryRecovery's stamp-aware guard; when L1 does
-                // not expose the entry store the stamp is null and we fall back to the presence-only check.
-                if (LocalCache is IFactoryCacheStore l1Store && l1PhysicalStamp.HasValue)
+                // L1 is the source of truth: only replay while it still holds the exact physical stamp this write
+                // produced (a different stamp means a newer local write landed and the queued write is obsolete).
+                if (!await l1Guard(ct).ConfigureAwait(false))
                 {
-                    var current = await l1Store.TryGetEntryAsync<T>(key, ct).ConfigureAwait(false);
-
-                    if (!current.Found || current.PhysicalExpiresAt != l1PhysicalStamp)
-                    {
-                        return HybridCacheRecoveryReplayOutcome.Obsolete;
-                    }
-                }
-                else
-                {
-                    var current = await LocalCache.GetAsync<T>(key, ct).ConfigureAwait(false);
-
-                    if (!current.HasValue)
-                    {
-                        return HybridCacheRecoveryReplayOutcome.Obsolete;
-                    }
+                    return HybridCacheRecoveryReplayOutcome.Obsolete;
                 }
 
                 TimeSpan? remaining = expiration.HasValue ? deadline - _timeProvider.GetUtcNow() : null;
@@ -76,6 +111,7 @@ public sealed partial class HybridCache
     {
         var queue = RecoveryQueue!;
         var writeTimestamp = _timeProvider.GetUtcNow();
+        var l1Guard = _BuildL1StampGuard<T>(key, l1PhysicalStamp);
 
         queue.Enqueue(
             key,
@@ -83,26 +119,11 @@ public sealed partial class HybridCache
             new DateTimeOffset(DateTime.SpecifyKind(entry.PhysicalExpiresAt, DateTimeKind.Utc)),
             async ct =>
             {
-                // L1 is the source of truth: only replay if the L1 entry still exists and carries the exact
-                // physical stamp this write produced — a different stamp means the entry changed and the
-                // queued write is obsolete.
-                if (LocalCache is IFactoryCacheStore l1Store && l1PhysicalStamp.HasValue)
+                // L1 is the source of truth: only replay while it still holds the exact physical stamp this write
+                // produced (a different stamp means the entry changed and the queued write is obsolete).
+                if (!await l1Guard(ct).ConfigureAwait(false))
                 {
-                    var current = await l1Store.TryGetEntryAsync<T>(key, ct).ConfigureAwait(false);
-
-                    if (!current.Found || current.PhysicalExpiresAt != l1PhysicalStamp)
-                    {
-                        return HybridCacheRecoveryReplayOutcome.Obsolete;
-                    }
-                }
-                else
-                {
-                    var current = await LocalCache.GetAsync<T>(key, ct).ConfigureAwait(false);
-
-                    if (!current.HasValue)
-                    {
-                        return HybridCacheRecoveryReplayOutcome.Obsolete;
-                    }
+                    return HybridCacheRecoveryReplayOutcome.Obsolete;
                 }
 
                 if (l2Cache is IFactoryCacheStore l2Store)
@@ -142,6 +163,7 @@ public sealed partial class HybridCache
     {
         var queue = RecoveryQueue!;
         var removeTimestamp = _timeProvider.GetUtcNow();
+        var l1Guard = _BuildL1PresenceGuard(key, removeTimestamp);
 
         queue.Enqueue(
             key,
@@ -149,28 +171,11 @@ public sealed partial class HybridCache
             removeTimestamp + queue.DefaultRetention,
             async ct =>
             {
-                // Guard against replaying a remove that would delete a value written during the outage. If L1
-                // still has an entry for this key then a newer write landed after the remove was queued; replaying
-                // the remove would silently clobber that write. Mirrors the stamp-aware guard in
-                // _QueueScalarUpsertRecovery / _QueueSetEntryRecovery (but uses presence-only because removes do
-                // not produce a physical stamp to compare against).
-                if (LocalCache is IFactoryCacheStore l1Store)
+                // Guard against replaying a remove that would delete a value written during the outage: if L1 now
+                // holds an entry newer than this remove, a newer write landed and replaying would clobber it.
+                if (!await l1Guard(ct).ConfigureAwait(false))
                 {
-                    var current = await l1Store.TryGetEntryAsync<object>(key, ct).ConfigureAwait(false);
-
-                    if (current.Found && current.PhysicalExpiresAt > removeTimestamp)
-                    {
-                        return HybridCacheRecoveryReplayOutcome.Obsolete;
-                    }
-                }
-                else
-                {
-                    var current = await LocalCache.GetAsync<object>(key, ct).ConfigureAwait(false);
-
-                    if (current.HasValue)
-                    {
-                        return HybridCacheRecoveryReplayOutcome.Obsolete;
-                    }
+                    return HybridCacheRecoveryReplayOutcome.Obsolete;
                 }
 
                 await l2Cache.RemoveAsync(key, ct).ConfigureAwait(false);
@@ -184,6 +189,7 @@ public sealed partial class HybridCache
     {
         var queue = RecoveryQueue!;
         var expireTimestamp = _timeProvider.GetUtcNow();
+        var l1Guard = _BuildL1PresenceGuard(key, expireTimestamp);
 
         queue.Enqueue(
             key,
@@ -191,26 +197,11 @@ public sealed partial class HybridCache
             expireTimestamp + queue.DefaultRetention,
             async ct =>
             {
-                // Guard: if L1 has a newer entry (physical stamp after the expire timestamp), a write landed
-                // during the outage and replaying the expire would evict it on L2. Return Obsolete to preserve
-                // the newer write — mirrors the remove guard above.
-                if (LocalCache is IFactoryCacheStore l1Store)
+                // Guard: if L1 now holds an entry newer than this expire, a write landed during the outage and
+                // replaying the expire would evict it on L2 — preserve the newer write.
+                if (!await l1Guard(ct).ConfigureAwait(false))
                 {
-                    var current = await l1Store.TryGetEntryAsync<object>(key, ct).ConfigureAwait(false);
-
-                    if (current.Found && current.PhysicalExpiresAt > expireTimestamp)
-                    {
-                        return HybridCacheRecoveryReplayOutcome.Obsolete;
-                    }
-                }
-                else
-                {
-                    var current = await LocalCache.GetAsync<object>(key, ct).ConfigureAwait(false);
-
-                    if (current.HasValue)
-                    {
-                        return HybridCacheRecoveryReplayOutcome.Obsolete;
-                    }
+                    return HybridCacheRecoveryReplayOutcome.Obsolete;
                 }
 
                 await l2Cache.ExpireAsync(key, ct).ConfigureAwait(false);

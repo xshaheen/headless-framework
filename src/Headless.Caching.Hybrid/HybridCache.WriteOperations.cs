@@ -49,7 +49,10 @@ public sealed partial class HybridCache
 
         if (!_IsDistributedCacheCircuitClosed())
         {
+            // Circuit open: skip L2 but queue the write for replay (when recovery is on) so the value still reaches
+            // L2/peers once it recovers — mirrors the background path's circuit-open branch in _BackgroundScalarUpsertAsync.
             updated = true;
+            queueScalarRecovery = RecoveryQueue is not null;
         }
         else
         {
@@ -421,9 +424,25 @@ public sealed partial class HybridCache
             return false;
         }
 
-        var replaced = await l2Cache
-            .TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken)
-            .ConfigureAwait(false);
+        bool replaced;
+
+        try
+        {
+            replaced = await l2Cache
+                .TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+            )
+        {
+            // CAS / non-replay-safe: trip the breaker so concurrent callers stop hammering a down L2, then rethrow.
+            // Never queue recovery — the compare-and-set outcome can't be safely replayed later.
+            _OpenDistributedCacheCircuit(exception, key);
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+            throw;
+        }
 
         if (replaced)
         {
@@ -646,7 +665,23 @@ public sealed partial class HybridCache
         CancellationToken cancellationToken
     )
     {
-        var result = await l2Op(cancellationToken).ConfigureAwait(false);
+        TResult result;
+
+        try
+        {
+            result = await l2Op(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+            )
+        {
+            // CAS / non-replay-safe numeric op: trip the breaker so concurrent callers stop hammering a down L2,
+            // then rethrow. Never queue recovery — the computed result can't be safely replayed later.
+            _OpenDistributedCacheCircuit(exception, key);
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+            throw;
+        }
 
         if (isUpdated(result))
         {
@@ -684,7 +719,24 @@ public sealed partial class HybridCache
         cancellationToken.ThrowIfCancellationRequested();
 
         var items = value as T[] ?? value.ToArray();
-        var addedCount = await l2Cache.SetAddAsync(key, items, expiration, cancellationToken).ConfigureAwait(false);
+
+        long addedCount;
+
+        try
+        {
+            addedCount = await l2Cache.SetAddAsync(key, items, expiration, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+            )
+        {
+            // CAS / non-replay-safe set mutation: trip the breaker so concurrent callers stop hammering a down L2,
+            // then rethrow. Never queue recovery — the set delta can't be safely replayed later.
+            _OpenDistributedCacheCircuit(exception, key);
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+            throw;
+        }
 
         if (addedCount == items.Length)
         {
@@ -909,7 +961,24 @@ public sealed partial class HybridCache
         Argument.IsNotNull(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var removed = await l2Cache.RemoveByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
+        int removed;
+
+        try
+        {
+            removed = await l2Cache.RemoveByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+            )
+        {
+            // Non-replay-safe bulk remove: trip the breaker so concurrent callers stop hammering a down L2, then
+            // rethrow. Never queue recovery — the prefix sweep isn't captured by auto-recovery.
+            _OpenDistributedCacheCircuit(exception, prefix);
+            _logger.LogFailedToWriteToL2Cache(exception, prefix);
+            throw;
+        }
+
         await LocalCache.RemoveByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if keys were actually removed
@@ -1098,9 +1167,26 @@ public sealed partial class HybridCache
         cancellationToken.ThrowIfCancellationRequested();
 
         var items = value as T[] ?? value.ToArray();
-        var removedCount = await l2Cache
-            .SetRemoveAsync(key, items, expiration, cancellationToken)
-            .ConfigureAwait(false);
+
+        long removedCount;
+
+        try
+        {
+            removedCount = await l2Cache
+                .SetRemoveAsync(key, items, expiration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+            )
+        {
+            // CAS / non-replay-safe set mutation: trip the breaker so concurrent callers stop hammering a down L2,
+            // then rethrow. Never queue recovery — the set delta can't be safely replayed later.
+            _OpenDistributedCacheCircuit(exception, key);
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+            throw;
+        }
 
         if (removedCount == items.Length)
         {
