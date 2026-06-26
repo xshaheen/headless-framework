@@ -48,6 +48,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         DateTime? eagerRefreshAt = null,
         string? etag = null,
         DateTime? lastModifiedAt = null,
+        DateTime? createdAt = null,
         IReadOnlyCollection<string>? tags = null,
         bool serveStaleImmediately = false
     )
@@ -63,6 +64,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 EagerRefreshAt: eagerRefreshAt,
                 ETag: etag,
                 LastModifiedAt: lastModifiedAt,
+                CreatedAt: createdAt,
                 Tags: tags,
                 ConcurrencyStamp: Guid.NewGuid().ToString("N"),
                 ServeStaleImmediately: serveStaleImmediately
@@ -115,6 +117,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                     EagerRefreshAt = entry.EagerRefreshAt,
                     ETag = entry.ETag,
                     LastModifiedAt = entry.LastModifiedAt,
+                    CreatedAt = entry.CreatedAt,
                     Tags = entry.Tags,
                     ConcurrencyStamp = entry.ConcurrencyStamp,
                     ServeStaleImmediately = entry.ServeStaleImmediately,
@@ -168,6 +171,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 EagerRefreshAt: entry.EagerRefreshAt,
                 ETag: entry.ETag,
                 LastModifiedAt: entry.LastModifiedAt,
+                CreatedAt: entry.CreatedAt,
                 Tags: entry.Tags,
                 ConcurrencyStamp: Guid.NewGuid().ToString("N")
             );
@@ -240,6 +244,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         DateTime? EagerRefreshAt = null,
         string? ETag = null,
         DateTime? LastModifiedAt = null,
+        DateTime? CreatedAt = null,
         IReadOnlyCollection<string>? Tags = null,
         string ConcurrencyStamp = "",
         bool ServeStaleImmediately = false

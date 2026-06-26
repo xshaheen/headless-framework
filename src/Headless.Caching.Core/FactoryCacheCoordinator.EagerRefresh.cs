@@ -130,8 +130,25 @@ public sealed partial class FactoryCacheCoordinator
                 return;
             }
 
+            // Re-read the just-committed gate entry so the final eager write CAS-guards against the post-gate
+            // concurrency stamp: a concurrent Remove/Upsert landing during the (potentially long) factory run then
+            // fails the final write's CAS instead of being silently clobbered or the removed key resurrected. The
+            // gate write carried the original birth time forward, so the re-read's CreatedAt preserves it on the
+            // NotModified path. A failed re-read degrades to NotFound (an unconditional write), matching the
+            // best-effort tolerance of the rest of this path.
+            var postGateEntry = await _TryGetEntryAsync<T>(store, key, CancellationToken.None).ConfigureAwait(false);
+
             ownsReleaser = false;
-            await _StartEagerFactoryAsync(store, key, context, factory, options, releaser, distributedLease)
+            await _StartEagerFactoryAsync(
+                    store,
+                    key,
+                    context,
+                    postGateEntry,
+                    factory,
+                    options,
+                    releaser,
+                    distributedLease
+                )
                 .ConfigureAwait(false);
         }
         finally
@@ -153,6 +170,7 @@ public sealed partial class FactoryCacheCoordinator
         IFactoryCacheStore store,
         string key,
         CacheFactoryContext<T> context,
+        CacheStoreEntry<T> sourceEntry,
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         IDisposable releaser,
@@ -167,6 +185,7 @@ public sealed partial class FactoryCacheCoordinator
                 store,
                 key,
                 context,
+                sourceEntry,
                 factoryTask,
                 internalCts,
                 options,
@@ -189,6 +208,7 @@ public sealed partial class FactoryCacheCoordinator
         IFactoryCacheStore store,
         string key,
         CacheFactoryContext<T> context,
+        CacheStoreEntry<T> sourceEntry,
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheEntryOptions options,
@@ -214,7 +234,7 @@ public sealed partial class FactoryCacheCoordinator
                     // when ctsTransferred is false (the factory was observed to completion), so the closure never
                     // touches a disposed CTS.
                     // ReSharper disable once AccessToDisposedClosure
-                    () => _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts)
+                    () => _ObserveEagerFactoryAsync(store, key, context, sourceEntry, factoryTask, internalCts)
                 )
                 .ConfigureAwait(false);
         }
@@ -240,6 +260,7 @@ public sealed partial class FactoryCacheCoordinator
         IFactoryCacheStore store,
         string key,
         CacheFactoryContext<T> context,
+        CacheStoreEntry<T> sourceEntry,
         Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts
     )
@@ -256,7 +277,7 @@ public sealed partial class FactoryCacheCoordinator
                         key,
                         context,
                         result,
-                        sourceEntry: CacheStoreEntry<T>.NotFound,
+                        sourceEntry: sourceEntry,
                         CancellationToken.None
                     )
                     .ConfigureAwait(false);
