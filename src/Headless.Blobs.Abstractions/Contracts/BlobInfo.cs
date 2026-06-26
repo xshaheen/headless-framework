@@ -28,5 +28,5 @@ public sealed class BlobInfo
     /// Provider-supplied metadata key/value pairs, or <see langword="null"/> when the provider does not return
     /// metadata (for example SFTP and the S3 list API, which omit per-object metadata from enumeration responses).
     /// </summary>
-    public IReadOnlyDictionary<string, string?>? Metadata { get; init; }
+    public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }

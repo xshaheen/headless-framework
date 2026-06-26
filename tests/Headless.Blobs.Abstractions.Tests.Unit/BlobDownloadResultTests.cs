@@ -41,7 +41,7 @@ public sealed class BlobDownloadResultTests : TestBase
     {
         // Arrange
         using var stream = new MemoryStream();
-        var metadata = new Dictionary<string, string?>(StringComparer.Ordinal)
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["key"] = "value",
             ["author"] = "test",

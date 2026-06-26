@@ -332,4 +332,62 @@ public sealed class BlobStorageHelpersTests : TestBase
     }
 
     #endregion
+
+    #region CreateGlobMatcher Tests
+
+    [Theory]
+    [InlineData("*.txt", "file.txt", true)]
+    [InlineData("*.txt", "a/b/file.txt", true)]
+    [InlineData("*.txt", "file.json", false)]
+    [InlineData("file?.txt", "file1.txt", true)]
+    [InlineData("file?.txt", "file12.txt", false)]
+    [InlineData("file?.txt", "file.txt", false)]
+    [InlineData("logs/*.log", "logs/app.log", true)]
+    [InlineData("logs/*.log", "other/app.log", false)]
+    [InlineData("exact.txt", "exact.txt", true)]
+    [InlineData("exact.txt", "exact.txt.bak", false)]
+    public void should_match_glob_pattern_against_whole_key(string pattern, string key, bool expected)
+    {
+        // Arrange
+        var matcher = BlobStorageHelpers.CreateGlobMatcher(pattern);
+
+        // Act
+        var isMatch = matcher(key);
+
+        // Assert
+        isMatch.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_treat_regex_special_chars_as_literals_in_glob()
+    {
+        // Arrange - '.' and '[' are literal in a glob, not regex metacharacters
+        var matcher = BlobStorageHelpers.CreateGlobMatcher("file[1].txt");
+
+        // Act & Assert
+        matcher("file[1].txt").Should().BeTrue();
+        matcher("fileX.txt").Should().BeFalse();
+    }
+
+    #endregion
+
+    #region GetLiteralPrefix Tests
+
+    [Theory]
+    [InlineData("logs/2024/*.log", "logs/2024/")]
+    [InlineData("logs/file?.txt", "logs/file")]
+    [InlineData("no-wildcard.txt", "no-wildcard.txt")]
+    [InlineData("*.txt", "")]
+    [InlineData("?abc", "")]
+    [InlineData("a/b/c", "a/b/c")]
+    public void should_return_literal_head_before_first_wildcard(string pattern, string expected)
+    {
+        // Act
+        var prefix = BlobStorageHelpers.GetLiteralPrefix(pattern);
+
+        // Assert
+        prefix.Should().Be(expected);
+    }
+
+    #endregion
 }

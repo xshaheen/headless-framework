@@ -30,6 +30,39 @@ public static class BlobStorageHelpers
         return path?.Replace('\\', '/');
     }
 
+    /// <summary>
+    /// Compiles a glob <paramref name="pattern"/> (<c>*</c> = any run of characters, <c>?</c> = any single character)
+    /// into a predicate that tests whole blob keys. This is the single shared client-side matcher layered over
+    /// <see cref="IBlobStorage.ListAsync"/> — providers no longer own private glob regex.
+    /// </summary>
+    /// <param name="pattern">The glob pattern.</param>
+    /// <returns>A predicate returning <see langword="true"/> when a key matches <paramref name="pattern"/>.</returns>
+    public static Func<string, bool> CreateGlobMatcher(string pattern)
+    {
+        var regexText = Regex
+            .Escape(pattern)
+            .Replace("\\*", ".*", StringComparison.Ordinal)
+            .Replace("\\?", ".", StringComparison.Ordinal);
+
+        var regex = new Regex($"^{regexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
+
+        return key => regex.IsMatch(key);
+    }
+
+    /// <summary>
+    /// Returns the literal (wildcard-free) head of a glob <paramref name="pattern"/> — the substring up to the first
+    /// <c>*</c> or <c>?</c>, or the whole pattern when it contains no wildcard. Usable as a server-pushed prefix to
+    /// narrow enumeration before the client-side matcher runs.
+    /// </summary>
+    /// <param name="pattern">The glob pattern.</param>
+    /// <returns>The longest non-wildcard prefix of <paramref name="pattern"/>.</returns>
+    public static string GetLiteralPrefix(string pattern)
+    {
+        var wildcardIndex = pattern.IndexOfAny(['*', '?']);
+
+        return wildcardIndex < 0 ? pattern : pattern[..wildcardIndex];
+    }
+
     public static SearchCriteria GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
     {
         searchPattern = Url.Combine(string.Join('/', directories), NormalizePath(searchPattern));
