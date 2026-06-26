@@ -405,7 +405,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             var fileStream = File.OpenRead(fullPath);
 
 #pragma warning disable CA2000 // Ownership transfers to the returned BlobDownloadResult ([MustDisposeResource]).
-            return new BlobDownloadResult(fileStream, Path.GetFileName(fullPath), metadata);
+            return new BlobDownloadResult(fileStream, Path.GetFileName(fullPath), _ToUserMetadata(metadata));
 #pragma warning restore CA2000
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
@@ -594,8 +594,42 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             Created = _ResolveCreated(metadata, fileInfo),
             Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
             Size = fileInfo.Length,
-            Metadata = metadata,
+            // Surface only the caller's metadata: the framework-internal bookkeeping keys (upload date, extension)
+            // drive Created resolution above but are not user metadata, so a no-metadata upload reads back as no
+            // metadata rather than resurrecting framework keys.
+            Metadata = _ToUserMetadata(metadata),
         };
+    }
+
+    /// <summary>
+    /// Projects stored metadata to the caller-facing view by dropping the framework-internal bookkeeping keys
+    /// (<see cref="BlobStorageHelpers.UploadDateMetadataKey"/>, <see cref="BlobStorageHelpers.ExtensionMetadataKey"/>).
+    /// Returns <see langword="null"/> when nothing remains so a blob with only framework keys reads back as no metadata.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string>? _ToUserMetadata(IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata is null)
+        {
+            return null;
+        }
+
+        Dictionary<string, string>? user = null;
+
+        foreach (var pair in metadata)
+        {
+            if (
+                string.Equals(pair.Key, BlobStorageHelpers.UploadDateMetadataKey, StringComparison.Ordinal)
+                || string.Equals(pair.Key, BlobStorageHelpers.ExtensionMetadataKey, StringComparison.Ordinal)
+            )
+            {
+                continue;
+            }
+
+            user ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            user[pair.Key] = pair.Value;
+        }
+
+        return user;
     }
 
     private static DateTimeOffset _ResolveCreated(IReadOnlyDictionary<string, string>? metadata, FileInfo fileInfo)
