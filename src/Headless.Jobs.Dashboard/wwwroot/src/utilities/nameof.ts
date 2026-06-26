@@ -1,31 +1,31 @@
 // nameof.ts
 
 // Overload for a single property selector
-export function nameof<T>(expr: (obj: T) => any): string;
+export function nameof<T>(expr: (obj: T) => unknown): string;
 
 // Overload for two property selectors
 export function nameof<T>(
-    expr1: (obj: T) => any,
-    expr2: (obj: T) => any
+    expr1: (obj: T) => unknown,
+    expr2: (obj: T) => unknown
 ): [string, string];
 
 // Overload for multiple property selectors
 export function nameof<T>(
-    expr1: (obj: T) => any,
-    expr2: (obj: T) => any,
-    ...exprs: Array<(obj: T) => any>
+    expr1: (obj: T) => unknown,
+    expr2: (obj: T) => unknown,
+    ...exprs: Array<(obj: T) => unknown>
 ): string[];
 
 // Implementation Signature
 export function nameof<T>(
-    ...exprs: Array<(obj: T) => any>
+    ...exprs: Array<(obj: T) => unknown>
 ): string | [string, string] | string[] {
     const paths: string[] = [];
 
     exprs.forEach(expr => {
         const path: string[] = [];
 
-        const handler: ProxyHandler<any> = {
+        const handler: ProxyHandler<object> = {
             get(target, prop, receiver) {
                 if (typeof prop === 'symbol') {
                     return receiver;
@@ -35,7 +35,7 @@ export function nameof<T>(
             }
         };
 
-        const proxy = new Proxy({}, handler);
+        const proxy = new Proxy({}, handler) as T;
         expr(proxy);
 
         paths.push(path.join('.'));

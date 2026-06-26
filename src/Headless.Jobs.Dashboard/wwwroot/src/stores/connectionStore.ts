@@ -92,7 +92,7 @@ export const useConnectionStore = defineStore('connection', () => {
       setConnectionState('Connected')
       setBackendHealthy(true)
       _startHealthCheck()
-    } catch (error) {
+    } catch {
       // Failed to initialize WebSocket connection
       setConnectionState('Disconnected')
       setBackendHealthy(false)
@@ -114,7 +114,7 @@ export const useConnectionStore = defineStore('connection', () => {
         setBackendHealthy(true)
         _startHealthCheck()
         return
-      } catch (error) {
+      } catch {
         // Connection attempt failed
         if (attempt === maxRetries) {
           // All connection attempts failed. WebSocket will not be available.
@@ -128,43 +128,6 @@ export const useConnectionStore = defineStore('connection', () => {
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
         await new Promise(resolve => setTimeout(resolve, delay))
       }
-    }
-  }
-
-  async function _establishConnection(): Promise<void> {
-    try {
-      // Add timeout to prevent hanging
-      const connectionPromise = JobNotificationHub.startConnection()
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), 10000)
-      })
-      
-      await Promise.race([connectionPromise, timeoutPromise])
-      
-      // Update connection state to connected
-      setConnecting(false)
-      setConnectionState('Connected')
-      setBackendHealthy(true)
-      _isInitialized.value = true
-      
-      // Set up connection event handlers
-      _setupConnectionHandlers()
-      
-      // Sync state with actual SignalR connection
-      _syncConnectionState()
-      
-      // Force UI update to ensure reactivity
-      forceUIUpdate()
-      
-      // Start health check after successful connection
-      _startHealthCheck()
-    } catch (error) {
-      // Ensure connecting state is reset on failure
-      setConnecting(false)
-      setConnectionState('Disconnected')
-      setBackendHealthy(false)
-      _isInitialized.value = false
-      throw error
     }
   }
 
@@ -202,62 +165,6 @@ export const useConnectionStore = defineStore('connection', () => {
     }
   }
 
-  function _setupConnectionHandlers(): void {
-    const connection = JobNotificationHub.connection
-    
-    if (!connection) {
-      return
-    }
-
-    // Handle connection state changes
-    connection.onclose((error) => {
-      _isInitialized.value = false
-      setBackendHealthy(false)
-      setConnecting(false)
-      setConnectionState('Disconnected')
-      _stopHealthCheck()
-      
-      // Attempt to reconnect after a delay if it wasn't a manual close
-      if (error) {
-        setTimeout(() => {
-          _attemptReconnection()
-        }, 3000)
-      }
-    })
-
-    connection.onreconnecting((error) => {
-      setBackendHealthy(false)
-      setConnecting(true)
-      setConnectionState('Connecting')
-    })
-
-    connection.onreconnected((connectionId) => {
-      _isInitialized.value = true
-      setConnecting(false)
-      setBackendHealthy(true)
-      setConnectionState('Connected')
-      // Start health check after reconnection
-      _startHealthCheck()
-    })
-
-    // Handle initial connection
-    connection.on('connected', () => {
-      _isInitialized.value = true
-      setConnecting(false)
-      setBackendHealthy(true)
-      setConnectionState('Connected')
-      _startHealthCheck()
-    })
-
-    // Also set up the 'connected' event for initial connection
-    connection.on('connected', () => {
-      _isInitialized.value = true
-      setConnecting(false)
-      setBackendHealthy(true)
-      setConnectionState('Connected')
-    })
-  }
-
   // Attempt reconnection
   async function _attemptReconnection(): Promise<void> {
     if (_isConnecting.value || _isInitialized.value) {
@@ -267,7 +174,7 @@ export const useConnectionStore = defineStore('connection', () => {
     _isConnecting.value = true
     try {
       await initializeConnection()
-    } catch (error) {
+    } catch {
       // Reconnection failed
     } finally {
       _isConnecting.value = false
@@ -284,7 +191,7 @@ export const useConnectionStore = defineStore('connection', () => {
     // Stop current connection if it exists
     try {
       await JobNotificationHub.stopConnection()
-    } catch (error) {
+    } catch {
       // Error stopping connection during force reconnection
     }
     
@@ -323,7 +230,7 @@ export const useConnectionStore = defineStore('connection', () => {
   }
 
   // Update connection with new auth token
-  async function updateAuthToken(newAuthToken: string): Promise<void> {
+  async function updateAuthToken(): Promise<void> {
     // Stop current connection
     if (_isInitialized.value) {
       await JobNotificationHub.stopConnection()
@@ -398,7 +305,7 @@ export const useConnectionStore = defineStore('connection', () => {
         // Sync state even when not connected
         _syncConnectionState()
       }
-    } catch (error) {
+    } catch {
       setBackendHealthy(false)
       setLastHealthCheck(new Date())
     }
@@ -444,9 +351,9 @@ export const useConnectionStore = defineStore('connection', () => {
     }
     
     // Trigger all computed properties by accessing them
-    isConnected.value
-    isWebSocketConnected.value
-    connectionState.value
+    void isConnected.value
+    void isWebSocketConnected.value
+    void connectionState.value
     
     // Force a reactive update by temporarily changing and restoring values
     const tempConnecting = _isConnecting.value

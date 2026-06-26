@@ -28,7 +28,7 @@ const getCronJobs = () => {
             else if ((response.retryIntervals == null || response.retryIntervals.length == 0) && (response.retries != null && (response.retries as number) > 0))
                 response.retryIntervals = Array(1).fill(`${30}s`);
             else 
-                response.retryIntervals = (response.retryIntervals as string[]).map((x: any) => formatTime(x as number, false));
+                response.retryIntervals = (response.retryIntervals as string[]).map((x: string) => formatTime(x as unknown as number, false));
             
             return response;
         })
@@ -69,7 +69,7 @@ const getCronJobsPaginated = () => {
                     else if ((item.retryIntervals == null || item.retryIntervals.length == 0) && (item.retries != null && (item.retries as number) > 0))
                         item.retryIntervals = Array(1).fill(`${30}s`);
                     else 
-                        item.retryIntervals = (item.retryIntervals as string[]).map((x: any) => formatTime(x as number, false));
+                        item.retryIntervals = (item.retryIntervals as string[]).map((x: string) => formatTime(x as unknown as number, false));
                     
                     return item;
                 });

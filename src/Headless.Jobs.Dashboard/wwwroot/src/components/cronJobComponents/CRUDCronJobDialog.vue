@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch, type PropType } from 'vue'
+import type { FilterFunction } from 'vuetify'
 import { useFunctionNameStore } from '@/stores/functionNames'
 import { useForm } from '@/composables/useCustomForm'
 import { jobsService } from '@/http/services/jobsService'
@@ -51,7 +52,7 @@ const formatJsonForDisplay = (json: string, isHtml: boolean = false) => {
   try {
     const formatted = JSON.stringify(JSON.parse(json), null, 2)
     return isHtml ? formatted.replace(/\n/g, '<br>').replace(/ /g, '&nbsp;') : formatted
-  } catch (error) {
+  } catch {
     return undefined
   }
 }
@@ -135,7 +136,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
   },
   onSubmitForm: async (values, errors) => {
     if (!errors) {
-      var originalRequestData = values.requestData
+      const originalRequestData = values.requestData
       if (!props.dialogProps.isFromDuplicate) {
         await updateCronJob
           .requestAsync(props.dialogProps.id, {
@@ -144,7 +145,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
             request: values.requestData,
             retries: parseInt(`${values.retries}`),
             description: values.description,
-            intervals: comboBoxModel.value.map((item) => item.value),
+            intervals: comboBoxModel.value.map((item) => (item as ComboBoxInterval).value),
           })
           .then(() => {
             emit('close')
@@ -158,7 +159,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
             request: values.requestData,
             retries: parseInt(`${values.retries}`),
             description: values.description,
-            intervals: comboBoxModel.value.map((item) => item.value),
+            intervals: comboBoxModel.value.map((item) => (item as ComboBoxInterval).value),
           })
           .then(() => {
             emit('close')
@@ -185,17 +186,24 @@ const reqyestType = computed(() => {
   return requestType == '' ? 'No request data' : requestType
 })
 
-const comboBoxFilter = (_: any, queryText: any, item: any) => {
-  const toLowerCaseString = (val: any) => String(val != null ? val : '').toLowerCase()
+const comboBoxFilter: FilterFunction = (_, queryText, item) => {
+  const toLowerCaseString = (val: unknown) => String(val != null ? val : '').toLowerCase()
   const query = toLowerCaseString(queryText)
 
-  if (item.raw.header) return true
+  if (item?.raw.header) return true
 
-  const text = toLowerCaseString(item.raw.title)
+  const text = toLowerCaseString(item?.raw.title)
   return text.includes(query)
 }
 
-const comboBoxItems = [
+interface ComboBoxItem {
+  id?: string | number
+  title: string
+  value?: number
+  header?: boolean
+}
+
+const comboBoxItems: ComboBoxItem[] = [
   { header: true, title: 'Select suggested intervals or create one' },
   {
     id: 1,
@@ -214,7 +222,13 @@ const comboBoxItems = [
   },
 ]
 
-const comboBoxModel = ref<any[]>([])
+interface ComboBoxInterval {
+  id: string | number
+  title: string
+  value: number
+}
+
+const comboBoxModel = ref<(ComboBoxInterval | string)[]>([])
 const comboBoxSearch = ref<string | null>(null)
 
 watch(comboBoxSearch, () => {
@@ -247,7 +261,7 @@ watch(
   { deep: true },
 )
 
-const removeSelection = (index: any) => {
+const removeSelection = (index: number) => {
   comboBoxModel.value.splice(index, 1)
 }
 
@@ -399,7 +413,7 @@ defineExpose({
                         ></v-list-subheader>
                         <v-list-item
                           v-if="!item.raw.header && comboBoxModel.length < values.retries"
-                          @click="props.onClick as any"
+                          @click="props.onClick as (() => void) | undefined"
                         >
                           <v-chip :text="item.raw.title" variant="flat" label></v-chip>
                         </v-list-item>

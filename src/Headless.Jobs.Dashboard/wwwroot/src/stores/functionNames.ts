@@ -19,7 +19,7 @@ export const useFunctionNameStore = defineStore('functionNames', () => {
     const data = computed(() => getFunctionData.response.value);
 
     const getNamespaceOrNull = (functionName: string) : string | null => {
-        var result = data.value?.find(x => x.functionName == functionName)?.functionRequestNamespace ?? null;
+        const result = data.value?.find(x => x.functionName == functionName)?.functionRequestNamespace ?? null;
 
         if(result == '' || result == null)
             return null;

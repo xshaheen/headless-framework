@@ -23,6 +23,16 @@ export interface Alert extends Required<Omit<AlertOptions, 'actions'>> {
   createdAt: number
 }
 
+interface HttpErrorLike {
+  response?: {
+    status?: number
+    statusText?: string
+    data?: string | { message?: string; error?: string; title?: string } | null
+  }
+  request?: unknown
+  message?: string
+}
+
 export const useAlertStore = defineStore('alert', () => {
   const alerts = ref<Alert[]>([])
   
@@ -128,26 +138,28 @@ export const useAlertStore = defineStore('alert', () => {
   }
 
   // HTTP Error specific method
-  const showHttpError = (error: any, customMessage?: string) => {
+  const showHttpError = (error: unknown, customMessage?: string) => {
     let message = customMessage || 'An error occurred'
     let title = 'HTTP Error'
 
-    if (error?.response) {
-      const status = error.response.status
-      const statusText = error.response.statusText || 'Unknown Error'
-      
+    const err = error as HttpErrorLike
+
+    if (err?.response) {
+      const status = err.response.status
+      const statusText = err.response.statusText || 'Unknown Error'
+
       title = `HTTP ${status} Error`
-      
+
       // Try to extract error message from response
-      if (error.response.data) {
-        if (typeof error.response.data === 'string') {
-          message = error.response.data
-        } else if (error.response.data.message) {
-          message = error.response.data.message
-        } else if (error.response.data.error) {
-          message = error.response.data.error
-        } else if (error.response.data.title) {
-          message = error.response.data.title
+      if (err.response.data) {
+        if (typeof err.response.data === 'string') {
+          message = err.response.data
+        } else if (err.response.data.message) {
+          message = err.response.data.message
+        } else if (err.response.data.error) {
+          message = err.response.data.error
+        } else if (err.response.data.title) {
+          message = err.response.data.title
         } else {
           message = statusText
         }
@@ -173,11 +185,11 @@ export const useAlertStore = defineStore('alert', () => {
           message = 'Service is temporarily unavailable. Please try again later.'
           break
       }
-    } else if (error?.request) {
+    } else if (err?.request) {
       title = 'Network Error'
       message = 'Unable to connect to the server. Please check your internet connection.'
-    } else if (error?.message) {
-      message = error.message
+    } else if (err?.message) {
+      message = err.message
     }
 
     return showError(message, {

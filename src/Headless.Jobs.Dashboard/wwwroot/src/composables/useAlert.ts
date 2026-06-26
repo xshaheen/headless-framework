@@ -45,7 +45,7 @@ export function useAlert() {
   /**
    * Show an HTTP error alert with intelligent error parsing
    */
-  const showHttpError = (error: any, customMessage?: string) => {
+  const showHttpError = (error: unknown, customMessage?: string) => {
     return alertStore.showHttpError(error, customMessage)
   }
 

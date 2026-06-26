@@ -33,31 +33,31 @@ class JobNotificationHub extends BaseHub {
   }
 
   onReceiveAddCronJob<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveAddCronJob, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveAddCronJob, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveUpdateCronJob<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveUpdateCronJob, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveUpdateCronJob, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveDeleteCronJob<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveDeleteCronJob, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveDeleteCronJob, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveUpdateCronJobOccurrence<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveUpdateCronJobOccurrence, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveUpdateCronJobOccurrence, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveAddCronJobOccurrence<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveAddCronJobOccurrence, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveAddCronJobOccurrence, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
@@ -70,56 +70,56 @@ class JobNotificationHub extends BaseHub {
   }
 
   onReceiveAddTimeJob<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveAddTimeJob, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveAddTimeJob, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveUpdateTimeJob<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveUpdateTimeJob, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveUpdateTimeJob, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveCanceledJob<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveCanceledJob, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveCanceledJob, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveDeleteTimeJob<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveDeleteTimeJob, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveDeleteTimeJob, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveThreadsActive<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveThreadsActive, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveThreadsActive, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveNextOccurrence<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveNextOccurrence, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveNextOccurrence, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveHostStatus<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveHostStatus, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveHostStatus, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   onReceiveHostExceptionMessage<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveHostExceptionMessage, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveHostExceptionMessage, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }
 
   // Live-nodes delta pushed by the membership dashboard bridge (one node-state change per event).
   onReceiveNodesUpdate<T>(callback: (response: T) => void): void {
-    this.onReceiveMessageAsSingle<T>(methodName.onReceiveNodesUpdate, (responseFromHub: any) => {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveNodesUpdate, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }

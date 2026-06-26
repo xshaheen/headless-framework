@@ -88,7 +88,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, type Ref } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -116,9 +116,25 @@ use([
 ])
 
 // Props
+interface GraphRangePoint {
+  date: string
+  count: number
+}
+
+interface GraphRangeSource {
+  loading?: Ref<boolean>
+  response?: Ref<GraphRangePoint[] | undefined>
+  requestAsync?: (min: number, max: number) => Promise<unknown>
+}
+
+interface GraphDataSource {
+  loading?: Ref<boolean>
+  response?: Ref<unknown[] | undefined>
+}
+
 interface Props {
-  getTimeJobsGraphDataRangeAndParseToGraph: any
-  getTimeJobsGraphData: any
+  getTimeJobsGraphDataRangeAndParseToGraph: GraphRangeSource
+  getTimeJobsGraphData: GraphDataSource
   range: number[]
 }
 
@@ -182,7 +198,7 @@ const lineChartOptions = computed(() => ({
   },
   xAxis: {
     type: 'category',
-    data: props.getTimeJobsGraphDataRangeAndParseToGraph?.response?.value?.map((item: any) => item.date) || [],
+    data: props.getTimeJobsGraphDataRangeAndParseToGraph?.response?.value?.map((item) => item.date) || [],
     axisLabel: {
       color: '#ffffff',
       rotate: 45
@@ -213,7 +229,7 @@ const lineChartOptions = computed(() => ({
     {
       name: 'Executions',
       type: 'line',
-      data: props.getTimeJobsGraphDataRangeAndParseToGraph?.response?.value?.map((item: any) => item.count) || [],
+      data: props.getTimeJobsGraphDataRangeAndParseToGraph?.response?.value?.map((item) => item.count) || [],
       smooth: true,
       lineStyle: {
         color: '#64b5f6',
@@ -287,9 +303,9 @@ const resetRange = () => {
 }
 
 // Debounce utility
-function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+function debounce<T extends (...args: never[]) => void>(fn: T, delay: number): T {
   let timeout: ReturnType<typeof setTimeout>
-  return ((...args: any[]) => {
+  return ((...args: never[]) => {
     clearTimeout(timeout)
     timeout = setTimeout(() => fn(...args), delay)
   }) as T

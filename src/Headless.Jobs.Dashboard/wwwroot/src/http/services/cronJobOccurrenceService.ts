@@ -24,7 +24,7 @@ const getByCronJobId = () => {
             
             // Safely set status with null check
             if (response.status !== undefined && response.status !== null) {
-                response.status = Status[response.status as any];
+                response.status = Status[response.status as number];
             }
 
             if (response.executedAt != null || response.executedAt != undefined) {
@@ -76,7 +76,7 @@ const getByCronJobIdPaginated = () => {
                     
                     // Safely set status with null check and ensure it's always a string
                     if (item.status !== undefined && item.status !== null) {
-                        const statusValue = Status[item.status as any];
+                        const statusValue = Status[item.status as number];
                         item.status = statusValue !== undefined ? statusValue : String(item.status);
                     } else {
                         item.status = 'Unknown';

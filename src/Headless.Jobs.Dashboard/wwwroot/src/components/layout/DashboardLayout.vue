@@ -41,14 +41,15 @@ const isAuthEnabled = computed(() => window.JobsConfig?.auth?.enabled ?? false)
 const router = useRouter()
 
 // Lazy-loaded stores and services
-let jobsService: any = null
+type JobsService = typeof import('../../http/services/jobsService').jobsService
+let jobsService: JobsService = null!
 
 // Lazy-loaded service functions
-let getOptions: any = null
-let getJobHostStatus: any = null
-let startJobHost: any = null
-let restartJobHost: any = null
-let stopJobHost: any = null
+let getOptions: ReturnType<JobsService['getOptions']> = null!
+let getJobHostStatus: ReturnType<JobsService['getJobHostStatus']> = null!
+let startJobHost: ReturnType<JobsService['startJobHost']> = null!
+let restartJobHost: ReturnType<JobsService['restartJobHost']> = null!
+let stopJobHost: ReturnType<JobsService['stopJobHost']> = null!
 
 
 
@@ -69,7 +70,7 @@ const initializeServices = async () => {
           try {
             await connectionStore.initializeConnectionWithRetry()
             connectionStore.setupVisibilityHandling()
-          } catch (error) {
+          } catch {
             // Connection initialization failed after retry
           }
         }, 2000)
@@ -77,7 +78,7 @@ const initializeServices = async () => {
       }
 
       await connectionStore.initializeConnection()
-    } catch (error) {
+    } catch {
       // Failed to initialize WebSocket connection
     }
 
@@ -96,7 +97,7 @@ const initializeServices = async () => {
 
     // Mark services as ready
     isServicesReady.value = true
-  } catch (error) {
+  } catch {
     // Failed to initialize services
     // Even if there's an error, mark as ready to prevent infinite loading
     isServicesReady.value = true
@@ -133,7 +134,7 @@ const loadInitialData = async () => {
     if (getJobHostStatus.response?.value) {
       tickerHostStatus.value = getJobHostStatus.response.value.isRunning
     }
-  } catch (error) {
+  } catch {
     // Failed to load initial data
     currentMachine.value = 'Error'
     tickerHostStatus.value = false
@@ -153,7 +154,7 @@ onMounted(async () => {
         try {
           await connectionStore.initializeConnectionWithRetry()
           connectionStore.setupVisibilityHandling()
-        } catch (error) {
+        } catch {
           // Connection initialization failed after retry
         }
       }, 2000)
@@ -164,7 +165,7 @@ onMounted(async () => {
 
     // After connection is established, initialize services and load data
     await initializeServices()
-  } catch (error) {
+  } catch {
     // Error initializing connection
   }
 })
@@ -214,7 +215,7 @@ async function handleReconnect() {
     // Force UI update
     connectionStore.forceUIUpdate()
 
-  } catch (error) {
+  } catch {
     // Reconnection failed
   }
 }
@@ -239,42 +240,6 @@ function handleAuthLogout() {
     window.location.reload()
   }
 }
-
-// Connection status display
-const getConnectionStatus = computed(() => {
-  if (connectionStore.isConnected) {
-    return 'Connected'
-  } else if (connectionStore.isConnecting) {
-    return 'Connecting...'
-  } else {
-    return 'Disconnected'
-  }
-})
-
-// Connection management methods
-const handleForceReconnection = async () => {
-  if (!connectionStore) return
-
-  try {
-    await connectionStore.forceReconnection()
-  } catch (error) {
-    // Force reconnection failed
-  }
-}
-
-const handleManualHealthCheck = async () => {
-  try {
-    await connectionStore.performManualHealthCheck()
-    await connectionStore.refreshConnectionStatus()
-  } catch (error) {
-    // Manual health check failed
-  }
-}
-
-const handleForceUIUpdate = () => {
-  connectionStore.forceUIUpdate()
-}
-
 
 </script>
 

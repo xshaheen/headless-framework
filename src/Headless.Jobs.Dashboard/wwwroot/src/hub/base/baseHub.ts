@@ -41,7 +41,7 @@ class BaseHub {
                 
                 // No auth configured or no token available
                 return null;
-            } catch (error) {
+            } catch {
                 // Could not access auth token
                 return null;
             }
@@ -66,7 +66,7 @@ class BaseHub {
         
         if (useWebSocketsOnly) {
             // WebSocket transport - use access_token query parameter for auth
-            const connectionOptions: any = {
+            const connectionOptions: signalR.IHttpConnectionOptions = {
                 transport: signalR.HttpTransportType.WebSockets
             };
             
@@ -95,7 +95,7 @@ class BaseHub {
                 .build();
         } else {
             // Allow fallback transports - use headers for auth
-            const connectionOptions: any = {};
+            const connectionOptions: signalR.IHttpConnectionOptions = {};
             
             if (authInfo) {
                 connectionOptions.headers = {
@@ -135,7 +135,7 @@ class BaseHub {
         if (this.connection.state === signalR.HubConnectionState.Connected) {
             try {
                 await this.connection.invoke(methodName);
-            } catch (err) {
+            } catch {
                 // Error sending message
             }
         } else {
@@ -157,13 +157,14 @@ class BaseHub {
             console.log('🔗 SignalR: Starting connection...');
             await this.connection.start();
             console.log('✅ SignalR: Connection established successfully');
-        } catch (err: any) {
+        } catch (err) {
             console.error('🚨 SignalR Connection Error:', err);
             
             // Check if it's an authentication error
-            if (err?.message?.includes('401') || 
-                err?.message?.includes('Unauthorized') ||
-                err?.message?.includes('Authentication failed')) {
+            const message = err instanceof Error ? err.message : '';
+            if (message.includes('401') ||
+                message.includes('Unauthorized') ||
+                message.includes('Authentication failed')) {
                 console.error('🚫 SignalR: Authentication failed - connection will not retry');
                 // Don't rethrow authentication errors to prevent infinite retry
                 return;
@@ -177,7 +178,7 @@ class BaseHub {
     async stopConnectionAsync(): Promise<void> {
         try {
             await this.connection.stop();
-        } catch (err) {
+        } catch {
             // Error stopping SignalR connection
         }
     }
@@ -192,13 +193,13 @@ class BaseHub {
 
     // Subscribe to messages from the server
     onReceiveMessageAsSingle<T>(methodName: string, callback: (response: T) => void): void {
-        this.connection.on(methodName, (responseFromHub: any) => {
+        this.connection.on(methodName, (responseFromHub: unknown) => {
             if (Array.isArray(responseFromHub)) {
                 responseFromHub.forEach((response) => {
-                    callback(response);
+                    callback(response as T);
                 });
             } else {
-                callback(responseFromHub);
+                callback(responseFromHub as T);
             }
         });
     }

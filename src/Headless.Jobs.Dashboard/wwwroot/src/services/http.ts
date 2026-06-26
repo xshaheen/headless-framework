@@ -22,14 +22,14 @@ class HttpService {
   /**
    * POST request
    */
-  async post<T>(endpoint: string, data?: any): Promise<T> {
+  async post<T>(endpoint: string, data?: unknown): Promise<T> {
     return this.request<T>('POST', endpoint, data);
   }
 
   /**
    * PUT request
    */
-  async put<T>(endpoint: string, data?: any): Promise<T> {
+  async put<T>(endpoint: string, data?: unknown): Promise<T> {
     return this.request<T>('PUT', endpoint, data);
   }
 
@@ -43,7 +43,7 @@ class HttpService {
   /**
    * Generic request method
    */
-  private async request<T>(method: string, endpoint: string, data?: any): Promise<T> {
+  private async request<T>(method: string, endpoint: string, data?: unknown): Promise<T> {
     const url = `${this.baseUrl}/api${endpoint}`;
     
     const headers: Record<string, string> = {
@@ -85,7 +85,7 @@ class HttpService {
         return response.json();
       }
       
-      return response.text() as any;
+      return response.text() as unknown as T;
     } catch (error) {
       console.error(`HTTP ${method} ${endpoint} failed:`, error);
       throw error;

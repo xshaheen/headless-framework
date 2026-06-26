@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { onMounted, ref, provide, computed, onUnmounted, nextTick, watch } from 'vue'
+import { onMounted, ref, provide, computed, onUnmounted, watch } from 'vue'
 import { timeJobService } from '@/http/services/timeJobService'
 import type { GetTimeJobResponse } from '@/http/services/types/timeJobService.types'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
@@ -24,7 +24,11 @@ import {
   DataZoomComponent,
 } from 'echarts/components'
 import VChart, { THEME_KEY } from 'vue-echarts'
-import type { GetTimeJobGraphDataRangeResponse } from '@/http/services/types/timeJobService.types'
+import type { LineSeriesOption, PieSeriesOption, LegendComponentOption } from 'echarts'
+import type {
+  GetTimeJobGraphDataRangeResponse,
+  GetTimeJobGraphDataResponse,
+} from '@/http/services/types/timeJobService.types'
 
 use([
   CanvasRenderer,
@@ -88,11 +92,11 @@ const chartLoading = ref(false)
 const chartKey = ref(0)
 const chartData = ref({
   xAxisData: [] as string[],
-  series: [] as any[],
-  legend: {} as any,
+  series: [] as LineSeriesOption[],
+  legend: {} as LegendComponentOption,
   title: 'Job statuses for all Time Jobs',
 })
-const pieChartData = ref<any[]>([])
+const pieChartData = ref<PieSeriesOption['data']>([])
 const pieChartKey = ref(0)
 
 // Provide theme for charts
@@ -107,12 +111,12 @@ onMounted(async () => {
     if (!connectionStore.isInitialized) {
       await connectionStore.initializeConnectionWithRetry()
     }
-  } catch (error: any) {}
+  } catch {}
 
   // Load initial data with pagination
   try {
     await loadPageData()
-  } catch (error) {
+  } catch {
     // Failed to load time jobs
   }
   
@@ -127,7 +131,7 @@ onMounted(async () => {
   // Add hub listeners
   try {
     await addHubListeners()
-  } catch (error) {
+  } catch {
     // Failed to add hub listeners
   }
 })
@@ -184,8 +188,9 @@ const loadTimeSeriesChartData = async (min: number, max: number) => {
     chartLoading.value = true
     const res = await getTimeJobsGraphDataRange.requestAsync(min, max)
     processTimeSeriesData(res)
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error) {
+    const err = error as { name?: string; code?: string } | undefined
+    if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
       return
     }
     console.error('Failed to load time series chart data:', error)
@@ -198,8 +203,9 @@ const loadPieChartData = async () => {
   try {
     const res = await getTimeJobsGraphData.requestAsync()
     processPieChartData(res)
-  } catch (error: any) {
-    if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+  } catch (error) {
+    const err = error as { name?: string; code?: string } | undefined
+    if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
       return
     }
     console.error('Failed to load pie chart data:', error)
@@ -219,7 +225,7 @@ const processTimeSeriesData = (data: GetTimeJobGraphDataRangeResponse[]) => {
 
   data.forEach((item) => {
     if (!item.results) return
-    item.results.forEach((result: any) => {
+    item.results.forEach((result) => {
       allStatuses.add(result.item1)
       if (!dateMap.has(item.date)) {
         dateMap.set(item.date, new Map())
@@ -243,7 +249,7 @@ const processTimeSeriesData = (data: GetTimeJobGraphDataRangeResponse[]) => {
     7: '#BA68C8', // Skipped - Medium Orchid (Purple)
   }
 
-  const composedData = statusArray.map((status) => ({
+  const composedData = statusArray.map((status): LineSeriesOption => ({
     name: Status[status] || `Status ${status}`,
     type: 'line',
     smooth: true,
@@ -276,14 +282,14 @@ const processTimeSeriesData = (data: GetTimeJobGraphDataRangeResponse[]) => {
   chartData.value = {
     xAxisData: uniqueDates,
     series: composedData,
-    legend: { data: composedData.map(s => s.name) },
+    legend: { data: composedData.map((s) => String(s.name ?? '')) },
     title: chartData.value.title
   }
   
   chartKey.value++
 }
 
-const processPieChartData = (data: any[]) => {
+const processPieChartData = (data: GetTimeJobGraphDataResponse[]) => {
   if (!data || !Array.isArray(data)) {
     pieChartData.value = []
     return
@@ -330,9 +336,9 @@ const processPieChartData = (data: any[]) => {
 
 const addHubListeners = async () => {
   // Debounce utility for view refreshes
-  function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+  function debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number): T {
     let timeout: ReturnType<typeof setTimeout>
-    return ((...args: any[]) => {
+    return ((...args: unknown[]) => {
       clearTimeout(timeout)
       timeout = setTimeout(() => fn(...args), delay)
     }) as T
@@ -351,7 +357,7 @@ const addHubListeners = async () => {
     debouncedRefresh()
   })
 
-  JobNotificationHub.onReceiveDeleteTimeJob<string>((id) => {
+  JobNotificationHub.onReceiveDeleteTimeJob<string>(() => {
     // Reload current page when item is deleted
     loadPageData()
     // Update charts
@@ -549,17 +555,31 @@ const pieChartOption = computed(() => ({
   animationEasing: 'cubicOut' as const,
 }))
 
+// Tree row shape: a time job enriched with tree-rendering metadata
+interface TreeTimeJob extends GetTimeJobResponse {
+  depth: number
+  isParent: boolean
+  isChild: boolean
+  isExpanded: boolean
+  hasChildren: boolean
+  childrenCount: number
+  treePath: string
+  isFirstChild: boolean
+  isLastChild: boolean
+  children: GetTimeJobResponse[]
+}
+
 // Process data to create tree table structure with proper hierarchy
 const processedTableData = computed(() => {
   const paginatedData = getTimeJobsPaginated.response.value
   const rawData = paginatedData?.items || []
-  const result: any[] = []
+  const result: TreeTimeJob[] = []
 
   // Recursive function to build tree structure with proper indentation
-  const buildTreeData = (items: any[], depth: number = 0, parentPath: string = '') => {
+  const buildTreeData = (items: GetTimeJobResponse[], depth: number = 0, parentPath: string = '') => {
     items.forEach((item, index) => {
       const currentPath = parentPath ? `${parentPath}.${index}` : `${index}`
-      const hasChildren = item.children && item.children.length > 0
+      const hasChildren = !!(item.children && item.children.length > 0)
       const isExpanded = expandedParents.value.has(item.id)
 
       // Add the current item with tree metadata
@@ -583,7 +603,7 @@ const processedTableData = computed(() => {
 
       // If this item is expanded and has children, add them recursively
       if (isExpanded && hasChildren) {
-        buildTreeData(item.children, depth + 1, currentPath)
+        buildTreeData(item.children ?? [], depth + 1, currentPath)
       }
     })
   }
@@ -662,7 +682,7 @@ const openChainJobsModal = () => {
   chainJobsModal.value.isOpen = true
 }
 
-const onChainJobsCreated = async (result: any) => {
+const onChainJobsCreated = async (result: object) => {
   console.log('Chain jobs created successfully!', result)
   await loadPageData()
 }
@@ -700,9 +720,9 @@ const expandToLevel = (maxDepth: number) => {
 }
 
 // Row props function to style rows based on tree depth and type
-const getRowProps = (item: any) => {
+const getRowProps = () => {
   const classes = []
-  const styles: any = {}
+  const styles: Record<string, string> = {}
 
   classes.push('tree-leaf-row')
   classes.push('tree-root-row')
@@ -714,7 +734,7 @@ const getRowProps = (item: any) => {
 }
 
 // Enhanced tree table helper functions
-const getTreeIcon = (item: any) => {
+const getTreeIcon = (item: TreeTimeJob) => {
   // Parent nodes - folder icons
   if (item.depth === 0) {
     return item.isExpanded ? 'mdi-folder-open-outline' : 'mdi-folder-outline'
@@ -723,7 +743,7 @@ const getTreeIcon = (item: any) => {
   }
 }
 
-const getTreeIconColor = (item: any) => {
+const getTreeIconColor = (item: TreeTimeJob) => {
   // Parent nodes - different colors by depth
   if (item.depth === 0) {
     return 'amber'
@@ -747,7 +767,7 @@ const pushRequestMatchType = (matchType: number) => {
 }
 
 const getRequestMatchType = computed(() => {
-  return Array.from(requestMatchType.value.entries()).map((item, index) => {
+  return Array.from(requestMatchType.value.entries()).map((item) => {
     if (item[1] == 0)
       return { id: item[0], icon: 'mdi-delete-alert', color: '#212121', class: 'grey-badge' }
     else if (item[1] == 1)
@@ -795,7 +815,7 @@ const getRetryIntervalsArray = (retryIntervals: string[] | string | null): strin
   return []
 }
 
-const getDisplayIntervals = (item: any) => {
+const getDisplayIntervals = (item: TreeTimeJob) => {
   const intervals = getRetryIntervalsArray(item.retryIntervals)
   if (intervals.length <= 3) {
     // Show all if 3 or fewer
@@ -823,7 +843,7 @@ const getDisplayIntervals = (item: any) => {
   }
 }
 
-const getHiddenCount = (item: any) => {
+const getHiddenCount = (item: TreeTimeJob) => {
   const intervals = getRetryIntervalsArray(item.retryIntervals)
   if (intervals.length <= 3) return 0
 
@@ -840,7 +860,7 @@ const getHiddenCount = (item: any) => {
   }
 }
 
-const getRetryStatus = (index: number, item: any) => {
+const getRetryStatus = (index: number, item: TreeTimeJob) => {
   if (!item.retryCount) return 'pending'
 
   const currentRetryIndex = item.retryCount - 1
@@ -863,7 +883,7 @@ const requestCancel = async (id: string) => {
 
 const onSubmitConfirmDialog = async () => {
   confirmDialog.close()
-  await deleteTimeJob.requestAsync(confirmDialog.propData?.id!)
+  await deleteTimeJob.requestAsync(confirmDialog.propData.id)
 }
 
 const canBeForceDeleted = ref<string[]>([])
@@ -1115,7 +1135,7 @@ const canBeForceDeleted = ref<string[]>([])
             :item-height="32"
           >
             <!-- Selection Column -->
-            <template v-slot:item.selection="{ item }">
+            <template #[`item.selection`]="{ item }">
               <v-checkbox
                 v-if="!item.isChild"
                 :model-value="selectedItems.has(item.id)"
@@ -1127,7 +1147,7 @@ const canBeForceDeleted = ref<string[]>([])
               />
             </template>
 
-            <template v-slot:item.function="{ item }">
+            <template #[`item.function`]="{ item }">
               <div class="tree-cell" :style="{ paddingLeft: item.depth * 28 + 'px' }">
                 <!-- Tree Structure with improved lines -->
                 <div class="tree-structure" v-if="item.depth > 0">
@@ -1194,7 +1214,7 @@ const canBeForceDeleted = ref<string[]>([])
               </div>
             </template>
 
-            <template v-slot:item.status="{ item }">
+            <template #[`item.status`]="{ item }">
               <div class="d-flex align-center">
                 <v-chip
                   :style="{ 
@@ -1228,7 +1248,7 @@ const canBeForceDeleted = ref<string[]>([])
                 </v-chip>
               </div>
             </template>
-            <template v-slot:item.RequestType="{ item }">
+            <template #[`item.RequestType`]="{ item }">
               <v-badge
                 v-bind="
                   getRequestMatchType.find((y) => y!.id == item.id) ?? {
@@ -1248,7 +1268,7 @@ const canBeForceDeleted = ref<string[]>([])
               </v-badge>
             </template>
 
-            <template v-slot:item.ExecutedAt="{ item }">
+            <template #[`item.ExecutedAt`]="{ item }">
               <div
                 v-if="hasStatus(item.status, Status.InProgress)"
                 class="snippet"
@@ -1267,9 +1287,9 @@ const canBeForceDeleted = ref<string[]>([])
               </div>
             </template>
 
-            <template v-slot:item.retryIntervals="{ item }">
-              <div class="retry-display" v-if="getRetryIntervalsArray(item.retryIntervals)?.length || (item.retries && item.retries > 0)">
-                <div class="retry-header" v-if="item.retries > 0">
+            <template #[`item.retryIntervals`]="{ item }">
+              <div class="retry-display" v-if="getRetryIntervalsArray(item.retryIntervals)?.length || (item.retries && Number(item.retries) > 0)">
+                <div class="retry-header" v-if="Number(item.retries) > 0">
                   <span class="retry-count-label">Attempt {{ item.retryCount || 0 }}/{{ item.retries }}</span>
                 </div>
                 <span class="retry-sequence" v-if="getRetryIntervalsArray(item.retryIntervals)?.length">
@@ -1287,14 +1307,14 @@ const canBeForceDeleted = ref<string[]>([])
               <span v-else class="no-retries">—</span>
             </template>
 
-            <template v-slot:item.lockHolder="{ item }">
+            <template #[`item.lockHolder`]="{ item }">
               <span class="text-caption">{{ item.lockHolder }}</span>
               <v-tooltip v-if="item.lockHolder != ''" activator="parent" location="left">
                 <span>Locked At: {{ formatDate(item.lockedAt) }}</span>
               </v-tooltip>
             </template>
 
-            <template v-slot:item.actions="{ item }">
+            <template #[`item.actions`]="{ item }">
               <div class="action-buttons-container">
                 <!-- Cancel Button -->
                 <div
@@ -1405,7 +1425,7 @@ const canBeForceDeleted = ref<string[]>([])
             </template>
 
             <!-- Tree Marker Column -->
-            <template v-slot:item.treeMarker="{ item }">
+            <template #[`item.treeMarker`]="{ item }">
               <div class="tree-marker">
                 <svg width="32" height="32" viewBox="0 0 32 32" class="tree-marker-svg">
                   <!-- Mirror the left side tree structure on the right -->
