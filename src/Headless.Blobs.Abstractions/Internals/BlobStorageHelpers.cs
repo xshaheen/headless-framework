@@ -14,6 +14,16 @@ public static class BlobStorageHelpers
     public const string UploadDateMetadataKey = "uploadDate";
     public const string ExtensionMetadataKey = "extension";
 
+    /// <summary>
+    /// Reserved object-key suffix used by filesystem-like providers (file system, SFTP) to store a blob's metadata in
+    /// a companion ("sidecar") file next to its content. Blob keys ending in this suffix are rejected at
+    /// <see cref="BlobLocation"/> construction so user blobs can never collide with a sidecar.
+    /// </summary>
+    public const string SidecarSuffix = ".hlmeta";
+
+    /// <summary>Returns <see langword="true"/> when <paramref name="key"/> is reserved for sidecar metadata (ends with <see cref="SidecarSuffix"/>).</summary>
+    public static bool IsSidecarKey(string key) => key.EndsWith(SidecarSuffix, StringComparison.Ordinal);
+
     [return: NotNullIfNotNull(nameof(path))]
     public static string? NormalizePath(string? path)
     {
