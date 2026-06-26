@@ -309,6 +309,15 @@ public sealed class Currency(decimal amount, string currencyCode)
     /// </returns>
     public static Currency operator *(Currency left, decimal right) => Multiply(left, right);
 
+    /// <summary>Scales a currency amount by a <see cref="decimal"/> factor, keeping the same currency code (commutative form of <c>currency * factor</c>).</summary>
+    /// <param name="left">The scalar factor.</param>
+    /// <param name="right">The currency to scale.</param>
+    /// <returns>
+    /// A <see cref="Currency"/> whose amount is <paramref name="right"/>'s amount multiplied by <paramref name="left"/>,
+    /// rounded to the currency's minor-unit scale using <see cref="MidpointRounding.ToEven"/>.
+    /// </returns>
+    public static Currency operator *(decimal left, Currency right) => Multiply(right, left);
+
     /// <summary>Scales a currency amount by a <see cref="decimal"/> factor, keeping the same currency code.</summary>
     /// <param name="currency">The currency to scale.</param>
     /// <param name="factor">The scalar factor.</param>

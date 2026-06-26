@@ -16,10 +16,11 @@ public static partial class Argument
     /// <param name="argumentName">The name of the input parameter being tested.</param>
     /// <param name="targetName">The name of the target parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is not the same instance as <paramref name="target"/>.</exception>
+    /// <returns>The validated <paramref name="argument"/>.</returns>
     /// <remarks>The method is generic to prevent using it with value types.</remarks>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void IsReferenceEqualTo<T>(
+    public static T IsReferenceEqualTo<T>(
         T argument,
         T target,
         string? message = null,
@@ -32,6 +33,8 @@ public static partial class Argument
         {
             _ThrowForIsReferenceEqualTo(message, argumentName, targetName);
         }
+
+        return argument;
     }
 
     /// <summary>Asserts that the input value must not be the same instance as the target value.</summary>
@@ -42,10 +45,11 @@ public static partial class Argument
     /// <param name="argumentName">The name of the input parameter being tested.</param>
     /// <param name="targetName">The name of the target parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is the same instance as <paramref name="target"/>.</exception>
+    /// <returns>The validated <paramref name="argument"/>.</returns>
     /// <remarks>The method is generic to prevent using it with value types.</remarks>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void IsReferenceNotEqualTo<T>(
+    public static T IsReferenceNotEqualTo<T>(
         T argument,
         T target,
         string? message = null,
@@ -58,6 +62,8 @@ public static partial class Argument
         {
             _ThrowForIsReferenceNotEqualTo(message, argumentName, targetName);
         }
+
+        return argument;
     }
 
     [DoesNotReturn]

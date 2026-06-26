@@ -21,7 +21,8 @@ public sealed record SesComplaintEvent
     /// <summary>
     /// The subtype of the complaint. <see langword="null"/>, <c>OnAccountSuppressionList</c>, or
     /// <c>OnTenantSuppressionList</c> — the suppression-list values mean SES accepted the message but did
-    /// not attempt to send it because the address was on the corresponding suppression list.
+    /// not attempt to send it because the address was on the corresponding suppression list. See
+    /// <see cref="ComplaintSubTypes"/> for the known values.
     /// </summary>
     [JsonPropertyName("complaintSubType")]
     public string? ComplaintSubType { get; init; }
@@ -85,4 +86,15 @@ public static class ComplaintFeedbackTypes
 
     /// <summary>Any other feedback that does not fit a registered type.</summary>
     public const string Other = "other";
+}
+
+/// <summary>The known values of <see cref="SesComplaintEvent.ComplaintSubType"/>.</summary>
+[PublicAPI]
+public static class ComplaintSubTypes
+{
+    /// <summary>SES accepted the message but suppressed sending because the address is on the account-level suppression list.</summary>
+    public const string OnAccountSuppressionList = "OnAccountSuppressionList";
+
+    /// <summary>SES accepted the message but suppressed sending because the address is on the tenant-level suppression list.</summary>
+    public const string OnTenantSuppressionList = "OnTenantSuppressionList";
 }
