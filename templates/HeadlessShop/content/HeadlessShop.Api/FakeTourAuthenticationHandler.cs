@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Headless.Constants;

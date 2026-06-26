@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using Headless.Domain;
 
 namespace HeadlessShop.Catalog.Domain;

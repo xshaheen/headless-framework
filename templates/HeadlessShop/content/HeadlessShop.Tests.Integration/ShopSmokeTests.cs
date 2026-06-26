@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using System.Net;
 using System.Net.Http.Json;
 using AwesomeAssertions;
@@ -33,7 +31,7 @@ public sealed class ShopSmokeTests
         );
 
         createProduct.StatusCode.Should().Be(HttpStatusCode.Created);
-        var product = await createProduct.Content.ReadFromJsonAsync<ProductDto>(TestContext.Current.CancellationToken);
+        var product = await createProduct.Content.ReadFromJsonAsync<ProductView>(TestContext.Current.CancellationToken);
         product.Should().NotBeNull();
 
         await harness.WaitForConsumed<ProductCreated>(
@@ -51,7 +49,7 @@ public sealed class ShopSmokeTests
         );
 
         placeOrder.StatusCode.Should().Be(HttpStatusCode.Created);
-        var order = await placeOrder.Content.ReadFromJsonAsync<OrderDto>(TestContext.Current.CancellationToken);
+        var order = await placeOrder.Content.ReadFromJsonAsync<OrderView>(TestContext.Current.CancellationToken);
         order.Should().NotBeNull();
         order!.ProductId.Should().Be(product.Id);
     }
@@ -72,7 +70,7 @@ public sealed class ShopSmokeTests
             TestContext.Current.CancellationToken
         );
 
-        var product = await createProduct.Content.ReadFromJsonAsync<ProductDto>(TestContext.Current.CancellationToken);
+        var product = await createProduct.Content.ReadFromJsonAsync<ProductView>(TestContext.Current.CancellationToken);
         var tenantBRead = await tenantB.GetAsync(
             $"/catalog/products/{product!.Id}",
             TestContext.Current.CancellationToken

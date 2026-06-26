@@ -1,21 +1,15 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
-using FluentValidation;
-using Headless.Abstractions;
 using Headless.Messaging;
 using HeadlessShop.Catalog.Domain;
 using HeadlessShop.Catalog.Infrastructure;
 using HeadlessShop.Contracts;
-using Mediator;
-using Microsoft.EntityFrameworkCore;
 
 namespace HeadlessShop.Catalog.Application;
 
-public sealed record CreateProductCommand(string Sku, string Name, decimal Price) : ICommand<ProductDto>;
+public sealed record CreateProduct(string Sku, string Name, decimal Price) : ICommand<ProductView>;
 
-public sealed class CreateProductCommandValidator : AbstractValidator<CreateProductCommand>
+public sealed class CreateProductValidator : AbstractValidator<CreateProduct>
 {
-    public CreateProductCommandValidator()
+    public CreateProductValidator()
     {
         RuleFor(command => command.Sku).NotEmpty().MaximumLength(64);
         RuleFor(command => command.Name).NotEmpty().MaximumLength(160);
@@ -23,10 +17,10 @@ public sealed class CreateProductCommandValidator : AbstractValidator<CreateProd
     }
 }
 
-public sealed class CreateProductCommandHandler(CatalogDbContext dbContext, ICurrentTenant currentTenant, IBus bus)
-    : ICommandHandler<CreateProductCommand, ProductDto>
+public sealed class CreateProductHandler(CatalogDbContext dbContext, ICurrentTenant currentTenant, IBus bus)
+    : ICommandHandler<CreateProduct, ProductView>
 {
-    public async ValueTask<ProductDto> Handle(CreateProductCommand command, CancellationToken cancellationToken)
+    public async ValueTask<ProductView> Handle(CreateProduct command, CancellationToken cancellationToken)
     {
         var tenantId = currentTenant.Id;
 

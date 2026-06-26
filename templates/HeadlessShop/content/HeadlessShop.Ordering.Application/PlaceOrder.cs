@@ -1,29 +1,23 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
-using FluentValidation;
-using Headless.Abstractions;
 using HeadlessShop.Ordering.Domain;
 using HeadlessShop.Ordering.Infrastructure;
-using Mediator;
-using Microsoft.EntityFrameworkCore;
 
 namespace HeadlessShop.Ordering.Application;
 
-public sealed record PlaceOrderCommand(Guid ProductId, int Quantity) : ICommand<OrderDto>;
+public sealed record PlaceOrder(Guid ProductId, int Quantity) : ICommand<OrderView>;
 
-public sealed class PlaceOrderCommandValidator : AbstractValidator<PlaceOrderCommand>
+public sealed class PlaceOrderValidator : AbstractValidator<PlaceOrder>
 {
-    public PlaceOrderCommandValidator()
+    public PlaceOrderValidator()
     {
         RuleFor(command => command.ProductId).NotEmpty();
         RuleFor(command => command.Quantity).GreaterThan(0);
     }
 }
 
-public sealed class PlaceOrderCommandHandler(OrderingDbContext dbContext, ICurrentTenant currentTenant)
-    : ICommandHandler<PlaceOrderCommand, OrderDto>
+public sealed class PlaceOrderHandler(OrderingDbContext dbContext, ICurrentTenant currentTenant)
+    : ICommandHandler<PlaceOrder, OrderView>
 {
-    public async ValueTask<OrderDto> Handle(PlaceOrderCommand command, CancellationToken cancellationToken)
+    public async ValueTask<OrderView> Handle(PlaceOrder command, CancellationToken cancellationToken)
     {
         var tenantId = currentTenant.Id;
 

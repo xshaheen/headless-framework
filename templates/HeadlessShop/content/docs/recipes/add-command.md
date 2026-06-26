@@ -12,7 +12,7 @@ Use this recipe when adding behavior to one module.
 
 3. Add a validator when the command accepts external input.
 
-   Register the validator in the module setup file, for example `HeadlessShop.Catalog.Module/CatalogModule.cs`.
+   Register the validator in the module setup file, for example `HeadlessShop.Catalog.Module/SetupCatalogModule.cs`.
 
 4. Add or update the endpoint in the module API project.
 

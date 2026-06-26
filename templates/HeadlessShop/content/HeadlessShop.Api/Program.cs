@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using Headless.Api;
 using Headless.Api.MultiTenancy;
 using Headless.Api.OperationProcessors;

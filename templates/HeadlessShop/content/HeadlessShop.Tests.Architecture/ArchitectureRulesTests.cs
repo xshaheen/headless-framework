@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using AwesomeAssertions;
 
 namespace HeadlessShop.Tests.Architecture;
@@ -105,13 +103,16 @@ public sealed class ArchitectureRulesTests
 
 internal static class DirectoryInfoExtensions
 {
-    public static FileInfo File(this DirectoryInfo directory, string relativePath)
+    extension(DirectoryInfo directory)
     {
-        return new(Path.Combine(directory.FullName, relativePath));
-    }
+        public FileInfo File(string relativePath)
+        {
+            return new(Path.Combine(directory.FullName, relativePath));
+        }
 
-    public static DirectoryInfo Directory(this DirectoryInfo directory, string relativePath)
-    {
-        return new(Path.Combine(directory.FullName, relativePath));
+        public DirectoryInfo Directory(string relativePath)
+        {
+            return new(Path.Combine(directory.FullName, relativePath));
+        }
     }
 }

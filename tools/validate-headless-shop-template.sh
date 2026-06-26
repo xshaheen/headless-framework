@@ -107,7 +107,7 @@ done
 
 for documented_path in \
     "$OUTPUT_DIR/TrailStore.Catalog.Application" \
-    "$OUTPUT_DIR/TrailStore.Catalog.Module/CatalogModule.cs" \
+    "$OUTPUT_DIR/TrailStore.Catalog.Module/SetupCatalogModule.cs" \
     "$OUTPUT_DIR/TrailStore.Contracts" \
     "$OUTPUT_DIR/TrailStore.Tests.Architecture/TrailStore.Tests.Architecture.csproj" \
     "$OUTPUT_DIR/TrailStore.Tests.Integration/TrailStore.Tests.Integration.csproj"; do

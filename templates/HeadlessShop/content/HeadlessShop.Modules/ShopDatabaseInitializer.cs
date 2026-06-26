@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using System.Globalization;
 using HeadlessShop.Catalog.Infrastructure;
 using HeadlessShop.Ordering.Infrastructure;
@@ -12,21 +10,21 @@ namespace HeadlessShop.Modules;
 
 public static class ShopDatabaseInitializer
 {
-    public static async Task InitializeShopDatabaseAsync(
-        this IServiceProvider services,
-        CancellationToken cancellationToken = default
-    )
+    extension(IServiceProvider services)
     {
-        await using var scope = services.CreateAsyncScope();
-        var catalog = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
-        var ordering = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
-
-        await catalog.Database.EnsureCreatedAsync(cancellationToken);
-
-        if (!await _HasTableAsync(ordering, "Orders", cancellationToken))
+        public async Task InitializeShopDatabaseAsync(CancellationToken cancellationToken = default)
         {
-            var orderingCreator = ordering.Database.GetService<IRelationalDatabaseCreator>();
-            await orderingCreator.CreateTablesAsync(cancellationToken);
+            await using var scope = services.CreateAsyncScope();
+            var catalog = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+            var ordering = scope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+            await catalog.Database.EnsureCreatedAsync(cancellationToken);
+
+            if (!await _HasTableAsync(ordering, "Orders", cancellationToken))
+            {
+                var orderingCreator = ordering.Database.GetService<IRelationalDatabaseCreator>();
+                await orderingCreator.CreateTablesAsync(cancellationToken);
+            }
         }
     }
 

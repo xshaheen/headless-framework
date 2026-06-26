@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using Headless.EntityFramework;
 using Headless.EntityFramework.Contexts.Runtime;
 using HeadlessShop.Catalog.Domain;
