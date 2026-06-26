@@ -62,3 +62,7 @@ jobs:
       - name: "Unit tests (vitest)"
         working-directory: ${{ matrix.dashboard }}
         run: npm run test:unit
+
+      - name: "Lint (eslint)"
+        working-directory: ${{ matrix.dashboard }}
+        run: npm run lint:check
