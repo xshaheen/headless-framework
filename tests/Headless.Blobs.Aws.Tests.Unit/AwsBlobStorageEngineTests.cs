@@ -31,15 +31,16 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
-    public async Task upload_does_not_create_bucket_when_auto_create_disabled()
+    public async Task upload_does_not_create_a_missing_bucket()
     {
+        // The data plane never auto-creates a missing top-level container; it only writes the object.
         _s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
 
-        var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
+        var sut = _CreateSut();
 
         using var stream = new MemoryStream("hello"u8.ToArray());
-        await sut.UploadAsync(["bucket"], "file.txt", stream);
+        await sut.UploadAsync(new BlobLocation("bucket", "file.txt"), stream);
 
         await _s3.DidNotReceiveWithAnyArgs().PutBucketAsync(default(PutBucketRequest)!, default);
         await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, default);
@@ -52,13 +53,13 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         _s3.PutObjectAsync(Arg.Do<PutObjectRequest>(r => captured = r), Arg.Any<CancellationToken>())
             .Returns(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
 
-        var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
+        var sut = _CreateSut();
 
         using var stream = new MemoryStream("hi"u8.ToArray());
-        await sut.UploadAsync(["My-Bucket", "Reports"], "Q1.pdf", stream);
+        await sut.UploadAsync(new BlobLocation("My-Bucket", "Reports", "Q1.pdf"), stream);
 
-        // Two-tier naming: the first segment (bucket) is lowercased by NormalizeContainerName; the sub-path and
-        // blob name are preserved because AwsBlobNamingNormalizer.NormalizeBlobName is validate-only.
+        // Two-tier naming: the container is lowercased by NormalizeContainerName; the sub-path and blob name are
+        // preserved because AwsBlobNamingNormalizer.NormalizeBlobName is validate-only.
         captured.Should().NotBeNull();
         captured!.BucketName.Should().Be("my-bucket");
         captured.Key.Should().Be("Reports/Q1.pdf");
@@ -79,17 +80,17 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                     : Task.FromResult(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
             });
 
-        var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
+        var sut = _CreateSut();
 
         var blobs = Enumerable
             .Range(0, 50)
             .Select(i => new BlobUploadRequest(
-                new MemoryStream("x"u8.ToArray()),
-                $"{(i % 2 == 0 ? "fail" : "ok")}-{i:000}.txt"
+                $"{(i % 2 == 0 ? "fail" : "ok")}-{i:000}.txt",
+                new MemoryStream("x"u8.ToArray())
             ))
             .ToList();
 
-        var results = await sut.BulkUploadAsync(["bucket"], blobs);
+        var results = await sut.BulkUploadAsync("bucket", blobs);
 
         results.Should().HaveCount(blobs.Count);
 
@@ -98,13 +99,16 @@ public sealed class AwsBlobStorageEngineTests : TestBase
             var expectedFailure = i % 2 == 0;
 
             results[i]
-                .IsFailure.Should()
-                .Be(expectedFailure, "result at index {0} must describe blobs[{0}] ({1})", i, blobs[i].FileName);
+                .Result.IsFailure.Should()
+                .Be(expectedFailure, "result at index {0} must describe blobs[{0}] ({1})", i, blobs[i].Path);
+
+            // Every result correlates to its own blob by identity (the new contract), not merely by position.
+            results[i].Location.Path.Should().Be(blobs[i].Path);
 
             if (expectedFailure)
             {
                 // The carried error must be the one raised for *this* blob, proving slot alignment.
-                results[i].Error.Message.Should().Be(blobs[i].FileName);
+                results[i].Result.Error.Message.Should().Be(blobs[i].Path);
             }
         }
     }
@@ -178,9 +182,9 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                 );
             });
 
-        var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
+        var sut = _CreateSut();
 
-        var deleted = await sut.DeleteAllAsync(["bucket"]);
+        var deleted = await sut.DeleteAllAsync(new BlobQuery("bucket"));
 
         // 3 deleted on the first pass + 2 deleted on the retry. The retry deletions must be included in the
         // returned total — the contract returns the number actually deleted, not just the first-pass successes.
@@ -198,7 +202,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.ExistsAsync(["missing"], "file.txt")).Should().BeFalse();
+        (await sut.ExistsAsync(new BlobLocation("missing", "file.txt"))).Should().BeFalse();
     }
 
     [Fact]
@@ -209,7 +213,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.GetBlobInfoAsync(["missing"], "file.txt")).Should().BeNull();
+        (await sut.GetBlobInfoAsync(new BlobLocation("missing", "file.txt"))).Should().BeNull();
     }
 
     [Fact]
@@ -220,91 +224,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        (await sut.OpenReadStreamAsync(["missing"], "file.txt")).Should().BeNull();
-    }
-
-    [Fact]
-    public async Task create_container_ensures_bucket_at_most_once()
-    {
-        _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>()).Returns(new PutBucketResponse());
-
-        var sut = _CreateSut();
-
-        await sut.CreateContainerAsync(["bucket"]);
-        var callsAfterFirst = _s3.ReceivedCalls().Count();
-
-        await sut.CreateContainerAsync(["bucket"]);
-
-        // The second call is served from the per-instance cache and issues no further S3 calls.
-        _s3.ReceivedCalls().Count().Should().Be(callsAfterFirst);
-    }
-
-    [Fact]
-    public async Task concurrent_create_container_ensures_bucket_at_most_once()
-    {
-        _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>()).Returns(new PutBucketResponse());
-        var sut = _CreateSut();
-
-        // 20 concurrent first-time ensures of the same bucket.
-        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => sut.CreateContainerAsync(["bucket"]).AsTask()));
-        var concurrentCalls = _s3.ReceivedCalls().Count();
-
-        // A single ensure on a fresh instance issues the same S3 calls; concurrency must not multiply them.
-        var fresh = Substitute.For<IAmazonS3>();
-        fresh
-            .PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new PutBucketResponse());
-        var freshSut = new AwsBlobStorage(
-            fresh,
-            new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
-            new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions()),
-            new AwsBlobNamingNormalizer()
-        );
-        await freshSut.CreateContainerAsync(["bucket"]);
-
-        concurrentCalls.Should().Be(fresh.ReceivedCalls().Count());
-    }
-
-    [Fact]
-    public async Task create_container_is_idempotent_when_bucket_already_owned()
-    {
-        _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new AmazonS3Exception("already owned") { ErrorCode = "BucketAlreadyOwnedByYou" });
-
-        var sut = _CreateSut();
-
-        var act = async () => await sut.CreateContainerAsync(["bucket"]);
-
-        await act.Should().NotThrowAsync();
-    }
-
-    [Fact]
-    public async Task bucket_create_failure_is_not_cached()
-    {
-        var calls = 0;
-        _s3.PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                calls++;
-
-                return calls == 1
-                    ? Task.FromException<PutBucketResponse>(
-                        new AmazonS3Exception("transient") { StatusCode = HttpStatusCode.ServiceUnavailable }
-                    )
-                    : Task.FromResult(new PutBucketResponse());
-            });
-
-        var sut = _CreateSut();
-
-        // First ensure fails; the failure must not be cached.
-        var firstAttempt = async () => await sut.CreateContainerAsync(["bucket"]);
-        await firstAttempt.Should().ThrowAsync<AmazonS3Exception>();
-
-        // Retry re-attempts the create rather than serving a poisoned cache entry.
-        await sut.CreateContainerAsync(["bucket"]);
-
-        calls.Should().Be(2);
+        (await sut.OpenReadStreamAsync(new BlobLocation("missing", "file.txt"))).Should().BeNull();
     }
 
     [Fact]
@@ -312,7 +232,8 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     {
         var sut = _CreateSut();
 
-        var act = async () => await sut.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.Zero);
+        var act = async () =>
+            await sut.GetPresignedDownloadUrlAsync(new BlobLocation("bucket", "file.txt"), TimeSpan.Zero);
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
@@ -330,7 +251,10 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        var url = await sut.GetPresignedDownloadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(15));
+        var url = await sut.GetPresignedDownloadUrlAsync(
+            new BlobLocation("bucket", "file.txt"),
+            TimeSpan.FromMinutes(15)
+        );
 
         url.Should().Be(new Uri("https://example.com/signed-get"));
         await _s3.Received(1)
@@ -353,7 +277,10 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut();
 
-        var url = await sut.GetPresignedUploadUrlAsync(["bucket"], "file.txt", TimeSpan.FromMinutes(15));
+        var url = await sut.GetPresignedUploadUrlAsync(
+            new BlobLocation("bucket", "file.txt"),
+            TimeSpan.FromMinutes(15)
+        );
 
         url.Should().Be(new Uri("https://example.com/signed-put"));
         await _s3.Received(1)

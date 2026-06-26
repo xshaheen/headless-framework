@@ -2,6 +2,7 @@
 
 using Amazon.Runtime;
 using Amazon.S3;
+using Amazon.S3.Model;
 using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Aws;
@@ -11,63 +12,42 @@ using Microsoft.Extensions.Options;
 namespace Tests;
 
 /// <summary>
-/// Cross-provider conformance run against a real Cloudflare R2 account. There is no R2 emulator, so this suite
-/// is credentials-gated: when the R2_* environment variables are absent (local runs, forks), every scenario
-/// skips instead of failing. The configured token must allow bucket creation for the full suite to run.
+/// Cross-provider conformance run against a real Cloudflare R2 account. There is no R2 emulator, so this suite is
+/// credentials-gated: when the R2_* environment variables are absent (local runs, forks), every scenario that touches
+/// the storage skips instead of failing. The configured token must allow bucket creation for the full suite to run.
 /// </summary>
+/// <remarks>
+/// R2 deliberately exposes no <see cref="IBlobContainerManager"/> capability (its object-scoped tokens cannot manage
+/// buckets), so <see cref="BlobStorageTestsBase.SupportsContainerManagement"/> is <see langword="false"/> and
+/// <see cref="BlobStorageTestsBase.GetContainerManager"/> returns <see langword="null"/>. Conformance buckets are
+/// provisioned out of band by this leaf (raw <c>PutBucket</c>), mirroring how R2 buckets are created in production.
+/// </remarks>
 public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
 {
+    // R2 has no bucket-lifecycle capability; the data plane never auto-creates a bucket and no manager is registered.
+    protected override bool SupportsContainerManagement => false;
+
+    // Mixed-case container that the R2 normalizer lowercases onto ContainerName's backing bucket ("storage").
+    protected override string NormalizationSensitiveContainer => "STORAGE";
+
     protected override IBlobStorage GetStorage()
     {
-        var accountId = Environment.GetEnvironmentVariable("R2_ACCOUNT_ID");
-        var accessKey = Environment.GetEnvironmentVariable("R2_ACCESS_KEY_ID");
-        var secretKey = Environment.GetEnvironmentVariable("R2_SECRET_ACCESS_KEY");
+        var (accountId, accessKey, secretKey) = _RequireR2Credentials();
 
-        Assert.SkipWhen(
-            string.IsNullOrWhiteSpace(accountId)
-                || string.IsNullOrWhiteSpace(accessKey)
-                || string.IsNullOrWhiteSpace(secretKey),
-            "R2 credentials are not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)."
-        );
-
-        // Build the client through the same factory the production setup uses, so the conformance suite can
-        // never drift from the real R2 client configuration (the whole point of the SDK-bump gate).
-#pragma warning disable CA2000 // Disposed by AwsBlobStorage / the test host.
-        var client = R2ClientFactory.Create(
-            new R2BlobStorageOptions
-            {
-                AccountId = accountId!,
-                AccessKeyId = accessKey!,
-                SecretAccessKey = secretKey!,
-            }
-        );
+#pragma warning disable CA2000 // Disposed by AwsBlobStorage on its own DisposeAsync.
+        var client = _CreateR2Client(accountId, accessKey, secretKey);
 #pragma warning restore CA2000
 
-        // Conformance exercises the full lifecycle, so it needs bucket creation; the test token must allow it.
-        var options = new OptionsWrapper<AwsBlobStorageOptions>(
-            new AwsBlobStorageOptions
-            {
-                CannedAcl = null,
-                UseChunkEncoding = false,
-                DisablePayloadSigning = true,
-                AutoCreateContainer = true,
-            }
-        );
-
-        return new AwsBlobStorage(
-            client,
-            new MimeTypeProvider(),
-            new Clock(TimeProvider.System),
-            options,
-            new R2BlobNamingNormalizer()
-        );
+        return _CreateR2Storage(client);
     }
+
+    #region Provider-specific scenarios
 
     [Fact]
     public async Task presigned_download_url_targets_the_r2_endpoint()
     {
-        // Presigning is a local SigV4 operation needing no real credentials or network, so this always runs
-        // (even without R2 creds) and keeps the module from reporting zero tests.
+        // Presigning is a local SigV4 operation needing no real credentials or network, so this always runs (even
+        // without R2 creds) and keeps the module from reporting zero tests.
         var config = new AmazonS3Config
         {
             ServiceURL = "https://testacc.r2.cloudflarestorage.com",
@@ -79,20 +59,16 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var client = new AmazonS3Client(new BasicAWSCredentials("ak", "sk"), config);
 #pragma warning restore CA2000
 
-        var options = new OptionsWrapper<AwsBlobStorageOptions>(
-            new AwsBlobStorageOptions { AutoCreateContainer = false }
-        );
         await using var storage = new AwsBlobStorage(
             client,
             new MimeTypeProvider(),
             new Clock(TimeProvider.System),
-            options,
+            Options.Create(new AwsBlobStorageOptions()),
             new R2BlobNamingNormalizer()
         );
 
         var url = await ((IPresignedUrlBlobStorage)storage).GetPresignedDownloadUrlAsync(
-            ["bucket"],
-            "file.txt",
+            new BlobLocation("bucket", "file.txt"),
             TimeSpan.FromMinutes(5)
         );
 
@@ -103,21 +79,26 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     [Fact]
     public async Task can_round_trip_via_presigned_download_url()
     {
-        var storage = (IPresignedUrlBlobStorage)GetStorage();
-        var container = new[] { $"presign-{Guid.NewGuid():N}" };
+        var (accountId, accessKey, secretKey) = _RequireR2Credentials();
+
+#pragma warning disable CA2000 // Disposed by the storage.
+        var client = _CreateR2Client(accountId, accessKey, secretKey);
+#pragma warning restore CA2000
+        await using var storage = _CreateR2Storage(client);
+        var presigned = (IPresignedUrlBlobStorage)storage;
+
+        var container = $"presign-{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "file.txt");
         var content = "presigned-content"u8.ToArray();
+
+        await _EnsureBucketAsync(client, container, AbortToken);
 
         using (var stream = new MemoryStream(content))
         {
-            await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
+            await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
         }
 
-        var url = await storage.GetPresignedDownloadUrlAsync(
-            container,
-            "file.txt",
-            TimeSpan.FromMinutes(5),
-            AbortToken
-        );
+        var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
 
         using var http = new HttpClient();
         var downloaded = await http.GetByteArrayAsync(url, AbortToken);
@@ -128,20 +109,23 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     [Fact]
     public async Task can_round_trip_via_presigned_upload_url()
     {
-        var storage = (IPresignedUrlBlobStorage)GetStorage();
-        var container = new[] { $"presign-{Guid.NewGuid():N}" };
+        var (accountId, accessKey, secretKey) = _RequireR2Credentials();
+
+#pragma warning disable CA2000 // Disposed by the storage.
+        var client = _CreateR2Client(accountId, accessKey, secretKey);
+#pragma warning restore CA2000
+        await using var storage = _CreateR2Storage(client);
+        var presigned = (IPresignedUrlBlobStorage)storage;
+
+        var container = $"presign-{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "file.txt");
         var content = "presigned-upload"u8.ToArray();
 
-        // The presigned PUT goes straight to R2 and does not create the bucket; create it first (the
-        // conformance token allows bucket creation).
-        await ((IBlobStorage)storage).CreateContainerAsync(container, AbortToken);
+        // The presigned PUT goes straight to R2 and does not create the bucket; provision it first (the conformance
+        // token must allow bucket creation).
+        await _EnsureBucketAsync(client, container, AbortToken);
 
-        var uploadUrl = await storage.GetPresignedUploadUrlAsync(
-            container,
-            "file.txt",
-            TimeSpan.FromMinutes(5),
-            AbortToken
-        );
+        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
 
         using (var http = new HttpClient())
         using (var body = new ByteArrayContent(content))
@@ -150,7 +134,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
             response.EnsureSuccessStatusCode();
         }
 
-        var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
+        await using var readBack = await storage.OpenReadStreamAsync(location, AbortToken);
         readBack.Should().NotBeNull();
 
         using var buffer = new MemoryStream();
@@ -161,20 +145,25 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     [Fact]
     public async Task presigned_download_url_is_denied_after_expiry()
     {
-        var storage = (IPresignedUrlBlobStorage)GetStorage();
-        var container = new[] { $"presign-{Guid.NewGuid():N}" };
+        var (accountId, accessKey, secretKey) = _RequireR2Credentials();
+
+#pragma warning disable CA2000 // Disposed by the storage.
+        var client = _CreateR2Client(accountId, accessKey, secretKey);
+#pragma warning restore CA2000
+        await using var storage = _CreateR2Storage(client);
+        var presigned = (IPresignedUrlBlobStorage)storage;
+
+        var container = $"presign-{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "file.txt");
+
+        await _EnsureBucketAsync(client, container, AbortToken);
 
         using (var stream = new MemoryStream("expiring"u8.ToArray()))
         {
-            await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
+            await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
         }
 
-        var url = await storage.GetPresignedDownloadUrlAsync(
-            container,
-            "file.txt",
-            TimeSpan.FromSeconds(2),
-            AbortToken
-        );
+        var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromSeconds(2), AbortToken);
 
         await Task.Delay(TimeSpan.FromSeconds(4), AbortToken);
 
@@ -183,6 +172,10 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
 
         response.IsSuccessStatusCode.Should().BeFalse();
     }
+
+    #endregion
+
+    #region List / Round-trip
 
     [Fact]
     public override Task can_get_empty_file_list_on_missing_directory() =>
@@ -195,10 +188,6 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     public override Task can_get_file_list_for_single_file() => base.can_get_file_list_for_single_file();
 
     [Fact]
-    public override Task can_get_paged_file_list_for_single_folder() =>
-        base.can_get_paged_file_list_for_single_folder();
-
-    [Fact]
     public override Task can_get_file_info() => base.can_get_file_info();
 
     [Fact]
@@ -208,10 +197,35 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     public override Task can_manage_files() => base.can_manage_files();
 
     [Fact]
-    public override Task can_rename_files() => base.can_rename_files();
+    public override Task can_move_files() => base.can_move_files();
+
+    [Fact]
+    public override Task can_round_trip_seekable_stream() => base.can_round_trip_seekable_stream();
+
+    [Fact]
+    public override Task will_reset_stream_position() => base.will_reset_stream_position();
+
+    [Fact]
+    public override Task can_save_over_existing_stored_content() => base.can_save_over_existing_stored_content();
 
     [Fact]
     public override Task can_concurrently_manage_files() => base.can_concurrently_manage_files();
+
+    #endregion
+
+    #region Token paging
+
+    [Fact]
+    public override Task token_paging_round_trips_across_serialization() =>
+        base.token_paging_round_trips_across_serialization();
+
+    #endregion
+
+    #region Delete by prefix / glob
+
+    [Fact]
+    public override Task delete_by_prefix_removes_only_matching_blobs() =>
+        base.delete_by_prefix_removes_only_matching_blobs();
 
     [Fact]
     public override Task can_delete_entire_folder() => base.can_delete_entire_folder();
@@ -233,14 +247,57 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     public override Task can_delete_specific_files_in_nested_folder() =>
         base.can_delete_specific_files_in_nested_folder();
 
-    [Fact]
-    public override Task can_round_trip_seekable_stream() => base.can_round_trip_seekable_stream();
+    #endregion
+
+    #region Metadata / Move with metadata
 
     [Fact]
-    public override Task will_reset_stream_position() => base.will_reset_stream_position();
+    public override Task metadata_round_trips_and_sidecar_is_hidden() =>
+        base.metadata_round_trips_and_sidecar_is_hidden();
 
     [Fact]
-    public override Task can_save_over_existing_stored_content() => base.can_save_over_existing_stored_content();
+    public override Task move_relocates_blob_and_metadata() => base.move_relocates_blob_and_metadata();
+
+    #endregion
+
+    #region Normalization round-trip
+
+    [Fact]
+    public override Task normalization_round_trips_through_bulk_and_info() =>
+        base.normalization_round_trips_through_bulk_and_info();
+
+    #endregion
+
+    #region Bulk operations
+
+    [Fact]
+    public override Task bulk_upload_reports_per_blob_results() => base.bulk_upload_reports_per_blob_results();
+
+    [Fact]
+    public override Task bulk_upload_failure_does_not_abort_batch() => base.bulk_upload_failure_does_not_abort_batch();
+
+    [Fact]
+    public override Task bulk_delete_reports_per_entry_results() => base.bulk_delete_reports_per_entry_results();
+
+    [Fact]
+    public override Task bulk_delete_reports_each_blob_by_identity() =>
+        base.bulk_delete_reports_each_blob_by_identity();
+
+    #endregion
+
+    #region Container management capability
+
+    [Fact]
+    public override Task container_management_capability_matches_support_flag() =>
+        base.container_management_capability_matches_support_flag();
+
+    #endregion
+
+    #region Empty / missing container (no throw)
+
+    [Fact]
+    public override Task can_call_delete_all_async_with_empty_container() =>
+        base.can_call_delete_all_async_with_empty_container();
 
     [Fact]
     public override Task can_call_delete_with_empty_container() => base.can_call_delete_with_empty_container();
@@ -250,14 +307,10 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         base.can_call_bulk_Delete_with_empty_container();
 
     [Fact]
-    public override Task can_call_delete_all_async_with_empty_container() =>
-        base.can_call_delete_all_async_with_empty_container();
+    public override Task can_call_move_with_empty_container() => base.can_call_move_with_empty_container();
 
     [Fact]
     public override Task can_call_copy_with_empty_container() => base.can_call_copy_with_empty_container();
-
-    [Fact]
-    public override Task can_call_rename_with_empty_container() => base.can_call_rename_with_empty_container();
 
     [Fact]
     public override Task can_call_exists_with_empty_container() => base.can_call_exists_with_empty_container();
@@ -270,46 +323,120 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         base.can_call_get_blob_info_with_empty_container();
 
     [Fact]
-    public override Task can_call_get_paged_list_with_empty_container() =>
-        base.can_call_get_paged_list_with_empty_container();
+    public override Task can_call_list_with_empty_container() => base.can_call_list_with_empty_container();
+
+    #endregion
+
+    #region Path traversal & construction security
 
     [Theory]
     [InlineData("../../../etc/passwd")]
     [InlineData("..\\..\\..\\etc\\passwd")]
     [InlineData("subdir/../../../etc/passwd")]
-    public override Task should_throw_when_blob_name_has_path_traversal(string blobName) =>
-        base.should_throw_when_blob_name_has_path_traversal(blobName);
+    public override Task blob_location_with_traversal_path_throws(string path) =>
+        base.blob_location_with_traversal_path_throws(path);
 
     [Fact]
-    public override Task should_throw_when_container_has_path_traversal() =>
-        base.should_throw_when_container_has_path_traversal();
+    public override Task blob_location_with_traversal_container_throws() =>
+        base.blob_location_with_traversal_container_throws();
 
     [Fact]
-    public override Task should_throw_when_upload_blob_has_path_traversal() =>
-        base.should_throw_when_upload_blob_has_path_traversal();
-
-    [Fact]
-    public override Task should_throw_when_download_blob_has_path_traversal() =>
-        base.should_throw_when_download_blob_has_path_traversal();
-
-    [Fact]
-    public override Task should_throw_when_delete_blob_has_path_traversal() =>
-        base.should_throw_when_delete_blob_has_path_traversal();
-
-    [Fact]
-    public override Task should_throw_when_rename_source_blob_has_path_traversal() =>
-        base.should_throw_when_rename_source_blob_has_path_traversal();
-
-    [Fact]
-    public override Task should_throw_when_copy_source_blob_has_path_traversal() =>
-        base.should_throw_when_copy_source_blob_has_path_traversal();
-
-    [Fact]
-    public override Task should_throw_when_blob_name_has_control_characters() =>
-        base.should_throw_when_blob_name_has_control_characters();
+    public override Task blob_location_with_control_characters_throws() =>
+        base.blob_location_with_control_characters_throws();
 
     [Theory]
     [InlineData("/etc/passwd")]
-    public override Task should_throw_when_blob_name_is_absolute_path(string blobName) =>
-        base.should_throw_when_blob_name_is_absolute_path(blobName);
+    [InlineData("\\windows\\system32")]
+    public override Task blob_location_with_absolute_path_throws(string path) =>
+        base.blob_location_with_absolute_path_throws(path);
+
+    [Fact]
+    public override Task blob_location_with_reserved_sidecar_suffix_throws() =>
+        base.blob_location_with_reserved_sidecar_suffix_throws();
+
+    [Theory]
+    [InlineData("../secret/")]
+    [InlineData("..\\secret\\")]
+    [InlineData("a/../../b")]
+    public override Task blob_query_with_traversal_prefix_throws(string prefix) =>
+        base.blob_query_with_traversal_prefix_throws(prefix);
+
+    [Fact]
+    public override Task blob_query_with_empty_container_throws() => base.blob_query_with_empty_container_throws();
+
+    [Fact]
+    public override Task bulk_delete_with_traversal_path_reports_failure() =>
+        base.bulk_delete_with_traversal_path_reports_failure();
+
+    #endregion
+
+    #region Helpers
+
+    private static (string accountId, string accessKey, string secretKey) _RequireR2Credentials()
+    {
+        var accountId = Environment.GetEnvironmentVariable("R2_ACCOUNT_ID");
+        var accessKey = Environment.GetEnvironmentVariable("R2_ACCESS_KEY_ID");
+        var secretKey = Environment.GetEnvironmentVariable("R2_SECRET_ACCESS_KEY");
+
+        Assert.SkipWhen(
+            string.IsNullOrWhiteSpace(accountId)
+                || string.IsNullOrWhiteSpace(accessKey)
+                || string.IsNullOrWhiteSpace(secretKey),
+            "R2 credentials are not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)."
+        );
+
+        return (accountId!, accessKey!, secretKey!);
+    }
+
+    // Build the client through the same factory the production setup uses, so the conformance suite can never drift
+    // from the real R2 client configuration.
+    private static IAmazonS3 _CreateR2Client(string accountId, string accessKey, string secretKey) =>
+        R2ClientFactory.Create(
+            new R2BlobStorageOptions
+            {
+                AccountId = accountId,
+                AccessKeyId = accessKey,
+                SecretAccessKey = secretKey,
+            }
+        );
+
+    private static AwsBlobStorage _CreateR2Storage(IAmazonS3 client) =>
+        new(
+            client,
+            new MimeTypeProvider(),
+            new Clock(TimeProvider.System),
+            // R2-forced behavior: no ACLs, no chunked encoding, payload signing disabled.
+            Options.Create(
+                new AwsBlobStorageOptions
+                {
+                    CannedAcl = null,
+                    UseChunkEncoding = false,
+                    DisablePayloadSigning = true,
+                }
+            ),
+            new R2BlobNamingNormalizer()
+        );
+
+    // R2 exposes no IBlobContainerManager; conformance buckets are provisioned out of band by the leaf. The bucket
+    // name must match the resolver's normalization so a later upload/presign targets the same bucket.
+    private static async Task _EnsureBucketAsync(
+        IAmazonS3 client,
+        string container,
+        CancellationToken cancellationToken
+    )
+    {
+        var bucket = new R2BlobNamingNormalizer().NormalizeContainerName(container);
+
+        try
+        {
+            await client.PutBucketAsync(new PutBucketRequest { BucketName = bucket }, cancellationToken);
+        }
+        catch (AmazonS3Exception e)
+            when (string.Equals(e.ErrorCode, "BucketAlreadyOwnedByYou", StringComparison.Ordinal))
+        {
+            // Already provisioned.
+        }
+    }
+
+    #endregion
 }

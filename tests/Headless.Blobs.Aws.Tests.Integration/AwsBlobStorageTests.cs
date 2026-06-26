@@ -13,7 +13,11 @@ namespace Tests;
 [Collection<AwsBlobStorageFixture>]
 public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobStorageTestsBase
 {
-    protected override IBlobStorage GetStorage()
+    // AWS S3 supports container (bucket) lifecycle, so the conformance suite resolves the dedicated
+    // IBlobContainerManager capability (constructed directly, never cast from the storage instance).
+    private AwsBlobContainerManager? _manager;
+
+    private AmazonS3Client _CreateClient()
     {
         var s3Config = new AmazonS3Config
         {
@@ -23,56 +27,61 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         };
 
         var awsCredentials = new BasicAWSCredentials("xxx", "xxx");
-#pragma warning disable CA2000 // Dispose objects before losing scope
-        var amazonS3Client = new AmazonS3Client(awsCredentials, s3Config);
-#pragma warning restore CA2000
 
-        var mimeTypeProvider = new MimeTypeProvider();
-        var clock = new Clock(TimeProvider.System);
-
-        var options = new AwsBlobStorageOptions();
-        var optionsWrapper = new OptionsWrapper<AwsBlobStorageOptions>(options);
-
-        return new AwsBlobStorage(
-            amazonS3Client,
-            mimeTypeProvider,
-            clock,
-            optionsWrapper,
-            new AwsBlobNamingNormalizer()
-        );
+        return new AmazonS3Client(awsCredentials, s3Config);
     }
 
-    [Fact]
-    public async Task upload_throws_when_auto_create_disabled_and_bucket_missing()
+    protected override IBlobStorage GetStorage()
     {
-        var s3Config = new AmazonS3Config
-        {
-            RegionEndpoint = RegionEndpoint.USEast1,
-            ServiceURL = fixture.Container.GetConnectionString(),
-            ForcePathStyle = true,
-        };
-
-        var awsCredentials = new BasicAWSCredentials("xxx", "xxx");
-#pragma warning disable CA2000 // Dispose objects before losing scope
-        var amazonS3Client = new AmazonS3Client(awsCredentials, s3Config);
+#pragma warning disable CA2000 // Disposed by AwsBlobStorage on its own DisposeAsync.
+        var amazonS3Client = _CreateClient();
 #pragma warning restore CA2000
 
-        var options = new OptionsWrapper<AwsBlobStorageOptions>(
-            new AwsBlobStorageOptions { AutoCreateContainer = false }
-        );
+        var options = new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions());
 
-        await using var storage = new AwsBlobStorage(
+        return new AwsBlobStorage(
             amazonS3Client,
             new MimeTypeProvider(),
             new Clock(TimeProvider.System),
             options,
             new AwsBlobNamingNormalizer()
         );
+    }
 
-        var missingBucket = $"missing-{Guid.NewGuid():N}";
+    // Container management is a separately-resolved capability (never a cast from IBlobStorage). The fixture owns the
+    // LocalStack endpoint, so the manager is constructed from a per-test S3 client + the AWS normalizer and cached.
+    protected override IBlobContainerManager GetContainerManager()
+    {
+#pragma warning disable CA2000 // Owned + disposed by the AwsBlobContainerManager, released in DisposeAsyncCore.
+        return _manager ??= new AwsBlobContainerManager(_CreateClient(), new AwsBlobNamingNormalizer());
+#pragma warning restore CA2000
+    }
+
+    // Mixed-case container that the AWS normalizer lowercases onto ContainerName's backing bucket ("storage"), so the
+    // normalization round-trip proves upload, bulk-delete, and info all route through the same resolve seam (H1/H2).
+    protected override string NormalizationSensitiveContainer => "STORAGE";
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        _manager?.Dispose();
+        _manager = null;
+
+        await base.DisposeAsyncCore();
+    }
+
+    #region Provider-specific scenarios
+
+    [Fact]
+    public async Task upload_throws_when_bucket_missing()
+    {
+        // The data plane never auto-creates a missing bucket (AutoCreateContainer is a retired no-op); a missing
+        // top-level container surfaces as an S3 error rather than silently creating the bucket.
+        await using var storage = GetStorage();
+
+        var location = new BlobLocation($"missing-{Guid.NewGuid():N}", "file.txt");
         using var stream = new MemoryStream("hello"u8.ToArray());
 
-        var act = async () => await storage.UploadAsync([missingBucket], "file.txt", stream);
+        var act = async () => await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
 
         await act.Should().ThrowAsync<AmazonS3Exception>();
     }
@@ -80,21 +89,22 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
     [Fact]
     public async Task can_round_trip_via_presigned_download_url()
     {
-        var storage = (IPresignedUrlBlobStorage)GetStorage();
-        var container = new[] { $"presign-{Guid.NewGuid():N}" };
+        await using var storage = GetStorage();
+        var presigned = (IPresignedUrlBlobStorage)storage;
+
+        var container = $"presign-{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "file.txt");
         var content = "presigned-content"u8.ToArray();
+
+        // The bucket must exist before the upload; ensure it through the container-management capability.
+        await GetContainerManager().EnsureContainerAsync(container, AbortToken);
 
         using (var stream = new MemoryStream(content))
         {
-            await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
+            await storage.UploadAsync(location, stream, cancellationToken: AbortToken);
         }
 
-        var url = await storage.GetPresignedDownloadUrlAsync(
-            container,
-            "file.txt",
-            TimeSpan.FromMinutes(5),
-            AbortToken
-        );
+        var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
 
         using var http = new HttpClient();
         var downloaded = await http.GetByteArrayAsync(url, AbortToken);
@@ -105,19 +115,17 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
     [Fact]
     public async Task can_round_trip_via_presigned_upload_url()
     {
-        var storage = (IPresignedUrlBlobStorage)GetStorage();
-        var container = new[] { $"presign-{Guid.NewGuid():N}" };
+        await using var storage = GetStorage();
+        var presigned = (IPresignedUrlBlobStorage)storage;
+
+        var container = $"presign-{Guid.NewGuid():N}";
+        var location = new BlobLocation(container, "file.txt");
         var content = "presigned-upload"u8.ToArray();
 
-        // The presigned PUT goes straight to S3 and does not create the bucket; create it first.
-        await ((IBlobStorage)storage).CreateContainerAsync(container, AbortToken);
+        // The presigned PUT goes straight to S3 and does not create the bucket; ensure it first.
+        await GetContainerManager().EnsureContainerAsync(container, AbortToken);
 
-        var uploadUrl = await storage.GetPresignedUploadUrlAsync(
-            container,
-            "file.txt",
-            TimeSpan.FromMinutes(5),
-            AbortToken
-        );
+        var uploadUrl = await presigned.GetPresignedUploadUrlAsync(location, TimeSpan.FromMinutes(5), AbortToken);
 
         using (var http = new HttpClient())
         using (var body = new ByteArrayContent(content))
@@ -126,7 +134,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
             response.EnsureSuccessStatusCode();
         }
 
-        var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
+        await using var readBack = await storage.OpenReadStreamAsync(location, AbortToken);
         readBack.Should().NotBeNull();
 
         using var buffer = new MemoryStream();
@@ -134,249 +142,200 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         buffer.ToArray().Should().Equal(content);
     }
 
-    [Fact]
-    public override Task can_get_empty_file_list_on_missing_directory()
-    {
-        return base.can_get_empty_file_list_on_missing_directory();
-    }
+    #endregion
+
+    #region List / Round-trip
 
     [Fact]
-    public override Task can_get_file_list_for_single_folder()
-    {
-        return base.can_get_file_list_for_single_folder();
-    }
+    public override Task can_get_empty_file_list_on_missing_directory() =>
+        base.can_get_empty_file_list_on_missing_directory();
 
     [Fact]
-    public override Task can_get_file_list_for_single_file()
-    {
-        return base.can_get_file_list_for_single_file();
-    }
+    public override Task can_get_file_list_for_single_folder() => base.can_get_file_list_for_single_folder();
 
     [Fact]
-    public override Task can_get_paged_file_list_for_single_folder()
-    {
-        return base.can_get_paged_file_list_for_single_folder();
-    }
+    public override Task can_get_file_list_for_single_file() => base.can_get_file_list_for_single_file();
 
     [Fact]
-    public override Task can_get_file_info()
-    {
-        return base.can_get_file_info();
-    }
+    public override Task can_get_file_info() => base.can_get_file_info();
 
     [Fact]
-    public override Task can_get_non_existent_file_info()
-    {
-        return base.can_get_non_existent_file_info();
-    }
+    public override Task can_get_non_existent_file_info() => base.can_get_non_existent_file_info();
 
     [Fact]
-    public override Task can_manage_files()
-    {
-        return base.can_manage_files();
-    }
+    public override Task can_manage_files() => base.can_manage_files();
 
     [Fact]
-    public override Task can_rename_files()
-    {
-        return base.can_rename_files();
-    }
+    public override Task can_move_files() => base.can_move_files();
 
     [Fact]
-    public override Task can_concurrently_manage_files()
-    {
-        return base.can_concurrently_manage_files();
-    }
+    public override Task can_round_trip_seekable_stream() => base.can_round_trip_seekable_stream();
 
     [Fact]
-    public override Task can_delete_entire_folder()
-    {
-        return base.can_delete_entire_folder();
-    }
+    public override Task will_reset_stream_position() => base.will_reset_stream_position();
 
     [Fact]
-    public override Task can_delete_entire_folder_with_wildcard()
-    {
-        return base.can_delete_entire_folder_with_wildcard();
-    }
+    public override Task can_save_over_existing_stored_content() => base.can_save_over_existing_stored_content();
 
     [Fact]
-    public override Task can_delete_folder_with_multi_folder_wildcards()
-    {
-        return base.can_delete_folder_with_multi_folder_wildcards();
-    }
+    public override Task can_concurrently_manage_files() => base.can_concurrently_manage_files();
+
+    #endregion
+
+    #region Token paging
 
     [Fact]
-    public override Task can_delete_specific_files()
-    {
-        return base.can_delete_specific_files();
-    }
+    public override Task token_paging_round_trips_across_serialization() =>
+        base.token_paging_round_trips_across_serialization();
+
+    #endregion
+
+    #region Delete by prefix / glob
 
     [Fact]
-    public override Task can_delete_nested_folder()
-    {
-        return base.can_delete_nested_folder();
-    }
+    public override Task delete_by_prefix_removes_only_matching_blobs() =>
+        base.delete_by_prefix_removes_only_matching_blobs();
 
     [Fact]
-    public override Task can_delete_specific_files_in_nested_folder()
-    {
-        return base.can_delete_specific_files_in_nested_folder();
-    }
+    public override Task can_delete_entire_folder() => base.can_delete_entire_folder();
 
     [Fact]
-    public override Task can_round_trip_seekable_stream()
-    {
-        return base.can_round_trip_seekable_stream();
-    }
+    public override Task can_delete_entire_folder_with_wildcard() => base.can_delete_entire_folder_with_wildcard();
 
     [Fact]
-    public override Task will_reset_stream_position()
-    {
-        return base.will_reset_stream_position();
-    }
+    public override Task can_delete_folder_with_multi_folder_wildcards() =>
+        base.can_delete_folder_with_multi_folder_wildcards();
 
     [Fact]
-    public override Task can_save_over_existing_stored_content()
-    {
-        return base.can_save_over_existing_stored_content();
-    }
+    public override Task can_delete_specific_files() => base.can_delete_specific_files();
 
     [Fact]
-    public override Task can_call_delete_with_empty_container()
-    {
-        return base.can_call_delete_with_empty_container();
-    }
+    public override Task can_delete_nested_folder() => base.can_delete_nested_folder();
 
     [Fact]
-    public override Task can_call_bulk_Delete_with_empty_container()
-    {
-        return base.can_call_bulk_Delete_with_empty_container();
-    }
+    public override Task can_delete_specific_files_in_nested_folder() =>
+        base.can_delete_specific_files_in_nested_folder();
+
+    #endregion
+
+    #region Metadata / Move with metadata
 
     [Fact]
-    public override Task can_call_delete_all_async_with_empty_container()
-    {
-        return base.can_call_delete_all_async_with_empty_container();
-    }
+    public override Task metadata_round_trips_and_sidecar_is_hidden() =>
+        base.metadata_round_trips_and_sidecar_is_hidden();
 
     [Fact]
-    public override Task can_call_copy_with_empty_container()
-    {
-        return base.can_call_copy_with_empty_container();
-    }
+    public override Task move_relocates_blob_and_metadata() => base.move_relocates_blob_and_metadata();
+
+    #endregion
+
+    #region Normalization round-trip
 
     [Fact]
-    public override Task can_call_rename_with_empty_container()
-    {
-        return base.can_call_rename_with_empty_container();
-    }
+    public override Task normalization_round_trips_through_bulk_and_info() =>
+        base.normalization_round_trips_through_bulk_and_info();
+
+    #endregion
+
+    #region Bulk operations
 
     [Fact]
-    public override Task can_call_exists_with_empty_container()
-    {
-        return base.can_call_exists_with_empty_container();
-    }
+    public override Task bulk_upload_reports_per_blob_results() => base.bulk_upload_reports_per_blob_results();
 
     [Fact]
-    public override Task can_call_download_with_empty_container()
-    {
-        return base.can_call_download_with_empty_container();
-    }
+    public override Task bulk_upload_failure_does_not_abort_batch() => base.bulk_upload_failure_does_not_abort_batch();
 
     [Fact]
-    public override Task can_call_get_blob_info_with_empty_container()
-    {
-        return base.can_call_get_blob_info_with_empty_container();
-    }
+    public override Task bulk_delete_reports_per_entry_results() => base.bulk_delete_reports_per_entry_results();
 
     [Fact]
-    public override Task can_call_get_paged_list_with_empty_container()
-    {
-        return base.can_call_get_paged_list_with_empty_container();
-    }
+    public override Task bulk_delete_reports_each_blob_by_identity() =>
+        base.bulk_delete_reports_each_blob_by_identity();
+
+    #endregion
+
+    #region Container management capability
 
     [Fact]
-    public override Task bulk_upload_reports_per_blob_results()
-    {
-        return base.bulk_upload_reports_per_blob_results();
-    }
+    public override Task container_management_capability_matches_support_flag() =>
+        base.container_management_capability_matches_support_flag();
+
+    #endregion
+
+    #region Empty / missing container (no throw)
 
     [Fact]
-    public override Task bulk_upload_aligns_results_to_input_order_under_failures()
-    {
-        return base.bulk_upload_aligns_results_to_input_order_under_failures();
-    }
+    public override Task can_call_delete_all_async_with_empty_container() =>
+        base.can_call_delete_all_async_with_empty_container();
 
     [Fact]
-    public override Task delete_all_with_empty_container_array_throws()
-    {
-        return base.delete_all_with_empty_container_array_throws();
-    }
+    public override Task can_call_delete_with_empty_container() => base.can_call_delete_with_empty_container();
 
-    // bulk_delete_reports_per_entry_results / bulk_delete_aligns_results_to_input_order are intentionally NOT wired
-    // here: S3 DeleteObjects is idempotent and reports success for already-absent keys, so it cannot honor the
-    // "not found -> Ok(false)" distinction those tests assert. See IBlobStorage.BulkDeleteAsync remarks.
+    [Fact]
+    public override Task can_call_bulk_Delete_with_empty_container() =>
+        base.can_call_bulk_Delete_with_empty_container();
 
-    #region Path Traversal Security Tests
+    [Fact]
+    public override Task can_call_move_with_empty_container() => base.can_call_move_with_empty_container();
+
+    [Fact]
+    public override Task can_call_copy_with_empty_container() => base.can_call_copy_with_empty_container();
+
+    [Fact]
+    public override Task can_call_exists_with_empty_container() => base.can_call_exists_with_empty_container();
+
+    [Fact]
+    public override Task can_call_download_with_empty_container() => base.can_call_download_with_empty_container();
+
+    [Fact]
+    public override Task can_call_get_blob_info_with_empty_container() =>
+        base.can_call_get_blob_info_with_empty_container();
+
+    [Fact]
+    public override Task can_call_list_with_empty_container() => base.can_call_list_with_empty_container();
+
+    #endregion
+
+    #region Path traversal & construction security
 
     [Theory]
     [InlineData("../../../etc/passwd")]
     [InlineData("..\\..\\..\\etc\\passwd")]
     [InlineData("subdir/../../../etc/passwd")]
-    public override Task should_throw_when_blob_name_has_path_traversal(string blobName)
-    {
-        return base.should_throw_when_blob_name_has_path_traversal(blobName);
-    }
+    public override Task blob_location_with_traversal_path_throws(string path) =>
+        base.blob_location_with_traversal_path_throws(path);
 
     [Fact]
-    public override Task should_throw_when_container_has_path_traversal()
-    {
-        return base.should_throw_when_container_has_path_traversal();
-    }
+    public override Task blob_location_with_traversal_container_throws() =>
+        base.blob_location_with_traversal_container_throws();
 
     [Fact]
-    public override Task should_throw_when_upload_blob_has_path_traversal()
-    {
-        return base.should_throw_when_upload_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_download_blob_has_path_traversal()
-    {
-        return base.should_throw_when_download_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_delete_blob_has_path_traversal()
-    {
-        return base.should_throw_when_delete_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_rename_source_blob_has_path_traversal()
-    {
-        return base.should_throw_when_rename_source_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_copy_source_blob_has_path_traversal()
-    {
-        return base.should_throw_when_copy_source_blob_has_path_traversal();
-    }
-
-    [Fact]
-    public override Task should_throw_when_blob_name_has_control_characters()
-    {
-        return base.should_throw_when_blob_name_has_control_characters();
-    }
+    public override Task blob_location_with_control_characters_throws() =>
+        base.blob_location_with_control_characters_throws();
 
     [Theory]
     [InlineData("/etc/passwd")]
-    public override Task should_throw_when_blob_name_is_absolute_path(string blobName)
-    {
-        return base.should_throw_when_blob_name_is_absolute_path(blobName);
-    }
+    [InlineData("\\windows\\system32")]
+    public override Task blob_location_with_absolute_path_throws(string path) =>
+        base.blob_location_with_absolute_path_throws(path);
+
+    [Fact]
+    public override Task blob_location_with_reserved_sidecar_suffix_throws() =>
+        base.blob_location_with_reserved_sidecar_suffix_throws();
+
+    [Theory]
+    [InlineData("../secret/")]
+    [InlineData("..\\secret\\")]
+    [InlineData("a/../../b")]
+    public override Task blob_query_with_traversal_prefix_throws(string prefix) =>
+        base.blob_query_with_traversal_prefix_throws(prefix);
+
+    [Fact]
+    public override Task blob_query_with_empty_container_throws() => base.blob_query_with_empty_container_throws();
+
+    [Fact]
+    public override Task bulk_delete_with_traversal_path_reports_failure() =>
+        base.bulk_delete_with_traversal_path_reports_failure();
 
     #endregion
 }
