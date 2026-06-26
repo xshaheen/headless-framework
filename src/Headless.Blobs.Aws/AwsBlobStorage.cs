@@ -681,46 +681,39 @@ public sealed class AwsBlobStorage(
     #region Presigned Urls
 
     /// <inheritdoc />
-    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedDownloadUrlAsync(
-        string[] container,
-        string blobName,
+        BlobLocation location,
         TimeSpan expiry,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(container, blobName, expiry, HttpVerb.GET, cancellationToken);
+        return _GetPresignedUrlAsync(location, expiry, HttpVerb.GET, cancellationToken);
     }
 
     /// <inheritdoc />
-    /// <exception cref="ArgumentException">Thrown when <paramref name="blobName"/> or <paramref name="container"/> fails validation.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="expiry"/> is not positive.</exception>
     public ValueTask<Uri> GetPresignedUploadUrlAsync(
-        string[] container,
-        string blobName,
+        BlobLocation location,
         TimeSpan expiry,
         CancellationToken cancellationToken = default
     )
     {
-        return _GetPresignedUrlAsync(container, blobName, expiry, HttpVerb.PUT, cancellationToken);
+        return _GetPresignedUrlAsync(location, expiry, HttpVerb.PUT, cancellationToken);
     }
 
     private async ValueTask<Uri> _GetPresignedUrlAsync(
-        string[] container,
-        string blobName,
+        BlobLocation location,
         TimeSpan expiry,
         HttpVerb verb,
         CancellationToken cancellationToken
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(expiry);
 
-        // The presigned capability still takes the legacy (container[], blobName) shape; route it through the same
-        // BlobLocation seam as the data plane so the bucket/key are validated and normalized identically.
-        var location = new BlobLocation(container[0], [.. container.Skip(1), blobName]);
+        // Route the validated location through the same BlobLocation seam as the data plane so the bucket/key are
+        // validated and normalized identically.
         var (bucket, key) = BlobLocationResolver.Resolve(location, normalizer);
 
         var request = new GetPreSignedUrlRequest
