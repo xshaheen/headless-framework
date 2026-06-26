@@ -19,7 +19,7 @@ A single application often needs several blob stores at once — images on one b
 
 - Each provider package contributes `Use{Provider}` extension members on `HeadlessBlobsSetupBuilder` (default) and `HeadlessBlobInstanceBuilder` (named). Named stores register as keyed `IBlobStorage` services, never touching the default (unkeyed) registration, so a named-only configuration leaves plain `IBlobStorage` unregistered.
 - Each store is fully isolated: its own named options, its own provider client, and its own `IBlobNamingNormalizer`. Ambient services (`IMimeTypeProvider`, `IClock`) are shared across stores.
-- Presigned support is a per-store capability. For named stores, AWS, Azure, and CloudflareR2 also register a keyed `IPresignedUrlBlobStorage` forward for direct injection. For the default store, feature-detect by casting (`storage is IPresignedUrlBlobStorage`).
+- Two capabilities are surfaced differently, on purpose. Presigned support is a per-store cast: for named stores, AWS, Azure, and CloudflareR2 also register a keyed `IPresignedUrlBlobStorage` forward; for the default store, feature-detect by casting (`storage is IPresignedUrlBlobStorage`). Container management is a **separate** registration resolved from DI: AWS, Azure, FileSystem, Redis, and SSH register a default + keyed `IBlobContainerManager`, while CloudflareR2 registers none (so `GetKeyedService<IBlobContainerManager>` returns null for an R2 store) — this is why it cannot be an `is`-cast from the shared AWS storage type.
 - `IBlobStorageProvider.RegisteredNames` contains only **named** instance names; the default/unnamed store is excluded. Use it to validate an externally-supplied name before calling `GetStorage` rather than probe-and-catch.
 
 ## Installation
@@ -82,11 +82,18 @@ public sealed class MultiStoreService(IBlobStorageProvider provider)
     public bool HasStore(string name) => provider.RegisteredNames.Contains(name);
 }
 
+// Named container management (AWS/Azure/FileSystem/Redis/SSH — resolved, null for R2).
+public sealed class ProvisioningService([FromKeyedServices("docs")] IBlobContainerManager? docsManager)
+{
+    public ValueTask EnsureAsync(string container, CancellationToken ct) =>
+        docsManager?.EnsureContainerAsync(container, ct) ?? ValueTask.CompletedTask;
+}
+
 // Named presigned URL (AWS/Azure/R2 only).
 public sealed class PresignedService([FromKeyedServices("docs")] IPresignedUrlBlobStorage presigned)
 {
-    public Task<Uri> GetDownloadUrl(string[] container, string blob) =>
-        presigned.GetPresignedDownloadUrlAsync(container, blob, TimeSpan.FromHours(1));
+    public Task<Uri> GetDownloadUrl(BlobLocation location) =>
+        presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromHours(1)).AsTask();
 }
 ```
 
@@ -104,5 +111,5 @@ No options of its own. Each store's options are configured through its provider'
 - Registers `IBlobStorageProvider` as singleton (backed by the container's keyed `IBlobStorage` registrations).
 - Registers a called-once marker that rejects a second `AddHeadlessBlobs` call on the same service collection.
 - Default `Use{Provider}`: registers `IBlobStorage` as unkeyed singleton.
-- `AddNamed(... Use{Provider})`: registers `IBlobStorage` as keyed singleton (`name`). For AWS, Azure, and CloudflareR2 also registers `IPresignedUrlBlobStorage` as keyed singleton (`name`). For SshNet, also registers a keyed `SftpClientPool` singleton (`name`).
+- `AddNamed(... Use{Provider})`: registers `IBlobStorage` as keyed singleton (`name`). For AWS, Azure, and CloudflareR2 also registers `IPresignedUrlBlobStorage` as keyed singleton (`name`). For AWS, Azure, FileSystem, Redis, and SshNet also registers `IBlobContainerManager` (default + keyed `name`); CloudflareR2 registers none. For SshNet, also registers a keyed `SftpClientPool` singleton (`name`).
 - There is no global (unkeyed) `IPresignedUrlBlobStorage` registration.
