@@ -51,9 +51,26 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
             : throw new InvalidOperationException($"Cannot access Value on failed result. Error: {_error}");
 
     /// <summary>The error describing the failure.</summary>
-    /// <exception cref="InvalidOperationException">Thrown when the result is a success (<see cref="IsSuccess"/> is <see langword="true"/>).</exception>
-    public ResultError Error =>
-        !IsSuccess ? _error! : throw new InvalidOperationException("Cannot access Error on successful result.");
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the result is a success (<see cref="IsSuccess"/> is <see langword="true"/>), or when accessed on a
+    /// default-initialized instance (which is a failure state carrying no error).
+    /// </exception>
+    public ResultError Error
+    {
+        get
+        {
+            if (IsSuccess)
+            {
+                throw new InvalidOperationException("Cannot access Error on successful result.");
+            }
+
+            // A default(ApiResult<T>) is a failure state with no error; throw clearly instead of a downstream NRE.
+            return _error
+                ?? throw new InvalidOperationException(
+                    "ApiResult<T> was not properly initialized. Error was accessed on a default instance."
+                );
+        }
+    }
 
     /// <summary>Tries to get the value without throwing.</summary>
     /// <param name="value">When this method returns <see langword="true"/>, the success value; otherwise <see langword="null"/>.</param>
@@ -85,7 +102,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     /// <returns>The value produced by the invoked branch.</returns>
     public TResult Match<TResult>(Func<T, TResult> success, Func<ResultError, TResult> failure)
     {
-        return IsSuccess ? success(_value!) : failure(_error!);
+        return IsSuccess ? success(_value!) : failure(Error);
     }
 
     /// <summary>Transforms the success value with <paramref name="mapper"/>, propagating the error unchanged on failure.</summary>
@@ -126,7 +143,7 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
     {
         if (!IsSuccess)
         {
-            action(_error!);
+            action(Error);
         }
 
         return this;

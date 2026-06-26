@@ -65,11 +65,13 @@ internal static partial class FileSystemBlobStorageLoggerExtensions
     )]
     public static partial void LogGettingFileStream(this ILogger logger, string path);
 
+    // A missing blob is a documented-normal outcome (GetBlobInfoAsync returns null); log at Debug so it does not
+    // pollute error-level telemetry an operator scans for real failures.
     [LoggerMessage(
         EventId = 9,
         EventName = "FileNotFound",
-        Level = LogLevel.Error,
-        Message = "Unable to get file info for {Path}: File Not Found"
+        Level = LogLevel.Debug,
+        Message = "No blob found at {Path}"
     )]
     public static partial void LogFileNotFound(this ILogger logger, string path);
 
@@ -88,4 +90,12 @@ internal static partial class FileSystemBlobStorageLoggerExtensions
         Message = "Getting file list matching {SearchPattern} Page: {Page}, PageSize: {PageSize}"
     )]
     public static partial void LogGettingFileList(this ILogger logger, string searchPattern, int page, int pageSize);
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "PathTraversalRejected",
+        Level = LogLevel.Warning,
+        Message = "Rejected path traversal attempt on {ParamName}: resolved path '{ResolvedPath}' escapes the base directory"
+    )]
+    public static partial void LogPathTraversalRejected(this ILogger logger, string paramName, string resolvedPath);
 }

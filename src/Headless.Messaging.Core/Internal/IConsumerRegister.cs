@@ -684,7 +684,7 @@ internal sealed class ConsumerRegister(
                     {
                         dataUri =
                             transportMessage.Body.Length != 0
-                                ? $"data:{val};base64," + Convert.ToBase64String(transportMessage.Body.Span)
+                                ? $"data:{val};base64," + transportMessage.Body.Span.ToBase64()
                                 : null;
 
                         message = new Message(transportMessage.Headers, dataUri);
@@ -693,7 +693,7 @@ internal sealed class ConsumerRegister(
                     {
                         dataUri =
                             transportMessage.Body.Length != 0
-                                ? "data:UnknownType;base64," + Convert.ToBase64String(transportMessage.Body.Span)
+                                ? "data:UnknownType;base64," + transportMessage.Body.Span.ToBase64()
                                 : null;
 
                         message = new Message(transportMessage.Headers, dataUri);

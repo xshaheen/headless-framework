@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Urls;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
 
@@ -42,17 +43,10 @@ public sealed class TurnstileScriptTagHelper(IOptionsSnapshot<TurnstileOptions> 
             );
         }
 
-        var baseUrl = _options.VerifyBaseUrl.TrimEnd('/');
-
-        var query = (ExplicitRender, string.IsNullOrWhiteSpace(Onload)) switch
-        {
-            (true, true) => "?render=explicit",
-            (true, false) => $"?render=explicit&onload={Uri.EscapeDataString(Onload!)}",
-            (false, false) => $"?onload={Uri.EscapeDataString(Onload!)}",
-            (false, true) => "",
-        };
-
-        var src = $"{baseUrl}/turnstile/v0/api.js{query}";
+        var src = Url.Parse(_options.VerifyBaseUrl.TrimEnd('/') + "/turnstile/v0/api.js")
+            .SetQueryParam("render", ExplicitRender ? "explicit" : null)
+            .SetQueryParam("onload", string.IsNullOrWhiteSpace(Onload) ? null : Onload)
+            .ToString();
 
         // Emit through the tag-helper output API so the framework HTML-encodes the attribute value, matching the
         // widget helper. Avoids raw SetHtmlContent string-concatenation of the URL into the <script> markup.

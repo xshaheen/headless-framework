@@ -240,6 +240,20 @@ public sealed class DateTimeOffsetExtensionsTests
     }
 
     [Fact]
+    public void safe_add_should_clamp_to_max_without_overflowing_for_extreme_positive_span()
+    {
+        // given - date.Ticks + value.Ticks overflows long before the bounds check in the old code,
+        // wrapping negative and wrongly returning MinValue instead of clamping to MaxValue
+        var dateTimeOffset = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        // when
+        var result = dateTimeOffset.SafeAdd(TimeSpan.MaxValue);
+
+        // then
+        result.Should().Be(DateTimeOffset.MaxValue);
+    }
+
+    [Fact]
     public void floor_should_round_down_to_interval()
     {
         // given

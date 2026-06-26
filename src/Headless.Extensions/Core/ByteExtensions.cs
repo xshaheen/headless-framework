@@ -18,8 +18,14 @@ public static class ByteExtensions
     public static byte[] Compress(this byte[] bytes)
     {
         using var output = new MemoryStream();
-        using var stream = new BrotliStream(output, CompressionMode.Compress);
-        stream.Write(bytes, 0, bytes.Length);
+
+        // Dispose the BrotliStream before reading the buffer: it flushes its trailing
+        // compressed bytes only on dispose, so calling ToArray() while it is still open
+        // yields truncated output. MemoryStream.ToArray() remains valid after disposal.
+        using (var stream = new BrotliStream(output, CompressionMode.Compress))
+        {
+            stream.Write(bytes, 0, bytes.Length);
+        }
 
         return output.ToArray();
     }

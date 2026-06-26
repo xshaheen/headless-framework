@@ -176,8 +176,10 @@ public sealed class AwsBlobStorage(
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var results = new Result<Exception>[blobs.Count];
-        var index = 0;
+        // Index results by enumeration position, not the order parallel bodies start, so results[i] always
+        // describes items[i] — honoring the "one Result per input blob, in original order" contract.
+        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? [.. blobs];
+        var results = new Result<Exception>[items.Count];
 
         var options = new ParallelOptions
         {
@@ -186,12 +188,13 @@ public sealed class AwsBlobStorage(
         };
 
         await Parallel
-            .ForEachAsync(
-                blobs,
+            .ForAsync(
+                0,
+                items.Count,
                 options,
-                async (blob, ct) =>
+                async (i, ct) =>
                 {
-                    var i = Interlocked.Increment(ref index) - 1;
+                    var blob = items[i];
 
                     try
                     {
@@ -262,10 +265,12 @@ public sealed class AwsBlobStorage(
             return [];
         }
 
-        var (bucket, keyPrefix) = (container[0], Url.Combine([.. container.Skip(1)]));
+        // Route through the same validated builder UploadAsync/DeleteAsync use: normalize the bucket and run
+        // PathValidation on every container segment + blob name, instead of taking raw input.
+        var bucket = _BuildBucketName(container);
 
         var objectKeys = blobNames
-            .Select(blobName => new KeyVersion { Key = Url.Combine(keyPrefix, blobName) })
+            .Select(blobName => new KeyVersion { Key = _BuildObjectKey(blobName, container).ObjectKey })
             .ToList();
 
         var request = new DeleteObjectsRequest
@@ -325,10 +330,13 @@ public sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(container);
+
         const int pageSize = 100;
 
-        var (bucket, directories) = (container[0], container.Skip(1));
-        var criteria = BlobStorageHelpers.GetRequestCriteria(directories, blobSearchPattern);
+        // Normalize + validate the bucket via the shared builder (parity with GetBlobsAsync) instead of raw container[0].
+        var bucket = _BuildBucketName(container);
+        var criteria = BlobStorageHelpers.GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
         var listRequest = new ListObjectsV2Request
         {
@@ -381,6 +389,9 @@ public sealed class AwsBlobStorage(
 
                 var deleteRetryResponse = await s3.DeleteObjectsAsync(deleteRetryRequest, cancellationToken)
                     .ConfigureAwait(false);
+
+                // Objects deleted only on retry must be counted too; the contract returns the number actually deleted.
+                count += deleteRetryResponse.DeletedObjects?.Count ?? 0;
 
                 if (deleteRetryResponse.DeleteErrors?.Count > 0)
                 {

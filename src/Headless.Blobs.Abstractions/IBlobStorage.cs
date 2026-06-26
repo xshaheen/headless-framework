@@ -103,9 +103,16 @@ public interface IBlobStorage : IAsyncDisposable
     /// <param name="blobNames">Names of the blobs to delete. An empty collection returns an empty list immediately.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// A list with one result per input name. Each entry is <c>Ok(<see langword="true"/>)</c> when deleted,
-    /// <c>Ok(<see langword="false"/>)</c> when not found, or <c>Fail</c> with the per-blob exception.
+    /// A list with one result per input name, in original order. Each entry is <c>Ok(<see langword="true"/>)</c> when
+    /// deleted, <c>Ok(<see langword="false"/>)</c> when not found, or <c>Fail</c> with the per-blob exception.
     /// </returns>
+    /// <remarks>
+    /// The <c>Ok(<see langword="false"/>)</c>-on-not-found distinction is best-effort. Object-store backends whose
+    /// batch delete is idempotent (Amazon S3 <c>DeleteObjects</c>, and the Azurite emulator) report success for
+    /// already-absent keys and therefore return <c>Ok(<see langword="true"/>)</c> rather than
+    /// <c>Ok(<see langword="false"/>)</c>; only filesystem-semantics backends (file system, Redis, SSH) reliably
+    /// report not-found. The per-input-name ordering of results is guaranteed for every provider.
+    /// </remarks>
     /// <exception cref="ArgumentException">Thrown when <paramref name="container"/> is null or empty.</exception>
     ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
         string[] container,
@@ -124,6 +131,15 @@ public interface IBlobStorage : IAsyncDisposable
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of blobs successfully deleted.</returns>
+    /// <remarks>
+    /// Best-effort bulk deletion: the returned count reflects only blobs confirmed deleted. The intended contract is
+    /// that an individual blob which fails to delete does not abort the operation and is excluded from the count,
+    /// while a failure that prevents the operation as a whole (authentication, connectivity, or container access)
+    /// propagates as an exception. Callers needing a per-blob outcome should use <see cref="BulkDeleteAsync"/>.
+    /// NOTE: providers do not yet uniformly honor this — some currently throw on any per-blob failure and others
+    /// swallow all errors; that divergence is tracked for reconciliation.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="container"/> is null or empty.</exception>
     ValueTask<int> DeleteAllAsync(
         string[] container,
         string? blobSearchPattern = null,

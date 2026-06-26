@@ -29,7 +29,7 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(message ?? _GetDefaultOfTypeMessage(paramName, argument, type), paramName);
+        _ThrowForIsOfType(message, argument, type, paramName);
     }
 
     /// <summary>Asserts that the input value is of a specific type.</summary>
@@ -52,7 +52,7 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(message ?? _GetDefaultOfTypeMessage(paramName, argument, type), paramName);
+        _ThrowForIsOfType(message, argument, type, paramName);
     }
 
     /// <summary>Asserts that the input value is not of a specific type.</summary>
@@ -76,7 +76,7 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(message ?? _GetDefaultNotOfTypeMessage(paramName, type), paramName);
+        _ThrowForIsNotOfType(message, type, paramName);
     }
 
     /// <summary>Asserts that the input value is not of a specific type.</summary>
@@ -99,7 +99,7 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(message ?? _GetDefaultNotOfTypeMessage(paramName, type), paramName);
+        _ThrowForIsNotOfType(message, type, paramName);
     }
 
     /// <summary>Asserts that the input value can be assigned to a specified type.</summary>
@@ -121,10 +121,7 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(
-            message ?? _GetDefaultAssignableToMessage(paramName, argument, typeof(T)),
-            paramName
-        );
+        _ThrowForIsAssignableToType(message, argument, typeof(T), paramName);
     }
 
     /// <summary>Asserts that the input value can be assigned to a specified type.</summary>
@@ -147,7 +144,7 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(message ?? _GetDefaultAssignableToMessage(paramName, argument, type), paramName);
+        _ThrowForIsAssignableToType(message, argument, type, paramName);
     }
 
     /// <summary>Asserts that the input value can't be assigned to a specified type.</summary>
@@ -169,7 +166,7 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(message ?? _GetDefaultNotAssignableToMessage(paramName, typeof(T)), paramName);
+        _ThrowForIsNotAssignableToType(message, typeof(T), paramName);
     }
 
     /// <summary>Asserts that the input value can't be assigned to a specified type.</summary>
@@ -192,7 +189,39 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(message ?? _GetDefaultNotAssignableToMessage(paramName, type), paramName);
+        _ThrowForIsNotAssignableToType(message, type, paramName);
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsOfType(string? message, object argument, Type expectedType, string? paramName)
+    {
+        throw new ArgumentException(message ?? _GetDefaultOfTypeMessage(paramName, argument, expectedType), paramName);
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNotOfType(string? message, Type type, string? paramName)
+    {
+        throw new ArgumentException(message ?? _GetDefaultNotOfTypeMessage(paramName, type), paramName);
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsAssignableToType(
+        string? message,
+        object argument,
+        Type expectedType,
+        string? paramName
+    )
+    {
+        throw new ArgumentException(
+            message ?? _GetDefaultAssignableToMessage(paramName, argument, expectedType),
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNotAssignableToType(string? message, Type expectedType, string? paramName)
+    {
+        throw new ArgumentException(message ?? _GetDefaultNotAssignableToMessage(paramName, expectedType), paramName);
     }
 
     private static string _GetDefaultOfTypeMessage(string? paramName, object argument, Type expectedType)

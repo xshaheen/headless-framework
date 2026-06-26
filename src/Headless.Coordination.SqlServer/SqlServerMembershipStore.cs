@@ -30,6 +30,7 @@ internal sealed class SqlServerMembershipStore(
     private readonly string _heartbeatSql = _BuildHeartbeatSql(providerOptions.Value.Schema);
     private readonly string _readLivenessSql = _BuildReadLivenessSql(providerOptions.Value.Schema);
     private readonly string _readNodeLivenessSql = _BuildReadNodeLivenessSql(providerOptions.Value.Schema);
+    private readonly string _readLiveNodesSql = _BuildReadLiveNodesSql(providerOptions.Value.Schema);
     private readonly string _pruneExpiredRowsSql = _BuildPruneExpiredRowsSql(providerOptions.Value.Schema);
 
     protected override async ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
@@ -270,8 +271,19 @@ internal sealed class SqlServerMembershipStore(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        // Pruning is best-effort cleanup; do not abort it on the caller's read cancellation.
-        await _PruneExpiredRowsAsync(connection, clusterName, CancellationToken.None).ConfigureAwait(false);
+
+        // Pruning is best-effort cleanup: isolate its failure (for example a deadlock victim, error 1205) so
+        // the liveness read for this tick still returns instead of being discarded along with the prune. The
+        // next read tick retries the prune. Not cancelled on the caller's read token.
+        try
+        {
+            await _PruneExpiredRowsAsync(connection, clusterName, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (SqlException ex)
+        {
+            logger.LogSqlServerMembershipPruneFailed(ex);
+        }
+
         await using var command = _CreateCommand(connection, _readLivenessSql);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("DeadThresholdMs", _ToMilliseconds(DeadThreshold));
@@ -313,6 +325,30 @@ internal sealed class SqlServerMembershipStore(
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
         return result is string stateText ? Enum.Parse<NodeLivenessState>(stateText) : null;
+    }
+
+    protected override async ValueTask<IReadOnlyList<NodeIdentity>> ReadLiveNodesCoreAsync(
+        string clusterName,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = _CreateCommand(connection, _readLiveNodesSql);
+        command.Parameters.AddWithValue("ClusterName", clusterName);
+        command.Parameters.AddWithValue("SuspicionThresholdMs", _ToMilliseconds(SuspicionThreshold));
+
+        var identities = new List<NodeIdentity>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var nodeId = await reader.GetFieldValueAsync<string>(0, cancellationToken).ConfigureAwait(false);
+            var incarnation = await reader.GetFieldValueAsync<long>(1, cancellationToken).ConfigureAwait(false);
+            identities.Add(new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation)));
+        }
+
+        return identities;
     }
 
     private async ValueTask _PruneExpiredRowsAsync(
@@ -464,6 +500,30 @@ internal sealed class SqlServerMembershipStore(
             """;
     }
 
+    private static string _BuildReadLiveNodesSql(string schema)
+    {
+        var generationTable = SqlServerCoordinationIdentifier.Qualified(
+            schema,
+            SqlServerMembershipSchema.Generation.Table
+        );
+        var livenessTable = SqlServerCoordinationIdentifier.Qualified(schema, SqlServerMembershipSchema.Liveness.Table);
+
+        // Alive-only, current-generation, identities only: join the generation authority so superseded
+        // incarnations are excluded, keep rows not left and whose store-clock beat age is below the suspicion
+        // threshold. No descriptor join, no prune; the base orders the result.
+        return $$"""
+            SELECT l.[{{SqlServerMembershipSchema.NodeId}}], l.[{{SqlServerMembershipSchema.Incarnation}}]
+            FROM {{livenessTable}} l
+            JOIN {{generationTable}} g
+              ON g.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
+             AND g.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
+             AND g.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
+            WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND l.[{{SqlServerMembershipSchema.Liveness.LeftAt}}] IS NULL
+              AND DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) < @SuspicionThresholdMs;
+            """;
+    }
+
     private static string _BuildPruneExpiredRowsSql(string schema)
     {
         var descriptorTable = SqlServerCoordinationIdentifier.Qualified(
@@ -608,4 +668,12 @@ internal static partial class SqlServerMembershipStoreLoggerExtensions
         string operationName,
         Exception exception
     );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SqlServerMembershipPruneFailed",
+        Level = LogLevel.Warning,
+        Message = "SQL Server coordination retention prune failed; the liveness read for this tick still returns and the next tick retries the prune."
+    )]
+    public static partial void LogSqlServerMembershipPruneFailed(this ILogger logger, Exception exception);
 }

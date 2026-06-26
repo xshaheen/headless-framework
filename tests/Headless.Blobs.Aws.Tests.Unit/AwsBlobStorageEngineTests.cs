@@ -65,6 +65,132 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task bulk_upload_returns_results_aligned_to_input_blob_order_under_failures()
+    {
+        // Blobs at even indices are configured to fail, odd indices to succeed. results[i] must describe
+        // blobs[i] regardless of the order the parallel upload bodies happen to start under MaxBulkParallelism.
+        _s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var key = ci.Arg<PutObjectRequest>().Key;
+
+                return key.StartsWith("fail-", StringComparison.Ordinal)
+                    ? Task.FromException<PutObjectResponse>(new AmazonS3Exception(key))
+                    : Task.FromResult(new PutObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+            });
+
+        var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
+
+        var blobs = Enumerable
+            .Range(0, 50)
+            .Select(i => new BlobUploadRequest(
+                new MemoryStream("x"u8.ToArray()),
+                $"{(i % 2 == 0 ? "fail" : "ok")}-{i:000}.txt"
+            ))
+            .ToList();
+
+        var results = await sut.BulkUploadAsync(["bucket"], blobs);
+
+        results.Should().HaveCount(blobs.Count);
+
+        for (var i = 0; i < blobs.Count; i++)
+        {
+            var expectedFailure = i % 2 == 0;
+
+            results[i]
+                .IsFailure.Should()
+                .Be(expectedFailure, "result at index {0} must describe blobs[{0}] ({1})", i, blobs[i].FileName);
+
+            if (expectedFailure)
+            {
+                // The carried error must be the one raised for *this* blob, proving slot alignment.
+                results[i].Error.Message.Should().Be(blobs[i].FileName);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task delete_all_counts_objects_deleted_on_the_partial_failure_retry()
+    {
+        // A single listing page of five matching objects: three that delete on the first pass, two that fail
+        // and only succeed on the one-time retry.
+        _s3.ListObjectsV2Async(Arg.Any<ListObjectsV2Request>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new ListObjectsV2Response
+                {
+                    HttpStatusCode = HttpStatusCode.OK,
+                    IsTruncated = false,
+                    S3Objects =
+                    [
+                        new() { Key = "ok-0" },
+                        new() { Key = "ok-1" },
+                        new() { Key = "ok-2" },
+                        new() { Key = "fail-0" },
+                        new() { Key = "fail-1" },
+                    ],
+                }
+            );
+
+        // First DeleteObjects (all five keys) reports a partial failure — three deleted, two errored. The retry,
+        // issued only for the two "fail-" keys, then deletes them. Branch on the request content (like
+        // bulk_upload_returns_results_aligned_to_input_blob_order_under_failures) instead of relying on call order.
+        _s3.DeleteObjectsAsync(Arg.Any<DeleteObjectsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var requestedKeys = (ci.Arg<DeleteObjectsRequest>().Objects ?? [])
+                    .Select(o => o.Key)
+                    .Where(k => k is not null)
+                    .Select(k => k!)
+                    .ToList();
+
+                var isRetry = requestedKeys.TrueForAll(k => k.StartsWith("fail-", StringComparison.Ordinal));
+
+                if (isRetry)
+                {
+                    // Retry deletes the previously-failed objects successfully, leaving no remaining errors.
+                    return Task.FromResult(
+                        new DeleteObjectsResponse
+                        {
+                            HttpStatusCode = HttpStatusCode.OK,
+                            DeletedObjects = requestedKeys.ConvertAll(k => new DeletedObject { Key = k }),
+                        }
+                    );
+                }
+
+                return Task.FromResult(
+                    new DeleteObjectsResponse
+                    {
+                        HttpStatusCode = HttpStatusCode.OK,
+                        DeletedObjects = requestedKeys
+                            .Where(k => k.StartsWith("ok-", StringComparison.Ordinal))
+                            .Select(k => new DeletedObject { Key = k })
+                            .ToList(),
+                        DeleteErrors = requestedKeys
+                            .Where(k => k.StartsWith("fail-", StringComparison.Ordinal))
+                            .Select(k => new DeleteError
+                            {
+                                Key = k,
+                                Code = "InternalError",
+                                Message = "transient",
+                            })
+                            .ToList(),
+                    }
+                );
+            });
+
+        var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
+
+        var deleted = await sut.DeleteAllAsync(["bucket"]);
+
+        // 3 deleted on the first pass + 2 deleted on the retry. The retry deletions must be included in the
+        // returned total — the contract returns the number actually deleted, not just the first-pass successes.
+        deleted.Should().Be(5);
+
+        // Exactly the initial bulk delete plus a single retry for the failed keys.
+        await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, default);
+    }
+
+    [Fact]
     public async Task exists_returns_false_when_bucket_missing()
     {
         _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())

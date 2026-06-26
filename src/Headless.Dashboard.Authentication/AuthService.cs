@@ -127,7 +127,7 @@ public sealed class AuthService : IAuthService
             )
             {
                 // Decode to get username for display
-                var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(credentials));
+                var decoded = credentials.DecodeBase64();
                 var username = decoded.Split(':')[0];
                 return Task.FromResult(AuthResult.Success(username));
             }

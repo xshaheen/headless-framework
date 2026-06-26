@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Domain;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -12,13 +10,11 @@ namespace Headless.Features.PostgreSql;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IFeatureValueRecordRepository"/> that reads and
-/// writes feature value records using raw ADO.NET. After each mutation the record is published
-/// via <see cref="ILocalEventBus"/> in a transient scope to notify in-process subscribers.
+/// writes feature value records using raw ADO.NET.
 /// </summary>
 internal sealed class PostgreSqlFeatureValueRecordRepository(
     IOptions<PostgreSqlFeaturesOptions> providerOptions,
-    IOptions<FeaturesStorageOptions> storageOptions,
-    IServiceProvider services
+    IOptions<FeaturesStorageOptions> storageOptions
 ) : IFeatureValueRecordRepository
 {
     /// <inheritdoc/>
@@ -114,7 +110,6 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
                 _Param("ProviderKey", feature.ProviderKey)
             )
             .ConfigureAwait(false);
-        await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -125,7 +120,6 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
 
         await _ExecuteAsync(sql, cancellationToken, _Param("Id", feature.Id), _Param("Value", feature.Value))
             .ConfigureAwait(false);
-        await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -144,11 +138,6 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
 
         await _ExecuteAsync(sql, cancellationToken, _Param("Ids", features.Select(x => x.Id).ToArray()))
             .ConfigureAwait(false);
-
-        foreach (var feature in features)
-        {
-            await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
-        }
     }
 
     private async Task<List<FeatureValueRecord>> _ReadValuesAsync(
@@ -195,20 +184,6 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask _PublishAsync(FeatureValueRecord feature, CancellationToken cancellationToken)
-    {
-        // Resolve the scoped publisher inside a fresh scope to avoid capturing it from the singleton's root provider.
-        await using var scope = services.CreateAsyncScope();
-        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
-
-        if (publisher is not null)
-        {
-            await publisher
-                .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken)
-                .ConfigureAwait(false);
-        }
     }
 
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;

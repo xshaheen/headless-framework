@@ -83,4 +83,18 @@ public sealed class UrlUtilityMethodTests
     {
         Url.IsValid(s).Should().Be(isValid);
     }
+
+    [Fact]
+    public void should_not_split_surrogate_pair_when_encoding_long_value()
+    {
+        // 😀 (U+1F600) is a UTF-16 surrogate pair. Place it so the high surrogate lands at index 65518 and the
+        // low at 65519 — straddling the 65519-char chunk boundary used when escaping very long strings.
+        const int boundary = 65519;
+        var s = new string('a', boundary - 1) + "\U0001F600" + new string('b', 100);
+
+        var encoded = Url.Encode(s, false);
+
+        encoded.Should().Contain("%F0%9F%98%80"); // intact 4-byte UTF-8 sequence, not two split surrogates
+        Url.Decode(encoded, false).Should().Be(s); // round-trips without corruption
+    }
 }

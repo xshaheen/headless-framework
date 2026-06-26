@@ -346,6 +346,30 @@ public sealed class NestedStreamTests : TestBase
     }
 
     [Fact]
+    public void Read_Span_NoMoreThanGiven()
+    {
+        var buffer = new byte[_underlyingStream.Length];
+
+        // The span overload clamps to the nested length even when the destination is larger.
+        var bytesRead = _stream.Read(buffer.AsSpan());
+        Assert.Equal(_DefaultNestedLength, bytesRead);
+
+        Assert.Equal(0, _stream.Read(buffer.AsSpan(bytesRead)));
+        Assert.Equal(_DefaultNestedLength, _underlyingStream.Position);
+    }
+
+    [Fact]
+    public void Read_Span_BeyondEndOfStream_ReturnsZero()
+    {
+        // Seek beyond the end of the stream
+        _stream.Seek(1, SeekOrigin.End);
+
+        var buffer = new byte[_underlyingStream.Length];
+
+        Assert.Equal(0, _stream.Read(buffer.AsSpan()));
+    }
+
+    [Fact]
     public void Read_Empty_ReturnsZero()
     {
         Assert.Equal(0, _stream.Read([], 0, 0));

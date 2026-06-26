@@ -122,15 +122,30 @@ public sealed class NameValueList<TValue>(bool caseSensitiveNames)
     public bool Remove(string name) => RemoveAll(x => x.Name.OrdinalEquals(name, !caseSensitiveNames)) > 0;
 
     /// <inheritdoc />
-    public TValue? FirstOrDefault(string name) => GetAll(name).FirstOrDefault();
+    public TValue? FirstOrDefault(string name)
+    {
+        // Indexed scan avoids the Where+Select iterator chain; returns the first match in order.
+        for (var i = 0; i < Count; i++)
+        {
+            if (this[i].Name.OrdinalEquals(name, !caseSensitiveNames))
+            {
+                return this[i].Value;
+            }
+        }
+        return default;
+    }
 
     /// <inheritdoc />
     public bool TryGetFirst(string name, out TValue? value)
     {
-        foreach (var v in GetAll(name))
+        // Indexed scan avoids allocating the GetAll iterator just to read the first element.
+        for (var i = 0; i < Count; i++)
         {
-            value = v;
-            return true;
+            if (this[i].Name.OrdinalEquals(name, !caseSensitiveNames))
+            {
+                value = this[i].Value;
+                return true;
+            }
         }
         value = default;
         return false;
@@ -139,12 +154,43 @@ public sealed class NameValueList<TValue>(bool caseSensitiveNames)
     /// <inheritdoc />
     public IEnumerable<TValue> GetAll(string name)
     {
-        return this.Where(x => x.Name.OrdinalEquals(name, !caseSensitiveNames)).Select(x => x.Value);
+        // Indexed yield keeps the original deferred/lazy semantics and order, without the Where+Select chain.
+        for (var i = 0; i < Count; i++)
+        {
+            if (this[i].Name.OrdinalEquals(name, !caseSensitiveNames))
+            {
+                yield return this[i].Value;
+            }
+        }
     }
 
     /// <inheritdoc />
-    public bool Contains(string name) => this.Any(x => x.Name.OrdinalEquals(name, !caseSensitiveNames));
+    public bool Contains(string name)
+    {
+        // Indexed scan avoids the Any iterator allocation.
+        for (var i = 0; i < Count; i++)
+        {
+            if (this[i].Name.OrdinalEquals(name, !caseSensitiveNames))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /// <inheritdoc />
-    public bool Contains(string name, TValue? value) => Contains((name, value)!);
+    public bool Contains(string name, TValue? value)
+    {
+        // Scan honoring caseSensitiveNames. The previous (name, value) tuple Contains used ordinal name
+        // equality, ignoring the case-insensitivity flag that every sibling method respects.
+        for (var i = 0; i < Count; i++)
+        {
+            if (this[i].Name.OrdinalEquals(name, !caseSensitiveNames) && Equals(this[i].Value, value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

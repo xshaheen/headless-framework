@@ -312,7 +312,9 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return min == max ? min : (long)((random.NextDouble() * (max - min)) + min);
+            // Delegate to the built-in generator: it is exact over the full long span (no (max - min)
+            // overflow, no double quantization) and yields a uniform value in [min, max).
+            return min == max ? min : random.NextInt64(min, max);
         }
 
         /// <summary>Returns a random <see cref="float"/> in the range <c>[<paramref name="min"/>, <paramref name="max"/>)</c>.</summary>
@@ -361,10 +363,19 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
+            if (min == max)
+            {
+                return min;
+            }
+
             Span<byte> buffer = stackalloc byte[sizeof(ulong)];
             random.NextBytes(buffer);
 
-            return (MemoryMarshal.Read<ulong>(buffer) * (max - min) / ulong.MaxValue) + min;
+            // Lemire-style scaling: the high 64 bits of the 128-bit product map a uniform ulong into
+            // [0, max - min) without the overflow a direct (value * (max - min)) multiply would hit.
+            var hi = Math.BigMul(MemoryMarshal.Read<ulong>(buffer), max - min, out _);
+
+            return hi + min;
         }
 
         /// <summary>Returns a random <see cref="decimal"/> in the range <c>[<paramref name="min"/>, <paramref name="max"/>)</c>.</summary>
@@ -408,15 +419,21 @@ public static class RandomExtensions
 
             var length = minLength + random.Next(0, maxLength - minLength + 1); // length of the string
 
-            var max = chars.Length; // number of available characters
-            var sb = new StringBuilder(length);
+            // Fill the result span directly (one allocation, no StringBuilder buffer churn).
+            return string.Create(
+                length,
+                (random, chars),
+                static (span, state) =>
+                {
+                    var (rnd, pool) = state;
+                    var max = pool.Length; // number of available characters
 
-            for (var i = 0; i < length; i++)
-            {
-                sb.Append(chars[random.Next(0, max)]);
-            }
-
-            return sb.ToString();
+                    for (var i = 0; i < span.Length; i++)
+                    {
+                        span[i] = pool[rnd.Next(0, max)];
+                    }
+                }
+            );
         }
 
         /// <summary>Returns a uniformly random element of <paramref name="objects"/>.</summary>

@@ -68,7 +68,7 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
                 group.DisplayName
             );
 
-            foreach (var property in group.Properties)
+            foreach (var property in group.ExtraProperties)
             {
                 permissionGroupRecord.SetProperty(property.Key, property.Value);
             }
@@ -91,7 +91,7 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
                 _SerializeProviders(permission.Providers)
             );
 
-            foreach (var property in permission.Properties)
+            foreach (var property in permission.ExtraProperties)
             {
                 permissionRecord.SetProperty(property.Key, property.Value);
             }

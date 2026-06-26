@@ -26,15 +26,12 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (argument.CompareTo(expected) <= 0)
+        if (argument.CompareTo(expected) > 0)
         {
-            return argument;
+            _ThrowForIsLessThanOrEqualTo(expected, message, paramName);
         }
 
-        message ??=
-            $"The argument {paramName.ToAssertString()} must be less than or equal to {expected.ToInvariantString()}.";
-
-        throw new ArgumentOutOfRangeException(paramName, message);
+        return argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not greater than or equal to <paramref name="expected"/>.</summary>
@@ -54,15 +51,12 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (argument.CompareTo(expected) >= 0)
+        if (argument.CompareTo(expected) < 0)
         {
-            return argument;
+            _ThrowForIsGreaterThanOrEqualTo(expected, message, paramName);
         }
 
-        message ??=
-            $"The argument {paramName.ToAssertString()} must be greater than or equal to {expected.ToInvariantString()}.";
-
-        throw new ArgumentOutOfRangeException(paramName, message);
+        return argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not less than <paramref name="expected"/>.</summary>
@@ -82,14 +76,12 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (argument.CompareTo(expected) < 0)
+        if (argument.CompareTo(expected) >= 0)
         {
-            return argument;
+            _ThrowForIsLessThan(expected, message, paramName);
         }
 
-        message ??= $"The argument {paramName.ToAssertString()} must be less than {expected.ToInvariantString()}.";
-
-        throw new ArgumentOutOfRangeException(paramName, message);
+        return argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not greater than <paramref name="expected"/>.</summary>
@@ -109,14 +101,12 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (argument.CompareTo(expected) > 0)
+        if (argument.CompareTo(expected) <= 0)
         {
-            return argument;
+            _ThrowForIsGreaterThan(expected, message, paramName);
         }
 
-        message ??= $"The argument {paramName.ToAssertString()} must be greater than {expected.ToInvariantString()}.";
-
-        throw new ArgumentOutOfRangeException(paramName, message);
+        return argument;
     }
 
     /// <summary>
@@ -139,15 +129,10 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        if (minimumValue.CompareTo(maximumValue) <= 0)
+        if (minimumValue.CompareTo(maximumValue) > 0)
         {
-            return;
+            _ThrowForRange(message, minimumValueParamName, maximumValueParamName);
         }
-
-        message ??=
-            $"The argument {minimumValueParamName.ToAssertString()} should be less or equal than {maximumValueParamName.ToAssertString()}.";
-
-        throw new ArgumentException(message, minimumValueParamName);
     }
 
     /// <summary>
@@ -179,15 +164,12 @@ public static partial class Argument
     {
         Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
-        if (argument.CompareTo(minimumValue) >= 0 && argument.CompareTo(maximumValue) <= 0)
+        if (argument.CompareTo(minimumValue) < 0 || argument.CompareTo(maximumValue) > 0)
         {
-            return argument;
+            _ThrowForIsInclusiveBetween(argument, minimumValue, maximumValue, message, argumentParamName);
         }
 
-        message ??=
-            $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} inclusively ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}).";
-
-        throw new ArgumentOutOfRangeException(argumentParamName, message);
+        return argument;
     }
 
     /// <summary>
@@ -219,15 +201,12 @@ public static partial class Argument
     {
         Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
-        if (argument.CompareTo(minimumValue) > 0 && argument.CompareTo(maximumValue) < 0)
+        if (argument.CompareTo(minimumValue) <= 0 || argument.CompareTo(maximumValue) >= 0)
         {
-            return argument;
+            _ThrowForIsExclusiveBetween(argument, minimumValue, maximumValue, message, argumentParamName);
         }
 
-        message ??=
-            $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} exclusively ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}).";
-
-        throw new ArgumentOutOfRangeException(argumentParamName, message);
+        return argument;
     }
 
     /// <summary>
@@ -259,15 +238,12 @@ public static partial class Argument
     {
         Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
-        if (argument.CompareTo(minimumValue) > 0 && argument.CompareTo(maximumValue) <= 0)
+        if (argument.CompareTo(minimumValue) <= 0 || argument.CompareTo(maximumValue) > 0)
         {
-            return argument;
+            _ThrowForIsLeftOpenedBetween(argument, minimumValue, maximumValue, message, argumentParamName);
         }
 
-        message ??=
-            $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}].";
-
-        throw new ArgumentOutOfRangeException(argumentParamName, message);
+        return argument;
     }
 
     /// <summary>
@@ -299,15 +275,12 @@ public static partial class Argument
     {
         Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
-        if (argument.CompareTo(minimumValue) >= 0 && argument.CompareTo(maximumValue) < 0)
+        if (argument.CompareTo(minimumValue) < 0 || argument.CompareTo(maximumValue) >= 0)
         {
-            return argument;
+            _ThrowForIsRightOpenedBetween(argument, minimumValue, maximumValue, message, argumentParamName);
         }
 
-        message ??=
-            $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} [{minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}).";
-
-        throw new ArgumentOutOfRangeException(argumentParamName, message);
+        return argument;
     }
 
     /// <summary>
@@ -339,11 +312,134 @@ public static partial class Argument
     {
         Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
-        if (!argument.Any(x => x.CompareTo(minimumValue) < 0 || x.CompareTo(maximumValue) > 0))
+        if (argument.Any(x => x.CompareTo(minimumValue) < 0 || x.CompareTo(maximumValue) > 0))
         {
-            return argument;
+            _ThrowForHaveAllItemsInRange(minimumValue, maximumValue, message, argumentParamName);
         }
 
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsLessThanOrEqualTo<T>(T expected, string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must be less than or equal to {expected.ToInvariantString()}."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsGreaterThanOrEqualTo<T>(T expected, string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message
+                ?? $"The argument {paramName.ToAssertString()} must be greater than or equal to {expected.ToInvariantString()}."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsLessThan<T>(T expected, string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} must be less than {expected.ToInvariantString()}."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsGreaterThan<T>(T expected, string? message, string? paramName)
+    {
+        throw new ArgumentOutOfRangeException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} must be greater than {expected.ToInvariantString()}."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForRange(string? message, string? minimumValueParamName, string? maximumValueParamName)
+    {
+        throw new ArgumentException(
+            message
+                ?? $"The argument {minimumValueParamName.ToAssertString()} should be less or equal than {maximumValueParamName.ToAssertString()}.",
+            minimumValueParamName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsInclusiveBetween<T>(
+        T argument,
+        T minimumValue,
+        T maximumValue,
+        string? message,
+        string? argumentParamName
+    )
+    {
+        throw new ArgumentOutOfRangeException(
+            argumentParamName,
+            message
+                ?? $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} inclusively ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsExclusiveBetween<T>(
+        T argument,
+        T minimumValue,
+        T maximumValue,
+        string? message,
+        string? argumentParamName
+    )
+    {
+        throw new ArgumentOutOfRangeException(
+            argumentParamName,
+            message
+                ?? $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} exclusively ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsLeftOpenedBetween<T>(
+        T argument,
+        T minimumValue,
+        T maximumValue,
+        string? message,
+        string? argumentParamName
+    )
+    {
+        throw new ArgumentOutOfRangeException(
+            argumentParamName,
+            message
+                ?? $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} ({minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()}]."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsRightOpenedBetween<T>(
+        T argument,
+        T minimumValue,
+        T maximumValue,
+        string? message,
+        string? argumentParamName
+    )
+    {
+        throw new ArgumentOutOfRangeException(
+            argumentParamName,
+            message
+                ?? $"The argument {argumentParamName} = {argument.ToInvariantString()} must be between {minimumValue.ToInvariantString()} and {maximumValue.ToInvariantString()} [{minimumValue.ToInvariantString()}, {maximumValue.ToInvariantString()})."
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForHaveAllItemsInRange<T>(
+        T minimumValue,
+        T maximumValue,
+        string? message,
+        string? argumentParamName
+    )
+    {
         throw new ArgumentOutOfRangeException(
             argumentParamName,
             message

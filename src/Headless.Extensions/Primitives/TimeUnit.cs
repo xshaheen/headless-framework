@@ -50,99 +50,71 @@ public static class TimeUnit
 
     private static TimeSpan? _ParseTime(string value)
     {
-        // compare using the original value as uppercase M could mean months.
-        var normalized = value.ToLowerInvariant().Trim();
+        // Trim a span instead of allocating a lowercased string. Suffix checks are case-insensitive (the original
+        // lowercased before matching); the numeric portion is sliced off before parsing, so case never affects parsing.
+        var trimmed = value.AsSpan().Trim();
 
-        if (value.EndsWith('m'))
+        try
         {
-            if (
-                int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var minutes)
-            )
+            // The minutes branch stays case-sensitive (uppercase 'M' could mean months) but tests the TRIMMED
+            // span, so a trailing space (e.g. "5m ") still matches.
+            if (trimmed.EndsWith('m'))
             {
-                return new TimeSpan(0, minutes, 0);
+                return int.TryParse(trimmed[..^1], CultureInfo.InvariantCulture, out var minutes)
+                    ? new TimeSpan(0, minutes, 0)
+                    : null;
+            }
+
+            if (trimmed.EndsWith("h", StringComparison.OrdinalIgnoreCase))
+            {
+                return int.TryParse(trimmed[..^1], CultureInfo.InvariantCulture, out var hours)
+                    ? new TimeSpan(hours, 0, 0)
+                    : null;
+            }
+
+            if (trimmed.EndsWith("d", StringComparison.OrdinalIgnoreCase))
+            {
+                return int.TryParse(trimmed[..^1], CultureInfo.InvariantCulture, out var days)
+                    ? new TimeSpan(days, 0, 0, 0)
+                    : null;
+            }
+
+            if (trimmed.EndsWith("nanos", StringComparison.OrdinalIgnoreCase))
+            {
+                // Cast to long: 100-ns ticks above int.MaxValue (~214s) must not truncate.
+                return long.TryParse(trimmed[..^5], CultureInfo.InvariantCulture, out var nanoseconds)
+                    ? new TimeSpan((long)Math.Round(nanoseconds / 100d))
+                    : null;
+            }
+
+            if (trimmed.EndsWith("micros", StringComparison.OrdinalIgnoreCase))
+            {
+                return long.TryParse(trimmed[..^6], CultureInfo.InvariantCulture, out var microseconds)
+                    ? new TimeSpan(microseconds * 10)
+                    : null;
+            }
+
+            if (trimmed.EndsWith("ms", StringComparison.OrdinalIgnoreCase))
+            {
+                return int.TryParse(trimmed[..^2], CultureInfo.InvariantCulture, out var milliseconds)
+                    ? new TimeSpan(0, 0, 0, 0, milliseconds)
+                    : null;
+            }
+
+            if (trimmed.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+            {
+                return int.TryParse(trimmed[..^1], CultureInfo.InvariantCulture, out var seconds)
+                    ? new TimeSpan(0, 0, seconds)
+                    : null;
             }
 
             return null;
         }
-
-        if (normalized.EndsWith('h'))
+        catch (Exception e) when (e is ArgumentOutOfRangeException or OverflowException)
         {
-            if (int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var hours))
-            {
-                return new TimeSpan(hours, 0, 0);
-            }
-
+            // A magnitude that parses as int/long but exceeds TimeSpan's range surfaces as a failed parse
+            // (TryParse -> false, Parse -> ArgumentException) instead of an uncaught throw.
             return null;
         }
-
-        if (normalized.EndsWith('d'))
-        {
-            if (int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var days))
-            {
-                return new TimeSpan(days, 0, 0, 0);
-            }
-
-            return null;
-        }
-
-        if (normalized.EndsWith("nanos", StringComparison.Ordinal))
-        {
-            if (
-                long.TryParse(
-                    normalized.AsSpan(0, normalized.Length - 5),
-                    CultureInfo.InvariantCulture,
-                    out var nanoseconds
-                )
-            )
-            {
-                return new TimeSpan((int)Math.Round(nanoseconds / 100d));
-            }
-
-            return null;
-        }
-
-        if (normalized.EndsWith("micros", StringComparison.Ordinal))
-        {
-            if (
-                long.TryParse(
-                    normalized.AsSpan(0, normalized.Length - 6),
-                    CultureInfo.InvariantCulture,
-                    out var microseconds
-                )
-            )
-            {
-                return new TimeSpan(microseconds * 10);
-            }
-
-            return null;
-        }
-
-        if (normalized.EndsWith("ms", StringComparison.Ordinal))
-        {
-            if (
-                int.TryParse(
-                    normalized.AsSpan(0, normalized.Length - 2),
-                    CultureInfo.InvariantCulture,
-                    out var milliseconds
-                )
-            )
-            {
-                return new TimeSpan(0, 0, 0, 0, milliseconds);
-            }
-
-            return null;
-        }
-
-        if (normalized.EndsWith('s'))
-        {
-            if (
-                int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var seconds)
-            )
-            {
-                return new TimeSpan(0, 0, seconds);
-            }
-        }
-
-        return null;
     }
 }

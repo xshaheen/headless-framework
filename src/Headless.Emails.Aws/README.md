@@ -15,6 +15,7 @@ Provides email sending via AWS SES v2 using the unified `IEmailSender` abstracti
 - SES-specific exceptions (`MessageRejectedException`, `BadRequestException`, `NotFoundException`, `AccountSuspendedException`, `MailFromDomainNotVerifiedException`, `LimitExceededException`, `TooManyRequestsException`, `SendingPausedException`) propagate — not wrapped in `Failed()`
 - BCC is delivered via the SES envelope (`Destination`) and the `Bcc` header is hidden from the serialized MIME on the raw (attachment) path, so BCC recipients are never disclosed
 - Non-PII logging on non-success HTTP responses (status code, request ID, message ID — no recipient/sender addresses)
+- Strongly-typed SES event tracking contracts (`Headless.Emails.Aws.Tracking`) for delivery/bounce/complaint/open/click/etc. notifications (see [Email Event Tracking](#email-event-tracking))
 
 ## Installation
 
@@ -52,6 +53,60 @@ builder.Services.AddHeadlessEmails(setup =>
     setup.AddNamed("ses", i => i.UseAwsSes(awsOptions)); // keyed "ses"
 });
 ```
+
+## Email Event Tracking
+
+SES can publish sending events (delivery, bounce, complaint, open, click, etc.) to an event
+destination — typically an Amazon SNS topic — for a configuration set. The `Headless.Emails.Aws.Tracking`
+namespace provides strongly-typed contracts for those JSON payloads so you can deserialize and react to
+them. This package supplies only the typed contract; you own the transport (SNS HTTP/S subscription, SQS
+poller, Lambda, etc.) and the handling logic.
+
+Every property carries an explicit `[JsonPropertyName]` matching the SES field, so deserialization works
+with any `JsonSerializerOptions` (no naming policy required). Unknown fields are tolerated via
+`[JsonExtensionData]` on the container types.
+
+```csharp
+using System.Text.Json;
+using Headless.Emails.Aws.Tracking;
+
+// `body` is the SES event record JSON (the SNS message body).
+var notification = JsonSerializer.Deserialize<EmailTrackingNotification>(body);
+
+switch (notification?.EventType)
+{
+    case EmailEventTypes.Bounce:
+        foreach (var recipient in notification.Bounce!.BouncedRecipients)
+        {
+            if (notification.Bounce.BounceType == BounceTypes.Permanent)
+            {
+                // Permanent (hard) bounce — suppress this address.
+            }
+        }
+        break;
+
+    case EmailEventTypes.Complaint:
+        // notification.Complaint!.ComplainedRecipients
+        break;
+
+    case EmailEventTypes.Delivery:
+        // notification.Delivery!.Recipients / Timestamp
+        break;
+
+    case EmailEventTypes.Open:
+    case EmailEventTypes.Click:
+        // notification.Open! / notification.Click!
+        break;
+}
+```
+
+The message correlation ID is `notification.Mail.MessageId` (the ID SES returns from a send).
+
+Available types: `EmailTrackingNotification`, `MailDetails` (`EmailHeader`, `EmailCommonHeaders`),
+`SesSendEvent`, `SesDeliveryEvent`, `SesDeliveryDelayEvent` (`DelayedRecipient`), `SesOpenEvent`, `SesClickEvent`,
+`SesBounceEvent` (`BouncedRecipient`), `SesComplaintEvent` (`ComplainedRecipient`), `SesRejectEvent`,
+`SesRenderingFailureEvent`; plus the `EmailEventTypes`, `BounceTypes`, `BounceSubTypes`, `DelayTypes`, and
+`ComplaintFeedbackTypes` constant holders.
 
 ## Configuration
 

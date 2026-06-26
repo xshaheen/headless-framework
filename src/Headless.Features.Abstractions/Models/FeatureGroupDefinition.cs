@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Primitives;
 
 namespace Headless.Features.Models;
 
 /// <summary>Describes a logical group that organizes one or more related <see cref="FeatureDefinition"/> instances.</summary>
-public sealed class FeatureGroupDefinition : ICanCreateChildFeature
+public sealed class FeatureGroupDefinition : ICanCreateChildFeature, IHasExtraProperties
 {
     private readonly List<FeatureDefinition> _features;
 
@@ -16,7 +17,6 @@ public sealed class FeatureGroupDefinition : ICanCreateChildFeature
     {
         Name = name;
         DisplayName = displayName ?? Name;
-        Properties = new(StringComparer.Ordinal);
         _features = [];
     }
 
@@ -34,19 +34,19 @@ public sealed class FeatureGroupDefinition : ICanCreateChildFeature
     /// <summary>List of features in this group.</summary>
     public IReadOnlyList<FeatureDefinition> Features => _features;
 
-    /// <summary>Can be used to get/set custom properties for this group.</summary>
-    public Dictionary<string, object?> Properties { get; }
+    /// <summary>Bag of custom properties for this group.</summary>
+    public ExtraProperties ExtraProperties { get; } = [];
 
-    /// <summary>Gets/sets a key-value on the <see cref="Properties"/>.</summary>
+    /// <summary>Gets/sets a key-value on the <see cref="ExtraProperties"/>.</summary>
     /// <param name="name">Name of the property</param>
     /// <returns>
-    /// Returns the value in the <see cref="Properties"/> dictionary by given <paramref name="name"/>.
-    /// Returns null if given <paramref name="name"/> is not present in the <see cref="Properties"/> dictionary.
+    /// Returns the value in the <see cref="ExtraProperties"/> dictionary by given <paramref name="name"/>.
+    /// Returns null if given <paramref name="name"/> is not present in the <see cref="ExtraProperties"/> dictionary.
     /// </returns>
     public object? this[string name]
     {
-        get => Properties.GetOrDefault(name);
-        set => Properties[name] = value;
+        get => ExtraProperties.GetOrDefault(name);
+        set => ExtraProperties[name] = value;
     }
 
     /// <summary>Adds a top-level feature to this group.</summary>

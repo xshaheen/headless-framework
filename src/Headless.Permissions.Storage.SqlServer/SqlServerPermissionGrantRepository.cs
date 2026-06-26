@@ -2,7 +2,6 @@
 
 using System.Data;
 using Headless.Abstractions;
-using Headless.Domain;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Microsoft.Data.SqlClient;
@@ -127,7 +126,6 @@ internal sealed class SqlServerPermissionGrantRepository(
 
         await _ExecuteAsync(sql, cancellationToken, _Param("Id", permissionGrant.Id), _TenantParam())
             .ConfigureAwait(false);
-        await _PublishAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteManyAsync(
@@ -152,11 +150,6 @@ internal sealed class SqlServerPermissionGrantRepository(
                 _TenantParam()
             )
             .ConfigureAwait(false);
-
-        foreach (var permissionGrant in permissionGrants)
-        {
-            await _PublishAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
-        }
     }
 
     private async Task<List<PermissionGrantRecord>> _ReadAsync(
@@ -198,19 +191,6 @@ internal sealed class SqlServerPermissionGrantRepository(
         command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask _PublishAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
-    {
-        await using var scope = services.CreateAsyncScope();
-        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
-
-        if (publisher is not null)
-        {
-            await publisher
-                .PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken)
-                .ConfigureAwait(false);
-        }
     }
 
     private SqlParameter _TenantParam() => _Param("TenantId", services.GetService<ICurrentTenant>()?.Id);

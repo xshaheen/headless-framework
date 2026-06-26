@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -17,7 +18,12 @@ internal sealed class MembershipService(
     private readonly CancellationTokenSource _localMembershipLost = new();
     private int _membershipLost;
 
-    public NodeIdentity? Identity { get; private set; }
+    // NodeIdentity? is a multi-field struct, so a plain field would expose a torn read to a consumer that
+    // reads Identity while the heartbeat loop clears it on membership loss. Box it behind a volatile
+    // reference: reference assignment is atomic and volatile supplies the read/write ordering.
+    private volatile StrongBox<NodeIdentity>? _identity;
+
+    public NodeIdentity? Identity => _identity?.Value;
 
     public CancellationToken LocalMembershipLostToken => _localMembershipLost.Token;
 
@@ -39,7 +45,7 @@ internal sealed class MembershipService(
         // UpsertDescriptorAsync durably establishes both the cold descriptor and the initial guarded
         // liveness row, so registration writes once. The heartbeat loop owns every subsequent beat.
         await store.UpsertDescriptorAsync(descriptor, cancellationToken).ConfigureAwait(false);
-        Identity = identity;
+        _identity = new StrongBox<NodeIdentity>(identity);
 
         return identity;
     }
@@ -58,7 +64,7 @@ internal sealed class MembershipService(
         if (!accepted)
         {
             // Clear the local identity so the heartbeat guard stops re-issuing beats for a lost membership.
-            Identity = null;
+            _identity = null;
             await _SignalLocalMembershipLostAsync(identity).ConfigureAwait(false);
         }
 
@@ -75,7 +81,7 @@ internal sealed class MembershipService(
         }
 
         await store.LeaveAsync(identity, cancellationToken).ConfigureAwait(false);
-        Identity = null;
+        _identity = null;
     }
 
     public async ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
@@ -94,12 +100,10 @@ internal sealed class MembershipService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var snapshots = await GetLivenessSnapshotAsync(cancellationToken).ConfigureAwait(false);
-
-        return snapshots
-            .Where(static snapshot => snapshot.State == NodeLivenessState.Alive)
-            .Select(static snapshot => snapshot.Identity)
-            .ToArray();
+        // Targeted live-node read: the store serves Alive-only current-generation identities directly (Redis
+        // from the :live sorted set, relational from a filtered query) instead of materializing the full
+        // snapshot and filtering it here.
+        return await store.ReadLiveNodesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<IReadOnlyList<NodeLivenessSnapshot>> GetLivenessSnapshotAsync(

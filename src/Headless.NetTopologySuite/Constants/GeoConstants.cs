@@ -17,6 +17,11 @@ public static class GeoConstants
     /// </summary>
     public const int GoogleMapsSrid = 4326;
 
+    // WGS84 / SRID 4326 coordinate bounds. These immutable geodetic limits are owned by the
+    // geometry domain and declared directly here — intentionally not sourced from the
+    // validation-side equivalents in Headless.Validators.GeoCoordinateValidator, a base-library
+    // type this geometry package should not reach into for its own spec constants.
+
     /// <summary>Minimum valid longitude (X) for WGS84 / SRID 4326.</summary>
     public const double MinLongitude = -180d;
 

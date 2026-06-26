@@ -169,7 +169,11 @@ public static class StringBuilderExtensions
     /// <returns>The same <paramref name="sb"/> instance, to allow chaining.</returns>
     public static StringBuilder AppendInvariant(this StringBuilder sb, byte value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <summary>Appends the invariant-culture string representation of <paramref name="value"/> to the builder, or nothing if it is <see langword="null"/>.</summary>
@@ -178,201 +182,305 @@ public static class StringBuilderExtensions
     /// <returns>The same <paramref name="sb"/> instance, to allow chaining.</returns>
     public static StringBuilder AppendInvariant(this StringBuilder sb, byte? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, sbyte value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, sbyte? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, short value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, short? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, ushort value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, ushort? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, int value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, int? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, uint value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, uint? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, long value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, long? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, ulong value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, ulong? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
 #if NET6_0_OR_GREATER
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, Half value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, Half? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 #endif
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, float value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, float? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, double value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[32];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, double? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[32];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, decimal value)
     {
-        return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        Span<char> buffer = stackalloc char[48];
+
+        return value.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <inheritdoc cref="AppendInvariant(StringBuilder, byte?)"/>
     public static StringBuilder AppendInvariant(this StringBuilder sb, decimal? value)
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        var actual = value.GetValueOrDefault();
+        Span<char> buffer = stackalloc char[48];
+
+        return actual.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture)
+            ? sb.Append(buffer[..written])
+            : sb.Append(actual.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <summary>Appends the invariant-culture formatted representation of <paramref name="value"/> to the builder, or nothing if it is <see langword="null"/>.</summary>
@@ -397,12 +505,23 @@ public static class StringBuilderExtensions
     public static StringBuilder AppendInvariant<T>(this StringBuilder sb, T? value)
         where T : IFormattable
     {
-        if (value is not null)
+        if (value is null)
         {
-            return sb.Append(value.ToString(format: null, CultureInfo.InvariantCulture));
+            return sb;
         }
 
-        return sb;
+        // Avoid the intermediate string for span-formattable values (covers most BCL types).
+        if (value is ISpanFormattable spanFormattable)
+        {
+            Span<char> buffer = stackalloc char[48];
+
+            if (spanFormattable.TryFormat(buffer, out var written, default, CultureInfo.InvariantCulture))
+            {
+                return sb.Append(buffer[..written]);
+            }
+        }
+
+        return sb.Append(value.ToString(format: null, CultureInfo.InvariantCulture));
     }
 
     /// <summary>Appends the invariant-culture string representation of <paramref name="value"/> to the builder, or nothing if it is <see langword="null"/>.</summary>

@@ -33,8 +33,7 @@ public static class ExtraPropertyExtensions
     {
         /// <summary>
         /// Reads the value at <paramref name="key"/> and returns it as the enum type <typeparamref name="T"/>,
-        /// parsing it from its string representation when necessary and caching the parsed value back into the
-        /// dictionary so subsequent reads take the typed fast path.
+        /// parsing it from its string representation when necessary.
         /// </summary>
         /// <typeparam name="T">The enum type to convert the stored value to.</typeparam>
         /// <param name="key">The key whose value is read.</param>
@@ -66,17 +65,14 @@ public static class ExtraPropertyExtensions
                 return default;
             }
 
-            var parsed = (T)Enum.Parse(typeof(T), text, ignoreCase: true);
-
-            // Cache the parsed enum so subsequent reads take the typed fast path above.
-            extraProperties[key] = parsed;
-
-            return parsed;
+            // Do not write the parsed value back into the dictionary: ToEnum is a read accessor and a write here is not
+            // thread-safe and throws "collection modified" if the bag is being enumerated concurrently.
+            return (T)Enum.Parse(typeof(T), text, ignoreCase: true);
         }
 
         /// <summary>
         /// Determines whether this instance and <paramref name="otherDictionary"/> contain the same keys with values
-        /// whose string representations are ordinally equal.
+        /// that are equal under the default equality comparer.
         /// </summary>
         /// <param name="otherDictionary">The dictionary to compare against.</param>
         /// <returns><see langword="true"/> if both contain the same keys and equivalent values; otherwise, <see langword="false"/>.</returns>
@@ -95,7 +91,7 @@ public static class ExtraPropertyExtensions
             {
                 if (
                     !otherDictionary.TryGetValue(key, out var value)
-                    || !string.Equals(extraProperties[key]?.ToString(), value?.ToString(), StringComparison.Ordinal)
+                    || !EqualityComparer<object?>.Default.Equals(extraProperties[key], value)
                 )
                 {
                     return false;
@@ -183,7 +179,7 @@ public static class HasExtraPropertiesExtensions
         /// <returns>The stored value, or <paramref name="defaultValue"/> when the property is absent.</returns>
         public object? GetProperty(string name, object? defaultValue = null)
         {
-            return source.ExtraProperties.TryGetValue(name, out var value) ? value : value ?? defaultValue;
+            return source.ExtraProperties.TryGetValue(name, out var value) ? value : defaultValue;
         }
 
         /// <summary>

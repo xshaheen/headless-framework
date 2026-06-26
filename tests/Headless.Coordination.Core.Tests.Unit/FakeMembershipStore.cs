@@ -28,6 +28,8 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public int ReadNodeLivenessCalls { get; private set; }
 
+    public int ReadLiveNodesCalls { get; private set; }
+
     public Dictionary<NodeIdentity, NodeLivenessState?> NodeStates { get; } = [];
 
     public List<NodeDescriptor> Descriptors { get; } = [];
@@ -124,6 +126,31 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
         // Absent identities (never configured) resolve to null, matching the SPI's absent contract.
         return ValueTask.FromResult(NodeStates.GetValueOrDefault(identity));
+    }
+
+    public ValueTask<IReadOnlyList<NodeIdentity>> ReadLiveNodesAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ReadLiveNodesCalls++;
+
+        if (ThrowOnRead)
+        {
+            throw new InvalidOperationException("store unavailable");
+        }
+
+        // Derive the Alive set from the next enqueued snapshot, ordered by identity — mirroring the real store
+        // SPI, where ReadLiveNodesAsync equals filtering ReadLivenessAsync to Alive and ordering by identity.
+        IReadOnlyList<NodeIdentity> live =
+            _snapshots.Count == 0
+                ? Array.Empty<NodeIdentity>()
+                : _snapshots
+                    .Dequeue()
+                    .Where(static snapshot => snapshot.State == NodeLivenessState.Alive)
+                    .Select(static snapshot => snapshot.Identity)
+                    .OrderBy(static identity => identity.ToString(), StringComparer.Ordinal)
+                    .ToArray();
+
+        return ValueTask.FromResult(live);
     }
 
     public void EnqueueSnapshot(params NodeLivenessSnapshot[] snapshots)

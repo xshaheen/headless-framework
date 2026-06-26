@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Domain;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -9,16 +8,12 @@ namespace Headless.Settings;
 
 /// <summary>
 /// EF Core implementation of <see cref="ISettingValueRecordRepository"/> that stores
-/// <see cref="SettingValueRecord"/> entities via a pooled <typeparamref name="TContext"/> and
-/// publishes <see cref="Headless.Domain.EntityChangedEventData{T}"/> events after mutations.
+/// <see cref="SettingValueRecord"/> entities via a pooled <typeparamref name="TContext"/>.
 /// </summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type registered with the DI container.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-/// <param name="localPublisher">Local event bus used to publish change events after inserts, updates, and deletes.</param>
-public sealed class EfSettingValueRecordRepository<TContext>(
-    IDbContextFactory<TContext> dbFactory,
-    ILocalEventBus localPublisher
-) : ISettingValueRecordRepository
+public sealed class EfSettingValueRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
+    : ISettingValueRecordRepository
     where TContext : DbContext
 {
     /// <inheritdoc/>
@@ -114,10 +109,6 @@ public sealed class EfSettingValueRecordRepository<TContext>(
 
         db.Set<SettingValueRecord>().Update(setting);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        await localPublisher
-            .PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken)
-            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -130,12 +121,5 @@ public sealed class EfSettingValueRecordRepository<TContext>(
 
         db.Set<SettingValueRecord>().RemoveRange(settings);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        foreach (var setting in settings)
-        {
-            await localPublisher
-                .PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken)
-                .ConfigureAwait(false);
-        }
     }
 }

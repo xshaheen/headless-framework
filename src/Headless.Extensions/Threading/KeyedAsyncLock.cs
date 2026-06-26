@@ -19,6 +19,11 @@ namespace Headless.Threading;
 /// rather than a single process-wide monitor.
 /// </para>
 /// <para>
+/// <b>Locks are non-reentrant.</b> Acquisition tracks no owning thread or async context, so a caller that
+/// already holds the lock for a key and re-acquires the same key without first releasing will deadlock
+/// (<see cref="LockAsync(string,CancellationToken)"/>) or observe the key as held (<see cref="TryLock"/>).
+/// </para>
+/// <para>
 /// <b>Cache stampede protection example:</b>
 /// </para>
 /// <code>
@@ -75,7 +80,7 @@ public sealed class KeyedAsyncLock : IDisposable
 
         for (var i = 0; i < _shards.Length; i++)
         {
-            _shards[i] = new Shard();
+            _shards[i] = new Shard(this);
         }
     }
 
@@ -95,7 +100,10 @@ public sealed class KeyedAsyncLock : IDisposable
         Argument.IsNotNullOrEmpty(key);
         Ensure.NotDisposed(_disposed, this);
 
-        var semaphore = _GetOrCreate(key);
+        // Resolve the owning shard once (hashing the key) and reuse it for create + release, so the
+        // acquire/release cycle hashes the key a single time instead of re-hashing in the releaser.
+        var shard = _GetShard(key);
+        var semaphore = shard.GetOrCreate(key);
 
         try
         {
@@ -103,11 +111,11 @@ public sealed class KeyedAsyncLock : IDisposable
         }
         catch
         {
-            _DecrementRefCount(key);
+            shard.DecrementRefCount(key);
             throw;
         }
 
-        return new Releaser(this, key);
+        return new Releaser(shard, key);
     }
 
     /// <summary>
@@ -125,15 +133,17 @@ public sealed class KeyedAsyncLock : IDisposable
         Argument.IsNotNullOrEmpty(key);
         Ensure.NotDisposed(_disposed, this);
 
-        var semaphore = _GetOrCreate(key);
+        // Resolve the owning shard once and reuse it for create + release (single hash per cycle).
+        var shard = _GetShard(key);
+        var semaphore = shard.GetOrCreate(key);
 
         if (!semaphore.Wait(0))
         {
-            _DecrementRefCount(key);
+            shard.DecrementRefCount(key);
             return null;
         }
 
-        return new Releaser(this, key);
+        return new Releaser(shard, key);
     }
 
     /// <summary>
@@ -169,7 +179,9 @@ public sealed class KeyedAsyncLock : IDisposable
 
         Argument.IsPositive(timeout);
 
-        var semaphore = _GetOrCreate(key);
+        // Resolve the owning shard once and reuse it for create + release (single hash per cycle).
+        var shard = _GetShard(key);
+        var semaphore = shard.GetOrCreate(key);
 
         // When the caller token cannot be cancelled, skip the linked CTS — one allocation instead of two.
         if (!cancellationToken.CanBeCanceled)
@@ -188,12 +200,12 @@ public sealed class KeyedAsyncLock : IDisposable
                 catch
                 {
                     await delayCts.CancelAsync().ConfigureAwait(false);
-                    _DecrementRefCount(key);
+                    shard.DecrementRefCount(key);
                     throw;
                 }
 
                 await delayCts.CancelAsync().ConfigureAwait(false);
-                return new Releaser(this, key);
+                return new Releaser(shard, key);
             }
 
             // Timeout elapsed: cancel the semaphore wait and clean up.
@@ -203,16 +215,16 @@ public sealed class KeyedAsyncLock : IDisposable
             {
                 await waitTask.ConfigureAwait(false);
                 // The wait completed in the window between the race and our cancel — treat as acquired then released.
-                _Release(key);
+                shard.Release(key);
             }
             catch (OperationCanceledException)
             {
                 // Our own delayCts triggered this; the caller did not cancel (CanBeCanceled was false).
-                _DecrementRefCount(key);
+                shard.DecrementRefCount(key);
             }
             catch
             {
-                _DecrementRefCount(key);
+                shard.DecrementRefCount(key);
                 throw;
             }
 
@@ -235,12 +247,12 @@ public sealed class KeyedAsyncLock : IDisposable
             catch
             {
                 await delayCts2.CancelAsync().ConfigureAwait(false);
-                _DecrementRefCount(key);
+                shard.DecrementRefCount(key);
                 throw;
             }
 
             await delayCts2.CancelAsync().ConfigureAwait(false);
-            return new Releaser(this, key);
+            return new Releaser(shard, key);
         }
 
         await waitCts.CancelAsync().ConfigureAwait(false);
@@ -248,16 +260,16 @@ public sealed class KeyedAsyncLock : IDisposable
         try
         {
             await waitTask2.ConfigureAwait(false);
-            _Release(key);
+            shard.Release(key);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // Cancelled by waitCts (timeout path), not by the caller.
-            _DecrementRefCount(key);
+            shard.DecrementRefCount(key);
         }
         catch
         {
-            _DecrementRefCount(key);
+            shard.DecrementRefCount(key);
             throw;
         }
 
@@ -267,17 +279,12 @@ public sealed class KeyedAsyncLock : IDisposable
 
     private Shard _GetShard(string key)
     {
-        // StringComparer.Ordinal matches the per-shard dictionary comparer, ensuring the same key
-        // always maps to the same shard regardless of the calling context.
-        var hash = StringComparer.Ordinal.GetHashCode(key);
+        // Ordinal hashing (matching the per-shard dictionary comparer) so the same key always maps to the
+        // same shard. string.GetHashCode(StringComparison) is a direct instance call, avoiding the virtual
+        // StringComparer.Ordinal.GetHashCode dispatch on this acquire/release hot path.
+        var hash = key.GetHashCode(StringComparison.Ordinal);
         return _shards[hash & (_ShardCount - 1)];
     }
-
-    private SemaphoreSlim _GetOrCreate(string key) => _GetShard(key).GetOrCreate(key);
-
-    private void _DecrementRefCount(string key) => _GetShard(key).DecrementRefCount(key);
-
-    private void _Release(string key) => _GetShard(key).Release(key);
 
     /// <summary>
     /// Disposes all semaphores held by this instance.
@@ -297,7 +304,8 @@ public sealed class KeyedAsyncLock : IDisposable
         }
     }
 
-    private sealed class Releaser(KeyedAsyncLock owner, string key) : IDisposable
+    // Holds the already-resolved shard (not the owner + key) so Dispose releases directly without re-hashing the key.
+    private sealed class Releaser(Shard shard, string key) : IDisposable
     {
         private int _disposed;
 
@@ -308,7 +316,7 @@ public sealed class KeyedAsyncLock : IDisposable
                 return;
             }
 
-            owner._Release(key);
+            shard.Release(key);
         }
     }
 
@@ -320,7 +328,7 @@ public sealed class KeyedAsyncLock : IDisposable
 
     // Each shard owns its lock and dictionary; all bookkeeping happens inside the shard so the monitor stays a
     // private field (never exposed), keeping lock-target analysis happy and scoping contention to the shard.
-    private sealed class Shard
+    private sealed class Shard(KeyedAsyncLock owner)
     {
         // Lock is .NET 9+ and performs better than lock(object) on uncontended paths.
         private readonly Lock _gate = new();
@@ -332,6 +340,11 @@ public sealed class KeyedAsyncLock : IDisposable
         {
             lock (_gate)
             {
+                // Re-check disposal under the shard lock: a caller can clear the outer NotDisposed gate and
+                // then race DisposeAll. Without this guard a post-DisposeAll insert would leak a semaphore
+                // that nothing will ever dispose. DisposeAll takes the same lock, so this read is ordered.
+                Ensure.NotDisposed(owner._disposed, owner);
+
                 if (_map.TryGetValue(key, out var item))
                 {
                     ++item.RefCount;

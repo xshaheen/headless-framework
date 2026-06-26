@@ -183,4 +183,76 @@ public sealed class ListExtensionsTests
         list.Should().HaveElementAt(1, 42);
         list.Should().HaveElementAt(2, 3);
     }
+
+    [Fact]
+    public void ReplaceFirst_with_item_should_replace_non_comparable_reference_type()
+    {
+        // given - records are not IComparable; the old Comparer<T>.Default.Compare path threw for them.
+        var a = new Box(1);
+        var c = new Box(3);
+        var list = new List<Box> { a, new Box(2), c };
+
+        // when
+        list.ReplaceFirst(new Box(2), new Box(42));
+
+        // then
+        list.Should().Equal(a, new Box(42), c);
+    }
+
+    [Fact]
+    public void GetOrAdd_should_add_when_no_value_type_element_matches()
+    {
+        // given - regression: the old FirstOrDefault + "is not null" check treated a value-type default
+        // as a hit, so a non-matching selector returned default(int) and never appended a new element.
+        var list = new List<int> { 1, 2, 3 };
+
+        // when
+        var result = list.GetOrAdd(x => x == 99, () => 42);
+
+        // then
+        result.Should().Be(42);
+        list.Should().Equal(1, 2, 3, 42);
+    }
+
+    [Fact]
+    public void GetOrAdd_should_return_existing_value_type_match_without_adding()
+    {
+        // given
+        var list = new List<int> { 1, 2, 3 };
+
+        // when
+        var result = list.GetOrAdd(x => x == 2, () => 42);
+
+        // then
+        result.Should().Be(2);
+        list.Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public void MoveItem_should_move_matching_element_to_target_index()
+    {
+        // given
+        var list = new List<int> { 1, 2, 3, 4 };
+
+        // when
+        list.MoveItem(x => x == 4, 0);
+
+        // then
+        list.Should().Equal(4, 1, 2, 3);
+    }
+
+    [Fact]
+    public void MoveItem_should_throw_when_no_element_matches()
+    {
+        // given
+        var list = new List<int> { 1, 2, 3 };
+
+        // when
+        var act = () => list.MoveItem(x => x == 99, 0);
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    private sealed record Box(int Value);
 }

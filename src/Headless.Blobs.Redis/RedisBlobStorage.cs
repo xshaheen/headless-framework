@@ -239,8 +239,11 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var results = new Result<Exception>[blobs.Count];
-        var index = 0;
+        // Index results by input position, not execution-start order: Parallel.ForEachAsync does not run bodies in
+        // enumeration order, so an Interlocked counter would misalign results with their inputs. Honors the
+        // "one Result per input blob, in original order" contract.
+        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? blobs.ToList();
+        var results = new Result<Exception>[items.Count];
 
         var options = new ParallelOptions
         {
@@ -249,12 +252,13 @@ public sealed class RedisBlobStorage : IBlobStorage
         };
 
         await Parallel
-            .ForEachAsync(
-                blobs,
+            .ForAsync(
+                0,
+                items.Count,
                 options,
-                async (blob, ct) =>
+                async (i, ct) =>
                 {
-                    var i = Interlocked.Increment(ref index) - 1;
+                    var blob = items[i];
 
                     try
                     {
@@ -332,8 +336,9 @@ public sealed class RedisBlobStorage : IBlobStorage
             return [];
         }
 
-        var results = new Result<bool, Exception>[blobNames.Count];
-        var index = 0;
+        // Index results by input position (see BulkUploadAsync) so each entry matches its blob name in original order.
+        var names = blobNames as IReadOnlyList<string> ?? blobNames.ToList();
+        var results = new Result<bool, Exception>[names.Count];
 
         var options = new ParallelOptions
         {
@@ -342,16 +347,15 @@ public sealed class RedisBlobStorage : IBlobStorage
         };
 
         await Parallel
-            .ForEachAsync(
-                blobNames,
+            .ForAsync(
+                0,
+                names.Count,
                 options,
-                async (fileName, ct) =>
+                async (i, ct) =>
                 {
-                    var i = Interlocked.Increment(ref index) - 1;
-
                     try
                     {
-                        results[i] = await DeleteAsync(container, fileName, ct).ConfigureAwait(false);
+                        results[i] = await DeleteAsync(container, names[i], ct).ConfigureAwait(false);
                     }
                     catch (Exception e)
                     {
@@ -825,7 +829,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         // Two-tier: directory segments use lenient path-segment normalization (matching stored keys); the search
         // pattern itself is only slash-normalized so wildcards survive.
         var normalizedDirectories = string.Join('/', directories.Select(_normalizer.NormalizeBlobName));
-        searchPattern = Url.Combine(normalizedDirectories, _NormalizePath(searchPattern));
+        searchPattern = Url.Combine(normalizedDirectories, BlobStorageHelpers.NormalizePath(searchPattern));
 
         if (string.IsNullOrEmpty(searchPattern))
         {
@@ -881,9 +885,6 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         return prefix.EnsureEndsWith('/') + normalizedBlobName;
     }
-
-    [return: NotNullIfNotNull(nameof(path))]
-    private static string? _NormalizePath(string? path) => path?.Replace('\\', '/');
 
     #endregion
 

@@ -84,7 +84,7 @@ public sealed class MessagingDashboardOptionsBuilder
     public MessagingDashboardOptionsBuilder WithBasicAuth(string username, string password)
     {
         Auth.Mode = AuthMode.Basic;
-        Auth.BasicCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}"));
+        Auth.BasicCredentials = $"{username}:{password}".ToBase64();
         return this;
     }
 

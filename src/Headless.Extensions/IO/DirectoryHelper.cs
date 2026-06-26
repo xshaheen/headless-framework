@@ -149,7 +149,15 @@ public static class DirectoryHelper
         Argument.IsNotNull(parentDirectory);
         Argument.IsNotNull(childDirectory);
 
-        if (string.Equals(parentDirectory.FullName, childDirectory.FullName, StringComparison.Ordinal))
+        // File-name case sensitivity is platform-dependent: Windows (NTFS) and macOS (APFS, default) match
+        // paths case-insensitively, while Linux is case-sensitive. Compare the same way the host filesystem
+        // does so a differently-cased ancestor is still recognized on case-insensitive platforms.
+        var comparison =
+            OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
+        if (string.Equals(parentDirectory.FullName, childDirectory.FullName, comparison))
         {
             return true;
         }
@@ -174,7 +182,8 @@ public static class DirectoryHelper
     {
         Argument.IsNotNull(directoryName);
 
-        return directoryName.All(c => !InvalidDirectoryNameChars.Contains(c));
+        // Vectorized scan over the whole span; the LINQ All(...Contains) form defeats SearchValues.
+        return !directoryName.AsSpan().ContainsAny(InvalidDirectoryNameChars);
     }
 
     #endregion

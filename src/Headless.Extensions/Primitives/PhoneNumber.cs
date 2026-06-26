@@ -26,25 +26,70 @@ public sealed class PhoneNumber : IEquatable<PhoneNumber>
     /// <exception cref="ArgumentException">Thrown when <paramref name="number"/> is empty.</exception>
     public PhoneNumber(int countryCode, string number)
     {
-        CountryCode = Argument.IsPositive(countryCode);
-        Number = Argument.IsNotNullOrEmpty(number);
+        // The init accessors below own validation and normalization, so object-initializer assignments cannot
+        // bypass them either.
+        CountryCode = countryCode;
+        Number = number;
     }
 
     /// <summary>The country calling code.</summary>
-    public int CountryCode { get; init; }
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the value is not positive.</exception>
+    public int CountryCode
+    {
+        get;
+        init => field = Argument.IsPositive(value);
+    }
 
-    /// <summary>The national (subscriber) number, without the country calling code.</summary>
-    public string Number { get; init; } = null!;
+    /// <summary>
+    /// The national (subscriber) number, without the country calling code. Stored in a canonical digits-only
+    /// form so that values differing only in formatting (for example <c>"555-1234"</c> and <c>"5551234"</c>)
+    /// are equal.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">Thrown when the value is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when the value is empty.</exception>
+    public string Number
+    {
+        get;
+        init => field = _CanonicalizeNumber(Argument.IsNotNullOrEmpty(value));
+    } = null!;
 
-    private string ConcatenatedNumber => $"+{CountryCode.ToString(CultureInfo.InvariantCulture)}{Number}";
+    // Lazily-computed, cached projections. A PhoneNumber is immutable once initialized, so first-use caching is
+    // safe and avoids re-parsing through libphonenumber on every format/normalize call. Reference/nullable-string
+    // results that can legitimately be null carry a companion "computed" flag.
+    private string? _nationalFormat;
+    private bool _nationalFormatComputed;
+    private string? _internationalFormat;
+    private bool _internationalFormatComputed;
+    private string? _toStringCache;
+    private string? _normalizedCache;
+
+    private string ConcatenatedNumber => field ??= $"+{CountryCode.ToString(CultureInfo.InvariantCulture)}{Number}";
 
     /// <summary>Formats this phone number in its national format.</summary>
     /// <returns>The national-format string, or <see langword="null"/> when the number cannot be parsed or is not a possible number.</returns>
-    public string? GetNationalFormat() => GetNationalFormat(ConcatenatedNumber);
+    public string? GetNationalFormat()
+    {
+        if (!_nationalFormatComputed)
+        {
+            _nationalFormat = GetNationalFormat(ConcatenatedNumber);
+            _nationalFormatComputed = true;
+        }
+
+        return _nationalFormat;
+    }
 
     /// <summary>Formats this phone number in its international format.</summary>
     /// <returns>The international-format string, or <see langword="null"/> when the number cannot be parsed or is not a possible number.</returns>
-    public string? GetInternationalFormat() => GetInternationalFormat(ConcatenatedNumber);
+    public string? GetInternationalFormat()
+    {
+        if (!_internationalFormatComputed)
+        {
+            _internationalFormat = GetInternationalFormat(ConcatenatedNumber);
+            _internationalFormatComputed = true;
+        }
+
+        return _internationalFormat;
+    }
 
     /// <summary>Returns the region where a phone number is from. This could be used for geocoding at the region level.</summary>
     /// <returns>The region where the phone number is from, or null if no region matches this calling code.</returns>
@@ -96,11 +141,53 @@ public sealed class PhoneNumber : IEquatable<PhoneNumber>
     public static bool operator !=(PhoneNumber? left, PhoneNumber? right) => !Equals(left, right);
 
     /// <summary>Returns the international format of the number, falling back to <c>+{CountryCode} {Number}</c> when it cannot be formatted.</summary>
-    public override string ToString() => GetInternationalFormat() ?? $"+{CountryCode} {Number}";
+    public override string ToString() => _toStringCache ??= GetInternationalFormat() ?? $"+{CountryCode} {Number}";
 
     /// <summary>Returns a normalized canonical representation of this phone number derived from its string form.</summary>
     /// <returns>The normalized phone number string.</returns>
-    public string Normalize() => LookupNormalizer.NormalizePhoneNumber(ToString());
+    public string Normalize() => _normalizedCache ??= LookupNormalizer.NormalizePhoneNumber(ToString());
+
+    /// <summary>
+    /// Reduces a national number to its canonical digits-only form, dropping formatting characters such as
+    /// spaces, dashes, parentheses, and a leading <c>+</c> so that equality ignores presentation differences.
+    /// </summary>
+    /// <param name="number">The national number to canonicalize.</param>
+    /// <returns>The digits-only form of <paramref name="number"/>.</returns>
+    private static string _CanonicalizeNumber(string number)
+    {
+        var digitCount = 0;
+
+        foreach (var c in number)
+        {
+            if (char.IsDigit(c))
+            {
+                digitCount++;
+            }
+        }
+
+        // Common case: already digits-only -> return as-is without allocating.
+        if (digitCount == number.Length)
+        {
+            return number;
+        }
+
+        return string.Create(
+            digitCount,
+            number,
+            static (span, source) =>
+            {
+                var i = 0;
+
+                foreach (var c in source)
+                {
+                    if (char.IsDigit(c))
+                    {
+                        span[i++] = c;
+                    }
+                }
+            }
+        );
+    }
 
     #region Utils
 

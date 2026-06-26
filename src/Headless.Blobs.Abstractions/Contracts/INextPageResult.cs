@@ -44,7 +44,7 @@ public interface IHasNextPageFunc
 /// After receiving the first page, advance through subsequent pages by calling <see cref="NextPageAsync"/> while
 /// <see cref="HasMore"/> is <see langword="true"/>. Each call mutates the same instance in place.
 /// </remarks>
-public sealed class PagedFileListResult : IHasNextPageFunc
+public sealed class PagedFileListResult : IHasNextPageFunc, IAsyncDisposable
 {
     private static readonly ReadOnlyCollection<BlobInfo> _Empty = new([]);
 
@@ -126,9 +126,37 @@ public sealed class PagedFileListResult : IHasNextPageFunc
     /// Creates an uninitialized cursor whose first page is loaded by calling <see cref="NextPageAsync"/> with the
     /// supplied delegate. Used by providers that load the first page lazily via <see cref="NextPageAsync"/>.
     /// </summary>
-    public PagedFileListResult(NextPageFunc nextPageFunc)
+    /// <param name="nextPageFunc">Delegate to fetch the next page.</param>
+    /// <param name="cleanup">
+    /// Optional provider-supplied cleanup invoked by <see cref="DisposeAsync"/> to release any resource that backs
+    /// the cursor (for example an open directory enumerator / OS find-handle). Defaults to <see langword="null"/>
+    /// (no-op) so providers that hold no such resource are unaffected.
+    /// </param>
+    public PagedFileListResult(NextPageFunc nextPageFunc, Action? cleanup = null)
     {
         _nextPageFunc = nextPageFunc;
+        _cleanup = cleanup;
+    }
+
+    #endregion
+
+    #region Dispose
+
+    private Action? _cleanup;
+
+    /// <summary>
+    /// Releases any provider-held resource backing the pagination cursor and detaches the next-page delegate. Safe
+    /// to call even when not all pages were consumed (the abandoned-pagination case) and idempotent across calls.
+    /// </summary>
+    public ValueTask DisposeAsync()
+    {
+        _nextPageFunc = null;
+
+        var cleanup = _cleanup;
+        _cleanup = null;
+        cleanup?.Invoke();
+
+        return ValueTask.CompletedTask;
     }
 
     #endregion

@@ -121,9 +121,24 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
 
         if (ParallelInvoke)
         {
-            await Task.WhenAll(tmpInvocationList.Select(callback => callback(sender, eventArgs)))
-                .WithAggregatedExceptions()
-                .ConfigureAwait(false);
+            // Materialize the task list eagerly, turning a synchronous throw (before a handler's first await) into a
+            // faulted task. Passing the lazy Select to Task.WhenAll would stop enumeration at the first synchronous
+            // throw, leaving earlier handlers orphaned and later handlers never started.
+            var tasks = new List<Task>(tmpInvocationList.Count);
+
+            foreach (var callback in tmpInvocationList)
+            {
+                try
+                {
+                    tasks.Add(callback(sender, eventArgs));
+                }
+                catch (Exception e)
+                {
+                    tasks.Add(Task.FromException(e));
+                }
+            }
+
+            await Task.WhenAll(tasks).WithAggregatedExceptions().ConfigureAwait(false);
         }
         else
         {

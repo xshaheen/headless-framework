@@ -26,17 +26,12 @@ public static partial class Argument
     )
         where T : struct, Enum
     {
-        if (Enum.IsDefined(argument) || _IsValidFlagsCombination(typeof(T), _EnumToUInt64(argument)))
+        if (!Enum.IsDefined(argument) && !_IsValidFlagsCombination(typeof(T), _EnumToUInt64(argument)))
         {
-            return argument;
+            _ThrowForIsInEnum(argument, message, paramName);
         }
 
-        message ??=
-            $"The argument {paramName.ToAssertString()} = {argument} is not a valid value for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
-
-#pragma warning disable MA0015
-        throw new InvalidEnumArgumentException(message);
-#pragma warning restore MA0015
+        return argument;
     }
 
     /// <inheritdoc cref="IsInEnum{T}(T,string?,string?)"/>
@@ -49,17 +44,12 @@ public static partial class Argument
     )
         where T : struct, Enum
     {
-        if (Enum.IsDefined(typeof(T), argument) || _IsValidFlagsCombination(typeof(T), unchecked((ulong)argument)))
+        if (!Enum.IsDefined(typeof(T), argument) && !_IsValidFlagsCombination(typeof(T), unchecked((ulong)argument)))
         {
-            return argument;
+            _ThrowForIsInEnumInt<T>(argument, message, paramName);
         }
 
-        message ??=
-            $"The argument {paramName.ToAssertString()} = {argument.ToString(CultureInfo.InvariantCulture)} is not a valid value for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
-
-#pragma warning disable MA0015
-        throw new InvalidEnumArgumentException(message);
-#pragma warning restore MA0015
+        return argument;
     }
 
     /// <summary>
@@ -93,5 +83,29 @@ public static partial class Argument
             ),
             _ => Convert.ToUInt64(value, CultureInfo.InvariantCulture),
         };
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsInEnum<T>(T argument, string? message, string? paramName)
+        where T : struct, Enum
+    {
+        message ??=
+            $"The argument {paramName.ToAssertString()} = {argument} is not a valid value for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
+
+#pragma warning disable MA0015
+        throw new InvalidEnumArgumentException(message);
+#pragma warning restore MA0015
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsInEnumInt<T>(int argument, string? message, string? paramName)
+        where T : struct, Enum
+    {
+        message ??=
+            $"The argument {paramName.ToAssertString()} = {argument.ToString(CultureInfo.InvariantCulture)} is not a valid value for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
+
+#pragma warning disable MA0015
+        throw new InvalidEnumArgumentException(message);
+#pragma warning restore MA0015
     }
 }

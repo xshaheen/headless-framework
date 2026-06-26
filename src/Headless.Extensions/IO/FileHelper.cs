@@ -56,20 +56,35 @@ public static class FileHelper
 
         Directory.CreateDirectory(directoryPath);
 
-        var results = blobs.Select(async blob =>
-        {
-            try
-            {
-                await _BaseSaveFileAsync(blob.BlobStream, blob.BlobName, directoryPath, token).ConfigureAwait(false);
-                return Result<Exception>.Ok();
-            }
-            catch (Exception e)
-            {
-                return Result<Exception>.Fail(e);
-            }
-        });
+        var items = blobs as IReadOnlyList<(Stream BlobStream, string BlobName)> ?? blobs.ToList();
+        var results = new Result<Exception>[items.Count];
 
-        return await Task.WhenAll(results).WithAggregatedExceptions().ConfigureAwait(false);
+        // Bound concurrency so a large batch does not open unbounded FileStreams at once (amplified by the
+        // per-file retry pipeline). Each blob's outcome is captured independently into its slot, preserving the
+        // one-result-per-input contract and the input ordering.
+        await Parallel
+            .ForAsync(
+                0,
+                items.Count,
+                new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
+                async (index, _) =>
+                {
+                    var (blobStream, blobName) = items[index];
+
+                    try
+                    {
+                        await _BaseSaveFileAsync(blobStream, blobName, directoryPath, token).ConfigureAwait(false);
+                        results[index] = Result<Exception>.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        results[index] = Result<Exception>.Fail(e);
+                    }
+                }
+            )
+            .ConfigureAwait(false);
+
+        return results;
     }
 
     /// <summary>
@@ -159,7 +174,7 @@ public static class FileHelper
             || Path.IsPathRooted(name)
         );
 
-        Argument.Is(
+        Argument.IsTrue(
             isSafePathSegment,
             "The file name must be a relative path segment without traversal sequences.",
             nameof(name)
@@ -211,23 +226,6 @@ public static class FileHelper
         var bytes = await ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
 
         return StringHelper.ConvertFromBytesWithoutBom(bytes);
-    }
-
-    /// <summary>Opens a text file, reads its entire content as a string, and then closes the file.</summary>
-    /// <param name="path">The file to open for reading.</param>
-    /// <param name="cancellationToken">A token to observe while reading.</param>
-    /// <returns>A string containing the entire content of the file.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <see langword="null"/>.</exception>
-    /// <exception cref="FileNotFoundException">Thrown when the file at <paramref name="path"/> is not found.</exception>
-    /// <exception cref="DirectoryNotFoundException">Thrown when the directory in <paramref name="path"/> is not found.</exception>
-    /// <exception cref="IOException">Thrown when an I/O error occurs while reading the file.</exception>
-    /// <exception cref="UnauthorizedAccessException">Thrown when the caller lacks permission to read the file.</exception>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
-    public static async Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
-    {
-        using var reader = File.OpenText(path);
-
-        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Opens a binary file, reads its entire content into a byte array, and then closes the file.</summary>

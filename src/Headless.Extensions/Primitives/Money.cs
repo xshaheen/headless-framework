@@ -15,13 +15,13 @@ public readonly partial struct Money : IPrimitive<decimal>
 
     /// <summary>
     /// Returns a copy of this <see cref="Money"/> rounded to two decimal places using
-    /// <see cref="MidpointRounding.ToPositiveInfinity"/>.
+    /// <see cref="MidpointRounding.ToEven"/> (banker's rounding).
     /// </summary>
     /// <returns>A new <see cref="Money"/> holding the rounded amount.</returns>
     /// <exception cref="InvalidPrimitiveValueException">Thrown when this <see cref="Money"/> was never initialized with a value (a default instance).</exception>
     public Money GetRounded()
     {
-        var rounded = Math.Round(_valueOrThrow, 2, MidpointRounding.ToPositiveInfinity);
+        var rounded = Math.Round(_valueOrThrow, 2, MidpointRounding.ToEven);
 
         return new(rounded);
     }

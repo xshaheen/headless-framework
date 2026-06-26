@@ -66,8 +66,33 @@ public sealed class Url
     /// <summary>
     /// i.e. "www.site.com:8080" in "https://www.site.com:8080/path". Includes both user info and port, if included.
     /// </summary>
-    public string Authority =>
-        string.Concat(UserInfo, UserInfo.Length > 0 ? "@" : "", Host, Port.HasValue ? ":" : "", Port);
+    public string Authority
+    {
+        get
+        {
+            var userInfo = UserInfo;
+            var host = Host;
+            var port = Port;
+
+            if (!port.HasValue)
+            {
+                return userInfo.Length > 0 ? string.Concat(userInfo, "@", host) : host;
+            }
+
+            // Append the port via the int overload so the nullable port isn't boxed (as string.Concat would).
+            var sb = new StringBuilder(userInfo.Length + host.Length + 8);
+            if (userInfo.Length > 0)
+            {
+                sb.Append(userInfo);
+                sb.Append('@');
+            }
+
+            sb.Append(host);
+            sb.Append(':');
+            sb.Append(port.Value);
+            return sb.ToString();
+        }
+    }
 
     /// <summary>
     /// i.e. "https://www.site.com:8080" in "https://www.site.com:8080/path" (everything before the path).
@@ -234,8 +259,13 @@ public sealed class Url
             _scheme = uri.Scheme;
             _userInfo = uri.UserInfo;
             _host = uri.Host;
+
+            // Root excludes the port here because _port is still null at this point.
+            var rootWithoutPort = Root;
             _port =
-                _originalString?.OrdinalStartsWith($"{Root}:{uri.Port}", ignoreCase: true) == true ? uri.Port : null; // don't default Port if not included explicitly
+                _originalString?.OrdinalStartsWith($"{rootWithoutPort}:{uri.Port}", ignoreCase: true) == true
+                    ? uri.Port
+                    : null; // don't default Port if not included explicitly
             _pathSegments = [];
             if (uri.AbsolutePath.Length > 0 && uri.AbsolutePath != "/")
             {
@@ -245,23 +275,33 @@ public sealed class Url
             _queryParams = new QueryParamCollection(uri.Query);
             _fragment = uri.Fragment.TrimStart('#'); // quirk - formal def of fragment does not include the #
 
-            _leadingSlash = uri.OriginalString.OrdinalStartsWith(Root + "/", ignoreCase: true);
+            // _port is final now; materialize Authority/Root once (mirrors the Root property) and reuse below
+            // instead of recomputing these string.Concat results 4-5 times on the parse hot path.
+            var authority = Authority;
+            var root = string.Concat(
+                _scheme,
+                _scheme.Length > 0 ? ":" : "",
+                authority.Length > 0 ? "//" : "",
+                authority
+            );
+
+            _leadingSlash = uri.OriginalString.OrdinalStartsWith(root + "/", ignoreCase: true);
             _trailingSlash = _pathSegments.Count > 0 && uri.AbsolutePath.OrdinalEndsWith("/");
             _trailingQmark = string.Equals(uri.Query, "?", StringComparison.Ordinal);
             _trailingHash = string.Equals(uri.Fragment, "#", StringComparison.Ordinal);
 
             // more quirk fixes
-            var hasAuthority = uri.OriginalString.OrdinalStartsWith($"{Scheme}://", ignoreCase: true);
-            if (hasAuthority && Authority.Length == 0 && PathSegments.Any())
+            var hasAuthority = uri.OriginalString.OrdinalStartsWith(_scheme + "://", ignoreCase: true);
+            if (hasAuthority && authority.Length == 0 && _pathSegments.Count != 0)
             {
                 // Uri didn't parse Authority when it should have
                 _host = _pathSegments[0];
                 _pathSegments.RemoveAt(0);
             }
-            else if (!hasAuthority && Authority.Length > 0)
+            else if (!hasAuthority && authority.Length > 0)
             {
                 // Uri parsed Authority when it should not have
-                _pathSegments.Insert(0, Authority);
+                _pathSegments.Insert(0, authority);
                 _userInfo = "";
                 _host = "";
                 _port = null;
@@ -702,7 +742,29 @@ public sealed class Url
     /// <summary>
     /// Creates a copy of this Url.
     /// </summary>
-    public Url Clone() => new(ToString());
+    public Url Clone()
+    {
+        _EnsureParsed();
+
+        // Copy the already-parsed state instead of serializing to a string and re-parsing it through new Uri(...).
+        var clone = new Url
+        {
+            _scheme = _scheme,
+            _userInfo = _userInfo,
+            _host = _host,
+            _port = _port,
+            _pathSegments = [.. _pathSegments],
+            _queryParams = _queryParams.Clone(),
+            _fragment = _fragment,
+            _leadingSlash = _leadingSlash,
+            _trailingSlash = _trailingSlash,
+            _trailingQmark = _trailingQmark,
+            _trailingHash = _trailingHash,
+            _parsed = true,
+        };
+
+        return clone;
+    }
 
     #endregion
 
@@ -718,7 +780,16 @@ public sealed class Url
             return _originalString ?? "";
         }
 
-        var sb = new StringBuilder();
+        // Seed capacity from the cheaply-measurable components (scheme, authority, path, fragment). The query
+        // length isn't known without rendering it, so the builder may still grow for large queries, but this
+        // avoids reallocations for the common short/no-query case.
+        var capacity = _scheme.Length + _userInfo.Length + _host.Length + _fragment.Length + 16;
+        for (var i = 0; i < _pathSegments.Count; i++)
+        {
+            capacity += _pathSegments[i].Length + 1;
+        }
+
+        var sb = new StringBuilder(capacity);
 
         // Append Root components inline: scheme + authority
         if (_scheme.Length > 0)
@@ -760,7 +831,7 @@ public sealed class Url
             }
 
             var segment = _pathSegments[i];
-            if (encodeSpaceAsPlus)
+            if (encodeSpaceAsPlus && segment.OrdinalContains("%20"))
             {
                 sb.Append(segment.Replace("%20", "+", StringComparison.Ordinal));
             }
@@ -832,12 +903,7 @@ public sealed class Url
     /// <param name="uri">The <see cref="System.Uri"/> to convert.</param>
     /// <returns>A new <see cref="Url"/> object built from <paramref name="uri"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="uri"/> is <see langword="null"/>.</exception>
-    public static implicit operator Url(Uri uri)
-    {
-        Argument.IsNotNull(uri);
-
-        return new(uri.ToString());
-    }
+    public static implicit operator Url(Uri uri) => new(uri);
 
     /// <summary>
     /// Builds a <see cref="Url"/> from a <see cref="System.Uri"/>. Named alternate for the implicit Uri-to-Url conversion.
@@ -845,12 +911,7 @@ public sealed class Url
     /// <param name="uri">The <see cref="System.Uri"/> to convert.</param>
     /// <returns>A new <see cref="Url"/> object built from <paramref name="uri"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="uri"/> is <see langword="null"/>.</exception>
-    public static Url FromUri(Uri uri)
-    {
-        Argument.IsNotNull(uri);
-
-        return uri;
-    }
+    public static Url FromUri(Uri uri) => new(uri);
 
     /// <summary>
     /// True if obj is an instance of Url and its string representation is equal to this instance's string representation.

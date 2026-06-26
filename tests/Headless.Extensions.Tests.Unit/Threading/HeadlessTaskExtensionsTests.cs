@@ -100,4 +100,88 @@ public sealed class HeadlessTaskExtensionsTests : TestBase
 
         actionExecuted.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task with_cancellation_returns_result_when_task_completes_before_cancellation()
+    {
+        // given
+        var tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cts = new CancellationTokenSource();
+        var wrapped = tcs.Task.WithCancellation(cts.Token);
+
+        // when
+        tcs.SetResult(42);
+
+        // then
+        (await wrapped)
+            .Should()
+            .Be(42);
+    }
+
+    [Fact]
+    public async Task with_cancellation_throws_when_token_cancels_before_task_completes()
+    {
+        // given
+        var tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cts = new CancellationTokenSource();
+        var wrapped = tcs.Task.WithCancellation(cts.Token);
+
+        // when
+        await cts.CancelAsync();
+
+        // then
+        var act = async () => await wrapped;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task with_cancellation_non_generic_throws_when_token_cancels_before_task_completes()
+    {
+        // given
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cts = new CancellationTokenSource();
+        var wrapped = tcs.Task.WithCancellation(cts.Token);
+
+        // when
+        await cts.CancelAsync();
+
+        // then
+        var act = async () => await wrapped;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task with_cancellation_returns_same_task_when_token_cannot_be_cancelled()
+    {
+        // given
+        var tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var task = tcs.Task;
+
+        // when — a non-cancellable token short-circuits to the same task instance (no wrapper allocation)
+        var wrapped = task.WithCancellation(CancellationToken.None);
+
+        // then
+        wrapped.Should().BeSameAs(task);
+        tcs.SetResult(7);
+        (await wrapped).Should().Be(7);
+    }
+
+    [Fact]
+    public async Task with_cancellation_observes_abandoned_task_fault_after_cancellation_wins()
+    {
+        // given
+        var tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cts = new CancellationTokenSource();
+        var wrapped = tcs.Task.WithCancellation(cts.Token);
+
+        // when — cancellation wins the race, abandoning the wrapped task
+        await cts.CancelAsync();
+        var act = async () => await wrapped;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // then — faulting the abandoned task afterwards is observed (via Forget), not left to escalate
+        tcs.SetException(new InvalidOperationException("late fault"));
+        await Task.Yield();
+        tcs.Task.IsFaulted.Should().BeTrue();
+    }
 }

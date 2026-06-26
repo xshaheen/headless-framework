@@ -25,9 +25,7 @@ public static class Ensure
     {
         if (!condition)
         {
-            throw new InvalidOperationException(
-                message ?? $"The condition {expression.ToAssertString()} must be true."
-            );
+            _ThrowForTrue(message, expression);
         }
     }
 
@@ -46,10 +44,53 @@ public static class Ensure
     {
         if (condition)
         {
-            throw new InvalidOperationException(
-                message ?? $"The condition {expression.ToAssertString()} must be false."
-            );
+            _ThrowForFalse(message, expression);
         }
+    }
+
+    /// <summary>
+    /// Throws an <see cref="InvalidOperationException"/> if <paramref name="value"/> is null. Use this for runtime state
+    /// (fields, lazily-initialized members) that must be present; use <see cref="Argument.IsNotNull{T}(T,string?,string?)"/>
+    /// for caller arguments.
+    /// </summary>
+    /// <param name="value">The value that must not be null.</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="expression">The captured text of <paramref name="value"/> (auto generated, no need to pass it).</param>
+    /// <returns><paramref name="value"/> if it is not null.</returns>
+    /// <exception cref="InvalidOperationException">if <paramref name="value"/> is null.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [return: SystemNotNull]
+    public static T NotNull<T>(
+        [SystemNotNull] T? value,
+        string? message = null,
+        [CallerArgumentExpression(nameof(value))] string? expression = null
+    )
+    {
+        if (value is null)
+        {
+            _ThrowForNotNull(message, expression);
+        }
+
+        return value;
+    }
+
+    /// <inheritdoc cref="NotNull{T}(T,string?,string?)"/>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static T NotNull<T>(
+        [SystemNotNull] T? value,
+        string? message = null,
+        [CallerArgumentExpression(nameof(value))] string? expression = null
+    )
+        where T : struct
+    {
+        if (value is null)
+        {
+            _ThrowForNotNull(message, expression);
+        }
+
+        return value.Value;
     }
 
     /// <summary>Throws an <see cref="ObjectDisposedException"/> if <paramref name="disposed"/> is <see langword="true"/>.</summary>
@@ -62,13 +103,37 @@ public static class Ensure
     {
         if (disposed)
         {
-            var objectName = disposedValue != null ? (disposedValue.GetType().FullName ?? string.Empty) : string.Empty;
-            if (message != null)
-            {
-                throw new ObjectDisposedException(objectName, message);
-            }
-
-            throw new ObjectDisposedException(objectName);
+            _ThrowObjectDisposed(disposedValue, message);
         }
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForTrue(string? message, string? expression)
+    {
+        throw new InvalidOperationException(message ?? $"The condition {expression.ToAssertString()} must be true.");
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForFalse(string? message, string? expression)
+    {
+        throw new InvalidOperationException(message ?? $"The condition {expression.ToAssertString()} must be false.");
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForNotNull(string? message, string? expression)
+    {
+        throw new InvalidOperationException(message ?? $"Expected {expression.ToAssertString()} to not be null.");
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowObjectDisposed(object? disposedValue, string? message)
+    {
+        var objectName = disposedValue != null ? (disposedValue.GetType().FullName ?? string.Empty) : string.Empty;
+        if (message != null)
+        {
+            throw new ObjectDisposedException(objectName, message);
+        }
+
+        throw new ObjectDisposedException(objectName);
     }
 }

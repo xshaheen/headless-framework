@@ -39,14 +39,30 @@ public static class ExceptionExtensions
             return null;
         }
 
-        var current = exception;
+        // Walk the chain with Floyd's tortoise-and-hare so a cyclic InnerException chain (possible with custom
+        // exceptions that override InnerException) cannot loop forever; on a detected cycle return the last seen node.
+        var slow = exception;
+        var fast = exception;
 
-        while (current.InnerException is not null)
+        while (fast.InnerException is { } next)
         {
-            current = current.InnerException;
+            fast = next;
+
+            if (fast.InnerException is not { } afterNext)
+            {
+                return fast;
+            }
+
+            fast = afterNext;
+            slow = slow.InnerException!;
+
+            if (ReferenceEquals(slow, fast))
+            {
+                return fast;
+            }
         }
 
-        return current;
+        return fast;
     }
 
     /// <summary>Wraps <paramref name="exception"/> in a <see cref="ConflictException"/> and throws it.</summary>

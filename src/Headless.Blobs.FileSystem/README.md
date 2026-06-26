@@ -10,7 +10,7 @@ Provides local file system storage using the unified `IBlobStorage` abstraction,
 
 - Full `IBlobStorage` implementation using local file system.
 - Container mapping to directories.
-- Metadata stored as companion JSON files.
+- Metadata is not persisted -- metadata supplied on upload is silently ignored (the file system has no native blob-metadata support).
 - No external service dependencies.
 - Cross-platform path handling.
 
@@ -53,6 +53,7 @@ options.BaseDirectoryPath = "/path/to/storage"; // required; the root directory 
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
+- `Headless.Blobs.Core`
 - `Headless.Hosting`
 
 ## Side Effects

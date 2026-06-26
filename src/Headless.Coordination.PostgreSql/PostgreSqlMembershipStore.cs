@@ -303,6 +303,45 @@ internal sealed class PostgreSqlMembershipStore(
         return result is string stateText ? Enum.Parse<NodeLivenessState>(stateText) : null;
     }
 
+    protected override async ValueTask<IReadOnlyList<NodeIdentity>> ReadLiveNodesCoreAsync(
+        string clusterName,
+        CancellationToken cancellationToken
+    )
+    {
+        // Alive-only, current-generation, identities only: join the generation authority so superseded
+        // incarnations are excluded, keep rows that have not left and whose store-clock beat age is below the
+        // suspicion threshold. No descriptor join, no metadata, no prune — the base orders the result.
+        const string sql = $"""
+            SELECT l.{PostgreSqlMembershipSchema.NodeId}, l.{PostgreSqlMembershipSchema.Incarnation}
+            FROM {PostgreSqlMembershipSchema.Liveness.Table} l
+            JOIN {PostgreSqlMembershipSchema.Generation.Table} g
+              ON g.{PostgreSqlMembershipSchema.ClusterName} = l.{PostgreSqlMembershipSchema.ClusterName}
+             AND g.{PostgreSqlMembershipSchema.NodeId} = l.{PostgreSqlMembershipSchema.NodeId}
+             AND g.{PostgreSqlMembershipSchema.Generation.CurrentIncarnation} = l.{PostgreSqlMembershipSchema.Incarnation}
+            WHERE l.{PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+              AND l.{PostgreSqlMembershipSchema.Liveness.LeftAt} IS NULL
+              AND l.{PostgreSqlMembershipSchema.Liveness.LastBeat} > clock_timestamp() - @SuspicionThreshold;
+            """;
+
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = _CreateCommand(connection, sql);
+        command.Parameters.AddWithValue("ClusterName", clusterName);
+        command.Parameters.AddWithValue("SuspicionThreshold", SuspicionThreshold);
+
+        var identities = new List<NodeIdentity>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var nodeId = await reader.GetFieldValueAsync<string>(0, cancellationToken).ConfigureAwait(false);
+            var incarnation = await reader.GetFieldValueAsync<long>(1, cancellationToken).ConfigureAwait(false);
+            identities.Add(new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation)));
+        }
+
+        return identities;
+    }
+
     private async ValueTask _PruneExpiredRowsAsync(
         NpgsqlConnection connection,
         string clusterName,

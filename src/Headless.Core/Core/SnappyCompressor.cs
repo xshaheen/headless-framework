@@ -34,9 +34,17 @@ public static class SnappyCompressor
     public static IMemoryOwner<byte> Compress<T>(T? result, JsonSerializerOptions? options = null)
     {
         options ??= JsonConstants.DefaultInternalJsonOptions;
-        var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(result, options);
 
-        return Snappy.CompressToMemory(serializedBytes);
+        // Serialize straight into a pooled buffer and hand the written span to Snappy, avoiding the intermediate
+        // right-sized byte[] that SerializeToUtf8Bytes allocates and immediately discards.
+        using var buffer = new PooledByteBufferWriter();
+
+        using (var writer = new Utf8JsonWriter(buffer, options.ToJsonWriterOptions()))
+        {
+            JsonSerializer.Serialize(writer, result, options);
+        }
+
+        return Snappy.CompressToMemory(buffer.WrittenSpan);
     }
 
     /// <summary>
@@ -56,9 +64,14 @@ public static class SnappyCompressor
     [MustDisposeResource]
     public static IMemoryOwner<byte> Compress<T>(T result, JsonTypeInfo<T> jsonTypeInfo)
     {
-        var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(result, jsonTypeInfo);
+        using var buffer = new PooledByteBufferWriter();
 
-        return Snappy.CompressToMemory(serializedBytes);
+        using (var writer = new Utf8JsonWriter(buffer, jsonTypeInfo.Options.ToJsonWriterOptions()))
+        {
+            JsonSerializer.Serialize(writer, result, jsonTypeInfo);
+        }
+
+        return Snappy.CompressToMemory(buffer.WrittenSpan);
     }
 
     /// <summary>

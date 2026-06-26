@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Domain;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -10,11 +9,8 @@ namespace Headless.Features;
 /// <summary>EF Core implementation of <see cref="IFeatureValueRecordRepository"/>.</summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type that owns the feature value entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-/// <param name="localPublisher">Local event bus used to publish <see cref="EntityChangedEventData{T}"/> after mutations.</param>
-public sealed class EfFeatureValueRecordRecordRepository<TContext>(
-    IDbContextFactory<TContext> dbFactory,
-    ILocalEventBus localPublisher
-) : IFeatureValueRecordRepository
+public sealed class EfFeatureValueRecordRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
+    : IFeatureValueRecordRepository
     where TContext : DbContext
 {
     /// <inheritdoc/>
@@ -84,10 +80,6 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().Add(featureValue);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        await localPublisher
-            .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
-            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -96,10 +88,6 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().Update(featureValue);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        await localPublisher
-            .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
-            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -111,12 +99,5 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         db.Set<FeatureValueRecord>().RemoveRange(featureValues);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        foreach (var featureValue in featureValues)
-        {
-            await localPublisher
-                .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(featureValue), cancellationToken)
-                .ConfigureAwait(false);
-        }
     }
 }

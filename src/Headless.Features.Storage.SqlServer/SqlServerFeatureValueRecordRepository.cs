@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.Domain;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Features.SqlServer;
@@ -13,14 +11,11 @@ namespace Headless.Features.SqlServer;
 /// <summary>
 /// SQL Server implementation of <see cref="IFeatureValueRecordRepository"/> that reads and
 /// writes feature value records using raw ADO.NET. Bulk deletes use a table-valued parameter
-/// (<c>HeadlessFeaturesIdList</c>) to avoid the 2100-parameter ceiling. After each mutation
-/// the record is published via <see cref="ILocalEventBus"/> in a transient scope to notify
-/// in-process subscribers.
+/// (<c>HeadlessFeaturesIdList</c>) to avoid the 2100-parameter ceiling.
 /// </summary>
 internal sealed class SqlServerFeatureValueRecordRepository(
     IOptions<SqlServerFeaturesOptions> providerOptions,
-    IOptions<FeaturesStorageOptions> storageOptions,
-    IServiceProvider services
+    IOptions<FeaturesStorageOptions> storageOptions
 ) : IFeatureValueRecordRepository
 {
     /// <inheritdoc/>
@@ -101,7 +96,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         var sql =
             $"INSERT INTO {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey);";
 
-        return _InsertAsync(
+        return _ExecuteAsync(
             sql,
             cancellationToken,
             _Param("Id", feature.Id),
@@ -110,12 +105,6 @@ internal sealed class SqlServerFeatureValueRecordRepository(
             _Param("ProviderName", feature.ProviderName),
             _Param("ProviderKey", feature.ProviderKey)
         );
-
-        async Task _InsertAsync(string insertSql, CancellationToken ct, params SqlParameter[] parameters)
-        {
-            await _ExecuteAsync(insertSql, ct, parameters).ConfigureAwait(false);
-            await _PublishAsync(feature, ct).ConfigureAwait(false);
-        }
     }
 
     /// <inheritdoc/>
@@ -126,7 +115,6 @@ internal sealed class SqlServerFeatureValueRecordRepository(
 
         await _ExecuteAsync(sql, cancellationToken, _Param("Id", feature.Id), _Param("Value", feature.Value))
             .ConfigureAwait(false);
-        await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -147,11 +135,6 @@ internal sealed class SqlServerFeatureValueRecordRepository(
 
         await _ExecuteAsync(sql, cancellationToken, _BuildIdListTvpParameter(features.Select(feature => feature.Id)))
             .ConfigureAwait(false);
-
-        foreach (var feature in features)
-        {
-            await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
-        }
     }
 
     private async Task<List<FeatureValueRecord>> _ReadValuesAsync(
@@ -192,20 +175,6 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask _PublishAsync(FeatureValueRecord feature, CancellationToken cancellationToken)
-    {
-        // Resolve the scoped publisher inside a fresh scope to avoid capturing it from the singleton's root provider.
-        await using var scope = services.CreateAsyncScope();
-        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
-
-        if (publisher is not null)
-        {
-            await publisher
-                .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken)
-                .ConfigureAwait(false);
-        }
     }
 
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;

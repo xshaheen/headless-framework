@@ -74,9 +74,12 @@ public static class CultureHelper
 
         try
         {
-            _ = CultureInfo.GetCultureInfo(cultureCode);
+            var culture = CultureInfo.GetCultureInfo(cultureCode);
 
-            return true;
+            // On ICU runtimes GetCultureInfo does not throw for well-formed-but-unknown tags (e.g. "xx-XX");
+            // it synthesizes a placeholder culture flagged UserCustomCulture. Real cultures (including genuine
+            // pseudo-locales such as "qps-ploc") never carry that flag, so treat synthesized ones as invalid.
+            return !culture.CultureTypes.HasFlag(CultureTypes.UserCustomCulture);
         }
         catch (CultureNotFoundException)
         {

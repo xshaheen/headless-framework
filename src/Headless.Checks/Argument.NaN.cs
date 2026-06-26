@@ -25,12 +25,12 @@ public static partial class Argument
     )
         where T : IFloatingPointIeee754<T>
     {
-        return T.IsNaN(argument)
-            ? throw new ArgumentException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be NaN.",
-                paramName
-            )
-            : argument;
+        if (T.IsNaN(argument))
+        {
+            _ThrowForIsNotNaN(message, paramName);
+        }
+
+        return argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument"/> is not NaN.</summary>
@@ -49,11 +49,23 @@ public static partial class Argument
     )
         where T : IFloatingPointIeee754<T>
     {
-        return T.IsNaN(argument)
-            ? argument
-            : throw new ArgumentException(
-                message ?? $"The argument {paramName.ToAssertString()} must be a NaN.",
-                paramName
-            );
+        if (!T.IsNaN(argument))
+        {
+            _ThrowForIsNaN(message, paramName);
+        }
+
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNotNaN(string? message, string? paramName)
+    {
+        throw new ArgumentException(message ?? $"The argument {paramName.ToAssertString()} cannot be NaN.", paramName);
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNaN(string? message, string? paramName)
+    {
+        throw new ArgumentException(message ?? $"The argument {paramName.ToAssertString()} must be a NaN.", paramName);
     }
 }

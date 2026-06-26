@@ -9,7 +9,9 @@ namespace Headless.Coordination;
 /// Node-id stability determines incarnation semantics. Prefer Kubernetes pod name plus namespace for
 /// deployments, StatefulSet pod name for stable ordinal workloads, and explicit configured ids only when
 /// uniqueness is externally guaranteed. Generated process ids are appropriate for local development but
-/// make each start a brand-new node.
+/// make each start a brand-new node — and because the store never purges a node id's generation counter
+/// (purging it would let a returning node reuse an incarnation), every distinct id leaves a permanent
+/// entry, so high-cardinality or generated ids grow the generation keyspace without bound.
 /// </remarks>
 [PublicAPI]
 public readonly record struct NodeId

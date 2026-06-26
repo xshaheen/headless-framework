@@ -16,42 +16,11 @@ public static partial class Argument
     /// <param name="argumentName">The name of the input parameter being tested.</param>
     /// <param name="targetName">The name of the target parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is not the same instance as <paramref name="target"/>.</exception>
+    /// <returns>The validated <paramref name="argument"/>.</returns>
     /// <remarks>The method is generic to prevent using it with value types.</remarks>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void IsReferenceEqualTo<T>(
-        T argument,
-        T target,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? argumentName = null,
-        [CallerArgumentExpression(nameof(target))] string? targetName = null
-    )
-        where T : class
-    {
-        if (ReferenceEquals(argument, target))
-        {
-            return;
-        }
-
-        throw new ArgumentException(
-            message
-                ?? $"The argument {argumentName.ToAssertString()} must be the same instance as {targetName.ToAssertString()}.",
-            argumentName
-        );
-    }
-
-    /// <summary>Asserts that the input value must not be the same instance as the target value.</summary>
-    /// <typeparam name="T">The type of input values to compare.</typeparam>
-    /// <param name="argument">The input <typeparamref name="T"/> value to test.</param>
-    /// <param name="target">The target <typeparamref name="T"/> value to test for.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="argumentName">The name of the input parameter being tested.</param>
-    /// <param name="targetName">The name of the target parameter being tested.</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is the same instance as <paramref name="target"/>.</exception>
-    /// <remarks>The method is generic to prevent using it with value types.</remarks>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void IsReferenceNotEqualTo<T>(
+    public static T IsReferenceEqualTo<T>(
         T argument,
         T target,
         string? message = null,
@@ -62,9 +31,54 @@ public static partial class Argument
     {
         if (!ReferenceEquals(argument, target))
         {
-            return;
+            _ThrowForIsReferenceEqualTo(message, argumentName, targetName);
         }
 
+        return argument;
+    }
+
+    /// <summary>Asserts that the input value must not be the same instance as the target value.</summary>
+    /// <typeparam name="T">The type of input values to compare.</typeparam>
+    /// <param name="argument">The input <typeparamref name="T"/> value to test.</param>
+    /// <param name="target">The target <typeparamref name="T"/> value to test for.</param>
+    /// <param name="message">(Optional) Custom error message</param>
+    /// <param name="argumentName">The name of the input parameter being tested.</param>
+    /// <param name="targetName">The name of the target parameter being tested.</param>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is the same instance as <paramref name="target"/>.</exception>
+    /// <returns>The validated <paramref name="argument"/>.</returns>
+    /// <remarks>The method is generic to prevent using it with value types.</remarks>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static T IsReferenceNotEqualTo<T>(
+        T argument,
+        T target,
+        string? message = null,
+        [CallerArgumentExpression(nameof(argument))] string? argumentName = null,
+        [CallerArgumentExpression(nameof(target))] string? targetName = null
+    )
+        where T : class
+    {
+        if (ReferenceEquals(argument, target))
+        {
+            _ThrowForIsReferenceNotEqualTo(message, argumentName, targetName);
+        }
+
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsReferenceEqualTo(string? message, string? argumentName, string? targetName)
+    {
+        throw new ArgumentException(
+            message
+                ?? $"The argument {argumentName.ToAssertString()} must be the same instance as {targetName.ToAssertString()}.",
+            argumentName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsReferenceNotEqualTo(string? message, string? argumentName, string? targetName)
+    {
         throw new ArgumentException(
             message
                 ?? $"The argument {argumentName.ToAssertString()} must not be the same instance as {targetName.ToAssertString()}.",

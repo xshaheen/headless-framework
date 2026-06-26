@@ -37,9 +37,8 @@ public static partial class Argument
             return argument;
         }
 
-        message ??= _GetDefaultOneOfMessage(paramName, argument, values);
-
-        throw new ArgumentException(message, paramName);
+        _ThrowForIsOneOf(message, argument, values, paramName);
+        return argument;
     }
 
     /// <inheritdoc cref="IsOneOf{T}(T,System.ReadOnlySpan{T},string?,string?)"/>
@@ -57,9 +56,8 @@ public static partial class Argument
             return argument;
         }
 
-        message ??= _GetDefaultOneOfMessage(paramName, argument, values);
-
-        throw new ArgumentException(message, paramName);
+        _ThrowForIsOneOf(message, argument, values, paramName);
+        return argument;
     }
 
     /// <inheritdoc cref="IsOneOf{T}(T,System.ReadOnlySpan{T},string?,string?)"/>
@@ -78,9 +76,8 @@ public static partial class Argument
             return argument;
         }
 
-        message ??= _GetDefaultOneOfMessage(paramName, argument, CollectionsMarshal.AsSpan(values));
-
-        throw new ArgumentException(message, paramName);
+        _ThrowForIsOneOf(message, argument, CollectionsMarshal.AsSpan(values), paramName);
+        return argument;
     }
 
     /// <inheritdoc cref="IsOneOf{T}(T,List{T},IEqualityComparer{T}?,string?,string?)"/>
@@ -99,7 +96,20 @@ public static partial class Argument
             return argument;
         }
 
-        throw new ArgumentException(message ?? _GetDefaultOneOfMessage(paramName, argument, validValues), paramName);
+        _ThrowForIsOneOf(message, argument, validValues, paramName);
+        return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsOneOf<T>(string? message, T argument, ReadOnlySpan<T> values, string? paramName)
+    {
+        throw new ArgumentException(message ?? _GetDefaultOneOfMessage(paramName, argument, values), paramName);
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsOneOf<T>(string? message, T argument, IEnumerable<T> values, string? paramName)
+    {
+        throw new ArgumentException(message ?? _GetDefaultOneOfMessage(paramName, argument, values), paramName);
     }
 
     private const int _PrintableItems = 5;

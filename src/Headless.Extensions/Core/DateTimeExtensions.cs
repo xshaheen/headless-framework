@@ -34,7 +34,8 @@ public static class DateTimeExtensions
     [JetBrainsPure]
     public static DateTime ClearTime(this DateTime dateTime)
     {
-        return new(dateTime.Year, dateTime.Month, dateTime.Day);
+        // Date keeps the original Kind (Utc/Local/Unspecified); a new DateTime(y, m, d) would reset it to Unspecified.
+        return dateTime.Date;
     }
 
     /// <summary>
@@ -53,7 +54,8 @@ public static class DateTimeExtensions
     [JetBrainsPure]
     public static DateTime TruncateToMilliseconds(this DateTime date)
     {
-        return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second, date.Millisecond);
+        // Floor the ticks to the millisecond boundary; AddTicks preserves Kind and avoids re-validating calendar parts.
+        return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerMillisecond));
     }
 
     /// <summary>
@@ -67,7 +69,8 @@ public static class DateTimeExtensions
     [JetBrainsPure]
     public static DateTime TruncateToSeconds(this DateTime date)
     {
-        return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second, 0);
+        // Floor the ticks to the second boundary; AddTicks preserves Kind and avoids re-validating calendar parts.
+        return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerSecond));
     }
 
     /// <summary>
@@ -81,7 +84,8 @@ public static class DateTimeExtensions
     [JetBrainsPure]
     public static DateTime TruncateToMinutes(this DateTime date)
     {
-        return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, 0, 0);
+        // Floor the ticks to the minute boundary; AddTicks preserves Kind and avoids re-validating calendar parts.
+        return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerMinute));
     }
 
     /// <summary>
@@ -95,7 +99,8 @@ public static class DateTimeExtensions
     [JetBrainsPure]
     public static DateTime TruncateToHours(this DateTime date)
     {
-        return new(date.Year, date.Month, date.Day, date.Hour, 0, 0, 0);
+        // Floor the ticks to the hour boundary; AddTicks preserves Kind and avoids re-validating calendar parts.
+        return date.AddTicks(-(date.Ticks % TimeSpan.TicksPerHour));
     }
 
     /// <summary>Converts the specified <see cref="DateTime"/> to Unix time in seconds. </summary>
@@ -132,14 +137,16 @@ public static class DateTimeExtensions
     [JetBrainsPure]
     public static DateTime SafeAdd(this DateTime date, TimeSpan value)
     {
-        if (date.Ticks + value.Ticks < DateTime.MinValue.Ticks)
-        {
-            return DateTime.MinValue;
-        }
-
-        if (date.Ticks + value.Ticks > DateTime.MaxValue.Ticks)
+        // Compare against the bounds without computing date.Ticks + value.Ticks, which can overflow long
+        // (TimeSpan.Ticks spans the full long range) before the clamp would ever run.
+        if (value.Ticks > 0 && date.Ticks > DateTime.MaxValue.Ticks - value.Ticks)
         {
             return DateTime.MaxValue;
+        }
+
+        if (value.Ticks < 0 && date.Ticks < DateTime.MinValue.Ticks - value.Ticks)
+        {
+            return DateTime.MinValue;
         }
 
         return date.Add(value);

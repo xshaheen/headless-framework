@@ -19,6 +19,10 @@ public sealed class FileNamesTests
     // HTML encode
     [InlineData("<>@hello \n   word&", "@hello word&amp;")]
     [InlineData("<>@hello \n   word&.png", "@hello word&amp;.png")]
+    // Invalid characters in the extension must not survive verbatim
+    [InlineData("report.p*ng", "report.png")]
+    [InlineData("archive.ta?r", "archive.tar")]
+    [InlineData("log.tx|t", "log.txt")]
     public void should_sanitize_as_expected_when_use_sanitize_file_name_method(string name, string expected)
     {
         // when
@@ -31,6 +35,8 @@ public sealed class FileNamesTests
     [Theory]
     [InlineData("<>@hello \n   word&.png", "_123", "@hello word&amp;.png", "hello_word_amp_123.png")]
     [InlineData("folder/report final (v1).pdf", "_42", "folder report final (v1).pdf", "folder_report_final_v1_42.pdf")]
+    // Invalid characters in the extension must not survive verbatim into either derived name
+    [InlineData("report.p*ng", "_7", "report.png", "report_7.png")]
     public void should_generate_trusted_file_names_with_suffix_as_expected(
         string untrustedName,
         string randomSuffix,

@@ -96,15 +96,33 @@ public sealed class NonSeekableStreamTests
     }
 
     [Fact]
-    public void should_delegate_Position_get_to_inner_stream()
+    public void Position_get_should_throw_NotSupportedException()
     {
         // given
         using var inner = new MemoryStream([1, 2, 3, 4, 5]);
         inner.Position = 3;
         using var sut = new NonSeekableStream(inner);
 
-        // when/then
-        sut.Position.Should().Be(3);
+        // when - the getter must not leak the seekable inner position; CanSeek is hard-false.
+        var act = () => _ = sut.Position;
+
+        // then
+        act.Should().Throw<NotSupportedException>();
+    }
+
+    [Fact]
+    public void Position_get_should_throw_ObjectDisposedException_when_disposed()
+    {
+        // given
+        using var inner = new MemoryStream([1, 2, 3]);
+        var sut = new NonSeekableStream(inner);
+        sut.Dispose();
+
+        // when
+        var act = () => _ = sut.Position;
+
+        // then
+        act.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]
@@ -237,5 +255,141 @@ public sealed class NonSeekableStreamTests
 
         // then
         act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_delegate_ReadAsync_byte_array_to_inner_stream()
+    {
+        // given
+        byte[] data = [10, 20, 30, 40, 50];
+        using var inner = new MemoryStream(data);
+        using var sut = new NonSeekableStream(inner);
+        var buffer = new byte[3];
+
+        // when
+        var bytesRead = await sut.ReadAsync(buffer.AsMemory(0, 3), TestContext.Current.CancellationToken);
+
+        // then
+        bytesRead.Should().Be(3);
+        buffer.Should().BeEquivalentTo(new byte[] { 10, 20, 30 });
+    }
+
+    [Fact]
+    public async Task should_delegate_ReadAsync_memory_to_inner_stream()
+    {
+        // given
+        byte[] data = [10, 20, 30, 40, 50];
+        using var inner = new MemoryStream(data);
+        using var sut = new NonSeekableStream(inner);
+        var buffer = new byte[3];
+
+        // when
+        var bytesRead = await sut.ReadAsync(buffer.AsMemory(), TestContext.Current.CancellationToken);
+
+        // then
+        bytesRead.Should().Be(3);
+        buffer.Should().BeEquivalentTo(new byte[] { 10, 20, 30 });
+    }
+
+    [Fact]
+    public void should_delegate_Read_span_to_inner_stream()
+    {
+        // given
+        byte[] data = [10, 20, 30, 40, 50];
+        using var inner = new MemoryStream(data);
+        using var sut = new NonSeekableStream(inner);
+        var buffer = new byte[3];
+
+        // when
+        var bytesRead = sut.Read(buffer.AsSpan());
+
+        // then
+        bytesRead.Should().Be(3);
+        buffer.Should().BeEquivalentTo(new byte[] { 10, 20, 30 });
+    }
+
+    [Fact]
+    public void should_delegate_Write_span_to_inner_stream()
+    {
+        // given
+        using var inner = new MemoryStream();
+        using var sut = new NonSeekableStream(inner);
+        byte[] data = [1, 2, 3];
+
+        // when
+        sut.Write(data.AsSpan());
+
+        // then
+        inner.ToArray().Should().BeEquivalentTo(data);
+    }
+
+    [Fact]
+    public async Task should_delegate_WriteAsync_byte_array_to_inner_stream()
+    {
+        // given
+        using var inner = new MemoryStream();
+        using var sut = new NonSeekableStream(inner);
+        byte[] data = [1, 2, 3];
+
+        // when
+        await sut.WriteAsync(data.AsMemory(0, 3), TestContext.Current.CancellationToken);
+
+        // then
+        inner.ToArray().Should().BeEquivalentTo(data);
+    }
+
+    [Fact]
+    public async Task should_delegate_WriteAsync_memory_to_inner_stream()
+    {
+        // given
+        using var inner = new MemoryStream();
+        using var sut = new NonSeekableStream(inner);
+        byte[] data = [1, 2, 3];
+
+        // when
+        await sut.WriteAsync(data.AsMemory(), TestContext.Current.CancellationToken);
+
+        // then
+        inner.ToArray().Should().BeEquivalentTo(data);
+    }
+
+    [Fact]
+    public async Task should_delegate_FlushAsync_to_inner_stream()
+    {
+        // given
+        using var inner = new MemoryStream();
+        using var sut = new NonSeekableStream(inner);
+
+        // when/then - no exception means delegation works
+        await sut.FlushAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public void Close_should_dispose_inner_stream_exactly_once()
+    {
+        // given
+        var inner = new DisposeCountingStream();
+        var sut = new NonSeekableStream(inner);
+
+        // when - Close routes through Dispose(true); the inner stream must not be disposed twice.
+        sut.Close();
+
+        // then
+        inner.DisposeCount.Should().Be(1);
+    }
+
+    private sealed class DisposeCountingStream : MemoryStream
+    {
+        public int DisposeCount { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                DisposeCount++;
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

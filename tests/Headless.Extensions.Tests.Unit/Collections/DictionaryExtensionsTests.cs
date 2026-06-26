@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.ObjectModel;
+
 namespace Tests.Collections;
 
 public sealed class DictionaryExtensionsTests
@@ -72,5 +74,40 @@ public sealed class DictionaryExtensionsTests
         // then
         result.Should().Be(100);
         dictionary.Should().ContainKey("key").WhoseValue.Should().Be(100);
+    }
+
+    [Fact]
+    public void add_dictionary_should_copy_all_pairs_and_return_same_instance()
+    {
+        // given
+        var target = new Dictionary<string, int>(StringComparer.Ordinal) { { "a", 1 } };
+        var other = new Dictionary<string, int>(StringComparer.Ordinal) { { "b", 2 }, { "c", 3 } };
+
+        // when
+        var result = target.AddDictionary(other);
+
+        // then
+        result.Should().BeSameAs(target);
+        target.Should().HaveCount(3);
+        target.Should().ContainKey("b").WhoseValue.Should().Be(2);
+        target.Should().ContainKey("c").WhoseValue.Should().Be(3);
+    }
+
+    [Fact]
+    public void add_dictionary_should_copy_all_pairs_from_readonly_dictionary()
+    {
+        // given
+        var target = new Dictionary<string, int>(StringComparer.Ordinal) { { "a", 1 } };
+        var other = new ReadOnlyDictionary<string, int>(
+            new Dictionary<string, int>(StringComparer.Ordinal) { { "b", 2 } }
+        );
+
+        // when
+        var result = target.AddDictionary(other);
+
+        // then
+        result.Should().BeSameAs(target);
+        target.Should().HaveCount(2);
+        target.Should().ContainKey("b").WhoseValue.Should().Be(2);
     }
 }

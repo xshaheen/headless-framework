@@ -78,6 +78,19 @@ public sealed class EgyptianNationalIdValidatorTests
         result.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("09001011234567")] // Century digit 0 - impossible century
+    [InlineData("19001011234567")] // Century digit 1 - impossible century
+    [InlineData("49001011234567")] // Century digit 4 - impossible century
+    [InlineData("99001011234567")] // Century digit 9 - impossible century
+    public void should_return_false_for_invalid_century(string nationalId)
+    {
+        // Only the first ("century") digit is invalid here; the encoded date and governorate (12) are otherwise valid,
+        // so before the century guard these all incorrectly validated as true.
+        var result = EgyptianNationalIdValidator.IsValid(nationalId);
+        result.Should().BeFalse();
+    }
+
     [Fact]
     public void should_parse_valid_id_correctly()
     {

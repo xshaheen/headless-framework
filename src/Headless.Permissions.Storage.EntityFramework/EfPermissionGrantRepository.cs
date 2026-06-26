@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Domain;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -14,14 +13,11 @@ namespace Headless.Permissions;
 /// <remarks>
 /// Each operation creates a short-lived, non-tracking context from
 /// <c>IDbContextFactory&lt;<typeparamref name="TContext"/>&gt;</c> and disposes it immediately.
-/// Delete operations publish an <c>EntityChangedEventData&lt;PermissionGrantRecord&gt;</c> event via
-/// <see cref="ILocalEventBus"/> after the row is removed to trigger cache invalidation.
 /// </remarks>
 /// <typeparam name="TContext">The consumer's <see cref="DbContext"/> that maps the permissions entities.</typeparam>
-public sealed class EfPermissionGrantRepository<TContext>(
-    IDbContextFactory<TContext> dbFactory,
-    ILocalEventBus localPublisher
-) : IPermissionGrantRepository
+/// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
+public sealed class EfPermissionGrantRepository<TContext>(IDbContextFactory<TContext> dbFactory)
+    : IPermissionGrantRepository
     where TContext : DbContext
 {
     /// <summary>
@@ -102,26 +98,16 @@ public sealed class EfPermissionGrantRepository<TContext>(
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Deletes the grant record and publishes an <c>EntityChangedEventData&lt;PermissionGrantRecord&gt;</c>
-    /// event via <see cref="ILocalEventBus"/> to trigger cache invalidation.
-    /// </summary>
+    /// <summary>Deletes the grant record.</summary>
     public async Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         db.Set<PermissionGrantRecord>().Remove(permissionGrant);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        await localPublisher
-            .PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken)
-            .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Deletes all supplied grant records and publishes an <c>EntityChangedEventData&lt;PermissionGrantRecord&gt;</c>
-    /// event for each deleted record via <see cref="ILocalEventBus"/> to trigger cache invalidation.
-    /// </summary>
+    /// <summary>Deletes all supplied grant records.</summary>
     public async Task DeleteManyAsync(
         IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
         CancellationToken cancellationToken = default
@@ -131,12 +117,5 @@ public sealed class EfPermissionGrantRepository<TContext>(
 
         db.Set<PermissionGrantRecord>().RemoveRange(permissionGrants);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        foreach (var permissionGrant in permissionGrants)
-        {
-            await localPublisher
-                .PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken)
-                .ConfigureAwait(false);
-        }
     }
 }

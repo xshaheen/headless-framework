@@ -5,7 +5,6 @@ using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.IO;
 using Headless.Primitives;
-using Headless.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using File = System.IO.File;
@@ -174,11 +173,20 @@ public sealed class FileSystemBlobStorage(
 
         var directoryPath = _GetDirectoryPath(container);
 
-        // No search pattern, delete the entire directory
+        // No search pattern: clear the whole container. Preserve the container directory itself (mirrors the
+        // SshNet provider and the object-store providers, which have no directory to remove) and delete only
+        // its contents.
         if (string.IsNullOrEmpty(blobSearchPattern) || string.Equals(blobSearchPattern, "*", StringComparison.Ordinal))
         {
-            return ValueTask.FromResult(_DeleteDirectoryWithLogging(directoryPath));
+            return ValueTask.FromResult(
+                _DeleteDirectoryWithLogging(directoryPath, includeSelf: false, cancellationToken)
+            );
         }
+
+        // Reject traversal sequences in the pattern before it is combined with the directory. The boundary check
+        // below is anchored to the base directory, so a '..' pattern could otherwise resolve into a sibling
+        // container; ValidatePathSegment rejects it up front (matching how blob names are validated).
+        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
         var path = Path.Combine(directoryPath, blobSearchPattern);
@@ -192,13 +200,13 @@ public sealed class FileSystemBlobStorage(
         )
         {
             var directory = Path.GetDirectoryName(path);
-            return ValueTask.FromResult(_DeleteDirectoryWithLogging(directory));
+            return ValueTask.FromResult(_DeleteDirectoryWithLogging(directory, includeSelf: true, cancellationToken));
         }
 
         // If the pattern is a directory, delete the directory
         if (Directory.Exists(path))
         {
-            return ValueTask.FromResult(_DeleteDirectoryWithLogging(path));
+            return ValueTask.FromResult(_DeleteDirectoryWithLogging(path, includeSelf: true, cancellationToken));
         }
 
         _logger.LogDeletingFilesMatching(blobSearchPattern);
@@ -207,6 +215,7 @@ public sealed class FileSystemBlobStorage(
 
         foreach (var file in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.LogDeletingFile(file);
             File.Delete(file);
             filesCount++;
@@ -217,7 +226,11 @@ public sealed class FileSystemBlobStorage(
         return ValueTask.FromResult(filesCount);
     }
 
-    private int _DeleteDirectoryWithLogging(string? directoryPath)
+    private int _DeleteDirectoryWithLogging(
+        string? directoryPath,
+        bool includeSelf,
+        CancellationToken cancellationToken
+    )
     {
         if (directoryPath is null || !Directory.Exists(directoryPath))
         {
@@ -226,8 +239,29 @@ public sealed class FileSystemBlobStorage(
 
         _logger.LogDeletingDirectory(directoryPath);
 
-        var count = Directory.EnumerateFiles(directoryPath, "*.*", SearchOption.AllDirectories).Count();
-        Directory.Delete(directoryPath, recursive: true);
+        // Count while deleting in a single enumeration pass; the count is the return value, so we cannot skip it,
+        // but we no longer walk the tree once to count and again to delete.
+        var count = 0;
+
+        foreach (var file in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Delete(file);
+            count++;
+        }
+
+        if (includeSelf)
+        {
+            Directory.Delete(directoryPath, recursive: true);
+        }
+        else
+        {
+            // Keep the container directory; remove the now-empty sub-directories it contained.
+            foreach (var subDirectory in Directory.EnumerateDirectories(directoryPath))
+            {
+                Directory.Delete(subDirectory, recursive: true);
+            }
+        }
 
         _logger.LogFinishedDeletingDirectory(directoryPath, count);
 
@@ -253,8 +287,8 @@ public sealed class FileSystemBlobStorage(
         Argument.IsNotNullOrEmpty(blobContainer);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        var oldFullPath = _BuildBlobPath(blobContainer, blobName).NormalizePath();
-        var newFullPath = _BuildBlobPath(newBlobContainer, newBlobName).NormalizePath();
+        var oldFullPath = _BuildBlobPath(blobContainer, blobName);
+        var newFullPath = _BuildBlobPath(newBlobContainer, newBlobName);
         var newDirectoryPath = _GetDirectoryPath(newBlobContainer);
 
         _logger.LogRenamingFile(oldFullPath, newFullPath);
@@ -335,20 +369,26 @@ public sealed class FileSystemBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var filePath = _BuildBlobPath(container, blobName);
 
-        if (!File.Exists(filePath))
+        try
         {
+            var fileStream = File.OpenRead(filePath);
+
+#pragma warning disable CA2000 // Ownership transfers to the returned BlobDownloadResult ([MustDisposeResource]).
+            return ValueTask.FromResult<BlobDownloadResult?>(
+                new BlobDownloadResult(fileStream, Path.GetFileName(filePath))
+            );
+#pragma warning restore CA2000
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // The file was removed between the path build and the open (TOCTOU); honor the documented null contract
+            // instead of leaking a FileNotFoundException to the caller.
             return ValueTask.FromResult<BlobDownloadResult?>(null);
         }
-
-        var fileStream = File.OpenRead(filePath);
-
-#pragma warning disable CA2000 // Dispose objects before losing scope
-        return ValueTask.FromResult<BlobDownloadResult?>(
-            new BlobDownloadResult(fileStream, Path.GetFileName(filePath))
-        );
-#pragma warning restore CA2000 // Dispose objects before losing scope
     }
 
     public ValueTask<BlobInfo?> GetBlobInfoAsync(
@@ -360,8 +400,17 @@ public sealed class FileSystemBlobStorage(
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
+        // Reject traversal blob names before they are combined with the container directory. This mirrors how
+        // the sibling read/write methods validate via _BuildBlobPath; without it a name like "../../etc/passwd"
+        // escapes the store and leaks existence/size/timestamps (and an absolute path via _ToBlobKey).
+        PathValidation.ValidatePathSegment(blobName);
+
+        var baseDirectoryPath = Path.Combine(_basePath, container[0]).EnsureEndsWith(Path.DirectorySeparatorChar);
         var directoryPath = _GetDirectoryPath(container);
         var filePath = Path.Combine(directoryPath, blobName);
+
+        // Defense-in-depth: verify the resolved path stays under the base directory before touching the file.
+        _ThrowIfPathTraversal(filePath, nameof(blobName));
 
         _logger.LogGettingFileStream(filePath);
         var fileInfo = new FileInfo(filePath);
@@ -373,7 +422,9 @@ public sealed class FileSystemBlobStorage(
             return ValueTask.FromResult<BlobInfo?>(null);
         }
 
-        var blobKey = Url.Combine([.. container.Skip(1).Append(blobName)]);
+        // Derive the blob key from the resolved path (stripping the container base), so the same blob yields the
+        // same BlobKey here and through GetBlobsAsync / GetPagedListAsync.
+        var blobKey = _ToBlobKey(fileInfo, baseDirectoryPath);
 
         return ValueTask.FromResult<BlobInfo?>(_CreateBlobInfo(fileInfo, blobKey));
     }
@@ -395,6 +446,11 @@ public sealed class FileSystemBlobStorage(
             blobSearchPattern = "*";
         }
 
+        // Reject traversal sequences in the search pattern (consistent with DeleteAllAsync) before it reaches
+        // Directory.EnumerateFiles, so the package surfaces its own ArgumentException rather than leaning on a
+        // BCL implementation detail.
+        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
+
         blobSearchPattern = blobSearchPattern.NormalizePath();
 
         var baseDirectoryPath = Path.Combine(_basePath, container[0]).EnsureEndsWith(Path.DirectorySeparatorChar);
@@ -406,6 +462,7 @@ public sealed class FileSystemBlobStorage(
             yield break;
         }
 
+        // The directory walk below is synchronous I/O; this await keeps the method a valid async iterator.
         await ValueTask.CompletedTask.ConfigureAwait(false);
 
         foreach (var path in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
@@ -419,11 +476,7 @@ public sealed class FileSystemBlobStorage(
                 continue;
             }
 
-            var blobKey = fileInfo
-                .FullName.Replace(baseDirectoryPath, string.Empty, StringComparison.Ordinal)
-                .Replace('\\', '/');
-
-            yield return _CreateBlobInfo(fileInfo, blobKey);
+            yield return _CreateBlobInfo(fileInfo, _ToBlobKey(fileInfo, baseDirectoryPath));
         }
     }
 
@@ -452,12 +505,13 @@ public sealed class FileSystemBlobStorage(
         cancellationToken.ThrowIfCancellationRequested();
         Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
-        Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         if (string.IsNullOrEmpty(blobSearchPattern))
         {
             blobSearchPattern = "*";
         }
+
+        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
 
@@ -472,11 +526,21 @@ public sealed class FileSystemBlobStorage(
             return PagedFileListResult.Empty;
         }
 
+        // Hoist a single forward-only enumerator that every page advances, instead of re-enumerating the whole
+        // tree and Skip()-ping prior entries per page. This turns full enumeration from O(N^2 / pageSize) into
+        // O(N); the PagedFileListResult cursor only ever moves forward, so a single enumerator is sufficient.
+        var enumerator = Directory
+            .EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories)
+            .GetEnumerator();
+
         var result = new PagedFileListResult(
             (_, _) =>
                 ValueTask.FromResult<INextPageResult>(
-                    _GetFiles(baseDirectoryPath, directoryPath, blobSearchPattern, 1, pageSize)
-                )
+                    _GetFiles(baseDirectoryPath, blobSearchPattern, pageSize, page: 1, enumerator, carryOver: null)
+                ),
+            // Deterministic cleanup: a caller that reads page 1 and stops while HasMore is still true can
+            // 'await using' the result to release the find handle, instead of waiting for finalization.
+            cleanup: () => enumerator.Dispose()
         );
 
         await result.NextPageAsync(cancellationToken).ConfigureAwait(false);
@@ -486,51 +550,61 @@ public sealed class FileSystemBlobStorage(
 
     private NextPageResult _GetFiles(
         string baseDirectoryPath,
-        string directoryPath,
         string searchPattern,
+        int pageSize,
         int page,
-        int pageSize
+        IEnumerator<string> enumerator,
+        BlobInfo? carryOver
     )
     {
-        var list = new List<BlobInfo>();
-
-        var pagingLimit = pageSize;
-        var skip = (page - 1) * pagingLimit;
-
-        if (pagingLimit < int.MaxValue)
-        {
-            pagingLimit++;
-        }
-
         _logger.LogGettingFileList(searchPattern, page, pageSize);
 
-        foreach (
-            var path in Directory
-                .EnumerateFiles(directoryPath, searchPattern, SearchOption.AllDirectories)
-                .Skip(skip)
-                .Take(pagingLimit)
-        )
+        var list = new List<BlobInfo>(pageSize);
+
+        // The lookahead entry pulled past the previous page (to learn that this page exists) starts this page.
+        if (carryOver is not null)
         {
-            var fileInfo = new FileInfo(path);
-
-            if (!fileInfo.Exists)
-            {
-                continue;
-            }
-
-            var blobKey = fileInfo
-                .FullName.Replace(baseDirectoryPath, string.Empty, StringComparison.Ordinal)
-                .Replace('\\', '/');
-
-            list.Add(_CreateBlobInfo(fileInfo, blobKey));
+            list.Add(carryOver);
         }
 
-        var hasMore = false;
+        BlobInfo? lookahead = null;
+        bool hasMore;
 
-        if (list.Count == pagingLimit)
+        try
         {
-            hasMore = true;
-            list.RemoveAt(pagingLimit - 1);
+            while (list.Count <= pageSize && enumerator.MoveNext())
+            {
+                var fileInfo = new FileInfo(enumerator.Current);
+
+                if (!fileInfo.Exists)
+                {
+                    continue;
+                }
+
+                var info = _CreateBlobInfo(fileInfo, _ToBlobKey(fileInfo, baseDirectoryPath));
+
+                // Pull one entry past the page to detect a further page, then carry it over rather than re-reading it.
+                if (list.Count == pageSize)
+                {
+                    lookahead = info;
+
+                    break;
+                }
+
+                list.Add(info);
+            }
+
+            hasMore = lookahead is not null;
+        }
+        finally
+        {
+            // Release the find handle when the walk reaches its end (no further page) or throws mid-iteration;
+            // only an in-progress cursor with more pages keeps the enumerator alive for the next page. The
+            // abandoned-cursor case is covered by PagedFileListResult.DisposeAsync via the provider cleanup delegate.
+            if (lookahead is null)
+            {
+                enumerator.Dispose();
+            }
         }
 
         return new NextPageResult
@@ -541,7 +615,7 @@ public sealed class FileSystemBlobStorage(
             NextPageFunc = hasMore
                 ? (_, _) =>
                     ValueTask.FromResult<INextPageResult>(
-                        _GetFiles(baseDirectoryPath, directoryPath, searchPattern, page + 1, pageSize)
+                        _GetFiles(baseDirectoryPath, searchPattern, pageSize, page + 1, enumerator, lookahead)
                     )
                 : null,
         };
@@ -560,6 +634,14 @@ public sealed class FileSystemBlobStorage(
             Size = fileInfo.Length,
         };
 
+    /// <summary>
+    /// Derives the provider-relative blob key for <paramref name="fileInfo"/> by stripping the container base
+    /// directory and normalizing separators to '/'. Shared by GetBlobInfoAsync, GetBlobsAsync, and GetPagedListAsync
+    /// so the same physical blob yields the same key across all three.
+    /// </summary>
+    private static string _ToBlobKey(FileInfo fileInfo, string baseDirectoryPath) =>
+        fileInfo.FullName.Replace(baseDirectoryPath, string.Empty, StringComparison.Ordinal).Replace('\\', '/');
+
     #endregion
 
     #region Build Paths
@@ -572,17 +654,13 @@ public sealed class FileSystemBlobStorage(
         PathValidation.ValidateContainer(container);
         PathValidation.ValidatePathSegment(blobName);
 
+        var normalizedContainer = _NormalizeContainerSegments(container);
         var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
 
         // Use single Path.Combine call to avoid intermediate string allocations
         var segments = new string[container.Length + 2];
         segments[0] = _basePath;
-        for (var i = 0; i < container.Length; i++)
-        {
-            // Two-tier: the first segment is the top-level container; the rest are path segments.
-            segments[i + 1] =
-                i == 0 ? _normalizer.NormalizeContainerName(container[i]) : _normalizer.NormalizeBlobName(container[i]);
-        }
+        normalizedContainer.CopyTo(segments, 1);
         segments[^1] = normalizedBlobName;
 
         var path = Path.Combine(segments);
@@ -596,26 +674,48 @@ public sealed class FileSystemBlobStorage(
         Argument.IsNotNullOrEmpty(container);
         PathValidation.ValidateContainer(container);
 
-        var normalizedContainer = new string[container.Length];
-        for (var i = 0; i < container.Length; i++)
-        {
-            // Two-tier: the first segment is the top-level container; the rest are path segments.
-            normalizedContainer[i] =
-                i == 0 ? _normalizer.NormalizeContainerName(container[i]) : _normalizer.NormalizeBlobName(container[i]);
-        }
-
-        var filePath = Path.Combine(_basePath, Path.Combine(normalizedContainer));
+        var filePath = Path.Combine(_basePath, Path.Combine(_NormalizeContainerSegments(container)));
         _ThrowIfPathTraversal(filePath, nameof(container));
 
         return filePath.EnsureEndsWith(Path.DirectorySeparatorChar);
     }
 
+    /// <summary>
+    /// Normalizes each container segment using the two-tier rule: the first segment is the top-level container
+    /// name; the remaining segments are treated as path (blob) segments.
+    /// </summary>
+    private string[] _NormalizeContainerSegments(string[] container)
+    {
+        var normalized = new string[container.Length];
+
+        for (var i = 0; i < container.Length; i++)
+        {
+            normalized[i] =
+                i == 0 ? _normalizer.NormalizeContainerName(container[i]) : _normalizer.NormalizeBlobName(container[i]);
+        }
+
+        return normalized;
+    }
+
     private void _ThrowIfPathTraversal(string path, string paramName)
     {
+        // Resolve '..'/'.' segments lexically, then verify the result stays under the base directory.
+        // Path.GetRelativePath honors the platform's path-casing semantics (case-insensitive on Windows,
+        // case-sensitive on Linux), so the boundary check matches how the OS actually resolves the path —
+        // unlike a fixed OrdinalIgnoreCase prefix compare, which is wrong on case-sensitive file systems.
         var fullPath = Path.GetFullPath(path);
-        if (!fullPath.StartsWith(_basePath, StringComparison.OrdinalIgnoreCase))
+        var relative = Path.GetRelativePath(_basePath, fullPath);
+
+        if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
         {
-            throw new ArgumentException("Path traversal detected", paramName);
+            // A rejected traversal attempt is a security-relevant event; surface it to logs and name the
+            // offending resolved path so an operator or agent can see exactly what was blocked.
+            _logger.LogPathTraversalRejected(paramName, fullPath);
+
+            throw new ArgumentException(
+                $"Path traversal detected: the resolved path escapes the base directory ('{fullPath}')",
+                paramName
+            );
         }
     }
 

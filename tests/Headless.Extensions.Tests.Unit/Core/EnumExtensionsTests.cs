@@ -239,4 +239,50 @@ public sealed class EnumExtensionsTests
         minLocales.Should().ContainSingle(l => l.Locale.DisplayName == "Far Past");
         maxLocales.Should().ContainSingle(l => l.Locale.DisplayName == "Far Future");
     }
+
+    [Fact]
+    public void GetDisplayName_should_fall_back_to_number_for_undefined_enum_value()
+    {
+        // given - an undefined cast has no declared member; GetMember(...)[0] previously threw IndexOutOfRange
+        const PaymentType value = (PaymentType)999;
+
+        // when
+        var displayName = value.GetDisplayName();
+
+        // then
+        displayName.Should().Be("999");
+    }
+
+    [Fact]
+    public void GetDescription_should_return_null_for_undefined_enum_value()
+    {
+        // given
+        const PaymentType value = (PaymentType)999;
+
+        // when / then
+        value.GetDescription().Should().BeNull();
+    }
+
+    [Fact]
+    public void GetFirstAttribute_should_return_null_for_undefined_enum_value()
+    {
+        // given
+        const PaymentType value = (PaymentType)999;
+
+        // when / then
+        value.GetFirstAttribute<DescriptionAttribute>().Should().BeNull();
+    }
+
+    [Fact]
+    public void GetAllLocales_should_be_empty_for_undefined_enum_value()
+    {
+        // given
+        const PaymentType value = (PaymentType)999;
+
+        // when
+        var locales = value.GetAllLocales().Locales;
+
+        // then
+        locales.Should().BeEmpty();
+    }
 }

@@ -43,17 +43,21 @@ public sealed class MoneyTests
         result.Should().Be(PrimitiveValidationResult.Ok);
     }
 
-    [Fact]
-    public void should_round_to_positive_infinity()
+    [Theory]
+    // Banker's rounding (MidpointRounding.ToEven): a midpoint rounds to the nearest even last digit.
+    [InlineData(5.125, 5.12)] // preceding digit 2 is even -> stays 5.12
+    [InlineData(5.135, 5.14)] // preceding digit 3 is odd  -> rounds to even 5.14
+    [InlineData(2.675, 2.68)] // preceding digit 7 is odd  -> rounds to even 2.68
+    public void should_round_midpoints_to_even(decimal value, decimal expected)
     {
-        // given - value at midpoint
-        var money = new Money(5.125m);
+        // given - value at the two-decimal midpoint
+        var money = new Money(value);
 
         // when
         var result = money.GetRounded();
 
-        // then - rounds toward positive infinity (up)
-        result.Should().Be(new Money(5.13m));
+        // then - banker's rounding
+        result.Should().Be(new Money(expected));
     }
 
     [Fact]
@@ -119,5 +123,53 @@ public sealed class MoneyTests
 
         // then
         money.Should().Be(new Money(123.45m));
+    }
+
+    [Fact]
+    public void default_get_hash_code_should_not_throw_and_return_zero()
+    {
+        // given
+        var act = () => default(Money).GetHashCode();
+
+        // when & then
+        act.Should().NotThrow().Which.Should().Be(0);
+    }
+
+    [Fact]
+    public void default_should_equal_default_but_not_an_initialized_value()
+    {
+        // given
+        var uninitialized = default(Money);
+        var initialized = new Money(0m);
+
+        // when & then
+        uninitialized.Equals(default).Should().BeTrue();
+        (uninitialized == default).Should().BeTrue();
+        uninitialized.Equals(initialized).Should().BeFalse();
+        (uninitialized != initialized).Should().BeTrue();
+    }
+
+    [Fact]
+    public void default_should_compare_consistently_with_equals()
+    {
+        // given
+        var uninitialized = default(Money);
+        var initialized = new Money(0m);
+
+        // when & then
+        uninitialized.CompareTo(default).Should().Be(0); // both uninitialized => equal
+        uninitialized.CompareTo(initialized).Should().Be(-1); // uninitialized sorts first
+        initialized.CompareTo(uninitialized).Should().Be(1);
+    }
+
+    [Fact]
+    public void default_should_be_usable_as_a_hash_set_member()
+    {
+        // given & when
+        var set = new HashSet<Money> { default, default, new(0m) };
+
+        // then - two defaults collapse to one entry, distinct from the initialized zero value
+        set.Should().HaveCount(2);
+        set.Should().Contain(default(Money));
     }
 }

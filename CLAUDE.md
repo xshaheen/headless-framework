@@ -78,6 +78,13 @@ Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — the
 
 ## Conventions
 
+**Reuse Before Reinventing (check `Headless.Extensions` first):**
+
+- Before writing any general-purpose utility — a string/collection/date/IO/reflection helper, a result or error type, a guard, a domain primitive or value object, pagination, a constant, or a validator — check [docs/llms/extensions.md](docs/llms/extensions.md). `Headless.Extensions` is the framework's base library and almost certainly already ships it; reuse it instead of hand-rolling a duplicate.
+- Read the relevant **Design Notes** before using a type, not just to confirm it exists — they document non-obvious behavior you would otherwise miss (e.g. `Currency` `*`/`/` take a `decimal` scalar, `KeyedAsyncLock`'s timeout overload returns `null` instead of throwing, `ParallelForEachAsync` does not preserve order).
+- Search by capability, not by package name: types live across several `Headless.*` namespaces (`Headless.Primitives`, `Headless.Collections`, `Headless.Threading`, `Headless.IO`, …) and many are extension methods surfaced on BCL types in `System.*`.
+- If `Headless.Extensions` genuinely lacks it, prefer adding the helper there (or to the matching foundational package) over duplicating it locally — then update `docs/llms/extensions.md` and the package README per [docs/authoring/AUTHORING.md](docs/authoring/AUTHORING.md).
+
 **Argument Validation:**
 
 - Use `Headless.Checks` (`Argument.*`, `Ensure.*`) for argument validation; avoid `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan`, etc.

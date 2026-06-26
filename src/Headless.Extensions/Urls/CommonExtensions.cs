@@ -75,11 +75,23 @@ public static class CommonExtensions
             return [];
         }
 
-        return from p in s.Split('&')
-            let pair = p.SplitOnFirstOccurrence("=")
-            let name = pair[0]
-            let value = pair.Length == 1 ? null : pair[1]
-            select (name, (object?)value);
+        var pairs = s.Split('&');
+        var result = new List<(string Key, object? Value)>(pairs.Length);
+        foreach (var pair in pairs)
+        {
+            // Split on the first '='. No '=' yields a null value (key-only); an empty right side yields "".
+            var i = pair.AsSpan().IndexOf('=');
+            if (i < 0)
+            {
+                result.Add((pair, null));
+            }
+            else
+            {
+                result.Add((pair[..i], pair[(i + 1)..]));
+            }
+        }
+
+        return result;
     }
 
     [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]

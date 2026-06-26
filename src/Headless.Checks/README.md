@@ -41,13 +41,22 @@ public void CreateUser(string name, int age, List<string> roles)
 - `Argument.IsNotNull(value)`
 - `Argument.IsNotNullOrEmpty(string|collection)`
 - `Argument.IsNotNullOrWhiteSpace(string)`
+- `Argument.IsNotEmpty(guid)` — rejects `Guid.Empty` (also `Guid?`; null passes through)
 - `Argument.IsPositive(number)` / `IsNegative` / `IsPositiveOrZero` / `IsNegativeOrZero`
+- `Argument.IsZero(number)` / `IsNotZero(number)` — `INumber<T>`, nullable, and `TimeSpan` overloads
+- `Argument.IsEqualTo(value, expected)` / `IsNotEqualTo(value, other)` — value equality (optional `IEqualityComparer<T>` overload); contrast `IsReferenceEqualTo`/`IsReferenceNotEqualTo` for identity
+- `Argument.IsCloseTo(value, target, delta)` / `IsNotCloseTo(…)` — tolerance comparison for `INumber<T>`; prefer over `IsEqualTo` for `float`/`double`. `int`/`long`/`nint` also have unsigned-`delta` overloads (overflow-safe, full distance range)
+- `Argument.IsBitwiseEqualTo(value, target)` — raw-byte equality for `unmanaged` types (distinguishes `+0.0`/`-0.0`, matches identical NaN payloads)
 - `Argument.IsOneOf(value, allowedValues)`
 - `Argument.IsInEnum(enumValue)`
-- `Argument.HasNoNulls(collection)`
+- `Argument.HasNoNulls(collection)` / `HasNoDuplicates(collection)` — `HasNoDuplicates` takes an optional `IEqualityComparer<T>`
+- `Argument.HasLength` / `HasMinLength` / `HasMaxLength` / `HasLengthBetween` / `HasLengthGreaterThan` / `HasLengthLessThan` / `HasLengthNotEqualTo(string, …)` — string length bounds (throw `ArgumentOutOfRangeException`)
+- `Argument.HasCount` / `HasMinCount` / `HasMaxCount` / `HasCountBetween(collection, …)` — item-count bounds (`IReadOnlyCollection<T>` fast-path + `IEnumerable<T>`)
+- `Argument.StartsWith` / `EndsWith` / `Contains(string, value, comparison)` — string content (`StringComparison.Ordinal` by default)
+- `Argument.IsInRangeFor(index, count | collection | span)` — bounds-checks an index against a length/collection/span
 - `Argument.FileExists(path)` / `DirectoryExists(path)`
 - `Argument.Matches(string, regex)` — throws `ArgumentException` when the string does not match the pattern
-- `Argument.Is(condition, message, nameof(arg))` — custom argument precondition; throws `ArgumentException`
+- `Argument.IsTrue(condition, message, nameof(arg))` / `IsFalse(condition, …)` — custom argument precondition that must hold / must not hold; throws `ArgumentException`
 
 ### Runtime Assertions
 
@@ -59,6 +68,7 @@ public void ProcessOrder()
     Ensure.True(_initialized, "Service must be initialized.");
     Ensure.NotDisposed(_disposed, this);
     Ensure.False(_queue.IsEmpty, "Queue should not be empty.");
+    var connection = Ensure.NotNull(_connection); // state must-be-present; throws InvalidOperationException
 }
 ```
 

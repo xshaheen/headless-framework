@@ -31,6 +31,14 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <summary>The error describing the failure, or <see langword="null"/> when <see cref="IsSuccess"/> is <see langword="true"/>.</summary>
     public ResultError? Error { get; }
 
+    // Guarded failure-state access used by Match/OnFailure: a default(ApiResult) is a failure state carrying no error,
+    // so surface a clear error instead of handing null to a non-null delegate parameter (a downstream NRE).
+    private ResultError FailureError =>
+        Error
+        ?? throw new InvalidOperationException(
+            "ApiResult was not properly initialized. Error was accessed on a default instance."
+        );
+
     /// <summary>Tries to get the error without throwing.</summary>
     /// <param name="error">When this method returns <see langword="true"/>, the failure error; otherwise <see langword="null"/>.</param>
     /// <returns><see langword="true"/> if the result is a failure; otherwise <see langword="false"/>.</returns>
@@ -47,7 +55,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     /// <returns>The value produced by the invoked branch.</returns>
     public TResult Match<TResult>(Func<TResult> success, Func<ResultError, TResult> failure)
     {
-        return IsSuccess ? success() : failure(Error!);
+        return IsSuccess ? success() : failure(FailureError);
     }
 
     /// <summary>Invokes <paramref name="action"/> when the result is a success, then returns this result.</summary>
@@ -70,7 +78,7 @@ public readonly struct ApiResult : IEquatable<ApiResult>
     {
         if (!IsSuccess)
         {
-            action(Error!);
+            action(FailureError);
         }
 
         return this;

@@ -135,5 +135,34 @@ public sealed class EnsureTests
             .WithMessage("*Tests.EnsureTests+TestDisposableObject*");
     }
 
+    [Fact]
+    public void not_null_should_return_value_when_not_null()
+    {
+        var reference = "value";
+        Ensure.NotNull(reference).Should().Be("value");
+        Ensure.NotNull((int?)5).Should().Be(5);
+    }
+
+    [Fact]
+    public void not_null_should_throw_when_reference_is_null()
+    {
+        string? reference = null;
+        var action = () => Ensure.NotNull(reference);
+        var actionWithMessage = () => Ensure.NotNull(reference, "must be set");
+
+        action.Should().ThrowExactly<InvalidOperationException>().WithMessage("Expected \"reference\" to not be null.");
+
+        actionWithMessage.Should().ThrowExactly<InvalidOperationException>().WithMessage("must be set");
+    }
+
+    [Fact]
+    public void not_null_should_throw_when_nullable_struct_is_null()
+    {
+        int? value = null;
+        var action = () => Ensure.NotNull(value);
+
+        action.Should().ThrowExactly<InvalidOperationException>().WithMessage("Expected \"value\" to not be null.");
+    }
+
     private sealed class TestDisposableObject;
 }

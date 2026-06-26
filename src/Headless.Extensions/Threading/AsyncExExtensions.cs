@@ -104,8 +104,18 @@ public static class AsyncExExtensions
         TimeProvider? timeProvider = null
     )
     {
-        _ = await Task.WhenAny(countdownEvent.WaitAsync(), (timeProvider ?? TimeProvider.System).Delay(timeout))
-            .ConfigureAwait(false);
+        // Drive both sides off one CTS so the loser is cancelled the moment either side completes. Otherwise
+        // Task.WhenAny abandons it: the delay timer (event-signalled path) or the wait registration (timeout
+        // path) lingers until it would have finished on its own.
+        using var cts = new CancellationTokenSource();
+        var waitTask = countdownEvent.WaitAsync(cts.Token);
+        var delayTask = (timeProvider ?? TimeProvider.System).Delay(timeout, cts.Token);
+
+        _ = await Task.WhenAny(waitTask, delayTask).ConfigureAwait(false);
+
+        // Cancelling the loser completes it as canceled (never faulted), so neither task leaks nor needs
+        // separate observation; this method still returns without throwing on timeout.
+        await cts.CancelAsync().ConfigureAwait(false);
     }
 
     /// <summary>Waits for the countdown <paramref name="resetEvent"/> to reach zero, returning silently if <paramref name="timeout"/> elapses first.</summary>

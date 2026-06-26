@@ -159,6 +159,36 @@ public abstract class CommitCoordinationConformanceTests<TFixture>(TFixture fixt
         calls.Should().Be(0);
     }
 
+    public virtual async Task should_doom_root_when_child_disposed_without_signal()
+    {
+        var factory = new CommitScopeFactory((CommitScopeStack)fixture.CreateStack());
+
+        await using var root = factory.Begin(fixture.Services);
+        var rootCalls = 0;
+
+        root.Coordinator.OnCommit(
+            (_, _) =>
+            {
+                rootCalls++;
+
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // Disposing a CHILD scope WITHOUT signalling is an implicit rollback that dooms the ROOT — not merely a
+        // discard of the child's own promoted work. The root must be RolledBack the moment the child's using block
+        // exits, before any root signal. (await using drains the doomed root's rollback inline, so this is
+        // deterministic — no background-timing race.)
+        await using (factory.Begin(fixture.Services)) { }
+
+        root.Coordinator.State.Should().Be(CommitCoordinatorState.RolledBack);
+
+        // The root's own later commit is now an ignored racing signal; its registered commit work never runs.
+        await root.SignalAsync(CommitOutcome.Committed);
+
+        rootCalls.Should().Be(0);
+    }
+
     public virtual async Task should_preserve_parent_slot_when_concurrent_child_flows_fork_and_dispose()
     {
         var stack = (CommitScopeStack)fixture.CreateStack();

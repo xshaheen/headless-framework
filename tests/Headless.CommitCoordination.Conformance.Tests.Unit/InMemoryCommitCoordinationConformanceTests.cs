@@ -38,6 +38,10 @@ public sealed class InMemoryCommitCoordinationConformanceTests(InMemoryCommitCoo
         base.should_discard_promoted_child_work_when_root_rolls_back();
 
     [Fact]
+    public override Task should_doom_root_when_child_disposed_without_signal() =>
+        base.should_doom_root_when_child_disposed_without_signal();
+
+    [Fact]
     public override Task should_preserve_parent_slot_when_concurrent_child_flows_fork_and_dispose() =>
         base.should_preserve_parent_slot_when_concurrent_child_flows_fork_and_dispose();
 

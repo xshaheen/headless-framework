@@ -118,7 +118,7 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 ### Setting Value Caching
 
-`SettingValueStore` caches resolved setting values to avoid repeated database reads. The cache is backed by the registered `ICache`. When `ISettingManager.SetAsync` or `DeleteAsync` writes or removes a value, a `CacheInvalidationMessage` is published and `SettingValueCacheItemInvalidator` evicts the affected entries across all nodes. Bypassing `ISettingManager` to write values directly to the repository breaks this invalidation path.
+`SettingValueStore` caches resolved setting values to avoid repeated database reads. The cache is backed by the registered `ICache`. When `ISettingManager.SetAsync` or `DeleteAsync` writes or removes a value, `SettingValueStore` updates or evicts the affected cache entries directly through `ICache` (a distributed cache propagates the eviction across nodes via `CacheInvalidationMessage`). Bypassing `ISettingManager` to write values directly to the repository breaks this invalidation path.
 
 ### Startup Initialization
 
@@ -404,7 +404,6 @@ services.AddHeadlessSettings(setup =>
 - Registers `ISettingDefinitionManager`, `IStaticSettingDefinitionStore`, `IDynamicSettingDefinitionStore`, `ISettingValueStore`, `ISettingValueProviderManager` as singletons
 - Registers `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider` as singletons
 - Registers `SettingsInitializationBackgroundService` as hosted service
-- Registers `SettingValueCacheItemInvalidator` as a domain event handler for `EntityChangedEventData<SettingValueRecord>`
 
 ---
 

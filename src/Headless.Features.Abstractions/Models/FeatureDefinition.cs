@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Primitives;
 
 namespace Headless.Features.Models;
 
 /// <summary>Describes a feature, its metadata, and its position in the feature hierarchy.</summary>
-public sealed class FeatureDefinition : ICanCreateChildFeature
+public sealed class FeatureDefinition : ICanCreateChildFeature, IHasExtraProperties
 {
     private readonly List<FeatureDefinition> _children;
 
@@ -33,7 +34,6 @@ public sealed class FeatureDefinition : ICanCreateChildFeature
         Description = description;
         IsVisibleToClients = isVisibleToClients;
         IsAvailableToHost = isAvailableToHost;
-        Properties = new(StringComparer.Ordinal);
         Providers = [];
         _children = [];
     }
@@ -75,19 +75,19 @@ public sealed class FeatureDefinition : ICanCreateChildFeature
     /// </summary>
     public List<string> Providers { get; }
 
-    /// <summary>Can be used to get/set custom properties for this feature.</summary>
-    public Dictionary<string, object?> Properties { get; }
+    /// <summary>Bag of custom properties for this feature.</summary>
+    public ExtraProperties ExtraProperties { get; } = [];
 
-    /// <summary>Gets/sets a key-value on the <see cref="Properties"/>.</summary>
+    /// <summary>Gets/sets a key-value on the <see cref="ExtraProperties"/>.</summary>
     /// <param name="name">Name of the property</param>
     /// <returns>
-    /// Returns the value in the <see cref="Properties"/> dictionary by given <paramref name="name"/>.
-    /// Returns null if given <paramref name="name"/> is not present in the <see cref="Properties"/> dictionary.
+    /// Returns the value in the <see cref="ExtraProperties"/> dictionary by given <paramref name="name"/>.
+    /// Returns null if given <paramref name="name"/> is not present in the <see cref="ExtraProperties"/> dictionary.
     /// </returns>
     public object? this[string name]
     {
-        get => Properties.GetOrDefault(name);
-        set => Properties[name] = value;
+        get => ExtraProperties.GetOrDefault(name);
+        set => ExtraProperties[name] = value;
     }
 
     /// <summary>Creates and registers a child feature nested under this feature.</summary>

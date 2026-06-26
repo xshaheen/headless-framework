@@ -32,6 +32,11 @@ public static class QueueExtensions
         /// <param name="items">The elements to enqueue.</param>
         public void EnqueueRange(IEnumerable<T> items)
         {
+            if (items is ICollection<T> collection)
+            {
+                queue.EnsureCapacity(queue.Count + collection.Count);
+            }
+
             foreach (var item in items)
             {
                 queue.Enqueue(item);
@@ -45,13 +50,8 @@ public static class QueueExtensions
     /// <returns>A <see cref="Queue{T}"/> that contains the elements of <paramref name="items"/>.</returns>
     public static Queue<T> ToQueue<T>(this IEnumerable<T> items)
     {
-        var queue = new Queue<T>();
-
-        foreach (var item in items)
-        {
-            queue.Enqueue(item);
-        }
-
-        return queue;
+        // The BCL constructor pre-sizes the backing array when items is an ICollection<T>
+        // and enqueues in iteration order, matching the previous element-by-element loop.
+        return new Queue<T>(items);
     }
 }

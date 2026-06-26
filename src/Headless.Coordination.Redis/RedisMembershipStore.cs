@@ -199,6 +199,36 @@ internal sealed class RedisMembershipStore(
         return result.IsNull ? null : Enum.Parse<NodeLivenessState>((string)result!);
     }
 
+    // Live-node fast path: read Alive current-generation identities straight from the :live sorted set
+    // (ZRANGEBYSCORE) instead of HGETALL-scanning and decoding the whole :known hash. Read-only — no prune, no
+    // mirror backfill — so it does not require a writable primary, but it is left on the default database for
+    // simplicity. The script resolves each candidate's generation mirror-first with a gen: fallback so a
+    // superseded incarnation is excluded even while still alive-by-score.
+    public async ValueTask<IReadOnlyList<NodeIdentity>> ReadLiveNodesAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                Db,
+                RedisMembershipReadLiveNodesScriptDefinition.Instance,
+                new ReadLiveNodesParams(
+                    _LiveKey(),
+                    _KnownKey(),
+                    _GenKeyPrefix(),
+                    _GenerationFieldPrefix,
+                    _ToMilliseconds(Options.SuspicionThreshold),
+                    _ToMilliseconds(Options.DeadThreshold)
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return _ParseLiveNodes((RedisResult[]?)result);
+    }
+
     internal async ValueTask CleanupAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -252,6 +282,24 @@ internal sealed class RedisMembershipStore(
 
         // The read Lua already returns members sorted (table.sort); no C# re-sort is needed.
         return snapshots.ToArray();
+    }
+
+    private static NodeIdentity[] _ParseLiveNodes(RedisResult[]? result)
+    {
+        if (result is null || result.Length == 0)
+        {
+            return [];
+        }
+
+        var identities = new NodeIdentity[result.Length];
+
+        // The script already returns members sorted (table.sort); no C# re-sort is needed.
+        for (var i = 0; i < result.Length; i++)
+        {
+            identities[i] = NodeIdentity.Parse((string)result[i]!);
+        }
+
+        return identities;
     }
 
     private string _MetadataJson(NodeIdentity identity, NodeDescriptor? descriptor)

@@ -19,6 +19,10 @@ internal sealed class FileSystemBlobStorageOptionsValidator : AbstractValidator<
 {
     public FileSystemBlobStorageOptionsValidator()
     {
-        RuleFor(x => x.BaseDirectoryPath).NotEmpty();
+        RuleFor(x => x.BaseDirectoryPath)
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty()
+            .Must(path => Path.IsPathFullyQualified(path))
+            .WithMessage("'{PropertyName}' must be an absolute, fully-qualified path.");
     }
 }

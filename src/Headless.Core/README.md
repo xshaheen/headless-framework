@@ -47,7 +47,7 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
             UserId = user.UserId!.Value,
             TenantId = tenant.Id,
             CreatedAt = clock.UtcNow,
-            Total = new Money(request.Amount, request.Currency),
+            Total = new Currency(request.Amount, request.Currency),
         };
     }
 }

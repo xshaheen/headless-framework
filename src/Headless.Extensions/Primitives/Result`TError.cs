@@ -34,9 +34,30 @@ public readonly struct Result<TError> : IEquatable<Result<TError>>
     public bool IsFailure => !IsSuccess;
 
     /// <summary>The error describing the failure.</summary>
-    /// <exception cref="InvalidOperationException">Thrown when the result is a success (<see cref="IsSuccess"/> is <see langword="true"/>).</exception>
-    public TError Error =>
-        IsFailure ? _error! : throw new InvalidOperationException("Cannot access Error on successful result.");
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the result is a success (<see cref="IsSuccess"/> is <see langword="true"/>), or when accessed on a
+    /// default-initialized instance (which is a failure state carrying no error).
+    /// </exception>
+    public TError Error
+    {
+        get
+        {
+            if (IsSuccess)
+            {
+                throw new InvalidOperationException("Cannot access Error on successful result.");
+            }
+
+            // A default(Result<TError>) is a failure state with no error; throw a clear error instead of a downstream NRE.
+            if (_error is null)
+            {
+                throw new InvalidOperationException(
+                    "Result<TError> was not properly initialized. Error was accessed on a default instance."
+                );
+            }
+
+            return _error;
+        }
+    }
 
     /// <summary>Tries to get the error without throwing.</summary>
     /// <param name="error">When this method returns <see langword="true"/>, the failure error; otherwise <see langword="null"/>.</param>
@@ -53,7 +74,7 @@ public readonly struct Result<TError> : IEquatable<Result<TError>>
     /// <param name="failure">The function invoked on failure, receiving the error.</param>
     /// <returns>The value produced by the invoked branch.</returns>
     public TResult Match<TResult>(Func<TResult> success, Func<TError, TResult> failure) =>
-        IsFailure ? failure(_error!) : success();
+        IsFailure ? failure(Error) : success();
 
     /// <summary>Invokes <paramref name="action"/> when the result is a success, then returns this result.</summary>
     /// <param name="action">The action to run on success.</param>
@@ -75,7 +96,7 @@ public readonly struct Result<TError> : IEquatable<Result<TError>>
     {
         if (IsFailure)
         {
-            action(_error!);
+            action(Error);
         }
 
         return this;

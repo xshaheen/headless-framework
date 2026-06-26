@@ -16,11 +16,17 @@ public sealed class PreferredLocale(string country, string language) : IEquatabl
     private PreferredLocale()
         : this(null!, null!) { }
 
-    /// <summary>Three-letter ISO country code in uppercase.</summary>
-    public string Country { get; private init; } = country;
+    /// <summary>
+    /// Three-letter ISO country code, normalized to uppercase (invariant) on construction so the documented
+    /// casing invariant always holds and equality is effectively case-insensitive on the country code.
+    /// </summary>
+    public string Country { get; private init; } = country?.ToUpperInvariant()!;
 
-    /// <summary>Two-letter ISO language code in lowercase.</summary>
-    public string Language { get; private init; } = language;
+    /// <summary>
+    /// Two-letter ISO language code, normalized to lowercase (invariant) on construction so the documented
+    /// casing invariant always holds and equality is effectively case-insensitive on the language code.
+    /// </summary>
+    public string Language { get; private init; } = language?.ToLowerInvariant()!;
 
     /// <summary>Returns the locale formatted as <c>{Language}-{Country}</c>.</summary>
     public override string ToString() => $"{Language}-{Country}";

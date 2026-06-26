@@ -19,12 +19,15 @@ public static class SequentialGuid
     /// <returns>A new <see cref="Guid"/> whose trailing bytes increase monotonically across calls, keeping values sequential in SQL Server's sort order.</returns>
     public static Guid NextSequentialAtEnd()
     {
-        var guidBytes = Guid.NewGuid().ToByteArray();
-        var counterBytes = BitConverter.GetBytes(Interlocked.Increment(ref _counter));
+        Span<byte> guidBytes = stackalloc byte[16];
+        Guid.NewGuid().TryWriteBytes(guidBytes);
+
+        Span<byte> counterBytes = stackalloc byte[sizeof(long)];
+        BitConverter.TryWriteBytes(counterBytes, Interlocked.Increment(ref _counter));
 
         if (!BitConverter.IsLittleEndian)
         {
-            Array.Reverse(counterBytes);
+            counterBytes.Reverse();
         }
 
         guidBytes[08] = counterBytes[1];

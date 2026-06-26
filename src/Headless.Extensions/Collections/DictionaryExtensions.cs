@@ -241,6 +241,8 @@ public static class DictionaryExtensions
     )
         where TKey : notnull
     {
+        dictionary.EnsureCapacity(dictionary.Count + otherDictionary.Count);
+
         foreach (var (key, value) in otherDictionary)
         {
             dictionary.AddPair(key, value);
@@ -265,6 +267,8 @@ public static class DictionaryExtensions
     )
         where TKey : notnull
     {
+        dictionary.EnsureCapacity(dictionary.Count + otherDictionary.Count);
+
         foreach (var (key, value) in otherDictionary)
         {
             dictionary.AddPair(key, value);

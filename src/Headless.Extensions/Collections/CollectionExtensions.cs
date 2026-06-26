@@ -8,6 +8,10 @@ namespace System.Collections.Generic;
 [PublicAPI]
 public static class CollectionExtensions
 {
+    // Above this list size, a per-item List<T>.Contains scan (O(n)) is worth replacing with a one-time
+    // HashSet snapshot so membership checks become O(1). Below it the snapshot allocation is not worthwhile.
+    private const int _ContainsHashSetThreshold = 16;
+
     /// <summary>
     /// Adds the specified elements to the end of the collection.
     /// </summary>
@@ -81,7 +85,26 @@ public static class CollectionExtensions
     {
         Argument.IsNotNull(source);
 
-        var addedItems = new List<T>();
+        var addedItems = items.TryGetNonEnumeratedCount(out var count) ? new List<T>(count) : new List<T>();
+
+        // List<T>.Contains is O(n), making the naive loop O(n*m). For large lists, snapshot the existing
+        // items into a HashSet (same default equality as List<T>.Contains) so membership checks are O(1).
+        // Newly added items are tracked in the set too, preserving the de-duplication of repeated items.
+        if (source is List<T> { Count: > _ContainsHashSetThreshold } list)
+        {
+            var seen = new HashSet<T>(list);
+
+            foreach (var item in items)
+            {
+                if (seen.Add(item))
+                {
+                    list.Add(item);
+                    addedItems.Add(item);
+                }
+            }
+
+            return addedItems;
+        }
 
         foreach (var item in items)
         {
@@ -136,9 +159,18 @@ public static class CollectionExtensions
     {
         var items = source.Where(predicate).ToList();
 
-        foreach (var item in items)
+        // List<T>.RemoveAll is a single O(n) compaction pass; the generic fallback is O(n*k) because each
+        // ICollection<T>.Remove rescans from the start.
+        if (source is List<T> list)
         {
-            source.Remove(item);
+            list.RemoveAll(new Predicate<T>(predicate));
+        }
+        else
+        {
+            foreach (var item in items)
+            {
+                source.Remove(item);
+            }
         }
 
         return items;

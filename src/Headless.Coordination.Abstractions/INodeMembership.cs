@@ -89,8 +89,15 @@ public interface INodeMembership : IMembershipEventSource
 
     /// <summary>
     /// Returns the full liveness snapshot for all known nodes, including suspected and dead incarnations
-    /// retained within <see cref="CoordinationOptions.DeadRetentionWindow"/>.
+    /// still within the provider's retention window.
     /// </summary>
+    /// <remarks>
+    /// <see cref="CoordinationOptions.DeadRetentionWindow"/> is the <em>minimum</em> a dead incarnation is
+    /// retained, not a ceiling: a provider may keep dead records longer. The relational providers prune
+    /// shortly after <see cref="CoordinationOptions.DeadThreshold"/>, whereas the Redis store retains them
+    /// for its <c>RedisKnownNodeRetention</c> (7 days by default). Classify by <see cref="NodeLivenessState"/>
+    /// rather than assuming dead records vanish exactly after <see cref="CoordinationOptions.DeadRetentionWindow"/>.
+    /// </remarks>
     /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
     /// <returns>
     /// A point-in-time list of <see cref="NodeLivenessSnapshot"/> records for every tracked node

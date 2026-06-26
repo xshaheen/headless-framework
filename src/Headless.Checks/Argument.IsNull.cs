@@ -24,10 +24,7 @@ public static partial class Argument
     {
         if (argument is not null)
         {
-            throw new ArgumentNullException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must be null."
-            );
+            _ThrowForIsNull(message, paramName);
         }
 
         return argument;
@@ -50,12 +47,18 @@ public static partial class Argument
     {
         if (argument is not null)
         {
-            throw new ArgumentNullException(
-                paramName,
-                message ?? $"The argument {paramName.ToAssertString()} must be null."
-            );
+            _ThrowForIsNull(message, paramName);
         }
 
         return argument;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNull(string? message, string? paramName)
+    {
+        throw new ArgumentNullException(
+            paramName,
+            message ?? $"The argument {paramName.ToAssertString()} must be null."
+        );
     }
 }

@@ -11,12 +11,6 @@ public static class ConcurrentQueueExtensions
 {
     extension<T>(ConcurrentQueue<T> queue)
     {
-        /// <summary>Removes all objects from the <see cref="ConcurrentQueue{T}"/> by dequeuing them one at a time.</summary>
-        public void Clear()
-        {
-            while (queue.TryDequeue(out _)) { }
-        }
-
         /// <summary>Adds the elements of the specified span to the end of the <see cref="ConcurrentQueue{T}"/>.</summary>
         /// <param name="items">The elements to enqueue.</param>
         [OverloadResolutionPriority(1)]

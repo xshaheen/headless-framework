@@ -138,6 +138,16 @@ public static class StreamExtensions
             return s.ToArray();
         }
 
+        // Seekable streams expose their length, so read straight into an exact-size buffer and skip the
+        // MemoryStream + second ToArray() copy.
+        if (stream.CanSeek)
+        {
+            var buffer = new byte[checked((int)stream.Length)];
+            stream.ReadExactly(buffer);
+
+            return buffer;
+        }
+
         using var ms = stream.CreateMemoryStream();
 
         return ms.ToArray();
@@ -163,6 +173,16 @@ public static class StreamExtensions
         if (stream is MemoryStream s)
         {
             return s.ToArray();
+        }
+
+        // Seekable streams expose their length, so read straight into an exact-size buffer and skip the
+        // MemoryStream + second ToArray() copy.
+        if (stream.CanSeek)
+        {
+            var buffer = new byte[checked((int)stream.Length)];
+            await stream.ReadExactlyAsync(buffer, cancellationToken).ConfigureAwait(false);
+
+            return buffer;
         }
 
         await using var ms = await stream.CreateMemoryStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -267,7 +287,7 @@ public static class StreamExtensions
         Argument.IsNotNull(stream);
 
         stream.ResetPosition();
-        var memoryStream = new MemoryStream();
+        var memoryStream = _CreateSizedMemoryStream(stream);
         stream.CopyTo(memoryStream);
 
         return memoryStream;
@@ -292,10 +312,16 @@ public static class StreamExtensions
         Argument.IsNotNull(stream);
 
         stream.ResetPosition();
-        var memoryStream = new MemoryStream();
+        var memoryStream = _CreateSizedMemoryStream(stream);
         await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
 
         return memoryStream;
+    }
+
+    private static MemoryStream _CreateSizedMemoryStream(Stream stream)
+    {
+        // Pre-size from the source length when known so CopyTo doesn't repeatedly double the buffer.
+        return stream.CanSeek ? new MemoryStream(checked((int)(stream.Length - stream.Position))) : new MemoryStream();
     }
 
     #endregion

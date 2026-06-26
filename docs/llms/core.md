@@ -9,7 +9,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
-- [Headless.Extensions](#headlessextensions)
+- [Headless.Core](#headlesscore)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
     - [Installation](#installation)
@@ -17,7 +17,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
-- [Headless.Core](#headlesscore)
+- [Headless.Checks](#headlesschecks)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
     - [Installation](#installation-1)
@@ -25,7 +25,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
-- [Headless.Checks](#headlesschecks)
+- [Headless.Domain](#headlessdomain)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
     - [Installation](#installation-2)
@@ -33,15 +33,16 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
-- [Headless.Domain](#headlessdomain)
+- [Headless.Domain.LocalEventBus](#headlessdomainlocaleventbus)
     - [Problem Solved](#problem-solved-3)
     - [Key Features](#key-features-3)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-3)
     - [Quick Start](#quick-start-3)
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
-- [Headless.Domain.LocalEventBus](#headlessdomainlocaleventbus)
+- [Headless.Security.Abstractions](#headlesssecurityabstractions)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
     - [Installation](#installation-4)
@@ -49,29 +50,21 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Configuration](#configuration-4)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
-- [Headless.Security.Abstractions](#headlesssecurityabstractions)
+- [Headless.Security](#headlesssecurity)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
     - [Dependencies](#dependencies-5)
     - [Side Effects](#side-effects-5)
-- [Headless.Security](#headlesssecurity)
-    - [Problem Solved](#problem-solved-6)
-    - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes)
-    - [Installation](#installation-6)
-    - [Quick Start](#quick-start-6)
-    - [Configuration](#configuration-6)
-    - [Dependencies](#dependencies-6)
-    - [Side Effects](#side-effects-6)
 
 > Foundational utilities, DDD building blocks, guard clauses, multi-tenancy, and domain messaging for the Headless framework.
 
 ## Quick Orientation
 
-- **`Headless.Extensions`** — utility extensions, domain primitives (`UserId`, `AccountId`, `Money`, `PhoneNumber`), result pattern (`ApiResult<T>`, `Result<TValue, TError>`), error hierarchy (`ResultError`, `NotFoundError`, `ValidationError`), GUID generation (`SequentialGuid`, `IGuidGenerator`), collection helpers, pagination, constants (`JwtClaimTypes`, `RegexPatterns`, `HttpHeaderNames`), and validators.
+- **`Headless.Extensions`** — the framework's base utility library (result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers, constants, validators). Almost every other `Headless.*` package depends on it. Documented separately — see [extensions.md](extensions.md).
 - **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
 - **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
@@ -88,7 +81,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - For local (in-process) domain events, register `AddHeadlessLocalEventBus()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit `IIntegrationEvent` via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
-- `Headless.Extensions` has no configuration. Register GUID generation through `AddHeadlessGuidGenerator()` only from host/package setup; persisted backends should resolve `SequentialGuidType.Version7` or `SequentialGuidType.SqlServer` by key instead of depending on the unkeyed default.
+- Register GUID generation through `AddHeadlessGuidGenerator()` only from host/package setup; persisted backends should resolve `SequentialGuidType.Version7` or `SequentialGuidType.SqlServer` by key instead of depending on the unkeyed default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md)).
 - `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddHeadlessSettings(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
 - Use `LogState` with `HeadlessLoggerExtensions` for structured logging with tags and properties.
@@ -97,109 +90,6 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - `StringEncryptionOptions.DefaultPassPhrase` and `DefaultSalt` are required; both are validated at startup. A missing or empty value is a startup error.
 
 ---
-
-## Headless.Extensions
-
-Foundational utility library providing extension methods, primitives, helpers, and common abstractions used throughout the framework.
-
-### Problem Solved
-
-Eliminates repetitive utility code across projects by providing a comprehensive set of battle-tested extensions, helpers, and primitives for common operations (strings, collections, dates, IO, reflection, etc.).
-
-### Key Features
-
-- **Result Pattern**:
-    - `ApiResult` / `ApiResult<T>` - Success/failure with built-in error factories (`NotFound`, `Conflict`, `Forbidden`, `Unauthorized`, `ValidationFailed`)
-    - `Result<TValue, TError>` / `Result<TError>` - Flexible result types with custom error types
-    - `ResultError` hierarchy - `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError`
-    - `ErrorDescriptor` - Standardized error reporting with code, description, severity, and params
-
-- **Primitives** (Source-generated with JSON/TypeConverter support):
-    - `UserId` / `AccountId` - Strongly-typed identifiers
-    - `Money` - Currency-aware decimal with arithmetic operators
-    - `Month` - Month representation
-    - `PhoneNumber` - E.164 phone number
-    - `Image` / `File` - Media metadata
-    - `PageMetadata` - SEO metadata
-    - `TenantInformation` - Tenant data
-
-- **Domain Value Objects**: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `OrderBy`, `NameValue<T>`, `ExtraProperties`, `Locales`, `TimeUnit`
-- **ID Generation**: `IGuidGenerator` (`SequentialGuidGenerator` supporting time-ordered `Version7` and SQL Server comb `SqlServer` strategies)
-- **Pagination**: `IndexPageRequest`/`IndexPage<T>` and `ContinuationPageRequest`/`ContinuationPage<T>`
-- **Collections**: `ParallelForEachAsync`, `DetectChanges`, `EquatableArray<T>`, `ComparerFactory`, `TypeList`
-- **Threading**: `KeyedAsyncLock` — per-key async mutual exclusion with an optional `TimeProvider`-driven acquisition timeout (returns `null` instead of blocking when the wait elapses)
-- **LINQ**: `PredicateBuilder` for composing EF Core expressions (`And`, `Or`, `Not`)
-- **Dates & Time**: Fluent date manipulation, `TimeProvider` extensions, timezone conversion, `ChangeableTimezoneTimeProvider`
-- **Strings**: Humanize integration, truncation, manipulation helpers
-- **Constants**: `RegexPatterns` (email, URL, IP, etc.), `ContentTypes`, `HttpHeaderNames`, `JwtClaimTypes`, `UserClaimTypes`, `LanguageCodes`
-- **Reflection**: Fast property accessors, type scanning, IL emit helpers, `AssemblyInformation`
-- **HTTP**: `BasicAuthenticationValue`, `HttpStatusCodeExtensions`
-- **Exceptions**: `EntityNotFoundException`, `ConflictException`
-- **Validation**: `MobilePhoneNumberValidator`, `GeoCoordinateValidator`, `EmailValidator`, `EgyptianNationalIdValidator`
-- **Helpers**: `OsHelper`, `DisposableFactory`, `IpAddressHelper`
-
-### Installation
-
-```bash
-dotnet add package Headless.Extensions
-```
-
-### Quick Start
-
-#### Result Pattern
-
-```csharp
-public async Task<ApiResult<User>> GetUserAsync(Guid id)
-{
-    var user = await _repo.GetByIdAsync(id);
-    if (user is null)
-        return ApiResult<User>.NotFound();
-
-    return ApiResult<User>.Ok(user);
-}
-```
-
-#### Collection Extensions
-
-```csharp
-await users.ParallelForEachAsync(async user => await ProcessUserAsync(user), maxDegreeOfParallelism: 5);
-```
-
-#### Egyptian National ID Validator
-
-```csharp
-if (EgyptianNationalIdValidator.IsValid("29901011234567"))
-{
-    var info = EgyptianNationalIdValidator.Analyze("29901011234567");
-    var birthDate = info.BirthDate;
-    var governorate = info.Governorate;
-}
-```
-
-### Configuration
-
-No configuration required.
-
-### Dependencies
-
-- `Headless.Checks`
-- `Headless.Generator.Primitives` (source generator)
-- `Headless.Generator.Primitives.Abstractions`
-- `CommunityToolkit.HighPerformance`
-- `Humanizer.Core`
-- `libphonenumber-csharp`
-- `Microsoft.Bcl.TimeProvider`
-- `MimeTypes`
-- `morelinq`
-- `Nito.AsyncEx`
-- `Nito.Disposables`
-- `Polly.Core`
-- `System.Reactive`
-- `TimeZoneConverter`
-
-### Side Effects
-
-None.
 
 ## Headless.Core
 
@@ -251,7 +141,7 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
             UserId = user.UserId!.Value,
             TenantId = tenant.Id,
             CreatedAt = clock.UtcNow,
-            Total = new Money(request.Amount, request.Currency),
+            Total = new Currency(request.Amount, request.Currency),
         };
     }
 }
@@ -349,13 +239,22 @@ public void CreateUser(string name, int age, List<string> roles)
 - `Argument.IsNotNull(value)`
 - `Argument.IsNotNullOrEmpty(string|collection)`
 - `Argument.IsNotNullOrWhiteSpace(string)`
+- `Argument.IsNotEmpty(guid)` — rejects `Guid.Empty` (also `Guid?`; null passes through)
 - `Argument.IsPositive(number)` / `IsNegative` / `IsPositiveOrZero` / `IsNegativeOrZero`
+- `Argument.IsZero(number)` / `IsNotZero(number)` — `INumber<T>`, nullable, and `TimeSpan` overloads
+- `Argument.IsEqualTo(value, expected)` / `IsNotEqualTo(value, other)` — value equality (optional `IEqualityComparer<T>` overload); contrast `IsReferenceEqualTo`/`IsReferenceNotEqualTo` for identity
+- `Argument.IsCloseTo(value, target, delta)` / `IsNotCloseTo(…)` — tolerance comparison for `INumber<T>`; prefer over `IsEqualTo` for `float`/`double`. `int`/`long`/`nint` also have unsigned-`delta` overloads (overflow-safe, full distance range)
+- `Argument.IsBitwiseEqualTo(value, target)` — raw-byte equality for `unmanaged` types (distinguishes `+0.0`/`-0.0`, matches identical NaN payloads)
 - `Argument.IsOneOf(value, allowedValues)`
 - `Argument.IsInEnum(enumValue)`
-- `Argument.HasNoNulls(collection)`
+- `Argument.HasNoNulls(collection)` / `HasNoDuplicates(collection)` — `HasNoDuplicates` takes an optional `IEqualityComparer<T>`
+- `Argument.HasLength` / `HasMinLength` / `HasMaxLength` / `HasLengthBetween` / `HasLengthGreaterThan` / `HasLengthLessThan` / `HasLengthNotEqualTo(string, …)` — string length bounds (throw `ArgumentOutOfRangeException`)
+- `Argument.HasCount` / `HasMinCount` / `HasMaxCount` / `HasCountBetween(collection, …)` — item-count bounds (`IReadOnlyCollection<T>` fast-path + `IEnumerable<T>`)
+- `Argument.StartsWith` / `EndsWith` / `Contains(string, value, comparison)` — string content (`StringComparison.Ordinal` by default)
+- `Argument.IsInRangeFor(index, count | collection | span)` — bounds-checks an index against a length/collection/span
 - `Argument.FileExists(path)` / `DirectoryExists(path)`
 - `Argument.Matches(string, regex)` — throws `ArgumentException` when the string does not match the pattern
-- `Argument.Is(condition, message, nameof(arg))` — custom argument precondition; throws `ArgumentException`
+- `Argument.IsTrue(condition, message, nameof(arg))` / `IsFalse(condition, …)` — custom argument precondition that must hold / must not hold; throws `ArgumentException`
 
 #### Runtime Assertions
 
@@ -367,6 +266,7 @@ public void ProcessOrder()
     Ensure.True(_initialized, "Service must be initialized.");
     Ensure.NotDisposed(_disposed, this);
     Ensure.False(_queue.IsEmpty, "Queue should not be empty.");
+    var connection = Ensure.NotNull(_connection); // state must-be-present; throws InvalidOperationException
 }
 ```
 
@@ -487,7 +387,7 @@ Provides in-memory domain event dispatch that resolves handlers from the DI cont
 - Handler ordering via `DomainEventHandlerOrderAttribute`
 - Handler exception aggregation and cooperative cancellation
 
-#### Design Notes
+### Design Notes
 
 - **Non-generic runtime-typed dispatch.** `Publish(IDomainEvent)` / `PublishAsync(IDomainEvent)` dispatch to handlers of the event's exact runtime type — there is no contravariant traversal to base types or implemented interfaces. The runtime type is mapped to a compiled invoker that is built once and cached, so repeated publishes of the same concrete type avoid reflection on the hot path. The generic overloads (`Publish<T>` / `PublishAsync<T>`) dispatch against the static type argument `T`.
 - **Scoped lifetime.** `AddHeadlessLocalEventBus()` registers `ILocalEventBus` as scoped (`TryAddScoped`). Handlers are resolved from the caller's scope, so they share the same scoped services — notably the `DbContext` — when published inside a unit of work.

@@ -52,7 +52,7 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 isEncrypted: setting.IsEncrypted
             );
 
-            foreach (var property in setting.Properties)
+            foreach (var property in setting.ExtraProperties)
             {
                 record.SetProperty(property.Key, property.Value);
             }

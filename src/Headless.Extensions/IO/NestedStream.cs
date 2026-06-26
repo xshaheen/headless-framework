@@ -120,6 +120,29 @@ internal sealed class NestedStream : Stream, IHasIsDisposed
         return bytesRead;
     }
 
+    public override int Read(Span<byte> buffer)
+    {
+        Ensure.NotDisposed(IsDisposed, this);
+
+        // If we're beyond the end of the stream (as the result of a Seek operation), return 0 bytes.
+        if (_remainingBytes < 0)
+        {
+            return 0;
+        }
+
+        buffer = buffer[..(int)Math.Min(buffer.Length, _remainingBytes)];
+
+        if (buffer.IsEmpty)
+        {
+            return 0;
+        }
+
+        var bytesRead = _underlyingStream.Read(buffer);
+        _remainingBytes -= bytesRead;
+
+        return bytesRead;
+    }
+
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         Ensure.NotDisposed(IsDisposed, this);

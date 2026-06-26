@@ -146,6 +146,15 @@ internal sealed class ReadOnlySequenceStream : Stream
                 throw new ArgumentOutOfRangeException(nameof(origin));
         }
 
+        // A negative absolute position can only arise in the branches that reset relativeTo to the sequence
+        // start (a negative Begin offset, or a Current/End offset that underflows past the start); in those
+        // branches `offset` already holds the absolute target. Guard it so seeking before the beginning
+        // surfaces as an IOException instead of GetPosition's ArgumentOutOfRangeException.
+        if (offset < 0)
+        {
+            throw new IOException("An attempt was made to move the position before the beginning of the stream.");
+        }
+
         _position = _readOnlySequence.GetPosition(offset, relativeTo);
 
         return Position;
@@ -155,10 +164,14 @@ internal sealed class ReadOnlySequenceStream : Stream
     {
         Ensure.NotDisposed(IsDisposed, this);
 
-        foreach (var segment in _readOnlySequence)
+        // Copy only the unread remainder (from the current position), then advance to the end so the stream is
+        // drained — iterating the whole sequence would re-copy already-read bytes and leave the position stale.
+        foreach (var segment in _readOnlySequence.Slice(_position))
         {
             await destination.WriteAsync(segment, cancellationToken).ConfigureAwait(false);
         }
+
+        _position = _readOnlySequence.End;
     }
 
     public override int Read(Span<byte> buffer)

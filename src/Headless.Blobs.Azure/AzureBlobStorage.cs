@@ -154,8 +154,9 @@ public sealed class AzureBlobStorage(
         };
 
         await Parallel
-            .ForEachAsync(
-                Enumerable.Range(0, items.Count),
+            .ForAsync(
+                0,
+                items.Count,
                 options,
                 async (i, ct) =>
                 {

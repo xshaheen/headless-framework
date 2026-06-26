@@ -48,14 +48,18 @@ file sealed class ComparisonFuncComparer<T>(Func<T, T, bool> func, Func<T, int> 
             return false;
         }
 
-        if (ReferenceEquals(x, y))
+        // ReferenceEquals and GetType() box value types, so only use these fast paths for reference types.
+        if (default(T) is null)
         {
-            return true;
-        }
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
 
-        if (x.GetType() != y.GetType())
-        {
-            return false;
+            if (x.GetType() != y.GetType())
+            {
+                return false;
+            }
         }
 
         return func(x, y);
@@ -83,14 +87,18 @@ file sealed class KeyBasedEqualityComparer<T, TKey>(Func<T, TKey> keyGetter) : I
             return false;
         }
 
-        if (ReferenceEquals(x, y))
+        // ReferenceEquals and GetType() box value types, so only use these fast paths for reference types.
+        if (default(T) is null)
         {
-            return true;
-        }
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
 
-        if (x.GetType() != y.GetType())
-        {
-            return false;
+            if (x.GetType() != y.GetType())
+            {
+                return false;
+            }
         }
 
         return EqualityComparer<TKey>.Default.Equals(keyGetter(x), keyGetter(y));
@@ -100,6 +108,7 @@ file sealed class KeyBasedEqualityComparer<T, TKey>(Func<T, TKey> keyGetter) : I
     {
         var key = keyGetter(obj);
 
-        return key is null ? 0 : key.GetHashCode();
+        // Use the same comparer as Equals so equal keys always hash equally.
+        return key is null ? 0 : EqualityComparer<TKey>.Default.GetHashCode(key);
     }
 }

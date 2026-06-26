@@ -11,6 +11,13 @@ namespace Headless.CommitCoordination;
 /// physical transaction completes. Disposing without first calling <see cref="SignalAsync" /> is treated as an
 /// implicit rollback: any registered work is discarded.
 /// <para>
+/// For a <b>child</b> scope — one opened via <see cref="ICommitScopeFactory.Begin" /> while an ambient coordinator
+/// already exists — that implicit rollback is <b>not local</b>: it dooms the entire <b>root</b> transaction,
+/// draining the root's rollback callbacks and causing any later root commit signal to be an ignored no-op. This is
+/// the fail-closed default (an abandoned nested unit rolls the whole transaction back). Signal a child explicitly
+/// before disposing it unless you intend to roll the whole transaction back.
+/// </para>
+/// <para>
 /// The scope pushes the enclosing coordinator onto the ambient stack (<see cref="ICurrentCommitCoordinator" />)
 /// at creation and pops it on disposal. The pop is <b>synchronous</b> and happens in the disposal frame —
 /// after disposal, <see cref="ICurrentCommitCoordinator.Current" /> no longer returns this scope's coordinator.

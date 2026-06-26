@@ -10,8 +10,9 @@ using Headless.Checks;
 namespace Headless.Primitives;
 
 /// <summary>
-/// A monetary amount paired with a currency code (for example <c>10.50USD</c>). Arithmetic and comparison
-/// operations require both operands to share the same <see cref="CurrencyCode"/>.
+/// A monetary amount paired with a currency code (for example <c>10.50USD</c>). Additive operations
+/// (<c>+</c>, <c>-</c>) require both operands to share the same <see cref="CurrencyCode"/>; scaling
+/// operations (<c>*</c>, <c>/</c>) take a <see cref="decimal"/> factor and preserve the currency code.
 /// </summary>
 /// <param name="amount">The monetary amount.</param>
 /// <param name="currencyCode">The currency code (for example <c>"USD"</c>). Must be a non-blank string.</param>
@@ -26,9 +27,8 @@ public sealed class Currency(decimal amount, string currencyCode)
         IComparable<decimal>,
         IAdditionOperators<Currency, Currency, Currency>,
         ISubtractionOperators<Currency, Currency, Currency>,
-        IMultiplyOperators<Currency, Currency, Currency>,
-        IDivisionOperators<Currency, Currency, Currency>,
-        IModulusOperators<Currency, Currency, Currency>,
+        IMultiplyOperators<Currency, decimal, Currency>,
+        IDivisionOperators<Currency, decimal, Currency>,
         IComparisonOperators<Currency, Currency, bool>,
         ISpanParsable<Currency?>,
         IUtf8SpanFormattable,
@@ -43,6 +43,10 @@ public sealed class Currency(decimal amount, string currencyCode)
     /// <summary>A zero-amount <see cref="Currency"/> in US dollars (<c>USD</c>).</summary>
     public static readonly Currency ZeroUsd = new(0, "USD");
 
+    // Number of fractional digits a scaling result is rounded to (cents). Currency carries no per-code
+    // scale table, so the conventional minor-unit scale of 2 is used (matching Money.GetRounded).
+    private const int _Scale = 2;
+
     #endregion
 
     #region Props
@@ -52,8 +56,6 @@ public sealed class Currency(decimal amount, string currencyCode)
 
     /// <summary>The currency code (for example <c>"USD"</c>).</summary>
     public string CurrencyCode { get; private init; } = Argument.IsNotNullOrWhiteSpace(currencyCode);
-
-    private FormattableString Format => $"{Amount}{CurrencyCode}";
 
     #endregion
 
@@ -101,7 +103,6 @@ public sealed class Currency(decimal amount, string currencyCode)
     /// <param name="obj">The object to compare with. Supported types are <see cref="decimal"/> and <see cref="Currency"/>; <see langword="null"/> sorts first.</param>
     /// <returns>A negative value if this instance precedes <paramref name="obj"/>, zero if they are equal, or a positive value if it follows.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="obj"/> is neither <see langword="null"/>, a <see cref="decimal"/>, nor a <see cref="Currency"/>.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="obj"/> is a <see cref="Currency"/> with a different <see cref="CurrencyCode"/>.</exception>
     public int CompareTo(object? obj)
     {
         return obj switch
@@ -113,10 +114,14 @@ public sealed class Currency(decimal amount, string currencyCode)
         };
     }
 
-    /// <summary>Compares this instance with <paramref name="other"/> by amount and returns their relative order.</summary>
+    /// <summary>
+    /// Compares this instance with <paramref name="other"/> and returns their relative order. The ordering is
+    /// total: instances are ordered by <see cref="CurrencyCode"/> (ordinal) first, then by <see cref="Amount"/>.
+    /// This makes <see cref="Currency"/> safe to sort even across mixed currency codes; it does not imply the
+    /// amounts are comparable in value.
+    /// </summary>
     /// <param name="other">The currency to compare with. <see langword="null"/> sorts first.</param>
     /// <returns>A negative value if this instance precedes <paramref name="other"/>, zero if equal, or a positive value if it follows.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="other"/> has a different <see cref="CurrencyCode"/>.</exception>
     public int CompareTo(Currency? other)
     {
         if (other is null)
@@ -124,12 +129,9 @@ public sealed class Currency(decimal amount, string currencyCode)
             return 1;
         }
 
-        if (!string.Equals(CurrencyCode, other.CurrencyCode, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("Cannot compare currencies with different currency codes");
-        }
+        var codeComparison = string.CompareOrdinal(CurrencyCode, other.CurrencyCode);
 
-        return Amount.CompareTo(other.Amount);
+        return codeComparison != 0 ? codeComparison : Amount.CompareTo(other.Amount);
     }
 
     /// <summary>Compares this instance's <see cref="Amount"/> with <paramref name="other"/> and returns their relative order.</summary>
@@ -182,28 +184,25 @@ public sealed class Currency(decimal amount, string currencyCode)
         [NotNullWhen(true)] out Currency? result
     )
     {
-        // 1. Split the numeric amount from the trailing alphabetic currency code (format: "{amount}{code}").
-        var codeStartIndex = -1;
+        // 1. Scan from the END for the trailing run of ASCII letters: that run is the currency code, and the
+        //    prefix before it is the amount (format: "{amount}{code}"). Scanning from the end (instead of to the
+        //    first letter) keeps an exponent in the amount, e.g. "1E5USD" -> amount "1E5", code "USD".
+        var codeStartIndex = s.Length;
 
-        for (var i = 0; i < s.Length; i++)
+        while (codeStartIndex > 0 && char.IsAsciiLetter(s[codeStartIndex - 1]))
         {
-            if (char.IsLetter(s[i]))
-            {
-                codeStartIndex = i;
-
-                break;
-            }
+            codeStartIndex--;
         }
 
-        // No amount (string starts with the code) or no code (no letters) -> not a valid currency string.
-        if (codeStartIndex <= 0)
+        // No code (no trailing letters) or no amount (string is all letters) -> not a valid currency string.
+        if (codeStartIndex == s.Length || codeStartIndex == 0)
         {
             result = null;
 
             return false;
         }
 
-        // 2. Parse the amount.
+        // 2. Parse the whole amount prefix strictly; any malformed remainder fails the parse.
         if (!decimal.TryParse(s[..codeStartIndex], NumberStyles.Any, provider, out var amount))
         {
             result = null;
@@ -301,104 +300,93 @@ public sealed class Currency(decimal amount, string currencyCode)
     /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
     public static Currency Subtract(Currency left, Currency right) => left - right;
 
-    /// <summary>Multiplies two currencies of the same currency code.</summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>A <see cref="Currency"/> whose amount is the product of the operands' amounts.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
-    public static Currency operator *(Currency left, Currency right)
-    {
-        if (!string.Equals(left.CurrencyCode, right.CurrencyCode, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("Cannot multiply currencies with different currency codes");
-        }
+    /// <summary>Scales a currency amount by a <see cref="decimal"/> factor, keeping the same currency code.</summary>
+    /// <param name="left">The currency to scale.</param>
+    /// <param name="right">The scalar factor.</param>
+    /// <returns>
+    /// A <see cref="Currency"/> whose amount is <paramref name="left"/>'s amount multiplied by <paramref name="right"/>,
+    /// rounded to the currency's minor-unit scale using <see cref="MidpointRounding.ToEven"/>.
+    /// </returns>
+    public static Currency operator *(Currency left, decimal right) => Multiply(left, right);
 
-        return new Currency(left.Amount * right.Amount, left.CurrencyCode);
+    /// <summary>Scales a currency amount by a <see cref="decimal"/> factor, keeping the same currency code (commutative form of <c>currency * factor</c>).</summary>
+    /// <param name="left">The scalar factor.</param>
+    /// <param name="right">The currency to scale.</param>
+    /// <returns>
+    /// A <see cref="Currency"/> whose amount is <paramref name="right"/>'s amount multiplied by <paramref name="left"/>,
+    /// rounded to the currency's minor-unit scale using <see cref="MidpointRounding.ToEven"/>.
+    /// </returns>
+    public static Currency operator *(decimal left, Currency right) => Multiply(right, left);
+
+    /// <summary>Scales a currency amount by a <see cref="decimal"/> factor, keeping the same currency code.</summary>
+    /// <param name="currency">The currency to scale.</param>
+    /// <param name="factor">The scalar factor.</param>
+    /// <param name="rounding">The rounding strategy applied to a fractional sub-unit result. Defaults to <see cref="MidpointRounding.ToEven"/>.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="currency"/>'s amount multiplied by <paramref name="factor"/>, rounded to the currency's minor-unit scale.</returns>
+    public static Currency Multiply(
+        Currency currency,
+        decimal factor,
+        MidpointRounding rounding = MidpointRounding.ToEven
+    )
+    {
+        var amount = Math.Round(currency.Amount * factor, _Scale, rounding);
+
+        return new Currency(amount, currency.CurrencyCode);
     }
 
-    /// <summary>Multiplies two currencies of the same currency code. Named alternate for the <c>*</c> operator.</summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>A <see cref="Currency"/> whose amount is the product of the operands' amounts.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
-    public static Currency Multiply(Currency left, Currency right) => left * right;
+    /// <summary>Divides a currency amount by a <see cref="decimal"/> divisor, keeping the same currency code.</summary>
+    /// <param name="left">The currency to divide.</param>
+    /// <param name="right">The scalar divisor.</param>
+    /// <returns>
+    /// A <see cref="Currency"/> whose amount is <paramref name="left"/>'s amount divided by <paramref name="right"/>,
+    /// rounded to the currency's minor-unit scale using <see cref="MidpointRounding.ToEven"/>.
+    /// </returns>
+    /// <exception cref="DivideByZeroException">Thrown when <paramref name="right"/> is zero.</exception>
+    public static Currency operator /(Currency left, decimal right) => Divide(left, right);
 
-    /// <summary>Computes the remainder of dividing two currencies of the same currency code.</summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> modulo <paramref name="right"/>.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
-    public static Currency operator %(Currency left, Currency right)
+    /// <summary>Divides a currency amount by a <see cref="decimal"/> divisor, keeping the same currency code.</summary>
+    /// <param name="currency">The currency to divide.</param>
+    /// <param name="divisor">The scalar divisor.</param>
+    /// <param name="rounding">The rounding strategy applied to a fractional sub-unit result. Defaults to <see cref="MidpointRounding.ToEven"/>.</param>
+    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="currency"/>'s amount divided by <paramref name="divisor"/>, rounded to the currency's minor-unit scale.</returns>
+    /// <exception cref="DivideByZeroException">Thrown when <paramref name="divisor"/> is zero.</exception>
+    public static Currency Divide(
+        Currency currency,
+        decimal divisor,
+        MidpointRounding rounding = MidpointRounding.ToEven
+    )
     {
-        if (!string.Equals(left.CurrencyCode, right.CurrencyCode, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("Cannot get modulus of currencies with different currency codes");
-        }
+        var amount = Math.Round(currency.Amount / divisor, _Scale, rounding);
 
-        return new Currency(left.Amount % right.Amount, left.CurrencyCode);
+        return new Currency(amount, currency.CurrencyCode);
     }
-
-    /// <summary>Computes the remainder of dividing two currencies of the same currency code. Named alternate for the <c>%</c> operator.</summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> modulo <paramref name="right"/>.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
-    public static Currency Mod(Currency left, Currency right) => left % right;
-
-    /// <summary>Divides one currency by another of the same currency code.</summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> divided by <paramref name="right"/>.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
-    /// <exception cref="DivideByZeroException">Thrown when <paramref name="right"/> has a zero amount.</exception>
-    public static Currency operator /(Currency left, Currency right)
-    {
-        if (!string.Equals(left.CurrencyCode, right.CurrencyCode, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("Cannot divide currencies with different currency codes");
-        }
-
-        return new Currency(left.Amount / right.Amount, left.CurrencyCode);
-    }
-
-    /// <summary>Divides one currency by another of the same currency code. Named alternate for the <c>/</c> operator.</summary>
-    /// <param name="left">The left operand.</param>
-    /// <param name="right">The right operand.</param>
-    /// <returns>A <see cref="Currency"/> whose amount is <paramref name="left"/> divided by <paramref name="right"/>.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
-    /// <exception cref="DivideByZeroException">Thrown when <paramref name="right"/> has a zero amount.</exception>
-    public static Currency Divide(Currency left, Currency right) => left / right;
 
     #endregion
 
     #region Comparison Operators
 
-    /// <summary>Determines whether <paramref name="left"/> is greater than <paramref name="right"/>.</summary>
+    /// <summary>Determines whether <paramref name="left"/> sorts after <paramref name="right"/> in the total order (by code, then amount).</summary>
     /// <param name="left">The left operand.</param>
     /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is greater than <paramref name="right"/>'s; otherwise <see langword="false"/>.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
+    /// <returns><see langword="true"/> if <paramref name="left"/> follows <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
     public static bool operator >(Currency left, Currency right) => left.CompareTo(right) > 0;
 
-    /// <summary>Determines whether <paramref name="left"/> is greater than or equal to <paramref name="right"/>.</summary>
+    /// <summary>Determines whether <paramref name="left"/> sorts after or equal to <paramref name="right"/> in the total order (by code, then amount).</summary>
     /// <param name="left">The left operand.</param>
     /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is greater than or equal to <paramref name="right"/>'s; otherwise <see langword="false"/>.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
+    /// <returns><see langword="true"/> if <paramref name="left"/> follows or equals <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
     public static bool operator >=(Currency left, Currency right) => left.CompareTo(right) >= 0;
 
-    /// <summary>Determines whether <paramref name="left"/> is less than <paramref name="right"/>.</summary>
+    /// <summary>Determines whether <paramref name="left"/> sorts before <paramref name="right"/> in the total order (by code, then amount).</summary>
     /// <param name="left">The left operand.</param>
     /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is less than <paramref name="right"/>'s; otherwise <see langword="false"/>.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
+    /// <returns><see langword="true"/> if <paramref name="left"/> precedes <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
     public static bool operator <(Currency left, Currency right) => left.CompareTo(right) < 0;
 
-    /// <summary>Determines whether <paramref name="left"/> is less than or equal to <paramref name="right"/>.</summary>
+    /// <summary>Determines whether <paramref name="left"/> sorts before or equal to <paramref name="right"/> in the total order (by code, then amount).</summary>
     /// <param name="left">The left operand.</param>
     /// <param name="right">The right operand.</param>
-    /// <returns><see langword="true"/> if <paramref name="left"/>'s amount is less than or equal to <paramref name="right"/>'s; otherwise <see langword="false"/>.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when <paramref name="left"/> and <paramref name="right"/> have different currency codes.</exception>
+    /// <returns><see langword="true"/> if <paramref name="left"/> precedes or equals <paramref name="right"/>; otherwise <see langword="false"/>.</returns>
     public static bool operator <=(Currency left, Currency right) => left.CompareTo(right) <= 0;
 
     /// <summary>Determines whether the amount <paramref name="left"/> is greater than <paramref name="right"/>'s amount.</summary>
@@ -459,13 +447,14 @@ public sealed class Currency(decimal amount, string currencyCode)
 
     /// <summary>Returns the <c>{amount}{code}</c> representation formatted with the invariant culture.</summary>
     /// <returns>The string representation of this currency.</returns>
-    public override string ToString() => Format.ToString(CultureInfo.InvariantCulture);
+    public override string ToString() => string.Create(CultureInfo.InvariantCulture, $"{Amount}{CurrencyCode}");
 
     /// <summary>Returns the <c>{amount}{code}</c> representation formatted with the supplied provider.</summary>
     /// <param name="format">A format string (ignored; the fixed <c>{amount}{code}</c> layout is always used).</param>
     /// <param name="formatProvider">An optional format provider used to format the amount.</param>
     /// <returns>The string representation of this currency.</returns>
-    public string ToString(string? format, IFormatProvider? formatProvider) => Format.ToString(formatProvider);
+    public string ToString(string? format, IFormatProvider? formatProvider) =>
+        string.Create(formatProvider, $"{Amount}{CurrencyCode}");
 
     #endregion
 }

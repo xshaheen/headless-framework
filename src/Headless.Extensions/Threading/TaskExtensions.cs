@@ -229,12 +229,17 @@ public static class HeadlessTaskExtensions
 
     private static async Task<T> _WithCancellationSlow<T>(Task<T> task, CancellationToken cancellationToken)
     {
-        var tcs = new TaskCompletionSource<bool>();
+        // RunContinuationsAsynchronously: cancelling the token must not resume this awaiter inline on the
+        // canceller's thread, which would risk re-entrancy/deadlock on the caller's stack.
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true), tcs))
         {
             if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(false))
             {
+                // Cancellation won the race: the wrapped task is now abandoned. Observe it so a later fault
+                // does not escalate as an unobserved-task exception, then surface the cancellation.
+                task.Forget();
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
@@ -259,12 +264,17 @@ public static class HeadlessTaskExtensions
         CancellationToken cancellationToken
     )
     {
-        var tcs = new TaskCompletionSource<bool>();
+        // RunContinuationsAsynchronously: cancelling the token must not resume this awaiter inline on the
+        // canceller's thread, which would risk re-entrancy/deadlock on the caller's stack.
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true), tcs))
         {
             if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(continueOnCapturedContext))
             {
+                // Cancellation won the race: the wrapped task is now abandoned. Observe it so a later fault
+                // does not escalate as an unobserved-task exception, then surface the cancellation.
+                task.Forget();
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
@@ -303,22 +313,27 @@ public static class HeadlessTaskExtensions
 
             timeProvider ??= TimeProvider.System;
 
+            // Validate/cancel synchronously on the caller (as before Task.Run wrapped this), so an
+            // already-cancelled token surfaces a synchronous OperationCanceledException, not a faulted task.
             cancellationToken.ThrowIfCancellationRequested();
 
-            return Task.Run(
-                async () =>
-                {
-                    if (delay.Ticks > 0)
-                    {
-                        await timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
-                    }
+            // No Task.Run hop needed: awaiting timeProvider.Delay yields, and ConfigureAwait(false) resumes the
+            // action on the thread pool. Argument.IsPositive guarantees delay > 0, so the await always runs.
+            return _DelayedAsync(delay, action, timeProvider, cancellationToken);
 
-                    cancellationToken.ThrowIfCancellationRequested();
+            static async Task _DelayedAsync(
+                TimeSpan delay,
+                Func<CancellationToken, Task> action,
+                TimeProvider timeProvider,
+                CancellationToken cancellationToken
+            )
+            {
+                await timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
 
-                    await action(cancellationToken).ConfigureAwait(false);
-                },
-                cancellationToken
-            );
+                cancellationToken.ThrowIfCancellationRequested();
+
+                await action(cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 

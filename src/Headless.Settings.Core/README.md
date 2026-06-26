@@ -158,4 +158,3 @@ The `(options, IServiceProvider)` overload is available for `ConfigureManagement
 - Registers `ISettingDefinitionManager`, `IStaticSettingDefinitionStore`, `IDynamicSettingDefinitionStore`, `ISettingValueStore`, `ISettingValueProviderManager` as singletons
 - Registers `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider` as singletons
 - Registers `SettingsInitializationBackgroundService` as hosted service
-- Registers `SettingValueCacheItemInvalidator` as a domain event handler for `EntityChangedEventData<SettingValueRecord>`

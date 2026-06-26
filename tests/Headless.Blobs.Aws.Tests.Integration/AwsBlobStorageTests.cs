@@ -296,6 +296,28 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         return base.can_call_get_paged_list_with_empty_container();
     }
 
+    [Fact]
+    public override Task bulk_upload_reports_per_blob_results()
+    {
+        return base.bulk_upload_reports_per_blob_results();
+    }
+
+    [Fact]
+    public override Task bulk_upload_aligns_results_to_input_order_under_failures()
+    {
+        return base.bulk_upload_aligns_results_to_input_order_under_failures();
+    }
+
+    [Fact]
+    public override Task delete_all_with_empty_container_array_throws()
+    {
+        return base.delete_all_with_empty_container_array_throws();
+    }
+
+    // bulk_delete_reports_per_entry_results / bulk_delete_aligns_results_to_input_order are intentionally NOT wired
+    // here: S3 DeleteObjects is idempotent and reports success for already-absent keys, so it cannot honor the
+    // "not found -> Ok(false)" distinction those tests assert. See IBlobStorage.BulkDeleteAsync remarks.
+
     #region Path Traversal Security Tests
 
     [Theory]

@@ -134,4 +134,73 @@ public sealed class RegexPatternsTests
         // then
         result.Should().Be(isMatch);
     }
+
+    [Theory]
+    [InlineData("123", true)]
+    [InlineData("0", true)]
+    [InlineData("-5", true)]
+    [InlineData("-10", true)] // regression: negatives containing a 0 were previously rejected
+    [InlineData("-100", true)]
+    [InlineData("-90", true)]
+    [InlineData("-0", true)]
+    [InlineData("12.5", false)]
+    [InlineData("abc", false)]
+    [InlineData("", false)]
+    [InlineData("-", false)]
+    public void integer_number_should_match_expected_results(string input, bool isMatch)
+    {
+        // when
+        var result = RegexPatterns.IntegerNumber.IsMatch(input);
+
+        // then
+        result.Should().Be(isMatch);
+    }
+
+    [Theory]
+    [InlineData("123", true)]
+    [InlineData("0.5", true)]
+    [InlineData("5,5", true)]
+    [InlineData("-10", true)] // regression: negatives containing a 0 were previously rejected
+    [InlineData("-0.5", true)] // regression
+    [InlineData("-10.5", true)] // regression
+    [InlineData("3.14", true)]
+    [InlineData("5.", false)]
+    [InlineData(".5", false)]
+    [InlineData("abc", false)]
+    [InlineData("", false)]
+    public void decimal_number_should_match_expected_results(string input, bool isMatch)
+    {
+        // when
+        var result = RegexPatterns.DecimalNumber.IsMatch(input);
+
+        // then
+        result.Should().Be(isMatch);
+    }
+
+    [Theory]
+    [InlineData("https://example.com", true)]
+    [InlineData("http://example.com/path/to/page", true)]
+    [InlineData("example.com", true)]
+    [InlineData("!!!", false)]
+    public void url_should_match_expected_results(string input, bool isMatch)
+    {
+        // when
+        var result = RegexPatterns.Url.IsMatch(input);
+
+        // then
+        result.Should().Be(isMatch);
+    }
+
+    [Theory]
+    [InlineData("<div>hello</div>", true)]
+    [InlineData("<br/>", true)]
+    [InlineData("plain text", false)]
+    public void xml_tag_should_match_expected_results(string input, bool isMatch)
+    {
+        // when
+        var result = RegexPatterns.XmlTag.IsMatch(input);
+
+        // then
+        result.Should().Be(isMatch);
+    }
 }

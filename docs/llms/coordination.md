@@ -96,6 +96,8 @@ The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Se
 
 `NodeIdentity` is `NodeId + NodeIncarnation` and formats as `node@incarnation`. The store allocates incarnation monotonically per node id. A restarted process with the same node id becomes a different identity, so consumers can reclaim `node@1` work without touching `node@2`.
 
+The per-node generation counter is never purged by any provider — purging it would let a returning node reuse an incarnation and defeat stale-owner detection — so every distinct node id ever registered leaves one permanent generation row (relational) or `:gen:<node-id>` key (Redis). Keep node-id cardinality bounded: prefer stable ids (StatefulSet ordinals, configured ids, or pod name plus namespace) and avoid the generated-`{guid}` fallback in long-lived deployments, where every process start mints a new immortal entry and the generation keyspace grows without bound.
+
 ### Liveness States
 
 `Alive` means the store-clock heartbeat age is below `SuspicionThreshold`. `Suspected` is a soft signal between `SuspicionThreshold` and `DeadThreshold`. `Dead` means the hard threshold passed or the node left gracefully. `GetLiveNodesAsync()` returns Alive identities only; `GetLivenessSnapshotAsync()` returns full state. `IsAliveAsync(identity)` checks a single node — it is a targeted O(1) read (one guarded single-row query / small Lua), not a full cluster snapshot, so per-request liveness checks do not scale with cluster size. It returns the same answer the snapshot would for that identity: current-generation-only, store-clock classified, and retention-bounded (a node at or past the retention window reads as absent, i.e. not alive).
@@ -348,7 +350,7 @@ Stores membership in Redis using Lua scripts and Redis server time.
 
 ### Design Notes
 
-Redis keys use a cluster hash tag around `ClusterName`. Avoid eviction policies that can delete generation counters if stale-heartbeat rejection matters.
+Redis keys use a cluster hash tag around `ClusterName`. The durable `:gen:<node-id>` counters carry no TTL, so an `allkeys-*` `maxmemory-policy` can evict a live node's counter under memory pressure. The next heartbeat then fails the generation guard, the node treats its own membership as lost, and under the default `MembershipLostBehavior.StopApplication` the host is asked to stop — a silent eviction surfaces as a spurious shutdown. Run coordination against a Redis instance or logical database configured with `noeviction` or a `volatile-*` policy; coordination keys carry no TTL, so `volatile-*` never evicts them.
 
 **Generation mirrors in `:known` are read-path projections, not authority.** The durable per-node generation key remains the heartbeat guard. Allocation and heartbeat scripts mirror the current value into a reserved `:known` hash field named `__gen:<node-id>`, so read Lua can classify retained member payloads from one `HGETALL` result instead of calling `GET` for every member. Cleanup sweeps a mirror field once its node has no surviving member payload (orphan prune); the durable generation key is never touched, so a restarting node re-mirrors on its next allocate or heartbeat.
 

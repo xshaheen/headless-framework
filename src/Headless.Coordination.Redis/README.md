@@ -16,7 +16,7 @@ Provides a Redis-backed membership provider for deployments where Redis is the a
 
 ## Design Notes
 
-Redis keys use a cluster hash tag around `ClusterName`. Avoid eviction policies that can delete generation counters when stale-heartbeat rejection matters.
+Redis keys use a cluster hash tag around `ClusterName`. The durable `:gen:<node-id>` counters carry no TTL, so an `allkeys-*` `maxmemory-policy` can evict a live node's counter under memory pressure. The next heartbeat then fails the generation guard, the node treats its own membership as lost, and under the default `MembershipLostBehavior.StopApplication` the host is asked to stop — a silent eviction surfaces as a spurious shutdown. Run coordination against a Redis instance or logical database configured with `noeviction` or a `volatile-*` policy; coordination keys carry no TTL, so `volatile-*` never evicts them.
 
 **Dead/Left retention divergence (intentional, plan KTD-16).** Redis retains Dead and Left descriptors in the `:known` hash for `RedisKnownNodeRetention` (default 7 days), so liveness snapshots keep surfacing them with `State = Dead` until that window elapses — consumers filter by `NodeLivenessState`. The relational providers prune shortly after `DeadThreshold + DeadRetentionWindow` (tens of seconds). Lower `RedisKnownNodeRetention` to align Redis with relational pruning.
 

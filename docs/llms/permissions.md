@@ -104,7 +104,7 @@ Provider packages:
 
 ### Permission Definitions and Groups
 
-A *permission definition* declares a permission's identity and metadata: its unique `Name`, optional `DisplayName`, whether it is `IsEnabled` (disabled permissions always resolve to not-granted), which `Providers` may read/write it (empty = all), and optional `Properties` for custom metadata.
+A *permission definition* declares a permission's identity and metadata: its unique `Name`, optional `DisplayName`, whether it is `IsEnabled` (disabled permissions always resolve to not-granted), which `Providers` may read/write it (empty = all), and an optional `ExtraProperties` bag (the model implements `IHasExtraProperties`) for custom metadata.
 
 Permissions form a tree via `AddChild`. A group (`PermissionGroupDefinition`) is the top-level container; calling `group.AddChild("Orders.View")` adds a root permission to the group. Calling `permission.AddChild("Orders.View.Detail")` nests a child under that permission. Both `PermissionGroupDefinition` and `PermissionDefinition` implement `ICanAddChildPermission` so the same `AddChild` fluent call works on both.
 
@@ -148,7 +148,7 @@ Each provider returns one of three states per permission:
 
 ### Grant Store and Caching
 
-`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, the framework publishes an event causing `PermissionGrantCacheItemInvalidator` to evict affected cache entries across the process. Writing directly to `IPermissionGrantRepository` bypasses this path and leaves stale cache entries.
+`PermissionGrantStore` caches resolved grant statuses to avoid repeated database reads per request. The cache is backed by a tenant-scoped `ICache<PermissionGrantCacheItem>` keyed on the current tenant id. When `IPermissionManager.SetAsync` writes a grant, `PermissionGrantStore` evicts the affected cache entries directly through `ICache`. Writing directly to `IPermissionGrantRepository` bypasses this path and leaves stale cache entries.
 
 ### Static vs. Dynamic Definition Store
 
@@ -452,7 +452,6 @@ builder.Services.AddHeadlessPermissions(setup =>
 - Starts `PermissionsInitializationBackgroundService` as a hosted service (`IInitializer`)
 - Registers `IGrantPermissionsSeedHelper` as transient
 - Registers `PermissionRequirementHandler` and `PermissionsRequirementHandler` as `IAuthorizationHandler` singletons
-- Registers `PermissionGrantCacheItemInvalidator` as `IDomainEventHandler<EntityChangedEventData<PermissionGrantRecord>>`
 - Registers a tenant-scoped `ICache<PermissionGrantCacheItem>` as singleton
 
 ---

@@ -16,15 +16,10 @@ public static partial class Argument
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CanRead(Stream stream, [CallerArgumentExpression(nameof(stream))] string? paramName = null)
     {
-        if (stream.CanRead)
+        if (!stream.CanRead)
         {
-            return;
+            _ThrowForCanRead(stream, paramName);
         }
-
-        throw new ArgumentException(
-            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support reading.",
-            paramName
-        );
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> does not support writing.</summary>
@@ -35,15 +30,10 @@ public static partial class Argument
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CanWrite(Stream stream, [CallerArgumentExpression(nameof(stream))] string? paramName = null)
     {
-        if (stream.CanWrite)
+        if (!stream.CanWrite)
         {
-            return;
+            _ThrowForCanWrite(stream, paramName);
         }
-
-        throw new ArgumentException(
-            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support writing.",
-            paramName
-        );
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> does not support seeking.</summary>
@@ -54,15 +44,10 @@ public static partial class Argument
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CanSeek(Stream stream, [CallerArgumentExpression(nameof(stream))] string? paramName = null)
     {
-        if (stream.CanSeek)
+        if (!stream.CanSeek)
         {
-            return;
+            _ThrowForCanSeek(stream, paramName);
         }
-
-        throw new ArgumentException(
-            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support seeking.",
-            paramName
-        );
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> is not at the starting position.</summary>
@@ -76,15 +61,10 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(stream))] string? paramName = null
     )
     {
-        if (stream.Position == 0)
+        if (stream.Position != 0)
         {
-            return;
+            _ThrowForIsAtStartPosition(stream, paramName);
         }
-
-        FormattableString format =
-            $"The stream argument {paramName.ToAssertString()} of type <{stream.GetType().Name} must be at the starting position. (Actual Position {stream.Position})";
-
-        throw new ArgumentException(format.ToString(CultureInfo.InvariantCulture), paramName);
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if the file at <paramref name="path" /> does not exist.</summary>
@@ -104,15 +84,12 @@ public static partial class Argument
     {
         IsNotNullOrEmpty(path, message, paramName);
 
-        if (File.Exists(path))
+        if (!File.Exists(path))
         {
-            return path;
+            _ThrowForFileExists(path, message, paramName);
         }
 
-        throw new ArgumentException(
-            message ?? $"The file {paramName.ToAssertString()} at path \"{path}\" does not exist.",
-            paramName
-        );
+        return path;
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if the directory at <paramref name="path" /> does not exist.</summary>
@@ -132,11 +109,62 @@ public static partial class Argument
     {
         IsNotNullOrEmpty(path, message, paramName);
 
-        if (Directory.Exists(path))
+        if (!Directory.Exists(path))
         {
-            return path;
+            _ThrowForDirectoryExists(path, message, paramName);
         }
 
+        return path;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForCanRead(Stream stream, string? paramName)
+    {
+        throw new ArgumentException(
+            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support reading.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForCanWrite(Stream stream, string? paramName)
+    {
+        throw new ArgumentException(
+            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support writing.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForCanSeek(Stream stream, string? paramName)
+    {
+        throw new ArgumentException(
+            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support seeking.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsAtStartPosition(Stream stream, string? paramName)
+    {
+        FormattableString format =
+            $"The stream argument {paramName.ToAssertString()} of type <{stream.GetType().Name} must be at the starting position. (Actual Position {stream.Position})";
+
+        throw new ArgumentException(format.ToString(CultureInfo.InvariantCulture), paramName);
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForFileExists(string? path, string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message ?? $"The file {paramName.ToAssertString()} at path \"{path}\" does not exist.",
+            paramName
+        );
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForDirectoryExists(string? path, string? message, string? paramName)
+    {
         throw new ArgumentException(
             message ?? $"The directory {paramName.ToAssertString()} at path \"{path}\" does not exist.",
             paramName

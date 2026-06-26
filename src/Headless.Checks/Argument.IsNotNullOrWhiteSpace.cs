@@ -31,10 +31,7 @@ public static partial class Argument
 
         if (_IsWhiteSpace(argument))
         {
-            throw new ArgumentException(
-                message ?? $"Required argument {paramName.ToAssertString()} was empty or white space.",
-                paramName
-            );
+            _ThrowForIsNotNullOrWhiteSpace(message, paramName);
         }
 
         return argument;
@@ -53,5 +50,14 @@ public static partial class Argument
         }
 
         return true;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsNotNullOrWhiteSpace(string? message, string? paramName)
+    {
+        throw new ArgumentException(
+            message ?? $"Required argument {paramName.ToAssertString()} was empty or white space.",
+            paramName
+        );
     }
 }

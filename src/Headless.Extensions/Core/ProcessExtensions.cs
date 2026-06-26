@@ -104,6 +104,17 @@ public static class ProcessExtensions
                 await registration.DisposeAsync().ConfigureAwait(false);
             }
 
+            // Drain any buffered stdout/stderr callbacks before reading the exit code and logs.
+            // WaitForExitAsync returns as soon as the process exits, but async stdio event callbacks
+            // may still be in-flight; the no-argument WaitForExit() blocks until all redirected streams
+            // have been fully read, so trailing output is captured in the logs list.
+            // Process has already exited (WaitForExitAsync awaited above), so the synchronous WaitForExit() returns
+            // immediately after draining buffered stdio — no deadlock risk; the async overload does not guarantee
+            // redirected streams have fully drained.
+#pragma warning disable CA1849, AsyncFixer02
+            process.WaitForExit();
+#pragma warning restore CA1849, AsyncFixer02
+
             exitCode = process.ExitCode;
         }
 
@@ -131,6 +142,10 @@ public static class ProcessExtensions
 
                 process.StartInfo = psi;
 
+                // stdout and stderr DataReceived callbacks fire on independent thread-pool threads. Rx requires
+                // OnNext to be serialized, so gate both handlers on a shared lock to honor the observer grammar.
+                var gate = new Lock();
+
                 if (psi.RedirectStandardError)
                 {
                     process.ErrorDataReceived += (_, e) =>
@@ -140,7 +155,10 @@ public static class ProcessExtensions
                             return;
                         }
 
-                        observer.OnNext(new ProcessObservedOutput(ProcessObservedOutputType.StandardError, e.Data));
+                        lock (gate)
+                        {
+                            observer.OnNext(new ProcessObservedOutput(ProcessObservedOutputType.StandardError, e.Data));
+                        }
                     };
                 }
 
@@ -153,7 +171,12 @@ public static class ProcessExtensions
                             return;
                         }
 
-                        observer.OnNext(new ProcessObservedOutput(ProcessObservedOutputType.StandardOutput, e.Data));
+                        lock (gate)
+                        {
+                            observer.OnNext(
+                                new ProcessObservedOutput(ProcessObservedOutputType.StandardOutput, e.Data)
+                            );
+                        }
                     };
                 }
 
