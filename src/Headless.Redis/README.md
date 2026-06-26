@@ -43,8 +43,6 @@ var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 await scriptsLoader.LoadAsync([IncrementScriptDefinition.Instance]);
 ```
 
-## Usage
-
 ### Script Execution
 
 ```csharp

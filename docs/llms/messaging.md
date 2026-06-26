@@ -188,13 +188,14 @@ services.AddHeadlessMessaging(setup =>
     setup.UseRabbitMq(options => options.HostName = "localhost");
     setup.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
 
-    setup.ForMessage<OrderPlaced>(message => message
-        .MessageName("orders.placed")
-        .CorrelationFrom(order => order.OrderId.ToString())
-        .OnBus<OrderProjection>(consumer => consumer
-            .Group("orders-projection")
-            .Concurrency(4)
-            .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))));
+    setup.ForMessage<OrderPlaced>(message =>
+        message
+            .MessageName("orders.placed")
+            .CorrelationFrom(order => order.OrderId.ToString())
+            .OnBus<OrderProjection>(consumer =>
+                consumer.Group("orders-projection").Concurrency(4).UseRabbitMq(rabbit => rabbit.PrefetchCount(20))
+            )
+    );
 });
 ```
 
@@ -448,10 +449,12 @@ services.AddHeadlessMessaging(setup =>
     setup.UseInMemoryTransport();
     setup.UseInMemoryStorage();
 
-    setup.ForMessage<OrderPlaced>(message => message
-        .MessageName("orders.placed")
-        .CorrelationFrom(order => order.OrderId.ToString())
-        .OnBus<OrderPlacedConsumer>(consumer => consumer.Group("orders")));
+    setup.ForMessage<OrderPlaced>(message =>
+        message
+            .MessageName("orders.placed")
+            .CorrelationFrom(order => order.OrderId.ToString())
+            .OnBus<OrderPlacedConsumer>(consumer => consumer.Group("orders"))
+    );
 });
 ```
 
@@ -501,11 +504,11 @@ pickup 3 (persisted retry #2):
 var info = new FailedInfo
 {
     ServiceProvider = scope.ServiceProvider, // live dispatch scope, NOT the root provider
-    MessageType     = MessageType.Subscribe, // or MessageType.Publish
-    Message         = message,
-    Exception       = ex,                    // the exhausting exception
-    StorageId       = mediumMessage.StorageId, // storage row identifier for DLQ correlation
-    RetryCount      = mediumMessage.Retries,   // final persisted-retry count
+    MessageType = MessageType.Subscribe, // or MessageType.Publish
+    Message = message,
+    Exception = ex, // the exhausting exception
+    StorageId = mediumMessage.StorageId, // storage row identifier for DLQ correlation
+    RetryCount = mediumMessage.Retries, // final persisted-retry count
 };
 ```
 
@@ -654,10 +657,9 @@ The U2 raw-header checks (`ReservedTenantHeader`, `TenantIdMismatch`) still run 
 Root tenancy setup:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Messaging(messaging => messaging
-        .PropagateTenant()
-        .RequireTenantOnPublish()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+);
 ```
 
 Messaging-only setup must still go through the root tenancy seam — `AddTenantPropagation()` has been removed. Combine `AddHeadlessMessaging` with the root tenancy registration:
@@ -668,20 +670,16 @@ builder.Services.AddHeadlessMessaging(options =>
     options.TenantContextRequired = true;
 });
 
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Messaging(messaging => messaging
-        .PropagateTenant()
-        .RequireTenantOnPublish()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+);
 ```
 
 **Remediation for background workers / `IHostedService` callers (no ambient HTTP scope):**
 
 ```csharp
 // Option A: pass the tenant explicitly
-await publisher.PublishAsync(
-    message,
-    new PublishOptions { TenantId = tenantId },
-    cancellationToken);
+await publisher.PublishAsync(message, new PublishOptions { TenantId = tenantId }, cancellationToken);
 
 // Option B: scope the AsyncLocal accessor before publishing
 using (currentTenant.Change(tenantId))
@@ -753,8 +751,7 @@ builder.Services.AddHeadlessMessaging(options => { /* ... */ })
 The framework ships built-in middleware that propagates the originating tenant on the wire:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Messaging(messaging => messaging.PropagateTenant()));
+builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
 ```
 
 The root tenancy seam registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
@@ -800,8 +797,8 @@ Open duration escalates exponentially on repeated trips and resets after consecu
 builder.Services.AddHeadlessMessaging(setup =>
 {
     // Global circuit breaker (applies to all consumer groups)
-    setup.Options.CircuitBreaker.FailureThreshold = 5;          // consecutive transient failures to trip
-    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);   // initial open duration
+    setup.Options.CircuitBreaker.FailureThreshold = 5; // consecutive transient failures to trip
+    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30); // initial open duration
     setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
 
     // Adaptive retry backpressure
@@ -817,15 +814,21 @@ builder.Services.AddHeadlessMessaging(setup =>
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.ForMessage<PaymentProcessed>(message =>
-        message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
-        {
-            cb.FailureThreshold = 3;                    // more sensitive
-            cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
-        })));
+        message
+            .MessageName("payments.process")
+            .OnBus<PaymentHandler>(consumer =>
+                consumer.WithCircuitBreaker(cb =>
+                {
+                    cb.FailureThreshold = 3; // more sensitive
+                    cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+                })
+            )
+    );
 
     // Disable circuit breaker for a best-effort consumer
     setup.ForMessage<MetricsUpdated>(message =>
-        message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
+        message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false))
+    );
 });
 ```
 
@@ -861,6 +864,7 @@ var state = monitor.GetState(IntentType.Bus, "payments"); // Closed, Open, HalfO
 
 // Rich snapshot with escalation and timing details
 CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot(IntentType.Bus, "payments");
+
 // snapshot.State, snapshot.EscalationLevel, snapshot.ConsecutiveFailures,
 // snapshot.FailureThreshold, snapshot.OpenedAt, snapshot.EstimatedRemainingOpenDuration,
 // snapshot.EffectiveOpenDuration
@@ -1026,7 +1030,8 @@ dotnet add package Headless.Messaging.OpenTelemetry
 ### Quick Start
 
 ```csharp
-builder.Services.AddOpenTelemetry()
+builder
+    .Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddMessagingInstrumentation())
     .WithMetrics(metrics => metrics.AddMessagingInstrumentation());
 ```
@@ -1075,10 +1080,12 @@ setup.UseAws(options =>
     options.Region = Amazon.RegionEndpoint.USEast1;
 });
 
-setup.ForMessage<OrderPlaced>(message => message
-    .MessageName("orders-placed.fifo")
-    .UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
-    .OnQueue<OrderWorker>());
+setup.ForMessage<OrderPlaced>(message =>
+    message
+        .MessageName("orders-placed.fifo")
+        .UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
+        .OnQueue<OrderWorker>()
+);
 ```
 
 ### Configuration
@@ -1121,9 +1128,9 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ```csharp
 setup.UseAzureServiceBus(options => options.ConnectionString = connectionString);
 
-setup.ForMessage<OrderPlaced>(message => message
-    .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString()))
-    .OnBus<OrderProjection>());
+setup.ForMessage<OrderPlaced>(message =>
+    message.UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString())).OnBus<OrderProjection>()
+);
 ```
 
 ### Configuration
@@ -1237,10 +1244,14 @@ dotnet add package Headless.Messaging.Kafka
 ```csharp
 setup.UseKafka(options => options.Servers = "localhost:9092");
 
-setup.ForMessage<OrderPlaced>(message => message
-    .MessageName("orders.placed")
-    .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
-    .OnQueue<OrderWorker>(consumer => consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))));
+setup.ForMessage<OrderPlaced>(message =>
+    message
+        .MessageName("orders.placed")
+        .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString()))
+        .OnQueue<OrderWorker>(consumer =>
+            consumer.UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))
+        )
+);
 ```
 
 ### Configuration
@@ -1285,9 +1296,11 @@ dotnet add package Headless.Messaging.Nats
 ```csharp
 setup.UseNats(options => options.Servers = "nats://localhost:4222");
 
-setup.ForMessage<OrderPlaced>(message => message
-    .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString()))
-    .OnBus<OrderProjection>(consumer => consumer.UseNats(nats => nats.Sharded())));
+setup.ForMessage<OrderPlaced>(message =>
+    message
+        .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString()))
+        .OnBus<OrderProjection>(consumer => consumer.UseNats(nats => nats.Sharded()))
+);
 ```
 
 ### Configuration
@@ -1369,8 +1382,9 @@ setup.UseRabbitMq(options =>
     options.Port = 5672;
 });
 
-setup.ForMessage<OrderPlaced>(message => message
-    .OnBus<OrderProjection>(consumer => consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(20))));
+setup.ForMessage<OrderPlaced>(message =>
+    message.OnBus<OrderProjection>(consumer => consumer.UseRabbitMq(rabbit => rabbit.PrefetchCount(20)))
+);
 ```
 
 ### Configuration

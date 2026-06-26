@@ -58,9 +58,8 @@ options.UseAws(sqs =>
 });
 
 options.ForMessage<OrderEvent>(message =>
-    message
-        .MessageName("orders.events.fifo")
-        .UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString())));
+    message.MessageName("orders.events.fifo").UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString()))
+);
 ```
 
 `MessageGroupId(...)` stamps `AwsMessagingHeaders.MessageGroupId` (`headless-aws-message-group-id`) during publish and is limited to 128 characters. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.

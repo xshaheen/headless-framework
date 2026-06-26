@@ -34,22 +34,35 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(builder.Configuration.GetSection("Smtp")));
 
 // Option 2: action
-builder.Services.AddHeadlessEmails(setup => setup.UseMailkit(options =>
-{
-    options.Server = "smtp.example.com";
-    options.Port = 587;
-    options.User = "user@example.com";
-    options.Password = "securepassword";
-    options.SocketOptions = SecureSocketOptions.StartTls;
-}));
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseMailkit(options =>
+    {
+        options.Server = "smtp.example.com";
+        options.Port = 587;
+        options.User = "user@example.com";
+        options.Password = "securepassword";
+        options.SocketOptions = SecureSocketOptions.StartTls;
+    })
+);
 
 // Option 3: action with IServiceProvider
-builder.Services.AddHeadlessEmails(setup => setup.UseMailkit((options, sp) =>
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseMailkit(
+        (options, sp) =>
+        {
+            var cfg = sp.GetRequiredService<IConfiguration>();
+            options.Server = cfg["Smtp:Server"]!;
+            options.Port = int.Parse(cfg["Smtp:Port"]!);
+        }
+    )
+);
+
+// Named instance — each named SMTP sender owns an isolated connection pool (keyed "marketing"):
+builder.Services.AddHeadlessEmails(setup =>
 {
-    var cfg = sp.GetRequiredService<IConfiguration>();
-    options.Server = cfg["Smtp:Server"]!;
-    options.Port = int.Parse(cfg["Smtp:Port"]!);
-}));
+    setup.UseMailkit(builder.Configuration.GetSection("Smtp")); // default (required)
+    setup.AddNamed("marketing", i => i.UseMailkit(builder.Configuration.GetSection("MarketingSmtp")));
+});
 ```
 
 ## Configuration
@@ -86,6 +99,5 @@ builder.Services.AddHeadlessEmails(setup => setup.UseMailkit((options, sp) =>
 
 ## Side Effects
 
-- Registers `IPooledObjectPolicy<SmtpClient>` as singleton
-- Registers `ObjectPool<SmtpClient>` as singleton
-- Registers `IEmailSender` as singleton
+- Default: registers `IPooledObjectPolicy<SmtpClient>`, `ObjectPool<SmtpClient>`, and `IEmailSender` as unkeyed singletons
+- Named (`AddNamed(name, i => i.UseMailkit(…))`): registers a keyed policy, pool, and `IEmailSender` plus named options under the instance name, so each named SMTP sender owns an isolated pool and never reads another instance's settings

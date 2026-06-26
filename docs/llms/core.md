@@ -14,9 +14,6 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Key Features](#key-features)
     - [Installation](#installation)
     - [Quick Start](#quick-start)
-        - [Result Pattern](#result-pattern)
-        - [Collection Extensions](#collection-extensions)
-        - [Egyptian National ID Validator](#egyptian-national-id-validator)
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
@@ -25,8 +22,6 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Key Features](#key-features-1)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
-        - [Structured Logging](#structured-logging)
-        - [Retry and Deferred Execution](#retry-and-deferred-execution)
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
@@ -35,9 +30,6 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Key Features](#key-features-2)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
-        - [Argument Validation](#argument-validation)
-        - [Common Checks](#common-checks)
-        - [Runtime Assertions](#runtime-assertions)
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
@@ -46,19 +38,14 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
     - [Key Features](#key-features-3)
     - [Installation](#installation-3)
     - [Quick Start](#quick-start-3)
-        - [Auditing](#auditing)
-        - [Value Objects](#value-objects)
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
 - [Headless.Domain.LocalEventBus](#headlessdomainlocaleventbus)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
-    - [Design Notes](#design-notes)
     - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
-        - [Publishing Events](#publishing-events)
-        - [Handling Events](#handling-events)
     - [Configuration](#configuration-4)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
@@ -73,11 +60,9 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - [Headless.Security](#headlesssecurity)
     - [Problem Solved](#problem-solved-6)
     - [Key Features](#key-features-6)
-    - [Design Notes](#design-notes-1)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-6)
     - [Quick Start](#quick-start-6)
-        - [String Encryption](#string-encryption)
-        - [String Hashing](#string-hashing)
     - [Configuration](#configuration-6)
     - [Dependencies](#dependencies-6)
     - [Side Effects](#side-effects-6)
@@ -113,15 +98,15 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 
 ---
 
-# Headless.Extensions
+## Headless.Extensions
 
 Foundational utility library providing extension methods, primitives, helpers, and common abstractions used throughout the framework.
 
-## Problem Solved
+### Problem Solved
 
 Eliminates repetitive utility code across projects by providing a comprehensive set of battle-tested extensions, helpers, and primitives for common operations (strings, collections, dates, IO, reflection, etc.).
 
-## Key Features
+### Key Features
 
 - **Result Pattern**:
     - `ApiResult` / `ApiResult<T>` - Success/failure with built-in error factories (`NotFound`, `Conflict`, `Forbidden`, `Unauthorized`, `ValidationFailed`)
@@ -153,15 +138,15 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 - **Validation**: `MobilePhoneNumberValidator`, `GeoCoordinateValidator`, `EmailValidator`, `EgyptianNationalIdValidator`
 - **Helpers**: `OsHelper`, `DisposableFactory`, `IpAddressHelper`
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Extensions
 ```
 
-## Quick Start
+### Quick Start
 
-### Result Pattern
+#### Result Pattern
 
 ```csharp
 public async Task<ApiResult<User>> GetUserAsync(Guid id)
@@ -174,16 +159,13 @@ public async Task<ApiResult<User>> GetUserAsync(Guid id)
 }
 ```
 
-### Collection Extensions
+#### Collection Extensions
 
 ```csharp
-await users.ParallelForEachAsync(
-    async user => await ProcessUserAsync(user),
-    maxDegreeOfParallelism: 5
-);
+await users.ParallelForEachAsync(async user => await ProcessUserAsync(user), maxDegreeOfParallelism: 5);
 ```
 
-### Egyptian National ID Validator
+#### Egyptian National ID Validator
 
 ```csharp
 if (EgyptianNationalIdValidator.IsValid("29901011234567"))
@@ -194,11 +176,11 @@ if (EgyptianNationalIdValidator.IsValid("29901011234567"))
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Checks`
 - `Headless.Generator.Primitives` (source generator)
@@ -215,19 +197,19 @@ No configuration required.
 - `System.Reactive`
 - `TimeZoneConverter`
 
-## Side Effects
+### Side Effects
 
 None.
 
-# Headless.Core
+## Headless.Core
 
 Core abstractions for building applications with multi-tenancy, user context, and cross-cutting concerns.
 
-## Problem Solved
+### Problem Solved
 
 Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (compression, structured logging) enabling consistent patterns across all application layers.
 
-## Key Features
+### Key Features
 
 - **Abstractions**:
     - `IClock` - Testable time abstraction (wraps `TimeProvider`)
@@ -250,13 +232,13 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
     - `LogState` / `HeadlessLoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
     - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Core
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant tenant)
@@ -269,37 +251,35 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
             UserId = user.UserId!.Value,
             TenantId = tenant.Id,
             CreatedAt = clock.UtcNow,
-            Total = new Money(request.Amount, request.Currency)
+            Total = new Money(request.Amount, request.Currency),
         };
     }
 }
 ```
 
-### Structured Logging
+#### Structured Logging
 
 ```csharp
-logger.LogInformation(
-    s => s.Tag("orders").Property("orderId", orderId),
-    "Order {OrderId} created",
-    orderId
-);
+logger.LogInformation(s => s.Tag("orders").Property("orderId", orderId), "Order {OrderId} created", orderId);
 ```
 
-### Retry and Deferred Execution
+#### Retry and Deferred Execution
 
 For retries and delayed execution, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
 
 ```csharp
 private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
-    .AddRetry(new RetryStrategyOptions
-    {
-        ShouldHandle = new PredicateBuilder().Handle<HttpRequestException>(),
-        MaxRetryAttempts = 3,
-        BackoffType = DelayBackoffType.Exponential,
-        Delay = TimeSpan.FromMilliseconds(100),
-        MaxDelay = TimeSpan.FromSeconds(1),
-        UseJitter = true,
-    })
+    .AddRetry(
+        new RetryStrategyOptions
+        {
+            ShouldHandle = new PredicateBuilder().Handle<HttpRequestException>(),
+            MaxRetryAttempts = 3,
+            BackoffType = DelayBackoffType.Exponential,
+            Delay = TimeSpan.FromMilliseconds(100),
+            MaxDelay = TimeSpan.FromSeconds(1),
+            UseJitter = true,
+        }
+    )
     .Build();
 
 var result = await _RetryPipeline.ExecuteAsync(
@@ -308,11 +288,11 @@ var result = await _RetryPipeline.ExecuteAsync(
 );
 ```
 
-## Configuration
+### Configuration
 
 No configuration required for the abstractions. Host/package setup can call `AddHeadlessGuidGenerator()` when it needs the framework GUID generator defaults.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Checks`
 - `Headless.Extensions`
@@ -321,20 +301,20 @@ No configuration required for the abstractions. Host/package setup can call `Add
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Snappier`
 
-## Side Effects
+### Side Effects
 
 - `AddHeadlessGuidGenerator()` registers keyed singleton `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`
 - `AddHeadlessGuidGenerator()` also registers an unkeyed singleton `IGuidGenerator` using `Version7` unless a caller supplies another default strategy
 
-# Headless.Checks
+## Headless.Checks
 
 Guard clause library for argument validation and defensive programming.
 
-## Problem Solved
+### Problem Solved
 
 Provides a fluent, expressive API for validating method arguments and ensuring preconditions, eliminating boilerplate validation code and standardizing error messages.
 
-## Key Features
+### Key Features
 
 - **Argument Validation**: Extensive static methods on `Argument` class
 - **Runtime Assertions**: `Ensure` class for internal state validation
@@ -342,15 +322,15 @@ Provides a fluent, expressive API for validating method arguments and ensuring p
 - **Caller Expression Support**: Automatic parameter name capture
 - **Type Support**: Nullable, `Span<T>`, `ReadOnlySpan<T>`, collections, strings
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Checks
 ```
 
-## Quick Start
+### Quick Start
 
-### Argument Validation
+#### Argument Validation
 
 ```csharp
 using Headless.Checks;
@@ -364,7 +344,7 @@ public void CreateUser(string name, int age, List<string> roles)
 }
 ```
 
-### Common Checks
+#### Common Checks
 
 - `Argument.IsNotNull(value)`
 - `Argument.IsNotNullOrEmpty(string|collection)`
@@ -377,7 +357,7 @@ public void CreateUser(string name, int age, List<string> roles)
 - `Argument.Matches(string, regex)` — throws `ArgumentException` when the string does not match the pattern
 - `Argument.Is(condition, message, nameof(arg))` — custom argument precondition; throws `ArgumentException`
 
-### Runtime Assertions
+#### Runtime Assertions
 
 ```csharp
 using Headless.Checks;
@@ -390,27 +370,27 @@ public void ProcessOrder()
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
-# Headless.Domain
+## Headless.Domain
 
 Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
 
-## Problem Solved
+### Problem Solved
 
 Provides building blocks for implementing DDD patterns: entities with identity, aggregate roots with domain events, value objects, auditing interfaces, and messaging contracts.
 
-## Key Features
+### Key Features
 
 - **Entity Abstractions**: `IEntity`, `IEntity<T>`, base `Entity` class
 - **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
@@ -422,13 +402,13 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 - **Integration Events (distributed)**: `IIntegrationEvent`, `IIntegrationEventEmitter`. `AggregateRoot` implements `IIntegrationEventEmitter` (`AddIntegrationEvent`, `ClearIntegrationEvents`, `GetIntegrationEvents`). This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.Orm.EntityFramework.Messaging`), not from `Headless.Domain` (see [orm.md](orm.md)).
 - **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Domain
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class Order : AggregateRoot<Guid>, ICreateAudit
@@ -450,7 +430,7 @@ public sealed record OrderCompletedEvent(Guid OrderId) : IDomainEvent
 }
 ```
 
-### Auditing
+#### Auditing
 
 Implement audit interfaces for automatic tracking:
 
@@ -463,7 +443,7 @@ public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
 }
 ```
 
-### Value Objects
+#### Value Objects
 
 ```csharp
 public sealed class Address : ValueObject
@@ -479,27 +459,27 @@ public sealed class Address : ValueObject
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required. This is an abstractions package.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
-# Headless.Domain.LocalEventBus
+## Headless.Domain.LocalEventBus
 
 DI-based implementation of `ILocalEventBus` for in-process domain event handling.
 
-## Problem Solved
+### Problem Solved
 
 Provides in-memory domain event dispatch that resolves handlers from the DI container, enabling decoupled event-driven architecture within a single process and unit of work.
 
-## Key Features
+### Key Features
 
 - `ILocalEventBus` implementation (`ServiceProviderLocalEventBus`) backed by DI
 - Generic and non-generic publish overloads (`Publish`, `PublishAsync`)
@@ -507,20 +487,20 @@ Provides in-memory domain event dispatch that resolves handlers from the DI cont
 - Handler ordering via `DomainEventHandlerOrderAttribute`
 - Handler exception aggregation and cooperative cancellation
 
-### Design Notes
+#### Design Notes
 
 - **Non-generic runtime-typed dispatch.** `Publish(IDomainEvent)` / `PublishAsync(IDomainEvent)` dispatch to handlers of the event's exact runtime type — there is no contravariant traversal to base types or implemented interfaces. The runtime type is mapped to a compiled invoker that is built once and cached, so repeated publishes of the same concrete type avoid reflection on the hot path. The generic overloads (`Publish<T>` / `PublishAsync<T>`) dispatch against the static type argument `T`.
 - **Scoped lifetime.** `AddHeadlessLocalEventBus()` registers `ILocalEventBus` as scoped (`TryAddScoped`). Handlers are resolved from the caller's scope, so they share the same scoped services — notably the `DbContext` — when published inside a unit of work.
 - **Exception aggregation and cancellation.** Handlers are resolved and invoked per publish. A single handler exception is rethrown as-is; multiple handler exceptions are wrapped in an `AggregateException`. Cancellation is observed between handlers; if the token is cancelled, already-accumulated handler exceptions are preserved rather than discarded.
 - **Namespace unchanged.** The package/assembly was renamed from `Headless.Domain.LocalPublisher`, but the namespace stays `Headless.Domain` — no `using` changes are needed.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Domain.LocalEventBus
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -532,7 +512,7 @@ builder.Services.AddHeadlessLocalEventBus();
 builder.Services.AddScoped<IDomainEventHandler<OrderCreatedEvent>, OrderCreatedHandler>();
 ```
 
-### Publishing Events
+#### Publishing Events
 
 ```csharp
 public sealed class OrderService(ILocalEventBus eventBus)
@@ -546,7 +526,7 @@ public sealed class OrderService(ILocalEventBus eventBus)
 }
 ```
 
-### Handling Events
+#### Handling Events
 
 ```csharp
 public sealed class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
@@ -569,30 +549,30 @@ public sealed class AuditHandler : IDomainEventHandler<OrderCreatedEvent>
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Domain`
 - `Headless.Hosting`
 
-## Side Effects
+### Side Effects
 
 - Registers `ILocalEventBus` (`ServiceProviderLocalEventBus`) as scoped
 
 ---
 
-# Headless.Security.Abstractions
+## Headless.Security.Abstractions
 
 Security contracts and option models for string encryption and hashing — no implementation, no DI coupling.
 
-## Problem Solved
+### Problem Solved
 
 Allows downstream packages and application layers to depend on encryption and hashing abstractions without referencing a concrete implementation. `Headless.Settings.Core` depends on `IStringEncryptionService` from this package; consuming code can swap the implementation independently.
 
-## Key Features
+### Key Features
 
 - **`IStringEncryptionService`** — AES-GCM authenticated encryption contract:
     - `Encrypt(string? plainText, string? passPhrase = null, byte[]? salt = null) → string?` — encrypts using the configured default pass phrase / salt, or an explicit override. Returns `null` when `plainText` is `null`. Each call uses a fresh random nonce, so identical plaintexts never produce identical cipher text.
@@ -602,19 +582,17 @@ Allows downstream packages and application layers to depend on encryption and ha
 - **`StringEncryptionOptions`** — `DefaultPassPhrase` (required), `DefaultSalt` (required `byte[]`), `KeySize` (128/192/256 bits; default 256), `Iterations` (PBKDF2 rounds; default 600 000).
 - **`StringHashOptions`** — `Algorithm` (SHA256/SHA384/SHA512; default SHA256), `SizeInBytes` (≥16; default 32), `Iterations` (default 600 000), `DefaultSalt` (optional string).
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Security.Abstractions
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 // Inject the contract; the implementation is registered by Headless.Security.
-public sealed class SecureSettingService(
-    IStringEncryptionService encryption,
-    IStringHashService hashing)
+public sealed class SecureSettingService(IStringEncryptionService encryption, IStringHashService hashing)
 {
     // Encrypt a sensitive value (e.g. before writing to the database).
     public string Protect(string value) => encryption.Encrypt(value)!;
@@ -627,69 +605,67 @@ public sealed class SecureSettingService(
 }
 ```
 
-## Configuration
+### Configuration
 
 No configuration required. This is an abstractions-only package; options are configured when registering the implementation via `Headless.Security`.
 
-## Dependencies
+### Dependencies
 
 None.
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Security
+## Headless.Security
 
 Default implementations of `IStringEncryptionService` and `IStringHashService`, plus idempotent DI registration helpers.
 
-## Problem Solved
+### Problem Solved
 
 Ships the concrete AES-GCM encryption and PBKDF2 hashing implementations so application code depends only on the `Headless.Security.Abstractions` contracts. Keeps security concerns separate from `Headless.Core` and `Headless.Api`.
 
-## Key Features
+### Key Features
 
 - **`StringEncryptionService`** — `IStringEncryptionService` implementation using AES-GCM with PBKDF2-SHA256 key derivation. Derives the default key once at construction; per-call key derivation only when pass phrase / salt overrides are supplied. Output format: `Base64(nonce[12] || tag[16] || cipherText)`.
 - **`StringHashService`** — `IStringHashService` implementation using `Rfc2898DeriveBytes.Pbkdf2`. Output: `Base64(hash[SizeInBytes])`. The call-site salt falls back to `StringHashOptions.DefaultSalt ?? string.Empty`.
 - **`AddStringEncryptionService(IConfiguration)`** / **`AddStringEncryptionService(Action<StringEncryptionOptions>)`** / **`AddStringEncryptionService(Action<StringEncryptionOptions, IServiceProvider>)`** — three overloads for binding `StringEncryptionOptions`. All are idempotent: the first registration wins.
 - **`AddStringHashService(IConfiguration)`** / **`AddStringHashService(Action<StringHashOptions>)`** / **`AddStringHashService(Action<StringHashOptions, IServiceProvider>)`** — three overloads for binding `StringHashOptions`. All are idempotent.
 
-## Design Notes
+### Design Notes
 
 - **Idempotency.** Both `AddStringEncryptionService` and `AddStringHashService` use `TryAddSingleton` under a prior-registration guard — calling either more than once is safe and the second call is silently ignored. Configure each service exactly once.
 - **AES-GCM nonce.** A fresh 12-byte random nonce is generated via `RandomNumberGenerator.Fill` for every `Encrypt` call. This guarantees ciphertext indistinguishability even when the same plaintext is encrypted multiple times with the same key.
 - **PBKDF2 key caching.** The default encryption key (derived from `DefaultPassPhrase` + `DefaultSalt` at construction) is cached as a `byte[]` singleton on the service instance. Overriding the pass phrase or salt on a per-call basis re-derives the key inline and is therefore slower. Design for the common case: configure the default key and use overrides only for rare multi-key scenarios.
 - **`StringHashService` is not a password hasher.** The hash has no embedded salt, no algorithm identifier, and no cost parameter — it is a fast keyed lookup digest. Do not use it for storing user passwords; use ASP.NET Core's `PasswordHasher<T>` instead.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Security
 ```
 
-## Quick Start
+### Quick Start
 
-### String Encryption
+#### String Encryption
 
 ```csharp
 // appsettings.json section: "Headless:StringEncryption"
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetSection("Headless:StringEncryption"));
 
 // Or configure inline (useful in tests / single-file apps).
 builder.Services.AddStringEncryptionService(options =>
 {
     options.DefaultPassPhrase = "your-secret-pass-phrase";
-    options.DefaultSalt      = "your-salt-bytes"u8.ToArray();
+    options.DefaultSalt = "your-salt-bytes"u8.ToArray();
     // options.KeySize     = 256;   // default
     // options.Iterations  = 600_000; // default
 });
 ```
 
-### String Hashing
+#### String Hashing
 
 ```csharp
 builder.Services.AddStringHashService(options =>
@@ -705,7 +681,7 @@ public string GetSearchKey(string value, string tenantId)
     => _hashService.Create(value, tenantId); // tenant-scoped deterministic hash
 ```
 
-## Configuration
+### Configuration
 
 `StringEncryptionOptions`:
 
@@ -727,14 +703,14 @@ public string GetSearchKey(string value, string tenantId)
 
 Both option types are validated via FluentValidation at startup (`ValidateOnStart`). A misconfigured `KeySize` or unsupported `Algorithm` is a startup error, not a runtime error.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Security.Abstractions`
 - `Headless.Checks`
 - `Headless.Hosting`
 - `FluentValidation`
 
-## Side Effects
+### Side Effects
 
 - `AddStringEncryptionService(...)` registers `IStringEncryptionService` (`StringEncryptionService`) as a singleton and registers validated `StringEncryptionOptions`.
 - `AddStringHashService(...)` registers `IStringHashService` (`StringHashService`) as a singleton and registers validated `StringHashOptions`.

@@ -1,23 +1,18 @@
 # Headless.Blobs.Abstractions
 
-Defines the unified interface for blob/file storage operations across different providers (AWS S3, Azure Blob, FileSystem, Redis, SFTP).
+Defines the unified interfaces for blob/file storage operations across all providers.
 
 ## Problem Solved
 
-Provides a provider-agnostic API for file storage operations, enabling seamless switching between cloud providers or local storage without changing application code.
+Application code needs a single, provider-agnostic API for file storage so it can switch between cloud providers, local storage, or test fakes without change. This package defines `IBlobStorage` and the supporting contracts; it carries no implementation and no DI registrations.
 
 ## Key Features
 
-- `IBlobStorage` - Core interface for all storage operations:
-  - Upload blobs with metadata
-  - Open read stream for downloading
-  - Bulk upload/delete operations
-  - Copy/Rename/Delete operations
-  - Exists check and blob info retrieval
-  - Paged listing with search patterns
-- `IBlobNamingNormalizer` - Provider-specific path normalization
-- Container/directory management
-- Metadata support
+- `IBlobStorage` — core interface covering upload, download (`OpenReadStreamAsync`), copy, rename, delete, exists, info, paged listing, bulk upload/delete, and container management.
+- `IPresignedUrlBlobStorage` — optional presigned GET + PUT URL capability; implemented only by AWS, Azure, and CloudflareR2.
+- `IBlobStorageProvider` — resolves named `IBlobStorage` instances registered through the setup builder (`GetStorage(name)`, `GetStorageOrNull(name)`, `RegisteredNames`).
+- `IBlobNamingNormalizer` — provider-specific two-tier path normalization contract.
+- Metadata support via `Dictionary<string, string?>`.
 
 ## Installation
 
@@ -25,7 +20,7 @@ Provides a provider-agnostic API for file storage operations, enabling seamless 
 dotnet add package Headless.Blobs.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
 public sealed class FileService(IBlobStorage storage)
@@ -43,9 +38,10 @@ public sealed class FileService(IBlobStorage storage)
 
     public async Task<string?> GetContentAsync(string fileName, CancellationToken ct)
     {
-        // IMPORTANT: Dispose result promptly - holding it may exhaust connection pools
+        // Dispose result promptly — holding it may exhaust connection pools.
         await using var result = await storage.OpenReadStreamAsync(["uploads", "images"], fileName, ct);
-        if (result is null) return null;
+        if (result is null)
+            return null;
 
         using var reader = new StreamReader(result.Stream);
         return await reader.ReadToEndAsync(ct);
@@ -53,9 +49,35 @@ public sealed class FileService(IBlobStorage storage)
 }
 ```
 
+Resolve a named store or check for presigned support:
+
+```csharp
+public sealed class StorageService(
+    IBlobStorageProvider provider,
+    [FromKeyedServices("archive")] IBlobStorage archiveStorage
+)
+{
+    // Validate an externally-supplied name before resolving:
+    public bool IsKnownStore(string name) => provider.RegisteredNames.Contains(name);
+
+    // Resolve by name:
+    public IBlobStorage GetByName(string name) => provider.GetStorage(name); // throws if not found
+
+    public IBlobStorage? TryGetByName(string name) => provider.GetStorageOrNull(name); // null if not found
+
+    // Feature-detect presigned on the default store:
+    public async Task<Uri?> TryGetPresignedUrlAsync(IBlobStorage storage, string[] container, string blob)
+    {
+        if (storage is not IPresignedUrlBlobStorage presigned)
+            return null;
+        return await presigned.GetPresignedDownloadUrlAsync(container, blob, TimeSpan.FromMinutes(15));
+    }
+}
+```
+
 ## Configuration
 
-No configuration required. This is an abstractions-only package.
+None. This is an abstractions-only package.
 
 ## Dependencies
 

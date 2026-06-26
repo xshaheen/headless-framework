@@ -25,11 +25,11 @@ services.AddPostgreSqlCommitCoordination();
 
 // Open + enlist + commit in one call; the enlist cannot be forgotten.
 await connection.ExecuteCoordinatedTransactionAsync(
-    async (conn, ct) =>
-    {
+    async (conn, ct) => {
         // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
     },
-    services: requestServiceProvider);
+    services: requestServiceProvider
+);
 ```
 
 ### Advanced: raw enlistment
@@ -44,6 +44,7 @@ await connection.ExecuteCoordinatedTransactionAsync(
 ```csharp
 await using var tx = await connection.BeginTransactionAsync(ct);
 await using var scope = connection.EnlistCommitCoordination(tx, requestServiceProvider);
+
 // ... raw-ADO work + publishes ...
 await tx.CommitAsync(ct);
 await scope.SignalAsync(CommitOutcome.Committed); // REQUIRED — see warning above

@@ -30,9 +30,7 @@ dotnet add package Headless.Settings.Storage.PostgreSql
 ```csharp
 builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 builder.Services.AddHeadlessSettings(setup =>
 {

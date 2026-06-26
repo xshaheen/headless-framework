@@ -129,7 +129,7 @@ builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaim
 var app = builder.Build();
 app.UseHeadless();
 app.UseAuthentication();
-app.UseHeadlessTenancy();   // between auth and authz
+app.UseHeadlessTenancy(); // between auth and authz
 app.UseAuthorization();
 app.MapHeadlessEndpoints();
 // Cookie-auth apps that opted into `options.Antiforgery.Enabled` should also

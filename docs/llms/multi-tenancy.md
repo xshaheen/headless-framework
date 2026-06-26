@@ -50,11 +50,13 @@ For tenant-aware hosts, the recommended setup is:
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless();
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims())
-    .Authorization(auth => auth.RequireTenant())
-    .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
-    .EntityFramework(ef => ef.GuardTenantWrites()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy
+        .Http(http => http.ResolveFromClaims())
+        .Authorization(auth => auth.RequireTenant())
+        .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+        .EntityFramework(ef => ef.GuardTenantWrites())
+);
 
 var app = builder.Build();
 
@@ -92,12 +94,16 @@ app.UseAuthorization();
 `AddHeadless()` and `AddHeadlessDbContextServices()` register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. The primary HTTP setup path is:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims(options =>
-    {
-        options.ClaimType = UserClaimTypes.TenantId; // default
-    }))
-    .Authorization(auth => auth.RequireTenant()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy
+        .Http(http =>
+            http.ResolveFromClaims(options =>
+            {
+                options.ClaimType = UserClaimTypes.TenantId; // default
+            })
+        )
+        .Authorization(auth => auth.RequireTenant())
+);
 
 builder.Services.AddAuthorization(options =>
 {
@@ -166,9 +172,7 @@ public sealed class UsersController : ControllerBase
 When the endpoint also lives under a tenant-required authorization policy, compose `.SkipTenantResolution()` with `.AllowMissingTenant()` so the authorization requirement is satisfied:
 
 ```csharp
-app.MapGet("/webhook", (ICurrentTenant t) => Results.Ok())
-    .SkipTenantResolution()
-    .AllowMissingTenant();
+app.MapGet("/webhook", (ICurrentTenant t) => Results.Ok()).SkipTenantResolution().AllowMissingTenant();
 ```
 
 **When to use** — prefer `[SkipTenantResolution]` over `[AllowMissingTenant]` when the endpoint must not even attempt claim extraction, for example:
@@ -188,6 +192,7 @@ For endpoints that may or may not carry a tenant claim depending on the caller, 
 
 ```csharp
 builder.AddHeadless();
+
 // AddHeadless() calls AddHeadlessProblemDetails() which auto-registers
 // HeadlessApiExceptionHandler. No opt-in needed.
 
@@ -251,9 +256,9 @@ Apply `[AllowMissingTenant]` or `.AllowMissingTenant()` to every endpoint whose 
 Forgetting the opt-out on one of these surfaces produces a 403 `g:tenant_required` for legitimate callers. Tenant-scoped endpoints that genuinely require tenant context must omit it.
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims())
-    .Authorization(auth => auth.RequireTenant()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Http(http => http.ResolveFromClaims()).Authorization(auth => auth.RequireTenant())
+);
 
 builder.Services.AddAuthorization(options =>
 {
@@ -321,12 +326,9 @@ Splitting these across PRs leaves the entity in a state where the query filter i
 The EF write guard is opt-in and disabled by default for compatibility. Enable it from the root tenancy surface:
 
 ```csharp
-builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
-    options.UseNpgsql(connectionString)
-);
+builder.Services.AddHeadlessDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .EntityFramework(ef => ef.GuardTenantWrites()));
+builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
 For package-level wiring without the root tenancy surface, the lower-level registration remains available:
@@ -414,10 +416,13 @@ For end-to-end propagation, opt in to the built-in middleware pair:
 ```csharp
 using Headless.Messaging.MultiTenancy;
 
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+);
 
-builder.Services.AddHeadlessMessaging(options => { /* ... */ });
+builder.Services.AddHeadlessMessaging(options =>
+{ /* ... */
+});
 ```
 
 This registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
@@ -449,10 +454,7 @@ To remediate a `MissingTenantContextException` from a background worker or `IHos
 
 ```csharp
 // Option A: explicit per-publish tenant
-await publisher.PublishAsync(
-    message,
-    new PublishOptions { TenantId = tenantId },
-    cancellationToken);
+await publisher.PublishAsync(message, new PublishOptions { TenantId = tenantId }, cancellationToken);
 
 // Option B: ambient scope around the publish
 using (currentTenant.Change(tenantId))
@@ -519,17 +521,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless();
 
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims())
-    .Authorization(auth => auth.RequireTenant())
-    .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
-    .EntityFramework(ef => ef.GuardTenantWrites()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy
+        .Http(http => http.ResolveFromClaims())
+        .Authorization(auth => auth.RequireTenant())
+        .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+        .EntityFramework(ef => ef.GuardTenantWrites())
+);
 
 var app = builder.Build();
 
 app.UseHeadless();
 app.UseAuthentication();
-app.UseHeadlessTenancy();   // after UseAuthentication, before UseAuthorization
+app.UseHeadlessTenancy(); // after UseAuthentication, before UseAuthorization
 app.UseAuthorization();
 ```
 

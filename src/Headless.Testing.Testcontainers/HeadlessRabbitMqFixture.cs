@@ -10,8 +10,11 @@ namespace Headless.Testing.Testcontainers;
 /// Subclass to add per-project connection helpers, queues, or exchanges.
 /// </summary>
 /// <remarks>
-/// Container reuse is intentionally disabled for RabbitMQ: queue and exchange state left
-/// over from a previous test run can cause false failures in isolation-sensitive tests.
+/// Container reuse is intentionally disabled for RabbitMQ. Unlike the other backends it does not survive a
+/// warm reattach: when a reused broker is restarted, its log-based readiness wait matches the previous run's
+/// startup log lines and reports ready before AMQP is actually accepting, so tests fail with
+/// <c>BrokerUnreachableException</c> (validated: 16 failures on the second run). Making reuse safe here would
+/// need an AMQP-level readiness wait rather than a log match.
 /// </remarks>
 [PublicAPI]
 public class HeadlessRabbitMqFixture()

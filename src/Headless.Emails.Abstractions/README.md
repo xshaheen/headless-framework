@@ -1,6 +1,6 @@
 # Headless.Emails.Abstractions
 
-Defines the unified interface for sending emails across different providers (AWS SES, SMTP/MailKit, development).
+Defines the unified interface for sending emails across different providers (Azure Communication Services, AWS SES, SMTP/MailKit, development).
 
 ## Problem Solved
 
@@ -9,6 +9,7 @@ Provides a provider-agnostic email sending API for switching email providers wit
 ## Key Features
 
 - `IEmailSender` — core interface with a single `SendAsync(SendSingleEmailRequest, CancellationToken)` method returning `ValueTask<SendSingleEmailResponse>`
+- `IEmailSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)`. Backed by the container's keyed `IEmailSender` registrations
 - `SendSingleEmailRequest` — immutable record with required `From`, `Destination`, `Subject`; optional `MessageHtml`, `MessageText`, `Attachments`. `EnsureHasBody()` throws `InvalidOperationException` when neither body is set (called by every sender)
 - `EmailRequestAddress` — sealed record wrapping email address + optional display name; supports implicit conversion from `string`
 - `EmailRequestDestination` — sealed record grouping `ToAddresses` (required), `CcAddresses`, `BccAddresses`
@@ -28,17 +29,19 @@ public sealed class NotificationService(IEmailSender emailSender)
 {
     public async Task SendWelcomeEmailAsync(string to, string name, CancellationToken ct)
     {
-        var response = await emailSender.SendAsync(new SendSingleEmailRequest
-        {
-            From = "noreply@example.com",
-            Destination = new EmailRequestDestination
-            {
-                ToAddresses = [new EmailRequestAddress(to)],
-            },
-            Subject = "Welcome!",
-            MessageHtml = $"<h1>Hello {name}!</h1>",
-            MessageText = $"Hello {name}!",
-        }, ct).ConfigureAwait(false);
+        var response = await emailSender
+            .SendAsync(
+                new SendSingleEmailRequest
+                {
+                    From = "noreply@example.com",
+                    Destination = new EmailRequestDestination { ToAddresses = [new EmailRequestAddress(to)] },
+                    Subject = "Welcome!",
+                    MessageHtml = $"<h1>Hello {name}!</h1>",
+                    MessageText = $"Hello {name}!",
+                },
+                ct
+            )
+            .ConfigureAwait(false);
 
         if (!response.Success)
         {

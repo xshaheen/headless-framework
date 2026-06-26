@@ -59,18 +59,17 @@ There is no `[HasPermission]` attribute. Wire permissions into ASP.NET Core poli
 // Single-permission policy
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("CanEditOrders", policy =>
-        policy.Requirements.Add(new PermissionRequirement("Orders.Edit")));
+    options.AddPolicy("CanEditOrders", policy => policy.Requirements.Add(new PermissionRequirement("Orders.Edit")));
 });
 
 // Multi-permission policy (AND)
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("CanManageOrders", policy =>
-        policy.Requirements.Add(new PermissionsRequirement(
-            ["Orders.Create", "Orders.Edit"],
-            requiresAll: true
-        )));
+    options.AddPolicy(
+        "CanManageOrders",
+        policy =>
+            policy.Requirements.Add(new PermissionsRequirement(["Orders.Create", "Orders.Edit"], requiresAll: true))
+    );
 });
 ```
 

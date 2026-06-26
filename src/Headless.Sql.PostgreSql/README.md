@@ -29,9 +29,7 @@ dotnet add package Headless.Sql.PostgreSql
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")!;
-builder.Services.AddSingleton<ISqlConnectionFactory>(
-    new NpgsqlConnectionFactory(connectionString)
-);
+builder.Services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
 
 // Optional: register the health-check helper
 builder.Services.AddSingleton<IConnectionStringChecker, NpgsqlConnectionStringChecker>();

@@ -7,7 +7,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 
-116+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
+150+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
 
 [Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Architecture](#architecture) &bull; [Using with AI Agents](#using-headless-with-ai-agents) &bull; [Contributing](#contributing)
 
@@ -21,7 +21,7 @@ Most .NET frameworks force opinions on you — folder structures, ORM choices, m
 
 Every feature ships as a pair: a thin **abstraction** package (interfaces and contracts) and one or more **provider** packages (concrete implementations). You pick the pieces you need, wire them up, and own the result.
 
-- **Composable** — 116+ standalone packages. Use one or use fifty.
+- **Composable** — 150+ standalone packages. Use one or use fifty.
 - **Swappable** — Switch from Redis to in-memory caching, or AWS to Azure blob storage, by changing one line.
 - **Explicit** — No hidden conventions, no magic. Every behavior is visible in your code.
 - **Testable** — Every abstraction is mockable. Every provider is integration-tested with Testcontainers.
@@ -31,34 +31,42 @@ Every feature ships as a pair: a thin **abstraction** package (interfaces and co
 ```bash
 dotnet add package Headless.Api.ServiceDefaults
 dotnet add package Headless.Caching.Redis
-dotnet add package Headless.Orm.EntityFramework
+dotnet add package Headless.Blobs.Azure
+dotnet add package Headless.Emails.Aws
 ```
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+// Service defaults: OpenTelemetry, OpenAPI, problem details, JSON, health checks, and more.
+// Binds secrets from the "Headless:StringEncryption" and "Headless:StringHash" config sections.
 builder.AddHeadless();
 
-builder.Services.AddHeadlessRedisCache(options =>
-{
-    options.ConnectionString = "localhost:6379";
-});
+// Caching — pick a provider on the unified setup builder. Swap UseRedis for UseInMemory
+// (or add an L1/L2 tier) without touching call sites.
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+builder.Services.AddHeadlessCaching(setup =>
+    setup.UseRedis(options => options.ConnectionMultiplexer = redis)
+);
 
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.ConnectionString = "your-connection-string";
-    options.ContainerName = "uploads";
-});
+// Blob storage — the Azure provider consumes a BlobServiceClient registered in DI.
+builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration["Azure:Storage:ConnectionString"]));
+builder.Services.AddHeadlessBlobs(blobs =>
+    blobs.UseAzure(options => options.AutoCreateContainer = true)
+);
 
-builder.Services.AddAwsSesEmail(options =>
-{
-    options.FromEmail = "noreply@example.com";
-});
+// Email — AWS SES reads region/credentials from AWSOptions (here, the "AWS:*" config section).
+builder.Services.AddHeadlessEmails(setup =>
+    setup.UseAwsSes(builder.Configuration.GetAWSOptions())
+);
 
 var app = builder.Build();
-app.UseExceptionHandler();
-app.UseResponseCompression();
-app.UseHsts();
+
+// Applies the Headless middleware pipeline (forwarded headers, compression, exception handler,
+// HSTS, status-code pages) and maps the health/alive/OpenAPI endpoints.
+app.UseHeadless();
+app.MapHeadlessEndpoints();
+
 app.Run();
 ```
 
@@ -78,6 +86,7 @@ Everything you need to stand up production-grade ASP.NET Core APIs — request/r
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Serilog logging integration |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | Minimal API utilities |
 | [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | MVC-specific utilities |
+| [Headless.Api.Idempotency](src/Headless.Api.Idempotency/README.md) | Stripe-style HTTP idempotency middleware — cache and replay responses on retries |
 
 ### Core
 
@@ -91,7 +100,9 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Security](src/Headless.Security/README.md) | String encryption and hashing services |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
-| [Headless.Domain.LocalPublisher](src/Headless.Domain.LocalPublisher/README.md) | In-process domain event publishing |
+| [Headless.Domain.LocalEventBus](src/Headless.Domain.LocalEventBus/README.md) | DI-based `ILocalEventBus` for in-process domain event publishing |
+| [Headless.Mediator](src/Headless.Mediator/README.md) | Mediator pipeline behaviors (FluentValidation, request/response logging) |
+| [Headless.MultiTenancy](src/Headless.MultiTenancy/README.md) | Composition surface for tenant posture across Headless packages |
 
 ### Audit Log
 
@@ -111,8 +122,10 @@ Unified blob storage interface with providers for every major cloud and protocol
 | Package | Description |
 |---------|-------------|
 | [Headless.Blobs.Abstractions](src/Headless.Blobs.Abstractions/README.md) | Blob storage interfaces |
+| [Headless.Blobs.Core](src/Headless.Blobs.Core/README.md) | Unified setup builder for composing named blob stores |
 | [Headless.Blobs.Aws](src/Headless.Blobs.Aws/README.md) | AWS S3 blob storage |
 | [Headless.Blobs.Azure](src/Headless.Blobs.Azure/README.md) | Azure Blob storage |
+| [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Cloudflare R2 (S3-compatible) blob storage |
 | [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | Local filesystem storage |
 | [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | Redis blob storage |
 | [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | SFTP blob storage |
@@ -124,9 +137,13 @@ Multi-tier caching with a clean abstraction layer. Supports in-memory, Redis, an
 | Package | Description |
 |---------|-------------|
 | [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | Caching interfaces |
+| [Headless.Caching.Core](src/Headless.Caching.Core/README.md) | Shared factory-backed cache orchestration |
 | [Headless.Caching.Hybrid](src/Headless.Caching.Hybrid/README.md) | Hybrid caching (L1/L2) |
 | [Headless.Caching.InMemory](src/Headless.Caching.InMemory/README.md) | In-memory caching |
 | [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Redis caching |
+| [Headless.Caching.Bcl](src/Headless.Caching.Bcl/README.md) | Adapter exposing a Headless cache as `IDistributedCache` |
+| [Headless.Caching.DistributedLocks](src/Headless.Caching.DistributedLocks/README.md) | Distributed-lock-backed cache stampede protection |
+| [Headless.Caching.OutputCache](src/Headless.Caching.OutputCache/README.md) | Backs ASP.NET Core output caching with a Headless cache |
 
 ### Captcha
 
@@ -147,6 +164,7 @@ Send transactional and marketing emails through a unified interface. Plug in AWS
 | [Headless.Emails.Abstractions](src/Headless.Emails.Abstractions/README.md) | Email sending interfaces |
 | [Headless.Emails.Core](src/Headless.Emails.Core/README.md) | Core email implementation |
 | [Headless.Emails.Aws](src/Headless.Emails.Aws/README.md) | AWS SES email provider |
+| [Headless.Emails.Azure](src/Headless.Emails.Azure/README.md) | Azure Communication Services email provider |
 | [Headless.Emails.Dev](src/Headless.Emails.Dev/README.md) | Development email provider |
 | [Headless.Emails.Mailkit](src/Headless.Emails.Mailkit/README.md) | MailKit SMTP provider |
 
@@ -159,6 +177,8 @@ Runtime feature flags backed by persistent storage. Toggle features without rede
 | [Headless.Features.Abstractions](src/Headless.Features.Abstractions/README.md) | Feature flag interfaces |
 | [Headless.Features.Core](src/Headless.Features.Core/README.md) | Feature management implementation |
 | [Headless.Features.Storage.EntityFramework](src/Headless.Features.Storage.EntityFramework/README.md) | EF Core feature storage |
+| [Headless.Features.Storage.PostgreSql](src/Headless.Features.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL feature storage |
+| [Headless.Features.Storage.SqlServer](src/Headless.Features.Storage.SqlServer/README.md) | SQL Server raw-DDL feature storage |
 
 ### Identity
 
@@ -202,10 +222,13 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 | Package | Description |
 |---------|-------------|
 | [Headless.Messaging.Abstractions](src/Headless.Messaging.Abstractions/README.md) | Core messaging interfaces and contracts |
+| [Headless.Messaging.Bus.Abstractions](src/Headless.Messaging.Bus.Abstractions/README.md) | Broadcast (pub/sub) publisher contracts |
+| [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | Point-to-point queue publisher contracts |
 | [Headless.Messaging.Core](src/Headless.Messaging.Core/README.md) | Runtime engine: outbox, retries, delayed delivery, consumer orchestration |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI for monitoring messages, failures, and system health |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | Kubernetes node auto-discovery for the dashboard |
 | [Headless.Messaging.OpenTelemetry](src/Headless.Messaging.OpenTelemetry/README.md) | Tracing, metrics, and context propagation |
+| [Headless.Messaging.Testing](src/Headless.Messaging.Testing/README.md) | In-process test harness for asserting on published/consumed/faulted messages |
 
 **Transports:**
 
@@ -258,6 +281,7 @@ Database access utilities for Entity Framework Core and Couchbase — convention
 | Package | Description |
 |---------|-------------|
 | [Headless.Orm.EntityFramework](src/Headless.Orm.EntityFramework/README.md) | Entity Framework Core utilities |
+| [Headless.Orm.EntityFramework.Messaging](src/Headless.Orm.EntityFramework.Messaging/README.md) | EF Core outbox dispatcher — atomic integration-event writes on save |
 | [Headless.Orm.Couchbase](src/Headless.Orm.Couchbase/README.md) | Couchbase ORM utilities |
 
 ### Payments
@@ -279,6 +303,8 @@ Dynamic, database-backed permission system. Define permissions as code, store as
 | [Headless.Permissions.Abstractions](src/Headless.Permissions.Abstractions/README.md) | Permission system interfaces |
 | [Headless.Permissions.Core](src/Headless.Permissions.Core/README.md) | Permission system implementation |
 | [Headless.Permissions.Storage.EntityFramework](src/Headless.Permissions.Storage.EntityFramework/README.md) | EF Core permission storage |
+| [Headless.Permissions.Storage.PostgreSql](src/Headless.Permissions.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL permission storage |
+| [Headless.Permissions.Storage.SqlServer](src/Headless.Permissions.Storage.SqlServer/README.md) | SQL Server raw-DDL permission storage |
 
 ### Push Notifications
 
@@ -298,8 +324,38 @@ Coordinate access to shared resources across distributed services.
 |---------|-------------|
 | [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLocks.Abstractions/README.md) | Distributed locking interfaces |
 | [Headless.DistributedLocks.Core](src/Headless.DistributedLocks.Core/README.md) | Distributed locking implementation |
+| [Headless.DistributedLocks.Core.Database](src/Headless.DistributedLocks.Core.Database/README.md) | Shared relational substrate for database lock providers |
 | [Headless.DistributedLocks.InMemory](src/Headless.DistributedLocks.InMemory/README.md) | In-process locking |
+| [Headless.DistributedLocks.PostgreSql](src/Headless.DistributedLocks.PostgreSql/README.md) | PostgreSQL advisory-lock locking |
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
+| [Headless.DistributedLocks.SqlServer](src/Headless.DistributedLocks.SqlServer/README.md) | SQL Server application-lock locking |
+
+### Coordination
+
+Cluster membership and liveness tracking — know which nodes are alive across a distributed deployment, with pluggable relational and Redis backends.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Coordination.Abstractions](src/Headless.Coordination.Abstractions/README.md) | Membership, liveness, and lifecycle contracts |
+| [Headless.Coordination.Core](src/Headless.Coordination.Core/README.md) | Provider-agnostic membership engine |
+| [Headless.Coordination.Core.Database](src/Headless.Coordination.Core.Database/README.md) | Shared relational substrate for SQL coordination providers |
+| [Headless.Coordination.PostgreSql](src/Headless.Coordination.PostgreSql/README.md) | PostgreSQL membership with server-clock liveness |
+| [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Redis membership via Lua scripts and server time |
+| [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | SQL Server membership with guarded writes |
+
+### Commit Coordination
+
+Tie side effects to transaction boundaries — buffer work (outbox dispatch, durable jobs) inside a transaction and drain it atomically on commit, discard it on rollback.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.CommitCoordination.Abstractions](src/Headless.CommitCoordination.Abstractions/README.md) | Commit coordination contracts (provider-free) |
+| [Headless.CommitCoordination.Core](src/Headless.CommitCoordination.Core/README.md) | In-process coordinator, ambient stack, and scope factory |
+| [Headless.CommitCoordination.DurableWork](src/Headless.CommitCoordination.DurableWork/README.md) | Base for durable work buffers writing inside the active transaction |
+| [Headless.CommitCoordination.EntityFramework](src/Headless.CommitCoordination.EntityFramework/README.md) | Bridges EF Core commit/rollback edges to commit coordination |
+| [Headless.CommitCoordination.InMemory](src/Headless.CommitCoordination.InMemory/README.md) | In-process signal source for tests and owner-driven flows |
+| [Headless.CommitCoordination.PostgreSql](src/Headless.CommitCoordination.PostgreSql/README.md) | PostgreSQL commit coordination registration points |
+| [Headless.CommitCoordination.SqlServer](src/Headless.CommitCoordination.SqlServer/README.md) | Correlates SQL Server commit/rollback signals to scopes |
 
 ### Serialization
 
@@ -320,6 +376,8 @@ Dynamic application settings stored in a database. Change configuration at runti
 | [Headless.Settings.Abstractions](src/Headless.Settings.Abstractions/README.md) | Dynamic settings interfaces |
 | [Headless.Settings.Core](src/Headless.Settings.Core/README.md) | Settings management implementation |
 | [Headless.Settings.Storage.EntityFramework](src/Headless.Settings.Storage.EntityFramework/README.md) | EF Core settings storage |
+| [Headless.Settings.Storage.PostgreSql](src/Headless.Settings.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL settings storage |
+| [Headless.Settings.Storage.SqlServer](src/Headless.Settings.Storage.SqlServer/README.md) | SQL Server raw-DDL settings storage |
 
 ### SMS
 
@@ -355,6 +413,7 @@ Test infrastructure and utilities — base classes, builders, fixtures, and Test
 | Package | Description |
 |---------|-------------|
 | [Headless.Testing](src/Headless.Testing/README.md) | Testing utilities and base classes |
+| [Headless.Testing.AspNetCore](src/Headless.Testing.AspNetCore/README.md) | ASP.NET Core integration-test server with time control and DB reset |
 | [Headless.Testing.Testcontainers](src/Headless.Testing.Testcontainers/README.md) | Testcontainers fixtures |
 
 ### TUS (Resumable Uploads)
@@ -373,6 +432,7 @@ Cross-cutting utilities that don't belong to a specific domain — validation ex
 
 | Package | Description |
 |---------|-------------|
+| [Headless.Dashboard.Authentication](src/Headless.Dashboard.Authentication/README.md) | Shared authentication for the Jobs and Messaging dashboards |
 | [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
 | [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |

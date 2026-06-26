@@ -1,0 +1,14 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
+  </ItemGroup>
+</Project>

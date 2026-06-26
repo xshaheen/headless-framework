@@ -10,6 +10,9 @@ packages: Identity.Storage.EntityFramework
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
+    - [What this package adds over stock Identity + EF](#what-this-package-adds-over-stock-identity-ef)
+    - [Type parameter forms](#type-parameter-forms)
+    - [Save pipeline and `HeadlessDbContextServices`](#save-pipeline-and-headlessdbcontextservices)
 - [Headless.Identity.Storage.EntityFramework](#headlessidentitystorageentityframework)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -76,15 +79,15 @@ The `HeadlessDbContextServices` parameter in the constructor carries the scoped 
 
 ---
 
-# Headless.Identity.Storage.EntityFramework
+## Headless.Identity.Storage.EntityFramework
 
 Entity Framework Core integration for ASP.NET Core Identity with framework EF Core conventions.
 
-## Problem Solved
+### Problem Solved
 
 `IdentityDbContext<>` from `Microsoft.AspNetCore.Identity.EntityFrameworkCore` is a plain DbContext with no awareness of the framework's save pipeline, auditing, soft delete, domain events, or multi-tenancy. This package provides `HeadlessIdentityDbContext<>` — a base class that combines both, so applications can use ASP.NET Core Identity alongside the full framework feature set without duplicate context registrations.
 
-## Key Features
+### Key Features
 
 - `HeadlessIdentityDbContext<TUser, TRole, TKey, ...>` — base DbContext that extends `IdentityDbContext<>` with the framework EF Core runtime
 - 8-type-parameter form (passkey hard-wired to `IdentityUserPasskey<TKey>`) and 9-type-parameter form (explicit `TUserPasskey`) for .NET 10 passkey-aware stores
@@ -94,7 +97,7 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 - `DefaultSchema` abstract member lets each derived context namespace all Identity tables under a custom schema
 - `IdentityOptions.Stores.SchemaVersion` defaulted to `IdentitySchemaVersions.Version3` (passkey table support) — guarded by sentinel so multiple `AddHeadlessDbContext` calls are idempotent
 
-## Design Notes
+### Design Notes
 
 **Identity schema version default.** `AddHeadlessDbContext` configures `IdentityOptions.Stores.SchemaVersion = IdentitySchemaVersions.Version3` exactly once, guarded by `HeadlessIdentityDefaultsSentinel`. Version 3 is the modern Identity model that includes the `AspNetUserPasskeys` table required for WebAuthn/passkey flows. Greenfield applications get this without extra configuration; existing applications that must target version 1 override via `services.Configure<IdentityOptions>(...)` after registration.
 
@@ -102,24 +105,29 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 
 **`IDbContextFactory<TDbContext>` scope ownership.** The factory registered by `AddHeadlessDbContext` is `HeadlessDbContextFactory<TDbContext>` — it creates a fresh DI scope per call and transfers ownership to the returned context, which disposes the scope alongside itself. This is the same implementation used by `Headless.Orm.EntityFramework` so behavior is at parity.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Identity.Storage.EntityFramework
 ```
 
-## Quick Start
+### Quick Start
 
-### Define the DbContext
+#### Define the DbContext
 
 ```csharp
 // 9-type-parameter form — recommended for .NET 10 passkey-aware stores
 public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<AppDbContext> options)
     : HeadlessIdentityDbContext<
-        AppUser, AppRole, Guid,
-        IdentityUserClaim<Guid>, IdentityUserRole<Guid>,
-        IdentityUserLogin<Guid>, IdentityRoleClaim<Guid>,
-        IdentityUserToken<Guid>, IdentityUserPasskey<Guid>
+        AppUser,
+        AppRole,
+        Guid,
+        IdentityUserClaim<Guid>,
+        IdentityUserRole<Guid>,
+        IdentityUserLogin<Guid>,
+        IdentityRoleClaim<Guid>,
+        IdentityUserToken<Guid>,
+        IdentityUserPasskey<Guid>
     >(services, options)
 {
     // Return null to use the database default schema, or a string to namespace Identity tables.
@@ -127,26 +135,28 @@ public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<A
 }
 ```
 
-### Register
+#### Register
 
 ```csharp
 // Registration — all 9 type parameters are required for the explicit-passkey form
 builder.Services.AddHeadlessDbContext<
     AppDbContext,
-    AppUser, AppRole, Guid,
-    IdentityUserClaim<Guid>, IdentityUserRole<Guid>,
-    IdentityUserLogin<Guid>, IdentityRoleClaim<Guid>,
-    IdentityUserToken<Guid>, IdentityUserPasskey<Guid>
+    AppUser,
+    AppRole,
+    Guid,
+    IdentityUserClaim<Guid>,
+    IdentityUserRole<Guid>,
+    IdentityUserLogin<Guid>,
+    IdentityRoleClaim<Guid>,
+    IdentityUserToken<Guid>,
+    IdentityUserPasskey<Guid>
 >(options => options.UseNpgsql(connectionString));
 
 // Wire ASP.NET Core Identity stores separately — AddHeadlessDbContext does not register UserManager/RoleManager
-builder.Services
-    .AddIdentityCore<AppUser>()
-    .AddRoles<AppRole>()
-    .AddEntityFrameworkStores<AppDbContext>();
+builder.Services.AddIdentityCore<AppUser>().AddRoles<AppRole>().AddEntityFrameworkStores<AppDbContext>();
 ```
 
-### 8-type-parameter convenience form
+#### 8-type-parameter convenience form
 
 ```csharp
 // Equivalent — TUserPasskey is implicitly IdentityUserPasskey<TKey>
@@ -170,7 +180,7 @@ builder.Services.AddHeadlessDbContext<
 >(options => options.UseNpgsql(connectionString));
 ```
 
-## Configuration
+### Configuration
 
 `AddHeadlessDbContext` accepts an optional `Action<HeadlessDbContextOptions>` as a second parameter to configure the save-entry processor chain:
 
@@ -184,18 +194,17 @@ builder.Services.AddHeadlessDbContext<AppDbContext, /* ... */>(
 `IdentityOptions.Stores.SchemaVersion` defaults to `IdentitySchemaVersions.Version3`. To target an older schema:
 
 ```csharp
-builder.Services.Configure<IdentityOptions>(o =>
-    o.Stores.SchemaVersion = IdentitySchemaVersions.Version1);
+builder.Services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = IdentitySchemaVersions.Version1);
 ```
 
 Service lifetimes default to `ServiceLifetime.Scoped` for both the context and its options. Override via the `contextLifetime` / `optionsLifetime` parameters when needed.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Orm.EntityFramework`
 - `Microsoft.AspNetCore.Identity.EntityFrameworkCore`
 
-## Side Effects
+### Side Effects
 
 - Calls `services.AddHeadlessDbContextServices()` — registers `HeadlessDbContextServices` (scoped), `IHeadlessSaveChangesPipeline`, `IHeadlessAuditPersistence`, `IAmbientDbTransactionAccessor`, `IAuditChangeCapture`, `ITenantWriteGuardBypass`, `IClock`, `ICurrentTenantAccessor`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider`, and related singletons.
 - Calls `services.AddEntityFrameworkCommitCoordination()` (commit-coordination interceptor registered once).

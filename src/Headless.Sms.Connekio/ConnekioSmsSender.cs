@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net.Http.Headers;
 using System.Text.Encodings.Web;
 using Headless.Checks;
 using Headless.Http;
@@ -24,6 +25,12 @@ internal sealed class ConnekioSmsSender(
     private readonly ConnekioSmsOptions _options = optionsAccessor.Value;
     private readonly Uri _singleSmsEndpoint = new(optionsAccessor.Value.SingleSmsEndpoint);
     private readonly Uri _batchSmsEndpoint = new(optionsAccessor.Value.BatchSmsEndpoint);
+
+    // Credentials are fixed at construction, so build the (immutable) Basic auth header once instead of
+    // re-interpolating + base64-encoding it on every send.
+    private readonly AuthenticationHeaderValue _basicAuthHeader = AuthenticationHeaderFactory.CreateBasic(
+        $"{optionsAccessor.Value.UserName}:{optionsAccessor.Value.Password}:{optionsAccessor.Value.AccountId}"
+    );
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -61,9 +68,7 @@ internal sealed class ConnekioSmsSender(
 
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/json");
 
-        requestMessage.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(
-            $"{_options.UserName}:{_options.Password}:{_options.AccountId}"
-        );
+        requestMessage.Headers.Authorization = _basicAuthHeader;
 
         using var httpClient = httpClientFactory.CreateClient(SetupConnekio.HttpClientName);
         var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);

@@ -189,9 +189,6 @@ public sealed class RedisBlobStorage : IBlobStorage
             var blobData = new byte[blobSegment.Count];
             Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
 
-            memory.Seek(0, SeekOrigin.Begin);
-            memory.SetLength(0);
-
             var now = _timeProvider.GetUtcNow();
             var blobInfo = new BlobInfo
             {
@@ -202,16 +199,9 @@ public sealed class RedisBlobStorage : IBlobStorage
                 Metadata = metadata,
             };
 
-            _serializer.Serialize(blobInfo, memory);
-
-            // Zero-copy: TryGetBuffer avoids ToArray() allocation
-            if (!memory.TryGetBuffer(out var infoSegment))
-            {
-                throw new InvalidOperationException("Failed to get buffer from MemoryStream");
-            }
-
-            var infoData = new byte[infoSegment.Count];
-            Buffer.BlockCopy(infoSegment.Array!, infoSegment.Offset, infoData, 0, infoSegment.Count);
+            // Serialize the small metadata payload straight to a right-sized array via the serializer's pooled
+            // buffer path — no MemoryStream reuse, TryGetBuffer, or BlockCopy dance.
+            var infoData = _serializer.SerializeToBytes(blobInfo)!;
 
             // Atomic upload using Lua script to prevent orphaned data
             await _retryPipeline

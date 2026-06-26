@@ -32,15 +32,13 @@ dotnet add package Headless.Security
 
 ```csharp
 // Bind from configuration section (e.g. "Headless:StringEncryption").
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetSection("Headless:StringEncryption"));
 
 // Or configure inline.
 builder.Services.AddStringEncryptionService(options =>
 {
     options.DefaultPassPhrase = "your-secret-pass-phrase";
-    options.DefaultSalt      = "your-salt-bytes"u8.ToArray();
+    options.DefaultSalt = "your-salt-bytes"u8.ToArray();
     // options.KeySize     = 256;      // default
     // options.Iterations  = 600_000;  // default
 });

@@ -22,7 +22,8 @@ namespace Headless.Emails.Aws;
 /// <see cref="SendSingleEmailResponse"/> with a generic error message; PII (addresses)
 /// is deliberately excluded from log output.
 /// </remarks>
-public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<AwsSesEmailSender> logger) : IEmailSender
+internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<AwsSesEmailSender> logger)
+    : IEmailSender
 {
     private const string _Charset = "UTF-8";
 

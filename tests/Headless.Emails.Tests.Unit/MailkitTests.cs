@@ -2,7 +2,7 @@
 
 using Headless.Emails;
 using Headless.Emails.Mailkit;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -77,9 +77,11 @@ public sealed class SmtpClientPooledObjectPolicyTests
 
     private static SmtpClientPooledObjectPolicy _Policy(TimeSpan timeout)
     {
+        var options = new MailkitSmtpOptions { Server = "smtp.example.com", Timeout = timeout };
         var monitor = Substitute.For<IOptionsMonitor<MailkitSmtpOptions>>();
-        monitor.CurrentValue.Returns(new MailkitSmtpOptions { Server = "smtp.example.com", Timeout = timeout });
-        return new SmtpClientPooledObjectPolicy(monitor);
+        monitor.CurrentValue.Returns(options);
+        monitor.Get(Arg.Any<string>()).Returns(options);
+        return new SmtpClientPooledObjectPolicy(monitor, optionsName: null);
     }
 }
 
@@ -90,7 +92,7 @@ public sealed class MailkitEmailSenderTests
     {
         var pool = Substitute.For<ObjectPool<SmtpClient>>();
         var options = Substitute.For<IOptionsMonitor<MailkitSmtpOptions>>();
-        var sender = new MailkitEmailSender(pool, options, Substitute.For<ILogger<MailkitEmailSender>>());
+        var sender = new MailkitEmailSender(pool, options, optionsName: null, NullLogger<MailkitEmailSender>.Instance);
 
         var request = new SendSingleEmailRequest
         {

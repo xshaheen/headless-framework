@@ -4,7 +4,7 @@ NetTopologySuite extensions for geospatial operations and SQL Server geography c
 
 ## Problem Solved
 
-Provides robust geometry manipulation utilities, precision handling, and SQL Server geography sanitization, solving common issues with geometry validity, coordinate orientation, and precision when working with geospatial data.
+Provides geometry manipulation utilities, precision handling, and SQL Server geography sanitization, solving common issues with geometry validity, coordinate orientation, and precision when working with geospatial data.
 
 ## Key Features
 
@@ -31,14 +31,16 @@ using NetTopologySuite.Geometries;
 var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);
 
 // Create a polygon from coordinates
-var polygon = factory.CreatePolygon(new[]
-{
-    new Coordinate(0, 0),
-    new Coordinate(10, 0),
-    new Coordinate(10, 10),
-    new Coordinate(0, 10),
-    new Coordinate(0, 0)
-});
+var polygon = factory.CreatePolygon(
+    new[]
+    {
+        new Coordinate(0, 0),
+        new Coordinate(10, 0),
+        new Coordinate(10, 10),
+        new Coordinate(0, 10),
+        new Coordinate(0, 0),
+    }
+);
 
 // Sanitize for SQL Server geography
 var sanitized = polygon.SanitizeForSqlGeography();
@@ -46,8 +48,6 @@ var sanitized = polygon.SanitizeForSqlGeography();
 // Simplify polygon
 var simplified = polygon.Simplify(GeoConstants.Around1MDegrees);
 ```
-
-## Usage
 
 ### Permissive Operations
 

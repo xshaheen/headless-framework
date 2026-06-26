@@ -43,6 +43,7 @@
         <Project Path="src\Headless.Blobs.Aws\Headless.Blobs.Aws.csproj" />
         <Project Path="src\Headless.Blobs.Azure\Headless.Blobs.Azure.csproj" />
         <Project Path="src\Headless.Blobs.CloudflareR2\Headless.Blobs.CloudflareR2.csproj" />
+        <Project Path="src\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
         <Project Path="src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
         <Project Path="src\Headless.Blobs.Redis\Headless.Blobs.Redis.csproj" />
         <Project Path="src\Headless.Blobs.SshNet\Headless.Blobs.SshNet.csproj" />
@@ -56,6 +57,8 @@
         <Project Path="tests\Headless.Blobs.Azure.Tests.Unit\Headless.Blobs.Azure.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.CloudflareR2.Tests.Integration\Headless.Blobs.CloudflareR2.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.CloudflareR2.Tests.Unit\Headless.Blobs.CloudflareR2.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Blobs.Core.Tests.Integration\Headless.Blobs.Core.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Blobs.Core.Tests.Unit\Headless.Blobs.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Integration\Headless.Blobs.FileSystem.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Unit\Headless.Blobs.FileSystem.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.Redis.Tests.Integration\Headless.Blobs.Redis.Tests.Integration.csproj" />
@@ -173,6 +176,8 @@
     <Folder Name="/Emails/Tests/">
         <Project Path="tests/Headless.Emails.Core.Tests.Unit/Headless.Emails.Core.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Emails.Azure.Tests.Unit/Headless.Emails.Azure.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Emails.Aws.Tests.Unit/Headless.Emails.Aws.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Emails.Mailkit.Tests.Unit/Headless.Emails.Mailkit.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Features/">
         <Project Path="src\Headless.Features.Abstractions\Headless.Features.Abstractions.csproj" />
@@ -365,6 +370,7 @@
         <Project Path="tests\Headless.Slugs.Tests.Unit\Headless.Slugs.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Serializers/">
+        <Project Path="benchmarks\Headless.Serializer.Benchmarks\Headless.Serializer.Benchmarks.csproj" />
         <Project Path="src\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
         <Project Path="src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
         <Project Path="src\Headless.Serializer.MessagePack\Headless.Serializer.MessagePack.csproj" />

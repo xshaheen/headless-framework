@@ -287,7 +287,12 @@ FusionCache alignment is intentional but not exact. Headless uses FusionCache-li
 public interface IBufferCache
 {
     ValueTask<bool> TryGetToAsync(string key, IBufferWriter<byte> destination, CancellationToken ct = default);
-    ValueTask UpsertRawAsync(string key, ReadOnlySequence<byte> value, CacheEntryOptions options, CancellationToken ct = default);
+    ValueTask UpsertRawAsync(
+        string key,
+        ReadOnlySequence<byte> value,
+        CacheEntryOptions options,
+        CancellationToken ct = default
+    );
 }
 ```
 
@@ -557,11 +562,15 @@ var redis = ConnectionMultiplexer.Connect("localhost:6379");
 services.AddHeadlessCaching(setup =>
 {
     setup.UseRedis(options => options.ConnectionMultiplexer = redis); // default slot: exactly one Use* required
-    setup.AddNamed("sessions", i => i.UseRedis(options =>
-    {
-        options.ConnectionMultiplexer = redis;
-        options.KeyPrefix = "sessions:";
-    }));
+    setup.AddNamed(
+        "sessions",
+        i =>
+            i.UseRedis(options =>
+            {
+                options.ConnectionMultiplexer = redis;
+                options.KeyPrefix = "sessions:";
+            })
+    );
     setup.UseDistributedFactoryLock(); // cross-cutting opt-in (Headless.Caching.DistributedLocks)
 });
 ```
@@ -798,8 +807,8 @@ services.AddHeadlessCaching(setup =>
     setup.AddNamed("hot-l2", i => i.UseRedis(options => options.ConnectionMultiplexer = redis));
     setup.UseHybrid(options =>
     {
-        options.LocalCacheName = "hot-l1";   // must implement IInMemoryCache
-        options.RemoteCacheName = "hot-l2";  // must implement IRemoteCache
+        options.LocalCacheName = "hot-l1"; // must implement IInMemoryCache
+        options.RemoteCacheName = "hot-l2"; // must implement IRemoteCache
     });
 });
 ```
@@ -1047,11 +1056,15 @@ Named instances (independent multiplexer, prefix, and scripts loader per name; t
 builder.Services.AddHeadlessCaching(setup =>
 {
     setup.UseRedis(options => options.ConnectionMultiplexer = redis);
-    setup.AddNamed("sessions", i => i.UseRedis(options =>
-    {
-        options.ConnectionMultiplexer = sessionsRedis;
-        options.KeyPrefix = "sessions:";
-    }));
+    setup.AddNamed(
+        "sessions",
+        i =>
+            i.UseRedis(options =>
+            {
+                options.ConnectionMultiplexer = sessionsRedis;
+                options.KeyPrefix = "sessions:";
+            })
+    );
 });
 
 public sealed class SessionService(ICacheProvider cacheProvider)
@@ -1068,11 +1081,14 @@ A named Redis instance can override its value serializer without affecting the d
 builder.Services.AddHeadlessCaching(setup =>
 {
     setup.UseRedis(options => options.ConnectionMultiplexer = redis);
-    setup.AddNamed("binary-values", instance =>
-    {
-        instance.WithSerializer<MyBinarySerializer>();
-        instance.UseRedis(options => options.ConnectionMultiplexer = redis);
-    });
+    setup.AddNamed(
+        "binary-values",
+        instance =>
+        {
+            instance.WithSerializer<MyBinarySerializer>();
+            instance.UseRedis(options => options.ConnectionMultiplexer = redis);
+        }
+    );
 });
 ```
 
@@ -1248,11 +1264,13 @@ builder.Services.AddHeadlessCaching(setup =>
     setup.UseRedis(options => options.ConnectionMultiplexer = mux);
     setup.UseOutputCache(
         options => options.CacheName = "output-cache",
-        instance => instance.UseRedis(options =>
-        {
-            options.ConnectionMultiplexer = mux;
-            options.KeyPrefix = "output-cache:";
-        }));
+        instance =>
+            instance.UseRedis(options =>
+            {
+                options.ConnectionMultiplexer = mux;
+                options.KeyPrefix = "output-cache:";
+            })
+    );
 });
 ```
 

@@ -8,43 +8,48 @@ namespace Headless.Emails.Mailkit;
 /// <summary>
 /// Configuration options for the MailKit SMTP email sender.
 /// </summary>
+/// <remarks>
+/// Properties use <c>set</c> rather than <c>init</c> deliberately: the <c>UseMailkit(Action&lt;MailkitSmtpOptions&gt;)</c>
+/// overloads mutate an already-constructed instance inside the options delegate, which <c>init</c>-only setters
+/// disallow. Do not change these back to <c>init</c>.
+/// </remarks>
 public sealed class MailkitSmtpOptions
 {
     /// <summary>The SMTP server hostname or IP address.</summary>
-    public required string Server { get; init; }
+    public required string Server { get; set; }
 
     /// <summary>
     /// The SMTP username. Together with <see cref="Password"/>, determines whether
     /// authenticated SMTP is used. Leave <see langword="null"/> for anonymous relay.
     /// </summary>
-    public string? User { get; init; }
+    public string? User { get; set; }
 
     /// <summary>
     /// The SMTP password. Store in user-secrets or a key vault — do not commit to source control.
     /// </summary>
-    public string? Password { get; init; }
+    public string? Password { get; set; }
 
     /// <summary>The SMTP port. Defaults to <c>587</c> (submission with STARTTLS).</summary>
-    public int Port { get; init; } = 587;
+    public int Port { get; set; } = 587;
 
     /// <summary>
     /// The TLS/SSL negotiation strategy. Defaults to <see cref="SecureSocketOptions.StartTls"/>
     /// (opportunistic upgrade on port 587).
     /// </summary>
-    public SecureSocketOptions SocketOptions { get; init; } = SecureSocketOptions.StartTls;
+    public SecureSocketOptions SocketOptions { get; set; } = SecureSocketOptions.StartTls;
 
     /// <summary>
     /// Connection and command timeout applied to each pooled SMTP client.
     /// Defaults to <c>30</c> seconds.
     /// </summary>
-    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Maximum number of SMTP connections retained in the pool. Defaults to <c>10</c>.
     /// The underlying object pool always keeps one fast-path slot, so <c>0</c> retains at most a
     /// single connection rather than disabling pooling entirely.
     /// </summary>
-    public int MaxPoolSize { get; init; } = 10;
+    public int MaxPoolSize { get; set; } = 10;
 
     /// <summary>
     /// <see langword="true"/> when both <see cref="User"/> and <see cref="Password"/> are non-empty,

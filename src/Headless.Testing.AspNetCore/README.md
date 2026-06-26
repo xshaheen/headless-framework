@@ -38,20 +38,22 @@ var response = await client.GetAsync("/health", AbortToken);
 response.EnsureSuccessStatusCode();
 ```
 
-## Usage
-
 ### Collection fixture with time control and DB reset
 
 ```csharp
 public sealed class ApiFixture : HeadlessTestServer<Program>
 {
     public ApiFixture()
-        : base(configureTestServices: services => { /* swap test doubles */ })
+        : base(configureTestServices: services =>
+        { /* swap test doubles */
+        })
     {
         ConfigureDatabaseReset(o =>
         {
             o.DbAdapter = DbAdapter.Postgres; // default; override for SQL Server
-            o.ConnectionProvider = sp => new NpgsqlConnection(/* test connection string */);
+            o.ConnectionProvider =
+                sp => new NpgsqlConnection( /* test connection string */
+                );
         });
     }
 }
@@ -65,7 +67,8 @@ fixture.AdvanceTime(TimeSpan.FromDays(30));
 await fixture.ExecuteScopeAsync(async sp =>
 {
     var sut = sp.GetRequiredService<IOrderService>();
-    await sut.CreateAsync(/* ... */);
+    await sut.CreateAsync( /* ... */
+    );
 });
 
 await fixture.ResetDatabaseAsync(); // between tests

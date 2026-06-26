@@ -33,17 +33,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadless();
 
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims())
-    .Authorization(auth => auth.RequireTenant())
-    .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
-    .EntityFramework(ef => ef.GuardTenantWrites()));
+builder.AddHeadlessTenancy(tenancy =>
+    tenancy
+        .Http(http => http.ResolveFromClaims())
+        .Authorization(auth => auth.RequireTenant())
+        .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+        .EntityFramework(ef => ef.GuardTenantWrites())
+);
 
 var app = builder.Build();
 
 app.UseHeadless();
 app.UseAuthentication();
-app.UseHeadlessTenancy();   // after UseAuthentication, before UseAuthorization
+app.UseHeadlessTenancy(); // after UseAuthentication, before UseAuthorization
 app.UseAuthorization();
 ```
 

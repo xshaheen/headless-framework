@@ -31,7 +31,14 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         {
             try
             {
-                handler.HandleAsync(domainEvent).AsTask().WaitAndUnwrapException();
+                var pending = handler.HandleAsync(domainEvent);
+
+                // Avoid the ValueTask -> Task allocation for the common synchronously-completed handler; only
+                // fall back to AsTask() (to block / unwrap) when the handler did not finish synchronously.
+                if (!pending.IsCompletedSuccessfully)
+                {
+                    pending.AsTask().WaitAndUnwrapException();
+                }
             }
             catch (TargetInvocationException e)
             {
@@ -116,11 +123,13 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         return _HandlerOrderCache.GetValue(handlerType, _ComputeHandlerOrder).Value;
     }
 
-    private static IEnumerable<IDomainEventHandler<T>> _OrderHandlers<T>(IEnumerable<IDomainEventHandler<T>> handlers)
+    private static IDomainEventHandler<T>[] _OrderHandlers<T>(IEnumerable<IDomainEventHandler<T>> handlers)
         where T : class, IDomainEvent
     {
-        // OrderBy is a stable sort but allocates a buffer on every publish. Skip it for the common 0/1-handler
-        // case, and for multi-handler sets where every handler keeps the default order (registration order wins).
+        // Return a concrete array so the foreach call sites iterate it with the array enumerator (no heap
+        // IEnumerator allocation). OrderBy is a stable sort but allocates a buffer on every publish, so skip
+        // it for the common 0/1-handler case and for multi-handler sets where every handler keeps the default
+        // order (registration order wins).
         var array = handlers as IDomainEventHandler<T>[] ?? handlers.ToArray();
 
         if (array.Length <= 1)
@@ -132,7 +141,7 @@ internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : 
         {
             if (_GetHandlerOrder(handler.GetType()) != 0)
             {
-                return array.OrderBy(handler => _GetHandlerOrder(handler.GetType()));
+                return array.OrderBy(ordered => _GetHandlerOrder(ordered.GetType())).ToArray();
             }
         }
 

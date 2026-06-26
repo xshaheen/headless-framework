@@ -6,7 +6,7 @@ using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using Headless.Emails;
 using Headless.Emails.Aws;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Tests;
@@ -18,7 +18,7 @@ public sealed class AwsSesEmailSenderTests
 
     public AwsSesEmailSenderTests()
     {
-        _sender = new AwsSesEmailSender(_ses, Substitute.For<ILogger<AwsSesEmailSender>>());
+        _sender = new AwsSesEmailSender(_ses, NullLogger<AwsSesEmailSender>.Instance);
     }
 
     [Fact]

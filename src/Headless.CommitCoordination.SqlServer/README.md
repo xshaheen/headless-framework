@@ -34,11 +34,11 @@ services.AddSqlServerCommitCoordination();
 
 // Open + enlist + commit in one call; the enlist cannot be forgotten.
 await connection.ExecuteCoordinatedTransactionAsync(
-    async (conn, ct) =>
-    {
+    async (conn, ct) => {
         // raw-ADO work on conn, plus publishes that enlist on the ambient coordinator
     },
-    services: requestServiceProvider);
+    services: requestServiceProvider
+);
 ```
 
 ## Configuration
@@ -48,8 +48,7 @@ services.AddSqlServerCommitCoordination(options =>
 {
     options.DiagnosticProbeMode = SqlServerCommitDiagnosticProbeMode.Strict;
     options.DiagnosticProbeTimeout = TimeSpan.FromSeconds(5);
-    options.DiagnosticProbeConnectionFactory = ct =>
-        ValueTask.FromResult(new SqlConnection(connectionString));
+    options.DiagnosticProbeConnectionFactory = ct => ValueTask.FromResult(new SqlConnection(connectionString));
 });
 ```
 

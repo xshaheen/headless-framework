@@ -6,13 +6,16 @@ using Azure.Communication.Email;
 using Headless.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+#pragma warning disable CA1708 // multiple extension blocks emit marker members differing only by case
 namespace Headless.Emails.Azure;
 
 /// <summary>
-/// Extension members on <see cref="HeadlessEmailsSetupBuilder"/> for selecting Azure Communication
-/// Services (ACS) Email as the email provider.
+/// Extension members for selecting Azure Communication Services (ACS) Email as a Headless email provider —
+/// the default (unkeyed) sender on <see cref="HeadlessEmailsSetupBuilder"/> or a named sender on
+/// <see cref="HeadlessEmailInstanceBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupAzureEmail
@@ -20,7 +23,7 @@ public static class SetupAzureEmail
     extension(HeadlessEmailsSetupBuilder setup)
     {
         /// <summary>
-        /// Selects Azure Communication Services Email as the email provider, binding
+        /// Selects Azure Communication Services Email as the default email provider, binding
         /// <see cref="AzureCommunicationEmailOptions"/> from the supplied configuration section.
         /// </summary>
         /// <param name="configuration">The configuration section to bind provider options from.</param>
@@ -35,13 +38,23 @@ public static class SetupAzureEmail
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new AzureCommunicationEmailOptionsExtension(configuration));
+            setup.RegisterDefaultProvider(services =>
+                _AddEmailsCore(
+                    services,
+                    name: null,
+                    (s, n) =>
+                        s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
+                            configuration,
+                            n
+                        )
+                )
+            );
 
             return setup;
         }
 
         /// <summary>
-        /// Selects Azure Communication Services Email as the email provider, configuring
+        /// Selects Azure Communication Services Email as the default email provider, configuring
         /// <see cref="AzureCommunicationEmailOptions"/> via a setup delegate.
         /// </summary>
         /// <param name="configure">Delegate that populates the options.</param>
@@ -51,13 +64,23 @@ public static class SetupAzureEmail
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new AzureCommunicationEmailOptionsExtension(configure));
+            setup.RegisterDefaultProvider(services =>
+                _AddEmailsCore(
+                    services,
+                    name: null,
+                    (s, n) =>
+                        s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
+                            configure,
+                            n
+                        )
+                )
+            );
 
             return setup;
         }
 
         /// <summary>
-        /// Selects Azure Communication Services Email as the email provider, configuring
+        /// Selects Azure Communication Services Email as the default email provider, configuring
         /// <see cref="AzureCommunicationEmailOptions"/> via a setup delegate that also receives the
         /// <see cref="IServiceProvider"/>.
         /// </summary>
@@ -68,51 +91,152 @@ public static class SetupAzureEmail
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new AzureCommunicationEmailOptionsExtension(configure));
+            setup.RegisterDefaultProvider(services =>
+                _AddEmailsCore(
+                    services,
+                    name: null,
+                    (s, n) =>
+                        s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
+                            configure,
+                            n
+                        )
+                )
+            );
 
             return setup;
         }
     }
 
-    private sealed class AzureCommunicationEmailOptionsExtension : IEmailProviderOptionsExtension
+    extension(HeadlessEmailInstanceBuilder instance)
     {
-        private readonly Action<IServiceCollection> _configure;
-
-        public AzureCommunicationEmailOptionsExtension(IConfiguration configuration)
+        /// <summary>
+        /// Uses Azure Communication Services Email for this named instance, binding
+        /// <see cref="AzureCommunicationEmailOptions"/> from the supplied configuration section. The instance
+        /// owns its own keyed <see cref="EmailClient"/> and named options; it never touches the default sender.
+        /// </summary>
+        /// <param name="configuration">The configuration section to bind provider options from.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>
+        public HeadlessEmailInstanceBuilder UseAzure(IConfiguration configuration)
         {
-            _configure = services =>
-                services.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
-                    configuration
-                );
+            Argument.IsNotNull(configuration);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                _AddEmailsCore(
+                    services,
+                    name,
+                    (s, n) =>
+                        s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
+                            configuration,
+                            n
+                        )
+                )
+            );
+
+            return instance;
         }
 
-        public AzureCommunicationEmailOptionsExtension(Action<AzureCommunicationEmailOptions> configure)
+        /// <summary>
+        /// Uses Azure Communication Services Email for this named instance, configuring
+        /// <see cref="AzureCommunicationEmailOptions"/> via a setup delegate.
+        /// </summary>
+        /// <param name="configure">Delegate that populates the options.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessEmailInstanceBuilder UseAzure(Action<AzureCommunicationEmailOptions> configure)
         {
-            _configure = services =>
-                services.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(configure);
+            Argument.IsNotNull(configure);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                _AddEmailsCore(
+                    services,
+                    name,
+                    (s, n) =>
+                        s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
+                            configure,
+                            n
+                        )
+                )
+            );
+
+            return instance;
         }
 
-        public AzureCommunicationEmailOptionsExtension(
-            Action<AzureCommunicationEmailOptions, IServiceProvider> configure
-        )
+        /// <summary>
+        /// Uses Azure Communication Services Email for this named instance, configuring
+        /// <see cref="AzureCommunicationEmailOptions"/> via a setup delegate that also receives the
+        /// <see cref="IServiceProvider"/>.
+        /// </summary>
+        /// <param name="configure">Delegate that populates the options using DI-resolved services.</param>
+        /// <returns>The instance builder for chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+        public HeadlessEmailInstanceBuilder UseAzure(Action<AzureCommunicationEmailOptions, IServiceProvider> configure)
         {
-            _configure = services =>
-                services.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(configure);
+            Argument.IsNotNull(configure);
+
+            var name = instance.Name;
+
+            instance.RegisterProvider(services =>
+                _AddEmailsCore(
+                    services,
+                    name,
+                    (s, n) =>
+                        s.Configure<AzureCommunicationEmailOptions, AzureCommunicationEmailOptionsValidator>(
+                            configure,
+                            n
+                        )
+                )
+            );
+
+            return instance;
         }
+    }
 
-        public void AddServices(IServiceCollection services)
+    /// <summary>
+    /// Registers the Azure email sender. <paramref name="name"/> <see langword="null"/> registers the default
+    /// (unkeyed) sender and options; a non-null name registers a keyed sender, keyed <see cref="EmailClient"/>,
+    /// and named options. The keyed path uses explicit factories that resolve the keyed client and read the
+    /// named options snapshot (<c>IOptionsMonitor.Get(name)</c>), because .NET keyed registrations do not
+    /// cascade the key to constructor dependencies.
+    /// </summary>
+    private static void _AddEmailsCore(
+        IServiceCollection services,
+        string? name,
+        Action<IServiceCollection, string?> configureOptions
+    )
+    {
+        configureOptions(services, name);
+
+        if (name is null)
         {
-            _configure(services);
-
             services.AddSingleton(static sp =>
-            {
-                var options = sp.GetRequiredService<IOptions<AzureCommunicationEmailOptions>>().Value;
-
-                return _CreateClient(options);
-            });
+                _CreateClient(sp.GetRequiredService<IOptionsMonitor<AzureCommunicationEmailOptions>>().Get(null))
+            );
 
             services.AddSingleton<IEmailSender, AzureCommunicationEmailSender>();
+
+            return;
         }
+
+        // Capture `name` rather than casting the resolution key: the keyed dependencies and named options
+        // snapshot must be resolved under this instance's name (keyed DI does not cascade the key).
+        services.AddKeyedSingleton<EmailClient>(
+            name,
+            (sp, _) => _CreateClient(sp.GetRequiredService<IOptionsMonitor<AzureCommunicationEmailOptions>>().Get(name))
+        );
+
+        services.AddKeyedSingleton<IEmailSender>(
+            name,
+            (sp, _) =>
+                new AzureCommunicationEmailSender(
+                    sp.GetRequiredKeyedService<EmailClient>(name),
+                    sp.GetRequiredService<ILogger<AzureCommunicationEmailSender>>()
+                )
+        );
     }
 
     private static EmailClient _CreateClient(AzureCommunicationEmailOptions options)

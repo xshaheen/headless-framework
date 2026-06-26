@@ -46,6 +46,7 @@ builder.Services.AddNswagOpenApi(options =>
 var app = builder.Build();
 
 app.MapNswagOpenApi();
+
 // or for versioned APIs:
 app.MapNswagOpenApiVersions();
 ```

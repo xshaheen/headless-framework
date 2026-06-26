@@ -27,8 +27,8 @@ dotnet add package Headless.Imaging.ImageSharp
 ## Quick Start
 
 ```csharp
-builder.Services
-    .AddImaging()
+builder
+    .Services.AddImaging()
     .AddImageSharpContributors(options =>
     {
         options.DefaultCompressQuality = 80; // sets JPEG + WebP encoder quality
@@ -38,12 +38,16 @@ builder.Services
 To override a specific encoder:
 
 ```csharp
-builder.Services
-    .AddImaging()
+builder
+    .Services.AddImaging()
     .AddImageSharpContributors(options =>
     {
         options.JpegCompressEncoder = new JpegEncoder { Quality = 90 };
-        options.PngCompressEncoder  = new PngEncoder  { CompressionLevel = PngCompressionLevel.BestCompression, SkipMetadata = true };
+        options.PngCompressEncoder = new PngEncoder
+        {
+            CompressionLevel = PngCompressionLevel.BestCompression,
+            SkipMetadata = true,
+        };
     });
 ```
 

@@ -20,6 +20,8 @@ TEST_PROJECT ?=
 TEST_FILTER ?=
 TEST_ARGS ?= --no-progress
 TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
+UNIT_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Unit.dll
+INTEGRATION_TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.Integration.dll
 MSBUILD_ARGS ?=
 TEST_MAX_PARALLEL ?= 3
 TEST_TIMEOUT ?= 15m
@@ -65,11 +67,31 @@ hook-pre-commit: ## Git hook: format staged C# files before commit.
 	git add -- "$${files[@]}"
 
 .PHONY: hook-pre-push
-hook-pre-push: hook-pre-push-message format-check rebuild ## Git hook: verify formatting and do a clean build before push.
+hook-pre-push: hook-pre-push-message hook-format-check hook-build ## Git hook: format-check changed files + incremental build before push.
 
 .PHONY: hook-pre-push-message
 hook-pre-push-message:
-	@printf '\033[36m[pre-push]\033[0m format-check + clean build (~1-2 min; skip with --no-verify)...\n'
+	@printf '\033[36m[pre-push]\033[0m format-check (changed) + incremental build; CI runs the full clean WAE build (skip: --no-verify)...\n'
+
+# Fast local push gate. Mirrors CI's Release posture (analyzer warnings stay warnings; nullable +
+# MSBuild + error-severity rules still fail) but builds incrementally over warm outputs instead of
+# the full --no-incremental rebuild CI runs. Incremental can skip up-to-date projects, so an
+# error-severity analyzer hit in an untouched project is caught by CI, not here. Assumes `make
+# bootstrap` already restored tools/packages (no restore/tool-restore in the hot path).
+.PHONY: hook-format-check
+hook-format-check: ## Git hook: CSharpier-check only the C# files changed vs upstream.
+	@base=$$(git rev-parse --verify -q '@{upstream}' 2>/dev/null || git merge-base origin/main HEAD 2>/dev/null || true); \
+	if [ -n "$$base" ]; then \
+		files=$$(git diff --name-only --diff-filter=ACM "$$base"...HEAD -- '*.cs'); \
+	else \
+		files=$$(git ls-files '*.cs'); \
+	fi; \
+	if [ -z "$$files" ]; then echo "[pre-push] no changed C# files to check"; exit 0; fi; \
+	echo "$$files" | tr '\n' '\0' | xargs -0 $(DOTNET) csharpier check
+
+.PHONY: hook-build
+hook-build: ## Git hook: incremental solution build over warm outputs (no restore, no clean).
+	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: ci-build
 ci-build: format-check rebuild pack-built ## CI: check formatting, clean-build, then pack already-built projects.
@@ -172,20 +194,14 @@ test-timeout: ## Run all tests with an explicit MTP timeout. SDK defaults still 
 	$(MAKE) test TEST_ARGS='$(TEST_ARGS) --timeout $(TEST_TIMEOUT)'
 
 .PHONY: test-unit
-test-unit: build ## Run every *.Tests.Unit project.
+test-unit: build ## Run every *.Tests.Unit module in parallel (honors TEST_MAX_PARALLEL).
 	@mkdir -p "$(TEST_RESULTS_DIR)/unit"
-	@find tests -name '*.Tests.Unit.csproj' -print0 | while IFS= read -r -d '' project; do \
-		echo "Testing $$project"; \
-		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)/unit" $(TEST_ARGS) $(TEST_FILTER); \
-	done
+	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/unit" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-integration
-test-integration: build ## Run every *.Tests.Integration project. Requires Docker/Testcontainers where applicable.
+test-integration: build ## Run every *.Tests.Integration module (honors TEST_MAX_PARALLEL; needs Docker). Lower TEST_MAX_PARALLEL on memory-constrained hosts.
 	@mkdir -p "$(TEST_RESULTS_DIR)/integration"
-	@find tests -name '*.Tests.Integration.csproj' -print0 | while IFS= read -r -d '' project; do \
-		echo "Testing $$project"; \
-		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)/integration" $(TEST_ARGS) $(TEST_FILTER); \
-	done
+	$(DOTNET) test --test-modules "$(INTEGRATION_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/integration" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: coverage
 coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension. TEST_MAX_PARALLEL caps concurrent modules (default 3).

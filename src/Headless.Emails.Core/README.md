@@ -8,8 +8,9 @@ Owns the unified email setup builder (`AddHeadlessEmails`) plus shared conversio
 
 ## Key Features
 
-- `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` — the single provider-agnostic registration entry point, with an exactly-one-provider gate
-- `HeadlessEmailsSetupBuilder` — receives `Use*` provider selections; `IEmailProviderOptionsExtension` — the hook each provider implements
+- `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` — the single provider-agnostic registration entry point, with an exactly-one-default-provider gate
+- `HeadlessEmailsSetupBuilder` — receives the default `Use*` selection plus `AddNamed(name, …)` named instances; `HeadlessEmailInstanceBuilder` — the per-named-instance builder that providers extend with their `Use*` members
+- `IEmailSenderProvider` — registered automatically by the gate (keyed-service-backed); resolves named senders by name
 - `EmailAttachmentContentType.Resolve(fileName)` — derives an attachment MIME type from its file name (MimeKit lookup, `application/octet-stream` fallback)
 - `EmailToMimeMessageConverter.ConvertToMimeMessageAsync()` — converts `SendSingleEmailRequest` to a MimeKit `MimeMessage` (internal extension; exposed to the Aws/Mailkit providers via `InternalsVisibleTo`)
 - `MapToMailboxAddress()` — maps an `EmailRequestAddress` to a MimeKit `MailboxAddress` (internal)
@@ -17,7 +18,7 @@ Owns the unified email setup builder (`AddHeadlessEmails`) plus shared conversio
 
 ## Design Notes
 
-The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate counts registered extensions and rejects zero, multiple, or a repeated `AddHeadlessEmails` on the same `IServiceCollection` (a host resolves a single `IEmailSender`). The MimeKit converter returns a `MimeMessage` that callers dispose; the implementation disposes the message if an exception occurs during construction, preventing a resource leak.
+The builder carries no shared, cross-provider feature options — it is provider-selection-only; each provider binds its own options inside its `Use*` member. The gate is **per-slot**: it requires exactly one default provider (rejecting zero or multiple) while allowing unbounded uniquely-named instances, and rejects a repeated `AddHeadlessEmails` on the same `IServiceCollection`. Providers contribute deferred `Action<IServiceCollection>` registrations (`RegisterDefaultProvider` for the default, `instance.RegisterProvider` for a named instance) rather than implementing a provider interface, keeping the default and named paths symmetric. The MimeKit converter returns a `MimeMessage` that callers dispose; the implementation disposes the message if an exception occurs during construction, preventing a resource leak.
 
 ## Installation
 
@@ -29,7 +30,14 @@ dotnet add package Headless.Emails.Core
 
 ```csharp
 // Provider-agnostic registration entry point (a provider package supplies the Use* member):
-builder.Services.AddHeadlessEmails(setup => setup.UseNoop());
+builder.Services.AddHeadlessEmails(setup =>
+{
+    setup.UseNoop(); // default (required)
+    setup.AddNamed("marketing", i => i.UseNoop()); // optional named sender, keyed "marketing"
+});
+
+// Resolve a named sender:
+var marketing = serviceProvider.GetRequiredService<IEmailSenderProvider>().GetSender("marketing");
 
 // Public content-type helper:
 var contentType = EmailAttachmentContentType.Resolve("invoice.pdf"); // "application/pdf"
@@ -47,4 +55,4 @@ No configuration required.
 
 ## Side Effects
 
-None directly. `AddHeadlessEmails` registers a provider-registration marker and delegates all `IEmailSender` wiring to the selected provider's extension.
+`AddHeadlessEmails` registers a provider-registration marker and `IEmailSenderProvider` (keyed-service-backed), then runs the default provider's wiring (the unkeyed `IEmailSender`) followed by each named instance's wiring (keyed under the instance name). The marker enforces the single-call rule.

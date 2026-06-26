@@ -42,9 +42,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Required dependencies
 builder.Services.AddCaching();
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-);
+builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
 // Register management core + storage in one call
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
@@ -60,17 +58,11 @@ public sealed class AppSettingDefinitionProvider : ISettingDefinitionProvider
 {
     public void Define(ISettingDefinitionContext context)
     {
-        context.Add(new SettingDefinition(
-            name: "App.MaxFileSize",
-            displayName: "Maximum File Size",
-            defaultValue: "10485760"
-        ));
+        context.Add(
+            new SettingDefinition(name: "App.MaxFileSize", displayName: "Maximum File Size", defaultValue: "10485760")
+        );
 
-        context.Add(new SettingDefinition(
-            name: "App.ApiKey",
-            displayName: "API Key",
-            isEncrypted: true
-        ));
+        context.Add(new SettingDefinition(name: "App.ApiKey", displayName: "API Key", isEncrypted: true));
     }
 }
 ```
@@ -141,10 +133,10 @@ services.AddHeadlessSettings(setup =>
     });
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "settings";                          // default
-        o.SettingValuesTableName = "SettingValues";     // default
+        o.Schema = "settings"; // default
+        o.SettingValuesTableName = "SettingValues"; // default
         o.SettingDefinitionsTableName = "SettingDefinitions"; // default
-        o.InitializeOnStartup = true;                   // default
+        o.InitializeOnStartup = true; // default
     });
     setup.UseEntityFramework<AppDbContext>();
 });

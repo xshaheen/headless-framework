@@ -10,62 +10,55 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Core Concepts](#core-concepts)
-  - [Permission Definitions and Groups](#permission-definitions-and-groups)
-  - [Grant Providers and Resolution Order](#grant-providers-and-resolution-order)
-  - [Grant States](#grant-states)
-  - [Grant Store and Caching](#grant-store-and-caching)
-  - [Static vs. Dynamic Definition Store](#static-vs-dynamic-definition-store)
-  - [Startup Initialization](#startup-initialization)
+    - [Permission Definitions and Groups](#permission-definitions-and-groups)
+    - [Grant Providers and Resolution Order](#grant-providers-and-resolution-order)
+    - [Grant States](#grant-states)
+    - [Grant Store and Caching](#grant-store-and-caching)
+    - [Static vs. Dynamic Definition Store](#static-vs-dynamic-definition-store)
+    - [Startup Initialization](#startup-initialization)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.Permissions.Abstractions](#headlesspermissionsabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-    - [Defining Permissions](#defining-permissions)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Permissions.Core](#headlesspermissionscore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Design Notes](#design-notes)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start)
-    - [ASP.NET Core Authorization Integration](#aspnet-core-authorization-integration)
-    - [Seeding Permissions at Startup](#seeding-permissions-at-startup)
-  - [Configuration](#configuration-1)
-    - [PermissionManagementOptions](#permissionmanagementoptions)
-    - [PermissionsStorageOptions](#permissionsstorageoptions)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Permissions.Storage.EntityFramework](#headlesspermissionsstorageentityframework)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Design Notes](#design-notes-1)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-1)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Permissions.Storage.PostgreSql](#headlesspermissionsstoragepostgresql)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-3)
-    - [Options](#options)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Permissions.Storage.SqlServer](#headlesspermissionsstoragesqlserver)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-3)
-  - [Configuration](#configuration-4)
-    - [Options](#options-1)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 
 > Dynamic permission management with hierarchical grant resolution (User > Role), explicit-deny semantics, caching, and database persistence via EF Core, PostgreSQL, or SQL Server.
 
@@ -184,15 +177,15 @@ Dependents can await `WaitForInitializationAsync()` on the `IInitializer` interf
 
 ---
 
-# Headless.Permissions.Abstractions
+## Headless.Permissions.Abstractions
 
 Defines the unified interface for permission management across different grant providers and storage backends.
 
-## Problem Solved
+### Problem Solved
 
 Provides a provider-agnostic permission management API, enabling dynamic permission checking with support for multiple grant providers (User, Role, and custom) without tying application code to a specific storage or grant strategy.
 
-## Key Features
+### Key Features
 
 - `IPermissionManager` — resolves and mutates permission grants with AWS IAM-style semantics; `GetAsync` (single), `GetAllAsync` (all or by names), `SetAsync` (grant or prohibit, single or batch), `DeleteAsync` (remove all records for a principal)
 - `PermissionManagerExtensions` — convenience helpers: `IsGrantedAsync` (boolean overloads), `GrantToUserAsync`, `RevokeFromUserAsync`, `SetToUserAsync`, `GrantToRoleAsync`, `RevokeFromRoleAsync`, `SetToRoleAsync`
@@ -207,13 +200,13 @@ Provides a provider-agnostic permission management API, enabling dynamic permiss
 - `MultiplePermissionGrantResult` — `Dictionary<string, bool>` with `AllGranted` and `AllProhibited` shorthand properties; returned by batch `IsGrantedAsync`
 - `PermissionGrantProviderNames` — constants `User` and `Role` for the built-in providers
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Permissions.Abstractions
 ```
 
-## Usage
+### Quick Start
 
 ```csharp
 public sealed class OrderService(IPermissionManager permissions, ICurrentUser currentUser)
@@ -241,7 +234,7 @@ var grantMap = await permissions.IsGrantedAsync(
 if (grantMap.AllGranted) { /* all allowed */ }
 ```
 
-### Defining Permissions
+#### Defining Permissions
 
 ```csharp
 public sealed class OrderPermissionProvider : IPermissionDefinitionProvider
@@ -263,29 +256,29 @@ public sealed class OrderPermissionProvider : IPermissionDefinitionProvider
 }
 ```
 
-## Configuration
+### Configuration
 
 None. This is an abstractions-only package.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Core`
 
-## Side Effects
+### Side Effects
 
 None.
 
 ---
 
-# Headless.Permissions.Core
+## Headless.Permissions.Core
 
 Core implementation of permission management with grant resolution, caching, background initialization, and ASP.NET Core authorization integration.
 
-## Problem Solved
+### Problem Solved
 
 Provides the full permission management runtime: AWS IAM-style grant resolution (User > Role), grant caching with cross-process invalidation, background startup sync of static definitions, and `PermissionRequirement` / `PermissionsRequirement` for wiring into ASP.NET Core authorization policies.
 
-## Key Features
+### Key Features
 
 - `PermissionManager` — full `IPermissionManager` implementation; walks the grant-provider chain, caches results, and coordinates writes with cache invalidation
 - `IPermissionGrantProvider` / built-in providers: `UserPermissionGrantProvider` (`"User"`) and `RolePermissionGrantProvider` (`"Role"`)
@@ -304,20 +297,20 @@ Provides the full permission management runtime: AWS IAM-style grant resolution 
 - `PermissionsRequirement` / `PermissionsRequirementHandler` — multi-permission requirement with AND (`RequiresAll = true`) or OR semantics
 - `AlwaysAllowPermissionManager` / `AlwaysAllowAuthorizationService` — test doubles
 
-## Design Notes
+### Design Notes
 
 - Grant providers are stored in registration order with last-registered = highest priority. The built-in registration is `Role` first, then `User`, making User the highest-priority built-in provider. Custom providers added via `AddPermissionGrantProvider<T>()` are appended after `User` and override both built-ins.
 - `AddHeadlessPermissions` is guarded on `IPermissionGrantStore` so calling it more than once is safe — the management core registers once. However, registering a second storage provider extension throws at host startup.
 - The grant cache is tenant-scoped (`ScopedCache<PermissionGrantCacheItem>` keyed on `ICurrentTenant.Id`). A permission check for tenant A never returns a cached result for tenant B.
 - `PermissionsInitializationBackgroundService` implements `IInitializer`: anything awaiting `WaitForInitializationAsync()` blocks until both the save and pre-cache steps complete. If the host stops before initialization finishes, the `TaskCompletionSource` is cancelled.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Permissions.Core
 ```
 
-## Quick Start
+### Quick Start
 
 Register required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessPermissions`:
 
@@ -331,7 +324,7 @@ builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
 builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
-### ASP.NET Core Authorization Integration
+#### ASP.NET Core Authorization Integration
 
 There is no `[HasPermission]` attribute. Wire permissions into ASP.NET Core policies using `PermissionRequirement` or `PermissionsRequirement`:
 
@@ -339,18 +332,17 @@ There is no `[HasPermission]` attribute. Wire permissions into ASP.NET Core poli
 // Single-permission policy
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("CanEditOrders", policy =>
-        policy.Requirements.Add(new PermissionRequirement("Orders.Edit")));
+    options.AddPolicy("CanEditOrders", policy => policy.Requirements.Add(new PermissionRequirement("Orders.Edit")));
 });
 
 // Multi-permission policy (AND)
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("CanManageOrders", policy =>
-        policy.Requirements.Add(new PermissionsRequirement(
-            ["Orders.Create", "Orders.Edit"],
-            requiresAll: true
-        )));
+    options.AddPolicy(
+        "CanManageOrders",
+        policy =>
+            policy.Requirements.Add(new PermissionsRequirement(["Orders.Create", "Orders.Edit"], requiresAll: true))
+    );
 });
 ```
 
@@ -360,7 +352,7 @@ Or check inline:
 var isGranted = await permissionManager.IsGrantedAsync(currentUser, "Orders.Edit");
 ```
 
-### Seeding Permissions at Startup
+#### Seeding Permissions at Startup
 
 ```csharp
 // In a data seeder or IHostedService:
@@ -369,9 +361,9 @@ await seedHelper.GrantAllPermissionsToRoleAsync("admin", tenantId: null, ct);
 
 `IGrantPermissionsSeedHelper.GrantAllPermissionsToRoleAsync` skips permissions that already have a grant record (idempotent) and only grants permissions that allow the `Role` provider.
 
-## Configuration
+### Configuration
 
-### PermissionManagementOptions
+#### PermissionManagementOptions
 
 Configure via `setup.ConfigureManagement(...)` or `services.Configure<PermissionManagementOptions>(...)`:
 
@@ -422,7 +414,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 An `(options, IServiceProvider)` overload is available for late-bound configuration.
 
-### PermissionsStorageOptions
+#### PermissionsStorageOptions
 
 Configure schema and table names via `setup.ConfigureStorage(...)`:
 
@@ -431,11 +423,11 @@ builder.Services.AddHeadlessPermissions(setup =>
 {
     setup.ConfigureStorage(o =>
     {
-        o.Schema = "permissions";                                     // default
-        o.PermissionGrantsTableName = "PermissionGrants";             // default
-        o.PermissionDefinitionsTableName = "PermissionDefinitions";   // default
+        o.Schema = "permissions"; // default
+        o.PermissionGrantsTableName = "PermissionGrants"; // default
+        o.PermissionDefinitionsTableName = "PermissionDefinitions"; // default
         o.PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"; // default
-        o.InitializeOnStartup = true;                                 // default
+        o.InitializeOnStartup = true; // default
     });
     setup.UseEntityFramework<AppDbContext>();
 });
@@ -443,14 +435,14 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 `InitializeOnStartup = false` makes the raw-DDL startup initializer a no-op (useful when schema is provisioned out-of-band). It still reports `IsInitialized = true` so dependents do not block. Ignored by the EF provider (EF uses migrations).
 
-## Dependencies
+### Dependencies
 
 - `Headless.Permissions.Abstractions`
 - `Headless.Domain`
 - `Headless.Caching.Abstractions`
 - `Headless.DistributedLocks.Abstractions`
 
-## Side Effects
+### Side Effects
 
 - Registers `IPermissionManager` (`PermissionManager`) as singleton
 - Registers `IPermissionGrantStore` (`PermissionGrantStore`) as singleton
@@ -465,15 +457,15 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 ---
 
-# Headless.Permissions.Storage.EntityFramework
+## Headless.Permissions.Storage.EntityFramework
 
 Entity Framework Core storage implementation for permission management.
 
-## Problem Solved
+### Problem Solved
 
 Provides EF Core repository implementations for permission grants, permission definitions, and permission group definitions using the consumer's own `DbContext`, with schema managed through EF migrations.
 
-## Key Features
+### Key Features
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessPermissionsSetupBuilder`
 - `modelBuilder.AddHeadlessPermissions(DbContext context)` — applies entity configurations by resolving `PermissionsStorageOptions` from the context's service provider (no constructor injection required)
@@ -482,17 +474,17 @@ Provides EF Core repository implementations for permission grants, permission de
 - `EfPermissionDefinitionRecordRepository<TContext>` — EF repository for `IPermissionDefinitionRecordRepository`
 - Startup gate that inspects the EF model before hosted services start and throws `InvalidOperationException` with an actionable message if any permissions entity is missing
 
-## Design Notes
+### Design Notes
 
 The package does not ship a dedicated permissions `DbContext` or a permissions-specific `DbContext` interface. Consumers register `AddDbContextFactory<TContext>()`, map entities with `modelBuilder.AddHeadlessPermissions(this)` in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties. Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`; writes commit through a fresh context owned by the repository.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Permissions.Storage.EntityFramework
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
@@ -518,7 +510,7 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
 `PermissionsStorageOptions` defaults:
 
@@ -532,13 +524,13 @@ Identifier names are validated using cross-provider rules (SQL Server superset) 
 
 `InitializeOnStartup` is ignored by the EF provider — EF uses migrations, not startup DDL.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Permissions.Core`
 - `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
-## Side Effects
+### Side Effects
 
 - Registers `IPermissionGrantRepository` (`EfPermissionGrantRepository<TContext>`) as singleton
 - Registers `IPermissionDefinitionRecordRepository` (`EfPermissionDefinitionRecordRepository<TContext>`) as singleton
@@ -547,15 +539,15 @@ Identifier names are validated using cross-provider rules (SQL Server superset) 
 
 ---
 
-# Headless.Permissions.Storage.PostgreSql
+## Headless.Permissions.Storage.PostgreSql
 
 PostgreSQL raw-DDL storage for permission management.
 
-## Problem Solved
+### Problem Solved
 
 Provides permission repositories and startup schema initialization without requiring the consumer to use Entity Framework. All schema is created idempotently at host startup via raw ADO.NET.
 
-## Key Features
+### Key Features
 
 - `setup.UsePostgreSql(string connectionString)` — registers the PostgreSQL storage provider from a connection string
 - `setup.UsePostgreSql(IConfiguration configuration)` — binds `PostgreSqlPermissionsOptions` from a configuration section
@@ -566,13 +558,13 @@ Provides permission repositories and startup schema initialization without requi
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 - Identifier names validated against PostgreSQL naming rules
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Permissions.Storage.PostgreSql
 ```
 
-## Quick Start
+### Quick Start
 
 Register required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessPermissions` registers the management core automatically.
 
@@ -594,9 +586,9 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### Options
+#### Options
 
 `PostgreSqlPermissionsOptions`:
 
@@ -607,13 +599,13 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 Configure schema and table names through `PermissionsStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Permissions.Core`
 - `Headless.Serializer.Json`
 - `Npgsql`
 
-## Side Effects
+### Side Effects
 
 - Registers `PostgreSqlPermissionsStorageInitializer` as `IHostedService` and `IInitializer`
 - Registers `PostgreSqlPermissionGrantRepository` as `IPermissionGrantRepository` (singleton)
@@ -621,15 +613,15 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 
 ---
 
-# Headless.Permissions.Storage.SqlServer
+## Headless.Permissions.Storage.SqlServer
 
 SQL Server raw-DDL storage for permission management.
 
-## Problem Solved
+### Problem Solved
 
 Provides permission repositories and startup schema initialization without requiring the consumer to use Entity Framework. All schema is created idempotently at host startup via raw ADO.NET.
 
-## Key Features
+### Key Features
 
 - `setup.UseSqlServer(string connectionString)` — registers the SQL Server storage provider from a connection string
 - `setup.UseSqlServer(IConfiguration configuration)` — binds `SqlServerPermissionsOptions` from a configuration section
@@ -640,13 +632,13 @@ Provides permission repositories and startup schema initialization without requi
 - Shares `PermissionsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 - Identifier names validated against SQL Server naming rules
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.Permissions.Storage.SqlServer
 ```
 
-## Quick Start
+### Quick Start
 
 Register required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessPermissions` registers the management core automatically.
 
@@ -668,9 +660,9 @@ builder.Services.AddHeadlessPermissions(setup =>
 });
 ```
 
-## Configuration
+### Configuration
 
-### Options
+#### Options
 
 `SqlServerPermissionsOptions`:
 
@@ -681,13 +673,13 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 Configure schema and table names through `PermissionsStorageOptions` via `setup.ConfigureStorage(...)`. Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true` so dependents awaiting `WaitForInitializationAsync` do not block.
 
-## Dependencies
+### Dependencies
 
 - `Headless.Permissions.Core`
 - `Headless.Serializer.Json`
 - `Microsoft.Data.SqlClient`
 
-## Side Effects
+### Side Effects
 
 - Registers `SqlServerPermissionsStorageInitializer` as `IHostedService` and `IInitializer`
 - Registers `SqlServerPermissionGrantRepository` as `IPermissionGrantRepository` (singleton)

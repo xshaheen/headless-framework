@@ -14,8 +14,18 @@ namespace Headless.Testing.Testcontainers;
 /// <see cref="TestImages.MsSqlServer"/> on x86_64.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Startup polls the TCP port and attempts a login for up to 60 seconds after the container
 /// log reports readiness, to guard against race conditions in slow CI environments.
+/// </para>
+/// <para>
+/// The container is created with reuse enabled, so when the host opts in
+/// (<c>testcontainers.reuse.enable=true</c> in <c>~/.testcontainers.properties</c>, or
+/// <c>TESTCONTAINERS_REUSE_ENABLE=true</c>) repeated local runs reattach to the already-warm SQL Server
+/// instead of paying the cold-start boot + login wait each time — the single biggest local-iteration cost
+/// for the SQL Server integration suites. CI leaves reuse disabled, so reuse becomes a no-op and Ryuk
+/// reaps the container as usual.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public class HeadlessSqlServerFixture : IAsyncLifetime
@@ -29,12 +39,21 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     private static readonly string _Image =
         RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TestImages.AzureSqlEdge : TestImages.MsSqlServer;
 
-    private readonly IContainer _container = new ContainerBuilder(_Image)
-        .WithPortBinding(1433, true)
-        .WithEnvironment("ACCEPT_EULA", "Y")
-        .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
-        .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"))
-        .Build();
+    private readonly IContainer _container;
+
+    public HeadlessSqlServerFixture()
+    {
+        // Per-project reuse label so each integration project reuses its OWN container instead of colliding on
+        // the shared `master` database under parallel module execution. See ReuseLabel for the keying rationale.
+        _container = new ContainerBuilder(_Image)
+            .WithPortBinding(1433, true)
+            .WithEnvironment("ACCEPT_EULA", "Y")
+            .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
+            .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
+            .WithReuse(true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"))
+            .Build();
+    }
 
     /// <summary>Gets the SQL Server connection string.</summary>
     public string ConnectionString
@@ -66,10 +85,15 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         await _WaitUntilLoginSucceedsAsync().ConfigureAwait(false);
     }
 
-    /// <summary>Stops and disposes the SQL Server container.</summary>
+    /// <summary>Disposes the SQL Server container.</summary>
+    /// <remarks>
+    /// Mirrors Testcontainers' own <c>ContainerFixture</c> teardown: a single <c>DisposeAsync</c> on the container.
+    /// With reuse enabled the engine stops-but-keeps the container so the next run reattaches by reuse hash;
+    /// with reuse disabled (CI) the same call removes it (and Ryuk backstops). An explicit <c>StopAsync</c>
+    /// before dispose is redundant and only adds teardown latency.
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
-        await _container.StopAsync().ConfigureAwait(false);
         await _container.DisposeAsync().ConfigureAwait(false);
         GC.SuppressFinalize(this);
     }

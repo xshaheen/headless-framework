@@ -26,17 +26,17 @@ dotnet add package Headless.Sms.VictoryLink
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(
-    builder.Configuration.GetSection("Sms:VictoryLink")
-));
+builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(builder.Configuration.GetSection("Sms:VictoryLink")));
 
 // Or in code:
-builder.Services.AddHeadlessSms(setup => setup.UseVictoryLink(options =>
-{
-    options.UserName = "your-username";
-    options.Password = "your-password";
-    options.Sender = "MyApp";
-}));
+builder.Services.AddHeadlessSms(setup =>
+    setup.UseVictoryLink(options =>
+    {
+        options.UserName = "your-username";
+        options.Password = "your-password";
+        options.Sender = "MyApp";
+    })
+);
 ```
 
 ## Configuration

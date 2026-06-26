@@ -26,10 +26,7 @@ public sealed class OrderEvents(IOutboxBus bus)
 {
     public Task PublishAsync(OrderPlaced message, CancellationToken cancellationToken)
     {
-        return bus.PublishAsync(
-            message,
-            new PublishOptions { MessageName = "orders.placed" },
-            cancellationToken);
+        return bus.PublishAsync(message, new PublishOptions { MessageName = "orders.placed" }, cancellationToken);
     }
 }
 ```

@@ -27,14 +27,10 @@ dotnet add package Headless.Sql.Sqlite
 
 ```csharp
 // In-process tests (no server required):
-services.AddSingleton<ISqlConnectionFactory>(
-    new SqliteConnectionFactory("Data Source=:memory:")
-);
+services.AddSingleton<ISqlConnectionFactory>(new SqliteConnectionFactory("Data Source=:memory:"));
 
 // File-based embedded database:
-services.AddSingleton<ISqlConnectionFactory>(
-    new SqliteConnectionFactory("Data Source=app.db")
-);
+services.AddSingleton<ISqlConnectionFactory>(new SqliteConnectionFactory("Data Source=app.db"));
 
 // Optional: register the health-check helper
 services.AddSingleton<IConnectionStringChecker, SqliteConnectionStringChecker>();
