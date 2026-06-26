@@ -43,6 +43,12 @@ public sealed class FileSystemBlobsRegistrationTests
         defaultStorage.Should().NotBeNull();
         images.Should().NotBeSameAs(docs);
         serviceProvider.GetRequiredKeyedService<IBlobStorage>("images").Should().BeSameAs(images);
+
+        // the file-system container-management capability is a separately-registered service (resolved, not cast):
+        // the default store registers an unkeyed manager and each named store registers a keyed one.
+        serviceProvider.GetService<IBlobContainerManager>().Should().NotBeNull();
+        serviceProvider.GetRequiredKeyedService<IBlobContainerManager>("images").Should().NotBeNull();
+        serviceProvider.GetRequiredKeyedService<IBlobContainerManager>("docs").Should().NotBeNull();
     }
 
     [Fact]
@@ -66,16 +72,16 @@ public sealed class FileSystemBlobsRegistrationTests
         var provider = serviceProvider.GetRequiredService<IBlobStorageProvider>();
         var images = provider.GetStorage("images");
         var docs = provider.GetStorage("docs");
-        string[] container = ["bucket"];
+        var location = new BlobLocation("bucket", "a.txt");
 
         // when
-        await images.UploadContentAsync(container, "a.txt", "hello");
+        await images.UploadContentAsync(location, "hello");
 
         // then — write to one named store is not visible in the other, and no default store exists
-        (await images.GetBlobContentAsync(container, "a.txt"))
+        (await images.GetBlobContentAsync(location))
             .Should()
             .Be("hello");
-        (await docs.GetBlobContentAsync(container, "a.txt")).Should().BeNull();
+        (await docs.GetBlobContentAsync(location)).Should().BeNull();
         serviceProvider.GetService<IBlobStorage>().Should().BeNull();
     }
 }
