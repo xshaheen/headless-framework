@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 using Nito.AsyncEx;

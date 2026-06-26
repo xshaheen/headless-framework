@@ -286,13 +286,12 @@ public static class ListExtensions
 
         var currentIndex = source.FindIndex(0, selector);
 
-        if (currentIndex < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(selector),
-                "No element in the list matches the given selector."
-            );
-        }
+        Argument.IsInRangeFor(
+            currentIndex,
+            source,
+            message: "No element in the list matches the given selector.",
+            paramName: nameof(selector)
+        );
 
         if (currentIndex == targetIndex)
         {
