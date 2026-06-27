@@ -184,4 +184,54 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
         response.Results.Should().HaveCount(2);
         response.Results.Should().AllSatisfy(r => r.Result.FailureKind.Should().Be(SmsFailureKind.Unknown));
     }
+
+    [Fact]
+    public async Task should_classify_a_not_enough_credits_recipient_as_out_of_credit()
+    {
+        // Infobip reports out-of-credit only as a per-message status name ("REJECTED_NOT_ENOUGH_CREDITS").
+        const string body = """
+            {
+              "bulkId": "bulk-12",
+              "messages": [
+                { "to": "201001110000", "status": { "groupId": 5, "groupName": "REJECTED", "id": 6, "name": "REJECTED_NOT_ENOUGH_CREDITS", "description": "Not enough credits" }, "messageId": "m-a" }
+              ]
+            }
+            """;
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody(body)
+            );
+
+        var response = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")));
+
+        response.AllSucceeded.Should().BeFalse();
+        response.Results[0].Result.FailureKind.Should().Be(SmsFailureKind.OutOfCredit);
+    }
+
+    [Fact]
+    public async Task should_classify_an_unauthorized_response_as_an_auth_failure()
+    {
+        // Authentication failures surface at the request level (HTTP 401), not as a per-message status.
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.Unauthorized)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody(
+                        """{"requestError":{"serviceException":{"messageId":"UNAUTHORIZED","text":"invalid api key"}}}"""
+                    )
+            );
+
+        var result = await CreateSender().SendAsync(SmsRequests.Single());
+
+        result.Success.Should().BeFalse();
+        result.FailureKind.Should().Be(SmsFailureKind.AuthFailure);
+    }
 }

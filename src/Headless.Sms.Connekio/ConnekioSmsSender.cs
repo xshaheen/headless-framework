@@ -41,32 +41,23 @@ internal sealed class ConnekioSmsSender(
         Argument.IsNotNull(request.Destination);
         Argument.IsNotEmpty(request.Text);
 
-        try
-        {
-            var payload = JsonSerializer.Serialize(
-                new ConnekioSingleSmsRequest
-                {
-                    AccountId = _options.AccountId,
-                    Sender = _options.Sender,
-                    Text = request.Text,
-                    Msisdn = request.Destination.ToString(),
-                },
-                _JsonOptions
-            );
-
-            return await _PostAsync(_singleSmsEndpoint, payload, destinationCount: 1, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            logger.LogSmsSendException(e, destinationCount: 1);
-
-            return SendSingleSmsResponse.FromException(e);
-        }
+        return await _SendAsync(
+                _singleSmsEndpoint,
+                () =>
+                    JsonSerializer.Serialize(
+                        new ConnekioSingleSmsRequest
+                        {
+                            AccountId = _options.AccountId,
+                            Sender = _options.Sender,
+                            Text = request.Text,
+                            Msisdn = request.Destination.ToString(),
+                        },
+                        _JsonOptions
+                    ),
+                destinationCount: 1,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<SendBulkSmsResponse> SendBulkAsync(
@@ -80,25 +71,44 @@ internal sealed class ConnekioSmsSender(
 
         // Connekio has a dedicated batch endpoint that returns a single status, so the same outcome applies to
         // every recipient.
+        var outcome = await _SendAsync(
+                _batchSmsEndpoint,
+                () =>
+                    JsonSerializer.Serialize(
+                        new ConnekioBatchSmsRequest
+                        {
+                            AccountId = _options.AccountId,
+                            Sender = _options.Sender,
+                            Text = request.Text,
+                            MobileList = request
+                                .Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() })
+                                .ToList(),
+                        },
+                        _JsonOptions
+                    ),
+                request.Destinations.Count,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
+    }
+
+    // Both entry points share one try/catch so the never-throw contract (only OperationCanceledException and
+    // argument-validation propagate) lives in a single place. The payload is built inside the guarded region so
+    // a serialization fault is reported as a failed response rather than thrown.
+    private async ValueTask<SendSingleSmsResponse> _SendAsync(
+        Uri endpoint,
+        [InstantHandle] Func<string> payloadFactory,
+        int destinationCount,
+        CancellationToken cancellationToken
+    )
+    {
         try
         {
-            var payload = JsonSerializer.Serialize(
-                new ConnekioBatchSmsRequest
-                {
-                    AccountId = _options.AccountId,
-                    Sender = _options.Sender,
-                    Text = request.Text,
-                    MobileList = request
-                        .Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() })
-                        .ToList(),
-                },
-                _JsonOptions
-            );
+            var payload = payloadFactory();
 
-            var outcome = await _PostAsync(_batchSmsEndpoint, payload, request.Destinations.Count, cancellationToken)
-                .ConfigureAwait(false);
-
-            return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
+            return await _PostAsync(endpoint, payload, destinationCount, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -106,9 +116,9 @@ internal sealed class ConnekioSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinationCount);
 
-            return SendBulkSmsResponse.FromAggregate(request.Destinations, SendSingleSmsResponse.FromException(e));
+            return SendSingleSmsResponse.FromException(e);
         }
     }
 

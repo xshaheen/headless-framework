@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Headless.Checks;
 using Infobip.Api.Client;
 using Infobip.Api.Client.Api;
@@ -42,7 +43,10 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendFailed(e, destinationCount: 1, e.ErrorCode);
 
-            return SendSingleSmsResponse.Failed(_FormatApiError(e));
+            return SendSingleSmsResponse.Failed(
+                _FormatApiError(e),
+                SmsFailureKinds.FromHttpStatusCode((HttpStatusCode)e.ErrorCode)
+            );
         }
         catch (OperationCanceledException)
         {
@@ -91,7 +95,10 @@ internal sealed class InfobipSmsSender(
 
             return SendBulkSmsResponse.FromAggregate(
                 request.Destinations,
-                SendSingleSmsResponse.Failed(_FormatApiError(e))
+                SendSingleSmsResponse.Failed(
+                    _FormatApiError(e),
+                    SmsFailureKinds.FromHttpStatusCode((HttpStatusCode)e.ErrorCode)
+                )
             );
         }
         catch (OperationCanceledException)
@@ -195,19 +202,13 @@ internal sealed class InfobipSmsSender(
             return SmsFailureKind.Unknown;
         }
 
-        if (status.Name?.Contains("BALANCE", StringComparison.OrdinalIgnoreCase) == true)
+        // Infobip exposes the specific reason only as a free-form per-message status name (for example
+        // "REJECTED_NOT_ENOUGH_CREDITS"). Authentication (401) and rate-limit (429) failures surface at the
+        // request level as an ApiException, not as per-message statuses, so out-of-credit is the only kind that
+        // can be refined here; every other rejection falls back to the delivery group.
+        if (status.Name?.Contains("CREDIT", StringComparison.OrdinalIgnoreCase) == true)
         {
             return SmsFailureKind.OutOfCredit;
-        }
-
-        if (status.Name?.Contains("AUTH", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return SmsFailureKind.AuthFailure;
-        }
-
-        if (status.Name?.Contains("RATE", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return SmsFailureKind.RateLimited;
         }
 
         return status.GroupName switch
