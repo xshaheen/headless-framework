@@ -24,6 +24,37 @@ public static class BlobStorageHelpers
     /// <summary>Returns <see langword="true"/> when <paramref name="key"/> is reserved for sidecar metadata (ends with <see cref="SidecarSuffix"/>).</summary>
     public static bool IsSidecarKey(string key) => key.EndsWith(SidecarSuffix, StringComparison.Ordinal);
 
+    /// <summary>
+    /// Returns a copy of <paramref name="metadata"/> with the framework-internal keys
+    /// (<see cref="UploadDateMetadataKey"/>, <see cref="ExtensionMetadataKey"/>) removed, so callers see only the
+    /// metadata they supplied. Returns <see langword="null"/> when nothing user-supplied remains. Providers call this
+    /// on the metadata they return from <c>GetBlobInfoAsync</c> / <c>OpenReadStreamAsync</c> / listing.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string>? ToUserMetadata(IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata is null || metadata.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, string>(metadata.Count, StringComparer.Ordinal);
+
+        foreach (var pair in metadata)
+        {
+            if (
+                string.Equals(pair.Key, UploadDateMetadataKey, StringComparison.Ordinal)
+                || string.Equals(pair.Key, ExtensionMetadataKey, StringComparison.Ordinal)
+            )
+            {
+                continue;
+            }
+
+            result[pair.Key] = pair.Value;
+        }
+
+        return result.Count == 0 ? null : result;
+    }
+
     [return: NotNullIfNotNull(nameof(path))]
     public static string? NormalizePath(string? path)
     {

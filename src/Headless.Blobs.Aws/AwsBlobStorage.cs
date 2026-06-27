@@ -500,7 +500,7 @@ public sealed class AwsBlobStorage(
 
         var stream = new ActionableStream(response.ResponseStream, response.Dispose);
 
-        return new(stream, location.Path, _ToDictionary(response.Metadata));
+        return new(stream, location.Path, BlobStorageHelpers.ToUserMetadata(_ToDictionary(response.Metadata)));
     }
 
     public async ValueTask<BlobInfo?> GetBlobInfoAsync(
@@ -541,9 +541,9 @@ public sealed class AwsBlobStorage(
             Created = created,
             Modified = modified,
             Size = response.ContentLength,
-            // M2 fold: the HEAD response carries the per-object metadata (including the framework uploadDate/extension
-            // keys), so GetBlobInfoAsync surfaces it. The list API cannot, which is why ListAsync leaves it null.
-            Metadata = _ToDictionary(response.Metadata),
+            // M2 fold: the HEAD response carries the per-object metadata; surface the caller's keys only (the
+            // framework uploadDate/extension keys are stripped). The list API cannot, which is why ListAsync leaves it null.
+            Metadata = BlobStorageHelpers.ToUserMetadata(_ToDictionary(response.Metadata)),
         };
     }
 

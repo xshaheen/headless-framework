@@ -504,10 +504,10 @@ public sealed class AzureBlobStorage(
             Size = properties.ContentLength,
             Created = properties.CreatedOn,
             Modified = properties.LastModified,
-            // M2 fold: the GetProperties response carries the per-blob metadata (including the framework
-            // uploadDate/extension keys), so GetBlobInfoAsync surfaces it as non-null string values. The list API
-            // returns metadata too (requested via BlobTraits.Metadata), so the two stay consistent.
-            Metadata = _ToMetadata(properties.Metadata),
+            // M2 fold: the GetProperties response carries the per-blob metadata; surface the caller's keys only
+            // (the framework uploadDate/extension keys are stripped). The list path strips identically, so the two
+            // stay consistent.
+            Metadata = BlobStorageHelpers.ToUserMetadata(_ToMetadata(properties.Metadata)),
         };
     }
 
@@ -573,7 +573,7 @@ public sealed class AzureBlobStorage(
             Size = blobItem.Properties.ContentLength ?? 0,
             Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
             Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
-            Metadata = _ToMetadata(blobItem.Metadata),
+            Metadata = BlobStorageHelpers.ToUserMetadata(_ToMetadata(blobItem.Metadata)),
         };
     }
 

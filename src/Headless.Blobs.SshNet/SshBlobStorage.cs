@@ -435,7 +435,7 @@ public sealed class SshBlobStorage(
             var wrappedStream = new PooledClientStream(sftpStream, client, pool);
 
 #pragma warning disable CA2000 // Dispose objects before losing scope - ownership transferred to caller
-            return new BlobDownloadResult(wrappedStream, location.Path, metadata);
+            return new BlobDownloadResult(wrappedStream, location.Path, BlobStorageHelpers.ToUserMetadata(metadata));
 #pragma warning restore CA2000
         }
         catch (SftpPathNotFoundException ex)
@@ -848,10 +848,11 @@ public sealed class SshBlobStorage(
         {
             BlobKey = objectKey,
             // Prefer the sidecar's recorded upload date when present; otherwise SFTP only exposes the last-write time.
+            // Created reads the raw sidecar (framework keys intact); the returned Metadata exposes caller keys only.
             Created = _GetCreated(metadata, modified),
             Modified = modified,
             Size = file.Length,
-            Metadata = metadata,
+            Metadata = BlobStorageHelpers.ToUserMetadata(metadata),
         };
     }
 
