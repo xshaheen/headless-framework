@@ -74,6 +74,10 @@ public interface ICache
     #region Update
 
     /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: any existing entry is evicted and
+    /// the method returns <see langword="false"/> without writing a new value.
+    /// </remarks>
     ValueTask<bool> UpsertAsync<T>(
         string key,
         T? value,
@@ -157,6 +161,10 @@ public interface ICache
     /// creating the key if absent, and resets the expiration to <paramref name="expiration"/>.
     /// </summary>
     /// <returns>The new value after the increment.</returns>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without incrementing.
+    /// </remarks>
     ValueTask<double> IncrementAsync(
         string key,
         double amount,
@@ -169,6 +177,10 @@ public interface ICache
     /// creating the key if absent, and resets the expiration to <paramref name="expiration"/>.
     /// </summary>
     /// <returns>The new value after the increment.</returns>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without incrementing.
+    /// </remarks>
     ValueTask<long> IncrementAsync(
         string key,
         long amount,
@@ -179,8 +191,13 @@ public interface ICache
     /// <summary>
     /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is greater than the current
     /// stored value. Returns the difference <c>(new - old)</c> when the store was updated, or <c>0</c> when
-    /// the current value was already ≥ <paramref name="value"/>.
+    /// the current value was already ≥ <paramref name="value"/>. When the key is absent the value is stored and
+    /// that stored value is returned (there is no prior value to compute a difference against).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without storing.
+    /// </remarks>
     ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
@@ -191,8 +208,13 @@ public interface ICache
     /// <summary>
     /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is greater than the current
     /// stored value. Returns the difference <c>(new - old)</c> when the store was updated, or <c>0</c> when
-    /// the current value was already ≥ <paramref name="value"/>.
+    /// the current value was already ≥ <paramref name="value"/>. When the key is absent the value is stored and
+    /// that stored value is returned (there is no prior value to compute a difference against).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without storing.
+    /// </remarks>
     ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
@@ -203,8 +225,13 @@ public interface ICache
     /// <summary>
     /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is less than the current
     /// stored value. Returns the difference <c>(old - new)</c> when the store was updated, or <c>0</c> when
-    /// the current value was already ≤ <paramref name="value"/>.
+    /// the current value was already ≤ <paramref name="value"/>. When the key is absent the value is stored and
+    /// that stored value is returned (there is no prior value to compute a difference against).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without storing.
+    /// </remarks>
     ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
@@ -215,8 +242,13 @@ public interface ICache
     /// <summary>
     /// Stores <paramref name="value"/> at <paramref name="key"/> only when it is less than the current
     /// stored value. Returns the difference <c>(old - new)</c> when the store was updated, or <c>0</c> when
-    /// the current value was already ≤ <paramref name="value"/>.
+    /// the current value was already ≤ <paramref name="value"/>. When the key is absent the value is stored and
+    /// that stored value is returned (there is no prior value to compute a difference against).
     /// </summary>
+    /// <remarks>
+    /// A <see cref="TimeSpan.Zero"/> expiration is treated as expire-immediately: the key is evicted and the method
+    /// returns <c>0</c> without storing.
+    /// </remarks>
     ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
