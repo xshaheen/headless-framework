@@ -453,13 +453,19 @@ public sealed class AzureBlobStorage(
 
         try
         {
-            // Stream lazily from the network instead of buffering the whole blob into a MemoryStream (which OOMs on
-            // large blobs). OpenReadAsync issues the initial request eagerly, so a missing blob/container still
-            // surfaces as RequestFailedException here and maps to null. The caller owns the returned result and
-            // disposes the stream (see IBlobStorage.OpenReadStreamAsync).
+            // Fetch metadata (and confirm existence) first so the download surfaces the caller's metadata like the
+            // other providers; the framework uploadDate/extension keys are stripped. A missing blob/container 404s
+            // here and maps to null below, before any stream is opened, so there is nothing to leak. Then stream
+            // lazily from the network instead of buffering the whole blob into a MemoryStream (which OOMs on large
+            // blobs). The caller owns the returned result and disposes the stream (see IBlobStorage.OpenReadStreamAsync).
+            var properties = await blobClient
+                .GetPropertiesAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            var metadata = BlobStorageHelpers.ToUserMetadata(_ToMetadata(properties.Value.Metadata));
+
             var stream = await blobClient.OpenReadAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            return new(stream, location.Path);
+            return new(stream, location.Path, metadata);
         }
         catch (RequestFailedException e)
             when (e.ErrorCode == BlobErrorCode.BlobNotFound || e.ErrorCode == BlobErrorCode.ContainerNotFound)
