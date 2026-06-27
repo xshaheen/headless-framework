@@ -5,6 +5,7 @@ using Headless.Blobs.SshNet;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Renci.SshNet.Common;
 
 // ReSharper disable AccessToDisposedClosure
 namespace Tests;
@@ -225,6 +226,32 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     [Fact]
     public override Task container_management_capability_matches_support_flag() =>
         base.container_management_capability_matches_support_flag();
+
+    [Fact]
+    public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
+    {
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+        var container = "missing-" + Guid.NewGuid().ToString("N");
+        var location = new BlobLocation(container, "nested/file.txt");
+
+        try
+        {
+            var act = async () => await storage.UploadContentAsync(location, "payload", AbortToken);
+
+            await act.Should().ThrowAsync<SftpPathNotFoundException>();
+            (await manager.ContainerExistsAsync(container, AbortToken)).Should().BeFalse();
+
+            await manager.EnsureContainerAsync(container, AbortToken);
+            await storage.UploadContentAsync(location, "payload", AbortToken);
+
+            (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("payload");
+        }
+        finally
+        {
+            await manager.DeleteContainerAsync(container, AbortToken);
+        }
+    }
 
     #endregion
 

@@ -35,6 +35,7 @@ public sealed class AwsBlobStorage(
 {
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
+    private const int _MaxDeleteObjectsBatchSize = 1000;
 
     private readonly AwsBlobStorageOptions _options = optionsAccessor.Value;
     private readonly ILogger _logger = logger ?? NullLogger<AwsBlobStorage>.Instance;
@@ -150,7 +151,7 @@ public sealed class AwsBlobStorage(
                         await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
                     }
@@ -222,40 +223,98 @@ public sealed class AwsBlobStorage(
         var items = paths as IReadOnlyList<string> ?? [.. paths];
         var results = new BlobBulkResult[items.Count];
 
-        var options = new ParallelOptions
+        var batchEntries = new List<(int Index, BlobLocation Location, string Bucket, string Key)>(items.Count);
+
+        for (var i = 0; i < items.Count; i++)
         {
-            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
-            CancellationToken = cancellationToken,
-        };
+            cancellationToken.ThrowIfCancellationRequested();
 
-        await Parallel
-            .ForAsync(
-                0,
-                items.Count,
-                options,
-                async (i, ct) =>
+            // H1 fold: build the location (validates) and resolve the bucket + key through the single seam, so a bulk
+            // delete can never target an un-normalized bucket or a raw, un-validated key. An unaddressable key fails
+            // that one item without aborting the batch.
+            var location = default(BlobLocation);
+
+            try
+            {
+                location = new BlobLocation(container, items[i]);
+                var (bucket, key) = BlobLocationResolver.Resolve(location, normalizer);
+                batchEntries.Add((i, location, bucket, key));
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+            }
+        }
+
+        var deleteEntries = new List<(int Index, BlobLocation Location, string Bucket, string Key)>(batchEntries.Count);
+
+        foreach (var entry in batchEntries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                if (await _ExistsAsync(entry.Bucket, entry.Key, cancellationToken).ConfigureAwait(false))
                 {
-                    var path = items[i];
+                    deleteEntries.Add(entry);
+                }
+                else
+                {
+                    results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(false));
+                }
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Fail(e));
+            }
+        }
 
-                    // H1 fold: build the location (validates) and resolve the bucket + key through the single seam,
-                    // so a bulk delete can never target an un-normalized bucket or a raw, un-validated key. An
-                    // unaddressable key fails that one item without aborting the batch.
-                    var location = default(BlobLocation);
+        foreach (var bucketGroup in deleteEntries.GroupBy(static entry => entry.Bucket, StringComparer.Ordinal))
+        {
+            foreach (var chunk in bucketGroup.Chunk(_MaxDeleteObjectsBatchSize))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-                    try
+                var request = new DeleteObjectsRequest
+                {
+                    BucketName = bucketGroup.Key,
+                    Objects = [.. chunk.Select(static entry => new KeyVersion { Key = entry.Key })],
+                    Quiet = false,
+                };
+
+                try
+                {
+                    var response = await s3.DeleteObjectsAsync(request, cancellationToken).ConfigureAwait(false);
+                    var errors = (response.DeleteErrors ?? [])
+                        .Where(static error => error.Key is not null)
+                        .ToDictionary(static error => error.Key!, StringComparer.Ordinal);
+
+                    foreach (var entry in chunk)
                     {
-                        location = new BlobLocation(container, path);
-                        var (bucket, key) = BlobLocationResolver.Resolve(location, normalizer);
-                        var deleted = await _DeleteResolvedAsync(bucket, key, ct).ConfigureAwait(false);
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted));
-                    }
-                    catch (Exception e)
-                    {
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+                        results[entry.Index] = errors.TryGetValue(entry.Key, out var error)
+                            ? new BlobBulkResult(
+                                entry.Location,
+                                Result<bool, Exception>.Fail(_ToDeleteException(error))
+                            )
+                            : new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(true));
                     }
                 }
-            )
-            .ConfigureAwait(false);
+                catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+                {
+                    foreach (var entry in chunk)
+                    {
+                        results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(false));
+                    }
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    foreach (var entry in chunk)
+                    {
+                        results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Fail(e));
+                    }
+                }
+            }
+        }
 
         return results;
     }
@@ -335,7 +394,9 @@ public sealed class AwsBlobStorage(
             _logger.LogDeletedFiles(deleteResponse.DeletedObjects?.Count ?? 0, prefix);
 
             count += deleteResponse.DeletedObjects?.Count ?? 0;
-        } while (listResponse.IsTruncated is true && !cancellationToken.IsCancellationRequested);
+        } while (listResponse.IsTruncated is true);
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (errors.Count > 0)
         {
@@ -404,21 +465,42 @@ public sealed class AwsBlobStorage(
         var (oldBucket, oldKey) = BlobLocationResolver.Resolve(source, normalizer);
 
         var deleteRequest = new DeleteObjectRequest { BucketName = oldBucket, Key = oldKey };
-        var deleteResponse = await s3.DeleteObjectAsync(deleteRequest, cancellationToken).ConfigureAwait(false);
+        DeleteObjectResponse deleteResponse;
+
+        try
+        {
+            deleteResponse = await s3.DeleteObjectAsync(deleteRequest, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await _RollbackMoveCopyAsync(destination).ConfigureAwait(false);
+            throw;
+        }
 
         if (!deleteResponse.HttpStatusCode.IsSuccessStatusCode())
         {
             _logger.LogFailedToDeleteOriginalRollback(oldBucket, oldKey);
 
-            // Compensating transaction: delete the copy to restore the original state.
-            var (newBucket, newKey) = BlobLocationResolver.Resolve(destination, normalizer);
-            var compensate = new DeleteObjectRequest { BucketName = newBucket, Key = newKey };
-            await s3.DeleteObjectAsync(compensate, cancellationToken).ConfigureAwait(false);
+            await _RollbackMoveCopyAsync(destination).ConfigureAwait(false);
 
             return false;
         }
 
         return true;
+    }
+
+    private async ValueTask _RollbackMoveCopyAsync(BlobLocation destination)
+    {
+        try
+        {
+            var (newBucket, newKey) = BlobLocationResolver.Resolve(destination, normalizer);
+            var compensate = new DeleteObjectRequest { BucketName = newBucket, Key = newKey };
+            await s3.DeleteObjectAsync(compensate, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _logger.LogMoveRollbackFailed(e, destination.ToString());
+        }
     }
 
     #endregion
@@ -630,6 +712,15 @@ public sealed class AwsBlobStorage(
 
     #region Metadata Converters
 
+    private static Exception _ToDeleteException(DeleteError error)
+    {
+        var message = string.IsNullOrEmpty(error.Message)
+            ? $"S3 failed to delete object '{error.Key}'."
+            : error.Message;
+
+        return new InvalidOperationException(message);
+    }
+
     private static IReadOnlyDictionary<string, string>? _ToDictionary(MetadataCollection? metadata)
     {
         if (metadata is null || metadata.Count == 0)
@@ -790,4 +881,12 @@ internal static partial class AwsBlobStorageLog
         Message = "Failed to delete original object {OldBucket}/{OldKey} after copy, rolling back"
     )]
     public static partial void LogFailedToDeleteOriginalRollback(this ILogger logger, string oldBucket, string oldKey);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "MoveRollbackFailed",
+        Level = LogLevel.Error,
+        Message = "Move rollback failed for {Blob}: could not delete the copied blob; a duplicate may remain"
+    )]
+    public static partial void LogMoveRollbackFailed(this ILogger logger, Exception exception, string blob);
 }

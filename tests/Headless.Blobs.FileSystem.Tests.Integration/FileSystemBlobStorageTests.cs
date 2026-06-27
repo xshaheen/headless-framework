@@ -226,6 +226,25 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         return base.container_management_capability_matches_support_flag();
     }
 
+    [Fact]
+    public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
+    {
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+        var container = "missing-" + Guid.NewGuid().ToString("N");
+        var location = new BlobLocation(container, "nested/file.txt");
+
+        var act = async () => await storage.UploadContentAsync(location, "payload", AbortToken);
+
+        await act.Should().ThrowAsync<DirectoryNotFoundException>();
+        (await manager.ContainerExistsAsync(container, AbortToken)).Should().BeFalse();
+
+        await manager.EnsureContainerAsync(container, AbortToken);
+        await storage.UploadContentAsync(location, "payload", AbortToken);
+
+        (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("payload");
+    }
+
     #endregion
 
     #region Empty / missing container (no throw)

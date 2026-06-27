@@ -68,14 +68,21 @@ public sealed class FileSystemBlobStorage : IBlobStorage
     {
         Argument.IsNotNull(content);
 
-        var (_, key, fullPath) = _ResolveLocation(location);
+        var (container, key, fullPath) = _ResolveLocation(location);
+        var containerDirectory = _ContainerDirectory(container);
+
+        if (!Directory.Exists(containerDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Blob container '{container}' does not exist. Ensure it through IBlobContainerManager before uploading."
+            );
+        }
 
         var directory = Path.GetDirectoryName(fullPath);
 
         if (!string.IsNullOrEmpty(directory))
         {
-            // Intermediate path creation is inherent to writing a blob (KTD5) — this is path creation, not the
-            // container lifecycle owned by FileSystemBlobContainerManager.
+            // Intermediate path creation is inherent to writing a blob; the top-level container was verified above.
             Directory.CreateDirectory(directory);
         }
 
@@ -138,7 +145,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
                 await UploadAsync(location, blob.Stream, blob.Metadata, cancellationToken).ConfigureAwait(false);
                 results.Add(new BlobBulkResult(location, Result<bool, Exception>.Ok(true)));
             }
-            catch (Exception e)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
                 results.Add(new BlobBulkResult(location, Result<bool, Exception>.Fail(e)));
             }
@@ -190,7 +197,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
                 var deleted = _DeleteBlobAndSidecar(fullPath);
                 results.Add(new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted)));
             }
-            catch (Exception e)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
                 results.Add(new BlobBulkResult(location, Result<bool, Exception>.Fail(e)));
             }
@@ -618,8 +625,8 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         foreach (var pair in metadata)
         {
             if (
-                string.Equals(pair.Key, BlobStorageHelpers.UploadDateMetadataKey, StringComparison.Ordinal)
-                || string.Equals(pair.Key, BlobStorageHelpers.ExtensionMetadataKey, StringComparison.Ordinal)
+                string.Equals(pair.Key, BlobStorageHelpers.UploadDateMetadataKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(pair.Key, BlobStorageHelpers.ExtensionMetadataKey, StringComparison.OrdinalIgnoreCase)
             )
             {
                 continue;

@@ -73,9 +73,8 @@ public sealed class SshBlobStorage(
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Write content first, creating the inherent path directories on demand. A missing top-level directory is
-            // created here as part of writing the blob (inherent path creation) — explicit container lifecycle lives
-            // on IBlobContainerManager, not on this data-plane upload.
+            // Write content first, creating only container-relative parent directories on demand. The top-level
+            // container must already exist because explicit container lifecycle lives on IBlobContainerManager.
             try
             {
                 await _WriteAllAsync(client, blobPath, content, cancellationToken).ConfigureAwait(false);
@@ -140,7 +139,7 @@ public sealed class SshBlobStorage(
                         await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
                     }
@@ -221,7 +220,7 @@ public sealed class SshBlobStorage(
                         var deleted = await DeleteAsync(location, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted));
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
                     }
@@ -368,21 +367,21 @@ public sealed class SshBlobStorage(
 
             return true;
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             logger.LogMoveRollback(e, source.ToString(), destination.ToString());
 
             // Compensating delete so the original is preserved; swallow a rollback failure (best-effort).
             try
             {
-                await DeleteAsync(destination, cancellationToken).ConfigureAwait(false);
+                await DeleteAsync(destination, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception rollbackError)
             {
                 logger.LogMoveRollbackFailed(rollbackError, destination.ToString());
             }
 
-            return false;
+            throw;
         }
     }
 
@@ -681,15 +680,29 @@ public sealed class SshBlobStorage(
         // The segments come from the already-resolved (validated + normalized) blob path, so directory creation can
         // never act on a raw, un-validated segment — this is the upload/move half of the H3 fold.
         var segments = directory.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        if (segments.Length == 0)
+        {
+            return;
+        }
+
         var current = string.Empty;
 
-        foreach (var segment in segments)
+        for (var i = 0; i < segments.Length; i++)
         {
+            var segment = segments[i];
             current = current.Length == 0 ? segment : $"{current}/{segment}";
 
             if (await client.ExistsAsync(current, cancellationToken).ConfigureAwait(false))
             {
                 continue;
+            }
+
+            if (i == 0)
+            {
+                throw new SftpPathNotFoundException(
+                    $"Blob container '{segment}' does not exist. Ensure it through IBlobContainerManager before uploading."
+                );
             }
 
             logger.LogCreatingContainerSegment(segment);

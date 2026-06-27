@@ -25,7 +25,7 @@ public static class BlobLocationResolver
     public static (string Container, string Key) Resolve(BlobLocation location, IBlobNamingNormalizer normalizer)
     {
         var container = normalizer.NormalizeContainerName(location.Container);
-        var key = _NormalizeKey(location.Path, normalizer);
+        var key = _NormalizeKey(location.Path, normalizer, allowTrailingSlash: false);
 
         _ValidateResolved(container, key);
 
@@ -44,7 +44,7 @@ public static class BlobLocationResolver
 
         if (!string.IsNullOrEmpty(query.Prefix))
         {
-            prefix = _NormalizeKey(query.Prefix, normalizer);
+            prefix = _NormalizeKey(query.Prefix, normalizer, allowTrailingSlash: true);
 
             // A non-empty prefix that the (lossy) normalizer reduces to empty must NOT silently widen a scoped
             // listing/delete into a whole-container match. Fail closed.
@@ -63,13 +63,38 @@ public static class BlobLocationResolver
         return (container, prefix);
     }
 
-    private static string _NormalizeKey(string path, IBlobNamingNormalizer normalizer)
+    private static string _NormalizeKey(string path, IBlobNamingNormalizer normalizer, bool allowTrailingSlash)
     {
         var segments = path.Split('/');
 
         for (var i = 0; i < segments.Length; i++)
         {
+            var rawSegment = segments[i];
             segments[i] = normalizer.NormalizeBlobName(segments[i]);
+
+            if (string.IsNullOrEmpty(segments[i]))
+            {
+                var isIntentionalTrailingSlash =
+                    allowTrailingSlash && i == segments.Length - 1 && rawSegment.Length == 0;
+
+                if (isIntentionalTrailingSlash)
+                {
+                    continue;
+                }
+
+                throw new ArgumentException(
+                    "The blob key contains a segment that is empty after provider normalization.",
+                    nameof(path)
+                );
+            }
+
+            if (segments[i] is "." or "..")
+            {
+                throw new ArgumentException(
+                    "The blob key contains a relative path segment after provider normalization.",
+                    nameof(path)
+                );
+            }
         }
 
         return string.Join('/', segments);

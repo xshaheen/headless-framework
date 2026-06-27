@@ -114,6 +114,103 @@ public sealed class AwsBlobStorageEngineTests : TestBase
     }
 
     [Fact]
+    public async Task bulk_upload_propagates_cancellation()
+    {
+        _s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+
+        var sut = _CreateSut();
+        IReadOnlyCollection<BlobUploadRequest> blobs = [new("cancel.txt", new MemoryStream("x"u8.ToArray()))];
+
+        var act = async () => await sut.BulkUploadAsync("bucket", blobs, AbortToken);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task bulk_delete_uses_s3_batch_delete_and_maps_delete_errors()
+    {
+        _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var key = ci.ArgAt<string>(1);
+
+                return key == "absent.txt"
+                    ? Task.FromException<GetObjectMetadataResponse>(
+                        new AmazonS3Exception("not found") { StatusCode = HttpStatusCode.NotFound }
+                    )
+                    : Task.FromResult(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK });
+            });
+
+        _s3.DeleteObjectsAsync(Arg.Any<DeleteObjectsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var keys = ci.Arg<DeleteObjectsRequest>().Objects.Select(static item => item.Key).ToList();
+
+                return new DeleteObjectsResponse
+                {
+                    HttpStatusCode = HttpStatusCode.OK,
+                    DeletedObjects = keys.Where(static key => key == "ok.txt")
+                        .Select(static key => new DeletedObject { Key = key })
+                        .ToList(),
+                    DeleteErrors = keys.Where(static key => key == "fail.txt")
+                        .Select(static key => new DeleteError
+                        {
+                            Key = key,
+                            Code = "InternalError",
+                            Message = "transient",
+                        })
+                        .ToList(),
+                };
+            });
+
+        var sut = _CreateSut();
+
+        var results = await sut.BulkDeleteAsync(
+            "bucket",
+            ["ok.txt", "fail.txt", "absent.txt", "../escape.txt"],
+            AbortToken
+        );
+
+        results.Should().HaveCount(4);
+        results[0].Location.Path.Should().Be("ok.txt");
+        results[0].Result.Value.Should().BeTrue();
+        results[1].Location.Path.Should().Be("fail.txt");
+        results[1].Result.IsFailure.Should().BeTrue();
+        results[2].Location.Path.Should().Be("absent.txt");
+        results[2].Result.Value.Should().BeFalse();
+        results[3].Result.IsFailure.Should().BeTrue();
+
+        await _s3.Received(1)
+            .DeleteObjectsAsync(
+                Arg.Is<DeleteObjectsRequest>(request =>
+                    request.BucketName == "bucket"
+                    && request.Objects.Count == 2
+                    && request.Objects.Any(static item => item.Key == "ok.txt")
+                    && request.Objects.Any(static item => item.Key == "fail.txt")
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        await _s3.ReceivedWithAnyArgs(3).GetObjectMetadataAsync(default(string)!, default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().DeleteObjectAsync(default(DeleteObjectRequest)!, default);
+    }
+
+    [Fact]
+    public async Task bulk_delete_propagates_cancellation()
+    {
+        _s3.GetObjectMetadataAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new GetObjectMetadataResponse { HttpStatusCode = HttpStatusCode.OK });
+        _s3.DeleteObjectsAsync(Arg.Any<DeleteObjectsRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+
+        var sut = _CreateSut();
+
+        var act = async () => await sut.BulkDeleteAsync("bucket", ["cancel.txt"], AbortToken);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task delete_all_counts_objects_deleted_on_the_partial_failure_retry()
     {
         // A single listing page of five matching objects: three that delete on the first pass, two that fail
@@ -192,6 +289,37 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         // Exactly the initial bulk delete plus a single retry for the failed keys.
         await _s3.ReceivedWithAnyArgs(2).DeleteObjectsAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task move_rolls_back_destination_copy_when_source_delete_throws()
+    {
+        _s3.CopyObjectAsync(Arg.Any<CopyObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CopyObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+
+        var deleteError = new AmazonS3Exception("delete failed");
+
+        _s3.DeleteObjectAsync(Arg.Any<DeleteObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var request = ci.Arg<DeleteObjectRequest>();
+
+                return request.Key == "source.txt"
+                    ? Task.FromException<DeleteObjectResponse>(deleteError)
+                    : Task.FromResult(new DeleteObjectResponse { HttpStatusCode = HttpStatusCode.OK });
+            });
+
+        var sut = _CreateSut();
+
+        var act = async () =>
+            await sut.MoveAsync(new BlobLocation("bucket", "source.txt"), new BlobLocation("bucket", "target.txt"));
+
+        await act.Should().ThrowAsync<AmazonS3Exception>().WithMessage("delete failed");
+        await _s3.Received(1)
+            .DeleteObjectAsync(
+                Arg.Is<DeleteObjectRequest>(request => request.BucketName == "bucket" && request.Key == "target.txt"),
+                Arg.Is<CancellationToken>(token => token == CancellationToken.None)
+            );
     }
 
     [Fact]

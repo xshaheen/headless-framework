@@ -104,6 +104,26 @@ public sealed class BlobLocationResolverTests : TestBase
     }
 
     [Fact]
+    public void should_reject_key_that_normalizes_to_empty()
+    {
+        var location = new BlobLocation("bucket", ":");
+
+        var act = () => BlobLocationResolver.Resolve(location, _crossOs);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_reject_key_segment_that_normalizes_to_current_directory()
+    {
+        var location = new BlobLocation("bucket", ".:/file.txt");
+
+        var act = () => BlobLocationResolver.Resolve(location, _crossOs);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_reject_query_prefix_that_normalizes_to_empty()
     {
         // ":" passes BlobQuery construction but normalizes to empty; it must not become a whole-container match
@@ -122,6 +142,16 @@ public sealed class BlobLocationResolverTests : TestBase
         var act = () => BlobLocationResolver.ResolveQuery(query, _crossOs);
 
         act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_preserve_query_prefix_with_trailing_slash()
+    {
+        var query = new BlobQuery("bucket", "folder/");
+
+        var (_, prefix) = BlobLocationResolver.ResolveQuery(query, _crossOs);
+
+        prefix.Should().Be("folder/");
     }
 
     #endregion

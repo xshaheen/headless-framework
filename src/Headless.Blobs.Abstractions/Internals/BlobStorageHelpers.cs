@@ -22,7 +22,7 @@ public static class BlobStorageHelpers
     public const string SidecarSuffix = ".hlmeta";
 
     /// <summary>Returns <see langword="true"/> when <paramref name="key"/> is reserved for sidecar metadata (ends with <see cref="SidecarSuffix"/>).</summary>
-    public static bool IsSidecarKey(string key) => key.EndsWith(SidecarSuffix, StringComparison.Ordinal);
+    public static bool IsSidecarKey(string key) => key.EndsWith(SidecarSuffix, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Returns a copy of <paramref name="metadata"/> with the framework-internal keys
@@ -42,8 +42,8 @@ public static class BlobStorageHelpers
         foreach (var pair in metadata)
         {
             if (
-                string.Equals(pair.Key, UploadDateMetadataKey, StringComparison.Ordinal)
-                || string.Equals(pair.Key, ExtensionMetadataKey, StringComparison.Ordinal)
+                string.Equals(pair.Key, UploadDateMetadataKey, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(pair.Key, ExtensionMetadataKey, StringComparison.OrdinalIgnoreCase)
             )
             {
                 continue;

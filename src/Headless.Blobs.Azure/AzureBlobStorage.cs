@@ -135,7 +135,7 @@ public sealed class AzureBlobStorage(
                         await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
                     }
@@ -198,7 +198,7 @@ public sealed class AzureBlobStorage(
                 var uri = blobServiceClient.GetBlobContainerClient(azureContainer).GetBlobClient(key).Uri;
                 batchEntries.Add((i, location, uri));
             }
-            catch (Exception e)
+            catch (Exception e) when (e is not OperationCanceledException)
             {
                 results[i] = new BlobBulkResult(default, Result<bool, Exception>.Fail(e));
             }
@@ -242,6 +242,29 @@ public sealed class AzureBlobStorage(
                     foreach (var entry in chunk)
                     {
                         results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(false));
+                    }
+                }
+                catch (AggregateException e)
+                    when (!e.InnerExceptions.Any(static inner => inner is OperationCanceledException))
+                {
+                    IReadOnlyList<Exception> errors =
+                        e.InnerExceptions.Count == chunk.Length
+                            ? e.InnerExceptions
+                            : Enumerable.Repeat<Exception>(e, chunk.Length).ToArray();
+
+                    for (var j = 0; j < chunk.Length; j++)
+                    {
+                        results[chunk[j].Index] = new BlobBulkResult(
+                            chunk[j].Location,
+                            Result<bool, Exception>.Fail(errors[j])
+                        );
+                    }
+                }
+                catch (RequestFailedException e)
+                {
+                    foreach (var entry in chunk)
+                    {
+                        results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Fail(e));
                     }
                 }
             }

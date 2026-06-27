@@ -196,6 +196,7 @@ The operational contract changed wholesale (greenfield, no compatibility layer).
 | `GetBlobsAsync(container, pattern, ct)` (interface member) | `GetBlobsAsync(new BlobQuery(container, prefix))` (extension); glob via `GetBlobsAsync(query, globPattern)` |
 | `DeleteAllAsync(container, blobSearchPattern, ct)` | `DeleteAllAsync(new BlobQuery(container, prefix), ct)` — prefix-based; glob-delete is list + filter + bulk-delete |
 | `CreateContainerAsync(container, ct)` | `IBlobContainerManager.EnsureContainerAsync(container, ct)` — resolved from DI |
+| `new BlobUploadRequest(stream, fileName, metadata)` / named `FileName:` | `new BlobUploadRequest(path, stream, metadata)` / named `Path:` |
 | `BulkUploadAsync(...)` → `IReadOnlyList<Result<Exception>>` | `BulkUploadAsync(container, requests, ct)` → `IReadOnlyList<BlobBulkResult>` |
 | `BulkDeleteAsync(...)` → `IReadOnlyList<Result<bool, Exception>>` | `BulkDeleteAsync(container, paths, ct)` → `IReadOnlyList<BlobBulkResult>` |
 | metadata `Dictionary<string, string?>` | `IReadOnlyDictionary<string, string>?` (non-null values) everywhere |

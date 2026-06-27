@@ -331,6 +331,28 @@ public sealed class BlobStorageHelpersTests : TestBase
         BlobStorageHelpers.ExtensionMetadataKey.Should().Be("extension");
     }
 
+    [Fact]
+    public void should_detect_reserved_sidecar_suffix_case_insensitively()
+    {
+        BlobStorageHelpers.IsSidecarKey("report.HLMETA").Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_strip_framework_metadata_keys_case_insensitively()
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["uploaddate"] = "2026-06-27T00:00:00.0000000Z",
+            ["EXTENSION"] = ".txt",
+            ["author"] = "blake",
+        };
+
+        var result = BlobStorageHelpers.ToUserMetadata(metadata);
+
+        result.Should().ContainSingle();
+        result!["author"].Should().Be("blake");
+    }
+
     #endregion
 
     #region CreateGlobMatcher Tests

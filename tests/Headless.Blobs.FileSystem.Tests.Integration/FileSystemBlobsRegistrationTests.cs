@@ -72,9 +72,11 @@ public sealed class FileSystemBlobsRegistrationTests
         var provider = serviceProvider.GetRequiredService<IBlobStorageProvider>();
         var images = provider.GetStorage("images");
         var docs = provider.GetStorage("docs");
+        var imagesManager = serviceProvider.GetRequiredKeyedService<IBlobContainerManager>("images");
         var location = new BlobLocation("bucket", "a.txt");
 
         // when
+        await imagesManager.EnsureContainerAsync(location.Container);
         await images.UploadContentAsync(location, "hello");
 
         // then — write to one named store is not visible in the other, and no default store exists

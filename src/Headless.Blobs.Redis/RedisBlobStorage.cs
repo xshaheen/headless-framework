@@ -268,7 +268,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                         await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
                     }
@@ -360,7 +360,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                         var deleted = await _DeleteResolvedAsync(blobsHash, infoHash, key, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted));
                     }
-                    catch (Exception e)
+                    catch (Exception e) when (e is not OperationCanceledException)
                     {
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
                     }
