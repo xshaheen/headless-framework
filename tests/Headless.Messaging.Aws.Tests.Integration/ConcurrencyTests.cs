@@ -3,7 +3,6 @@
 using Amazon.SimpleNotificationService;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

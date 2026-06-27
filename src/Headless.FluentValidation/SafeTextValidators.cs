@@ -30,6 +30,4 @@ public static class SafeTextValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.ContainsScripts());
         }
     }
-
-#nullable restore
 }

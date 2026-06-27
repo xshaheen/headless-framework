@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Entities;
 using Tests.Fixture;
-using Tests.Fixtures;
 
 namespace Tests;
 

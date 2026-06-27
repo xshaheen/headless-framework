@@ -3,7 +3,6 @@
 using System.Reflection;
 using Headless.Coordination;
 using Headless.Jobs.Coordination;
-using Headless.Jobs.DashboardDtos;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure.Dashboard;
 using Headless.Jobs.Interfaces;

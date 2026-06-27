@@ -72,9 +72,7 @@ public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture)
 
         // when
         var act = () =>
-            provider
-                .GetRequiredService<Microsoft.Extensions.Options.IOptions<Headless.DistributedLocks.DistributedLockOptions>>()
-                .Value;
+            provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<DistributedLockOptions>>().Value;
 
         // then
         act.Should().Throw<Microsoft.Extensions.Options.OptionsValidationException>();

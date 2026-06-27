@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Dapper;
 using Headless.Abstractions;
 using Headless.Messaging.Configuration;

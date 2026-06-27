@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Testing;
 using Headless.Messaging.Transport;
@@ -122,7 +121,7 @@ public sealed class EndToEndTests : TestBase
         // then
         recorded.MessageId.Should().NotBeNullOrWhiteSpace();
         recorded.MessageName.Should().NotBeNullOrWhiteSpace();
-        recorded.MessageType.Should().Be(typeof(OrderCreatedEvent));
+        recorded.MessageType.Should().Be<OrderCreatedEvent>();
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-001");
 
         harness.Published.Should().ContainSingle();
@@ -191,7 +190,7 @@ public sealed class EndToEndTests : TestBase
 
         // then
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("target");
-        recorded.MessageType.Should().Be(typeof(OrderCreatedEvent));
+        recorded.MessageType.Should().Be<OrderCreatedEvent>();
     }
 
     // ─── Test 4: timeout produces descriptive exception ───────────────────────
@@ -208,7 +207,7 @@ public sealed class EndToEndTests : TestBase
 
         // then
         var ex = await act.Should().ThrowAsync<MessageObservationTimeoutException>();
-        ex.Which.ExpectedType.Should().Be(typeof(OrderCreatedEvent));
+        ex.Which.ExpectedType.Should().Be<OrderCreatedEvent>();
         ex.Which.ObservationType.Should().Be(MessageObservationType.Consumed);
         ex.Which.Message.Should().Contain(nameof(OrderCreatedEvent));
         ex.Which.Elapsed.Should().BeGreaterThan(TimeSpan.Zero);
@@ -555,7 +554,7 @@ public sealed class EndToEndTests : TestBase
         var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — observation captures the exhausted message and its exception
-        recorded.MessageType.Should().Be(typeof(OrderCreatedEvent));
+        recorded.MessageType.Should().Be<OrderCreatedEvent>();
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-EXH");
         // The exception is the pipeline-wrapped failure; the original "Test failure" is the inner.
         recorded.Exception.Should().NotBeNull();

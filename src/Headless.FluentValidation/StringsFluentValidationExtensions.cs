@@ -132,7 +132,7 @@ public static class StringsFluentValidationExtensions
         public IRuleBuilderOptions<T, string> Base64()
         {
             return builder
-                .Must(static value => value is null || global::System.Buffers.Text.Base64.IsValid(value.AsSpan()))
+                .Must(static value => value is null || System.Buffers.Text.Base64.IsValid(value.AsSpan()))
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidBase64());
         }
 
@@ -179,5 +179,4 @@ public static class StringsFluentValidationExtensions
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Strings.InvalidCulture());
         }
     }
-#nullable restore
 }

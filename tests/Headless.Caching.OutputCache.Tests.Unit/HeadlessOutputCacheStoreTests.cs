@@ -5,7 +5,6 @@ using System.IO.Pipelines;
 using Headless.Caching;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
-using NSubstitute;
 
 namespace Tests;
 

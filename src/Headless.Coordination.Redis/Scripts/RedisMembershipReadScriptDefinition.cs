@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.Coordination.Redis;
+namespace Headless.Coordination.Redis.Scripts;
 
 /// <summary>Classifies known coordination members with Redis server time.</summary>
 internal sealed class RedisMembershipReadScriptDefinition : RedisScriptDefinition

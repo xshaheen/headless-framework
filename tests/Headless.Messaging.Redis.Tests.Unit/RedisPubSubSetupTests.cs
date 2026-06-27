@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;

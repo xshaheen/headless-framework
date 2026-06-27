@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Exceptions;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

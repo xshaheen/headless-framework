@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Coordination.Redis.Scripts;
 using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;

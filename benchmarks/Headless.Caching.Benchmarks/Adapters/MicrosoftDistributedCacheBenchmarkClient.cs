@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 
 namespace Headless.Caching.Benchmarks.Adapters;

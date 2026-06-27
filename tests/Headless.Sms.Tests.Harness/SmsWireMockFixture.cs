@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http;
 using WireMock.Server;
 
 namespace Headless.Sms.Testing;

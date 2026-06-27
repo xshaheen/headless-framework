@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically releases a reader lock id from the reader hash.</summary>
 internal sealed class ReleaseReadLockScriptDefinition : RedisScriptDefinition

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.AuditLog;
 using Headless.Hosting.Initialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;

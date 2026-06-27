@@ -3,7 +3,6 @@
 using System.Collections;
 using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.PostgreSql;
 using Headless.Testing.Tests;

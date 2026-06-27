@@ -323,7 +323,7 @@ public sealed class MessageObservationStoreTests : TestBase
 
         // then
         ex.Should().NotBeNull();
-        ex!.ExpectedType.Should().Be(typeof(OtherMessage));
+        ex!.ExpectedType.Should().Be<OtherMessage>();
         ex.ObservationType.Should().Be(MessageObservationType.Published);
         ex.Elapsed.Should().BeGreaterThan(TimeSpan.Zero);
         // ObservedMessages contains what was in the Published bucket

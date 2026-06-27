@@ -347,11 +347,11 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         throw new AggregateException(teardownErrors);
     }
 
-    private DatabaseConnection _CreateConnection(string connectionString)
+    private PostgresDatabaseConnection _CreateConnection(string connectionString)
     {
         // connectionString is the engine's pool key; the storage always opens against its owned data source so an
         // injected DataSource (with its configuration and pooling) is honored.
-        return new PostgresDatabaseConnection(_dataSource, _timeProvider, _commandTimeoutSeconds);
+        return new(_dataSource, _timeProvider, _commandTimeoutSeconds);
     }
 
     private PostgresAdvisoryLockKey _CreateKey(string resource)

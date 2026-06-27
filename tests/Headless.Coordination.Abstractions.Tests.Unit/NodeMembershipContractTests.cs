@@ -96,7 +96,7 @@ public sealed class NodeMembershipContractTests : TestBase
                 [typeof(CancellationToken)]
             )!
             .ReturnType.Should()
-            .Be(typeof(ValueTask<IReadOnlyList<NodeIdentity>>));
+            .Be<ValueTask<IReadOnlyList<NodeIdentity>>>();
         typeof(INodeMembership)
             .GetMethod(
                 nameof(INodeMembership.GetLivenessSnapshotAsync),
@@ -104,7 +104,7 @@ public sealed class NodeMembershipContractTests : TestBase
                 [typeof(CancellationToken)]
             )!
             .ReturnType.Should()
-            .Be(typeof(ValueTask<IReadOnlyList<NodeLivenessSnapshot>>));
+            .Be<ValueTask<IReadOnlyList<NodeLivenessSnapshot>>>();
     }
 
     [Fact]

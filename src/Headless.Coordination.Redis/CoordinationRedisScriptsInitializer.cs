@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination.Redis.Scripts;
 using Headless.Hosting.Initialization;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;

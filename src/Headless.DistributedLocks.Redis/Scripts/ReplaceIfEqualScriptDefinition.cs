@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically replaces a value only if it matches the expected value.</summary>
 internal sealed class ReplaceIfEqualScriptDefinition : RedisScriptDefinition

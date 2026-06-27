@@ -420,7 +420,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 IncrementWithExpireScriptDefinition.Instance,
                 key,
-                (RedisValue)amount,
+                amount,
                 expiration,
                 cancellationToken
             )
@@ -450,7 +450,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 IncrementWithExpireScriptDefinition.Instance,
                 key,
-                (RedisValue)amount,
+                amount,
                 expiration,
                 cancellationToken
             )
@@ -480,7 +480,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 SetIfHigherScriptDefinition.Instance,
                 key,
-                (RedisValue)value,
+                value,
                 expiration,
                 cancellationToken
             )
@@ -510,7 +510,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 SetIfHigherScriptDefinition.Instance,
                 key,
-                (RedisValue)value,
+                value,
                 expiration,
                 cancellationToken
             )
@@ -540,7 +540,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 SetIfLowerScriptDefinition.Instance,
                 key,
-                (RedisValue)value,
+                value,
                 expiration,
                 cancellationToken
             )
@@ -570,7 +570,7 @@ public sealed class RedisCache(
         var raw = await _RunNumericScriptAsync(
                 SetIfLowerScriptDefinition.Instance,
                 key,
-                (RedisValue)value,
+                value,
                 expiration,
                 cancellationToken
             )
@@ -1719,7 +1719,7 @@ public sealed class RedisCache(
     )
     {
         var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs.HasValue ? expiresMs.Value : RedisValue.EmptyString;
 
         return scriptsLoader.EvaluateAsync(
             _database,
@@ -2673,7 +2673,7 @@ public sealed class RedisCache(
             var newTtlMs = (long)expiresIn.TotalMilliseconds;
 
             await _database
-                .ScriptEvaluateAsync(_SlidingRearmLua, [redisKey], [(RedisValue)rearmThresholdMs, (RedisValue)newTtlMs])
+                .ScriptEvaluateAsync(_SlidingRearmLua, [redisKey], [rearmThresholdMs, newTtlMs])
                 .ConfigureAwait(false);
         }
         catch (Exception exception)
