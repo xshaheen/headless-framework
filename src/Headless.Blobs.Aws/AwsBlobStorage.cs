@@ -141,19 +141,15 @@ public sealed class AwsBlobStorage(
                 {
                     var blob = items[i];
 
-                    // Build the per-item location inside the try so an unaddressable key (traversal, reserved
-                    // sidecar suffix, etc.) becomes a per-item failure instead of aborting the whole batch.
-                    var location = default(BlobLocation);
-
                     try
                     {
-                        location = new BlobLocation(container, blob.Path);
+                        var location = new BlobLocation(container, blob.Path);
                         await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+                        results[i] = new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e));
                     }
                 }
             )
@@ -229,20 +225,18 @@ public sealed class AwsBlobStorage(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // H1 fold: build the location (validates) and resolve the bucket + key through the single seam, so a bulk
-            // delete can never target an un-normalized bucket or a raw, un-validated key. An unaddressable key fails
-            // that one item without aborting the batch.
-            var location = default(BlobLocation);
-
             try
             {
-                location = new BlobLocation(container, items[i]);
+                // H1 fold: build the location (validates) and resolve the bucket + key through the single seam, so a
+                // bulk delete can never target an un-normalized bucket or a raw, un-validated key. An unaddressable key
+                // fails that one item without aborting the batch.
+                var location = new BlobLocation(container, items[i]);
                 var (bucket, key) = BlobLocationResolver.Resolve(location, normalizer);
                 batchEntries.Add((i, location, bucket, key));
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+                results[i] = new BlobBulkResult(container, items[i], Result<bool, Exception>.Fail(e));
             }
         }
 

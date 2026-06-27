@@ -125,19 +125,15 @@ public sealed class AzureBlobStorage(
                 {
                     var blob = items[i];
 
-                    // Build the per-item location inside the try so an unaddressable key (traversal, reserved
-                    // sidecar suffix, etc.) becomes a per-item failure instead of aborting the whole batch.
-                    var location = default(BlobLocation);
-
                     try
                     {
-                        location = new BlobLocation(container, blob.Path);
+                        var location = new BlobLocation(container, blob.Path);
                         await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+                        results[i] = new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e));
                     }
                 }
             )
@@ -200,7 +196,7 @@ public sealed class AzureBlobStorage(
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                results[i] = new BlobBulkResult(default, Result<bool, Exception>.Fail(e));
+                results[i] = new BlobBulkResult(container, items[i], Result<bool, Exception>.Fail(e));
             }
         }
 

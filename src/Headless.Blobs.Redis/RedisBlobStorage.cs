@@ -258,19 +258,15 @@ public sealed class RedisBlobStorage : IBlobStorage
                 {
                     var blob = items[i];
 
-                    // Build the per-item location inside the try so an unaddressable key (traversal, reserved
-                    // sidecar suffix, etc.) becomes a per-item failure instead of aborting the whole batch.
-                    var location = default(BlobLocation);
-
                     try
                     {
-                        location = new BlobLocation(container, blob.Path);
+                        var location = new BlobLocation(container, blob.Path);
                         await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+                        results[i] = new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e));
                     }
                 }
             )
@@ -349,20 +345,18 @@ public sealed class RedisBlobStorage : IBlobStorage
                 {
                     var path = items[i];
 
-                    // Build the location (validates) and resolve it through the single seam so a bulk delete can
-                    // never target a raw, un-validated key. An unaddressable key fails that one item only.
-                    var location = default(BlobLocation);
-
                     try
                     {
-                        location = new BlobLocation(container, path);
+                        // Build the location (validates) and resolve it through the single seam so a bulk delete can
+                        // never target a raw, un-validated key. An unaddressable key fails that one item only.
+                        var location = new BlobLocation(container, path);
                         var (blobsHash, infoHash, key) = _Resolve(location);
                         var deleted = await _DeleteResolvedAsync(blobsHash, infoHash, key, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted));
                     }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+                        results[i] = new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e));
                     }
                 }
             )

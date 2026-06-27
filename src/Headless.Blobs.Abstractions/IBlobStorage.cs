@@ -51,8 +51,9 @@ public interface IBlobStorage : IAsyncDisposable
     /// <param name="blobs">The blobs to upload. The <see cref="BlobUploadRequest.Path"/> of each is the container-relative key.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// One <see cref="BlobBulkResult"/> per input blob, each carrying the blob's <see cref="BlobLocation"/> and a
-    /// <c>Result&lt;bool, Exception&gt;</c> (<c>Ok(true)</c> on success, <c>Fail</c> with the upload exception). A
+    /// One <see cref="BlobBulkResult"/> per input blob, each carrying the raw container/path identity and a
+    /// <c>Result&lt;bool, Exception&gt;</c> (<c>Ok(true)</c> on success, <c>Fail</c> with the upload exception). Invalid
+    /// per-entry paths keep their raw identity with a <see langword="null"/> <see cref="BlobBulkResult.Location"/>. A
     /// per-entry failure does not abort the batch; correlate results by identity, not position.
     /// </returns>
     ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
@@ -76,9 +77,11 @@ public interface IBlobStorage : IAsyncDisposable
     /// <param name="paths">Container-relative object keys to delete. An empty collection returns an empty list immediately.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// One <see cref="BlobBulkResult"/> per input key, each carrying the blob's <see cref="BlobLocation"/> and a
+    /// One <see cref="BlobBulkResult"/> per input key, each carrying the raw container/path identity and a
     /// <c>Result&lt;bool, Exception&gt;</c> (<c>Ok(true)</c> deleted, <c>Ok(false)</c> not found, <c>Fail</c> with the
-    /// per-blob exception). A per-entry failure does not abort the batch; correlate by identity, not position.
+    /// per-blob exception). Invalid per-entry paths keep their raw identity with a <see langword="null"/>
+    /// <see cref="BlobBulkResult.Location"/>. A per-entry failure does not abort the batch; correlate by identity, not
+    /// position.
     /// </returns>
     ValueTask<IReadOnlyList<BlobBulkResult>> BulkDeleteAsync(
         string container,

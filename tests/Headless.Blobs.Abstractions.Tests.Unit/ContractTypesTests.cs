@@ -274,7 +274,7 @@ public sealed class ContractTypesTests : TestBase
     #region BlobBulkResult Tests
 
     [Fact]
-    public void should_carry_location_and_success_result_when_constructed()
+    public void should_carry_location_identity_and_success_result_when_constructed()
     {
         // Arrange
         var location = new BlobLocation("bucket", "file.txt");
@@ -283,13 +283,15 @@ public sealed class ContractTypesTests : TestBase
         var result = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
 
         // Assert
+        result.Container.Should().Be("bucket");
+        result.Path.Should().Be("file.txt");
         result.Location.Should().Be(location);
         result.Result.IsSuccess.Should().BeTrue();
         result.Result.Value.Should().BeTrue();
     }
 
     [Fact]
-    public void should_carry_location_and_failure_result_when_constructed_with_error()
+    public void should_carry_location_identity_and_failure_result_when_constructed_with_error()
     {
         // Arrange
         var location = new BlobLocation("bucket", "file.txt");
@@ -299,7 +301,26 @@ public sealed class ContractTypesTests : TestBase
         var result = new BlobBulkResult(location, Result<bool, Exception>.Fail(error));
 
         // Assert
+        result.Container.Should().Be("bucket");
+        result.Path.Should().Be("file.txt");
         result.Location.Should().Be(location);
+        result.Result.IsFailure.Should().BeTrue();
+        result.Result.Error.Should().BeSameAs(error);
+    }
+
+    [Fact]
+    public void should_carry_raw_identity_without_location_when_input_path_is_invalid()
+    {
+        // Arrange
+        var error = new ArgumentException("Invalid path.");
+
+        // Act
+        var result = new BlobBulkResult("bucket", "../escape.txt", Result<bool, Exception>.Fail(error));
+
+        // Assert
+        result.Container.Should().Be("bucket");
+        result.Path.Should().Be("../escape.txt");
+        result.Location.Should().BeNull();
         result.Result.IsFailure.Should().BeTrue();
         result.Result.Error.Should().BeSameAs(error);
     }

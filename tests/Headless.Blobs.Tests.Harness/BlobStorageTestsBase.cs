@@ -722,7 +722,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
         results.Should().HaveCount(2);
         results.Should().OnlyContain(r => r.Result.IsSuccess);
-        results.Select(r => r.Location.Path).Should().BeEquivalentTo(["one.txt", "two.txt"]);
+        results.Select(r => r.Path).Should().BeEquivalentTo(["one.txt", "two.txt"]);
         (await storage.GetBlobContentAsync(_Loc("one.txt"), AbortToken)).Should().Be("one");
         (await storage.GetBlobContentAsync(_Loc("two.txt"), AbortToken)).Should().Be("two");
     }
@@ -770,7 +770,7 @@ public abstract class BlobStorageTestsBase : TestBase
         results.Should().HaveCount(2);
 
         // Correlate by identity (the new contract), not by position.
-        var byPath = results.ToDictionary(r => r.Location.Path, r => r.Result, StringComparer.Ordinal);
+        var byPath = results.ToDictionary(r => r.Path, r => r.Result, StringComparer.Ordinal);
         byPath["present.txt"].IsSuccess.Should().BeTrue();
         byPath["present.txt"].Value.Should().BeTrue("the blob existed and was deleted");
         byPath["absent.txt"].IsSuccess.Should().BeTrue();
@@ -804,7 +804,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
         results.Should().HaveCount(count);
 
-        var byPath = results.ToDictionary(r => r.Location.Path, r => r.Result, StringComparer.Ordinal);
+        var byPath = results.ToDictionary(r => r.Path, r => r.Result, StringComparer.Ordinal);
 
         for (var i = 0; i < count; i++)
         {

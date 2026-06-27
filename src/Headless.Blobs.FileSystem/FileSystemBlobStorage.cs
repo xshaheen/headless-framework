@@ -135,19 +135,17 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Build the per-item location inside the try so an unaddressable key (traversal, reserved sidecar
-            // suffix, etc.) becomes a per-item failure instead of aborting the whole batch.
-            var location = default(BlobLocation);
-
             try
             {
-                location = new BlobLocation(container, blob.Path);
+                // Build the per-item location inside the try so an unaddressable key (traversal, reserved sidecar
+                // suffix, etc.) becomes a per-item failure instead of aborting the whole batch.
+                var location = new BlobLocation(container, blob.Path);
                 await UploadAsync(location, blob.Stream, blob.Metadata, cancellationToken).ConfigureAwait(false);
                 results.Add(new BlobBulkResult(location, Result<bool, Exception>.Ok(true)));
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                results.Add(new BlobBulkResult(location, Result<bool, Exception>.Fail(e)));
+                results.Add(new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e)));
             }
         }
 
@@ -187,19 +185,17 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Build + resolve inside the try so an unaddressable key fails that one item without aborting the batch.
-            var location = default(BlobLocation);
-
             try
             {
-                location = new BlobLocation(container, path);
+                // Build + resolve inside the try so an unaddressable key fails that one item without aborting the batch.
+                var location = new BlobLocation(container, path);
                 var (_, _, fullPath) = _ResolveLocation(location);
                 var deleted = _DeleteBlobAndSidecar(fullPath);
                 results.Add(new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted)));
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                results.Add(new BlobBulkResult(location, Result<bool, Exception>.Fail(e)));
+                results.Add(new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e)));
             }
         }
 

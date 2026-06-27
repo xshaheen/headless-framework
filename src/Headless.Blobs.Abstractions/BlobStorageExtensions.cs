@@ -63,8 +63,14 @@ public static class BlobStorageExtensions
         )
         {
             var matcher = BlobStorageHelpers.CreateGlobMatcher(globPattern);
+            var narrowedQuery = _TryNarrowGlobQuery(query, globPattern);
 
-            await foreach (var blob in storage.GetBlobsAsync(query, cancellationToken).ConfigureAwait(false))
+            if (narrowedQuery is null)
+            {
+                yield break;
+            }
+
+            await foreach (var blob in storage.GetBlobsAsync(narrowedQuery, cancellationToken).ConfigureAwait(false))
             {
                 if (matcher(blob.BlobKey))
                 {
@@ -325,6 +331,47 @@ public static class BlobStorageExtensions
             }
 
             return JsonSerializer.Deserialize(content, jsonTypeInfo);
+        }
+    }
+
+    private static BlobQuery? _TryNarrowGlobQuery(BlobQuery query, string globPattern)
+    {
+        if (query.ContinuationToken is not null)
+        {
+            return query;
+        }
+
+        var literalPrefix = BlobStorageHelpers.GetLiteralPrefix(globPattern);
+
+        if (string.IsNullOrEmpty(literalPrefix))
+        {
+            return query;
+        }
+
+        if (string.IsNullOrEmpty(query.Prefix))
+        {
+            return _TryCreateQueryWithPrefix(query, literalPrefix);
+        }
+
+        if (literalPrefix.StartsWith(query.Prefix, StringComparison.Ordinal))
+        {
+            return _TryCreateQueryWithPrefix(query, literalPrefix);
+        }
+
+        return query.Prefix.StartsWith(literalPrefix, StringComparison.Ordinal) ? query : null;
+    }
+
+    private static BlobQuery _TryCreateQueryWithPrefix(BlobQuery query, string prefix)
+    {
+        try
+        {
+            return new BlobQuery(query.Container, prefix, query.PageSize, query.ContinuationToken);
+        }
+        catch (ArgumentException)
+        {
+            // A glob can contain a literal prefix that is not a valid BlobQuery prefix. Keep the old behavior in that
+            // case: enumerate the caller's query and let the client-side matcher decide.
+            return query;
         }
     }
 }

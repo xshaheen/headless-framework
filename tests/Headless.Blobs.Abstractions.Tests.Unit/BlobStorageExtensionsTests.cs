@@ -103,6 +103,92 @@ public sealed class BlobStorageExtensionsTests : TestBase
         collected.Select(b => b.BlobKey).Should().BeEquivalentTo(["a.txt", "c.txt"]);
     }
 
+    [Fact]
+    public async Task should_push_glob_literal_prefix_when_it_narrows_query()
+    {
+        // Arrange
+        var page = new BlobPage([_Blob("logs/2026/a.txt"), _Blob("logs/2026/b.json")], null);
+        _storage.ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>()).Returns(page);
+
+        // Act
+        var collected = new List<BlobInfo>();
+        await foreach (
+            var blob in _storage.GetBlobsAsync(new BlobQuery("bucket", "logs/"), "logs/2026/*.txt", AbortToken)
+        )
+        {
+            collected.Add(blob);
+        }
+
+        // Assert
+        collected.Select(b => b.BlobKey).Should().BeEquivalentTo(["logs/2026/a.txt"]);
+        await _storage
+            .Received(1)
+            .ListAsync(
+                Arg.Is<BlobQuery>(q => q.Container == "bucket" && q.Prefix == "logs/2026/" && q.PageSize == 100),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_keep_query_prefix_when_it_is_already_narrower_than_glob_literal_prefix()
+    {
+        // Arrange
+        var page = new BlobPage([_Blob("logs/2026/a.txt")], null);
+        _storage.ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>()).Returns(page);
+
+        // Act
+        await foreach (var _ in _storage.GetBlobsAsync(new BlobQuery("bucket", "logs/2026/"), "logs/*.txt", AbortToken))
+        { }
+
+        // Assert
+        await _storage
+            .Received(1)
+            .ListAsync(
+                Arg.Is<BlobQuery>(q => q.Container == "bucket" && q.Prefix == "logs/2026/"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_enumerate_when_query_prefix_and_glob_literal_prefix_are_incompatible()
+    {
+        // Act
+        var collected = new List<BlobInfo>();
+        await foreach (var blob in _storage.GetBlobsAsync(new BlobQuery("bucket", "logs/"), "images/*.txt", AbortToken))
+        {
+            collected.Add(blob);
+        }
+
+        // Assert
+        collected.Should().BeEmpty();
+        await _storage.DidNotReceiveWithAnyArgs().ListAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task should_not_change_prefix_when_query_has_continuation_token()
+    {
+        // Arrange
+        var page = new BlobPage([_Blob("logs/2026/a.txt")], null);
+        _storage.ListAsync(Arg.Any<BlobQuery>(), Arg.Any<CancellationToken>()).Returns(page);
+
+        // Act
+        await foreach (
+            var _ in _storage.GetBlobsAsync(
+                new BlobQuery("bucket", "logs/", continuationToken: "token-1"),
+                "logs/2026/*.txt",
+                AbortToken
+            )
+        ) { }
+
+        // Assert
+        await _storage
+            .Received(1)
+            .ListAsync(
+                Arg.Is<BlobQuery>(q => q.Prefix == "logs/" && q.ContinuationToken == "token-1"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     #endregion
 
     #region GetBlobsListAsync Tests

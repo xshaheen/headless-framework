@@ -129,19 +129,15 @@ public sealed class SshBlobStorage(
                 {
                     var blob = items[i];
 
-                    // Build the per-item location inside the try so an unaddressable key (traversal, reserved sidecar
-                    // suffix, etc.) becomes a per-item failure instead of aborting the whole batch.
-                    var location = default(BlobLocation);
-
                     try
                     {
-                        location = new BlobLocation(container, blob.Path);
+                        var location = new BlobLocation(container, blob.Path);
                         await UploadAsync(location, blob.Stream, blob.Metadata, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(true));
                     }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+                        results[i] = new BlobBulkResult(container, blob.Path, Result<bool, Exception>.Fail(e));
                     }
                 }
             )
@@ -210,19 +206,17 @@ public sealed class SshBlobStorage(
                 {
                     var path = items[i];
 
-                    // Build the location inside the try (validates + resolves through the single seam) so an
-                    // unaddressable key fails that one item without aborting the batch.
-                    var location = default(BlobLocation);
-
                     try
                     {
-                        location = new BlobLocation(container, path);
+                        // Build the location inside the try (validates + resolves through the single seam) so an
+                        // unaddressable key fails that one item without aborting the batch.
+                        var location = new BlobLocation(container, path);
                         var deleted = await DeleteAsync(location, ct).ConfigureAwait(false);
                         results[i] = new BlobBulkResult(location, Result<bool, Exception>.Ok(deleted));
                     }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
-                        results[i] = new BlobBulkResult(location, Result<bool, Exception>.Fail(e));
+                        results[i] = new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e));
                     }
                 }
             )
@@ -512,12 +506,13 @@ public sealed class SshBlobStorage(
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // SFTP has no server-side listing: enumerate the whole container, drop sidecars, apply the prefix, then
-            // sort by key so the start-after-key continuation token is stable across pages (emulated re-scan tier).
+            // SFTP has no server-side listing filter, but a path-like prefix can still start recursion at the deepest
+            // safe directory implied by that prefix. File-name-only prefixes fall back to the container root.
+            var (startDirectory, relativePrefix) = GetEnumerationScope(container, prefix);
             var matches = new List<BlobInfo>();
 
             await foreach (
-                var (key, file) in _EnumerateBlobsAsync(client, container, relativePrefix: "", cancellationToken)
+                var (key, file) in _EnumerateBlobsAsync(client, startDirectory, relativePrefix, cancellationToken)
                     .ConfigureAwait(false)
             )
             {
@@ -579,6 +574,30 @@ public sealed class SshBlobStorage(
     private static string _CombinePath(string container, string key)
     {
         return string.IsNullOrEmpty(key) ? container : $"{container}/{key}";
+    }
+
+    internal static (string Directory, string RelativePrefix) GetEnumerationScope(string container, string? prefix)
+    {
+        if (string.IsNullOrEmpty(prefix))
+        {
+            return (container, "");
+        }
+
+        var lastSlash = prefix.LastIndexOf('/');
+
+        if (lastSlash < 0)
+        {
+            return (container, "");
+        }
+
+        var directoryPrefix = prefix[..lastSlash];
+
+        if (directoryPrefix.Length == 0)
+        {
+            return (container, "");
+        }
+
+        return ($"{container}/{directoryPrefix}", prefix[..(lastSlash + 1)]);
     }
 
     private Dictionary<string, string> _BuildSidecarPayload(IReadOnlyDictionary<string, string>? metadata, string path)

@@ -103,7 +103,7 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                 .Be(expectedFailure, "result at index {0} must describe blobs[{0}] ({1})", i, blobs[i].Path);
 
             // Every result correlates to its own blob by identity (the new contract), not merely by position.
-            results[i].Location.Path.Should().Be(blobs[i].Path);
+            results[i].Path.Should().Be(blobs[i].Path);
 
             if (expectedFailure)
             {
@@ -173,12 +173,14 @@ public sealed class AwsBlobStorageEngineTests : TestBase
         );
 
         results.Should().HaveCount(4);
-        results[0].Location.Path.Should().Be("ok.txt");
+        results[0].Path.Should().Be("ok.txt");
         results[0].Result.Value.Should().BeTrue();
-        results[1].Location.Path.Should().Be("fail.txt");
+        results[1].Path.Should().Be("fail.txt");
         results[1].Result.IsFailure.Should().BeTrue();
-        results[2].Location.Path.Should().Be("absent.txt");
+        results[2].Path.Should().Be("absent.txt");
         results[2].Result.Value.Should().BeFalse();
+        results[3].Path.Should().Be("../escape.txt");
+        results[3].Location.Should().BeNull();
         results[3].Result.IsFailure.Should().BeTrue();
 
         await _s3.Received(1)
