@@ -9,15 +9,6 @@ namespace Headless.Blobs.Azure;
 public sealed class AzureStorageOptions
 {
     /// <summary>
-    /// Legacy flag retained for provider option-shape compatibility. It is no longer consulted by the data-plane
-    /// write path: <see cref="IBlobStorage"/> never auto-creates a missing container — a missing container surfaces
-    /// as an error. Container lifecycle now lives on the separately-registered <see cref="IBlobContainerManager"/>
-    /// capability (<c>EnsureContainerAsync</c> always creates regardless of this flag, caching the result per
-    /// instance).
-    /// </summary>
-    public bool AutoCreateContainer { get; set; } = true;
-
-    /// <summary>
     /// Access type applied when <see cref="IBlobContainerManager.EnsureContainerAsync"/> creates a new container.
     /// </summary>
     public PublicAccessType ContainerPublicAccessType { get; set; } = PublicAccessType.None;

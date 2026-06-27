@@ -23,7 +23,7 @@ public sealed class BlobInfo
     public required DateTimeOffset Modified { get; init; }
 
     /// <summary>Size of the blob content in bytes.</summary>
-    public long Size { get; init; }
+    public required long Size { get; init; }
 
     /// <summary>
     /// Provider-supplied metadata key/value pairs, or <see langword="null"/> when the provider does not return

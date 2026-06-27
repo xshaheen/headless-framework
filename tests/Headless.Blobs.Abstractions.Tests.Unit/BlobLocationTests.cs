@@ -121,6 +121,16 @@ public sealed class BlobLocationTests : TestBase
     }
 
     [Fact]
+    public void should_throw_when_path_segment_matches_reserved_sidecar_suffix()
+    {
+        // Act
+        var act = () => new BlobLocation("bucket", "report.hlmeta/content.txt");
+
+        // Assert
+        act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("path");
+    }
+
+    [Fact]
     public void should_allow_dotted_filename_when_not_traversal()
     {
         // Act

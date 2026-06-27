@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Primitives;
@@ -101,7 +102,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         "return redis.call('HSCAN', KEYS[1], ARGV[1], 'MATCH', ARGV[2], 'COUNT', ARGV[3])";
 
     /// <summary>The Redis database obtained from the configured <see cref="IConnectionMultiplexer"/>.</summary>
-    public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+    private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
     public RedisBlobStorage(
         IOptions<RedisBlobStorageOptions> optionsAccessor,
@@ -369,8 +370,8 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         Argument.IsNotNull(query);
 
-        var (blobsHash, infoHash, prefix) = _ResolveQuery(query);
-        var match = string.IsNullOrEmpty(prefix) ? "*" : prefix + "*";
+        var (_, infoHash, prefix) = _ResolveQuery(query);
+        var match = _ToRedisGlobPrefixMatch(prefix);
 
         // Walk the HSCAN cursor to completion to collect every field under the prefix, then delete each blob. The
         // cursor is exhausted when it returns to "0"; COUNT is only a hint, so each batch is approximate.
@@ -405,36 +406,9 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         _logger.LogDeletingFiles(distinctKeys.Count, prefix);
 
-        var count = 0;
-
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
-            CancellationToken = cancellationToken,
-        };
-
-        await Parallel
-            .ForEachAsync(
-                distinctKeys,
-                options,
-                async (key, ct) =>
-                {
-                    try
-                    {
-                        if (await _DeleteResolvedAsync(blobsHash, infoHash, key, ct).ConfigureAwait(false))
-                        {
-                            Interlocked.Increment(ref count);
-                        }
-                    }
-#pragma warning disable ERP022
-                    catch
-                    {
-                        // Best-effort: swallow per-key failures and just don't count them.
-                    }
-#pragma warning restore ERP022
-                }
-            )
+        var deleteResults = await BulkDeleteAsync(query.Container, distinctKeys, cancellationToken)
             .ConfigureAwait(false);
+        var count = BlobStorageHelpers.CountDeletedOrThrow(deleteResults, $"DeleteAllAsync({infoHash}, {prefix})");
 
         _logger.LogFinishedDeletingFiles(count, prefix);
 
@@ -635,7 +609,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNull(query);
 
         var (_, infoHash, prefix) = _ResolveQuery(query);
-        var match = string.IsNullOrEmpty(prefix) ? "*" : prefix + "*";
+        var match = _ToRedisGlobPrefixMatch(prefix);
         var cursor = string.IsNullOrEmpty(query.ContinuationToken) ? "0" : query.ContinuationToken;
 
         // HSCAN is a cursor-based scan, NOT an ordered range query: it returns fields in an unspecified,
@@ -683,6 +657,28 @@ public sealed class RedisBlobStorage : IBlobStorage
         var entries = (RedisResult[]?)top[1];
 
         return (nextCursor, entries);
+    }
+
+    private static string _ToRedisGlobPrefixMatch(string? prefix)
+    {
+        return string.IsNullOrEmpty(prefix) ? "*" : _EscapeRedisGlob(prefix) + "*";
+    }
+
+    private static string _EscapeRedisGlob(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+
+        foreach (var ch in value)
+        {
+            if (ch is '*' or '?' or '[' or ']' or '\\')
+            {
+                builder.Append('\\');
+            }
+
+            builder.Append(ch);
+        }
+
+        return builder.ToString();
     }
 
     private List<BlobInfo> _ParseBlobInfos(RedisResult[]? entries)

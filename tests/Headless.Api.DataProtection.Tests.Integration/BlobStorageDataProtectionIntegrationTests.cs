@@ -2,8 +2,10 @@
 
 using System.Xml.Linq;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Headless.Abstractions;
 using Headless.Api;
+using Headless.Blobs;
 using Headless.Blobs.Azure;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -38,7 +40,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
 
-        var azureStorageOptions = new AzureStorageOptions { AutoCreateContainer = true };
+        var azureStorageOptions = new AzureStorageOptions();
         var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
@@ -54,12 +56,20 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
         );
     }
 
+    private IBlobContainerManager _CreateContainerManager()
+    {
+        return new TestAzureBlobContainerManager(
+            _blobServiceClient ?? throw new InvalidOperationException("Create storage before creating the manager."),
+            new AzureBlobNamingNormalizer()
+        );
+    }
+
     [Fact]
     public async Task should_persist_and_retrieve_keys_with_real_storage()
     {
         // Arrange
         await using var storage = _CreateStorage();
-        var repository = new BlobStorageDataProtectionXmlRepository(storage, LoggerFactory);
+        var repository = new BlobStorageDataProtectionXmlRepository(storage, _CreateContainerManager(), LoggerFactory);
 
         var keyId = Faker.Random.Guid().ToString("N");
         var element = new XElement(
@@ -85,7 +95,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     {
         // Arrange
         await using var storage = _CreateStorage();
-        var repository = new BlobStorageDataProtectionXmlRepository(storage, LoggerFactory);
+        var repository = new BlobStorageDataProtectionXmlRepository(storage, _CreateContainerManager(), LoggerFactory);
 
         var keys = Enumerable
             .Range(0, 3)
@@ -211,6 +221,46 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
             var keyId = key.Attribute("id")!.Value;
             var retrieved = retrievedElements.FirstOrDefault(e => e.Attribute("id")?.Value == keyId);
             retrieved.Should().NotBeNull($"concurrent key {keyId} should be retrieved");
+        }
+    }
+
+    private sealed class TestAzureBlobContainerManager(
+        BlobServiceClient blobServiceClient,
+        IBlobNamingNormalizer normalizer
+    ) : IBlobContainerManager
+    {
+        public async ValueTask EnsureContainerAsync(string container, CancellationToken cancellationToken = default)
+        {
+            await blobServiceClient
+                .GetBlobContainerClient(normalizer.NormalizeContainerName(container))
+                .CreateIfNotExistsAsync(PublicAccessType.None, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        public async ValueTask<bool> ContainerExistsAsync(
+            string container,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var response = await blobServiceClient
+                .GetBlobContainerClient(normalizer.NormalizeContainerName(container))
+                .ExistsAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            return response.Value;
+        }
+
+        public async ValueTask<bool> DeleteContainerAsync(
+            string container,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var response = await blobServiceClient
+                .GetBlobContainerClient(normalizer.NormalizeContainerName(container))
+                .DeleteIfExistsAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            return response.Value;
         }
     }
 }

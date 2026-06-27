@@ -843,6 +843,26 @@ public abstract class BlobStorageTestsBase : TestBase
         (await storage.GetBlobContentAsync(_Loc("ensure.txt"), AbortToken)).Should().Be("ok");
     }
 
+    public virtual async Task container_manager_rejects_traversal_container()
+    {
+        if (!SupportsContainerManagement)
+        {
+            GetContainerManager().Should().BeNull("the backend does not support container management");
+            return;
+        }
+
+        var manager = GetContainerManager();
+        manager.Should().NotBeNull("SupportsContainerManagement is true");
+
+        var ensure = () => manager!.EnsureContainerAsync("../escape", AbortToken).AsTask();
+        var exists = () => manager!.ContainerExistsAsync("../escape", AbortToken).AsTask();
+        var delete = () => manager!.DeleteContainerAsync("../escape", AbortToken).AsTask();
+
+        await ensure.Should().ThrowAsync<ArgumentException>();
+        await exists.Should().ThrowAsync<ArgumentException>();
+        await delete.Should().ThrowAsync<ArgumentException>();
+    }
+
     #endregion
 
     #region Empty / missing container (no throw)

@@ -40,6 +40,40 @@ public static class DataProtectionBuilderExtensions
 
     /// <summary>
     /// Configures the data protection system to persist XML key descriptors to an <see cref="IBlobStorage"/> backend
+    /// and ensure the key container through <paramref name="containerManager"/> before writes.
+    /// </summary>
+    /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
+    /// <param name="storage">The blob storage instance that will store the key XML files.</param>
+    /// <param name="containerManager">Container manager used to ensure the DataProtection container before writes.</param>
+    /// <param name="loggerFactory">
+    /// Optional logger factory passed to the repository; when <see langword="null"/>, logging is suppressed.
+    /// </param>
+    /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="builder"/>, <paramref name="storage"/>, or <paramref name="containerManager"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    public static IDataProtectionBuilder PersistKeysToBlobStorage(
+        this IDataProtectionBuilder builder,
+        IBlobStorage storage,
+        IBlobContainerManager containerManager,
+        ILoggerFactory? loggerFactory = null
+    )
+    {
+        builder.Services.Configure<KeyManagementOptions>(options =>
+        {
+            options.XmlRepository = new BlobStorageDataProtectionXmlRepository(
+                storage,
+                containerManager,
+                loggerFactory
+            );
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures the data protection system to persist XML key descriptors to an <see cref="IBlobStorage"/> backend
     /// resolved from the application's DI container at first use.
     /// </summary>
     /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
@@ -59,10 +93,15 @@ public static class DataProtectionBuilderExtensions
         builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>
         {
             var storage = storageFactory.Invoke(services);
+            var containerManager = services.GetService<IBlobContainerManager>();
             var loggerFactory = services.GetService<ILoggerFactory>();
 
             return new ConfigureOptions<KeyManagementOptions>(options =>
-                options.XmlRepository = new BlobStorageDataProtectionXmlRepository(storage, loggerFactory)
+                options.XmlRepository = new BlobStorageDataProtectionXmlRepository(
+                    storage,
+                    containerManager,
+                    loggerFactory
+                )
             );
         });
 
@@ -86,10 +125,15 @@ public static class DataProtectionBuilderExtensions
         builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>
         {
             var storage = services.GetRequiredService<IBlobStorage>();
+            var containerManager = services.GetService<IBlobContainerManager>();
             var loggerFactory = services.GetService<ILoggerFactory>();
 
             return new ConfigureOptions<KeyManagementOptions>(options =>
-                options.XmlRepository = new BlobStorageDataProtectionXmlRepository(storage, loggerFactory)
+                options.XmlRepository = new BlobStorageDataProtectionXmlRepository(
+                    storage,
+                    containerManager,
+                    loggerFactory
+                )
             );
         });
 

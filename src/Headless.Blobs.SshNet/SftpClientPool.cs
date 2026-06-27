@@ -104,13 +104,25 @@ public sealed class SftpClientPool : IDisposable
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="client"/> is <see langword="null"/>.</exception>
     public ValueTask ReleaseAsync(SftpClient client)
     {
+        Release(client);
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Synchronously returns a client to the pool if it is still connected and the pool has capacity; otherwise disposes it.
+    /// </summary>
+    /// <param name="client">The client to return. Must not be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="client"/> is <see langword="null"/>.</exception>
+    public void Release(SftpClient client)
+    {
         Argument.IsNotNull(client);
 
         if (_disposed || !client.IsConnected)
         {
             _DisposeClient(client);
             _maxConnections.Release();
-            return ValueTask.CompletedTask;
+            return;
         }
 
         if (!_idle.Writer.TryWrite(client))
@@ -124,8 +136,6 @@ public sealed class SftpClientPool : IDisposable
         {
             _logger.LogReturnedClientToPool();
         }
-
-        return ValueTask.CompletedTask;
     }
 
     private async ValueTask<SftpClient> _CreateAndConnectAsync(CancellationToken ct)

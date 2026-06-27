@@ -183,10 +183,9 @@ public static class SetupCloudflareR2Blob
 
     private static void _ApplyR2ForcedDefaults(AwsBlobStorageOptions options)
     {
-        // R2 has no ACLs, rejects chunked/payload signing, and object-scoped tokens cannot create buckets.
+        // R2 has no ACLs and rejects chunked/payload signing.
         options.CannedAcl = null;
         options.UseChunkEncoding = false;
         options.DisablePayloadSigning = true;
-        options.AutoCreateContainer = false;
     }
 }

@@ -70,6 +70,17 @@ internal sealed class FileSystemBlobContainerManager : IBlobContainerManager
         PathValidation.ValidatePathSegment(container);
 
         var normalized = _normalizer.NormalizeContainerName(container);
+
+        if (string.IsNullOrWhiteSpace(normalized) || normalized is "." or "..")
+        {
+            throw new ArgumentException(
+                "The blob container resolves to the storage root after provider normalization.",
+                nameof(container)
+            );
+        }
+
+        PathValidation.ValidatePathSegment(normalized);
+
         var directory = Path.Combine(_basePath, normalized);
 
         // Defense-in-depth: the resolved container directory must stay under the base directory.

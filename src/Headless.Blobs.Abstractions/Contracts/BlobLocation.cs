@@ -12,11 +12,11 @@ namespace Headless.Blobs;
 /// contain <c>/</c> separators).
 /// </summary>
 /// <remarks>
-/// The value is validated for path security — traversal sequences, absolute paths, control characters, and the
-/// reserved sidecar-metadata suffix — at construction, so every operation that accepts a <see cref="BlobLocation"/>
-/// is guarded before it reaches a provider. Provider-specific normalization (bucket/container naming rules, object-key
-/// normalization) is applied by the provider when it resolves the location, not by this type — normalization rules
-/// differ per backend.
+/// The value is validated for path security — traversal sequences, absolute paths, control characters, and any segment
+/// ending in the reserved sidecar-metadata suffix — at construction, so every operation that accepts a
+/// <see cref="BlobLocation"/> is guarded before it reaches a provider. Provider-specific normalization
+/// (bucket/container naming rules, object-key normalization) is applied by the provider when it resolves the location,
+/// not by this type — normalization rules differ per backend.
 /// </remarks>
 [PublicAPI]
 public readonly record struct BlobLocation
@@ -27,7 +27,7 @@ public readonly record struct BlobLocation
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="container"/> or <paramref name="path"/> is empty/whitespace, contains a
     /// path-traversal sequence, is an absolute path, contains control characters, or — for <paramref name="path"/> —
-    /// collides with the reserved sidecar-metadata suffix.
+    /// contains a segment that collides with the reserved sidecar-metadata suffix.
     /// </exception>
     public BlobLocation(string container, string path)
     {
@@ -37,10 +37,10 @@ public readonly record struct BlobLocation
         PathValidation.ValidatePathSegment(container);
         PathValidation.ValidatePathSegment(path);
 
-        if (BlobStorageHelpers.IsSidecarKey(path))
+        if (BlobStorageHelpers.HasSidecarSegment(path))
         {
             throw new ArgumentException(
-                $"Blob keys ending in the reserved sidecar suffix '{BlobStorageHelpers.SidecarSuffix}' are not allowed.",
+                $"Blob key segments ending in the reserved sidecar suffix '{BlobStorageHelpers.SidecarSuffix}' are not allowed.",
                 nameof(path)
             );
         }

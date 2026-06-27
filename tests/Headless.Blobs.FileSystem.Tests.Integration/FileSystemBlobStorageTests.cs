@@ -227,6 +227,12 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     [Fact]
+    public override Task container_manager_rejects_traversal_container()
+    {
+        return base.container_manager_rejects_traversal_container();
+    }
+
+    [Fact]
     public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
     {
         await using var storage = GetStorage();
@@ -243,6 +249,24 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         await storage.UploadContentAsync(location, "payload", AbortToken);
 
         (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("payload");
+    }
+
+    [Fact]
+    public async Task container_manager_rejects_container_that_normalizes_to_storage_root()
+    {
+        var manager = GetContainerManager();
+
+        Directory.Exists(_baseDirectoryPath).Should().BeTrue();
+
+        var ensure = () => manager.EnsureContainerAsync(":", AbortToken).AsTask();
+        var exists = () => manager.ContainerExistsAsync(":", AbortToken).AsTask();
+        var delete = () => manager.DeleteContainerAsync(":", AbortToken).AsTask();
+
+        await ensure.Should().ThrowAsync<ArgumentException>();
+        await exists.Should().ThrowAsync<ArgumentException>();
+        await delete.Should().ThrowAsync<ArgumentException>();
+
+        Directory.Exists(_baseDirectoryPath).Should().BeTrue();
     }
 
     #endregion

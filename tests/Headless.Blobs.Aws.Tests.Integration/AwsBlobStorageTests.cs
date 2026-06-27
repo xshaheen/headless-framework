@@ -74,7 +74,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
     [Fact]
     public async Task upload_throws_when_bucket_missing()
     {
-        // The data plane never auto-creates a missing bucket (AutoCreateContainer is a retired no-op); a missing
+        // The data plane never auto-creates a missing bucket; a missing
         // top-level container surfaces as an S3 error rather than silently creating the bucket.
         await using var storage = GetStorage();
 
@@ -259,6 +259,10 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
     [Fact]
     public override Task container_management_capability_matches_support_flag() =>
         base.container_management_capability_matches_support_flag();
+
+    [Fact]
+    public override Task container_manager_rejects_traversal_container() =>
+        base.container_manager_rejects_traversal_container();
 
     #endregion
 

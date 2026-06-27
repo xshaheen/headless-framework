@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text;
 using System.Text.RegularExpressions;
 using Headless.Constants;
-using Headless.Urls;
 
 namespace Headless.Blobs.Internals;
 
@@ -23,6 +23,20 @@ public static class BlobStorageHelpers
 
     /// <summary>Returns <see langword="true"/> when <paramref name="key"/> is reserved for sidecar metadata (ends with <see cref="SidecarSuffix"/>).</summary>
     public static bool IsSidecarKey(string key) => key.EndsWith(SidecarSuffix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Returns <see langword="true"/> when any <c>/</c>-delimited segment is reserved for sidecar metadata.</summary>
+    public static bool HasSidecarSegment(string key)
+    {
+        foreach (var segment in key.Split('/'))
+        {
+            if (segment.Length > 0 && IsSidecarKey(segment))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Returns a copy of <paramref name="metadata"/> with the framework-internal keys
@@ -94,31 +108,31 @@ public static class BlobStorageHelpers
         return wildcardIndex < 0 ? pattern : pattern[..wildcardIndex];
     }
 
-    public static SearchCriteria GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
+    /// <summary>Encodes a continuation token that carries the last key returned by a sorted provider page.</summary>
+    public static string EncodeContinuationToken(string startAfterKey)
     {
-        searchPattern = Url.Combine(string.Join('/', directories), NormalizePath(searchPattern));
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(startAfterKey));
+    }
 
-        if (string.IsNullOrEmpty(searchPattern))
+    /// <summary>Decodes a continuation token produced by <see cref="EncodeContinuationToken"/>.</summary>
+    public static string? DecodeContinuationToken(string? token)
+    {
+        return string.IsNullOrEmpty(token) ? null : Encoding.UTF8.GetString(Convert.FromBase64String(token));
+    }
+
+    /// <summary>Counts successful deletes and throws when a bulk delete returned per-entry failures.</summary>
+    public static int CountDeletedOrThrow(IReadOnlyCollection<BlobBulkResult> results, string operation)
+    {
+        var failures = results
+            .Where(static result => result.Result.IsFailure)
+            .Select(static result => result.Result.Error)
+            .ToList();
+
+        if (failures.Count > 0)
         {
-            return new();
+            throw new AggregateException($"{operation} failed for {failures.Count} blob(s).", failures);
         }
 
-        var hasWildcard = searchPattern.Contains('*', StringComparison.Ordinal);
-
-        var prefix = searchPattern;
-        Regex? patternRegex = null;
-
-        if (hasWildcard)
-        {
-            var searchRegexText = Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
-            patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
-
-            var slashPos = searchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? searchPattern[..(slashPos + 1)] : string.Empty;
-        }
-
-        return new(prefix, patternRegex);
+        return results.Count(static result => result.Result is { IsSuccess: true, Value: true });
     }
 }
-
-public sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);

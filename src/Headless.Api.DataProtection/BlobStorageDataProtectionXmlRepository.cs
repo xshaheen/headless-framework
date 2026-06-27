@@ -33,6 +33,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 {
     private const string _Container = "DataProtection";
     private readonly IBlobStorage _storage;
+    private readonly IBlobContainerManager? _containerManager;
     private readonly ILogger _logger;
 
     private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
@@ -54,9 +55,22 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     /// <param name="loggerFactory">Optional logger factory; when <see langword="null"/>, a no-op logger is used.</param>
     /// <exception cref="ArgumentNullException"><paramref name="storage"/> is <see langword="null"/>.</exception>
     public BlobStorageDataProtectionXmlRepository(IBlobStorage storage, ILoggerFactory? loggerFactory = null)
+        : this(storage, containerManager: null, loggerFactory) { }
+
+    /// <summary>Initializes a new instance that reads and writes data-protection key XML to the given blob storage.</summary>
+    /// <param name="storage">The blob storage backend to read and write key XML files.</param>
+    /// <param name="containerManager">Optional container manager used to ensure the DataProtection container before writing.</param>
+    /// <param name="loggerFactory">Optional logger factory; when <see langword="null"/>, a no-op logger is used.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="storage"/> is <see langword="null"/>.</exception>
+    public BlobStorageDataProtectionXmlRepository(
+        IBlobStorage storage,
+        IBlobContainerManager? containerManager,
+        ILoggerFactory? loggerFactory = null
+    )
     {
         Argument.IsNotNull(storage);
         _storage = storage;
+        _containerManager = containerManager;
         _logger = loggerFactory?.CreateLogger(typeof(BlobStorageDataProtectionXmlRepository)) ?? NullLogger.Instance;
     }
 
@@ -138,17 +152,19 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     private async Task _StoreElementAsync(XElement element, string fileName)
     {
         _logger.LogSavingElement(fileName);
-        await _RetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName)).ConfigureAwait(false);
+        await _RetryPipeline.ExecuteAsync(storeElementAsync, (this, element, fileName)).ConfigureAwait(false);
         _logger.LogSavedElement(fileName);
 
         return;
 
         static async ValueTask storeElementAsync(
-            (IBlobStorage Storage, XElement Element, string FileName) state,
+            (BlobStorageDataProtectionXmlRepository Repository, XElement Element, string FileName) state,
             CancellationToken cancellationToken
         )
         {
-            var (storage, element, fileName) = state;
+            var (repository, element, fileName) = state;
+
+            await repository._EnsureContainerAsync(cancellationToken).ConfigureAwait(false);
 
             await using var memoryStream = new MemoryStream();
             await element
@@ -156,9 +172,22 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 .ConfigureAwait(false);
             memoryStream.Seek(0, SeekOrigin.Begin);
 
-            await storage
-                .UploadAsync(new BlobLocation(_Container, fileName), memoryStream, metadata: null, cancellationToken)
+            await repository
+                ._storage.UploadAsync(
+                    new BlobLocation(_Container, fileName),
+                    memoryStream,
+                    metadata: null,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask _EnsureContainerAsync(CancellationToken cancellationToken)
+    {
+        if (_containerManager is not null)
+        {
+            await _containerManager.EnsureContainerAsync(_Container, cancellationToken).ConfigureAwait(false);
         }
     }
 }

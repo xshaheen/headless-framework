@@ -228,6 +228,10 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         base.container_management_capability_matches_support_flag();
 
     [Fact]
+    public override Task container_manager_rejects_traversal_container() =>
+        base.container_manager_rejects_traversal_container();
+
+    [Fact]
     public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
     {
         await using var storage = GetStorage();

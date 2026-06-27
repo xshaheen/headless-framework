@@ -109,7 +109,20 @@ public static class BlobLocationResolver
     /// </summary>
     private static void _ValidateResolved(string container, string? keyOrPrefix)
     {
+        if (string.IsNullOrWhiteSpace(container))
+        {
+            throw new ArgumentException("The blob container is empty after provider normalization.", nameof(container));
+        }
+
         PathValidation.ValidatePathSegment(container);
+
+        if (container is "." or "..")
+        {
+            throw new ArgumentException(
+                "The blob container is a relative path segment after provider normalization.",
+                nameof(container)
+            );
+        }
 
         if (string.IsNullOrEmpty(keyOrPrefix))
         {
@@ -118,11 +131,11 @@ public static class BlobLocationResolver
 
         PathValidation.ValidatePathSegment(keyOrPrefix);
 
-        if (BlobStorageHelpers.IsSidecarKey(keyOrPrefix))
+        if (BlobStorageHelpers.HasSidecarSegment(keyOrPrefix))
         {
             throw new ArgumentException(
-                $"The blob key collides with the reserved sidecar suffix '{BlobStorageHelpers.SidecarSuffix}' after "
-                    + "provider normalization.",
+                $"The blob key contains a segment that collides with the reserved sidecar suffix '{BlobStorageHelpers.SidecarSuffix}' "
+                    + "after provider normalization.",
                 nameof(keyOrPrefix)
             );
         }

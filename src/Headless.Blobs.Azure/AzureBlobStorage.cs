@@ -202,57 +202,32 @@ public sealed class AzureBlobStorage(
 
         if (batchEntries.Count > 0)
         {
-            var batch = blobServiceClient.GetBlobBatchClient();
+            var batchClient = blobServiceClient.GetBlobBatchClient();
 
             // Chunk to stay within the 256 sub-request batch limit. Each chunk's responses are positional, so
             // responses[j] is the outcome for chunk[j].
             foreach (var chunk in batchEntries.Chunk(_MaxBlobBatchSize))
             {
-                var uris = Array.ConvertAll(chunk, entry => entry.Uri);
-
                 try
                 {
-                    var responses = await batch
-                        .DeleteBlobsAsync(uris, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken)
-                        .ConfigureAwait(false);
+                    var batch = batchClient.CreateBatch();
+                    var responses = new List<(int Index, BlobLocation Location, Response Response)>(chunk.Length);
 
-                    for (var j = 0; j < chunk.Length; j++)
-                    {
-                        results[chunk[j].Index] = new BlobBulkResult(
-                            chunk[j].Location,
-                            _MapDeleteResponse(responses[j])
-                        );
-                    }
-                }
-                catch (AggregateException e)
-                    when (e
-                            .InnerExceptions.OfType<RequestFailedException>()
-                            .Any(static inner =>
-                                inner.Status == 404
-                                && string.Equals(inner.ErrorCode, "ContainerNotFound", StringComparison.Ordinal)
-                            )
-                    )
-                {
-                    // The whole container is missing, so every blob in the chunk is simply "not found" -> Ok(false),
-                    // matching the per-blob not-found semantics of a single delete rather than an operation failure.
                     foreach (var entry in chunk)
                     {
-                        results[entry.Index] = new BlobBulkResult(entry.Location, Result<bool, Exception>.Ok(false));
+                        var response = batch.DeleteBlob(entry.Uri, DeleteSnapshotsOption.IncludeSnapshots);
+                        responses.Add((entry.Index, entry.Location, response));
                     }
-                }
-                catch (AggregateException e)
-                    when (!e.InnerExceptions.Any(static inner => inner is OperationCanceledException))
-                {
-                    IReadOnlyList<Exception> errors =
-                        e.InnerExceptions.Count == chunk.Length
-                            ? e.InnerExceptions
-                            : Enumerable.Repeat<Exception>(e, chunk.Length).ToArray();
 
-                    for (var j = 0; j < chunk.Length; j++)
+                    await batchClient
+                        .SubmitBatchAsync(batch, throwOnAnyFailure: false, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    foreach (var response in responses)
                     {
-                        results[chunk[j].Index] = new BlobBulkResult(
-                            chunk[j].Location,
-                            Result<bool, Exception>.Fail(errors[j])
+                        results[response.Index] = new BlobBulkResult(
+                            response.Location,
+                            _MapDeleteResponse(response.Response)
                         );
                     }
                 }
@@ -339,7 +314,10 @@ public sealed class AzureBlobStorage(
                 var deleteResults = await BulkDeleteAsync(query.Container, names, cancellationToken)
                     .ConfigureAwait(false);
 
-                count += deleteResults.Count(static result => result.Result is { IsSuccess: true, Value: true });
+                count += BlobStorageHelpers.CountDeletedOrThrow(
+                    deleteResults,
+                    $"DeleteAllAsync({azureContainer}, {prefix})"
+                );
             }
         }
         catch (Exception e)

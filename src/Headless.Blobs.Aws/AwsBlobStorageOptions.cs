@@ -29,15 +29,6 @@ public sealed class AwsBlobStorageOptions
 
     /// <summary>Maximum degree of parallelism for bulk operations. Default is 10.</summary>
     public int MaxBulkParallelism { get; set; } = 10;
-
-    /// <summary>
-    /// Legacy flag retained for provider option-shape compatibility (for example Cloudflare R2 forces it
-    /// <see langword="false"/>). It is no longer consulted by the data-plane write path: <see cref="IBlobStorage"/>
-    /// never auto-creates a missing bucket — a missing bucket surfaces as an error. Bucket lifecycle now lives on the
-    /// separately-registered <see cref="IBlobContainerManager"/> capability
-    /// (<c>EnsureContainerAsync</c> always creates regardless of this flag).
-    /// </summary>
-    public bool AutoCreateContainer { get; set; } = true;
 }
 
 internal sealed class AwsBlobStorageOptionsValidator : AbstractValidator<AwsBlobStorageOptions>

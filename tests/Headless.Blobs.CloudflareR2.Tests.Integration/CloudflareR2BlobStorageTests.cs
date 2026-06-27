@@ -291,6 +291,10 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
     public override Task container_management_capability_matches_support_flag() =>
         base.container_management_capability_matches_support_flag();
 
+    [Fact]
+    public override Task container_manager_rejects_traversal_container() =>
+        base.container_manager_rejects_traversal_container();
+
     #endregion
 
     #region Empty / missing container (no throw)

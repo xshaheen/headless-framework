@@ -102,6 +102,25 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     public override Task can_delete_specific_files_in_nested_folder() =>
         base.can_delete_specific_files_in_nested_folder();
 
+    [Fact]
+    public async Task delete_all_treats_prefix_glob_metacharacters_as_literals()
+    {
+        await using var storage = GetStorage();
+        await ResetAsync(storage);
+
+        var literal = new BlobLocation(ContainerName, "tenant[1]", "a.txt");
+        var globMatch = new BlobLocation(ContainerName, "tenant1", "a.txt");
+
+        await storage.UploadContentAsync(literal, "literal", AbortToken);
+        await storage.UploadContentAsync(globMatch, "glob", AbortToken);
+
+        var deleted = await storage.DeleteAllAsync(new BlobQuery(ContainerName, "tenant[1]/"), AbortToken);
+
+        deleted.Should().Be(1);
+        (await storage.ExistsAsync(literal, AbortToken)).Should().BeFalse();
+        (await storage.GetBlobContentAsync(globMatch, AbortToken)).Should().Be("glob");
+    }
+
     #endregion
 
     #region Metadata / Move with metadata
@@ -145,6 +164,10 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     [Fact]
     public override Task container_management_capability_matches_support_flag() =>
         base.container_management_capability_matches_support_flag();
+
+    [Fact]
+    public override Task container_manager_rejects_traversal_container() =>
+        base.container_manager_rejects_traversal_container();
 
     #endregion
 

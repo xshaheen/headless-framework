@@ -104,9 +104,32 @@ public sealed class BlobLocationResolverTests : TestBase
     }
 
     [Fact]
+    public void should_reject_key_segment_that_normalizes_into_reserved_sidecar_suffix()
+    {
+        // The whole key does not end in ".hlmeta", but the first segment normalizes into a reserved sidecar key.
+        var location = new BlobLocation("bucket", "report.hlmet:a/content.txt");
+
+        var act = () => BlobLocationResolver.Resolve(location, _crossOs);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_reject_key_that_normalizes_to_empty()
     {
         var location = new BlobLocation("bucket", ":");
+
+        var act = () => BlobLocationResolver.Resolve(location, _crossOs);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(":")]
+    [InlineData(".")]
+    public void should_reject_container_that_normalizes_to_storage_root(string container)
+    {
+        var location = new BlobLocation(container, "file.txt");
 
         var act = () => BlobLocationResolver.Resolve(location, _crossOs);
 

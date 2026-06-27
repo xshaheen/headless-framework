@@ -94,8 +94,6 @@ options.CannedAcl = S3CannedACL.Private;
 options.UseChunkEncoding = true;
 options.DisablePayloadSigning = false;
 options.MaxBulkParallelism = 10;
-// options.AutoCreateContainer — legacy flag, retained for option-shape compatibility; no longer consulted by the
-// write path (UploadAsync never auto-creates a bucket). Use IBlobContainerManager.EnsureContainerAsync instead.
 ```
 
 ## Dependencies

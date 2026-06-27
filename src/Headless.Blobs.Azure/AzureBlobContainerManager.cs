@@ -106,7 +106,19 @@ internal sealed class AzureBlobContainerManager : IBlobContainerManager, IDispos
         Argument.IsNotNullOrWhiteSpace(container);
         PathValidation.ValidatePathSegment(container);
 
-        return _normalizer.NormalizeContainerName(container);
+        var normalized = _normalizer.NormalizeContainerName(container);
+
+        if (string.IsNullOrWhiteSpace(normalized) || normalized is "." or "..")
+        {
+            throw new ArgumentException(
+                "The blob container resolves to the storage root after provider normalization.",
+                nameof(container)
+            );
+        }
+
+        PathValidation.ValidatePathSegment(normalized);
+
+        return normalized;
     }
 
     private bool _disposed;

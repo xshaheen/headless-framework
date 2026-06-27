@@ -316,6 +316,43 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     }
 
     [Fact]
+    public async Task should_ensure_DataProtection_container_before_upload_when_manager_is_available()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        var manager = Substitute.For<IBlobContainerManager>();
+        var calls = new List<string>();
+
+        manager
+            .EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls.Add("ensure");
+                return ValueTask.CompletedTask;
+            });
+
+        storage
+            .UploadAsync(
+                Arg.Any<BlobLocation>(),
+                Arg.Any<Stream>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                calls.Add("upload");
+                return ValueTask.CompletedTask;
+            });
+
+        var sut = new BlobStorageDataProtectionXmlRepository(storage, manager);
+
+        sut.StoreElement(new XElement("key", new XAttribute("id", "test")), "test-key");
+
+        calls.Should().Equal("ensure", "upload");
+
+        await manager.Received(1).EnsureContainerAsync("DataProtection", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void should_save_xml_without_formatting()
     {
         var storage = Substitute.For<IBlobStorage>();

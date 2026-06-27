@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Headless.Abstractions;
@@ -303,10 +304,21 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
         return base.bulk_upload_failure_does_not_abort_batch();
     }
 
-    // bulk_delete_reports_per_entry_results / bulk_delete_reports_each_blob_by_identity are intentionally NOT wired
-    // here: those scenarios assert the "not found -> Ok(false)" distinction, but the Azure batch-delete API (and the
-    // Azurite emulator used in these tests) report success for an already-absent blob, so that distinction is not
-    // observable on this backend. See IBlobStorage.BulkDeleteAsync remarks.
+    [Fact(
+        Skip = "Azure batch delete reports already-absent blobs as success in Azurite, so Ok(false) is not observable."
+    )]
+    public override Task bulk_delete_reports_per_entry_results()
+    {
+        return base.bulk_delete_reports_per_entry_results();
+    }
+
+    [Fact(
+        Skip = "Azure batch delete reports already-absent blobs as success in Azurite, so Ok(false) is not observable."
+    )]
+    public override Task bulk_delete_reports_each_blob_by_identity()
+    {
+        return base.bulk_delete_reports_each_blob_by_identity();
+    }
 
     #endregion
 
@@ -316,6 +328,30 @@ public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobSto
     public override Task container_management_capability_matches_support_flag()
     {
         return base.container_management_capability_matches_support_flag();
+    }
+
+    [Fact]
+    public override Task container_manager_rejects_traversal_container()
+    {
+        return base.container_manager_rejects_traversal_container();
+    }
+
+    [Fact]
+    public async Task upload_to_missing_container_throws_until_container_manager_ensures_it()
+    {
+        await using var storage = GetStorage();
+        var manager = GetContainerManager();
+        var container = "missing" + Guid.NewGuid().ToString("N");
+        var location = new BlobLocation(container, "nested/file.txt");
+
+        var act = async () => await storage.UploadContentAsync(location, "payload", AbortToken);
+
+        await act.Should().ThrowAsync<RequestFailedException>();
+        (await manager.ContainerExistsAsync(container, AbortToken)).Should().BeFalse();
+
+        await manager.EnsureContainerAsync(container, AbortToken);
+        await storage.UploadContentAsync(location, "payload", AbortToken);
+        (await storage.GetBlobContentAsync(location, AbortToken)).Should().Be("payload");
     }
 
     #endregion

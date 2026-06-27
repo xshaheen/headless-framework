@@ -501,7 +501,7 @@ public sealed class SshBlobStorage(
 
         var (container, prefix) = BlobLocationResolver.ResolveQuery(query, normalizer);
 
-        var startAfter = _DecodeToken(query.ContinuationToken);
+        var startAfter = BlobStorageHelpers.DecodeContinuationToken(query.ContinuationToken);
 
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -509,7 +509,7 @@ public sealed class SshBlobStorage(
             // SFTP has no server-side listing filter, but a path-like prefix can still start recursion at the deepest
             // safe directory implied by that prefix. File-name-only prefixes fall back to the container root.
             var (startDirectory, relativePrefix) = GetEnumerationScope(container, prefix);
-            var matches = new List<BlobInfo>();
+            var pageWindow = new List<BlobInfo>(query.PageSize + 1);
 
             await foreach (
                 var (key, file) in _EnumerateBlobsAsync(client, startDirectory, relativePrefix, cancellationToken)
@@ -526,32 +526,40 @@ public sealed class SshBlobStorage(
                     continue;
                 }
 
+                if (startAfter is not null && string.CompareOrdinal(key, startAfter) <= 0)
+                {
+                    continue;
+                }
+
                 // List omits per-object metadata (it would cost a sidecar read per file); GetBlobInfoAsync is the
                 // authoritative source for Metadata and the sidecar-derived Created timestamp.
-                matches.Add(_ToBlobInfo(file, key, metadata: null));
+                var item = _ToBlobInfo(file, key, metadata: null);
+
+                if (pageWindow.Count < query.PageSize + 1)
+                {
+                    pageWindow.Add(item);
+                    continue;
+                }
+
+                var maxIndex = _IndexOfMaxBlobKey(pageWindow);
+
+                if (string.CompareOrdinal(item.BlobKey, pageWindow[maxIndex].BlobKey) < 0)
+                {
+                    pageWindow[maxIndex] = item;
+                }
             }
 
-            matches.Sort(static (a, b) => string.CompareOrdinal(a.BlobKey, b.BlobKey));
-
-            IEnumerable<BlobInfo> ordered = matches;
-
-            if (startAfter is not null)
-            {
-                ordered = ordered.Where(b => string.CompareOrdinal(b.BlobKey, startAfter) > 0);
-            }
-
-            // Take one extra to detect whether a further page exists without a second scan.
-            var page = ordered.Take(query.PageSize + 1).ToList();
+            pageWindow.Sort(static (a, b) => string.CompareOrdinal(a.BlobKey, b.BlobKey));
 
             string? continuationToken = null;
 
-            if (page.Count > query.PageSize)
+            if (pageWindow.Count > query.PageSize)
             {
-                page.RemoveAt(page.Count - 1);
-                continuationToken = _EncodeToken(page[^1].BlobKey);
+                pageWindow.RemoveAt(pageWindow.Count - 1);
+                continuationToken = BlobStorageHelpers.EncodeContinuationToken(pageWindow[^1].BlobKey);
             }
 
-            return new BlobPage(page, continuationToken);
+            return new BlobPage(pageWindow, continuationToken);
         }
         finally
         {
@@ -908,16 +916,19 @@ public sealed class SshBlobStorage(
         return fallback;
     }
 
-    // The continuation token is the last key of the previous page (the start-after-key), Base64-encoded so callers
-    // treat it as opaque and round-trip it without parsing.
-    private static string _EncodeToken(string key)
+    private static int _IndexOfMaxBlobKey(List<BlobInfo> items)
     {
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(key));
-    }
+        var maxIndex = 0;
 
-    private static string? _DecodeToken(string? token)
-    {
-        return string.IsNullOrEmpty(token) ? null : Encoding.UTF8.GetString(Convert.FromBase64String(token));
+        for (var i = 1; i < items.Count; i++)
+        {
+            if (string.CompareOrdinal(items[i].BlobKey, items[maxIndex].BlobKey) > 0)
+            {
+                maxIndex = i;
+            }
+        }
+
+        return maxIndex;
     }
 
     #endregion
@@ -976,9 +987,15 @@ file sealed class PooledClientStream(Stream innerStream, SftpClient client, Sftp
     {
         if (!_disposed && disposing)
         {
-            innerStream.Dispose();
-            pool.ReleaseAsync(client).AsTask().GetAwaiter().GetResult();
-            _disposed = true;
+            try
+            {
+                innerStream.Dispose();
+            }
+            finally
+            {
+                pool.Release(client);
+                _disposed = true;
+            }
         }
 
         base.Dispose(disposing);
@@ -988,9 +1005,15 @@ file sealed class PooledClientStream(Stream innerStream, SftpClient client, Sftp
     {
         if (!_disposed)
         {
-            await innerStream.DisposeAsync().ConfigureAwait(false);
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
-            _disposed = true;
+            try
+            {
+                await innerStream.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                await pool.ReleaseAsync(client).ConfigureAwait(false);
+                _disposed = true;
+            }
         }
 
         await base.DisposeAsync().ConfigureAwait(false);

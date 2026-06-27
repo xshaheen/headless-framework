@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
@@ -44,14 +45,14 @@ public sealed class AzureBlobsRegistrationTests
         services.AddHeadlessBlobs(blobs =>
         {
             // Default store: resolves BlobServiceClient from DI
-            blobs.UseAzure(options => options.AutoCreateContainer = true);
+            blobs.UseAzure(options => options.ContainerPublicAccessType = PublicAccessType.None);
 
             // Named "archive": per-store client factory — simulates a second Azure account
             blobs.AddNamed(
                 "archive",
                 instance =>
                     instance.UseAzure(
-                        setupAction: options => options.AutoCreateContainer = false,
+                        setupAction: options => options.ContainerPublicAccessType = PublicAccessType.None,
                         clientFactory: _ => archiveClient
                     )
             );

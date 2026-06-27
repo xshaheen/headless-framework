@@ -12,8 +12,9 @@ namespace Headless.Blobs;
 /// <para>
 /// Every operation identifies a blob by a single validated <see cref="BlobLocation"/> (top-level container plus a
 /// container-relative object key). The location's constructor validates path security (traversal, control characters,
-/// absolute paths, reserved sidecar suffix) once, so no operation re-implements that guard. Provider-specific naming
-/// rules are applied by the provider's resolve step via the registered <see cref="IBlobNamingNormalizer"/>.
+/// absolute paths, any segment ending in the reserved sidecar suffix) once, so no operation re-implements that guard.
+/// Provider-specific naming rules are applied by the provider's resolve step via the registered
+/// <see cref="IBlobNamingNormalizer"/>.
 /// </para>
 /// <para>
 /// Container/bucket lifecycle (create/exists/delete) is not part of this data-plane contract — it lives on the opt-in
@@ -92,11 +93,12 @@ public interface IBlobStorage : IAsyncDisposable
     /// <summary>Deletes every blob matched by <paramref name="query"/>'s validated prefix and returns how many were deleted.</summary>
     /// <param name="query">The container plus optional server-pushed prefix selecting the blobs to delete.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The number of blobs deleted.</returns>
+    /// <returns>The number of blobs deleted when the whole prefix delete succeeds.</returns>
     /// <remarks>
     /// Deletion is by validated prefix only (the prefix is path-security checked at <see cref="BlobQuery"/>
     /// construction, so a <c>../</c> prefix can never reach enumeration). Glob-pattern deletion is a client-side
-    /// concern: list with a glob filter, then bulk-delete.
+    /// concern: list with a glob filter, then bulk-delete. Providers throw on per-entry or backend failures instead of
+    /// silently under-counting partial deletes.
     /// </remarks>
     ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default);
 

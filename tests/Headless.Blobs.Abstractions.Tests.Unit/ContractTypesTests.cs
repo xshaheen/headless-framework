@@ -20,6 +20,7 @@ public sealed class ContractTypesTests : TestBase
             BlobKey = "folder/file.txt",
             Created = DateTimeOffset.UtcNow,
             Modified = DateTimeOffset.UtcNow,
+            Size = 0,
         };
 
         // Assert
@@ -38,6 +39,7 @@ public sealed class ContractTypesTests : TestBase
             BlobKey = "file.txt",
             Created = created,
             Modified = DateTimeOffset.UtcNow,
+            Size = 0,
         };
 
         // Assert
@@ -56,6 +58,7 @@ public sealed class ContractTypesTests : TestBase
             BlobKey = "file.txt",
             Created = DateTimeOffset.UtcNow.AddDays(-1),
             Modified = modified,
+            Size = 0,
         };
 
         // Assert
@@ -90,6 +93,7 @@ public sealed class ContractTypesTests : TestBase
             BlobKey = "file.txt",
             Created = DateTimeOffset.UtcNow,
             Modified = DateTimeOffset.UtcNow,
+            Size = 0,
             Metadata = metadata,
         };
 
@@ -257,6 +261,7 @@ public sealed class ContractTypesTests : TestBase
                 BlobKey = "file1.txt",
                 Created = DateTimeOffset.UtcNow,
                 Modified = DateTimeOffset.UtcNow,
+                Size = 0,
             },
         };
 

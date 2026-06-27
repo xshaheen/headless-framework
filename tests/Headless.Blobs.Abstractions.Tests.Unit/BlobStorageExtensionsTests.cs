@@ -21,6 +21,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
             BlobKey = key,
             Created = DateTimeOffset.UtcNow,
             Modified = DateTimeOffset.UtcNow,
+            Size = 0,
         };
 
     #region GetBlobsAsync (streaming) Tests
