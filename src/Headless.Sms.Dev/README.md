@@ -8,8 +8,8 @@ Provides no-op and file-logging SMS senders for development and test environment
 
 ## Key Features
 
-- `DevSmsSender` — appends formatted SMS details to a local file for inspection.
-- `NoopSmsSender` — silently discards all messages and returns `SendSingleSmsResponse.Succeeded()`.
+- `DevSmsSender` — implements `ISmsSender` and `IBulkSmsSender`; appends formatted SMS details to a local file for inspection.
+- `NoopSmsSender` — implements `ISmsSender` and `IBulkSmsSender`; silently discards all messages and returns a success response.
 - No external dependencies, no HTTP calls, no API credentials needed.
 
 ## Installation
@@ -52,5 +52,5 @@ No configuration required.
 
 ## Side Effects
 
-- Registers `ISmsSender` as singleton
+- Registers `ISmsSender` and `IBulkSmsSender` as singleton (the bulk sender forwards to the same instance)
 - `DevSmsSender` writes to the specified file path

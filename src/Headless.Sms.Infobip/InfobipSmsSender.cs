@@ -133,11 +133,30 @@ internal sealed class InfobipSmsSender(
     {
         var messages = response.Messages;
 
-        if (messages is null || messages.Count != destinations.Count)
+        if (messages is null)
         {
-            var aggregate = SendSingleSmsResponse.Succeeded(response.BulkId);
+            // A 200 with a bulk id but no per-recipient breakdown: the batch was accepted, so mirror the
+            // aggregate success to every recipient.
+            return SendBulkSmsResponse.FromAggregate(
+                destinations,
+                SendSingleSmsResponse.Succeeded(response.BulkId),
+                response.BulkId
+            );
+        }
 
-            return SendBulkSmsResponse.FromAggregate(destinations, aggregate, response.BulkId);
+        if (messages.Count != destinations.Count)
+        {
+            // The provider returned a per-recipient breakdown whose count does not match the request, so
+            // positional mapping is unsafe. Do not fabricate success: report the outcome as Unknown for every
+            // recipient so callers can retry or investigate rather than treat unconfirmed sends as accepted.
+            return SendBulkSmsResponse.FromAggregate(
+                destinations,
+                SendSingleSmsResponse.Failed(
+                    $"Infobip returned {messages.Count} message result(s) for {destinations.Count} recipient(s)",
+                    SmsFailureKind.Unknown
+                ),
+                response.BulkId
+            );
         }
 
         var results = new List<SmsRecipientResult>(destinations.Count);

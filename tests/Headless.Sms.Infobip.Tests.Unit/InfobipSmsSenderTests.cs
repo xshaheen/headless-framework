@@ -151,4 +151,37 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
         response.Results[1].Result.FailureError.Should().Be("Invalid destination");
         response.Results[1].Result.FailureKind.Should().Be(SmsFailureKind.InvalidRecipient);
     }
+
+    [Fact]
+    public async Task should_not_report_success_when_the_bulk_response_count_does_not_match()
+    {
+        // Two recipients requested, but Infobip returns only one message result: the response cannot be
+        // attributed per recipient, so the send must not be reported as all-succeeded.
+        const string body = """
+            {
+              "bulkId": "bulk-11",
+              "messages": [
+                { "to": "201001110000", "status": { "groupId": 1, "groupName": "PENDING", "id": 7, "name": "PENDING_ENROUTE", "description": "q" }, "messageId": "m-a" }
+              ]
+            }
+            """;
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody(body)
+            );
+
+        var response = await CreateSender()
+            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")));
+
+        response.AllSucceeded.Should().BeFalse();
+        response.AnySucceeded.Should().BeFalse();
+        response.ProviderBatchId.Should().Be("bulk-11");
+        response.Results.Should().HaveCount(2);
+        response.Results.Should().AllSatisfy(r => r.Result.FailureKind.Should().Be(SmsFailureKind.Unknown));
+    }
 }
