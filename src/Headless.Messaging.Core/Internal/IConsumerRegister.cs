@@ -925,6 +925,9 @@ internal sealed class ConsumerRegister(
         public required string GroupName { get; init; }
         public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
+        // Production reads the pause state through the private _isPaused field (see AddClientAsync); the public getter
+        // exists for setter symmetry and is exercised by the reflection-based ConsumerRegisterTests. Not dead state.
+        // ReSharper disable once UnusedMember.Local
         public bool IsPaused
         {
             get
