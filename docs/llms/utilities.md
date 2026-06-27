@@ -86,7 +86,7 @@ packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstracti
 Install individually as needed -- these packages are independent of each other:
 
 - **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
-- **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`), national IDs, collections, geo, pagination, URLs. Use `ErrorDescriptor` for structured API errors.
+- **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`, `MobilePhoneNumber()`), national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
 - **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
@@ -118,12 +118,15 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 
 ### Key Features
 
-- Phone number validation (international, country-specific) via `libphonenumber-csharp`
+- Phone number validation (international, country-specific, mobile-only) via `libphonenumber-csharp`
 - Egyptian National ID validation with checksum verification
 - Collection validators (unique elements, min/max counts)
 - Geo validators (latitude/longitude)
 - Pagination validators (page index, page size, search query)
-- URL validators (absolute URLs, HTTP/HTTPS)
+- URL validators (absolute URLs, HTTP/HTTPS) and IP address validators (IPv4/IPv6)
+- String-format validators (slug, username, ZIP code, hex color, decimal, Base64, trimmed, culture name)
+- Relative date/time validators (`InThePast`/`InTheFuture`/`MinimumAge`, …) that read "now" from an injectable `TimeProvider`
+- Enum-name and markup-rejection (`NoScripts`) validators
 - `ErrorDescriptor` integration for structured API responses
 - Automatic camelCase property path normalization
 
@@ -177,12 +180,18 @@ var errors = result.Errors.ToErrorDescriptors(); // Dictionary<string, List<Erro
 
 | Category | Validators |
 |----------|-----------|
-| Phone | `BasicPhoneNumber`, `PhoneNumber`, `InternationalPhoneNumber`, `PhoneCountryCode` |
+| Phone | `BasicPhoneNumber`, `PhoneNumber`, `InternationalPhoneNumber`, `PhoneCountryCode`, `MobilePhoneNumber`, `InternationalMobileNumber` |
 | National ID | `EgyptianNationalId` |
 | Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
 | Geo | `Latitude`, `Longitude` |
 | Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
-| URL | `Url`, `HttpUrl` |
+| URL | `Url`, `HttpUrl`, `HttpsOnlyUrl`, `FileUrl`, `FtpUrl`, `MailtoUrl`, `CorsOrigin` |
+| Network | `Ipv4`, `Ipv6`, `IpAddress` |
+| String | `OnlyIntegers`, `OnlyDecimals`, `Slug`, `Username`, `ZipCode`, `HexColor`, `Base64`, `Trimmed`, `Culture` |
+| Date/Time | `InThePast`, `InTheFuture`, `NotInThePast`, `NotInTheFuture`, `MinimumAge` (`DateTime`/`DateTimeOffset`/`DateOnly` + nullable, `TimeProvider`-based) |
+| Enum | `EnumName(typeof(TEnum))` |
+| Safe Text | `NoScripts` |
+| Storage Identifier | `IsValidPostgreSqlIdentifier`, `IsValidSqlServerIdentifier`, `IsValidCrossProviderIdentifier` |
 | ID | `Id` (validates non-empty Guid, positive int/long) |
 
 ### Configuration
