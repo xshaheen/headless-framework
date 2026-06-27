@@ -104,6 +104,23 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
         result.Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_return_fractional_difference_for_set_if_higher_double()
+    {
+        // given — a non-integer difference exercises the Lua tostring(d) return branch; the integer-valued cases
+        // above all land on string.format('%d', d), so the fractional path was previously uncovered.
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetIfHigherAsync(key, 50.25, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.SetIfHigherAsync(key, 100.75, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().Be(50.5); // 100.75 - 50.25, returned via tostring(d)
+    }
+
     #endregion
 
     #region SetIfLower Long
@@ -204,6 +221,23 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
 
         // then
         result.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_return_fractional_difference_for_set_if_lower_double()
+    {
+        // given — a non-integer difference exercises the Lua tostring(d) return branch (the integer-valued cases
+        // above all land on string.format('%d', d)).
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetIfLowerAsync(key, 100.75, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.SetIfLowerAsync(key, 50.25, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().Be(50.5); // 100.75 - 50.25, returned via tostring(d)
     }
 
     #endregion
