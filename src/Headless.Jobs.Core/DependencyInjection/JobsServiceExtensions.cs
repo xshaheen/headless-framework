@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.CommitCoordination;
 using Headless.Coordination;
+using Headless.Core;
 using Headless.DistributedLocks;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
@@ -64,6 +65,11 @@ public static class JobsServiceExtensions
 
         // Configure whether job request payloads should use GZip compression
         JobsHelper.UseGZipCompression = optionInstance.RequestGZipCompressionEnabled;
+
+        // Persisted job/cron primary keys are stamped via IGuidGenerator (Version7 default) instead of random
+        // Guid.NewGuid() so they stay index-friendly. Idempotent: TryAdd-based, so a host that already registered it wins.
+        services.AddHeadlessGuidGenerator();
+
         services.AddSingleton<ITimeJobManager<TTimeJob>, JobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<ICronJobManager<TCronJob>, JobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeJob, TCronJob>>();

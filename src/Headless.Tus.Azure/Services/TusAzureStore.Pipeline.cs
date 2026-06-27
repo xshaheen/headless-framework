@@ -5,7 +5,6 @@ using System.IO.Pipelines;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs.Models;
 using Headless.Checks;
-using Headless.Tus.Internal;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Extensions.Store;
 using tusdotnet.Interfaces;
@@ -108,7 +107,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
                     // Stage the block
                     var blockId = _GenerateBlockId(blockToken, nextBlockNumber++);
-                    await using var chunkStream = new ReadOnlySequenceStream(chunk);
+                    await using var chunkStream = chunk.ToStream();
                     await blockBlobClient
                         .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)
                         .ConfigureAwait(false);

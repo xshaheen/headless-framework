@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Abstractions;
 using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.DependencyInjection;
@@ -466,6 +467,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
             persistence,
             scheduler,
             TimeProvider.System,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             notification,
             new JobsExecutionContext(),
             dispatcher,
