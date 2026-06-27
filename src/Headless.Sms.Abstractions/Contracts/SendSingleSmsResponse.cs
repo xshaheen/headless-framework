@@ -100,12 +100,4 @@ public enum SmsFailureKind
 
     /// <summary>The provider account has insufficient credit or balance.</summary>
     OutOfCredit,
-
-    /// <summary>
-    /// The provider does not support the requested operation (for example a multi-destination batch send on a
-    /// provider that only sends to one recipient per call). Retrying or switching the same request to another
-    /// instance of the same provider will not help; the caller must change the request or route to a different
-    /// provider.
-    /// </summary>
-    Unsupported,
 }

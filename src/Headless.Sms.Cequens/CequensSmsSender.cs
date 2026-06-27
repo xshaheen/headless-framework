@@ -19,7 +19,7 @@ internal sealed class CequensSmsSender(
     TimeProvider timeProvider,
     IOptions<CequensSmsOptions> optionsAccessor,
     ILogger<CequensSmsSender> logger
-) : ISmsSender, IDisposable
+) : ISmsSender, IBulkSmsSender, IDisposable
 {
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
@@ -36,12 +36,54 @@ internal sealed class CequensSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destination);
+        Argument.IsNotEmpty(request.Text);
+
+        return await _SendAsync(
+                request.Destination.ToString(),
+                request.MessageId,
+                request.Text,
+                destinationCount: 1,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<SendBulkSmsResponse> SendBulkAsync(
+        SendBulkSmsRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(request);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        // Cequens accepts a comma-separated recipient list and reports a single status, so the same outcome
+        // applies to every recipient.
+        var outcome = await _SendAsync(
+                string.Join(',', request.Destinations),
+                request.MessageId,
+                request.Text,
+                request.Destinations.Count,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendAsync(
+        string recipients,
+        string? messageId,
+        string text,
+        int destinationCount,
+        CancellationToken cancellationToken
+    )
+    {
         try
         {
-            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            return await _SendCoreAsync(recipients, messageId, text, destinationCount, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -49,14 +91,17 @@ internal sealed class CequensSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinationCount);
 
             return SendSingleSmsResponse.FromException(e);
         }
     }
 
     private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
-        SendSingleSmsRequest request,
+        string recipients,
+        string? messageId,
+        string text,
+        int destinationCount,
         CancellationToken cancellationToken
     )
     {
@@ -65,13 +110,10 @@ internal sealed class CequensSmsSender(
         var apiRequest = new SendSmsRequest
         {
             ClientMessageId =
-                request.MessageId is not null
-                && int.TryParse(request.MessageId, CultureInfo.InvariantCulture, out var id)
-                    ? id
-                    : null,
+                messageId is not null && int.TryParse(messageId, CultureInfo.InvariantCulture, out var id) ? id : null,
             SenderName = _options.SenderName,
-            MessageText = request.Text,
-            Recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString(),
+            MessageText = text,
+            Recipients = recipients,
         };
 
         // At most two attempts: a 401 invalidates a stale cached token so the retry re-authenticates.
@@ -95,7 +137,7 @@ internal sealed class CequensSmsSender(
 
             if (response.IsSuccessStatusCode)
             {
-                logger.LogSmsSentSuccessfully(request.Destinations.Count, response.StatusCode);
+                logger.LogSmsSentSuccessfully(destinationCount, response.StatusCode);
 
                 return SendSingleSmsResponse.Succeeded();
             }
@@ -107,7 +149,7 @@ internal sealed class CequensSmsSender(
                 continue;
             }
 
-            logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
+            logger.LogFailedToSendSms(destinationCount, response.StatusCode);
 
             var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var error = string.IsNullOrEmpty(rawContent) ? "Failed to send SMS using Cequens API" : rawContent;

@@ -123,6 +123,7 @@ public static class SetupVodafone
         {
             _configureOptions(services);
             services.AddSingleton<ISmsSender, VodafoneSmsSender>();
+            services.AddSingleton<IBulkSmsSender>(static sp => (IBulkSmsSender)sp.GetRequiredService<ISmsSender>());
 
             var httpClientBuilder = _configureClient is null
                 ? services.AddHttpClient(HttpClientName)

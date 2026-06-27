@@ -23,16 +23,8 @@ internal sealed class AwsSnsSmsSender(
     )
     {
         Argument.IsNotNull(request);
-        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotNull(request.Destination);
         Argument.IsNotEmpty(request.Text);
-
-        if (request.Destinations.Count > 1)
-        {
-            return SendSingleSmsResponse.Failed(
-                "AWS SNS does not support sending SMS to multiple destinations",
-                SmsFailureKind.Unsupported
-            );
-        }
 
         var attributes = new Dictionary<string, MessageAttributeValue>(StringComparer.Ordinal)
         {
@@ -60,7 +52,7 @@ internal sealed class AwsSnsSmsSender(
 
         var publishRequest = new PublishRequest
         {
-            PhoneNumber = request.Destinations[0].ToString(hasPlusPrefix: true),
+            PhoneNumber = request.Destination.ToString(hasPlusPrefix: true),
             Message = request.Text,
             MessageAttributes = attributes,
         };
@@ -74,7 +66,7 @@ internal sealed class AwsSnsSmsSender(
                 return SendSingleSmsResponse.Succeeded(publishResponse.MessageId);
             }
 
-            logger.LogSmsSendFailed(request.Destinations.Count, publishResponse.HttpStatusCode);
+            logger.LogSmsSendFailed(destinationCount: 1, publishResponse.HttpStatusCode);
 
             return SendSingleSmsResponse.Failed(
                 $"Failed to send SMS using AWS with status code {publishResponse.HttpStatusCode}",
@@ -87,7 +79,7 @@ internal sealed class AwsSnsSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinationCount: 1);
 
             return SendSingleSmsResponse.FromException(e);
         }

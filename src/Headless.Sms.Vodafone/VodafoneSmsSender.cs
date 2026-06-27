@@ -12,7 +12,7 @@ internal sealed class VodafoneSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<VodafoneSmsOptions> optionsAccessor,
     ILogger<VodafoneSmsSender> logger
-) : ISmsSender
+) : ISmsSender, IBulkSmsSender
 {
     private readonly VodafoneSmsOptions _options = optionsAccessor.Value;
     private readonly Uri _uri = new(optionsAccessor.Value.SendSmsEndpoint);
@@ -24,12 +24,37 @@ internal sealed class VodafoneSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destination);
+        Argument.IsNotEmpty(request.Text);
+
+        return await _SendAsync([request.Destination], request.Text, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<SendBulkSmsResponse> SendBulkAsync(
+        SendBulkSmsRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(request);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        // Vodafone Egypt accepts a comma-separated recipient list and reports a single batch status, so the
+        // same outcome applies to every recipient.
+        var outcome = await _SendAsync(request.Destinations, request.Text, cancellationToken).ConfigureAwait(false);
+
+        return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendAsync(
+        IReadOnlyList<SmsRequestDestination> destinations,
+        string text,
+        CancellationToken cancellationToken
+    )
+    {
         try
         {
-            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            return await _SendCoreAsync(destinations, text, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -37,20 +62,21 @@ internal sealed class VodafoneSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinations.Count);
 
             return SendSingleSmsResponse.FromException(e);
         }
     }
 
     private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
-        SendSingleSmsRequest request,
+        IReadOnlyList<SmsRequestDestination> destinations,
+        string text,
         CancellationToken cancellationToken
     )
     {
         using var httpClient = httpClientFactory.CreateClient(SetupVodafone.HttpClientName);
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
-        requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/xml");
+        requestMessage.Content = new StringContent(_BuildPayload(destinations, text), Encoding.UTF8, "application/xml");
 
         using var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
         var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -69,20 +95,17 @@ internal sealed class VodafoneSmsSender(
             return SendSingleSmsResponse.Succeeded();
         }
 
-        logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
+        logger.LogFailedToSendSms(destinations.Count, response.StatusCode);
 
         // Vodafone reports logical failures inside a 200 body, so the HTTP status is not a reliable signal;
         // surface the raw response so callers can see the provider's actual error.
         return SendSingleSmsResponse.Failed(rawContent);
     }
 
-    private string _BuildPayload(SendSingleSmsRequest request)
+    private string _BuildPayload(IReadOnlyList<SmsRequestDestination> destinations, string text)
     {
-        var hashableKey = _BuildHashableKey(request);
-        var secureHash = _ComputeHash(hashableKey);
-        var recipients = request.IsBatch
-            ? string.Join(',', request.Destinations.Select(d => SecurityElement.Escape(d.ToString())))
-            : SecurityElement.Escape(request.Destinations[0].ToString());
+        var secureHash = _ComputeHash(_BuildHashableKey(destinations, text));
+        var recipients = string.Join(',', destinations.Select(d => SecurityElement.Escape(d.ToString())));
 
         return "<Payload>"
             + $"<AccountId>{SecurityElement.Escape(_options.AccountId)}</AccountId>"
@@ -90,11 +113,11 @@ internal sealed class VodafoneSmsSender(
             + $"<SenderName>{SecurityElement.Escape(_options.Sender)}</SenderName>"
             + $"<SecureHash>{secureHash}</SecureHash>"
             + $"<Recipients>{recipients}</Recipients>"
-            + $"<Message>{SecurityElement.Escape(request.Text)}</Message>"
+            + $"<Message>{SecurityElement.Escape(text)}</Message>"
             + "</Payload>";
     }
 
-    private string _BuildHashableKey(SendSingleSmsRequest request)
+    private string _BuildHashableKey(IReadOnlyList<SmsRequestDestination> destinations, string text)
     {
         var hashableKey = new StringBuilder();
 
@@ -103,21 +126,11 @@ internal sealed class VodafoneSmsSender(
             $"AccountId={_options.AccountId}&Password={_options.Password}"
         );
 
-        if (request.IsBatch)
-        {
-            foreach (var recipient in request.Destinations)
-            {
-                hashableKey.Append(
-                    CultureInfo.InvariantCulture,
-                    $"&SenderName={_options.Sender}&ReceiverMSISDN={recipient}&SMSText={request.Text}"
-                );
-            }
-        }
-        else
+        foreach (var recipient in destinations)
         {
             hashableKey.Append(
                 CultureInfo.InvariantCulture,
-                $"&SenderName={_options.Sender}&ReceiverMSISDN={request.Destinations[0]}&SMSText={request.Text}"
+                $"&SenderName={_options.Sender}&ReceiverMSISDN={recipient}&SMSText={text}"
             );
         }
 

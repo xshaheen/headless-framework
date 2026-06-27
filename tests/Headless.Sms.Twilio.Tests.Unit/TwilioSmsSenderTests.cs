@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Sms;
 using Headless.Sms.Testing;
 using Headless.Sms.Twilio;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -38,17 +37,5 @@ public sealed class TwilioSmsSenderTests
 
         result.Success.Should().BeTrue();
         result.ProviderMessageId.Should().Be("SM123");
-    }
-
-    [Fact]
-    public async Task should_reject_multiple_destinations_as_unsupported_without_calling_twilio()
-    {
-        var client = Substitute.For<ITwilioRestClient>();
-
-        var result = await CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")));
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Unsupported);
-        await client.DidNotReceive().RequestAsync(Arg.Any<Request>());
     }
 }

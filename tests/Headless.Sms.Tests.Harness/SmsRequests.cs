@@ -2,10 +2,10 @@
 
 namespace Headless.Sms.Testing;
 
-/// <summary>Builders for <see cref="SendSingleSmsRequest"/> values used across SMS provider tests.</summary>
+/// <summary>Builders for SMS request values used across SMS provider tests.</summary>
 public static class SmsRequests
 {
-    /// <summary>A single-destination request.</summary>
+    /// <summary>A single-recipient <see cref="SendSingleSmsRequest"/>.</summary>
     public static SendSingleSmsRequest Single(
         string text = "Hello world",
         int code = 20,
@@ -15,19 +15,16 @@ public static class SmsRequests
     {
         return new SendSingleSmsRequest
         {
-            Destinations = [new SmsRequestDestination(code, number)],
+            Destination = new SmsRequestDestination(code, number),
             Text = text,
             MessageId = messageId,
         };
     }
 
-    /// <summary>A multi-destination (batch) request.</summary>
-    public static SendSingleSmsRequest Batch(
-        string text = "Hello world",
-        params (int Code, string Number)[] destinations
-    )
+    /// <summary>A multi-recipient <see cref="SendBulkSmsRequest"/> for <see cref="IBulkSmsSender"/>.</summary>
+    public static SendBulkSmsRequest Bulk(string text = "Hello world", params (int Code, string Number)[] destinations)
     {
-        return new SendSingleSmsRequest
+        return new SendBulkSmsRequest
         {
             Destinations = destinations.Select(d => new SmsRequestDestination(d.Code, d.Number)).ToList(),
             Text = text,

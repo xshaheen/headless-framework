@@ -8,7 +8,7 @@ Provides SMS sending via Twilio's REST API, the most widely supported internatio
 
 ## Key Features
 
-- `TwilioSmsSender` — `ISmsSender` implementation using `ITwilioRestClient`.
+- `TwilioSmsSender` — `ISmsSender` implementation using `ITwilioRestClient`. Single recipient per send; does not implement `IBulkSmsSender` (Twilio creates one message per recipient).
 - `Sid` + `AuthToken` — Twilio account credentials.
 - `PhoneNumber` — E.164 sender number validated by `InternationalPhoneNumber` rule.
 - `MaxPrice` — optional per-message USD price cap.

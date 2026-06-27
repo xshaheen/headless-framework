@@ -13,7 +13,7 @@ internal sealed class VictoryLinkSmsSender(
     IHttpClientFactory httpClientFactory,
     IOptions<VictoryLinkSmsOptions> optionsAccessor,
     ILogger<VictoryLinkSmsSender> logger
-) : ISmsSender
+) : ISmsSender, IBulkSmsSender
 {
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
@@ -30,12 +30,40 @@ internal sealed class VictoryLinkSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destination);
+        Argument.IsNotEmpty(request.Text);
+
+        return await _SendAsync([request.Destination], request.Text, request.MessageId, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<SendBulkSmsResponse> SendBulkAsync(
+        SendBulkSmsRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(request);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
+        // VictoryLink accepts a comma-separated receiver list and returns a single response code, so the same
+        // outcome applies to every recipient.
+        var outcome = await _SendAsync(request.Destinations, request.Text, request.MessageId, cancellationToken)
+            .ConfigureAwait(false);
+
+        return SendBulkSmsResponse.FromAggregate(request.Destinations, outcome);
+    }
+
+    private async ValueTask<SendSingleSmsResponse> _SendAsync(
+        IReadOnlyList<SmsRequestDestination> destinations,
+        string text,
+        string? messageId,
+        CancellationToken cancellationToken
+    )
+    {
         try
         {
-            return await _SendCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            return await _SendCoreAsync(destinations, text, messageId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -43,28 +71,28 @@ internal sealed class VictoryLinkSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogSmsSendException(e, request.Destinations.Count);
+            logger.LogSmsSendException(e, destinations.Count);
 
             return SendSingleSmsResponse.FromException(e);
         }
     }
 
     private async ValueTask<SendSingleSmsResponse> _SendCoreAsync(
-        SendSingleSmsRequest request,
+        IReadOnlyList<SmsRequestDestination> destinations,
+        string text,
+        string? messageId,
         CancellationToken cancellationToken
     )
     {
         var victoryLinkRequest = new VictoryLinkRequest
         {
-            SmsId = request.MessageId ?? Guid.NewGuid().ToString(),
+            SmsId = messageId ?? Guid.NewGuid().ToString(),
             UserName = _options.UserName,
             Password = _options.Password,
-            SmsText = request.Text,
-            SmsLang = request.Text.IsRtlText() ? "a" : "e",
+            SmsText = text,
+            SmsLang = text.IsRtlText() ? "a" : "e",
             SmsSender = _options.Sender,
-            SmsReceiver = request.IsBatch
-                ? string.Join(',', request.Destinations.Select(x => x.ToString()))
-                : request.Destinations[0].ToString(),
+            SmsReceiver = string.Join(',', destinations.Select(x => x.ToString())),
         };
 
         using var httpClient = httpClientFactory.CreateClient(SetupVictoryLink.HttpClientName);
@@ -90,7 +118,7 @@ internal sealed class VictoryLinkSmsSender(
 
         var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(code);
 
-        logger.LogFailedToSendSms(request.Destinations.Count, responseMessage);
+        logger.LogFailedToSendSms(destinations.Count, responseMessage);
 
         return SendSingleSmsResponse.Failed(responseMessage, VictoryLinkResponseCodes.GetFailureKind(code));
     }

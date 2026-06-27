@@ -26,6 +26,27 @@ public sealed class DevSmsSenderTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task should_append_a_bulk_message_for_every_recipient()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"sms-dev-{Guid.NewGuid():N}.txt");
+        using var sender = new DevSmsSender(path);
+
+        try
+        {
+            var response = await sender.SendBulkAsync(SmsRequests.Bulk("bulk dev", (20, "1001"), (20, "1002")));
+
+            response.AllSucceeded.Should().BeTrue();
+            response.Results.Should().HaveCount(2);
+            var contents = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+            contents.Should().Contain("bulk dev").And.Contain("201001").And.Contain("201002");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }
 
 public sealed class NoopSmsSenderTests

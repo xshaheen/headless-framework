@@ -3,7 +3,6 @@
 using System.Net;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
-using Headless.Sms;
 using Headless.Sms.Aws;
 using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -47,18 +46,6 @@ public sealed class AwsSnsSmsSenderTests
         await client
             .Received(1)
             .PublishAsync(Arg.Is<PublishRequest>(r => r.PhoneNumber == "+201001234567"), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task should_reject_multiple_destinations_as_unsupported_without_calling_aws()
-    {
-        var client = Substitute.For<IAmazonSimpleNotificationService>();
-
-        var result = await CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")));
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Unsupported);
-        await client.DidNotReceive().PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

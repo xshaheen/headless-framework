@@ -80,13 +80,14 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     }
 
     [Fact]
-    public async Task should_route_batch_requests_to_the_batch_endpoint()
+    public async Task should_route_bulk_requests_to_the_batch_endpoint()
     {
         Stub("/batch", HttpStatusCode.OK, "{}");
 
-        var result = await CreateSender().SendAsync(SmsRequests.Batch("hi", (20, "1001"), (20, "1002")));
+        var result = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001"), (20, "1002")));
 
-        result.Success.Should().BeTrue();
+        result.AllSucceeded.Should().BeTrue();
+        result.Results.Should().HaveCount(2);
         _fixture.Server.FindLogEntries(Request.Create().WithPath("/batch").UsingPost()).Should().ContainSingle();
     }
 

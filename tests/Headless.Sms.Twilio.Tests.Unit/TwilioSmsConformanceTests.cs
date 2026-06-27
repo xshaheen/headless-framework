@@ -55,8 +55,7 @@ public sealed class TwilioSmsConformanceTests : SmsSenderConformanceTests
     public override Task should_reject_a_null_request() => base.should_reject_a_null_request();
 
     [Fact]
-    public override Task should_reject_a_request_without_destinations() =>
-        base.should_reject_a_request_without_destinations();
+    public override Task should_reject_a_null_destination() => base.should_reject_a_null_destination();
 
     [Fact]
     public override Task should_reject_a_request_with_an_empty_body() =>

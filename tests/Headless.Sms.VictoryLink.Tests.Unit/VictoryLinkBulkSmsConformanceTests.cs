@@ -11,22 +11,20 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-/// <summary>
-/// Runs the cross-provider <see cref="SmsSenderConformanceTests"/> contract against the VictoryLink sender.
-/// VictoryLink-specific behavior (numeric response codes, RTL language detection, recipient formatting) lives
-/// in <see cref="VictoryLinkSmsSenderTests"/>.
-/// </summary>
-public sealed class VictoryLinkSmsConformanceTests : SmsSenderConformanceTests, IClassFixture<SmsWireMockFixture>
+/// <summary>Runs the <see cref="SmsBulkSenderConformanceTests"/> contract against the VictoryLink bulk sender.</summary>
+public sealed class VictoryLinkBulkSmsConformanceTests
+    : SmsBulkSenderConformanceTests,
+        IClassFixture<SmsWireMockFixture>
 {
     private readonly SmsWireMockFixture _fixture;
 
-    public VictoryLinkSmsConformanceTests(SmsWireMockFixture fixture)
+    public VictoryLinkBulkSmsConformanceTests(SmsWireMockFixture fixture)
     {
         _fixture = fixture;
         _fixture.Reset();
     }
 
-    protected override ISmsSender CreateSuccessfulSender()
+    protected override IBulkSmsSender CreateSuccessfulSender()
     {
         _fixture
             .Server.Given(Request.Create().WithPath("/send").UsingPost())
@@ -35,7 +33,7 @@ public sealed class VictoryLinkSmsConformanceTests : SmsSenderConformanceTests, 
         return _CreateSender($"{_fixture.BaseUrl}/send");
     }
 
-    protected override ISmsSender CreateFaultingSender() => _CreateSender("http://localhost:1/send");
+    protected override IBulkSmsSender CreateFaultingSender() => _CreateSender("http://localhost:1/send");
 
     private VictoryLinkSmsSender _CreateSender(string endpoint)
     {
@@ -56,14 +54,16 @@ public sealed class VictoryLinkSmsConformanceTests : SmsSenderConformanceTests, 
     public override Task should_reject_a_null_request() => base.should_reject_a_null_request();
 
     [Fact]
-    public override Task should_reject_a_null_destination() => base.should_reject_a_null_destination();
+    public override Task should_reject_a_request_without_destinations() =>
+        base.should_reject_a_request_without_destinations();
 
     [Fact]
     public override Task should_reject_a_request_with_an_empty_body() =>
         base.should_reject_a_request_with_an_empty_body();
 
     [Fact]
-    public override Task should_succeed_for_a_single_destination() => base.should_succeed_for_a_single_destination();
+    public override Task should_return_a_result_for_every_recipient() =>
+        base.should_return_a_result_for_every_recipient();
 
     [Fact]
     public override Task should_report_a_transient_failure_on_a_transport_fault() =>

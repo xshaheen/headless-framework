@@ -34,24 +34,20 @@ public abstract class SmsSenderConformanceTests
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
-    public virtual async Task should_reject_a_request_without_destinations()
+    public virtual async Task should_reject_a_null_destination()
     {
         var sender = CreateSuccessfulSender();
-        var request = new SendSingleSmsRequest { Destinations = [], Text = "Hello world" };
+        var request = new SendSingleSmsRequest { Destination = null!, Text = "Hello world" };
 
         var act = async () => await sender.SendAsync(request);
 
-        await act.Should().ThrowAsync<ArgumentException>();
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     public virtual async Task should_reject_a_request_with_an_empty_body()
     {
         var sender = CreateSuccessfulSender();
-        var request = new SendSingleSmsRequest
-        {
-            Destinations = [new SmsRequestDestination(20, "1001234567")],
-            Text = "",
-        };
+        var request = new SendSingleSmsRequest { Destination = new SmsRequestDestination(20, "1001234567"), Text = "" };
 
         var act = async () => await sender.SendAsync(request);
 

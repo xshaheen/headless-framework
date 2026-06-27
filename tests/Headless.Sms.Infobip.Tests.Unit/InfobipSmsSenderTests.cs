@@ -84,4 +84,36 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
 
         result.Success.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task should_carry_per_recipient_message_ids_for_a_bulk_send()
+    {
+        const string body = """
+            {
+              "bulkId": "bulk-9",
+              "messages": [
+                { "to": "201001110000", "status": { "groupId": 1, "groupName": "PENDING", "id": 7, "name": "PENDING_ENROUTE", "description": "q" }, "messageId": "m-a" },
+                { "to": "201002220000", "status": { "groupId": 1, "groupName": "PENDING", "id": 7, "name": "PENDING_ENROUTE", "description": "q" }, "messageId": "m-b" }
+              ]
+            }
+            """;
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody(body)
+            );
+
+        var response = await CreateSender()
+            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")));
+
+        response.AllSucceeded.Should().BeTrue();
+        response.ProviderBatchId.Should().Be("bulk-9");
+        response.Results.Should().HaveCount(2);
+        response.Results[0].Result.ProviderMessageId.Should().Be("m-a");
+        response.Results[1].Result.ProviderMessageId.Should().Be("m-b");
+    }
 }
