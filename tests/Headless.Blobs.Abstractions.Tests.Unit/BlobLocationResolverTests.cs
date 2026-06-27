@@ -73,6 +73,58 @@ public sealed class BlobLocationResolverTests : TestBase
     }
 
     #endregion
+
+    #region Post-normalization re-validation (lossy normalizer must not reintroduce traversal/sidecar/empty)
+
+    // The default CrossOsNamingNormalizer (file system, SFTP, Redis) strips invalid filename chars (\ / : * ? " < > |).
+    // These inputs pass BlobLocation/BlobQuery construction-time validation but normalize INTO a dangerous form, so the
+    // resolve seam must re-validate the normalized result.
+    private readonly IBlobNamingNormalizer _crossOs = new CrossOsNamingNormalizer();
+
+    [Fact]
+    public void should_reject_key_that_normalizes_into_traversal()
+    {
+        // ".*." has no literal ".." (passes construction); CrossOs strips '*' so each segment collapses to ".."
+        var location = new BlobLocation("bucket", ".*./.*./evil.txt");
+
+        var act = () => BlobLocationResolver.Resolve(location, _crossOs);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_reject_key_that_normalizes_into_reserved_sidecar_suffix()
+    {
+        // "report.hlmet:a" does not end in ".hlmeta" (passes construction); stripping ':' yields "report.hlmeta"
+        var location = new BlobLocation("bucket", "report.hlmet:a");
+
+        var act = () => BlobLocationResolver.Resolve(location, _crossOs);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_reject_query_prefix_that_normalizes_to_empty()
+    {
+        // ":" passes BlobQuery construction but normalizes to empty; it must not become a whole-container match
+        var query = new BlobQuery("bucket", ":");
+
+        var act = () => BlobLocationResolver.ResolveQuery(query, _crossOs);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_reject_query_prefix_that_normalizes_into_traversal()
+    {
+        var query = new BlobQuery("bucket", ".*./secret");
+
+        var act = () => BlobLocationResolver.ResolveQuery(query, _crossOs);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    #endregion
 }
 
 /// <summary>Normalizer that distinguishes the two tiers: container strict (upper), blob segments lenient (lower).</summary>

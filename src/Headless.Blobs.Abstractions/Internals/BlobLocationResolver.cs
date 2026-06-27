@@ -10,9 +10,11 @@ namespace Headless.Blobs.Internals;
 /// <remarks>
 /// The two-tier naming model is applied here: the top-level container is normalized strictly through
 /// <see cref="IBlobNamingNormalizer.NormalizeContainerName"/>, while each <c>/</c>-delimited key segment is normalized
-/// leniently through <see cref="IBlobNamingNormalizer.NormalizeBlobName"/>. Path security has already been enforced by
-/// the <see cref="BlobLocation"/> / <see cref="BlobQuery"/> constructor, so this step only normalizes — it does not
-/// re-validate.
+/// leniently through <see cref="IBlobNamingNormalizer.NormalizeBlobName"/>. Construction-time validation alone is not
+/// sufficient: provider normalizers are lossy (they strip characters such as <c>*</c>, <c>:</c>, <c>|</c>), so an input
+/// that passed <see cref="BlobLocation"/> / <see cref="BlobQuery"/> validation can normalize <em>into</em> a dangerous
+/// form (<c>.*.</c> → <c>..</c>, <c>x.hlmet:a</c> → <c>x.hlmeta</c>, or a non-empty prefix → empty). Path security is
+/// therefore re-validated on the normalized result, in this one seam, so the guarantee holds for every provider.
 /// </remarks>
 public static class BlobLocationResolver
 {
@@ -25,6 +27,8 @@ public static class BlobLocationResolver
         var container = normalizer.NormalizeContainerName(location.Container);
         var key = _NormalizeKey(location.Path, normalizer);
 
+        _ValidateResolved(container, key);
+
         return (container, key);
     }
 
@@ -36,7 +40,25 @@ public static class BlobLocationResolver
     {
         var container = normalizer.NormalizeContainerName(query.Container);
 
-        var prefix = string.IsNullOrEmpty(query.Prefix) ? null : _NormalizeKey(query.Prefix, normalizer);
+        string? prefix = null;
+
+        if (!string.IsNullOrEmpty(query.Prefix))
+        {
+            prefix = _NormalizeKey(query.Prefix, normalizer);
+
+            // A non-empty prefix that the (lossy) normalizer reduces to empty must NOT silently widen a scoped
+            // listing/delete into a whole-container match. Fail closed.
+            if (string.IsNullOrEmpty(prefix))
+            {
+                throw new ArgumentException(
+                    "The listing/delete prefix is empty after provider normalization; refusing to treat it as a "
+                        + "whole-container match.",
+                    nameof(query)
+                );
+            }
+        }
+
+        _ValidateResolved(container, prefix);
 
         return (container, prefix);
     }
@@ -51,5 +73,33 @@ public static class BlobLocationResolver
         }
 
         return string.Join('/', segments);
+    }
+
+    /// <summary>
+    /// Re-applies path-security validation to the <em>normalized</em> container and key/prefix. Provider normalizers
+    /// are lossy, so an input that passed construction-time validation can normalize into a traversal sequence
+    /// (<c>.*.</c> → <c>..</c>) or the reserved sidecar suffix (<c>x.hlmet:a</c> → <c>x.hlmeta</c>). Validating here —
+    /// in the single seam every provider routes through — keeps the path-handling guarantee true regardless of the
+    /// normalizer.
+    /// </summary>
+    private static void _ValidateResolved(string container, string? keyOrPrefix)
+    {
+        PathValidation.ValidatePathSegment(container);
+
+        if (string.IsNullOrEmpty(keyOrPrefix))
+        {
+            return;
+        }
+
+        PathValidation.ValidatePathSegment(keyOrPrefix);
+
+        if (BlobStorageHelpers.IsSidecarKey(keyOrPrefix))
+        {
+            throw new ArgumentException(
+                $"The blob key collides with the reserved sidecar suffix '{BlobStorageHelpers.SidecarSuffix}' after "
+                    + "provider normalization.",
+                nameof(keyOrPrefix)
+            );
+        }
     }
 }

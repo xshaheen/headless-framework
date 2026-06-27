@@ -6,6 +6,7 @@ using System.Diagnostics;
 namespace Headless.Blobs;
 
 /// <summary>Metadata snapshot for a single blob returned by listing or info operations.</summary>
+[PublicAPI]
 [DebuggerDisplay("BlobKey = {BlobKey}, Created = {Created}, Modified = {Modified}, Size = {Size} bytes")]
 public sealed class BlobInfo
 {
