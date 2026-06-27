@@ -1623,13 +1623,7 @@ public sealed class RedisCache(
         var ms = RedisCacheEntryFrame.ToUnixTimeMilliseconds(invalidatedAt.UtcDateTime);
         var ticks = _StopwatchTicks();
 
-        _markerCache.AddOrUpdate(
-            tag,
-            static (_, state) => (state.ms, state.ticks),
-            static (_, existing, state) =>
-                existing.MarkerMs >= state.ms ? (existing.MarkerMs, state.ticks) : (state.ms, state.ticks),
-            (ms, ticks)
-        );
+        _RaiseTagMarker(tag, ms, ticks);
     }
 
     /// <inheritdoc />
@@ -1995,15 +1989,7 @@ public sealed class RedisCache(
 
                 // Raise-only (mirrors SeedTagMarker): a stale durable read must not lower a newer per-tag marker
                 // a backplane push already seeded. FetchedTicks is still refreshed so the freshness window holds.
-                var resolved = _markerCache.AddOrUpdate(
-                    stale[i],
-                    static (_, state) => (state.ms, state.fetchedTicks),
-                    static (_, existing, state) =>
-                        existing.MarkerMs >= state.ms
-                            ? (existing.MarkerMs, state.fetchedTicks)
-                            : (state.ms, state.fetchedTicks),
-                    (ms, fetchedTicks)
-                );
+                var resolved = _RaiseTagMarker(stale[i], ms, fetchedTicks);
 
                 if (resolved.MarkerMs > newestMs)
                 {
@@ -2017,6 +2003,27 @@ public sealed class RedisCache(
 
     private static long _ParseMarkerMs(RedisValue value) =>
         RedisCacheEntryFrame.TryParseMarkerMs(value) ?? _MarkerAbsent;
+
+    /// <summary>
+    /// Raises the process-local tag marker for <paramref name="tag"/> to <paramref name="markerMs"/> when it is
+    /// newer, always refreshing the freshness stamp to <paramref name="fetchedTicks"/>. Raise-only: a stale durable
+    /// read or a backplane push can never lower a newer marker this node already observed; the freshness stamp is
+    /// refreshed in both branches so the refresh window holds. Returns the resolved (post-raise) entry. Shared by
+    /// <see cref="SeedTagMarker"/>, <see cref="_ResolveTagMarkersAsync"/>, and <see cref="_PrefetchTagMarkersAsync"/>
+    /// so the raise-only invariant lives in exactly one place.
+    /// </summary>
+    private (long MarkerMs, long FetchedTicks) _RaiseTagMarker(string tag, long markerMs, long fetchedTicks)
+    {
+        return _markerCache.AddOrUpdate(
+            tag,
+            static (_, state) => (state.markerMs, state.fetchedTicks),
+            static (_, existing, state) =>
+                existing.MarkerMs >= state.markerMs
+                    ? (existing.MarkerMs, state.fetchedTicks)
+                    : (state.markerMs, state.fetchedTicks),
+            (markerMs, fetchedTicks)
+        );
+    }
 
     /// <summary>
     /// Pre-warms <see cref="_markerCache"/> for all unique stale tag markers referenced by the supplied decoded
@@ -2070,15 +2077,7 @@ public sealed class RedisCache(
 
             // Raise-only (mirrors SeedTagMarker): a stale durable read must not lower a newer per-tag marker a
             // backplane push already seeded. FetchedTicks is still refreshed so the freshness window holds.
-            _markerCache.AddOrUpdate(
-                staleList[i],
-                static (_, state) => (state.ms, state.fetchedTicks),
-                static (_, existing, state) =>
-                    existing.MarkerMs >= state.ms
-                        ? (existing.MarkerMs, state.fetchedTicks)
-                        : (state.ms, state.fetchedTicks),
-                (ms, fetchedTicks)
-            );
+            _RaiseTagMarker(staleList[i], ms, fetchedTicks);
         }
     }
 
