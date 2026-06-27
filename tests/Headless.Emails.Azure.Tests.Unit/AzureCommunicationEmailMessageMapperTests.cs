@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
 using Headless.Emails;
 using Headless.Emails.Azure;
 

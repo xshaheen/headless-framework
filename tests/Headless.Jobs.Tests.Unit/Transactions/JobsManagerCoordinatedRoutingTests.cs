@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using Headless.CommitCoordination;
 using Headless.Jobs;
 using Headless.Jobs.DependencyInjection;

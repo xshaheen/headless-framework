@@ -7,7 +7,6 @@ using Headless.Blobs.Azure;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 
 namespace Tests;
 

@@ -1,6 +1,5 @@
 using Demo;
 using Demo.Controllers;
-using Headless.CommitCoordination;
 using Headless.CommitCoordination.EntityFramework;
 using Headless.CommitCoordination.PostgreSql;
 using Headless.Messaging.Dashboard;

@@ -62,12 +62,12 @@ public sealed class IsInRangeForTests
     {
         Span<int> span = [10, 20, 30];
 
-        Argument.IsInRangeFor(1, (ReadOnlySpan<int>)span).Should().Be(1);
+        Argument.IsInRangeFor(1, span).Should().Be(1);
 
         var threw = false;
         try
         {
-            Argument.IsInRangeFor(3, (ReadOnlySpan<int>)span);
+            Argument.IsInRangeFor(3, span);
         }
         catch (ArgumentOutOfRangeException)
         {

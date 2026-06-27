@@ -28,7 +28,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         (await _Database.KeyExistsAsync(markerKey)).Should().BeTrue();
         var marker = await _Database.StringGetAsync(markerKey);
         marker.HasValue.Should().BeTrue();
-        long.TryParse(marker.ToString(), System.Globalization.CultureInfo.InvariantCulture, out _)
+        long.TryParse(marker.ToString(), CultureInfo.InvariantCulture, out _)
             .Should()
             .BeTrue("the marker is a unix-ms timestamp");
     }

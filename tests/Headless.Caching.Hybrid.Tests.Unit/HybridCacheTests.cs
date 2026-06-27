@@ -22,7 +22,8 @@ public sealed class HybridCacheTests : TestBase
 
         // Create a separate in-memory cache as the "distributed" cache for testing
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        var l2 = new InMemoryRemoteCacheAdapter(new InMemoryCache(_timeProvider, l2Options));
+        var inMemoryCache = new InMemoryCache(_timeProvider, l2Options);
+        var l2 = new InMemoryRemoteCacheAdapter(inMemoryCache);
 
         var publisher = Substitute.For<IBus>();
         publisher
@@ -861,9 +862,10 @@ public sealed class HybridCacheTests : TestBase
     {
         // given
         var l1Options = new InMemoryCacheOptions { CloneValues = true };
-        var l1 = new InMemoryCache(_timeProvider, l1Options);
+        using var l1 = new InMemoryCache(_timeProvider, l1Options);
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        var l2 = new InMemoryRemoteCacheAdapter(new InMemoryCache(_timeProvider, l2Options));
+        using var l2Base = new InMemoryCache(_timeProvider, l2Options);
+        var l2 = new InMemoryRemoteCacheAdapter(l2Base);
 
         var publisher = Substitute.For<IBus>();
         publisher

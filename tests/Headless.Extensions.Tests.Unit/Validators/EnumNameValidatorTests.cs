@@ -19,7 +19,7 @@ public sealed class EnumNameValidatorTests
     [InlineData("Blue")]
     public void should_return_true_for_defined_member_name(string name)
     {
-        EnumNameValidator.IsDefinedName(typeof(Color), name).Should().BeTrue();
+        EnumNameValidator.IsDefinedName<Color>(name).Should().BeTrue();
         EnumNameValidator.IsDefinedName<Color>(name).Should().BeTrue();
     }
 
@@ -33,7 +33,7 @@ public sealed class EnumNameValidatorTests
     [InlineData(" ")]
     public void should_return_false_for_non_member_name_when_case_sensitive(string name)
     {
-        EnumNameValidator.IsDefinedName(typeof(Color), name).Should().BeFalse();
+        EnumNameValidator.IsDefinedName<Color>(name).Should().BeFalse();
         EnumNameValidator.IsDefinedName<Color>(name).Should().BeFalse();
     }
 
@@ -50,7 +50,7 @@ public sealed class EnumNameValidatorTests
     [InlineData("Blue")]
     public void should_match_case_insensitively_when_requested(string name)
     {
-        EnumNameValidator.IsDefinedName(typeof(Color), name, ignoreCase: true).Should().BeTrue();
+        EnumNameValidator.IsDefinedName<Color>(name, ignoreCase: true).Should().BeTrue();
         EnumNameValidator.IsDefinedName<Color>(name, ignoreCase: true).Should().BeTrue();
     }
 

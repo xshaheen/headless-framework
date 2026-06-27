@@ -6,6 +6,7 @@ using Nito.AsyncEx;
 
 namespace Tests.Threading;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class AsyncExExtensionsTests : TestBase
 {
     #region SafeWaitAsync(CancellationToken) — swallows the wait-token cancellation

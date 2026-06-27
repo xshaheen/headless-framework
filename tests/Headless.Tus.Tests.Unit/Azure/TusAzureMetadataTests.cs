@@ -2,7 +2,6 @@
 
 using Headless.Testing.Tests;
 using Headless.Tus.Models;
-using tusdotnet.Models;
 
 namespace Tests.Azure;
 

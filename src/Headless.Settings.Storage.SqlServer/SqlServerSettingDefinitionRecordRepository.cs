@@ -83,10 +83,8 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
 
         foreach (var record in deletedRecords)
         {
-            await using var command = new SqlCommand(_DeleteSql(), connection, (SqlTransaction)transaction)
-            {
-                CommandTimeout = _CommandTimeout(),
-            };
+            await using var command = new SqlCommand(_DeleteSql(), connection, (SqlTransaction)transaction);
+            command.CommandTimeout = _CommandTimeout();
             command.Parameters.AddWithValue("@Id", record.Id);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }

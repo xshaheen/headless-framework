@@ -4,9 +4,7 @@ using Headless.CommitCoordination;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 
 namespace Tests;
 

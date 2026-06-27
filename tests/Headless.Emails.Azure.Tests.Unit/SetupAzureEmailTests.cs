@@ -6,8 +6,6 @@ using Headless.Emails;
 using Headless.Emails.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using NSubstitute;
 
 namespace Tests;
 

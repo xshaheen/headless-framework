@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Headless.CommitCoordination.EntityFramework;
 using Headless.Domain;
 using Headless.EntityFramework;
@@ -12,7 +11,6 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Xunit;
 
 namespace Tests;
 

@@ -18,7 +18,7 @@ public sealed class ConsumeContextTests
 
         // then
         context.Response.Should().BeSameAs(response);
-        context.ResponseType.Should().Be(typeof(ResponseContract));
+        context.ResponseType.Should().Be<ResponseContract>();
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class ConsumeContextTests
 
         // then
         context.Response.Should().BeSameAs(response);
-        context.ResponseType.Should().Be(typeof(ResponseContract));
+        context.ResponseType.Should().Be<ResponseContract>();
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class ConsumeContextTests
 
         // then
         context.Response.Should().BeNull();
-        context.ResponseType.Should().Be(typeof(ConcreteResponse));
+        context.ResponseType.Should().Be<ConcreteResponse>();
     }
 
     [Fact]

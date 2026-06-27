@@ -3,7 +3,6 @@
 using Confluent.Kafka;
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -174,5 +174,4 @@ public static class CollectionValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator());
         }
     }
-#nullable restore
 }

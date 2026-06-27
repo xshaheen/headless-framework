@@ -8,7 +8,6 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

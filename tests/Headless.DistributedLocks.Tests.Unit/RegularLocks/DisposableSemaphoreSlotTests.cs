@@ -6,7 +6,6 @@ using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 

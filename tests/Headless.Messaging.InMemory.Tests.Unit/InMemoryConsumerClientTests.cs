@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;

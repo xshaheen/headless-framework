@@ -2,7 +2,6 @@ using Headless.AuditLog;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Fixture;

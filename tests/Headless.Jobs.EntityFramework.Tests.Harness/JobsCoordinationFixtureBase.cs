@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Globalization;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;

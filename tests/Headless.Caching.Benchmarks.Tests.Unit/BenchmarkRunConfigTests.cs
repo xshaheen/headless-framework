@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using AwesomeAssertions;
-using BenchmarkDotNet.Configs;
 using Headless.Caching.Benchmarks;
 
 namespace Tests;

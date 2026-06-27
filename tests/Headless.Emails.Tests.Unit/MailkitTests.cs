@@ -5,7 +5,6 @@ using Headless.Emails.Mailkit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Tests;

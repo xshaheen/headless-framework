@@ -6,7 +6,6 @@ using Headless.Emails;
 using Headless.Emails.Azure;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 
 namespace Tests;
 

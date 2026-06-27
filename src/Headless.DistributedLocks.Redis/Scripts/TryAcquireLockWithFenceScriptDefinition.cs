@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically acquires a mutex lock and issues a fencing token only when the grant succeeds.</summary>
 internal sealed class TryAcquireLockWithFenceScriptDefinition : RedisScriptDefinition

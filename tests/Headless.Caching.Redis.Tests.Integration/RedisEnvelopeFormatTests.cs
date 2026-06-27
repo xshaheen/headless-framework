@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers.Binary;
-using System.Text;
 using Headless.Caching;
 using StackExchange.Redis;
 

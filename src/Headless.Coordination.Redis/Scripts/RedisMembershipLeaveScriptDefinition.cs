@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.Coordination.Redis;
+namespace Headless.Coordination.Redis.Scripts;
 
 /// <summary>Marks a coordination member as left using Redis server time.</summary>
 internal sealed class RedisMembershipLeaveScriptDefinition : RedisScriptDefinition

@@ -273,15 +273,14 @@ public sealed class MessagePackSerializerTests
 
         // when
 #pragma warning disable CA2263 // Prefer generic
-        var result = _serializer.Deserialize(bytes.AsMemory(), typeof(Person));
+        var result = _serializer.Deserialize<Person>(bytes.AsMemory());
 #pragma warning restore CA2263
 
         // then
         result.Should().NotBeNull();
         result.Should().BeOfType<Person>();
-        var typedResult = (Person)result!;
-        typedResult.Name.Should().Be("TypeTest");
-        typedResult.Age.Should().Be(99);
+        result.Name.Should().Be("TypeTest");
+        result.Age.Should().Be(99);
     }
 
     // Splits the payload across two segments so deserialization runs against a genuinely non-contiguous sequence.

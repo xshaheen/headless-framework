@@ -58,13 +58,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "soft-timeout-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "soft-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -81,13 +75,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "hard-timeout-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "hard-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -104,13 +92,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "background-ceiling-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "background-ceiling-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -128,13 +110,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "timeout-order-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "timeout-order-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -152,7 +128,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
+            .GetOrAddAsync(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         result.Value.Should().Be("fresh");
@@ -166,7 +142,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
+            .GetOrAddAsync(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         result.Value.Should().Be("fresh");
@@ -378,7 +354,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var lockProvider = new FakeCacheFactoryLockProvider();
         var coordinator = new FactoryCacheCoordinator(
             _timeProvider,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<FactoryCacheCoordinator>.Instance,
+            NullLogger<FactoryCacheCoordinator>.Instance,
             lockProvider
         );
         var factoryCalls = 0;
@@ -1312,8 +1288,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when
         var act = async () =>
-            await _CreateCoordinator()
-                .GetOrAddAsync<string>(_store, key, _FactoryReturns("fresh"), options, AbortToken);
+            await _CreateCoordinator().GetOrAddAsync(_store, key, _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should()
@@ -1518,13 +1493,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(
-                    _store,
-                    "lock-timeout-validation",
-                    _FactoryReturns("fresh"),
-                    options,
-                    AbortToken
-                );
+                .GetOrAddAsync(_store, "lock-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -2269,7 +2238,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when — the conditional factory fails exactly like a simple factory would
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(
+            .GetOrAddAsync(
                 _store,
                 key,
                 (CacheFactoryContext<string> _, CancellationToken _) =>
@@ -2603,7 +2572,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when — the refresh factory succeeds
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(_store, key, _FactoryReturns("fresh"), options, AbortToken);
+            .GetOrAddAsync(_store, key, _FactoryReturns("fresh"), options, AbortToken);
 
         // then — the new value wins; nothing stale is served despite the usable reserve
         result.Value.Should().Be("fresh");
@@ -2716,7 +2685,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when — the factory disables fail-safe on its context copy (in a finally) and throws
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(
+            .GetOrAddAsync(
                 _store,
                 key,
                 (CacheFactoryContext<string> context, CancellationToken _) =>

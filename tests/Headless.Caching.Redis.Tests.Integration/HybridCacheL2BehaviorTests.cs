@@ -25,10 +25,10 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     private HybridCache _CreateHybrid(
         string keyPrefix = "",
         HybridCacheOptions? hybridOptions = null,
-        _CapturingBus? bus = null
+        CapturingBus? bus = null
     )
     {
-        var l1 = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        using var l1 = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
 
         var redisCacheOptions = new RedisCacheOptions
         {
@@ -36,7 +36,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
             KeyPrefix = keyPrefix,
         };
 
-        var l2 = new RedisCache(
+        using var l2 = new RedisCache(
             new SystemJsonSerializer(),
             TimeProvider.System,
             redisCacheOptions,
@@ -44,7 +44,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
             LoggerFactory.CreateLogger<RedisCache>()
         );
 
-        var publisher = (IBus?)bus ?? _NoopBus.Instance;
+        var publisher = (IBus?)bus ?? NoopBus.Instance;
         hybridOptions ??= new HybridCacheOptions();
 
         return new HybridCache(l1, l2, publisher, hybridOptions, NullLogger<HybridCache>.Instance, TimeProvider.System);
@@ -57,7 +57,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     public async Task flush_all_clears_both_tiers_and_new_write_is_visible()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         await using var hybrid = _CreateHybrid("hybrid-flush:");
 
         var key = Faker.Random.AlphaNumeric(12);
@@ -90,7 +90,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     public async Task l1_ttl_is_capped_to_local_expiration_when_l2_ttl_is_longer()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var hybridOptions = new HybridCacheOptions { DefaultLocalExpiration = TimeSpan.FromSeconds(30) };
         await using var hybrid = _CreateHybrid("hybrid-ttl:", hybridOptions);
 
@@ -121,8 +121,8 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     public async Task backplane_invalidation_from_node_a_clears_l1_on_node_b()
     {
         // given
-        await FlushAsync();
-        var bus = new _CapturingBus();
+        await _FlushAsync();
+        var bus = new CapturingBus();
 
         await using var hybridA = _CreateHybrid("hybrid-bp:", bus: bus);
         await using var hybridB = _CreateHybrid("hybrid-bp:", bus: bus);
@@ -157,12 +157,12 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
         freshReadOnB.Value.Should().Be("v2", "node B must read the updated value from L2 after L1 invalidation");
     }
 
-    private async Task FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
 
     // Minimal in-process backplane bus: routes CacheInvalidationMessage to all attached HybridCache instances.
     // HandleInvalidationAsync is internal (InternalsVisibleTo is not granted to this project) so we invoke it
     // via reflection — the same approach the real infrastructure's message consumer uses, but synchronous here.
-    private sealed class _CapturingBus : IBus
+    private sealed class CapturingBus : IBus
     {
         private readonly List<HybridCache> _subscribers = [];
 
@@ -185,7 +185,10 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
                 // without InternalsVisibleTo being granted to this integration test project.
                 var method = typeof(HybridCache).GetMethod(
                     "HandleInvalidationAsync",
-                    BindingFlags.Instance | BindingFlags.NonPublic
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+                    null,
+                    [typeof(CacheInvalidationMessage), typeof(CancellationToken)],
+                    null
                 );
                 var task = (ValueTask)method!.Invoke(subscriber, [invalidation, cancellationToken])!;
                 await task.ConfigureAwait(false);
@@ -194,9 +197,9 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     }
 
     // No-op bus for tests that don't need cross-node invalidation routing.
-    private sealed class _NoopBus : IBus
+    private sealed class NoopBus : IBus
     {
-        public static readonly _NoopBus Instance = new();
+        public static readonly NoopBus Instance = new();
 
         public Task PublishAsync<T>(
             T? message,
