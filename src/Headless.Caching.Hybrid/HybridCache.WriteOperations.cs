@@ -487,7 +487,11 @@ public sealed partial class HybridCache
             key,
             expiration,
             ct => l2Cache.IncrementAsync(key, amount, expiration, ct),
-            static result => result != 0,
+            // Increment always writes and returns the NEW TOTAL; 0 is a valid stored value, not a no-op signal, so
+            // L1 must always be seeded. (Contrast SetIfHigher/Lower below, whose result is a difference where 0 means
+            // "unchanged" and L1 is correctly left untouched.)
+            static _ =>
+                true,
             static result => result,
             cancellationToken
         );
@@ -514,7 +518,11 @@ public sealed partial class HybridCache
             key,
             expiration,
             ct => l2Cache.IncrementAsync(key, amount, expiration, ct),
-            static result => result != 0,
+            // Increment always writes and returns the NEW TOTAL; 0 is a valid stored value, not a no-op signal, so
+            // L1 must always be seeded. (Contrast SetIfHigher/Lower below, whose result is a difference where 0 means
+            // "unchanged" and L1 is correctly left untouched.)
+            static _ =>
+                true,
             static result => result,
             cancellationToken
         );

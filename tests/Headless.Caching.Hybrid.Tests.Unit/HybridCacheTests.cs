@@ -925,6 +925,33 @@ public sealed class HybridCacheTests : TestBase
 
     #endregion
 
+    #region Numeric Operations
+
+    [Fact]
+    public async Task should_seed_l1_with_zero_when_increment_total_reaches_zero()
+    {
+        // given — a decrement that brings the running total back to exactly 0 must keep 0 in L1, not evict it.
+        // Guards against treating the increment's new total of 0 as a "no-op" (the SetIfHigher/Lower difference
+        // convention) and removing the key from L1.
+        var (cache, l1, _, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.IncrementAsync(key, 5L, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.IncrementAsync(key, -5L, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().Be(0L);
+
+        var l1Result = await l1.GetAsync<long>(key, AbortToken);
+        l1Result.HasValue.Should().BeTrue("a 0 total is a valid stored value, not a no-op signal");
+        l1Result.Value.Should().Be(0L);
+    }
+
+    #endregion
+
     #region Dispose
 
     [Fact]
