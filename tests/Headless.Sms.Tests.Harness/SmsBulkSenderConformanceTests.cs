@@ -60,7 +60,7 @@ public abstract class SmsBulkSenderConformanceTests
 
         response.AllSucceeded.Should().BeTrue();
         response.Results.Should().HaveCount(2);
-        response.Results.Select(r => r.Destination).Should().BeEquivalentTo(request.Destinations);
+        response.Results.Select(r => r.Destination).Should().Equal(request.Destinations);
     }
 
     public virtual async Task should_report_a_transient_failure_on_a_transport_fault()

@@ -124,8 +124,8 @@ internal sealed class InfobipSmsSender(
         return await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
     }
 
-    // Infobip returns one entry per recipient (in request order) carrying its own message id. When that
-    // detail is present we map it per recipient; otherwise we fall back to the bulk id for every recipient.
+    // Infobip returns one entry per recipient (in request order) carrying its own message id and status.
+    // When that detail is present we map it per recipient; otherwise we fall back to the bulk id.
     private static SendBulkSmsResponse _MapBulkResponse(
         IReadOnlyList<SmsRequestDestination> destinations,
         SmsResponse response
@@ -144,12 +144,59 @@ internal sealed class InfobipSmsSender(
 
         for (var i = 0; i < destinations.Count; i++)
         {
-            results.Add(
-                new SmsRecipientResult(destinations[i], SendSingleSmsResponse.Succeeded(messages[i].MessageId))
-            );
+            results.Add(new SmsRecipientResult(destinations[i], _MapMessageResponse(messages[i])));
         }
 
         return SendBulkSmsResponse.FromResults(results, response.BulkId);
+    }
+
+    private static SendSingleSmsResponse _MapMessageResponse(SmsResponseDetails message)
+    {
+        var status = message.Status;
+        var groupName = status?.GroupName;
+
+        if (
+            groupName is MessageGeneralStatus.Accepted or MessageGeneralStatus.Pending or MessageGeneralStatus.Delivered
+        )
+        {
+            return SendSingleSmsResponse.Succeeded(message.MessageId);
+        }
+
+        var failure = string.IsNullOrWhiteSpace(status?.Description)
+            ? $"Infobip message status {status?.Name ?? groupName?.ToString() ?? "unknown"}"
+            : status.Description;
+
+        return SendSingleSmsResponse.Failed(failure, _MapMessageFailureKind(status));
+    }
+
+    private static SmsFailureKind _MapMessageFailureKind(SmsMessageStatus? status)
+    {
+        if (status is null)
+        {
+            return SmsFailureKind.Unknown;
+        }
+
+        if (status.Name?.Contains("BALANCE", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return SmsFailureKind.OutOfCredit;
+        }
+
+        if (status.Name?.Contains("AUTH", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return SmsFailureKind.AuthFailure;
+        }
+
+        if (status.Name?.Contains("RATE", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return SmsFailureKind.RateLimited;
+        }
+
+        return status.GroupName switch
+        {
+            MessageGeneralStatus.Undeliverable or MessageGeneralStatus.Expired or MessageGeneralStatus.Rejected =>
+                SmsFailureKind.InvalidRecipient,
+            _ => SmsFailureKind.Unknown,
+        };
     }
 
     private static string _FormatApiError(ApiException exception)

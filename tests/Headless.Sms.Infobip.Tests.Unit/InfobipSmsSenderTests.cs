@@ -116,4 +116,39 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
         response.Results[0].Result.ProviderMessageId.Should().Be("m-a");
         response.Results[1].Result.ProviderMessageId.Should().Be("m-b");
     }
+
+    [Fact]
+    public async Task should_preserve_per_recipient_failure_status_for_a_bulk_send()
+    {
+        const string body = """
+            {
+              "bulkId": "bulk-10",
+              "messages": [
+                { "to": "201001110000", "status": { "groupId": 1, "groupName": "PENDING", "id": 7, "name": "PENDING_ENROUTE", "description": "queued" }, "messageId": "m-a" },
+                { "to": "201002220000", "status": { "groupId": 5, "groupName": "REJECTED", "id": 99, "name": "REJECTED_DESTINATION", "description": "Invalid destination" }, "messageId": "m-b" }
+              ]
+            }
+            """;
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody(body)
+            );
+
+        var response = await CreateSender()
+            .SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000"), (20, "1002220000")));
+
+        response.AllSucceeded.Should().BeFalse();
+        response.AnySucceeded.Should().BeTrue();
+        response.ProviderBatchId.Should().Be("bulk-10");
+        response.Results[0].Result.Success.Should().BeTrue();
+        response.Results[0].Result.ProviderMessageId.Should().Be("m-a");
+        response.Results[1].Result.Success.Should().BeFalse();
+        response.Results[1].Result.FailureError.Should().Be("Invalid destination");
+        response.Results[1].Result.FailureKind.Should().Be(SmsFailureKind.InvalidRecipient);
+    }
 }

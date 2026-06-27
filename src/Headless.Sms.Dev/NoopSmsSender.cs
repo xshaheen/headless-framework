@@ -11,6 +11,10 @@ internal sealed class NoopSmsSender : ISmsSender, IBulkSmsSender
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destination);
+        Argument.IsNotEmpty(request.Text);
+
         cancellationToken.ThrowIfCancellationRequested();
 
         return ValueTask.FromResult(SendSingleSmsResponse.Succeeded());
@@ -23,6 +27,7 @@ internal sealed class NoopSmsSender : ISmsSender, IBulkSmsSender
     {
         Argument.IsNotNull(request);
         Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
 
         cancellationToken.ThrowIfCancellationRequested();
 

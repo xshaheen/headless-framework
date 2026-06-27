@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Sms;
 using Headless.Sms.Dev;
 using Headless.Sms.Testing;
 
@@ -60,12 +61,69 @@ public sealed class NoopSmsSenderTests
     }
 
     [Fact]
+    public async Task should_reject_a_null_single_request()
+    {
+        var act = async () => await new NoopSmsSender().SendAsync(null!);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task should_reject_a_single_request_without_destination()
+    {
+        var request = new SendSingleSmsRequest { Destination = null!, Text = "Hello world" };
+
+        var act = async () => await new NoopSmsSender().SendAsync(request);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task should_reject_a_single_request_with_an_empty_body()
+    {
+        var act = async () => await new NoopSmsSender().SendAsync(SmsRequests.Single(text: ""));
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task should_report_bulk_success()
+    {
+        var response = await new NoopSmsSender().SendBulkAsync(SmsRequests.Bulk("Hello world", (20, "1001")));
+
+        response.AllSucceeded.Should().BeTrue();
+        response.Results.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task should_reject_a_bulk_request_with_an_empty_body()
+    {
+        var request = SmsRequests.Bulk("", (20, "1001"));
+
+        var act = async () => await new NoopSmsSender().SendBulkAsync(request);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
     public async Task should_honor_cancellation()
     {
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
         var act = async () => await new NoopSmsSender().SendAsync(SmsRequests.Single(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_honor_bulk_cancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var act = async () =>
+            await new NoopSmsSender().SendBulkAsync(SmsRequests.Bulk("Hello world", (20, "1001")), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
