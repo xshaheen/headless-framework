@@ -282,7 +282,7 @@ public sealed class NamedHybridCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("value");
@@ -293,9 +293,9 @@ public sealed class NamedHybridCacheTests : TestBase
         cache.DefaultEntryOptions.Value.Duration.Should().Be(TimeSpan.FromMinutes(10));
 
         // when — past BOTH tier defaults (1 and 2 minutes) but within the hybrid's 10-minute default
-        await cache.GetOrAddAsync(key, Factory, AbortToken);
+        await cache.GetOrAddAsync(key, factory, AbortToken);
         _timeProvider.Advance(TimeSpan.FromMinutes(4));
-        var withinHybridDefault = await cache.GetOrAddAsync(key, Factory, AbortToken);
+        var withinHybridDefault = await cache.GetOrAddAsync(key, factory, AbortToken);
 
         // then — still fresh: the hybrid's default governed the write, the tier defaults did not
         withinHybridDefault.Value.Should().Be("value");
@@ -303,7 +303,7 @@ public sealed class NamedHybridCacheTests : TestBase
 
         // and past the hybrid's default the entry expires, proving its duration actually bounded the entry
         _timeProvider.Advance(TimeSpan.FromMinutes(7));
-        await cache.GetOrAddAsync(key, Factory, AbortToken);
+        await cache.GetOrAddAsync(key, factory, AbortToken);
         factoryCalls.Should().Be(2);
     }
 
@@ -350,16 +350,16 @@ public sealed class NamedHybridCacheTests : TestBase
         var perCallOptions = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(30) };
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("value");
         }
 
         // when — 40 seconds later: past the per-call 30s, within every default (1m, 2m, and 10m)
-        await cache.GetOrAddAsync(key, Factory, perCallOptions, AbortToken);
+        await cache.GetOrAddAsync(key, factory, perCallOptions, AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(40));
-        await cache.GetOrAddAsync(key, Factory, perCallOptions, AbortToken);
+        await cache.GetOrAddAsync(key, factory, perCallOptions, AbortToken);
 
         // then — the factory re-ran: only the per-call duration can explain the expiry
         factoryCalls.Should().Be(2, "per-call options must beat the hybrid's default and both tier defaults");

@@ -8,12 +8,12 @@ namespace Tests;
 
 public sealed class DeadOwnerRecoveryBridgeTests
 {
-    private static NodeIdentity Identity(string node, long incarnation) =>
+    private static NodeIdentity _Identity(string node, long incarnation) =>
         new(new NodeId(node), new NodeIncarnation(incarnation));
 
-    private static NodeLivenessSnapshot Dead(string node, long incarnation) =>
+    private static NodeLivenessSnapshot _Dead(string node, long incarnation) =>
         new(
-            Identity(node, incarnation),
+            _Identity(node, incarnation),
             NodeLivenessState.Dead,
             Role: null,
             Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
@@ -21,17 +21,17 @@ public sealed class DeadOwnerRecoveryBridgeTests
 
     // The bridge reclaims a batch (one owner from the event path, the whole dead set from a reconcile tick), so
     // assertions match the owner set rather than a single string.
-    private static IReadOnlyCollection<string> Batch(string owner) =>
+    private static IReadOnlyCollection<string> _Batch(string owner) =>
         Arg.Is<IReadOnlyCollection<string>>(owners => owners.Contains(owner));
 
-    private static IReadOnlyCollection<string> BatchWithout(string owner) =>
+    private static IReadOnlyCollection<string> _BatchWithout(string owner) =>
         Arg.Is<IReadOnlyCollection<string>>(owners => !owners.Contains(owner));
 
     private static (
         DeadOwnerRecoveryBridge<IDeadOwnerReclaimer> Bridge,
         FakeMembership Membership,
         IDeadOwnerReclaimer Reclaimer
-    ) Create()
+    ) _Create()
     {
         var membership = new FakeMembership();
         var reclaimer = Substitute.For<IDeadOwnerReclaimer>();
@@ -51,31 +51,31 @@ public sealed class DeadOwnerRecoveryBridgeTests
     [Fact]
     public async Task should_reclaim_once_on_node_left()
     {
-        var (bridge, _, reclaimer) = Create();
+        var (bridge, _, reclaimer) = _Create();
 
-        await bridge.HandleEventAsync(new NodeLeft(Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
 
-        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_pass_none_token_to_reclaim_so_shutdown_does_not_tear_the_write()
     {
-        var (bridge, _, reclaimer) = Create();
+        var (bridge, _, reclaimer) = _Create();
 
-        await bridge.HandleEventAsync(new NodeLeft(Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
 
-        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), CancellationToken.None);
+        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), CancellationToken.None);
     }
 
     [Fact]
     public async Task should_not_reclaim_on_suspected_recovered_or_joined()
     {
-        var (bridge, _, reclaimer) = Create();
+        var (bridge, _, reclaimer) = _Create();
 
-        await bridge.HandleEventAsync(new NodeSuspected(Identity("node-a", 5)));
-        await bridge.HandleEventAsync(new NodeRecovered(Identity("node-a", 5)));
-        await bridge.HandleEventAsync(new NodeJoined(Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new NodeSuspected(_Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new NodeRecovered(_Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new NodeJoined(_Identity("node-a", 5)));
 
         await reclaimer
             .DidNotReceive()
@@ -85,18 +85,18 @@ public sealed class DeadOwnerRecoveryBridgeTests
     [Fact]
     public async Task should_reclaim_dead_owner_from_snapshot_and_skip_alive_and_suspected()
     {
-        var (bridge, membership, reclaimer) = Create();
+        var (bridge, membership, reclaimer) = _Create();
         membership.Snapshot =
         [
-            Dead("node-dead", 5),
+            _Dead("node-dead", 5),
             new NodeLivenessSnapshot(
-                Identity("node-alive", 7),
+                _Identity("node-alive", 7),
                 NodeLivenessState.Alive,
                 Role: null,
                 Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
             ),
             new NodeLivenessSnapshot(
-                Identity("node-suspect", 9),
+                _Identity("node-suspect", 9),
                 NodeLivenessState.Suspected,
                 Role: null,
                 Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
@@ -105,70 +105,70 @@ public sealed class DeadOwnerRecoveryBridgeTests
 
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await reclaimer.Received(1).ReclaimAsync(Batch("node-dead@5"), Arg.Any<CancellationToken>());
-        await reclaimer.Received(1).ReclaimAsync(BatchWithout("node-alive@7"), Arg.Any<CancellationToken>());
-        await reclaimer.Received(1).ReclaimAsync(BatchWithout("node-suspect@9"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("node-dead@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_BatchWithout("node-alive@7"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_BatchWithout("node-suspect@9"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_dedup_between_event_and_reconcile()
     {
-        var (bridge, membership, reclaimer) = Create();
-        membership.Snapshot = [Dead("node-a", 5)];
+        var (bridge, membership, reclaimer) = _Create();
+        membership.Snapshot = [_Dead("node-a", 5)];
 
-        await bridge.HandleEventAsync(new NodeLeft(Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_reclaim_persistent_dead_node_only_once_across_ticks()
     {
-        var (bridge, membership, reclaimer) = Create();
-        membership.Snapshot = [Dead("node-a", 5)];
+        var (bridge, membership, reclaimer) = _Create();
+        membership.Snapshot = [_Dead("node-a", 5)];
 
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_not_suppress_a_new_incarnation_after_predecessor_aged_out()
     {
-        var (bridge, membership, reclaimer) = Create();
+        var (bridge, membership, reclaimer) = _Create();
 
-        membership.Snapshot = [Dead("node-a", 5)];
+        membership.Snapshot = [_Dead("node-a", 5)];
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
         // node-a@5 ages out of the snapshot, a fresh node-a@6 starts and dies.
-        membership.Snapshot = [Dead("node-a", 6)];
+        membership.Snapshot = [_Dead("node-a", 6)];
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
-        await reclaimer.Received(1).ReclaimAsync(Batch("node-a@6"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(1).ReclaimAsync(_Batch("node-a@6"), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_retry_after_a_failed_reclaim_and_not_swallow_silently()
     {
-        var (bridge, membership, reclaimer) = Create();
-        membership.Snapshot = [Dead("node-a", 5)];
+        var (bridge, membership, reclaimer) = _Create();
+        membership.Snapshot = [_Dead("node-a", 5)];
 
         // Throw on the first reclaim, succeed afterwards.
         reclaimer
-            .ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>())
+            .ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("boom"), _ => Task.CompletedTask);
 
         // The event-path failure must not escape the handler (loop continues).
-        await bridge.HandleEventAsync(new NodeLeft(Identity("node-a", 5)));
+        await bridge.HandleEventAsync(new NodeLeft(_Identity("node-a", 5)));
 
         // The next reconcile retries because the failed owner was removed from the reclaimed-set.
         await bridge.ReconcileOnceAsync(TestContext.Current.CancellationToken);
 
-        await reclaimer.Received(2).ReclaimAsync(Batch("node-a@5"), Arg.Any<CancellationToken>());
+        await reclaimer.Received(2).ReclaimAsync(_Batch("node-a@5"), Arg.Any<CancellationToken>());
     }
 
     private sealed class FakeMembership : INodeMembership

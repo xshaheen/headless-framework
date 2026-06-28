@@ -62,11 +62,11 @@ internal sealed class TryAcquireWriteLockScriptDefinition : RedisScriptDefinitio
 /// <summary>Parameters for <see cref="TryAcquireWriteLockScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
 internal readonly record struct ReaderWriterWriteParams(
-    RedisKey writerKey,
-    RedisKey readerKey,
-    string leaseId,
-    string waitingId,
-    RedisValue expires,
-    RedisValue markerExpires
+    RedisKey WriterKey,
+    RedisKey ReaderKey,
+    string LeaseId,
+    string WaitingId,
+    RedisValue Expires,
+    RedisValue MarkerExpires
 );
 #pragma warning restore IDE1006

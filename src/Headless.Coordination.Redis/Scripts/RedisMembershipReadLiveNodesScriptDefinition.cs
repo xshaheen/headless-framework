@@ -61,11 +61,11 @@ internal sealed class RedisMembershipReadLiveNodesScriptDefinition : RedisScript
 /// <summary>Parameters for <see cref="RedisMembershipReadLiveNodesScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
 internal readonly record struct ReadLiveNodesParams(
-    RedisKey liveKey,
-    RedisKey knownKey,
-    string genKeyPrefix,
-    string generationFieldPrefix,
-    long softMs,
-    long hardMs
+    RedisKey LiveKey,
+    RedisKey KnownKey,
+    string GenKeyPrefix,
+    string GenerationFieldPrefix,
+    long SoftMs,
+    long HardMs
 );
 #pragma warning restore IDE1006

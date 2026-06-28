@@ -42,11 +42,11 @@ internal sealed class RedisMembershipLeaveScriptDefinition : RedisScriptDefiniti
 /// <summary>Parameters for <see cref="RedisMembershipLeaveScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
 internal readonly record struct LeaveParams(
-    RedisKey knownKey,
-    RedisKey liveKey,
-    string member,
-    long hardMs,
-    string role,
-    string metadata
+    RedisKey KnownKey,
+    RedisKey LiveKey,
+    string Member,
+    long HardMs,
+    string Role,
+    string Metadata
 );
 #pragma warning restore IDE1006

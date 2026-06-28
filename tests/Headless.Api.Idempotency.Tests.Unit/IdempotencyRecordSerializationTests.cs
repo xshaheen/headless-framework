@@ -6,7 +6,7 @@ namespace Tests;
 
 public sealed class IdempotencyRecordSerializationTests
 {
-    private static readonly JsonSerializerOptions _options = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _Options = new(JsonSerializerDefaults.Web);
 
     [Fact]
     public void complete_record_round_trips_via_json()
@@ -25,8 +25,8 @@ public sealed class IdempotencyRecordSerializationTests
             CreatedAt = new DateTimeOffset(2026, 5, 19, 12, 0, 0, TimeSpan.Zero),
         };
 
-        var json = JsonSerializer.Serialize(original, _options);
-        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _options)!;
+        var json = JsonSerializer.Serialize(original, _Options);
+        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _Options)!;
 
         restored.Kind.Should().Be(RecordKind.Complete);
         restored.StatusCode.Should().Be(201);
@@ -47,8 +47,8 @@ public sealed class IdempotencyRecordSerializationTests
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        var json = JsonSerializer.Serialize(original, _options);
-        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _options)!;
+        var json = JsonSerializer.Serialize(original, _Options);
+        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _Options)!;
 
         restored.Kind.Should().Be(RecordKind.InFlight);
         restored.Body.Should().BeEmpty();
@@ -65,8 +65,8 @@ public sealed class IdempotencyRecordSerializationTests
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        var json = JsonSerializer.Serialize(original, _options);
-        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _options)!;
+        var json = JsonSerializer.Serialize(original, _Options);
+        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _Options)!;
 
         restored.Fingerprint.Should().BeNull();
     }
@@ -87,8 +87,8 @@ public sealed class IdempotencyRecordSerializationTests
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        var json = JsonSerializer.Serialize(original, _options);
-        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _options)!;
+        var json = JsonSerializer.Serialize(original, _Options);
+        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _Options)!;
 
         restored.Headers["X-Empty"].Should().BeEmpty();
         restored.Headers["X-Single"].Should().Equal("one");
@@ -107,8 +107,8 @@ public sealed class IdempotencyRecordSerializationTests
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        var json = JsonSerializer.Serialize(original, _options);
-        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _options)!;
+        var json = JsonSerializer.Serialize(original, _Options);
+        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _Options)!;
 
         restored.Body.Should().Equal(allBytes);
     }
@@ -128,8 +128,8 @@ public sealed class IdempotencyRecordSerializationTests
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        var json = JsonSerializer.Serialize(original, _options);
-        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _options)!;
+        var json = JsonSerializer.Serialize(original, _Options);
+        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _Options)!;
 
         // Lowercase keys must hit the case-insensitive comparer.
         restored.Headers["content-type"].Should().Equal("application/json");
@@ -155,8 +155,8 @@ public sealed class IdempotencyRecordSerializationTests
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-        var json = JsonSerializer.Serialize(original, _options);
-        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _options)!;
+        var json = JsonSerializer.Serialize(original, _Options);
+        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _Options)!;
 
         restored.Body.Should().Equal(body);
     }

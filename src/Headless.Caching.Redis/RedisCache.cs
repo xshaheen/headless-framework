@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Headless.Caching.Scripts;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;

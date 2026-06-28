@@ -68,7 +68,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         {
             cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
-            _logger.LogGetK8sServicesFailed(ex);
+            _logger.LogGetK8SServicesFailed(ex);
 
             return [];
         }
@@ -316,7 +316,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     }
 }
 
-internal static partial class K8sNodeDiscoveryProviderLog
+internal static partial class K8SNodeDiscoveryProviderLog
 {
     [LoggerMessage(
         EventId = 1,
@@ -332,5 +332,5 @@ internal static partial class K8sNodeDiscoveryProviderLog
         Level = LogLevel.Error,
         Message = "Get k8s services raised an exception"
     )]
-    public static partial void LogGetK8sServicesFailed(this ILogger logger, Exception exception);
+    public static partial void LogGetK8SServicesFailed(this ILogger logger, Exception exception);
 }

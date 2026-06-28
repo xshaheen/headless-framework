@@ -102,7 +102,7 @@ internal sealed partial class IdempotencyMiddleware(
         // Header value validation: length, control characters, multi-value
         if (!_ValidateKeyHeader(headerValues, keyHeader, out var malformedReason))
         {
-            LogKeyMalformed(malformedReason);
+            _LogKeyMalformed(malformedReason);
             await _WriteBadRequestAsync(context, IdempotencyMessageDescriber.KeyMalformed()).ConfigureAwait(false);
             return;
         }
@@ -118,7 +118,7 @@ internal sealed partial class IdempotencyMiddleware(
         {
             if (options.OversizeBehavior == OversizeBehavior.Reject)
             {
-                LogBodyTooLarge(options.MaxBodySizeForHashing);
+                _LogBodyTooLarge(options.MaxBodySizeForHashing);
                 var descriptor = IdempotencyMessageDescriber.BodyTooLarge();
                 var pd = new ProblemDetails
                 {
@@ -132,7 +132,7 @@ internal sealed partial class IdempotencyMiddleware(
             }
 
             // PassThrough: log and let the request through without idempotency guarantees
-            LogBodyCapPassThrough(options.MaxBodySizeForHashing);
+            _LogBodyCapPassThrough(options.MaxBodySizeForHashing);
             await next(context).ConfigureAwait(false);
             return;
         }
@@ -145,7 +145,7 @@ internal sealed partial class IdempotencyMiddleware(
         var cacheKey = _BuildCacheKey(context, options, keyHeader);
         if (cacheKey.Length == 0)
         {
-            LogSkippedNoIdentity();
+            _LogSkippedNoIdentity();
             await next(context).ConfigureAwait(false);
             return;
         }
@@ -157,7 +157,7 @@ internal sealed partial class IdempotencyMiddleware(
         }
         catch (Exception cacheEx)
         {
-            LogCacheFailure("existing-record-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
+            _LogCacheFailure("existing-record-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
             if (options.OnCacheError == OnCacheErrorBehavior.Throw)
             {
                 throw;
@@ -201,7 +201,7 @@ internal sealed partial class IdempotencyMiddleware(
             }
             catch (Exception lockEx)
             {
-                LogLockProviderFailure("winner-tryacquire", cacheKey, options.OnCacheError.ToString(), lockEx);
+                _LogLockProviderFailure("winner-tryacquire", cacheKey, options.OnCacheError.ToString(), lockEx);
                 if (options.OnCacheError == OnCacheErrorBehavior.Throw)
                 {
                     throw;
@@ -217,7 +217,7 @@ internal sealed partial class IdempotencyMiddleware(
             {
                 // Another request already holds the winner-lock for this key. Defer to the
                 // in-flight response path (Reject → 409, WaitAndReplay → block on existing winner).
-                LogWinnerLockContended(cacheKey);
+                _LogWinnerLockContended(cacheKey);
                 await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
                 return;
             }
@@ -247,7 +247,7 @@ internal sealed partial class IdempotencyMiddleware(
                 }
                 catch (Exception cacheEx)
                 {
-                    LogCacheFailure("sentinel-tryinsert", cacheKey, options.OnCacheError.ToString(), cacheEx);
+                    _LogCacheFailure("sentinel-tryinsert", cacheKey, options.OnCacheError.ToString(), cacheEx);
                     if (options.OnCacheError == OnCacheErrorBehavior.Throw)
                     {
                         throw;
@@ -271,7 +271,7 @@ internal sealed partial class IdempotencyMiddleware(
                 }
                 catch (Exception cacheEx)
                 {
-                    LogCacheFailure("race-peek-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
+                    _LogCacheFailure("race-peek-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
                     if (options.OnCacheError == OnCacheErrorBehavior.Throw)
                     {
                         throw;
@@ -358,7 +358,7 @@ internal sealed partial class IdempotencyMiddleware(
             await context.Response.Body.WriteAsync(record.Body, ct).ConfigureAwait(false);
         }
 
-        LogReplayHit(cacheKey);
+        _LogReplayHit(cacheKey);
     }
 
     /// <summary>
@@ -400,7 +400,7 @@ internal sealed partial class IdempotencyMiddleware(
 
     private async Task _WriteMismatchAsync(HttpContext context, IdempotencyOptions options, string cacheKey)
     {
-        LogFingerprintMismatch(cacheKey);
+        _LogFingerprintMismatch(cacheKey);
         var descriptor = IdempotencyMessageDescriber.KeyReused();
 
         var pd =
@@ -430,7 +430,7 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        LogInFlightReject(cacheKey);
+        _LogInFlightReject(cacheKey);
         var pd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
         await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
     }
@@ -470,7 +470,7 @@ internal sealed partial class IdempotencyMiddleware(
         }
         catch (Exception lockEx)
         {
-            LogLockProviderFailure("loser-tryacquire", cacheKey, options.OnCacheError.ToString(), lockEx);
+            _LogLockProviderFailure("loser-tryacquire", cacheKey, options.OnCacheError.ToString(), lockEx);
             if (options.OnCacheError == OnCacheErrorBehavior.Throw)
             {
                 throw;
@@ -478,7 +478,7 @@ internal sealed partial class IdempotencyMiddleware(
 
             // FailOpen on the loser path: we cannot wait on the winner. Return a recoverable
             // 409 so the client retries — bypassing to next() would re-execute the handler.
-            LogInFlightTimeout(cacheKey);
+            _LogInFlightTimeout(cacheKey);
             var failOpenPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
             await Results.Problem(failOpenPd).ExecuteAsync(context).ConfigureAwait(false);
             return;
@@ -486,7 +486,7 @@ internal sealed partial class IdempotencyMiddleware(
 
         if (dlock is null)
         {
-            LogInFlightTimeout(cacheKey);
+            _LogInFlightTimeout(cacheKey);
             var pd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
             await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
             return;
@@ -501,7 +501,7 @@ internal sealed partial class IdempotencyMiddleware(
         }
         catch (Exception cacheEx)
         {
-            LogCacheFailure("post-lock-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
+            _LogCacheFailure("post-lock-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
             if (options.OnCacheError == OnCacheErrorBehavior.Throw)
             {
                 throw;
@@ -510,7 +510,7 @@ internal sealed partial class IdempotencyMiddleware(
             // Loser path: we cannot read the winner's record. Return a recoverable 409 so the
             // client retries — bypassing to next() here would re-execute the handler and break
             // the idempotency guarantee outright.
-            LogInFlightTimeout(cacheKey);
+            _LogInFlightTimeout(cacheKey);
             var failOpenPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
             await Results.Problem(failOpenPd).ExecuteAsync(context).ConfigureAwait(false);
             return;
@@ -531,7 +531,7 @@ internal sealed partial class IdempotencyMiddleware(
         }
 
         // InFlight or NoValue after holding the lock → winner timed out or is still stuck
-        LogInFlightTimeout(cacheKey);
+        _LogInFlightTimeout(cacheKey);
         var timeoutPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
         await Results.Problem(timeoutPd).ExecuteAsync(context).ConfigureAwait(false);
     }
@@ -558,7 +558,7 @@ internal sealed partial class IdempotencyMiddleware(
         catch (Exception handlerEx)
         {
             context.Response.Body = originalBody;
-            LogHandlerThrew(cacheKey, handlerEx);
+            _LogHandlerThrew(cacheKey, handlerEx);
             try
             {
                 // Cleanup must outlive request cancellation
@@ -566,7 +566,7 @@ internal sealed partial class IdempotencyMiddleware(
             }
             catch (Exception cleanupEx)
             {
-                LogMarkerCleanupFailed(cacheKey, cleanupEx);
+                _LogMarkerCleanupFailed(cacheKey, cleanupEx);
             }
             throw;
         }
@@ -628,21 +628,21 @@ internal sealed partial class IdempotencyMiddleware(
                 }
                 catch (Exception casEx)
                 {
-                    LogFinalizeFailed(cacheKey, casEx);
+                    _LogFinalizeFailed(cacheKey, casEx);
                     try
                     {
                         await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
                     }
                     catch (Exception cleanupEx)
                     {
-                        LogMarkerCleanupFailed(cacheKey, cleanupEx);
+                        _LogMarkerCleanupFailed(cacheKey, cleanupEx);
                     }
                     throw;
                 }
 
                 if (!replaced)
                 {
-                    LogFinalizeSkippedMarkerChanged(cacheKey);
+                    _LogFinalizeSkippedMarkerChanged(cacheKey);
                 }
             }
             else
@@ -653,7 +653,7 @@ internal sealed partial class IdempotencyMiddleware(
                 }
                 catch (Exception cleanupEx)
                 {
-                    LogMarkerCleanupFailed(cacheKey, cleanupEx);
+                    _LogMarkerCleanupFailed(cacheKey, cleanupEx);
                 }
             }
         }
@@ -668,7 +668,7 @@ internal sealed partial class IdempotencyMiddleware(
             }
             catch (Exception cleanupEx)
             {
-                LogMarkerCleanupFailed(cacheKey, cleanupEx);
+                _LogMarkerCleanupFailed(cacheKey, cleanupEx);
             }
             // Swallow — the response was already committed (or the client is gone). Rethrowing
             // would surface a logged 500 the client never sees.
@@ -867,71 +867,71 @@ internal sealed partial class IdempotencyMiddleware(
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Idempotency replay hit for key {CacheKey}")]
-    private partial void LogReplayHit(string cacheKey);
+    private partial void _LogReplayHit(string cacheKey);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency fingerprint mismatch for key {CacheKey}")]
-    private partial void LogFingerprintMismatch(string cacheKey);
+    private partial void _LogFingerprintMismatch(string cacheKey);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency in-flight reject for key {CacheKey}")]
-    private partial void LogInFlightReject(string cacheKey);
+    private partial void _LogInFlightReject(string cacheKey);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency in-flight timeout for key {CacheKey}")]
-    private partial void LogInFlightTimeout(string cacheKey);
+    private partial void _LogInFlightTimeout(string cacheKey);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
         Message = "Idempotency request body exceeded cap {Cap}; rejecting with 413"
     )]
-    private partial void LogBodyTooLarge(int cap);
+    private partial void _LogBodyTooLarge(int cap);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
         Message = "Idempotency request body exceeded cap {Cap}; passing through without idempotency guarantees"
     )]
-    private partial void LogBodyCapPassThrough(int cap);
+    private partial void _LogBodyCapPassThrough(int cap);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency-Key header rejected: {Reason}")]
-    private partial void LogKeyMalformed(string reason);
+    private partial void _LogKeyMalformed(string reason);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
         Message = "Idempotency skipped: neither tenant nor user identity is present and no KeyDeriver is configured"
     )]
-    private partial void LogSkippedNoIdentity();
+    private partial void _LogSkippedNoIdentity();
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Idempotency finalize (UpsertAsync) failed for key {CacheKey}")]
-    private partial void LogFinalizeFailed(string cacheKey, Exception exception);
+    private partial void _LogFinalizeFailed(string cacheKey, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
         Message = "Idempotency finalize skipped: marker for key {CacheKey} no longer owned by this request"
     )]
-    private partial void LogFinalizeSkippedMarkerChanged(string cacheKey);
+    private partial void _LogFinalizeSkippedMarkerChanged(string cacheKey);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency marker cleanup failed for key {CacheKey}")]
-    private partial void LogMarkerCleanupFailed(string cacheKey, Exception exception);
+    private partial void _LogMarkerCleanupFailed(string cacheKey, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
         Message = "Idempotency cache call failed at {Site} for key {CacheKey}; behavior={Behavior}"
     )]
-    private partial void LogCacheFailure(string site, string cacheKey, string behavior, Exception exception);
+    private partial void _LogCacheFailure(string site, string cacheKey, string behavior, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Warning,
         Message = "Idempotency lock-provider call failed at {Site} for key {CacheKey}; behavior={Behavior}"
     )]
-    private partial void LogLockProviderFailure(string site, string cacheKey, string behavior, Exception exception);
+    private partial void _LogLockProviderFailure(string site, string cacheKey, string behavior, Exception exception);
 
     [LoggerMessage(
         Level = LogLevel.Debug,
         Message = "Idempotency winner-lock contended for key {CacheKey}; deferring to in-flight response path"
     )]
-    private partial void LogWinnerLockContended(string cacheKey);
+    private partial void _LogWinnerLockContended(string cacheKey);
 
     [LoggerMessage(
         Level = LogLevel.Debug,
         Message = "Idempotency handler threw for key {CacheKey}; removing in-flight marker before propagating"
     )]
-    private partial void LogHandlerThrew(string cacheKey, Exception exception);
+    private partial void _LogHandlerThrew(string cacheKey, Exception exception);
 }

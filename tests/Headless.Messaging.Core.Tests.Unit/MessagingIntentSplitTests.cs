@@ -606,7 +606,7 @@ public sealed class MessagingIntentSplitTests : TestBase
                 )
             )
             {
-                _listenerSubscription = value.Subscribe(this, IsBeforePublish);
+                _listenerSubscription = value.Subscribe(this, _IsBeforePublish);
             }
         }
 
@@ -631,7 +631,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             _allListenersSubscription.Dispose();
         }
 
-        private static bool IsBeforePublish(string eventName, object? _, object? __) =>
+        private static bool _IsBeforePublish(string eventName, object? _, object? __) =>
             string.Equals(eventName, MessageDiagnosticListenerNames.BeforePublish, StringComparison.Ordinal);
     }
 }

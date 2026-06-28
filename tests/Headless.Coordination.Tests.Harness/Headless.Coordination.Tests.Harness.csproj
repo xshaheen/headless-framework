@@ -3,6 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <IsTestProject>false</IsTestProject>
+    <IsTestableProject>false</IsTestableProject>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ExcludeFromCodeCoverage>true</ExcludeFromCodeCoverage>
+    <NoWarn>$(NoWarn);CA1707;IDE1006;CA1848</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />

@@ -689,7 +689,7 @@ public sealed class DistributedLockTests : TestBase
 
     private const int _SafetyDeadlineSeconds = DistributedLockTestSupport.NonBlockingAcquireDeadlineSeconds; // Mirrors _NonBlockingAcquireDeadline.
 
-    private static Func<NSubstitute.Core.CallInfo, ValueTask<DistributedLockAcquireResult>> _HangForeverInsert =>
+    private static Func<NSubstitute.Core.CallInfo, ValueTask<DistributedLockAcquireResult>> HangForeverInsert =>
         ci => new ValueTask<DistributedLockAcquireResult>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3)));
 
     private static async Task<DistributedLockAcquireResult> _HangUntilCancelledAsync(CancellationToken ct)
@@ -715,7 +715,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(_HangForeverInsert);
+            .Returns(HangForeverInsert);
 
         var provider = _CreateProvider(storage: storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -744,7 +744,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(_HangForeverInsert);
+            .Returns(HangForeverInsert);
 
         var provider = _CreateProvider(storage: storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -779,7 +779,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(_HangForeverInsert);
+            .Returns(HangForeverInsert);
 
         var captured = new List<int>();
         var logger = new DistributedLockTestSupport.CapturingLogger<DistributedLock>(captured);
@@ -953,7 +953,7 @@ public sealed class DistributedLockTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(_HangForeverInsert);
+            .Returns(HangForeverInsert);
 
         var provider = _CreateProvider(storage: storage);
         var resource = Faker.Random.AlphaNumeric(10);

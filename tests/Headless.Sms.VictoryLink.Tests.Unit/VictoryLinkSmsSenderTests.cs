@@ -2,7 +2,6 @@
 
 using System.Net;
 using Headless.Sms;
-using Headless.Sms.Testing;
 using Headless.Sms.VictoryLink;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -21,7 +20,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
         _fixture.Reset();
     }
 
-    private VictoryLinkSmsSender CreateSender()
+    private VictoryLinkSmsSender _CreateSender()
     {
         var options = Options.Create(
             new VictoryLinkSmsOptions
@@ -36,7 +35,7 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
         return new VictoryLinkSmsSender(_fixture.HttpClientFactory, options, NullLogger<VictoryLinkSmsSender>.Instance);
     }
 
-    private void StubSend(HttpStatusCode statusCode, string body)
+    private void _StubSend(HttpStatusCode statusCode, string body)
     {
         _fixture
             .Server.Given(Request.Create().WithPath("/send").UsingPost())
@@ -50,9 +49,9 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     [InlineData("\"0\"")] // JSON-quoted body
     public async Task should_succeed_for_success_codes_with_noisy_bodies(string body)
     {
-        StubSend(HttpStatusCode.OK, body);
+        _StubSend(HttpStatusCode.OK, body);
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeTrue();
     }
@@ -60,9 +59,9 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     [Fact]
     public async Task should_fail_and_map_out_of_credit()
     {
-        StubSend(HttpStatusCode.OK, "-5");
+        _StubSend(HttpStatusCode.OK, "-5");
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.OutOfCredit);
@@ -71,9 +70,9 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     [Fact]
     public async Task should_fail_on_empty_body()
     {
-        StubSend(HttpStatusCode.OK, string.Empty);
+        _StubSend(HttpStatusCode.OK, string.Empty);
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
     }
@@ -106,11 +105,11 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     [Fact]
     public async Task should_propagate_cancellation()
     {
-        StubSend(HttpStatusCode.OK, "0");
+        _StubSend(HttpStatusCode.OK, "0");
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
+        var act = async () => await _CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -118,9 +117,9 @@ public sealed class VictoryLinkSmsSenderTests : IClassFixture<SmsWireMockFixture
     [Fact]
     public async Task should_include_the_country_code_in_the_recipient()
     {
-        StubSend(HttpStatusCode.OK, "0");
+        _StubSend(HttpStatusCode.OK, "0");
 
-        await CreateSender().SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
+        await _CreateSender().SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
 
         var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
         body.Should().Contain("201001234567");

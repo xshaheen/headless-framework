@@ -106,6 +106,7 @@ internal sealed partial class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMes
         Level = LogLevel.Warning,
         Message = "Outbox flush exceeded the {FlushTimeout} timeout; undispatched messages remain durable and will be recovered by the relay sweep."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogFlushTimedOut(ILogger logger, TimeSpan flushTimeout);
 
     [LoggerMessage(
@@ -113,5 +114,6 @@ internal sealed partial class MessageOutboxBuffer : InMemoryWorkBuffer<MediumMes
         Level = LogLevel.Error,
         Message = "Outbox flush failed to dispatch message {StorageId}; it remains durable and will be recovered by the relay sweep."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogMessageDispatchFailed(ILogger logger, Guid storageId, Exception exception);
 }

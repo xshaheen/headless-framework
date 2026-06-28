@@ -6,8 +6,8 @@
     <IsTestableProject>false</IsTestableProject>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <ExcludeFromCodeCoverage>true</ExcludeFromCodeCoverage>
+    <NoWarn>$(NoWarn);CA1707;IDE1006;CA1848</NoWarn>
   </PropertyGroup>
-  <ItemGroup></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

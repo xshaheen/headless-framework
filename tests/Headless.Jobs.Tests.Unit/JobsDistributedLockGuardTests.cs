@@ -32,7 +32,7 @@ public sealed class JobsDistributedLockGuardTests
     };
 
     /// <summary>A real lock over in-memory storage. Two calls sharing one storage instance simulate two nodes.</summary>
-    private static IDistributedLock CreateLock(InMemoryDistributedLockStorage storage) =>
+    private static IDistributedLock _CreateLock(InMemoryDistributedLockStorage storage) =>
         new DistributedLock(
             storage,
             outboxBus: null, // lock-released notifications are not needed for these guard tests
@@ -46,7 +46,7 @@ public sealed class JobsDistributedLockGuardTests
     // Cron-seed migration guard (U2)
     // ----------------------------------------------------------------------------------------------------------------
 
-    private static async Task InvokeSeedAsync(
+    private static async Task _InvokeSeedAsync(
         IInternalJobManager manager,
         SchedulerOptionsBuilder options,
         IDistributedLock lockProvider,
@@ -78,7 +78,7 @@ public sealed class JobsDistributedLockGuardTests
         var spyLock = Substitute.For<IDistributedLock>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = false };
 
-        await InvokeSeedAsync(manager, options, spyLock, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, spyLock, CancellationToken.None);
 
         await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
         await spyLock
@@ -90,11 +90,11 @@ public sealed class JobsDistributedLockGuardTests
     public async Task Seed_with_free_lock_runs_body_once_and_releases_lease()
     {
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
-        var lockProvider = CreateLock(storage);
+        var lockProvider = _CreateLock(storage);
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        await InvokeSeedAsync(manager, options, lockProvider, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, lockProvider, CancellationToken.None);
 
         await manager.Received(1).MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>());
         // Lease released on completion → the resource is free again for the next boot.
@@ -107,14 +107,14 @@ public sealed class JobsDistributedLockGuardTests
     public async Task Seed_releases_lease_when_body_throws()
     {
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
-        var lockProvider = CreateLock(storage);
+        var lockProvider = _CreateLock(storage);
         var manager = Substitute.For<IInternalJobManager>();
         manager
             .MigrateDefinedCronJobs(Arg.Any<(string, string)[]>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("seed boom"));
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        var act = async () => await InvokeSeedAsync(manager, options, lockProvider, CancellationToken.None);
+        var act = async () => await _InvokeSeedAsync(manager, options, lockProvider, CancellationToken.None);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         // The `await using` must release the lease even when the body throws, so the resource is free for the next boot
@@ -130,16 +130,16 @@ public sealed class JobsDistributedLockGuardTests
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
 
         // Node A holds the seed lock.
-        var nodeA = CreateLock(storage);
+        var nodeA = _CreateLock(storage);
         await using var held = await nodeA.TryAcquireAsync(JobsKeys.CronSeedMigrationResource, _HoldOptions);
         held.Should().NotBeNull("pre-condition: the seed lock must be acquirable on an empty store");
 
         // Node B (same storage) attempts the guarded seed.
-        var nodeB = CreateLock(storage);
+        var nodeB = _CreateLock(storage);
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        await InvokeSeedAsync(manager, options, nodeB, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, nodeB, CancellationToken.None);
 
         await manager
             .DidNotReceive()
@@ -157,7 +157,7 @@ public sealed class JobsDistributedLockGuardTests
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
         // Faulting acquire is swallowed as a skip — startup must not fail on a lock-store hiccup.
-        await InvokeSeedAsync(manager, options, faultingLock, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, faultingLock, CancellationToken.None);
 
         await manager
             .DidNotReceive()
@@ -178,7 +178,7 @@ public sealed class JobsDistributedLockGuardTests
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
-        var act = async () => await InvokeSeedAsync(manager, options, cancelingLock, cts.Token);
+        var act = async () => await _InvokeSeedAsync(manager, options, cancelingLock, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         await manager
@@ -199,7 +199,7 @@ public sealed class JobsDistributedLockGuardTests
         var options = new SchedulerOptionsBuilder { UseStorageLock = true };
 
         // CancellationToken.None → not cancelled → the OCE is swallowed as a skip, startup is not failed.
-        await InvokeSeedAsync(manager, options, faultingLock, CancellationToken.None);
+        await _InvokeSeedAsync(manager, options, faultingLock, CancellationToken.None);
 
         await manager
             .DidNotReceive()
@@ -238,7 +238,7 @@ public sealed class JobsDistributedLockGuardTests
     // Dead-node reclaim (intentionally unguarded — bridge-retry contract, #267)
     // ----------------------------------------------------------------------------------------------------------------
 
-    private static JobsDeadOwnerReclaimer CreateReclaimer(
+    private static JobsDeadOwnerReclaimer _CreateReclaimer(
         IInternalJobManager manager,
         SchedulerOptionsBuilder options
     ) => new(manager, options);
@@ -248,7 +248,7 @@ public sealed class JobsDistributedLockGuardTests
     {
         var manager = Substitute.For<IInternalJobManager>();
         var options = new SchedulerOptionsBuilder();
-        var reclaimer = CreateReclaimer(manager, options);
+        var reclaimer = _CreateReclaimer(manager, options);
 
         await reclaimer.ReclaimAsync(["node-a@1", "node-b@2"], CancellationToken.None);
 
@@ -274,7 +274,7 @@ public sealed class JobsDistributedLockGuardTests
             .ReleaseDeadNodeResources(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("release boom"));
         var options = new SchedulerOptionsBuilder();
-        var reclaimer = CreateReclaimer(manager, options);
+        var reclaimer = _CreateReclaimer(manager, options);
 
         var act = async () => await reclaimer.ReclaimAsync(["node-a@1"], CancellationToken.None);
 

@@ -346,20 +346,20 @@ public abstract class CacheConformanceTestsBase : TestBase
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("stale"), options, AbortToken);
         await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
+        var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await TriggerTimeoutAsync(options.FactorySoftTimeout, timeoutTask);
+        await _TriggerTimeoutAsync(options.FactorySoftTimeout, timeoutTask);
 
         var timedOut = await timeoutTask;
         factoryGate.SetResult("fresh");
 
-        await WaitUntilAsync(async () =>
+        await _WaitUntilAsync(async () =>
         {
             var cached = await cache.GetAsync<string>(key, AbortToken);
             return cached.HasValue && cached.Value == "fresh";
@@ -377,16 +377,16 @@ public abstract class CacheConformanceTestsBase : TestBase
         var options = _CreateTimeoutOptions(isFailSafeEnabled: false);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             return "fresh";
         }
 
-        var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
+        var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await TriggerTimeoutAsync(options.FactoryHardTimeout, timeoutTask);
+        await _TriggerTimeoutAsync(options.FactoryHardTimeout, timeoutTask);
         var act = async () => await timeoutTask;
 
         await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
@@ -403,16 +403,16 @@ public abstract class CacheConformanceTestsBase : TestBase
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("stale"), options, AbortToken);
         await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             return "fresh";
         }
 
-        var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
+        var timeoutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await TriggerTimeoutAsync(options.FactoryHardTimeout, timeoutTask);
+        await _TriggerTimeoutAsync(options.FactoryHardTimeout, timeoutTask);
         var result = await timeoutTask;
 
         result.Value.Should().Be("stale");
@@ -432,23 +432,23 @@ public abstract class CacheConformanceTestsBase : TestBase
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("stale"), options, AbortToken);
         await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
 
-        async ValueTask<string?> FirstFactory(CancellationToken cancellationToken)
+        async ValueTask<string?> firstFactory(CancellationToken cancellationToken)
         {
             firstStarted.SetResult();
             return await firstGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        ValueTask<string?> SecondFactory(CancellationToken _)
+        ValueTask<string?> secondFactory(CancellationToken _)
         {
             secondFactoryCalls++;
             return ValueTask.FromResult<string?>("second");
         }
 
-        var first = cache.GetOrAddAsync(key, FirstFactory, options, AbortToken).AsTask();
+        var first = cache.GetOrAddAsync(key, firstFactory, options, AbortToken).AsTask();
         await firstStarted.Task;
         await Task.Yield();
-        var second = cache.GetOrAddAsync(key, SecondFactory, options, AbortToken).AsTask();
-        await TriggerTimeoutAsync(options.FactorySoftTimeout, second);
+        var second = cache.GetOrAddAsync(key, secondFactory, options, AbortToken).AsTask();
+        await _TriggerTimeoutAsync(options.FactorySoftTimeout, second);
         var secondResult = await second;
         firstGate.SetResult("fresh");
         await first;
@@ -474,7 +474,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         hit.Value.Should().Be("v1");
         hit.IsStale.Should().BeFalse();
 
-        await WaitUntilAsync(async () =>
+        await _WaitUntilAsync(async () =>
         {
             var cached = await cache.GetAsync<string>(key, AbortToken);
             return cached.HasValue && cached.Value == "v2";
@@ -493,21 +493,21 @@ public abstract class CacheConformanceTestsBase : TestBase
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v1"), options, AbortToken);
         await AdvanceAsync(TimeSpan.FromMilliseconds(250));
 
-        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        async ValueTask<string?> factory(CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref factoryCalls);
             return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var results = await Task.WhenAll(
-            Enumerable.Range(0, 8).Select(_ => cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask())
+            Enumerable.Range(0, 8).Select(_ => cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask())
         );
 
         results.Should().AllSatisfy(result => result.Value.Should().Be("v1"));
 
         factoryGate.SetResult("v2");
 
-        await WaitUntilAsync(async () =>
+        await _WaitUntilAsync(async () =>
         {
             var cached = await cache.GetAsync<string>(key, AbortToken);
             return cached.HasValue && cached.Value == "v2";
@@ -1113,7 +1113,7 @@ public abstract class CacheConformanceTestsBase : TestBase
             BackgroundFactoryCeiling = TimeSpan.FromSeconds(2),
         };
 
-    private async ValueTask TriggerTimeoutAsync(TimeSpan timeout, Task pendingTimeout)
+    private async ValueTask _TriggerTimeoutAsync(TimeSpan timeout, Task pendingTimeout)
     {
         await Task.Yield();
         await AdvanceAsync(timeout);
@@ -1129,7 +1129,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         }
     }
 
-    private async ValueTask WaitUntilAsync(Func<ValueTask<bool>> condition)
+    private async ValueTask _WaitUntilAsync(Func<ValueTask<bool>> condition)
     {
         for (var attempt = 0; attempt < 50; attempt++)
         {

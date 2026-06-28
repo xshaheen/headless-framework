@@ -115,7 +115,7 @@ public static class SetupIdempotency
             services.TryAddScoped<IdempotencyMiddleware>();
 
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsDIValidator>()
+                ServiceDescriptor.Singleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsDiValidator>()
             );
 
             return services;

@@ -281,7 +281,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
 
         // catch-all registered FIRST
-        builder.Services.AddSingleton<IExceptionHandler, _CatchAllHandler>();
+        builder.Services.AddSingleton<IExceptionHandler, CatchAllHandler>();
         // tenancy handler registered SECOND via AddHeadlessProblemDetails
         builder.Services.AddHeadlessProblemDetails();
 
@@ -341,7 +341,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         return new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
     }
 
-    private sealed class _CatchAllHandler : IExceptionHandler
+    private sealed class CatchAllHandler : IExceptionHandler
     {
         public async ValueTask<bool> TryHandleAsync(
             HttpContext httpContext,

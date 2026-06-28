@@ -231,7 +231,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             OrderId = orderId.ToString(CultureInfo.InvariantCulture),
             TransactionId = payResponse.Id,
             RedirectionUrl = payResponse.RedirectionUrl,
-            Is3DSecure = payResponse.Is3dSecure.Equals("true", StringComparison.OrdinalIgnoreCase),
+            Is3DSecure = payResponse.Is3DSecure.Equals("true", StringComparison.OrdinalIgnoreCase),
             IsSuccess = payResponse.IsSuccess(),
         };
     }

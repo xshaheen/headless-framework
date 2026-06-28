@@ -72,7 +72,7 @@ public sealed class CashInTransaction
     public bool IsRefunded { get; init; }
 
     [JsonPropertyName("is_3d_secure")]
-    public bool Is3dSecure { get; init; }
+    public bool Is3DSecure { get; init; }
 
     [JsonPropertyName("is_void")]
     public bool IsVoid { get; init; }

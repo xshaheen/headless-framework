@@ -25,5 +25,5 @@ internal sealed class RedisMembershipAllocateIncarnationScriptDefinition : Redis
 #pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
 /// <summary>Parameters for <see cref="RedisMembershipAllocateIncarnationScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
-internal readonly record struct AllocateIncarnationParams(RedisKey genKey, RedisKey knownKey, string generationField);
+internal readonly record struct AllocateIncarnationParams(RedisKey GenKey, RedisKey KnownKey, string GenerationField);
 #pragma warning restore IDE1006

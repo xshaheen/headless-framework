@@ -246,7 +246,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         // so replaying an old marker only re-asserts its generation and cannot lower a newer one; and (2) synthetic
         // marker keys (the "\0hybrid-marker:*" namespace) are never emitted as real cache keys in invalidation
         // messages, so they never match the key/prefix branches below.
-        bool IsConflicting(RecoveryItem item) =>
+        bool isConflicting(RecoveryItem item) =>
             item.Kind != HybridCacheRecoveryKind.MarkerBump
             && (message.Timestamp is null || item.EnqueuedAt < message.Timestamp.Value);
 
@@ -254,7 +254,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var pair in _items)
             {
-                if (IsConflicting(pair.Value))
+                if (isConflicting(pair.Value))
                 {
                     _TryRemoveConflicting(pair);
                 }
@@ -267,7 +267,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var pair in _items)
             {
-                if (pair.Key.StartsWith(message.Prefix, StringComparison.Ordinal) && IsConflicting(pair.Value))
+                if (pair.Key.StartsWith(message.Prefix, StringComparison.Ordinal) && isConflicting(pair.Value))
                 {
                     _TryRemoveConflicting(pair);
                 }
@@ -280,7 +280,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         {
             foreach (var key in message.Keys)
             {
-                if (_items.TryGetValue(key, out var item) && IsConflicting(item))
+                if (_items.TryGetValue(key, out var item) && isConflicting(item))
                 {
                     _TryRemoveConflicting(new(key, item));
                 }
@@ -292,7 +292,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
         if (
             !string.IsNullOrEmpty(message.Key)
             && _items.TryGetValue(message.Key, out var single)
-            && IsConflicting(single)
+            && isConflicting(single)
         )
         {
             _TryRemoveConflicting(new(message.Key, single));

@@ -1107,14 +1107,14 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
         // when — the caller soft-times-out, then the detached factory completes and writes through the store
-        var timedOutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
+        var timedOutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await _TriggerTimeoutAsync(options.FactorySoftTimeout, timedOutTask);
         var timedOut = await timedOutTask;
@@ -1388,13 +1388,13 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
-        var pending = cache.GetOrAddAsync(key, Factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
         await factoryStarted.Task;
 
         // when — the L2 entry is created and removed by another actor mid-operation, then the factory lands
@@ -1427,13 +1427,13 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
-        var pending = cache.GetOrAddAsync(key, Factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
         await factoryStarted.Task;
 
         // when — L2 starts throwing mid-operation, then the factory completes
@@ -1466,13 +1466,13 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
-        var pending = cache.GetOrAddAsync(key, Factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
         await factoryStarted.Task;
 
         // when — the key is removed while the factory is in flight, then the factory write lands
@@ -1499,13 +1499,13 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
-        var pending = cache.GetOrAddAsync(key, Factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
         await factoryStarted.Task;
 
         // when — the invalidation-driven removal fires mid-factory, then the factory write lands

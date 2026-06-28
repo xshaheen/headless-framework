@@ -66,7 +66,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_send_message_successfully()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var message = CreateMessage();
 
         // when
@@ -115,7 +115,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_have_valid_broker_address()
     {
         // given, when
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
 
         // then
         transport.BrokerAddress.Name.Should().NotBeNullOrEmpty();
@@ -130,7 +130,7 @@ public abstract class TransportTestsBase : TestBase
         }
 
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var customHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             { "CustomHeader1", "Value1" },
@@ -156,7 +156,7 @@ public abstract class TransportTestsBase : TestBase
         }
 
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var messages = Enumerable.Range(0, 10).Select(i => CreateMessage(messageId: $"batch-msg-{i}")).ToList();
 
         // when
@@ -173,7 +173,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_throw_when_transport_disposed()
     {
         // given
-        var transport = GetPrimaryTransport();
+        var transport = _GetPrimaryTransport();
         await transport.DisposeAsync();
 
         var message = CreateMessage();
@@ -188,7 +188,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_empty_message_body()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var message = CreateMessage(body: ReadOnlyMemory<byte>.Empty);
 
         // when
@@ -201,7 +201,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_large_message_body()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var largeBody = new byte[64 * 1024]; // 64KB
         Random.Shared.NextBytes(largeBody);
         var message = CreateMessage(body: largeBody);
@@ -216,7 +216,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_dispose_async_without_exception()
     {
         // given
-        var transport = GetPrimaryTransport();
+        var transport = _GetPrimaryTransport();
 
         // when & then - dispose should complete without exception
         var act = () => transport.DisposeAsync().AsTask();
@@ -226,7 +226,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_concurrent_sends()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var results = new ConcurrentBag<OperateResult>();
         var tasks = Enumerable
             .Range(0, 50)
@@ -248,7 +248,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_include_message_id_in_headers()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var expectedId = Guid.NewGuid().ToString();
         var message = CreateMessage(messageId: expectedId);
 
@@ -263,7 +263,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_include_message_name_in_headers()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         const string expectedName = "TestMessageName";
         var message = CreateMessage(messageName: expectedName);
 
@@ -278,7 +278,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_special_characters_in_message_body()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         const string specialContent = "{\"text\": \"Hello \\\"World\\\" with émojis 🎉 and unicode: 日本語\"}";
         var message = CreateMessage(body: Encoding.UTF8.GetBytes(specialContent));
 
@@ -292,7 +292,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_null_header_values()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { { "NullableHeader", null } };
         var message = CreateMessage(additionalHeaders: headers);
 
@@ -306,7 +306,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_correlation_id_header()
     {
         // given
-        await using var transport = GetPrimaryTransport();
+        await using var transport = _GetPrimaryTransport();
         var correlationId = Guid.NewGuid().ToString();
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -342,7 +342,7 @@ public abstract class TransportTestsBase : TestBase
         public ValueTask DisposeAsync() => transport.DisposeAsync();
     }
 
-    private ProbeTransport GetPrimaryTransport()
+    private ProbeTransport _GetPrimaryTransport()
     {
         if (Capabilities.SupportsBusTransport)
         {

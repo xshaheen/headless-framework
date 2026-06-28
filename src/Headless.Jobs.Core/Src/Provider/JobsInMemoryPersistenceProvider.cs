@@ -346,7 +346,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var affected = 0;
 
-        bool TryApply(Guid id, Action<TTimeJob> mutate)
+        bool tryApply(Guid id, Action<TTimeJob> mutate)
         {
             if (!_timeJobs.TryGetValue(id, out var current))
             {
@@ -366,7 +366,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             switch (job.OnNodeDeath)
             {
                 case NodeDeathPolicy.Retry
-                    when TryApply(
+                    when tryApply(
                         job.Id,
                         t =>
                         {
@@ -378,7 +378,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     affected++;
                     break;
                 case NodeDeathPolicy.MarkFailed
-                    when TryApply(
+                    when tryApply(
                         job.Id,
                         t =>
                         {
@@ -391,7 +391,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     affected++;
                     break;
                 case NodeDeathPolicy.Skip
-                    when TryApply(
+                    when tryApply(
                         job.Id,
                         t =>
                         {
@@ -642,7 +642,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var affected = 0;
 
-        bool TryApply(Guid id, Action<TTimeJob> mutate)
+        bool tryApply(Guid id, Action<TTimeJob> mutate)
         {
             if (!_timeJobs.TryGetValue(id, out var current))
             {
@@ -671,7 +671,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             if (release)
             {
                 if (
-                    TryApply(
+                    tryApply(
                         job.Id,
                         t =>
                         {
@@ -688,7 +688,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             else if (inProgressLapsed && job.OnNodeDeath == NodeDeathPolicy.MarkFailed)
             {
                 if (
-                    TryApply(
+                    tryApply(
                         job.Id,
                         t =>
                         {
@@ -706,7 +706,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             else if (inProgressLapsed && job.OnNodeDeath == NodeDeathPolicy.Skip)
             {
                 if (
-                    TryApply(
+                    tryApply(
                         job.Id,
                         t =>
                         {
@@ -1072,7 +1072,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var affected = 0;
 
-        bool TryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        bool tryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
         {
             if (!_cronOccurrences.TryGetValue(id, out var current))
             {
@@ -1094,7 +1094,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             switch (occurrence.OnNodeDeath)
             {
                 case NodeDeathPolicy.Retry
-                    when TryApply(
+                    when tryApply(
                         occurrence.Id,
                         t =>
                         {
@@ -1106,7 +1106,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     affected++;
                     break;
                 case NodeDeathPolicy.MarkFailed
-                    when TryApply(
+                    when tryApply(
                         occurrence.Id,
                         t =>
                         {
@@ -1119,7 +1119,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     affected++;
                     break;
                 case NodeDeathPolicy.Skip
-                    when TryApply(
+                    when tryApply(
                         occurrence.Id,
                         t =>
                         {
@@ -1216,7 +1216,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var affected = 0;
 
-        bool TryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
+        bool tryApply(Guid id, Action<CronJobOccurrenceEntity<TCronJob>> mutate)
         {
             if (!_cronOccurrences.TryGetValue(id, out var current))
             {
@@ -1245,7 +1245,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             if (release)
             {
                 if (
-                    TryApply(
+                    tryApply(
                         occurrence.Id,
                         o =>
                         {
@@ -1262,7 +1262,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             else if (inProgressLapsed && occurrence.OnNodeDeath == NodeDeathPolicy.MarkFailed)
             {
                 if (
-                    TryApply(
+                    tryApply(
                         occurrence.Id,
                         o =>
                         {
@@ -1280,7 +1280,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             else if (inProgressLapsed && occurrence.OnNodeDeath == NodeDeathPolicy.Skip)
             {
                 if (
-                    TryApply(
+                    tryApply(
                         occurrence.Id,
                         o =>
                         {

@@ -29,5 +29,5 @@ internal sealed class GetSemaphoreCountScriptDefinition : RedisScriptDefinition
 #pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
 /// <summary>Parameters for <see cref="GetSemaphoreCountScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
-internal readonly record struct SemaphoreCountParams(RedisKey holdersKey);
+internal readonly record struct SemaphoreCountParams(RedisKey HoldersKey);
 #pragma warning restore IDE1006
