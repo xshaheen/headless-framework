@@ -56,6 +56,11 @@ public static class BlobStorageExtensions
         /// <param name="globPattern">A glob pattern matched against each blob's <see cref="BlobInfo.BlobKey"/>.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>An async sequence of matching <see cref="BlobInfo"/> records.</returns>
+        /// <remarks>
+        /// When <see cref="BlobQuery.Prefix"/> and the glob's literal prefix are mutually exclusive (neither is a
+        /// prefix of the other), no key can satisfy both, so this yields an empty sequence. That is an empty match,
+        /// not an error — compare the two prefixes yourself first if you need to distinguish the cases.
+        /// </remarks>
         public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
             BlobQuery query,
             string globPattern,

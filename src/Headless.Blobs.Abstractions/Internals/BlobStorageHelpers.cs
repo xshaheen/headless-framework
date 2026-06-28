@@ -115,9 +115,29 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>Decodes a continuation token produced by <see cref="EncodeContinuationToken"/>.</summary>
+    /// <exception cref="ArgumentException">The token is not a valid opaque token produced by this provider.</exception>
     public static string? DecodeContinuationToken(string? token)
     {
-        return string.IsNullOrEmpty(token) ? null : Encoding.UTF8.GetString(Convert.FromBase64String(token));
+        if (string.IsNullOrEmpty(token))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(token));
+        }
+        catch (FormatException e)
+        {
+            // A continuation token may round-trip through an untrusted boundary (e.g. a web pagination cursor), so a
+            // malformed/forged token must fail as a clean, catchable contract error rather than leaking the backend's
+            // FormatException unhandled out of ListAsync.
+            throw new ArgumentException(
+                "The continuation token is not a valid opaque token produced by this provider.",
+                nameof(token),
+                e
+            );
+        }
     }
 
     /// <summary>Counts successful deletes and throws when a bulk delete returned per-entry failures.</summary>

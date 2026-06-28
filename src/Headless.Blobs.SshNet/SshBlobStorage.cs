@@ -509,7 +509,12 @@ public sealed class SshBlobStorage(
             // SFTP has no server-side listing filter, but a path-like prefix can still start recursion at the deepest
             // safe directory implied by that prefix. File-name-only prefixes fall back to the container root.
             var (startDirectory, relativePrefix) = GetEnumerationScope(container, prefix);
-            var pageWindow = new List<BlobInfo>(query.PageSize + 1);
+
+            // Hold at most PageSize+1 items so a full window signals that a further page remains. Compute the +1 in
+            // long space and clamp the initial capacity so a caller passing PageSize == int.MaxValue ("everything in
+            // one page") cannot overflow the capacity/threshold into a negative value.
+            var windowLimit = (long)query.PageSize + 1;
+            var pageWindow = new List<BlobInfo>((int)Math.Min(windowLimit, 1024));
 
             await foreach (
                 var (key, file) in _EnumerateBlobsAsync(client, startDirectory, relativePrefix, cancellationToken)
@@ -535,7 +540,7 @@ public sealed class SshBlobStorage(
                 // authoritative source for Metadata and the sidecar-derived Created timestamp.
                 var item = _ToBlobInfo(file, key, metadata: null);
 
-                if (pageWindow.Count < query.PageSize + 1)
+                if (pageWindow.Count < windowLimit)
                 {
                     pageWindow.Add(item);
                     continue;
