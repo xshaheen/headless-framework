@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Nito.Disposables;
+using Headless.Core;
 
 namespace Headless.Testing.Helpers;
 
@@ -43,7 +43,7 @@ public sealed class TestCurrentTenant : ICurrentTenant
         Id = id;
         Name = name;
 
-        return new Disposable(() =>
+        return DisposableFactory.Create(() =>
         {
             Id = previousId;
             Name = previousName;

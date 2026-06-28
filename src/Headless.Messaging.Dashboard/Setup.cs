@@ -94,8 +94,7 @@ public static class SetupMessagingDashboard
                             if (file.Exists)
                             {
                                 await using var stream = file.CreateReadStream();
-                                using var reader = new StreamReader(stream);
-                                var htmlContent = await reader.ReadToEndAsync().ConfigureAwait(false);
+                                var htmlContent = await stream.GetAllTextAsync().ConfigureAwait(false);
 
                                 htmlContent = _ReplaceBasePath(htmlContent, context, basePath, config);
 

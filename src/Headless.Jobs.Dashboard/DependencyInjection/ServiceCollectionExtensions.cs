@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using System.Text.Encodings.Web;
+using Headless.Constants;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Entities;
@@ -152,7 +153,7 @@ internal static class ServiceCollectionExtensions
                                 // Inject the base tag and other replacements into the HTML
                                 htmlContent = _ReplaceBasePath(htmlContent, context, basePath, config);
 
-                                context.Response.ContentType = "text/html";
+                                context.Response.ContentType = ContentTypes.Texts.Html;
                                 context.Response.StatusCode = 200;
                                 await context.Response.WriteAsync(htmlContent).ConfigureAwait(false);
                             }
