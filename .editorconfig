@@ -287,6 +287,9 @@ dotnet_diagnostic.JSON001.severity = suggestion
 # CA2201: Do not raise reserved exception types
 # Tests verify generic exception handling behavior
 dotnet_diagnostic.CA2201.severity = suggestion
+# MA0025: Implement the functionality (or raise NotSupportedException)
+# Tests intentionally throw NotImplementedException to exercise exception-handler mapping
+dotnet_diagnostic.MA0025.severity = suggestion
 # CA2263: Use the generic overload
 # Tests may intentionally test non-generic overloads
 dotnet_diagnostic.CA2263.severity = suggestion
