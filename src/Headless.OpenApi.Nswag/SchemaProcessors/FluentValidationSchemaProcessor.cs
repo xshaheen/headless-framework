@@ -217,8 +217,8 @@ public sealed class FluentValidationSchemaProcessor(
     private void _AddRulesFromIncludedValidators(SchemaProcessorContext context, IValidator validator)
     {
         // Note: IValidatorDescriptor doesn't return IncludeRules so we need to get validators manually.
-        var includeRules = ValidationExtensions
-            .EmptyIfNull(validator as IEnumerable<IValidationRule>)
+        var includeRules = (validator as IEnumerable<IValidationRule>)
+            .EmptyIfNull()
             .Where(rule => rule.HasNoCondition() && rule is IIncludeRule);
 
         var childAdapters = includeRules

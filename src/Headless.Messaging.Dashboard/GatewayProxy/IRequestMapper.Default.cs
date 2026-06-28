@@ -112,9 +112,7 @@ public class RequestMapper : IRequestMapper
     {
         await using (stream)
         {
-            await using var memStream = new MemoryStream();
-            await stream.CopyToAsync(memStream).ConfigureAwait(false);
-            return memStream.ToArray();
+            return await stream.GetAllBytesAsync().ConfigureAwait(false);
         }
     }
 
