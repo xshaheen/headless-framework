@@ -35,7 +35,6 @@ public sealed class RedisBlobStorage : IBlobStorage
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;
     private readonly IClock _clock;
-    private readonly TimeProvider _timeProvider;
     private readonly RedisBlobStorageOptions _options;
     private readonly ResiliencePipeline _retryPipeline;
     private readonly IBlobNamingNormalizer _normalizer;
@@ -103,12 +102,11 @@ public sealed class RedisBlobStorage : IBlobStorage
         _logger = _options.LoggerFactory?.CreateLogger(typeof(RedisBlobStorage)) ?? NullLogger.Instance;
         _serializer = _options.Serializer ?? defaultSerializer;
         _clock = clock;
-        _timeProvider = timeProvider ?? TimeProvider.System;
         _normalizer = normalizer;
 
         var pipelineLogger = _logger;
 
-        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = _timeProvider }
+        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = timeProvider ?? TimeProvider.System }
             .AddRetry(
                 new RetryStrategyOptions
                 {

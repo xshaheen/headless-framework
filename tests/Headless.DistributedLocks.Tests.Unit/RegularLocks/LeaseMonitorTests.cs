@@ -258,7 +258,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         // Trigger an iteration that will block inside RenewOrValidateLeaseAsync.
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => handle.IsBlocking);
+        await _DrainUntilAsync(() => handle.IsBlocking, AbortToken);
 
         // when
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
