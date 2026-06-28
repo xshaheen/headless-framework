@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.SqlServer;
 
+[PublicAPI]
 public partial class SqlServerEntityFrameworkMessagingOptions
 {
     public const string DefaultSchema = "messaging";

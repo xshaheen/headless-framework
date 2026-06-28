@@ -6,17 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Dashboard.Authentication;
 
-internal static partial class AuthMiddlewareLog
-{
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "AuthenticationFailed",
-        Level = LogLevel.Warning,
-        Message = "Authentication failed for {Path}: {Error}"
-    )]
-    public static partial void LogAuthenticationFailed(this ILogger logger, string path, string? error);
-}
-
 /// <summary>
 /// Authentication middleware that only protects API endpoints.
 /// Static files, negotiate, and auth endpoints are excluded.
@@ -125,4 +114,15 @@ public sealed class AuthMiddleware
             || string.Equals(path, "/api/auth/validate", StringComparison.Ordinal)
             || string.Equals(path, "/api/auth/info", StringComparison.Ordinal);
     }
+}
+
+internal static partial class AuthMiddlewareLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "AuthenticationFailed",
+        Level = LogLevel.Warning,
+        Message = "Authentication failed for {Path}: {Error}"
+    )]
+    public static partial void LogAuthenticationFailed(this ILogger logger, string path, string? error);
 }

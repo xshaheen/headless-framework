@@ -2,7 +2,6 @@
 
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -16,7 +15,7 @@ namespace Headless.Settings.PostgreSql;
 internal sealed class PostgreSqlSettingValueRecordRepository(
     IOptions<PostgreSqlSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions,
-    IServiceProvider services
+    TimeProvider timeProvider
 ) : ISettingValueRecordRepository
 {
     /// <summary>Comma-separated column list used in SELECT queries for setting value records.</summary>
@@ -125,7 +124,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
         // the TimeProvider when the caller left it at default. Tests that pin DateCreated for
         // deterministic assertions and audit-driven scenarios that backfill historical timestamps
         // both depend on this round-trip.
-        var dateCreated = setting.DateCreated == default ? _TimeProvider().GetUtcNow() : setting.DateCreated;
+        var dateCreated = setting.DateCreated == default ? timeProvider.GetUtcNow() : setting.DateCreated;
 
         await _ExecuteAsync(
                 sql,
@@ -150,7 +149,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
         // the TimeProvider when the caller left it null/default.
         var dateUpdated =
             setting.DateUpdated is null || setting.DateUpdated == default(DateTimeOffset)
-                ? _TimeProvider().GetUtcNow()
+                ? timeProvider.GetUtcNow()
                 : setting.DateUpdated.Value;
 
         await _ExecuteAsync(
@@ -233,9 +232,6 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
 
     /// <summary>Returns <see cref="PostgreSqlSettingsOptions.CommandTimeout"/> expressed in whole seconds for use as <c>CommandTimeout</c>.</summary>
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
-
-    /// <summary>Resolves the registered <see cref="TimeProvider"/>, falling back to <see cref="TimeProvider.System"/> when not registered.</summary>
-    private TimeProvider _TimeProvider() => services.GetService<TimeProvider>() ?? TimeProvider.System;
 
     /// <summary>Creates an <see cref="NpgsqlParameter"/> named <paramref name="name"/> with <paramref name="value"/>, substituting <see cref="DBNull.Value"/> for <see langword="null"/>.</summary>
     private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);

@@ -22,7 +22,7 @@ namespace Headless.CommitCoordination.PostgreSql;
 /// afterward; an already-open connection is left open.
 /// </remarks>
 [PublicAPI]
-public static class CoordinatedTransactionExtensions
+public static partial class CoordinatedTransactionExtensions
 {
     extension(NpgsqlConnection connection)
     {
@@ -194,10 +194,7 @@ public static class CoordinatedTransactionExtensions
                         // accelerator (drain); a fault here must not surface as a caller failure — a retry would
                         // re-run the operation and double-apply. The enlisted work is relay-recoverable (durable
                         // rows committed in-transaction + polling recovery), so log and return the committed result.
-                        logger.LogError(
-                            ex,
-                            "Post-commit drain faulted after a successful PostgreSQL commit; the relay will recover any uncommitted work."
-                        );
+                        LogPostCommitDrainFaulted(logger, ex);
                     }
 
                     return result;
@@ -212,4 +209,11 @@ public static class CoordinatedTransactionExtensions
             }
         }
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Error,
+        Message = "Post-commit drain faulted after a successful PostgreSQL commit; the relay will recover any uncommitted work."
+    )]
+    private static partial void LogPostCommitDrainFaulted(ILogger logger, Exception exception);
 }

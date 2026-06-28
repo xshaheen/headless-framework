@@ -18,12 +18,13 @@ internal sealed class NatsConsumerClient(
     IOptions<MessagingNatsOptions> options,
     IServiceProvider serviceProvider,
     Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null,
-    IntentType intentType = IntentType.Bus
+    IntentType intentType = IntentType.Bus,
+    TimeProvider? timeProvider = null
 ) : IConsumerClient
 {
     private readonly Lock _receiveLock = new();
     private readonly MessagingNatsOptions _natsOptions = Argument.IsNotNull(options.Value);
-    private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
 

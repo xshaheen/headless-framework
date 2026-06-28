@@ -59,7 +59,7 @@ internal static partial class SqlServerConnectionStringCheckerLoggerExtensions
         EventId = 1,
         EventName = "ErrorCheckingConnectionString",
         Level = LogLevel.Warning,
-        Message = "Error checking connection string"
+        Message = "Error while checking connection string"
     )]
     public static partial void LogErrorCheckingConnectionString(this ILogger logger, Exception exception);
 }

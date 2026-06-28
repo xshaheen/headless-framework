@@ -28,7 +28,8 @@ public sealed class PaymobCashOutException(string? message, HttpStatusCode statu
     /// indicates failure. Returns without throwing on success responses.
     /// </summary>
     /// <param name="response">The HTTP response to inspect.</param>
-    public static async Task ThrowAsync(HttpResponseMessage response)
+    /// <param name="cancellationToken">Token to cancel the body-read operation.</param>
+    public static async Task ThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken = default)
     {
         if (response.IsSuccessStatusCode)
         {
@@ -39,7 +40,7 @@ public sealed class PaymobCashOutException(string? message, HttpStatusCode statu
 
         try
         {
-            body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         }
 #pragma warning disable ERP022
         catch

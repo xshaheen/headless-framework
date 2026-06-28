@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.PushNotifications.Abstractions;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.PushNotifications;
 
 /// <summary>
 /// Provider-agnostic contract for sending push notifications to client devices.

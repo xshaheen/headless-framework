@@ -9,7 +9,7 @@ namespace Headless.Features;
 /// <summary>EF Core implementation of <see cref="IFeatureValueRecordRepository"/>.</summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type that owns the feature value entities.</typeparam>
 /// <param name="dbFactory">Factory used to create <typeparamref name="TContext"/> instances per operation.</param>
-public sealed class EfFeatureValueRecordRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
+public sealed class EfFeatureValueRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : IFeatureValueRecordRepository
     where TContext : DbContext
 {

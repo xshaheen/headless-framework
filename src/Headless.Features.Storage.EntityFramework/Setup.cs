@@ -44,7 +44,7 @@ public static class SetupFeaturesEntityFramework
             services.AddOptions<FeaturesStorageOptions, EntityFrameworkFeaturesStorageOptionsValidator>();
             services.TryAddSingleton(
                 typeof(IFeatureValueRecordRepository),
-                typeof(EfFeatureValueRecordRecordRepository<>).MakeGenericType(dbContextType)
+                typeof(EfFeatureValueRecordRepository<>).MakeGenericType(dbContextType)
             );
             services.TryAddSingleton(
                 typeof(IFeatureDefinitionRecordRepository),

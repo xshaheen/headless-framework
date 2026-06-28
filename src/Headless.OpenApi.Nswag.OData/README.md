@@ -8,7 +8,7 @@ When ASP.NET Core OData endpoints accept `ODataQueryOptions` or carry `[EnableQu
 
 ## Key Features
 
-- `ODataOperationFilter : IOperationProcessor` — detects endpoints via `ODataQueryOptions` parameter type or `[EnableQuery]` attribute and injects seven OData parameters: `$select`, `$expand`, `$filter`, `$search`, `$top`, `$skip`, `$orderby`
+- `ODataOperationProcessor : IOperationProcessor` — detects endpoints via `ODataQueryOptions` parameter type or `[EnableQuery]` attribute and injects seven OData parameters: `$select`, `$expand`, `$filter`, `$search`, `$top`, `$skip`, `$orderby`
 - The raw `ODataQueryOptions` parameter is removed from the operation so it does not appear as an undocumented parameter alongside the injected ones
 - Detection works on both the method and the declaring controller type for `[EnableQuery]`
 
@@ -25,7 +25,7 @@ builder.Services.AddNswagOpenApi(
     setupHeadlessAction: null,
     setupGeneratorActions: settings =>
     {
-        settings.OperationProcessors.Add(new ODataOperationFilter());
+        settings.OperationProcessors.Add(new ODataOperationProcessor());
     }
 );
 ```
@@ -40,7 +40,7 @@ builder.Services.AddNswagOpenApi(
     },
     setupGeneratorActions: (settings, serviceProvider) =>
     {
-        settings.OperationProcessors.Add(new ODataOperationFilter());
+        settings.OperationProcessors.Add(new ODataOperationProcessor());
     }
 );
 ```
@@ -56,4 +56,4 @@ None.
 
 ## Side Effects
 
-None. `ODataOperationFilter` is instantiated and registered manually inside `setupGeneratorActions`; no DI registrations are made.
+None. `ODataOperationProcessor` is instantiated and registered manually inside `setupGeneratorActions`; no DI registrations are made.

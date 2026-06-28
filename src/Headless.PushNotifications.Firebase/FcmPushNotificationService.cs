@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.PushNotifications.Abstractions;
 using Headless.PushNotifications.Firebase.Internals;
 
 namespace Headless.PushNotifications.Firebase;

@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Exceptions;
 using Headless.Settings.Models;
+using Headless.Settings.Resources;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Settings.Helpers;
@@ -27,6 +28,7 @@ public interface ISettingEncryptionService
 /// <summary>Default implementation of <see cref="ISettingEncryptionService"/> backed by <see cref="IStringEncryptionService"/>.</summary>
 public sealed class SettingEncryptionService(
     IStringEncryptionService stringEncryptionService,
+    ISettingsErrorsDescriptor errorsDescriptor,
     ILogger<SettingEncryptionService> logger
 ) : ISettingEncryptionService
 {
@@ -67,7 +69,12 @@ public sealed class SettingEncryptionService(
         {
             logger.LogFailedToDecryptSettingValue(e, settingDefinition.Name);
 
-            throw new ConflictException($"Failed to decrypt setting '{settingDefinition.Name}'.", e);
+            // Synchronous contract: the default descriptor resolves the message synchronously, so the
+            // completed ValueTask is unwrapped here without blocking. The underlying cause is preserved
+            // in the log above (the descriptor-based ConflictException carries no inner exception).
+            var error = errorsDescriptor.DecryptionFailed(settingDefinition.Name).GetAwaiter().GetResult();
+
+            throw new ConflictException(error);
         }
     }
 }

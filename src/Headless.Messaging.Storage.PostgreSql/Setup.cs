@@ -26,6 +26,8 @@ public static class SetupPostgreSqlMessaging
         /// <returns>The setup builder for chaining.</returns>
         public MessagingSetupBuilder UsePostgreSql(string connectionString)
         {
+            Argument.IsNotNullOrWhiteSpace(connectionString);
+
             return setup.UsePostgreSql(opt =>
             {
                 opt.ConnectionString = connectionString;
