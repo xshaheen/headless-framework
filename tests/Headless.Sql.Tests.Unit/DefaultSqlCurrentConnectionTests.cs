@@ -6,7 +6,6 @@ using Headless.Sql;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 /// <summary>
 /// Unit tests for <see cref="DefaultSqlCurrentConnection"/>.
 /// </summary>

@@ -16,7 +16,6 @@ using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 {
     // ── pass-through ──────────────────────────────────────────────────────────

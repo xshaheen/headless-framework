@@ -5,7 +5,6 @@ using Headless.Blobs.SshNet;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
 [Collection<SshBlobStorageFixture>]

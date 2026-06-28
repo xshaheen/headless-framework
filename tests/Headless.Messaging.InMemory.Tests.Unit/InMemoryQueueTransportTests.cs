@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryQueueTransportTests : TestBase
 {
     private readonly InMemoryQueueTransport _transport;

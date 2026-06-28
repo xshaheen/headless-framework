@@ -27,7 +27,6 @@ public sealed class IoTests
         stream.Position = 1;
 
         // when
-        // ReSharper disable once AccessToDisposedClosure
         var action = () => Argument.IsAtStartPosition(stream);
 
         // then

@@ -7,8 +7,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
-
 /// <summary>
 /// Per-call tier-write control (<see cref="CacheEntryOptions.SkipMemoryCacheWrite"/>,
 /// <see cref="CacheEntryOptions.SkipDistributedCacheWrite"/>) and force-refresh

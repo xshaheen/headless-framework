@@ -315,7 +315,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             AbortToken
         );
         var leaseHandle = (LeaseMonitor.ILeaseHandle)handle;
-        counting.____RULE_VIOLATION____ExtendCalls____RULE_VIOLATION____ = 0;
+        counting.ExtendCalls = 0;
 
         // when - block the inflight probe, then fire two concurrent invocations. Both MUST
         // share the same Task<LeaseState> so the storage call count is exactly one.
@@ -326,7 +326,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         await Task.WhenAll(t1, t2);
 
         // then
-        counting.____RULE_VIOLATION____ExtendCalls____RULE_VIOLATION____.Should().Be(1);
+        counting.ExtendCalls.Should().Be(1);
     }
 
     [Fact]
@@ -402,8 +402,13 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
     {
         private readonly InMemoryDistributedReadWriteLockStorage _inner = new(TimeProvider.System);
         private TaskCompletionSource _extendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _extendCalls;
 
-        public int ____RULE_VIOLATION____ExtendCalls____RULE_VIOLATION____;
+        public int ExtendCalls
+        {
+            get => _extendCalls;
+            set => _extendCalls = value;
+        }
 
         public bool BlockExtend
         {
@@ -437,7 +442,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
-            Interlocked.Increment(ref ____RULE_VIOLATION____ExtendCalls____RULE_VIOLATION____);
+            Interlocked.Increment(ref _extendCalls);
             await _extendGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             return await _inner.TryExtendReadAsync(resource, leaseId, ttl, cancellationToken).ConfigureAwait(false);
         }

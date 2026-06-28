@@ -6,7 +6,6 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public abstract class SqlConnectionFactoryTestBase : TestBase
 {
     public abstract string GetConnection();

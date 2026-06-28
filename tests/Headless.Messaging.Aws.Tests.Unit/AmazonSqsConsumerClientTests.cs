@@ -14,7 +14,6 @@ using SqsMessage = Amazon.SQS.Model.Message;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class AmazonSqsConsumerClientTests : TestBase
 {
     private static IOptions<AmazonSqsOptions> _CreateOptions() =>

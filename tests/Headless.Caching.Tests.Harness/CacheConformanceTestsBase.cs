@@ -362,7 +362,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         await _WaitUntilAsync(async () =>
         {
             var cached = await cache.GetAsync<string>(key, AbortToken);
-            return cached.HasValue && cached.Value == "fresh";
+            return cached is { HasValue: true, Value: "fresh" };
         });
 
         timedOut.Value.Should().Be("stale");
@@ -477,7 +477,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         await _WaitUntilAsync(async () =>
         {
             var cached = await cache.GetAsync<string>(key, AbortToken);
-            return cached.HasValue && cached.Value == "v2";
+            return cached is { HasValue: true, Value: "v2" };
         });
     }
 
@@ -510,7 +510,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         await _WaitUntilAsync(async () =>
         {
             var cached = await cache.GetAsync<string>(key, AbortToken);
-            return cached.HasValue && cached.Value == "v2";
+            return cached is { HasValue: true, Value: "v2" };
         });
 
         factoryCalls.Should().Be(1);

@@ -4,7 +4,6 @@ using Headless.Sitemaps;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class SitemapIndexBuilderTests : SitemapTestBase
 {
     public static readonly TheoryData<List<SitemapReference>, string> TestData = new()

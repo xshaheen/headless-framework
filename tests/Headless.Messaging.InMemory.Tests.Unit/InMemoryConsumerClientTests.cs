@@ -8,7 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryConsumerClientTests : TestBase
 {
     private readonly MemoryQueue _queue;

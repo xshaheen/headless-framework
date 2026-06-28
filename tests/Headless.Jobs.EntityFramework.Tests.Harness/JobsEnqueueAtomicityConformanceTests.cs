@@ -7,8 +7,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Cross-provider conformance for atomic job enqueue via commit coordination (separate from the distributed-lock
 /// coordination suite in <c>JobsCoordinationConformanceTests</c>). Proves the EF coordinated-write seam (U2) and the

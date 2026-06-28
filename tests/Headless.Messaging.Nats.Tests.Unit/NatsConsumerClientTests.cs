@@ -11,7 +11,6 @@ using MsOptions = Microsoft.Extensions.Options;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class NatsConsumerClientTests : TestBase
 {
     private readonly MsOptions.IOptions<MessagingNatsOptions> _options = MsOptions.Options.Create(

@@ -8,7 +8,6 @@ using StackExchange.Redis;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 /// <summary>
 /// Verifies <c>AddHeadlessBlobs</c> default + named registration and per-instance isolation for the Redis
 /// provider. Registration-shape-only — no live Redis required; <see cref="IConnectionMultiplexer"/> is

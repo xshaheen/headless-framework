@@ -5,7 +5,6 @@ using Headless.IO;
 
 namespace Tests.IO;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class ActionableStreamTests
 {
     [Fact]

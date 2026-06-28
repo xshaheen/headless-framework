@@ -96,7 +96,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
             },
         };
 
-        var page1Result = new PagedFileListResult(
+        await using var page1Result = new PagedFileListResult(
             page1Blobs,
             hasMore: true,
             (_, _) =>
@@ -149,7 +149,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
             },
         };
 
-        var pageResult = new PagedFileListResult(
+        await using var pageResult = new PagedFileListResult(
             blobs,
             hasMore: true,
             (_, _) =>
@@ -177,7 +177,7 @@ public sealed class BlobStorageExtensionsTests : TestBase
     {
         // Arrange
         string[] container = ["bucket"];
-        var pageResult = new PagedFileListResult([]);
+        await using var pageResult = new PagedFileListResult([]);
 
         _storage.GetPagedListAsync(container, null, 1_000_000, AbortToken).Returns(pageResult);
 
@@ -328,7 +328,6 @@ public sealed class BlobStorageExtensionsTests : TestBase
         string[] container = ["bucket"];
         const string blobName = "nonexistent.txt";
 
-        // ReSharper disable once NotDisposedResource
         _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns((BlobDownloadResult?)null);
 
         // Act
@@ -349,7 +348,6 @@ public sealed class BlobStorageExtensionsTests : TestBase
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(expectedContent));
         await using var downloadResult = new BlobDownloadResult(stream, blobName);
 
-        // ReSharper disable once NotDisposedResource
         _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns(downloadResult);
 
         // Act
@@ -374,7 +372,6 @@ public sealed class BlobStorageExtensionsTests : TestBase
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
         await using var downloadResult = new BlobDownloadResult(stream, blobName);
 
-        // ReSharper disable once NotDisposedResource
         _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns(downloadResult);
 
         // Act
@@ -393,7 +390,6 @@ public sealed class BlobStorageExtensionsTests : TestBase
         string[] container = ["bucket"];
         const string blobName = "nonexistent.json";
 
-        // ReSharper disable once NotDisposedResource
         _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns((BlobDownloadResult?)null);
 
         // Act
@@ -414,7 +410,6 @@ public sealed class BlobStorageExtensionsTests : TestBase
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
         await using var downloadResult = new BlobDownloadResult(stream, blobName);
 
-        // ReSharper disable once NotDisposedResource
         _storage.OpenReadStreamAsync(container, blobName, AbortToken).Returns(downloadResult);
 
         // Act

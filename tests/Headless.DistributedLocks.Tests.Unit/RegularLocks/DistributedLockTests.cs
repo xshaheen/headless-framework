@@ -11,7 +11,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class DistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();

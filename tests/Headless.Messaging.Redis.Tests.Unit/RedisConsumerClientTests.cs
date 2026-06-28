@@ -10,7 +10,6 @@ using StackExchange.Redis;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 // ReSharper disable DisposeOnUsingVariable
 /// <summary>
 /// Unit tests for <see cref="RedisConsumerClient"/>.

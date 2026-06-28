@@ -8,7 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryBusTransportTests : TestBase
 {
     [Fact]

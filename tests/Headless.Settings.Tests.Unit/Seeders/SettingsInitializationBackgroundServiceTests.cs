@@ -11,7 +11,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Seeders;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class SettingsInitializationBackgroundServiceTests : TestBase
 {
     private readonly IServiceScopeFactory _serviceScopeFactory = Substitute.For<IServiceScopeFactory>();

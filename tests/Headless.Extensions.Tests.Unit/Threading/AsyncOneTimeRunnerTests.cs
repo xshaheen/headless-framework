@@ -5,7 +5,6 @@ using Headless.Threading;
 
 namespace Tests.Threading;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class AsyncOneTimeRunnerTests : TestBase
 {
     [Fact]

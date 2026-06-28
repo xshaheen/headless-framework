@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class MembershipServiceTests : TestBase
 {
     [Fact]
