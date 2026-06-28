@@ -1481,6 +1481,42 @@ public sealed class HybridCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_wipe_l1_when_l2_remove_fails_in_breaker_only_mode()
+    {
+        // given — circuit breaker on, auto-recovery off (RecoveryQueue null). An L2 RemoveAsync failure must not
+        // leave this node's L1 serving the value the caller asked to remove. (re-review N1)
+        using var l2 = new TogglableRemoteCache(_timeProvider);
+        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cache = new HybridCache(
+            l1,
+            l2,
+            publisher,
+            new HybridCacheOptions { DistributedCacheCircuitBreakerDuration = TimeSpan.FromSeconds(30) },
+            timeProvider: _timeProvider
+        );
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, 7, TimeSpan.FromMinutes(5), AbortToken);
+        (await l1.GetAsync<int>(key, AbortToken)).HasValue.Should().BeTrue();
+
+        // when — the L2 remove throws
+        l2.FailWrites = true;
+        Func<Task> act = () => cache.RemoveAsync(key, AbortToken).AsTask();
+
+        // then — the failure surfaces, but L1 no longer serves the removed value
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await l1.GetAsync<int>(key, AbortToken))
+            .HasValue.Should()
+            .BeFalse("L1 must be wiped before the L2 failure is rethrown");
+    }
+
+    [Fact]
     public async Task should_resurrect_key_when_factory_write_lands_after_concurrent_remove()
     {
         // given — RemoveAsync does not take the per-key factory lock, so it can interleave with a factory

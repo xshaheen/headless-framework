@@ -797,8 +797,9 @@ public sealed partial class HybridCache
 
             if (RecoveryQueue is null)
             {
-                // No recovery queue to replay the removal: surface the failure so the caller knows the L2 remove
-                // may not have applied.
+                // Wipe L1 before surfacing the L2 failure so this node never keeps serving the value the caller
+                // asked to remove (mirrors RemoveAllAsync/TryReplaceAsync, which clear L1 first then rethrow).
+                await LocalCache.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
 
@@ -851,8 +852,9 @@ public sealed partial class HybridCache
 
             if (RecoveryQueue is null)
             {
-                // No recovery queue to replay the expiration: surface the failure so the caller knows the L2
-                // expire may not have applied.
+                // Logically expire L1 before surfacing the L2 failure so this node does not keep serving an entry
+                // the caller asked to expire (its fail-safe reserve is preserved, mirroring the success path).
+                await LocalCache.ExpireAsync(key, CancellationToken.None).ConfigureAwait(false);
                 throw;
             }
 
@@ -896,7 +898,25 @@ public sealed partial class HybridCache
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var removed = await l2Cache.RemoveIfEqualAsync(key, expected, cancellationToken).ConfigureAwait(false);
+        bool removed;
+
+        try
+        {
+            removed = await l2Cache.RemoveIfEqualAsync(key, expected, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+            when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+            )
+        {
+            // CAS / non-replay-safe delete: trip the breaker so concurrent callers stop hammering a down L2, then
+            // rethrow. Never queue recovery — the compare-and-delete outcome can't be safely replayed. Wipe L1
+            // first so a possibly-stale local value is not served after the failure (mirrors TryReplaceIfEqualAsync).
+            _OpenDistributedCacheCircuit(exception, key);
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+            await LocalCache.RemoveAsync(key, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
 
         // Always remove from local cache unconditionally (local cache might have stale value)
         await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
