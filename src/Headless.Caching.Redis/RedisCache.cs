@@ -45,14 +45,17 @@ public sealed class RedisCache(
     /// timestamp (Unix-ms string) lives at <c>{KeyPrefix}\0__tag:{tag}</c>. One key per tag, so tag invalidation
     /// works on Redis Cluster. The leading NUL (<c>\0</c>) keeps markers in a namespace a normal consumer key
     /// cannot reach: consumer keys flow through <see cref="_GetKey"/> (KeyPrefix + caller key) and ordinary cache
-    /// keys do not embed a NUL byte, so a consumer key such as <c>__tag:x</c> cannot collide with or forge a marker.
+    /// keys do not embed a NUL byte, so an ordinary consumer key such as <c>__tag:x</c> does not collide with a
+    /// marker. Consumer keys are NOT sanitized for NUL bytes (key-content validation is delegated to callers), so
+    /// this guards against accidental collisions, not a deliberately NUL-prefixed key (see issue #555).
     /// </summary>
     private const string _TagMarkerNamespace = "\0__tag:";
 
     /// <summary>
     /// Reserved key for the Family-2 global clear-generation marker (Unix-ms string) at <c>{KeyPrefix}\0__clear</c>.
     /// Bumped by <c>ClearAsync</c>; compared on every read. The leading NUL (<c>\0</c>) keeps it in the same
-    /// unreachable namespace as the tag markers, so a consumer key such as <c>__clear</c> cannot forge it.
+    /// unreachable namespace as the tag markers, so an ordinary consumer key such as <c>__clear</c> does not
+    /// collide with it (accidental collisions only — a deliberately NUL-prefixed key is not guarded; see #555).
     /// </summary>
     private const string _ClearMarkerSuffix = "\0__clear";
 
@@ -60,7 +63,8 @@ public sealed class RedisCache(
     /// Reserved key for the Family-2 global remove-generation marker (Unix-ms string) at <c>{KeyPrefix}\0__remove</c>.
     /// Bumped by the logical <c>FlushAsync</c>; compared on every read. Entries born before it read as a hard miss
     /// with no fail-safe reserve (distinct from the clear marker, which preserves reserves). The leading NUL
-    /// (<c>\0</c>) keeps it in the same unreachable namespace, so a consumer key such as <c>__remove</c> cannot forge it.
+    /// (<c>\0</c>) keeps it in the same unreachable namespace, so an ordinary consumer key such as <c>__remove</c>
+    /// does not collide with it (accidental collisions only; see #555).
     /// </summary>
     private const string _RemoveMarkerSuffix = "\0__remove";
 
@@ -75,10 +79,9 @@ public sealed class RedisCache(
         StringComparer.Ordinal
     );
 
-    // Cached clear-generation marker: MarkerMs (long.MinValue = absent) and the fetch tick. Read/refreshed on
-    // every read (tagged or not) within the refresh window. Guarded by Volatile reads/writes of the tuple via a
-    // lock-free swap is unnecessary — a torn read at worst forces an extra refresh, but to keep it simple and
-    // correct we store the two longs behind a single reference cell.
+    // Cached clear-generation marker: MarkerMs (long.MinValue = absent) and the fetch tick, stored as two separate
+    // long fields read/written individually (not a single reference cell). A torn read across the two at worst
+    // forces an extra marker refresh, which is harmless, so no lock or atomic swap is used.
     private long _clearMarkerMs = long.MinValue;
     private long _clearMarkerFetchedTicks = long.MinValue;
 
