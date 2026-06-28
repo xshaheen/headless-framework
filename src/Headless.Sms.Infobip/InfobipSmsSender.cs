@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net;
 using Headless.Checks;
 using Infobip.Api.Client;
 using Infobip.Api.Client.Api;
@@ -54,10 +53,7 @@ internal sealed class InfobipSmsSender(
         {
             logger.LogSmsSendFailed(e, destinationCount: 1, e.ErrorCode);
 
-            return SendSingleSmsResponse.Failed(
-                _FormatApiError(e),
-                SmsFailureKinds.FromHttpStatusCode((HttpStatusCode)e.ErrorCode)
-            );
+            return SendSingleSmsResponse.Failed(_FormatApiError(e));
         }
         catch (OperationCanceledException)
         {
@@ -107,10 +103,7 @@ internal sealed class InfobipSmsSender(
 
             return SendBulkSmsResponse.FromAggregate(
                 request.Destinations,
-                SendSingleSmsResponse.Failed(
-                    _FormatApiError(e),
-                    SmsFailureKinds.FromHttpStatusCode((HttpStatusCode)e.ErrorCode)
-                )
+                SendSingleSmsResponse.Failed(_FormatApiError(e))
             );
         }
         catch (OperationCanceledException)
@@ -211,29 +204,18 @@ internal sealed class InfobipSmsSender(
         return SendSingleSmsResponse.Failed(failure, _MapMessageFailureKind(status));
     }
 
-    private static SmsFailureKind _MapMessageFailureKind(SmsMessageStatus? status)
-    {
-        if (status is null)
-        {
-            return SmsFailureKind.Unknown;
-        }
-
-        // Infobip exposes the specific reason only as a free-form per-message status name (for example
-        // "REJECTED_NOT_ENOUGH_CREDITS"). Authentication (401) and rate-limit (429) failures surface at the
-        // request level as an ApiException, not as per-message statuses, so out-of-credit is the only kind that
-        // can be refined here; every other rejection falls back to the delivery group.
-        if (status.Name?.Contains("CREDIT", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return SmsFailureKind.OutOfCredit;
-        }
-
-        return status.GroupName switch
+    // Infobip's only reliably-typed failure signal is the delivery group (MessageGeneralStatus); the specific
+    // status name is a free-form string, so classify by group rather than parsing names. A rejected,
+    // undeliverable, or expired message is reported as InvalidRecipient (the framework's kind for a recipient
+    // "rejected by the provider"); any other non-accepted status is Unknown. The raw provider status text is
+    // preserved in FailureError for callers that need the specific reason.
+    private static SmsFailureKind _MapMessageFailureKind(SmsMessageStatus? status) =>
+        status?.GroupName switch
         {
             MessageGeneralStatus.Undeliverable or MessageGeneralStatus.Expired or MessageGeneralStatus.Rejected =>
                 SmsFailureKind.InvalidRecipient,
             _ => SmsFailureKind.Unknown,
         };
-    }
 
     private static string _FormatApiError(ApiException exception)
     {

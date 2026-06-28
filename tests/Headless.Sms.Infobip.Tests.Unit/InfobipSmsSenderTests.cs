@@ -186,9 +186,11 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
     }
 
     [Fact]
-    public async Task should_classify_a_not_enough_credits_recipient_as_out_of_credit()
+    public async Task should_classify_a_rejected_recipient_by_group_not_by_status_name()
     {
-        // Infobip reports out-of-credit only as a per-message status name ("REJECTED_NOT_ENOUGH_CREDITS").
+        // Deliberate: classify by Infobip's typed delivery group, not by parsing the free-form status name, so
+        // even a "REJECTED_NOT_ENOUGH_CREDITS" rejection maps to InvalidRecipient (REJECTED group). The specific
+        // reason is preserved in FailureError.
         const string body = """
             {
               "bulkId": "bulk-12",
@@ -210,13 +212,16 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
         var response = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")));
 
         response.AllSucceeded.Should().BeFalse();
-        response.Results[0].Result.FailureKind.Should().Be(SmsFailureKind.OutOfCredit);
+        response.Results[0].Result.FailureKind.Should().Be(SmsFailureKind.InvalidRecipient);
+        response.Results[0].Result.FailureError.Should().Be("Not enough credits");
     }
 
     [Fact]
-    public async Task should_classify_an_unauthorized_response_as_an_auth_failure()
+    public async Task should_not_infer_a_failure_kind_from_the_http_status()
     {
-        // Authentication failures surface at the request level (HTTP 401), not as a per-message status.
+        // Deliberate: Infobip's HTTP status is not a reliable per-provider kind signal (its real error lives in
+        // the response body), so a request-level rejection is reported without a guessed kind (Unknown) rather
+        // than run through the generic HTTP-status mapping.
         _fixture
             .Server.Given(Request.Create().UsingPost())
             .RespondWith(
@@ -232,7 +237,7 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
         var result = await CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.AuthFailure);
+        result.FailureKind.Should().Be(SmsFailureKind.Unknown);
     }
 
     [Fact]
