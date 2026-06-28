@@ -393,6 +393,30 @@ public sealed class HybridCacheBestPracticesAdvisorTests : TestBase
 
         logger.HasWarning("InvalidationConsumerNotRegistered").Should().BeFalse();
     }
+
+    // ────────────────────────────────────────────────────────────
+    // Named instances — the advisor inspects the named options (re-review N14)
+    // ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task should_advise_a_named_instance_using_its_own_options()
+    {
+        // A per-named-instance advisor inspects that instance's options; the instance-name logging scope must not
+        // suppress advising.
+        var options = new HybridCacheOptions { EnableAutoRecovery = true, AutoRecoveryDelay = TimeSpan.FromMinutes(6) };
+
+        var logger = new CapturingLogger();
+        var advisor = new HybridCacheBestPracticesAdvisor(
+            options,
+            logger,
+            invalidationConsumerRegistered: true,
+            instanceName: "products"
+        );
+
+        await advisor.StartingAsync(AbortToken);
+
+        logger.HasWarning("AutoRecoveryDelayTooLarge").Should().BeTrue();
+    }
 }
 
 /// <summary>

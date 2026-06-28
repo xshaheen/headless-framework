@@ -13,7 +13,8 @@ namespace Headless.Caching;
 internal sealed partial class HybridCacheBestPracticesAdvisor(
     HybridCacheOptions options,
     ILogger<HybridCacheBestPracticesAdvisor> logger,
-    bool invalidationConsumerRegistered
+    bool invalidationConsumerRegistered,
+    string? instanceName = null
 ) : IHostedLifecycleService
 {
     // AutoRecoveryDelay above this threshold produces a graveyard-sized replay lag.
@@ -24,6 +25,12 @@ internal sealed partial class HybridCacheBestPracticesAdvisor(
 
     public Task StartingAsync(CancellationToken cancellationToken)
     {
+        // Named instances advise under a logging scope so an operator can tell which hybrid cache a warning is
+        // about (the default/unnamed instance advises without the scope).
+        using var scope = instanceName is null
+            ? null
+            : logger.BeginScope("Named hybrid cache instance {CacheInstanceName}", instanceName);
+
         _Advise(options);
         return Task.CompletedTask;
     }
