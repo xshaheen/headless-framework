@@ -9,7 +9,7 @@ Application code needs a single, provider-agnostic API for file storage so it ca
 ## Key Features
 
 - `IBlobStorage` — data-plane interface covering upload, download (`OpenReadStreamAsync`), copy, move (non-atomic), delete, exists, info, token-based listing (`ListAsync`), and bulk upload/delete.
-- `BlobLocation` — validated `(Container, Path)` address value type; constructor enforces path security and offers a `params string[]` segment overload.
+- `BlobLocation` — validated `(Container, Path)` address value type; constructor enforces path security and offers a `params ReadOnlySpan<string>` segment overload.
 - `BlobQuery` / `BlobPage` — token-based paging primitive: a prefix-scoped page request and its result plus an opaque continuation token.
 - `BlobBulkResult` — identity-carrying bulk outcome (`Container` + `Path` + optional validated `BlobLocation` + `Result<bool, Exception>`).
 - `IBlobContainerManager` — optional container-lifecycle capability (Ensure/Exists/Delete), resolved from DI; implemented by AWS, Azure, FileSystem, Redis, and SSH (not R2).

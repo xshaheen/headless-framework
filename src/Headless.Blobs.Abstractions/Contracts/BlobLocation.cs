@@ -49,7 +49,7 @@ public readonly record struct BlobLocation
     /// <summary>Creates a location from a container and hierarchical path segments joined with <c>/</c>.</summary>
     /// <param name="container">The top-level container (bucket/container/root).</param>
     /// <param name="segments">Path segments joined with <c>/</c> to form the object key.</param>
-    public BlobLocation(string container, params string[] segments)
+    public BlobLocation(string container, params ReadOnlySpan<string> segments)
         : this(container, string.Join('/', segments)) { }
 
     /// <summary>The top-level container (bucket/container/root) that holds the blob.</summary>

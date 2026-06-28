@@ -193,8 +193,8 @@ public sealed class AwsBlobStorageEngineTests : TestBase
                 ),
                 Arg.Any<CancellationToken>()
             );
-        await _s3.ReceivedWithAnyArgs(3).GetObjectMetadataAsync(default(string)!, default!, default);
-        await _s3.DidNotReceiveWithAnyArgs().DeleteObjectAsync(default(DeleteObjectRequest)!, default);
+        await _s3.ReceivedWithAnyArgs(3).GetObjectMetadataAsync(default!, default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().DeleteObjectAsync(default!, default);
     }
 
     [Fact]
