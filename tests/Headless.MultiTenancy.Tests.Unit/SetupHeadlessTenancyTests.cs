@@ -300,8 +300,8 @@ public sealed class SetupHeadlessTenancyTests
         // when — an out-of-range cast must fail loudly instead of silently down-ranking the seam
         var act = () => manifest.RecordSeam("Seam", (TenantPostureStatus)99);
 
-        // then
-        act.Should().Throw<ArgumentOutOfRangeException>();
+        // then — Argument.IsInEnum surfaces an undefined enum value as InvalidEnumArgumentException
+        act.Should().Throw<System.ComponentModel.InvalidEnumArgumentException>();
     }
 
     [Theory]

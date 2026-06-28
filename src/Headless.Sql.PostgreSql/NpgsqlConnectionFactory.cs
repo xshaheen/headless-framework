@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using Headless.Checks;
 using Npgsql;
 
 namespace Headless.Sql.PostgreSql;
@@ -12,10 +13,12 @@ namespace Headless.Sql.PostgreSql;
 [PublicAPI]
 public sealed class NpgsqlConnectionFactory(string connectionString) : ISqlConnectionFactory
 {
+    private readonly string _connectionString = Argument.IsNotNullOrWhiteSpace(connectionString);
+
     /// <inheritdoc />
     public string GetConnectionString()
     {
-        return connectionString;
+        return _connectionString;
     }
 
     /// <summary>
@@ -33,7 +36,7 @@ public sealed class NpgsqlConnectionFactory(string connectionString) : ISqlConne
     /// </exception>
     public async ValueTask<NpgsqlConnection> CreateNewConnectionAsync(CancellationToken cancellationToken = default)
     {
-        var connection = new NpgsqlConnection(connectionString);
+        var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         return connection;

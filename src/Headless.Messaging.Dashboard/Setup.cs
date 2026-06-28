@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using System.Text.Encodings.Web;
+using Headless.Constants;
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -98,7 +99,7 @@ public static class SetupMessagingDashboard
 
                                 htmlContent = _ReplaceBasePath(htmlContent, context, basePath, config);
 
-                                context.Response.ContentType = "text/html";
+                                context.Response.ContentType = ContentTypes.Texts.Html;
                                 context.Response.StatusCode = 200;
                                 await context.Response.WriteAsync(htmlContent).ConfigureAwait(false);
                             }
