@@ -19,12 +19,7 @@ namespace Tests;
 
 public sealed class MessageSenderTests : TestBase
 {
-    private static MediumMessage _CreateMediumMessage()
-    {
-        return _CreateMediumMessage(IntentType.Bus);
-    }
-
-    private static MediumMessage _CreateMediumMessage(IntentType intentType)
+    private static MediumMessage _CreateMediumMessage(IntentType intentType = IntentType.Bus)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
