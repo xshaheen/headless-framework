@@ -1114,6 +1114,23 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_count_only_newly_added_members_when_some_already_exist()
+    {
+        // SetAddAsync returns the count of members actually added (mirrors Redis ZADD), excluding members already
+        // present in the set.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { 1, 2 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - re-add 2 (already present) plus 3 (new)
+        var result = await cache.SetAddAsync(key, new[] { 2, 3 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_add_string_to_set()
     {
         // given
@@ -1349,20 +1366,26 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_deduplicate_string_set_case_insensitively()
+    public async Task should_treat_string_set_members_case_sensitively()
     {
-        // The string branch uses StringComparer.OrdinalIgnoreCase; the last value wins for the key bucket.
+        // String members use StringComparer.Ordinal (case-sensitive), matching Redis byte-exact set membership.
         // given
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        await cache.SetAddAsync(key, new[] { "Hello", "HELLO", "world" }, TimeSpan.FromMinutes(5), AbortToken);
+        var added = await cache.SetAddAsync(
+            key,
+            new[] { "Hello", "HELLO", "world" },
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
         var result = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
 
         // then
+        added.Should().Be(3); // all three are distinct under ordinal comparison
         result.HasValue.Should().BeTrue();
-        result.Value.Should().HaveCount(2);
+        result.Value.Should().HaveCount(3);
     }
 
     [Fact]

@@ -400,9 +400,11 @@ public sealed class InMemoryCache
             return false;
         }
 
-        var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
-            : (DateTime?)null;
+        // Single clock read: createdAt (nowTicks) and expiresAt derive from the same instant so a direct write's
+        // birth time can never land after its own expiry under an advancing clock.
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
+        var now = new DateTime(nowTicks, DateTimeKind.Utc);
+        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
         var entrySize = _CalculateEntrySize(value);
 
         if (!_ValidateEntrySize(entrySize))
@@ -412,7 +414,6 @@ public sealed class InMemoryCache
 
         var wasReplaced = false;
         long sizeDelta = 0;
-        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
 
         // Use atomic TryUpdate to avoid TOCTOU race condition
         _memory.TryUpdate(
@@ -479,9 +480,11 @@ public sealed class InMemoryCache
             return false;
         }
 
-        var expiresAt = expiration.HasValue
-            ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
-            : (DateTime?)null;
+        // Single clock read: createdAt (nowTicks) and expiresAt derive from the same instant so a direct write's
+        // birth time can never land after its own expiry under an advancing clock.
+        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
+        var now = new DateTime(nowTicks, DateTimeKind.Utc);
+        var expiresAt = expiration.HasValue ? now.Add(expiration.Value) : (DateTime?)null;
         var newSize = _CalculateEntrySize(value);
 
         if (!_ValidateEntrySize(newSize))
@@ -491,7 +494,6 @@ public sealed class InMemoryCache
 
         var wasExpectedValue = false;
         long sizeDelta = 0;
-        var nowTicks = _timeProvider.GetUtcNow().UtcDateTime.Ticks;
 
         _memory.TryUpdate(
             key,
@@ -715,8 +717,10 @@ public sealed class InMemoryCache
 
                 if (!op.Replace)
                 {
+                    // No-op (e.g. SetIfHigher/Lower when the value is not higher/lower): leave the entry — including
+                    // its TTL — untouched, matching Redis, which issues no pexpire on the no-replace path.
                     sizeDelta = 0;
-                    return existingEntry.WithExpiration(expiresAt);
+                    return existingEntry;
                 }
 
                 var computedSize = _CalculateEntrySize(op.NewValue);
@@ -778,7 +782,7 @@ public sealed class InMemoryCache
 
         if (typeof(T) == typeof(string))
         {
-            var newItems = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
+            var newItems = new Dictionary<string, DateTime?>(StringComparer.Ordinal);
 
             foreach (var v in value)
             {
@@ -788,7 +792,7 @@ public sealed class InMemoryCache
                 }
             }
 
-            result = _SetAddItems(key, newItems, expiresAt, StringComparer.OrdinalIgnoreCase);
+            result = _SetAddItems(key, newItems, expiresAt, StringComparer.Ordinal);
         }
         else
         {
@@ -810,7 +814,7 @@ public sealed class InMemoryCache
         return result;
     }
 
-    // Shared set-add path for both the string (case-insensitive) and object (default-comparer) member dictionaries.
+    // Shared set-add path for both the string (ordinal) and object (default-comparer) member dictionaries.
     // The caller picks TKey + comparer at the typeof(T) dispatch; everything below — merge, expiry recomputation,
     // size bookkeeping, expiry tracking — is identical across both backings.
     private long _SetAddItems<TKey>(
@@ -836,12 +840,16 @@ public sealed class InMemoryCache
             entrySize
         );
         long sizeDelta = 0;
+        // Count only members that were not already present, so the return matches the documented contract ("number
+        // of members actually added") and Redis (whose ZADD reply counts only previously-absent members).
+        long addedCount = 0;
 
         var committed = _memory.AddOrUpdate(
             key,
             _ =>
             {
                 sizeDelta = entrySize;
+                addedCount = newItems.Count;
                 return entry;
             },
             (existingKey, existingEntry) =>
@@ -858,6 +866,13 @@ public sealed class InMemoryCache
 
                 foreach (var kvp in newItems)
                 {
+                    // A member already live in the (post-expiry-prune) set is not newly added; an absent or
+                    // expired-and-pruned member is. Mirrors Redis ZADD new-member counting.
+                    if (!updatedDict.ContainsKey(kvp.Key))
+                    {
+                        addedCount++;
+                    }
+
                     updatedDict[kvp.Key] = kvp.Value;
                 }
 
@@ -886,7 +901,7 @@ public sealed class InMemoryCache
 
         _TrackUpdate(committed.PhysicalExpiresAt);
 
-        return newItems.Count;
+        return addedCount;
     }
 
     #endregion
@@ -1008,7 +1023,13 @@ public sealed class InMemoryCache
         );
     }
 
-    /// <summary>Returns the count of live, logically-valid entries whose keys begin with <paramref name="prefix"/>. Pass an empty string to count all entries.</summary>
+    /// <summary>
+    /// Returns the count of physically-live entries (those not yet physically evicted) whose keys begin with
+    /// <paramref name="prefix"/>; pass an empty string to count all entries. Mirroring
+    /// <see cref="GetAllKeysByPrefixAsync"/>, this counts entries that are logically expired or tag-invalidated but
+    /// still physically retained (for example fail-safe reserves); value reads (<see cref="GetAsync{T}"/>) treat
+    /// those as misses. The result is therefore an upper bound on the logically-valid entry count.
+    /// </summary>
     /// <remarks>
     /// When <paramref name="prefix"/> is non-empty this method performs an O(N) full scan of all live entries
     /// (N = current item count). Do not call it on hot request paths; reserve it for admin, monitoring, or
@@ -1590,7 +1611,7 @@ public sealed class InMemoryCache
         if (typeof(T) == typeof(string))
         {
             var stringsToRemove = value.Where(v => v is not null).Select(v => (string)(object)v!).ToList();
-            return new ValueTask<long>(_SetRemoveItems(key, stringsToRemove, StringComparer.OrdinalIgnoreCase));
+            return new ValueTask<long>(_SetRemoveItems(key, stringsToRemove, StringComparer.Ordinal));
         }
         else
         {

@@ -257,9 +257,9 @@ public interface ICache
     );
 
     /// <summary>
-    /// Adds members to the set stored at <paramref name="key"/>, creating the set if absent. String members
-    /// are compared case-insensitively; other types use default equality. Null members are silently skipped.
-    /// Returns the number of members actually added (duplicates excluded).
+    /// Adds members to the set stored at <paramref name="key"/>, creating the set if absent. String members use
+    /// ordinal (case-sensitive) equality, matching the distributed providers; other types use default equality.
+    /// Null members are silently skipped. Returns the number of members actually added (duplicates excluded).
     /// </summary>
     ValueTask<long> SetAddAsync<T>(
         string key,
