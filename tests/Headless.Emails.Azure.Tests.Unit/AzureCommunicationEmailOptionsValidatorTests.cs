@@ -2,7 +2,6 @@
 
 using Azure.Core;
 using Headless.Emails.Azure;
-using NSubstitute;
 
 namespace Tests;
 

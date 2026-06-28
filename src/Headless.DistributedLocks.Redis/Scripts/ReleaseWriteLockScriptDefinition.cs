@@ -2,7 +2,7 @@
 
 using Headless.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically releases a writer lock or the caller's writer-waiting marker.</summary>
 internal sealed class ReleaseWriteLockScriptDefinition : RedisScriptDefinition

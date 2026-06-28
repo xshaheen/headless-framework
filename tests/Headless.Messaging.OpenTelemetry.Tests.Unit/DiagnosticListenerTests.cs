@@ -7,11 +7,8 @@ using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.OpenTelemetry;
 using Headless.Messaging.OpenTelemetry.Internal;
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using DiagnosticListener = Headless.Messaging.OpenTelemetry.DiagnosticListener;
 
 namespace Tests;

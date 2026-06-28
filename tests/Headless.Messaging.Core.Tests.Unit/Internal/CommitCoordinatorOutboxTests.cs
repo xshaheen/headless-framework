@@ -4,7 +4,6 @@ using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
-using Headless.Generator.Primitives;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -72,7 +71,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 new NoopPublishMiddlewarePipeline(),
                 TimeProvider.System,
                 Options.Create(new MessagingOptions()),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
+                NullLogger<MessageOutboxBuffer>.Instance
             );
 
             await writer.PublishAsync(
@@ -142,7 +141,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 new NoopPublishMiddlewarePipeline(expectTransactional: false),
                 TimeProvider.System,
                 Options.Create(new MessagingOptions()),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<MessageOutboxBuffer>.Instance
+                NullLogger<MessageOutboxBuffer>.Instance
             );
 
             await writer.PublishAsync(

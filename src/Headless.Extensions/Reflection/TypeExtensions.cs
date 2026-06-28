@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using System.Text;
 using Headless.Checks;
 using Headless.Reflection;
 

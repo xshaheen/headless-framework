@@ -8,7 +8,6 @@ using Headless.Blobs;
 using Headless.Blobs.Aws;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests;

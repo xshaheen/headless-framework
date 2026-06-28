@@ -224,7 +224,7 @@ public sealed class SystemJsonSerializerTests
 
         // when
 #pragma warning disable CA2263 // Prefer generic
-        var result = _serializer.Deserialize(stream, typeof(TestClass));
+        var result = _serializer.Deserialize<TestClass>(stream);
 #pragma warning restore CA2263
 
         // then

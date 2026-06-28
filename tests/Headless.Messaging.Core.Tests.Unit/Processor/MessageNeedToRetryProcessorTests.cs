@@ -13,7 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Tests.Helpers;
 
 namespace Tests.Processor;
 
@@ -186,7 +185,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var msg1 = _CreateMessage("group-a");
         var msg2 = _CreateMessage("group-b");
         _SetupReceivedMessages(dataStorage, msg1, msg2);
-        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act
         await sut.ProcessAsync(context);
@@ -207,7 +206,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, msg);
-        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act
         await sut.ProcessAsync(context);
@@ -242,7 +241,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, messages);
-        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — first cycle
         await sut.ProcessAsync(context);
@@ -307,7 +306,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, messages);
-        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — all skipped, but adaptive polling is off
         await sut.ProcessAsync(context);
@@ -337,7 +336,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, _CreateMessage("open-group"));
-        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — 10 cycles, each doubles interval, should cap at maxPollingInterval (2s)
         for (var i = 0; i < 10; i++)
@@ -847,7 +846,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
         var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
-        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — drive three cycles; the third must emit EventId 82.
         await sut.ProcessAsync(context);
@@ -1025,7 +1024,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
         var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
 
-        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+        using var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         await sut.ProcessAsync(context);
         await Task.Delay(50, AbortToken);

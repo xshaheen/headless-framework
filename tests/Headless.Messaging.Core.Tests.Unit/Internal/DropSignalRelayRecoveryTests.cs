@@ -4,7 +4,6 @@ using System.Data;
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.CommitCoordination;
-using Headless.Generator.Primitives;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;

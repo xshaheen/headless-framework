@@ -455,7 +455,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         // when
         var waiter = keyedLock.LockAsync("timeout-elapsed-key", TimeSpan.FromSeconds(5), timeProvider, AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        var releaser = await waiter;
+        using var releaser = await waiter;
 
         // then
         releaser.Should().BeNull();
@@ -472,7 +472,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         // when
         var waiter = keyedLock.LockAsync("timeout-cleanup-key", TimeSpan.FromSeconds(5), timeProvider, AbortToken);
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        var timedOut = await waiter;
+        using var timedOut = await waiter;
         holder.Dispose();
 
         // then
@@ -713,7 +713,7 @@ public sealed class KeyedAsyncLockTests : TestBase
     public async Task should_dispose_all_semaphores_on_dispose()
     {
         // given
-        var keyedLock = new KeyedAsyncLock();
+        using var keyedLock = new KeyedAsyncLock();
 
         // Acquire some locks and release them (semaphores should be cleaned up)
         // But also keep a reference to verify disposal behavior
@@ -755,7 +755,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         );
 
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        var releaser = await waiter;
+        using var releaser = await waiter;
 
         // then
         releaser.Should().BeNull();
@@ -778,7 +778,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         );
 
         timeProvider.Advance(TimeSpan.FromSeconds(5));
-        var timedOut = await waiter;
+        using var timedOut = await waiter;
         holder.Dispose();
 
         // then — no leaked ref count after the non-cancellable-token timeout path
@@ -887,7 +887,10 @@ public sealed class KeyedAsyncLockTests : TestBase
 
     private static int _SemaphoreCount(KeyedAsyncLock keyedLock)
     {
-        var shardsField = typeof(KeyedAsyncLock).GetField("_shards", BindingFlags.Instance | BindingFlags.NonPublic);
+        var shardsField = typeof(KeyedAsyncLock).GetField(
+            "_shards",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
         var shards = (Array)shardsField!.GetValue(keyedLock)!;
 
         var total = 0;

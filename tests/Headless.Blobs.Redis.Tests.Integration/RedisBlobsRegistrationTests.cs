@@ -4,11 +4,11 @@ using Headless.Blobs;
 using Headless.Blobs.Redis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using StackExchange.Redis;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 /// <summary>
 /// Verifies <c>AddHeadlessBlobs</c> default + named registration and per-instance isolation for the Redis
 /// provider. Registration-shape-only — no live Redis required; <see cref="IConnectionMultiplexer"/> is
@@ -88,8 +88,8 @@ public sealed class RedisBlobsRegistrationTests
     public async Task named_stores_bind_their_own_connection_multiplexer()
     {
         // given — distinct multiplexers per named store
-        var cacheMultiplexer = CreateMockMultiplexer();
-        var scratchMultiplexer = CreateMockMultiplexer();
+        await using var cacheMultiplexer = CreateMockMultiplexer();
+        await using var scratchMultiplexer = CreateMockMultiplexer();
 
         var services = new ServiceCollection();
         services.AddLogging();

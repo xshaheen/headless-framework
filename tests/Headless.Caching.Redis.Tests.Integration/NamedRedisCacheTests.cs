@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
-using System.Globalization;
-using System.Text;
 using Headless.Caching;
 using Headless.Serializer;
 using Headless.Testing.Tests;

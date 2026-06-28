@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
-using Headless.Messaging;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;

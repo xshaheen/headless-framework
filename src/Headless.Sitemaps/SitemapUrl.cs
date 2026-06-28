@@ -97,7 +97,7 @@ public sealed class SitemapUrl
     public IEnumerable<SitemapImage>? Images { get; }
 
     /// <summary>Gets alternate localized URLs of the page.</summary>
-    public IEnumerable<SitemapAlternateUrl>? AlternateLocations { get; }
+    public IReadOnlyList<SitemapAlternateUrl>? AlternateLocations { get; }
 
     /// <summary>
     /// Restricts which localized versions get their own &lt;url&gt; entry to the specified language/region codes;

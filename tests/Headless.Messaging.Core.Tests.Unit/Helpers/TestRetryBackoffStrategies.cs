@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Retry;
 
 namespace Tests.Helpers;
 

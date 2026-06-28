@@ -186,7 +186,7 @@ public sealed class FileSystemBlobStorage(
         // Reject traversal sequences in the pattern before it is combined with the directory. The boundary check
         // below is anchored to the base directory, so a '..' pattern could otherwise resolve into a sibling
         // container; ValidatePathSegment rejects it up front (matching how blob names are validated).
-        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
+        PathValidation.ValidatePathSegment(blobSearchPattern);
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
         var path = Path.Combine(directoryPath, blobSearchPattern);
@@ -449,7 +449,7 @@ public sealed class FileSystemBlobStorage(
         // Reject traversal sequences in the search pattern (consistent with DeleteAllAsync) before it reaches
         // Directory.EnumerateFiles, so the package surfaces its own ArgumentException rather than leaning on a
         // BCL implementation detail.
-        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
+        PathValidation.ValidatePathSegment(blobSearchPattern);
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
 
@@ -511,7 +511,7 @@ public sealed class FileSystemBlobStorage(
             blobSearchPattern = "*";
         }
 
-        PathValidation.ValidatePathSegment(blobSearchPattern, nameof(blobSearchPattern));
+        PathValidation.ValidatePathSegment(blobSearchPattern);
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
 

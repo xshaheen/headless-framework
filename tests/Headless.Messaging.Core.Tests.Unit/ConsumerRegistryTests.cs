@@ -718,7 +718,7 @@ public sealed class ConsumerRegistryTests : TestBase
         registry.Register(metadata2);
 
         // when
-        var found = registry.FindByMessageType(typeof(OtherMessage)).ToList();
+        var found = registry.FindByMessageType<OtherMessage>().ToList();
 
         // then
         found.Should().HaveCount(1);

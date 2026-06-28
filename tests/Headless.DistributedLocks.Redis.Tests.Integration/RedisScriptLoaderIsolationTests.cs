@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Bogus;
 using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
@@ -8,7 +7,6 @@ using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using Testcontainers.Redis;
-using Xunit;
 
 namespace Tests;
 
@@ -95,11 +93,11 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
         lockHandle.Should().NotBeNull("lock acquire must succeed against container B");
 
         // --- assert: cache key is in container A, NOT in container B ---
-        var cacheDb_A = _cacheMultiplexer.GetDatabase();
-        var cacheDb_B = _lockMultiplexer.GetDatabase();
+        var cacheDbA = _cacheMultiplexer.GetDatabase();
+        var cacheDbB = _lockMultiplexer.GetDatabase();
 
-        var keyInA = await cacheDb_A.KeyExistsAsync(cacheKey);
-        var keyInB = await cacheDb_B.KeyExistsAsync(cacheKey);
+        var keyInA = await cacheDbA.KeyExistsAsync(cacheKey);
+        var keyInB = await cacheDbB.KeyExistsAsync(cacheKey);
         keyInA.Should().BeTrue("cache key must exist in container A (the cache Redis instance)");
         keyInB.Should().BeFalse("cache key must NOT exist in container B (the lock Redis instance)");
 
@@ -114,7 +112,7 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
     }
 
     private static async Task<bool> _KeyExistsByPatternAsync(
-        IConnectionMultiplexer multiplexer,
+        ConnectionMultiplexer multiplexer,
         string pattern,
         CancellationToken ct
     )

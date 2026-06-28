@@ -30,7 +30,7 @@ internal sealed class RecordingDatabaseConnection : DatabaseConnection
     public static RecordingDatabaseConnection CreateClosed(TimeProvider timeProvider)
     {
         var fake = new FakeDbConnection();
-        fake.SetState(System.Data.ConnectionState.Closed);
+        fake.SetState(ConnectionState.Closed);
 
         return new RecordingDatabaseConnection(fake, timeProvider);
     }

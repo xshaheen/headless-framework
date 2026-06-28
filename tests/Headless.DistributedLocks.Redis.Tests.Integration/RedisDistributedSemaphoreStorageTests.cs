@@ -3,7 +3,6 @@
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Redis;
-using Headless.Testing.Tests;
 
 namespace Tests;
 

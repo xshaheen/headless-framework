@@ -2,8 +2,6 @@
 
 using System.Collections.Concurrent;
 using Headless.Messaging;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
 using MessagingHeaders = Headless.Messaging.Headers;

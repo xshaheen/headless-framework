@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.DistributedLocks.Redis;
+namespace Headless.DistributedLocks.Redis.Scripts;
 
 /// <summary>Atomically acquires a distributed semaphore slot and issues a fencing token.</summary>
 internal sealed class TryAcquireSemaphoreWithFenceScriptDefinition : RedisScriptDefinition
