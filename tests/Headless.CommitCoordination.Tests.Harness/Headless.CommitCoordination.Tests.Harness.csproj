@@ -6,7 +6,7 @@
     <IsTestableProject>false</IsTestableProject>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <ExcludeFromCodeCoverage>true</ExcludeFromCodeCoverage>
-    <NoWarn>$(NoWarn);CA1707;IDE1006;CA1848</NoWarn>
+    <NoWarn>$(NoWarn);CA1707;IDE1006;CA1848;CA2254</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.CommitCoordination.Core\Headless.CommitCoordination.Core.csproj" />

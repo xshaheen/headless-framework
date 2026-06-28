@@ -980,7 +980,7 @@ public sealed class HybridCacheTests : TestBase
 
         // when — cancel the caller token while the factory is in flight
         var act = async () =>
-            await cache.GetOrAddAsync<int>(
+            await cache.GetOrAddAsync(
                 key,
                 async ct =>
                 {
@@ -1224,11 +1224,13 @@ public sealed class HybridCacheTests : TestBase
         // given — L2 healthy, the backplane down for the first publish, auto-recovery on
         var failPublish = true;
         var publisher = Substitute.For<IBus>();
+
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ => failPublish ? throw new InvalidOperationException("Publish failed") : Task.CompletedTask);
 
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+
         var l2 = new InMemoryRemoteCacheAdapter(
             new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
         );
@@ -1277,9 +1279,9 @@ public sealed class HybridCacheTests : TestBase
     public async Task should_drop_peer_l1_entry_when_factory_write_invalidation_received()
     {
         // given — two nodes share an L2; the peer's L1 holds an outdated copy of the key
-        var sharedL2 = new InMemoryRemoteCacheAdapter(
-            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
-        );
+        using var sharedL2Base = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+
+        var sharedL2 = new InMemoryRemoteCacheAdapter(sharedL2Base);
 
         var published = new List<CacheInvalidationMessage>();
         var publisherA = Substitute.For<IBus>();
@@ -1296,8 +1298,8 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        var l1A = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var l1B = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1A = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1B = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
 
         var nodeA = new HybridCache(
             l1A,

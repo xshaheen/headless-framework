@@ -5,52 +5,52 @@ using Headless.Primitives;
 namespace Headless.Settings.Resources;
 
 /// <summary>Describes localised error descriptors for settings management failures.</summary>
-public interface ISettingsErrorsDescriptor
+public interface ISettingErrorsDescriptor
 {
     /// <summary>Returns an error descriptor for a setting that is not defined.</summary>
     /// <param name="settingName">The name of the undefined setting.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> NotDefined(string settingName);
+    ErrorDescriptor NotDefined(string settingName);
 
     /// <summary>Returns an error descriptor when a requested setting value provider is not registered.</summary>
     /// <param name="providerName">The name of the missing provider.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> ProviderNotFound(string providerName);
+    ErrorDescriptor ProviderNotFound(string providerName);
 
     /// <summary>Returns an error descriptor when a setting value provider does not support write operations.</summary>
     /// <param name="providerKey">The key identifying the read-only provider.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> ProviderIsReadonly(string providerKey);
+    ErrorDescriptor ProviderIsReadonly(string providerKey);
 
     /// <summary>Returns an error descriptor when the current user is not available in the current scope.</summary>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> CurrentUserNotAvailable();
+    ErrorDescriptor CurrentUserNotAvailable();
 
     /// <summary>Returns an error descriptor when the current tenant is not available in the current scope.</summary>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> CurrentTenantNotAvailable();
+    ErrorDescriptor CurrentTenantNotAvailable();
 
     /// <summary>Returns an error descriptor when decryption of an encrypted setting value fails.</summary>
     /// <param name="settingName">The name of the setting whose value could not be decrypted.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> DecryptionFailed(string settingName);
+    ErrorDescriptor DecryptionFailed(string settingName);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
-/// <summary>Default implementation of <see cref="ISettingsErrorsDescriptor"/> using built-in message resources.</summary>
-public sealed class DefaultSettingsErrorsDescriptor : ISettingsErrorsDescriptor
+/// <summary>Default implementation of <see cref="ISettingErrorsDescriptor"/> using built-in message resources.</summary>
+public sealed class DefaultSettingErrorsDescriptor : ISettingErrorsDescriptor
 {
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> NotDefined(string settingName)
+    public ErrorDescriptor NotDefined(string settingName)
     {
         var description = string.Format(CultureInfo.InvariantCulture, Messages.setting_not_defined, settingName);
         var error = new ErrorDescriptor("setting:not_defined", description).WithParam("settingName", settingName);
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> ProviderNotFound(string providerName)
+    public ErrorDescriptor ProviderNotFound(string providerName)
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
@@ -63,11 +63,11 @@ public sealed class DefaultSettingsErrorsDescriptor : ISettingsErrorsDescriptor
             providerName
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> ProviderIsReadonly(string providerKey)
+    public ErrorDescriptor ProviderIsReadonly(string providerKey)
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
@@ -80,27 +80,27 @@ public sealed class DefaultSettingsErrorsDescriptor : ISettingsErrorsDescriptor
             providerKey
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> CurrentUserNotAvailable()
+    public ErrorDescriptor CurrentUserNotAvailable()
     {
         var error = new ErrorDescriptor("setting:user_not_available", Messages.setting_user_not_available);
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> CurrentTenantNotAvailable()
+    public ErrorDescriptor CurrentTenantNotAvailable()
     {
         var error = new ErrorDescriptor("setting:tenant_not_available", Messages.setting_tenant_not_available);
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> DecryptionFailed(string settingName)
+    public ErrorDescriptor DecryptionFailed(string settingName)
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
@@ -113,6 +113,6 @@ public sealed class DefaultSettingsErrorsDescriptor : ISettingsErrorsDescriptor
             settingName
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 }

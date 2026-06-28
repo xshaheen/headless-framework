@@ -331,7 +331,7 @@ public sealed class PermissionManagerTests : TestBase
         var errorDescriptor = new ErrorDescriptor("test", "Permission not defined");
 
         _definitionManager.FindAsync(permissionName, AbortToken).Returns((PermissionDefinition?)null);
-        _errorsDescriptor.PermissionIsNotDefined(permissionName).Returns(ValueTask.FromResult(errorDescriptor));
+        _errorsDescriptor.PermissionIsNotDefined(permissionName).Returns(errorDescriptor);
 
         // when
         var act = () => _sut.SetAsync(permissionName, "Role", "admin", true, AbortToken);
@@ -349,7 +349,7 @@ public sealed class PermissionManagerTests : TestBase
         var errorDescriptor = new ErrorDescriptor("test", "Permission disabled");
 
         _definitionManager.FindAsync(permissionName, AbortToken).Returns(disabledPermission);
-        _errorsDescriptor.PermissionDisabled(permissionName).Returns(ValueTask.FromResult(errorDescriptor));
+        _errorsDescriptor.PermissionDisabled(permissionName).Returns(errorDescriptor);
 
         // when
         var act = () => _sut.SetAsync(permissionName, "Role", "admin", true, AbortToken);
@@ -370,9 +370,8 @@ public sealed class PermissionManagerTests : TestBase
         var errorDescriptor = new ErrorDescriptor("test", "Provider not allowed");
 
         _definitionManager.FindAsync(permissionName, AbortToken).Returns(permission);
-        _errorsDescriptor
-            .PermissionProviderNotDefined(permissionName, providerName)
-            .Returns(ValueTask.FromResult(errorDescriptor));
+
+        _errorsDescriptor.PermissionProviderNotDefined(permissionName, providerName).Returns(errorDescriptor);
 
         // when
         var act = () => _sut.SetAsync(permissionName, providerName, "key", true, AbortToken);
@@ -392,7 +391,7 @@ public sealed class PermissionManagerTests : TestBase
 
         _definitionManager.FindAsync(permissionName, AbortToken).Returns(permission);
         _grantProviderManager.ValueProviders.Returns([]);
-        _errorsDescriptor.PermissionsProviderNotFound(providerName).Returns(ValueTask.FromResult(errorDescriptor));
+        _errorsDescriptor.PermissionsProviderNotFound(providerName).Returns(errorDescriptor);
 
         // when
         var act = () => _sut.SetAsync(permissionName, providerName, "key", true, AbortToken);
@@ -444,9 +443,8 @@ public sealed class PermissionManagerTests : TestBase
         var errorDescriptor = new ErrorDescriptor("test", "Some permissions undefined");
 
         _definitionManager.GetPermissionsAsync(AbortToken).Returns([permission]);
-        _errorsDescriptor
-            .SomePermissionsAreNotDefined(Arg.Any<IReadOnlyCollection<string>>())
-            .Returns(ValueTask.FromResult(errorDescriptor));
+
+        _errorsDescriptor.SomePermissionsAreNotDefined(Arg.Any<IReadOnlyCollection<string>>()).Returns(errorDescriptor);
 
         // when
         var act = () => _sut.SetAsync(permissionNames, "Role", "admin", true, AbortToken);
@@ -465,9 +463,8 @@ public sealed class PermissionManagerTests : TestBase
         var errorDescriptor = new ErrorDescriptor("test", "Some permissions disabled");
 
         _definitionManager.GetPermissionsAsync(AbortToken).Returns([enabledPermission, disabledPermission]);
-        _errorsDescriptor
-            .SomePermissionsAreDisabled(Arg.Any<IReadOnlyCollection<string>>())
-            .Returns(ValueTask.FromResult(errorDescriptor));
+
+        _errorsDescriptor.SomePermissionsAreDisabled(Arg.Any<IReadOnlyCollection<string>>()).Returns(errorDescriptor);
 
         // when
         var act = () => _sut.SetAsync(permissionNames, "Role", "admin", true, AbortToken);

@@ -143,7 +143,7 @@ public static class SetupCoreSettings
 
         services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
 
-        services.TryAddSingleton<ISettingsErrorsDescriptor, DefaultSettingsErrorsDescriptor>();
+        services.TryAddSingleton<ISettingErrorsDescriptor, DefaultSettingErrorsDescriptor>();
         services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
 
         // Definition Services

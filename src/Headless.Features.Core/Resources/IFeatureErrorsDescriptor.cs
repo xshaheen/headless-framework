@@ -10,18 +10,18 @@ public interface IFeatureErrorsDescriptor
     /// <summary>Returns an error descriptor indicating that the feature named <paramref name="featureName"/> is not defined.</summary>
     /// <param name="featureName">The name of the undefined feature.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> FeatureIsNotDefined(string featureName);
+    ErrorDescriptor FeatureIsNotDefined(string featureName);
 
     /// <summary>Returns an error descriptor indicating that the provider <paramref name="providerName"/> is not defined for feature <paramref name="featureName"/>.</summary>
     /// <param name="featureName">The name of the feature.</param>
     /// <param name="providerName">The name of the missing provider.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> FeatureProviderNotDefined(string featureName, string providerName);
+    ErrorDescriptor FeatureProviderNotDefined(string featureName, string providerName);
 
     /// <summary>Returns an error descriptor indicating that the provider identified by <paramref name="providerKey"/> is read-only and cannot be modified.</summary>
     /// <param name="providerKey">The key identifying the read-only provider.</param>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
-    ValueTask<ErrorDescriptor> ProviderIsReadonly(string providerKey);
+    ErrorDescriptor ProviderIsReadonly(string providerKey);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
@@ -29,16 +29,16 @@ public interface IFeatureErrorsDescriptor
 public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
 {
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> FeatureIsNotDefined(string featureName)
+    public ErrorDescriptor FeatureIsNotDefined(string featureName)
     {
         var description = string.Format(CultureInfo.InvariantCulture, "The feature '{0}' is undefined.", featureName);
         var error = new ErrorDescriptor("features:undefined", description).WithParam("featureName", featureName);
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> FeatureProviderNotDefined(string featureName, string providerName)
+    public ErrorDescriptor FeatureProviderNotDefined(string featureName, string providerName)
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
@@ -51,11 +51,11 @@ public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
             .WithParam("featureName", featureName)
             .WithParam("providerName", providerName);
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 
     /// <inheritdoc/>
-    public ValueTask<ErrorDescriptor> ProviderIsReadonly(string providerKey)
+    public ErrorDescriptor ProviderIsReadonly(string providerKey)
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
@@ -68,6 +68,6 @@ public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
             providerKey
         );
 
-        return ValueTask.FromResult(error);
+        return error;
     }
 }
