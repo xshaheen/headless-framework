@@ -14,6 +14,11 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
 {
     private readonly RedisMembershipFixture _fixture = fixture;
 
+    protected override ValueTask DisposeAsyncCore()
+    {
+        return base.DisposeAsyncCore();
+    }
+
     [Fact]
     public override Task should_register_and_appear_in_live_set() => base.should_register_and_appear_in_live_set();
 

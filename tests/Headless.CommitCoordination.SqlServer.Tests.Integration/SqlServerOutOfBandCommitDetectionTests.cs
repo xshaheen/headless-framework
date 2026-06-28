@@ -167,9 +167,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
                 {
                     // CommitContext.Services must resolve a scoped service during the drain.
                     resolvedProbe = context.Services.GetRequiredService<ScopedProbe>() is not null;
-                    relationalContextSeen = context.TryGetCapability<IRelationalCommitContext>(
-                        out IRelationalCommitContext? _
-                    );
+                    relationalContextSeen = context.TryGetCapability(out IRelationalCommitContext? _);
                     drained.TrySetResult();
 
                     return ValueTask.CompletedTask;

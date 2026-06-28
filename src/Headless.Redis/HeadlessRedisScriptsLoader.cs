@@ -104,7 +104,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
                 var missingDefinitions = _GetMissingDefinitions(definitions, state);
 
-                if (missingDefinitions.Count is 0)
+                if (missingDefinitions.Length is 0)
                 {
                     return;
                 }
@@ -148,7 +148,7 @@ public sealed class HeadlessRedisScriptsLoader(
                             .ConfigureAwait(false);
                     }
 
-                    for (var index = 0; index < missingDefinitions.Count; index++)
+                    for (var index = 0; index < missingDefinitions.Length; index++)
                     {
                         var definition = missingDefinitions[index];
                         loadedScripts[definition.GetType()] = new LoadedRedisScript(definition, results[index]);
@@ -384,8 +384,8 @@ public sealed class HeadlessRedisScriptsLoader(
         return scriptDefinitions.All(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is not null);
     }
 
-    private static IReadOnlyList<RedisScriptDefinition> _GetMissingDefinitions(
-        IReadOnlyList<RedisScriptDefinition> definitions,
+    private static RedisScriptDefinition[] _GetMissingDefinitions(
+        List<RedisScriptDefinition> definitions,
         ScriptsLoadState state
     )
     {
@@ -433,7 +433,7 @@ public sealed class HeadlessRedisScriptsLoader(
         }
     }
 
-    private static IReadOnlyList<RedisScriptDefinition> _GetDistinctDefinitions(
+    private static List<RedisScriptDefinition> _GetDistinctDefinitions(
         IEnumerable<RedisScriptDefinition> scriptDefinitions
     )
     {

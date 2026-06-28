@@ -1347,7 +1347,7 @@ public sealed class HybridCacheTests : TestBase
             )
             .Returns(Task.CompletedTask);
 
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new InMemoryRemoteCacheAdapter(
             new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
         );
@@ -1416,7 +1416,7 @@ public sealed class HybridCacheTests : TestBase
     {
         // given — L2 healthy at read time, failing by the time the factory write lands
         using var l2 = new TogglableRemoteCache(_timeProvider);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
@@ -1539,7 +1539,7 @@ public sealed class HybridCacheTests : TestBase
     public async Task should_return_partial_count_clear_l1_members_and_publish_all_keys_when_upsert_all_partially_succeeds()
     {
         // given — L2 reports a partial batch write (2 of 3 members landed)
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = Substitute.For<IRemoteCache>();
         l2.UpsertAllAsync(Arg.Any<IDictionary<string, int>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(2);
@@ -1597,7 +1597,7 @@ public sealed class HybridCacheTests : TestBase
     public async Task should_propagate_exception_and_leave_l1_untouched_when_remove_all_l2_fails_mid_batch()
     {
         // given — the L2 bulk removal throws
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = Substitute.For<IRemoteCache>();
         l2.RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns<int>(_ => throw new InvalidOperationException("L2 batch failed"));
