@@ -1078,6 +1078,45 @@ public abstract class CacheConformanceTestsBase : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    public virtual async Task should_add_only_new_set_members_and_compare_strings_case_sensitively()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var countKey = Faker.Random.AlphaNumeric(10);
+        var caseKey = Faker.Random.AlphaNumeric(10);
+
+        // Added-count: SetAddAsync returns only members that were not already present (matches Redis ZADD); the
+        // re-add of "b" must not be counted.
+        var firstAdd = await cache.SetAddAsync(countKey, new[] { "a", "b" }, TimeSpan.FromMinutes(5), AbortToken);
+        var secondAdd = await cache.SetAddAsync(countKey, new[] { "b", "c" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // Case-sensitivity: string members use ordinal equality across every provider, so "X" and "x" are distinct.
+        var caseAdd = await cache.SetAddAsync(caseKey, new[] { "X", "x" }, TimeSpan.FromMinutes(5), AbortToken);
+        var members = await cache.GetSetAsync<string>(caseKey, cancellationToken: AbortToken);
+
+        firstAdd.Should().Be(2);
+        secondAdd.Should().Be(1); // only "c" is genuinely new
+        caseAdd.Should().Be(2);
+        members.HasValue.Should().BeTrue();
+        members.Value.Should().HaveCount(2);
+    }
+
+    public virtual async Task should_keep_zero_total_after_decrementing_to_zero()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        await cache.IncrementAsync(key, 5L, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.IncrementAsync(key, -5L, TimeSpan.FromMinutes(5), AbortToken);
+        var cached = await cache.GetAsync<long>(key, AbortToken);
+
+        // A decrement that lands on exactly 0 keeps 0 as a valid stored value across providers — not a miss.
+        result.Should().Be(0);
+        cached.HasValue.Should().BeTrue("a 0 total is a valid stored value, not a miss");
+        cached.Value.Should().Be(0);
+    }
+
     // Fail-safe keeps the entry physically retained past its logical expiry, so a stale last-known-good value
     // (and its validators) is still available to the conditional factory after AdvanceAsync(Duration).
     private static CacheEntryOptions _CreateConditionalOptions() =>

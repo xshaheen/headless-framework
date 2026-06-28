@@ -215,4 +215,12 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
     [Fact]
     public override Task should_expire_raw_written_payload_after_duration() =>
         base.should_expire_raw_written_payload_after_duration();
+
+    [Fact]
+    public override Task should_add_only_new_set_members_and_compare_strings_case_sensitively() =>
+        base.should_add_only_new_set_members_and_compare_strings_case_sensitively();
+
+    [Fact]
+    public override Task should_keep_zero_total_after_decrementing_to_zero() =>
+        base.should_keep_zero_total_after_decrementing_to_zero();
 }
