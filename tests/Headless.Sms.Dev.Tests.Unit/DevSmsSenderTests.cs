@@ -106,6 +106,16 @@ public sealed class NoopSmsSenderTests
     }
 
     [Fact]
+    public async Task should_reject_a_bulk_request_without_destinations()
+    {
+        var request = new SendBulkSmsRequest { Destinations = null!, Text = "Hello world" };
+
+        var act = async () => await new NoopSmsSender().SendBulkAsync(request);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
     public async Task should_honor_cancellation()
     {
         using var cts = new CancellationTokenSource();

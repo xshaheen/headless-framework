@@ -26,6 +26,7 @@ internal sealed class NoopSmsSender : ISmsSender, IBulkSmsSender
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destinations);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 

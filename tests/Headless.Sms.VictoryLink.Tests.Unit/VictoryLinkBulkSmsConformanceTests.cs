@@ -58,6 +58,9 @@ public sealed class VictoryLinkBulkSmsConformanceTests
         base.should_reject_a_request_without_destinations();
 
     [Fact]
+    public override Task should_reject_null_destinations() => base.should_reject_null_destinations();
+
+    [Fact]
     public override Task should_reject_a_request_with_an_empty_body() =>
         base.should_reject_a_request_with_an_empty_body();
 

@@ -25,7 +25,9 @@ public interface IBulkSmsSender
     /// propagate. Providers whose API reports a single status for the whole batch apply that aggregate outcome
     /// to every recipient.
     /// </returns>
-    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="request"/> or its <see cref="SendBulkSmsRequest.Destinations"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="request"/> has no destinations or an empty message body.
     /// </exception>

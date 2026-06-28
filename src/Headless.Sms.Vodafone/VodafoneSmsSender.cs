@@ -36,6 +36,7 @@ internal sealed class VodafoneSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destinations);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 

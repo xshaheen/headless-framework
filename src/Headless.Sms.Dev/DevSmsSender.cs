@@ -43,6 +43,7 @@ internal sealed class DevSmsSender(string filePath) : ISmsSender, IBulkSmsSender
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destinations);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 

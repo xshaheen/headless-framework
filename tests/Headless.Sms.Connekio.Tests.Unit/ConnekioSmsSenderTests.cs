@@ -92,6 +92,32 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     }
 
     [Fact]
+    public async Task should_mirror_a_bulk_failure_kind_to_every_recipient()
+    {
+        // Connekio's batch endpoint reports one status, so a 401 must classify every recipient as an auth failure.
+        Stub("/batch", HttpStatusCode.Unauthorized, "nope");
+
+        var result = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001"), (20, "1002")));
+
+        result.AllSucceeded.Should().BeFalse();
+        result.AnySucceeded.Should().BeFalse();
+        result.Results.Should().HaveCount(2);
+        result.Results.Should().AllSatisfy(r => r.Result.FailureKind.Should().Be(SmsFailureKind.AuthFailure));
+    }
+
+    [Fact]
+    public async Task should_send_every_recipient_in_the_bulk_payload()
+    {
+        Stub("/batch", HttpStatusCode.OK, "{}");
+
+        await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001"), (20, "1002")));
+
+        var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
+        body.Should().NotBeNull();
+        body.Should().Contain("201001").And.Contain("201002");
+    }
+
+    [Fact]
     public async Task should_send_a_basic_authorization_header()
     {
         Stub("/single", HttpStatusCode.OK, "{}");

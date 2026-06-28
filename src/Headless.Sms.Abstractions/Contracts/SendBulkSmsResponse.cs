@@ -37,15 +37,17 @@ public sealed class SendBulkSmsResponse
     public bool AnySucceeded => Results.Any(static r => r.Result.Success);
 
     /// <summary>Creates a response from explicit per-recipient results.</summary>
-    /// <param name="results">One result per recipient. Must not be <see langword="null"/>.</param>
+    /// <param name="results">One result per recipient. Must not be <see langword="null"/> or empty.</param>
     /// <param name="providerBatchId">The provider-assigned batch id, when available.</param>
     /// <exception cref="ArgumentNullException"><paramref name="results"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="results"/> is empty.</exception>
     public static SendBulkSmsResponse FromResults(
         IReadOnlyList<SmsRecipientResult> results,
         string? providerBatchId = null
     )
     {
         Argument.IsNotNull(results);
+        Argument.IsNotEmpty(results);
 
         return new SendBulkSmsResponse(results, providerBatchId);
     }

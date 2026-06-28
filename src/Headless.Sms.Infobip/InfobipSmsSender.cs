@@ -35,9 +35,20 @@ internal sealed class InfobipSmsSender(
         try
         {
             var smsResponse = await _SendAsync([destination], request.Text, cancellationToken).ConfigureAwait(false);
-            logger.LogSmsSentSuccessfully(destinationCount: 1);
 
-            return SendSingleSmsResponse.Succeeded(smsResponse.BulkId);
+            // A single send returns one message entry; honor its per-recipient status so a rejection delivered
+            // inside a 200 response is reported as a failure (matching the bulk path) instead of a blanket
+            // success. The success id stays the bulk id, as documented.
+            var message = smsResponse.Messages is { Count: > 0 } ? smsResponse.Messages[0] : null;
+
+            if (message is null || _IsAccepted(message.Status))
+            {
+                logger.LogSmsSentSuccessfully(destinationCount: 1);
+
+                return SendSingleSmsResponse.Succeeded(smsResponse.BulkId);
+            }
+
+            return _MapMessageResponse(message);
         }
         catch (ApiException e)
         {
@@ -66,6 +77,7 @@ internal sealed class InfobipSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotNull(request.Destinations);
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
@@ -176,20 +188,24 @@ internal sealed class InfobipSmsSender(
         return SendBulkSmsResponse.FromResults(results, response.BulkId);
     }
 
+    // Infobip's PENDING/ACCEPTED/DELIVERED groups mean the message was taken for delivery; everything else is
+    // a rejection the caller should treat as a failed send.
+    private static bool _IsAccepted(SmsMessageStatus? status) =>
+        status?.GroupName
+            is MessageGeneralStatus.Accepted
+                or MessageGeneralStatus.Pending
+                or MessageGeneralStatus.Delivered;
+
     private static SendSingleSmsResponse _MapMessageResponse(SmsResponseDetails message)
     {
-        var status = message.Status;
-        var groupName = status?.GroupName;
-
-        if (
-            groupName is MessageGeneralStatus.Accepted or MessageGeneralStatus.Pending or MessageGeneralStatus.Delivered
-        )
+        if (_IsAccepted(message.Status))
         {
             return SendSingleSmsResponse.Succeeded(message.MessageId);
         }
 
+        var status = message.Status;
         var failure = string.IsNullOrWhiteSpace(status?.Description)
-            ? $"Infobip message status {status?.Name ?? groupName?.ToString() ?? "unknown"}"
+            ? $"Infobip message status {status?.Name ?? status?.GroupName?.ToString() ?? "unknown"}"
             : status.Description;
 
         return SendSingleSmsResponse.Failed(failure, _MapMessageFailureKind(status));

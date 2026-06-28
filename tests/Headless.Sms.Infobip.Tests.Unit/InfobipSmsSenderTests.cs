@@ -234,4 +234,86 @@ public sealed class InfobipSmsSenderTests : IClassFixture<SmsWireMockFixture>
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.AuthFailure);
     }
+
+    [Fact]
+    public async Task should_fail_a_single_send_when_the_message_is_rejected_in_a_200()
+    {
+        // Infobip can accept the request (HTTP 200) but reject the individual message; a single send must
+        // surface that as a failure rather than reporting success.
+        const string body = """
+            {
+              "bulkId": "bulk-13",
+              "messages": [
+                { "to": "201001234567", "status": { "groupId": 5, "groupName": "REJECTED", "id": 99, "name": "REJECTED_DESTINATION", "description": "Invalid destination" }, "messageId": "m1" }
+              ]
+            }
+            """;
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody(body)
+            );
+
+        var result = await CreateSender().SendAsync(SmsRequests.Single());
+
+        result.Success.Should().BeFalse();
+        result.FailureError.Should().Be("Invalid destination");
+        result.FailureKind.Should().Be(SmsFailureKind.InvalidRecipient);
+    }
+
+    [Fact]
+    public async Task should_classify_a_missing_status_as_unknown_for_a_bulk_recipient()
+    {
+        const string body = """
+            {
+              "bulkId": "bulk-14",
+              "messages": [{ "to": "201001110000", "messageId": "m-a" }]
+            }
+            """;
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody(body)
+            );
+
+        var response = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")));
+
+        response.Results[0].Result.Success.Should().BeFalse();
+        response.Results[0].Result.FailureKind.Should().Be(SmsFailureKind.Unknown);
+    }
+
+    [Fact]
+    public async Task should_use_the_status_name_when_the_failure_description_is_blank()
+    {
+        const string body = """
+            {
+              "bulkId": "bulk-15",
+              "messages": [
+                { "to": "201001110000", "status": { "groupId": 5, "groupName": "REJECTED", "id": 99, "name": "REJECTED_DESTINATION", "description": "" }, "messageId": "m-a" }
+              ]
+            }
+            """;
+        _fixture
+            .Server.Given(Request.Create().UsingPost())
+            .RespondWith(
+                Response
+                    .Create()
+                    .WithStatusCode(HttpStatusCode.OK)
+                    .WithHeader("Content-Type", "application/json")
+                    .WithBody(body)
+            );
+
+        var response = await CreateSender().SendBulkAsync(SmsRequests.Bulk("hi", (20, "1001110000")));
+
+        response.Results[0].Result.Success.Should().BeFalse();
+        response.Results[0].Result.FailureError.Should().Be("Infobip message status REJECTED_DESTINATION");
+    }
 }

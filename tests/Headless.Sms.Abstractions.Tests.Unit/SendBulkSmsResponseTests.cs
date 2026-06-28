@@ -60,6 +60,14 @@ public sealed class SendBulkSmsResponseTests
     }
 
     [Fact]
+    public void should_reject_empty_results()
+    {
+        var act = () => SendBulkSmsResponse.FromResults([]);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void should_reject_null_aggregate_arguments()
     {
         var actDestinations = () => SendBulkSmsResponse.FromAggregate(null!, SendSingleSmsResponse.Succeeded());

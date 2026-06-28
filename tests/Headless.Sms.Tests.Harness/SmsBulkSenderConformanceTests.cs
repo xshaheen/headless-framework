@@ -37,6 +37,16 @@ public abstract class SmsBulkSenderConformanceTests
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    public virtual async Task should_reject_null_destinations()
+    {
+        var sender = CreateSuccessfulSender();
+        var request = new SendBulkSmsRequest { Destinations = null!, Text = "Hello world" };
+
+        var act = async () => await sender.SendBulkAsync(request);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
     public virtual async Task should_reject_a_request_with_an_empty_body()
     {
         var sender = CreateSuccessfulSender();
