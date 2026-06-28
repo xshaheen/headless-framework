@@ -31,7 +31,7 @@ namespace Headless.Api;
 /// query option semantics.
 /// </para>
 /// </remarks>
-public sealed class ODataOperationFilter : IOperationProcessor
+public sealed class ODataOperationProcessor : IOperationProcessor
 {
     /// <summary>
     /// Processes the NSwag operation context and, when applicable, injects OData query parameters.

@@ -99,7 +99,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         return (
@@ -125,7 +125,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -166,7 +166,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
+            await PaymobCashOutException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

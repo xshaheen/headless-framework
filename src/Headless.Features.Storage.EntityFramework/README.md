@@ -69,6 +69,6 @@ The registration validates identifier names using cross-provider rules (SQL Serv
 ## Side Effects
 
 - Registers `IFeatureDefinitionRecordRepository` (`EfFeatureDefinitionRecordRepository<TContext>`) as singleton
-- Registers `IFeatureValueRecordRepository` (`EfFeatureValueRecordRecordRepository<TContext>`) as singleton
+- Registers `IFeatureValueRecordRepository` (`EfFeatureValueRecordRepository<TContext>`) as singleton
 - Registers validated `FeaturesStorageOptions`
 - Registers `FeaturesEntityValidationStartupGate<TContext>` as `IHostedService`

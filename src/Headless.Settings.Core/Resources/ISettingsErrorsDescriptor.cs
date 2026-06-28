@@ -29,6 +29,11 @@ public interface ISettingsErrorsDescriptor
     /// <summary>Returns an error descriptor when the current tenant is not available in the current scope.</summary>
     /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
     ValueTask<ErrorDescriptor> CurrentTenantNotAvailable();
+
+    /// <summary>Returns an error descriptor when decryption of an encrypted setting value fails.</summary>
+    /// <param name="settingName">The name of the setting whose value could not be decrypted.</param>
+    /// <returns>An <see cref="ErrorDescriptor"/> describing the error.</returns>
+    ValueTask<ErrorDescriptor> DecryptionFailed(string settingName);
 }
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
@@ -90,6 +95,23 @@ public sealed class DefaultSettingsErrorsDescriptor : ISettingsErrorsDescriptor
     public ValueTask<ErrorDescriptor> CurrentTenantNotAvailable()
     {
         var error = new ErrorDescriptor("setting:tenant_not_available", Messages.setting_tenant_not_available);
+
+        return ValueTask.FromResult(error);
+    }
+
+    /// <inheritdoc/>
+    public ValueTask<ErrorDescriptor> DecryptionFailed(string settingName)
+    {
+        var description = string.Format(
+            CultureInfo.InvariantCulture,
+            Messages.setting_decryption_failed,
+            settingName
+        );
+
+        var error = new ErrorDescriptor("setting:decryption_failed", description).WithParam(
+            "settingName",
+            settingName
+        );
 
         return ValueTask.FromResult(error);
     }

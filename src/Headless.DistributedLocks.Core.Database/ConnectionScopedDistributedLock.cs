@@ -142,13 +142,7 @@ public sealed class ConnectionScopedDistributedLock(
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        if (resource.Length > options.MaxResourceNameLength)
-        {
-            throw new ArgumentException(
-                $"{nameof(resource)} cannot exceed {options.MaxResourceNameLength} characters.",
-                nameof(resource)
-            );
-        }
+        Argument.IsLessThanOrEqualTo(resource.Length, options.MaxResourceNameLength, paramName: nameof(resource));
 
         DistributedLockCoreHelpers.ValidateAcquireTimeout(acquireOptions?.AcquireTimeout);
 

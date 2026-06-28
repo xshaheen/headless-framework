@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
+using Headless.Abstractions;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Constants;
@@ -33,6 +34,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;
+    private readonly IClock _clock;
     private readonly TimeProvider _timeProvider;
     private readonly RedisBlobStorageOptions _options;
     private readonly ResiliencePipeline _retryPipeline;
@@ -93,12 +95,14 @@ public sealed class RedisBlobStorage : IBlobStorage
         IOptions<RedisBlobStorageOptions> optionsAccessor,
         IJsonSerializer defaultSerializer,
         IBlobNamingNormalizer normalizer,
+        IClock clock,
         TimeProvider? timeProvider = null
     )
     {
         _options = optionsAccessor.Value;
         _logger = _options.LoggerFactory?.CreateLogger(typeof(RedisBlobStorage)) ?? NullLogger.Instance;
         _serializer = _options.Serializer ?? defaultSerializer;
+        _clock = clock;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _normalizer = normalizer;
 
@@ -189,7 +193,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             var blobData = new byte[blobSegment.Count];
             Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
 
-            var now = _timeProvider.GetUtcNow();
+            var now = _clock.UtcNow;
             var blobInfo = new BlobInfo
             {
                 BlobKey = blobPath,
