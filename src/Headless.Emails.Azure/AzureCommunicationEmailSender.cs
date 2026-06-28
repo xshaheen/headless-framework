@@ -46,6 +46,9 @@ internal sealed class AzureCommunicationEmailSender(EmailClient client, ILogger<
         CancellationToken cancellationToken = default
     )
     {
+        // Reject a body-less request identically to the other providers (AWS/Mailkit/Dev all call this first).
+        request.EnsureHasBody();
+
         var message = AzureCommunicationEmailMessageMapper.ToEmailMessage(request);
 
         EmailSendOperation operation;

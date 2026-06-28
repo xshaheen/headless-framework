@@ -466,6 +466,7 @@ public sealed class JobsManagerCoordinatedRoutingTests
             persistence,
             scheduler,
             TimeProvider.System,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             notification,
             new JobsExecutionContext(),
             dispatcher,
