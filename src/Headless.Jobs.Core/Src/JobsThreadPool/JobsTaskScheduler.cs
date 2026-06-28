@@ -50,12 +50,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         TimeProvider? timeProvider = null
     )
     {
-        if (maxConcurrency <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "Must be greater than zero");
-        }
-
-        _maxConcurrency = maxConcurrency;
+        _maxConcurrency = Argument.IsPositive(maxConcurrency);
         _idleWorkerTimeout = idleWorkerTimeout ?? TimeSpan.FromSeconds(60);
         _maxCapacityPerWorker = 1024; // Fixed optimal capacity
         _notifyDebounce = notifyDebounce ?? new SoftSchedulerNotifyDebounce(_ => { });

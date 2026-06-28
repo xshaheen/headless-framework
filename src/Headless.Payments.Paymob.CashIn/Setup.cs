@@ -39,7 +39,7 @@ public static class SetupPaymobCashIn
 
         services.Configure<PaymobCashInOptions, PaymobCashInOptionsValidator>(setupAction);
 
-        return _AddCore(services, configureClient, configureResilience);
+        return _AddPaymobCashInCore(services, configureClient, configureResilience);
     }
 
     /// <summary>
@@ -67,10 +67,10 @@ public static class SetupPaymobCashIn
 
         services.Configure<PaymobCashInOptions, PaymobCashInOptionsValidator>(config);
 
-        return _AddCore(services, configureClient, configureResilience);
+        return _AddPaymobCashInCore(services, configureClient, configureResilience);
     }
 
-    private static IServiceCollection _AddCore(
+    private static IServiceCollection _AddPaymobCashInCore(
         IServiceCollection services,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null

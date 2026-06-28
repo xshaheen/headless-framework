@@ -168,7 +168,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         {
             // Called via non-thread-safe paths, so a true dispose check is appropriate; it only reaches a caller that
             // is using non-thread-safe APIs concurrently.
-            ObjectDisposedException.ThrowIf(_state == State.Disposed, typeof(ConnectionMonitor));
+            Ensure.NotDisposed(_state == State.Disposed, this);
 
             // The connection is already closed; we'll never see a close state-change, so return an already-cancelled
             // handle.

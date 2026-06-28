@@ -30,31 +30,26 @@ public interface ICashOutService
     /// <summary>Disburses funds to a Vodafone Cash mobile wallet.</summary>
     /// <param name="request">Recipient phone number and amount.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
     Task<CashOutResult<CashOutResponse>> DisburseAsync(VodafoneCashOutRequest request);
 
     /// <summary>Disburses funds to an Etisalat Cash mobile wallet.</summary>
     /// <param name="request">Recipient phone number and amount.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
     Task<CashOutResult<CashOutResponse>> DisburseAsync(EtisalatCashOutRequest request);
 
     /// <summary>Disburses funds to an Orange Money mobile wallet.</summary>
     /// <param name="request">Recipient phone number, full name, and amount.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
     Task<CashOutResult<CashOutResponse>> DisburseAsync(OrangeCashOutRequest request);
 
     /// <summary>Disburses funds to a bank-linked mobile wallet.</summary>
     /// <param name="request">Recipient phone number, full name, and amount.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
     Task<CashOutResult<CashOutResponse>> DisburseAsync(BankWalletCashOutRequest request);
 
     /// <summary>Disburses funds directly to a bank account or card.</summary>
     /// <param name="request">Recipient account number, bank code, transaction type, full name, and amount.</param>
     /// <returns>A result wrapping the transaction ID and disbursement status, or an error descriptor on failure.</returns>
-    [Pure]
     Task<CashOutResult<CashOutResponse>> DisburseAsync(BankAccountCashOutRequest request);
 
     /// <summary>
@@ -66,7 +61,6 @@ public interface ICashOutService
     /// A result wrapping the transaction ID, disbursement status, and Aman billing reference,
     /// or an error descriptor on failure.
     /// </returns>
-    [Pure]
     Task<CashOutResult<KioskCashOutResponse>> DisburseAsync(KioskCashOutRequest request);
 }
 

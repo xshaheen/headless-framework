@@ -136,15 +136,10 @@ public record ConsumeContext
         get;
         init
         {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                throw new ArgumentException(
-                    "MessageId cannot be null or whitespace. Each message must have a unique identifier.",
-                    nameof(value)
-                );
-            }
-
-            field = value;
+            field = Argument.IsNotNullOrWhiteSpace(
+                value,
+                "MessageId cannot be null or whitespace. Each message must have a unique identifier."
+            );
         }
     }
 
