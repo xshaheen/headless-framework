@@ -372,7 +372,7 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         Argument.IsNotNull(query);
 
-        var (_, infoHash, prefix) = _ResolveQuery(query);
+        var (blobsHash, infoHash, prefix) = _ResolveQuery(query);
         var match = _ToRedisGlobPrefixMatch(prefix);
 
         // Walk the HSCAN cursor to completion to collect every field under the prefix, then delete each blob. The
@@ -408,9 +408,50 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         _logger.LogDeletingFiles(distinctKeys.Count, prefix);
 
-        var deleteResults = await BulkDeleteAsync(query.Container, distinctKeys, cancellationToken)
+        // Delete each resolved field directly (bypassing BlobLocation re-validation): the fields come from scanning
+        // this container's own info hash, so they are valid backend keys even when their shape (e.g. an out-of-band
+        // reserved suffix) would be rejected by new BlobLocation — re-wrapping could hard-fail and leave the container
+        // un-clearable. Results are written to disjoint indices so the parallel bodies need no synchronization.
+        var deleteOutcomes = new bool[distinctKeys.Count];
+        var deleteErrors = new Exception?[distinctKeys.Count];
+
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel
+            .ForAsync(
+                0,
+                distinctKeys.Count,
+                options,
+                async (i, ct) =>
+                {
+                    try
+                    {
+                        deleteOutcomes[i] = await _DeleteResolvedAsync(blobsHash, infoHash, distinctKeys[i], ct)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        deleteErrors[i] = e;
+                    }
+                }
+            )
             .ConfigureAwait(false);
-        var count = BlobStorageHelpers.CountDeletedOrThrow(deleteResults, $"DeleteAllAsync({infoHash}, {prefix})");
+
+        var failures = deleteErrors.Where(static e => e is not null).Select(static e => e!).ToList();
+
+        if (failures.Count > 0)
+        {
+            throw new AggregateException(
+                $"DeleteAllAsync({infoHash}, {prefix}) failed for {failures.Count} blob(s).",
+                failures
+            );
+        }
+
+        var count = deleteOutcomes.Count(static deleted => deleted);
 
         _logger.LogFinishedDeletingFiles(count, prefix);
 

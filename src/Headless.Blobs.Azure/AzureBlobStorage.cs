@@ -262,6 +262,58 @@ public sealed class AzureBlobStorage(
         return Result<bool, Exception>.Fail(new RequestFailedException(response.Status, response.ReasonPhrase));
     }
 
+    // Deletes already-resolved container-relative keys directly via the batch API, bypassing BlobLocation
+    // re-validation. Used by DeleteAllAsync, whose keys come from listing the backend and may legally include shapes
+    // BlobLocation rejects. Returns the number deleted; throws an AggregateException on any non-404 failure so the
+    // "DeleteAll throws on any per-key failure" contract holds.
+    private async ValueTask<int> _DeleteResolvedKeysAsync(
+        BlobContainerClient containerClient,
+        IReadOnlyList<string> resolvedKeys,
+        CancellationToken cancellationToken
+    )
+    {
+        var batchClient = blobServiceClient.GetBlobBatchClient();
+        var deleted = 0;
+        List<Exception>? failures = null;
+
+        foreach (var chunk in resolvedKeys.Chunk(_MaxBlobBatchSize))
+        {
+            var batch = batchClient.CreateBatch();
+            var responses = new List<Response>(chunk.Length);
+
+            foreach (var key in chunk)
+            {
+                var uri = containerClient.GetBlobClient(key).Uri;
+                responses.Add(batch.DeleteBlob(uri, DeleteSnapshotsOption.IncludeSnapshots));
+            }
+
+            await batchClient
+                .SubmitBatchAsync(batch, throwOnAnyFailure: false, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var response in responses)
+            {
+                var result = _MapDeleteResponse(response);
+
+                if (result.IsFailure)
+                {
+                    (failures ??= []).Add(result.Error);
+                }
+                else if (result.Value)
+                {
+                    deleted++;
+                }
+            }
+        }
+
+        if (failures is { Count: > 0 })
+        {
+            throw new AggregateException($"DeleteAllAsync failed for {failures.Count} blob(s).", failures);
+        }
+
+        return deleted;
+    }
+
     public async ValueTask<int> DeleteAllAsync(BlobQuery query, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(query);
@@ -310,14 +362,12 @@ public sealed class AzureBlobStorage(
                     continue;
                 }
 
-                // Listed names are already container-relative keys; bulk-delete them against the same container.
-                var deleteResults = await BulkDeleteAsync(query.Container, names, cancellationToken)
+                // Listed names are already-resolved backend keys for this container; delete them directly instead of
+                // re-wrapping in new BlobLocation. A backend key whose shape BlobLocation rejects (an out-of-band
+                // reserved-suffix or traversal key written outside the framework) would otherwise hard-fail the
+                // re-validation and leave the container permanently un-clearable.
+                count += await _DeleteResolvedKeysAsync(containerClient, names, cancellationToken)
                     .ConfigureAwait(false);
-
-                count += BlobStorageHelpers.CountDeletedOrThrow(
-                    deleteResults,
-                    $"DeleteAllAsync({azureContainer}, {prefix})"
-                );
             }
         }
         catch (Exception e)
