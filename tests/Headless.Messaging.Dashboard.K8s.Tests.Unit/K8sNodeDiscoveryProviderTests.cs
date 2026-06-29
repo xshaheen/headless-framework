@@ -13,12 +13,18 @@ public sealed class K8SNodeDiscoveryProviderTests : TestBase
 {
     private readonly K8sNodeDiscoveryProvider _provider;
     private readonly K8sDiscoveryOptions _options;
-    private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
+    private readonly MemoryCache _cache = new(new MemoryCacheOptions());
 
     public K8SNodeDiscoveryProviderTests()
     {
         _options = new K8sDiscoveryOptions();
         _provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _options);
+    }
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        _cache.Dispose();
+        return base.DisposeAsyncCore();
     }
 
     #region FilterNodesByTags Tests

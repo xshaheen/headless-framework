@@ -2,21 +2,32 @@
 
 using System.Net;
 using Headless.Captcha;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
 /// <summary>Turnstile-specific verify behavior: idempotency key encoding and cdata surfacing.</summary>
-public sealed class TurnstileSiteVerifyTests : IDisposable
+public sealed class TurnstileSiteVerifyTests : TestBase
 {
     private readonly TurnstileVerifierFixture _fixture = new();
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        _fixture.Dispose();
+        return base.DisposeAsyncCore();
+    }
 
     [Fact]
     public async Task idempotency_key_included_in_form_when_supplied()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
         var verifier = _fixture.CreateTurnstileVerifier(stub);
 
-        await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token", IdempotencyKey = "idem-1" });
+        await verifier.VerifyAsync(
+            new TurnstileVerifyRequest { Response = "token", IdempotencyKey = "idem-1" },
+            AbortToken
+        );
 
         stub.LastRequestBody.Should().Contain("idempotency_key");
         stub.LastRequestBody.Should().Contain("idem-1");
@@ -25,10 +36,11 @@ public sealed class TurnstileSiteVerifyTests : IDisposable
     [Fact]
     public async Task idempotency_key_omitted_from_form_when_absent()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
         var verifier = _fixture.CreateTurnstileVerifier(stub);
 
-        await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" });
+        await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" }, AbortToken);
 
         stub.LastRequestBody.Should().NotContain("idempotency_key");
     }
@@ -36,10 +48,11 @@ public sealed class TurnstileSiteVerifyTests : IDisposable
     [Fact]
     public async Task cdata_is_surfaced_on_result_which_is_assignable_to_base()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
         var verifier = _fixture.CreateTurnstileVerifier(stub);
 
-        var result = await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" });
+        var result = await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" }, AbortToken);
 
         result.CData.Should().Be("session-123");
 
@@ -53,10 +66,11 @@ public sealed class TurnstileSiteVerifyTests : IDisposable
     {
         // A success body that omits hostname/challenge_ts is valid — the base result must not over-promise
         // them as non-null on success (no MemberNotNullWhen contract), and verification must not throw.
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, """{"success":true}""");
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, """{"success":true}""");
         var verifier = _fixture.CreateTurnstileVerifier(stub);
 
-        var result = await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" });
+        var result = await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token" }, AbortToken);
 
         result.Success.Should().BeTrue();
         result.HostName.Should().BeNull();
@@ -68,10 +82,11 @@ public sealed class TurnstileSiteVerifyTests : IDisposable
     [Fact]
     public async Task explicit_base_verifier_forwards_idempotency_key_when_request_is_turnstile_type()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
-        ICaptchaVerifier verifier = _fixture.CreateVerifier(stub);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        var verifier = _fixture.CreateVerifier(stub);
 
-        await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token", IdempotencyKey = "x" });
+        await verifier.VerifyAsync(new TurnstileVerifyRequest { Response = "token", IdempotencyKey = "x" }, AbortToken);
 
         stub.LastRequestBody.Should().Contain("idempotency_key");
         stub.LastRequestBody.Should().Contain("x");
@@ -80,13 +95,12 @@ public sealed class TurnstileSiteVerifyTests : IDisposable
     [Fact]
     public async Task explicit_base_verifier_omits_idempotency_key_when_request_is_plain_base_type()
     {
-        var stub = new StubSiteVerifyHandler().EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
-        ICaptchaVerifier verifier = _fixture.CreateVerifier(stub);
+        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
+        var stub = stubSiteVerifyHandler.EnqueueJson(HttpStatusCode.OK, _fixture.SuccessResponseBody);
+        var verifier = _fixture.CreateVerifier(stub);
 
-        await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" });
+        await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
 
         stub.LastRequestBody.Should().NotContain("idempotency_key");
     }
-
-    public void Dispose() => _fixture.Dispose();
 }

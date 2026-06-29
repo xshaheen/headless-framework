@@ -95,6 +95,7 @@ public sealed partial class CommitCoordinationTransactionInterceptor(
         Level = LogLevel.Error,
         Message = "Post-commit drain faulted after a durable EF Core commit; the relay will recover any uncommitted work."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogPostCommitDrainFaulted(ILogger logger, Exception exception);
 
     [LoggerMessage(
@@ -102,5 +103,6 @@ public sealed partial class CommitCoordinationTransactionInterceptor(
         Level = LogLevel.Error,
         Message = "Rollback drain faulted after an EF Core rollback; the enlisted work was already discarded."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogPostRollbackDrainFaulted(ILogger logger, Exception exception);
 }

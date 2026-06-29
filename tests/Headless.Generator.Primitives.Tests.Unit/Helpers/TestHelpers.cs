@@ -12,7 +12,7 @@ namespace Tests.Helpers;
 internal static class TestHelpers
 {
     // Cache assembly references to avoid repeated enumeration across tests
-    private static readonly Lazy<ImmutableArray<MetadataReference>> _cachedReferences = new(() =>
+    private static readonly Lazy<ImmutableArray<MetadataReference>> _CachedReferences = new(() =>
         [
             .. AppDomain
                 .CurrentDomain.GetAssemblies()
@@ -34,7 +34,7 @@ internal static class TestHelpers
         var compilation = CSharpCompilation.Create(
             "generator_Test",
             [syntaxTree],
-            _cachedReferences.Value,
+            _CachedReferences.Value,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
 

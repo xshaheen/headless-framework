@@ -50,7 +50,6 @@ public sealed class NatsTransportTests : TestBase
         await using var transport = new NatsTransport(_logger, _pool);
 
         // ReSharper disable once DisposeOnUsingVariable
-        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await transport.DisposeAsync();
 
         await act.Should().NotThrowAsync();

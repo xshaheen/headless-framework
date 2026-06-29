@@ -65,8 +65,8 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
         var userId = Guid.NewGuid().ToString();
         const string settingName = "NotDefinedSetting";
-        var settingsErrorsProvider = scope.ServiceProvider.GetRequiredService<ISettingsErrorsDescriptor>();
-        var error = await settingsErrorsProvider.NotDefined(settingName);
+        var settingsErrorsProvider = scope.ServiceProvider.GetRequiredService<ISettingErrorsDescriptor>();
+        var error = settingsErrorsProvider.NotDefined(settingName);
 
         // when
         var act = () => settingManager.SetForUserAsync(userId, name: settingName, value: "NewValue");

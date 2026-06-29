@@ -7,7 +7,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class HybridCacheTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
@@ -980,7 +979,7 @@ public sealed class HybridCacheTests : TestBase
 
         // when — cancel the caller token while the factory is in flight
         var act = async () =>
-            await cache.GetOrAddAsync<int>(
+            await cache.GetOrAddAsync(
                 key,
                 async ct =>
                 {
@@ -1107,14 +1106,14 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
         // when — the caller soft-times-out, then the detached factory completes and writes through the store
-        var timedOutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
+        var timedOutTask = cache.GetOrAddAsync(key, factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
         await _TriggerTimeoutAsync(options.FactorySoftTimeout, timedOutTask);
         var timedOut = await timedOutTask;
@@ -1224,11 +1223,13 @@ public sealed class HybridCacheTests : TestBase
         // given — L2 healthy, the backplane down for the first publish, auto-recovery on
         var failPublish = true;
         var publisher = Substitute.For<IBus>();
+
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ => failPublish ? throw new InvalidOperationException("Publish failed") : Task.CompletedTask);
 
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+
         var l2 = new InMemoryRemoteCacheAdapter(
             new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
         );
@@ -1277,9 +1278,9 @@ public sealed class HybridCacheTests : TestBase
     public async Task should_drop_peer_l1_entry_when_factory_write_invalidation_received()
     {
         // given — two nodes share an L2; the peer's L1 holds an outdated copy of the key
-        var sharedL2 = new InMemoryRemoteCacheAdapter(
-            new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
-        );
+        using var sharedL2Base = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+
+        var sharedL2 = new InMemoryRemoteCacheAdapter(sharedL2Base);
 
         var published = new List<CacheInvalidationMessage>();
         var publisherA = Substitute.For<IBus>();
@@ -1296,8 +1297,8 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        var l1A = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
-        var l1B = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1A = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1B = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
 
         var nodeA = new HybridCache(
             l1A,
@@ -1345,7 +1346,7 @@ public sealed class HybridCacheTests : TestBase
             )
             .Returns(Task.CompletedTask);
 
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = new InMemoryRemoteCacheAdapter(
             new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true })
         );
@@ -1388,13 +1389,13 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
-        var pending = cache.GetOrAddAsync(key, Factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
         await factoryStarted.Task;
 
         // when — the L2 entry is created and removed by another actor mid-operation, then the factory lands
@@ -1414,7 +1415,7 @@ public sealed class HybridCacheTests : TestBase
     {
         // given — L2 healthy at read time, failing by the time the factory write lands
         using var l2 = new TogglableRemoteCache(_timeProvider);
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
@@ -1427,13 +1428,13 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
-        var pending = cache.GetOrAddAsync(key, Factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
         await factoryStarted.Task;
 
         // when — L2 starts throwing mid-operation, then the factory completes
@@ -1466,13 +1467,13 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
-        var pending = cache.GetOrAddAsync(key, Factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
         await factoryStarted.Task;
 
         // when — the key is removed while the factory is in flight, then the factory write lands
@@ -1499,13 +1500,13 @@ public sealed class HybridCacheTests : TestBase
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async ValueTask<int?> Factory(CancellationToken cancellationToken)
+        async ValueTask<int?> factory(CancellationToken cancellationToken)
         {
             factoryStarted.SetResult();
             return await factoryGate.Task.WaitAsync(cancellationToken);
         }
 
-        var pending = cache.GetOrAddAsync(key, Factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
+        var pending = cache.GetOrAddAsync(key, factory, TimeSpan.FromMinutes(5), AbortToken).AsTask();
         await factoryStarted.Task;
 
         // when — the invalidation-driven removal fires mid-factory, then the factory write lands
@@ -1537,7 +1538,7 @@ public sealed class HybridCacheTests : TestBase
     public async Task should_return_partial_count_clear_l1_members_and_publish_all_keys_when_upsert_all_partially_succeeds()
     {
         // given — L2 reports a partial batch write (2 of 3 members landed)
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = Substitute.For<IRemoteCache>();
         l2.UpsertAllAsync(Arg.Any<IDictionary<string, int>>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(2);
@@ -1595,7 +1596,7 @@ public sealed class HybridCacheTests : TestBase
     public async Task should_propagate_exception_and_leave_l1_untouched_when_remove_all_l2_fails_mid_batch()
     {
         // given — the L2 bulk removal throws
-        var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });
         var l2 = Substitute.For<IRemoteCache>();
         l2.RemoveAllAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns<int>(_ => throw new InvalidOperationException("L2 batch failed"));

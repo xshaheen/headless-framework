@@ -14,7 +14,6 @@ using Tests.Helpers;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class DispatcherTests : TestBase
 {
     private readonly ILogger<Dispatcher> _logger = Substitute.For<ILogger<Dispatcher>>();

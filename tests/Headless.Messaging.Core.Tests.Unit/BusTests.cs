@@ -616,7 +616,6 @@ public sealed class BusTests : TestBase
         await cts.CancelAsync();
 
         // when
-        // ReSharper disable once AccessToDisposedClosure
         var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: cts.Token);
 
         // then

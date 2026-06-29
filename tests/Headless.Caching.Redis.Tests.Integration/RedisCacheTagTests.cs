@@ -11,7 +11,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
     private const string _ClearMarkerSuffix = "__clear";
     private const string _RemoveMarkerSuffix = "__remove";
 
-    private IDatabase _Database => Fixture.ConnectionMultiplexer.GetDatabase();
+    private IDatabase Database => Fixture.ConnectionMultiplexer.GetDatabase();
 
     [Fact]
     public async Task should_write_tag_marker_under_reserved_namespace()
@@ -25,8 +25,8 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         await cache.RemoveByTagAsync(tag, AbortToken);
 
         var markerKey = $"{prefix}{_TagMarkerNamespace}{tag}";
-        (await _Database.KeyExistsAsync(markerKey)).Should().BeTrue();
-        var marker = await _Database.StringGetAsync(markerKey);
+        (await Database.KeyExistsAsync(markerKey)).Should().BeTrue();
+        var marker = await Database.StringGetAsync(markerKey);
         marker.HasValue.Should().BeTrue();
         long.TryParse(marker.ToString(), CultureInfo.InvariantCulture, out _)
             .Should()
@@ -43,7 +43,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         await cache.ClearAsync(AbortToken);
 
         var clearKey = $"{prefix}{_ClearMarkerSuffix}";
-        (await _Database.KeyExistsAsync(clearKey)).Should().BeTrue();
+        (await Database.KeyExistsAsync(clearKey)).Should().BeTrue();
     }
 
     [Fact]
@@ -62,18 +62,18 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
 
         // A durable write establishes the marker.
         await writer.WriteTagMarkerAsync(tag, t1, AbortToken);
-        var afterT1 = (await _Database.StringGetAsync(markerKey)).ToString();
+        var afterT1 = (await Database.StringGetAsync(markerKey)).ToString();
 
         // An OLDER write must not lower it (raise-only — this is what makes an auto-recovery replay safe).
         await writer.WriteTagMarkerAsync(tag, t0, AbortToken);
-        (await _Database.StringGetAsync(markerKey))
+        (await Database.StringGetAsync(markerKey))
             .ToString()
             .Should()
             .Be(afterT1, "an older raise-only write must not lower the stored marker");
 
         // A NEWER write does raise it.
         await writer.WriteTagMarkerAsync(tag, t2, AbortToken);
-        (await _Database.StringGetAsync(markerKey)).ToString().Should().NotBe(afterT1);
+        (await Database.StringGetAsync(markerKey)).ToString().Should().NotBe(afterT1);
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         (await cache.ExistsAsync(key, AbortToken)).Should().BeFalse();
 
         // The entry is still physically present (the marker invalidates logically, not by deletion).
-        (await _Database.KeyExistsAsync($"{prefix}{key}"))
+        (await Database.KeyExistsAsync($"{prefix}{key}"))
             .Should()
             .BeTrue();
     }
@@ -192,7 +192,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         (await cache.GetAsync<string>(key, AbortToken))
             .HasValue.Should()
             .BeFalse();
-        (await _Database.KeyExistsAsync($"{prefix}{key}")).Should().BeTrue();
+        (await Database.KeyExistsAsync($"{prefix}{key}")).Should().BeTrue();
 
         // A failing fail-safe factory still serves the stale reserve.
         var result = await cache.GetOrAddAsync<string>(
@@ -223,7 +223,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
         (await cache.GetAsync<string>(key, AbortToken))
             .HasValue.Should()
             .BeFalse();
-        (await _Database.KeyExistsAsync($"{prefix}{key}")).Should().BeTrue();
+        (await Database.KeyExistsAsync($"{prefix}{key}")).Should().BeTrue();
     }
 
     [Fact]
@@ -248,10 +248,10 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
 
         // Logical flush (FusionCache Clear(false)): no FLUSHDB — the entry key is physically retained and the
         // remove-generation marker is written under its reserved key.
-        (await _Database.KeyExistsAsync($"{prefix}{key}"))
+        (await Database.KeyExistsAsync($"{prefix}{key}"))
             .Should()
             .BeTrue();
-        (await _Database.KeyExistsAsync($"{prefix}{_RemoveMarkerSuffix}")).Should().BeTrue();
+        (await Database.KeyExistsAsync($"{prefix}{_RemoveMarkerSuffix}")).Should().BeTrue();
 
         // ...yet the entry reads as a hard miss.
         (await cache.GetAsync<string>(key, AbortToken))
@@ -292,7 +292,7 @@ public sealed class RedisCacheTagTests(RedisCacheFixture fixture) : RedisCacheTe
 
         // Simulate marker loss (e.g. its own TTL elapsed or it was evicted): the entry is no longer invalidated,
         // and its physical TTL is the staleness backstop.
-        await _Database.KeyDeleteAsync($"{prefix}{_TagMarkerNamespace}{tag}");
+        await Database.KeyDeleteAsync($"{prefix}{_TagMarkerNamespace}{tag}");
         await Task.Delay(20, AbortToken);
 
         var cached = await cache.GetAsync<string>(key, AbortToken);

@@ -9,8 +9,6 @@ public sealed class SoftSchedulerNotifyDebounce : IDisposable
 
     private int _latest;
     private int _lastNotified = -1;
-
-    private static readonly TimeSpan _Debounce = TimeSpan.FromMilliseconds(100);
     private int _disposed;
 
     public SoftSchedulerNotifyDebounce(Action<string> notifyCoreAction)

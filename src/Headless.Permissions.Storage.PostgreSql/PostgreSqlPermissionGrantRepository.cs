@@ -108,10 +108,8 @@ internal sealed class PostgreSqlPermissionGrantRepository(
 
         foreach (var permissionGrant in permissionGrants)
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = _CommandTimeout(),
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = _CommandTimeout();
             command.Parameters.AddRange(_Parameters(permissionGrant));
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -189,7 +187,8 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection) { CommandTimeout = _CommandTimeout() };
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }

@@ -156,22 +156,22 @@ public sealed class TypedCacheDefaultEntryExtensionsTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var factoryCalls = 0;
 
-        ValueTask<string?> Factory(CancellationToken ct)
+        ValueTask<string?> factory(CancellationToken ct)
         {
             Interlocked.Increment(ref factoryCalls);
             return ValueTask.FromResult<string?>("value");
         }
 
         // when / then — within the default duration the entry stays fresh …
-        await typed.GetOrAddAsync(key, Factory, AbortToken);
+        await typed.GetOrAddAsync(key, factory, AbortToken);
         timeProvider.Advance(TimeSpan.FromMinutes(4));
-        var within = await typed.GetOrAddAsync(key, Factory, AbortToken);
+        var within = await typed.GetOrAddAsync(key, factory, AbortToken);
         within.Value.Should().Be("value");
         factoryCalls.Should().Be(1, "the entry must still be fresh within the default 5-minute duration");
 
         // … and right after it the entry expires
         timeProvider.Advance(TimeSpan.FromMinutes(2));
-        await typed.GetOrAddAsync(key, Factory, AbortToken);
+        await typed.GetOrAddAsync(key, factory, AbortToken);
         factoryCalls.Should().Be(2, "the default duration must bound the entry's lifetime");
     }
 }

@@ -129,5 +129,6 @@ public sealed partial class SqlServerCommitSignalSource(
         Level = LogLevel.Error,
         Message = "A SQL Server commit coordination scope is already attached for provider transaction key {ProviderTransactionKey}."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
 }

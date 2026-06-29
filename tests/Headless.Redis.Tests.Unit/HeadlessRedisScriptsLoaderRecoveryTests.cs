@@ -10,7 +10,7 @@ namespace Tests;
 
 public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
 {
-    private static object _SampleParameters =>
+    private static object SampleParameters =>
         new
         {
             key = (RedisKey)"key",
@@ -50,7 +50,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             .Returns(Task.FromResult(RedisResult.Create(1)));
 
         // when
-        var result = await sut.EvaluateAsync(db, SampleScriptDefinition.Instance, _SampleParameters, AbortToken);
+        var result = await sut.EvaluateAsync(db, SampleScriptDefinition.Instance, SampleParameters, AbortToken);
 
         // then
         ((int)result)
@@ -89,7 +89,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             .Returns<Task<RedisResult>>(_ => throw new RedisServerException("LOADING Redis is loading the dataset."));
 
         // when
-        var act = () => sut.EvaluateAsync(db, SampleScriptDefinition.Instance, _SampleParameters, AbortToken);
+        var act = () => sut.EvaluateAsync(db, SampleScriptDefinition.Instance, SampleParameters, AbortToken);
 
         // then
         await act.Should().ThrowAsync<RedisServerException>();
@@ -118,7 +118,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             .Returns<Task<RedisResult>>(_ => throw new RedisServerException("WRONGTYPE Operation against a key."));
 
         // when
-        var act = () => sut.EvaluateAsync(db, SampleScriptDefinition.Instance, _SampleParameters, AbortToken);
+        var act = () => sut.EvaluateAsync(db, SampleScriptDefinition.Instance, SampleParameters, AbortToken);
 
         // then — a non-NOSCRIPT error propagates immediately; the EVAL recovery path is never entered.
         await act.Should().ThrowAsync<RedisServerException>().WithMessage("WRONGTYPE*");

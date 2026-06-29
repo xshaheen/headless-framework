@@ -75,7 +75,7 @@ internal sealed class MultiplexedConnectionLockPool
 
             try
             {
-                var opportunisticResult = await _TryAcquireAsync(existingLock, opportunistic: true)
+                var opportunisticResult = await tryAcquireAsync(existingLock, opportunistic: true)
                     .ConfigureAwait(false);
 
                 if (opportunisticResult.Handle is not null)
@@ -91,7 +91,7 @@ internal sealed class MultiplexedConnectionLockPool
                     case MultiplexedConnectionLockRetry.NoRetry:
                         return null;
                     case MultiplexedConnectionLockRetry.RetryOnThisLock:
-                        var retryOnThisLockResult = await _TryAcquireAsync(existingLock, opportunistic: false)
+                        var retryOnThisLockResult = await tryAcquireAsync(existingLock, opportunistic: false)
                             .ConfigureAwait(false);
                         canSafelyDisposeExistingLock = retryOnThisLockResult.CanSafelyDispose;
 
@@ -122,7 +122,7 @@ internal sealed class MultiplexedConnectionLockPool
 
         try
         {
-            result = await _TryAcquireAsync(@lock, opportunistic: false).ConfigureAwait(false);
+            result = await tryAcquireAsync(@lock, opportunistic: false).ConfigureAwait(false);
             Debug.Assert(
                 result.Value.Retry == MultiplexedConnectionLockRetry.NoRetry,
                 "Acquire on a fresh lock should not recommend a retry."
@@ -137,7 +137,7 @@ internal sealed class MultiplexedConnectionLockPool
 
         return result.Value.Handle;
 
-        ValueTask<MultiplexedConnectionLock.Result> _TryAcquireAsync(
+        ValueTask<MultiplexedConnectionLock.Result> tryAcquireAsync(
             MultiplexedConnectionLock instance,
             bool opportunistic
         ) => instance.TryAcquireAsync(name, timeout, strategy, keepaliveCadence, opportunistic, cancellationToken);

@@ -9,8 +9,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
-// ReSharper disable AccessToDisposedClosure
-
 namespace Tests.Services;
 
 public sealed class PermissionsInitializationBackgroundServiceTests : TestBase

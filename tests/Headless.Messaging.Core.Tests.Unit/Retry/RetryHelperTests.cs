@@ -651,7 +651,6 @@ public sealed class RetryHelperTests : TestBase
                     async () =>
                     {
                         await Task.Delay(50, AbortToken).ConfigureAwait(false);
-                        // ReSharper disable once AccessToDisposedClosure
                         await hostCts.CancelAsync().ConfigureAwait(false);
                     },
                     AbortToken

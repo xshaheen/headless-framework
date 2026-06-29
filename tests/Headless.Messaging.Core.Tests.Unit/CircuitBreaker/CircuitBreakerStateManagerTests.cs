@@ -9,8 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Tests.CircuitBreaker;
 
-// ReSharper disable AccessToDisposedClosure
-// ReSharper disable AccessToModifiedClosure
 public sealed class CircuitBreakerStateManagerTests : TestBase
 {
     private const string _Group = "test.group";
@@ -666,7 +664,6 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             .Select(i =>
                 Task.Run(() =>
                 {
-                    // ReSharper disable once AccessToDisposedClosure
                     barrier.SignalAndWait(); // maximize contention
                     results[i] = sut.TryAcquireHalfOpenProbe(_Group);
                 })

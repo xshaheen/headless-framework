@@ -26,7 +26,7 @@ public sealed class SettingManagerTests : TestBase
         _valueStore = Substitute.For<ISettingValueStore>();
         _valueProviderManager = Substitute.For<ISettingValueProviderManager>();
         _encryptionService = Substitute.For<ISettingEncryptionService>();
-        ISettingsErrorsDescriptor errorsDescriptor = new DefaultSettingsErrorsDescriptor();
+        ISettingErrorsDescriptor errorsDescriptor = new DefaultSettingErrorsDescriptor();
 
         _sut = new SettingManager(
             _definitionManager,

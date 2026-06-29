@@ -41,8 +41,8 @@ public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
     public async Task count_must_not_overshoot_max_items_after_expiry_sweep_removes_tracked_minimum()
     {
         // given — capacity of 3; L2 is down so every write queues a recovery item
-        const int max_items = 3;
-        var (cache, l2) = _CreateCache(max_items);
+        const int maxItems = 3;
+        var (cache, l2) = _CreateCache(maxItems);
         await using var _ = cache;
 
         l2.FailWrites = true;
@@ -54,7 +54,7 @@ public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
         await cache.GetOrAddAsync("key-long-a", _ => new ValueTask<int?>(2), TimeSpan.FromMinutes(10), AbortToken);
         await cache.GetOrAddAsync("key-long-b", _ => new ValueTask<int?>(3), TimeSpan.FromMinutes(10), AbortToken);
 
-        cache.RecoveryQueue!.Count.Should().Be(max_items);
+        cache.RecoveryQueue!.Count.Should().Be(maxItems);
         cache.RecoveryQueue.Contains("key-short").Should().BeTrue("the short-TTL item must be in the queue");
 
         // when — advance time past the short item's recovery window so the sweep inside ProcessAsync
@@ -76,7 +76,7 @@ public sealed class HybridCacheRecoveryQueueMinExpiryStaleTests : TestBase
         cache
             .RecoveryQueue.Count.Should()
             .BeLessThanOrEqualTo(
-                max_items,
+                maxItems,
                 "the queue must not overshoot AutoRecoveryMaxItems after the expiry sweep removes the tracked minimum"
             );
     }

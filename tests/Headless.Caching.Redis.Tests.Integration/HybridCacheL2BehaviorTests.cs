@@ -22,13 +22,21 @@ namespace Tests;
 [Collection(nameof(RedisCacheFixture))]
 public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : TestBase
 {
+    // The L1/L2 tiers created in _CreateHybrid are owned by the test, NOT by the returned HybridCache:
+    // HybridCache.DisposeAsync deliberately does not dispose injected tiers (in DI the container owns them).
+    // Track them here and dispose at test teardown, after each await-using hybrid is gone. A `using var` on
+    // l1/l2 would dispose them when _CreateHybrid returns — before the test ever touches the hybrid — which
+    // surfaces as ObjectDisposedException on the L1 InMemoryCache.
+    private readonly List<IDisposable> _tierCaches = [];
+
     private HybridCache _CreateHybrid(
         string keyPrefix = "",
         HybridCacheOptions? hybridOptions = null,
         CapturingBus? bus = null
     )
     {
-        using var l1 = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        var l1 = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
+        _tierCaches.Add(l1);
 
         var redisCacheOptions = new RedisCacheOptions
         {
@@ -36,13 +44,14 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
             KeyPrefix = keyPrefix,
         };
 
-        using var l2 = new RedisCache(
+        var l2 = new RedisCache(
             new SystemJsonSerializer(),
             TimeProvider.System,
             redisCacheOptions,
             fixture.ScriptsLoader,
             LoggerFactory.CreateLogger<RedisCache>()
         );
+        _tierCaches.Add(l2);
 
         var publisher = (IBus?)bus ?? NoopBus.Instance;
         hybridOptions ??= new HybridCacheOptions();
@@ -158,6 +167,20 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
     }
 
     private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+
+    /// <inheritdoc />
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        // Dispose the L1/L2 tiers created by _CreateHybrid (HybridCache does not own them). Runs after each
+        // test's await-using hybrid has already been disposed. Idempotent: Clear + per-cache Dispose guards.
+        foreach (var cache in _tierCaches)
+        {
+            cache.Dispose();
+        }
+
+        _tierCaches.Clear();
+        await base.DisposeAsyncCore();
+    }
 
     // Minimal in-process backplane bus: routes CacheInvalidationMessage to all attached HybridCache instances.
     // HandleInvalidationAsync is internal (InternalsVisibleTo is not granted to this project) so we invoke it

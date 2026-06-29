@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable NotDisposedResource
 public sealed class BlobStorageDataProtectionXmlRepositoryTests
 {
     #region Constructor Tests

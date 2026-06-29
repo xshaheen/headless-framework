@@ -149,6 +149,7 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         Level = LogLevel.Error,
         Message = "An EF Core commit coordination scope is already attached for provider transaction key {ProviderTransactionKey}."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
 
     [LoggerMessage(
@@ -156,5 +157,6 @@ public sealed partial class EntityFrameworkCommitSignalSource(
         Level = LogLevel.Error,
         Message = "An EF Core commit coordination background signal faulted."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogBackgroundSignalFaulted(ILogger logger, Exception? exception);
 }

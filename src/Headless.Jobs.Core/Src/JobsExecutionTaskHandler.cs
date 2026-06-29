@@ -210,7 +210,7 @@ internal class JobsExecutionTaskHandler(
         using var renewalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var renewalTask = _RenewLeaseLoopAsync(context, cancellationTokenSource, renewalCts.Token);
 
-        async Task StopRenewalAsync()
+        async Task stopRenewalAsync()
         {
             // StopRenewalAsync is a local function invoked on each exit path before `using var renewalCts` disposes
             // at method end, so renewalCts is never disposed when this runs.
@@ -273,7 +273,7 @@ internal class JobsExecutionTaskHandler(
                     // MarkFailed/Skip terminalize). Writing Cancelled here would terminalize a row that is still ours
                     // when the loss was a false positive (slow-but-healthy store), permanently dropping a Retry job.
                     logger.LogJobLeaseLostCancellation(context.JobId, context.FunctionName);
-                    await StopRenewalAsync().ConfigureAwait(false);
+                    await stopRenewalAsync().ConfigureAwait(false);
                     cancellationTokenSource?.Dispose();
                     JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                     return;
@@ -302,7 +302,7 @@ internal class JobsExecutionTaskHandler(
                 await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
 
                 // Clean up and exit early on cancellation
-                await StopRenewalAsync().ConfigureAwait(false);
+                await stopRenewalAsync().ConfigureAwait(false);
                 cancellationTokenSource?.Dispose();
                 JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                 return;
@@ -336,7 +336,7 @@ internal class JobsExecutionTaskHandler(
                 await internalJobsManager.UpdateTickerAsync(context, CancellationToken.None).ConfigureAwait(false);
 
                 // Clean up and exit early on termination
-                await StopRenewalAsync().ConfigureAwait(false);
+                await stopRenewalAsync().ConfigureAwait(false);
                 cancellationTokenSource.Dispose();
                 JobsCancellationTokenManager.RemoveTickerCancellationToken(context.JobId);
                 return;
@@ -413,7 +413,7 @@ internal class JobsExecutionTaskHandler(
         }
 
         // Stop renewal before disposing the job CTS it cancels on loss.
-        await StopRenewalAsync().ConfigureAwait(false);
+        await stopRenewalAsync().ConfigureAwait(false);
 
         // IMPORTANT: Always dispose CancellationTokenSource to prevent memory leaks
         cancellationTokenSource?.Dispose();

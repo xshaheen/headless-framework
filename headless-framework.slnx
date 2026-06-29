@@ -261,9 +261,7 @@
         <Project Path="src\Headless.Mediator\Headless.Mediator.csproj" />
         <Project Path="tests\Headless.Mediator.Tests.Unit\Headless.Mediator.Tests.Unit.csproj" />
     </Folder>
-    <Folder Name="/Messaging/">
-        <Project Path="benchmarks/Headless.Messaging.Benchmarks/Headless.Messaging.Benchmarks.csproj" />
-    </Folder>
+    <Folder Name="/Messaging/" />
     <Folder Name="/Messaging/Demo/">
         <Project Path="demo/Headless.Messaging.Aws.InMemory.Demo/Headless.Messaging.Aws.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.AzureServiceBus.InMemory.Demo/Headless.Messaging.AzureServiceBus.InMemory.Demo.csproj" />
@@ -300,6 +298,7 @@
         <Project Path="tests/Headless.Messaging.Testing.Tests.Unit/Headless.Messaging.Testing.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
+        <Project Path="benchmarks/Headless.Messaging.Benchmarks/Headless.Messaging.Benchmarks.csproj" />
         <Project Path="tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Aws.Tests.Unit/Headless.Messaging.Aws.Tests.Unit.csproj" />

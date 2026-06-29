@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class SubscribeInvokerTests : TestBase
 {
     [Fact]

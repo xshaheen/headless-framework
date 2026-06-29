@@ -12,7 +12,6 @@ using StringComparer = System.StringComparer;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 [Collection<LocalStackTestFixture>]
 public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
 {

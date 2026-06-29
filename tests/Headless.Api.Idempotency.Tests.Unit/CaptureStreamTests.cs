@@ -5,7 +5,6 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class CaptureStreamTests : TestBase
 {
     private const int _Cap = 100;

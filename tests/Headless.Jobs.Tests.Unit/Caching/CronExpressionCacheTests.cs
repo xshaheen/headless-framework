@@ -259,7 +259,7 @@ public sealed class CronExpressionCacheTests
                 .Options;
 
             var fixture = new CronCacheFixture(connection, services, options);
-            await using var dbContext = fixture.CreateDbContext();
+            await using var dbContext = fixture._CreateDbContext();
             await dbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
 
             return fixture;
@@ -280,7 +280,7 @@ public sealed class CronExpressionCacheTests
 
         public async Task SeedCronJobsAsync(params CronJobEntity[] cronJobs)
         {
-            await using var dbContext = CreateDbContext();
+            await using var dbContext = _CreateDbContext();
             await dbContext.Set<CronJobEntity>().AddRangeAsync(cronJobs, TestContext.Current.CancellationToken);
             await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
@@ -291,7 +291,7 @@ public sealed class CronExpressionCacheTests
             await _services.DisposeAsync();
         }
 
-        private JobsDbContext CreateDbContext() => new(_options);
+        private JobsDbContext _CreateDbContext() => new(_options);
     }
 
     private sealed class TestDbContextFactory(DbContextOptions<JobsDbContext> options)

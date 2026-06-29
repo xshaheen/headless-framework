@@ -215,5 +215,6 @@ public static partial class CoordinatedTransactionExtensions
         Level = LogLevel.Error,
         Message = "Post-commit drain faulted after a successful PostgreSQL commit; the relay will recover any uncommitted work."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogPostCommitDrainFaulted(ILogger logger, Exception exception);
 }

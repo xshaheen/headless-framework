@@ -611,7 +611,7 @@ public sealed class AuditLogIntegrationTests : TestBase
             InterceptionResult<int> result
         )
         {
-            ThrowIfAuditSave(eventData.Context);
+            _ThrowIfAuditSave(eventData.Context);
             return base.SavingChanges(eventData, result);
         }
 
@@ -621,11 +621,11 @@ public sealed class AuditLogIntegrationTests : TestBase
             CancellationToken cancellationToken = default
         )
         {
-            ThrowIfAuditSave(eventData.Context);
+            _ThrowIfAuditSave(eventData.Context);
             return base.SavingChangesAsync(eventData, result, cancellationToken);
         }
 
-        private void ThrowIfAuditSave(DbContext? context)
+        private void _ThrowIfAuditSave(DbContext? context)
         {
             if (_hasThrown || context is null)
             {

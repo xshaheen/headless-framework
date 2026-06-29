@@ -274,7 +274,6 @@ public sealed class TusAzureStoreTests : TestBase
         await using var stream = new MemoryStream(dataToAppend);
 
         // when
-        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await _store.AppendDataAsync(nonExistentFileId, stream, CancellationToken.None);
 
         // then
@@ -330,7 +329,6 @@ public sealed class TusAzureStoreTests : TestBase
         await pipe.WriteAsync(dataToAppend, AbortToken);
 
         // when
-        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await _store.AppendDataAsync(nonExistentFileId, pipe.AsStream(), CancellationToken.None);
 
         // then

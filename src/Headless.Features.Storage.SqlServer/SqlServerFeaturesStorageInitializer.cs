@@ -33,10 +33,8 @@ internal sealed class SqlServerFeaturesStorageInitializer(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection)
-        {
-            CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-        };
+        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection);
+        command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

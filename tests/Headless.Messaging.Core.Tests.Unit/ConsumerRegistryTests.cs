@@ -4,7 +4,6 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class ConsumerRegistryTests : TestBase
 {
     [Fact]

@@ -51,6 +51,12 @@ public sealed class BasicAuthenticationHandlerTests : TestBase
         _logger = Substitute.For<ILogger<BasicAuthenticationHandler<TestUser, string>>>();
     }
 
+    protected override ValueTask DisposeAsyncCore()
+    {
+        _userManager.Dispose();
+        return base.DisposeAsyncCore();
+    }
+
     [Fact]
     public async Task should_return_success_when_user_already_authenticated()
     {

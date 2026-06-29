@@ -5,7 +5,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Threading;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class KeyedAsyncLockTests : TestBase
 {
     [Fact]
@@ -403,7 +402,6 @@ public sealed class KeyedAsyncLockTests : TestBase
         cts.CancelAfter(50);
 
         // then
-        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await keyedLock.LockAsync("cancel-key", cts.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -724,7 +722,6 @@ public sealed class KeyedAsyncLockTests : TestBase
         releaser2.Dispose();
 
         // Acquire more and don't release - these will be cleaned up by Dispose
-        // ReSharper disable once NotDisposedResource
         var releaser3 = await keyedLock.LockAsync("key3", AbortToken);
 
         // when

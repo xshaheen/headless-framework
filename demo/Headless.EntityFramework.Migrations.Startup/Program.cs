@@ -4,11 +4,11 @@ using System.Reflection;
 using Headless.Api;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
+using Headless.EntityFramework.Migrations.Startup;
 using Headless.Features;
 using Headless.Permissions;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 // To add a migration use:
@@ -87,40 +87,4 @@ static void addRedisDistributedLock(IServiceCollection services)
 
     // Resource Locks
     services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-}
-
-internal sealed class SettingsMigrationDbContext(
-    DbContextOptions<SettingsMigrationDbContext> options,
-    IOptions<SettingsStorageOptions> storageOptions
-) : DbContext(options)
-{
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessSettings(storageOptions.Value);
-    }
-}
-
-internal sealed class PermissionsMigrationDbContext(
-    DbContextOptions<PermissionsMigrationDbContext> options,
-    IOptions<PermissionsStorageOptions> storageOptions
-) : DbContext(options)
-{
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessPermissions(storageOptions.Value);
-    }
-}
-
-internal sealed class FeaturesMigrationDbContext(
-    DbContextOptions<FeaturesMigrationDbContext> options,
-    IOptions<FeaturesStorageOptions> storageOptions
-) : DbContext(options)
-{
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessFeatures(storageOptions.Value);
-    }
 }

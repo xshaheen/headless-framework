@@ -232,7 +232,7 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
             output.Write(Encoding.UTF8.GetBytes(prefix + number.ToString(CultureInfo.InvariantCulture)));
         }
 
-        public object? Deserialize(ReadOnlyMemory<byte> data, Type type)
+        public object Deserialize(ReadOnlyMemory<byte> data, Type type)
         {
             if (type != typeof(int))
             {
@@ -243,6 +243,6 @@ public sealed class NamedRedisCacheTests(RedisCacheFixture fixture) : TestBase
             return int.Parse(stored.AsSpan(prefix.Length), CultureInfo.InvariantCulture);
         }
 
-        public object? Deserialize(in ReadOnlySequence<byte> data, Type type) => Deserialize(data.ToArray(), type);
+        public object Deserialize(in ReadOnlySequence<byte> data, Type type) => Deserialize(data.ToArray(), type);
     }
 }

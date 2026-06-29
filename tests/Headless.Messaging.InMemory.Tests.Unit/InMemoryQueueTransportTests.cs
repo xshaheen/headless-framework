@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryQueueTransportTests : TestBase
 {
     private readonly InMemoryQueueTransport _transport;
@@ -299,7 +298,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var received = 0;
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        Task OnMessage(TransportMessage _, object? __)
+        Task onMessage(TransportMessage _, object? __)
         {
             if (Interlocked.Increment(ref received) == 1)
             {
@@ -309,8 +308,8 @@ public sealed class InMemoryQueueTransportTests : TestBase
             return Task.CompletedTask;
         }
 
-        worker1.OnMessageCallback = OnMessage;
-        worker2.OnMessageCallback = OnMessage;
+        worker1.OnMessageCallback = onMessage;
+        worker2.OnMessageCallback = onMessage;
 
         using var cts = new CancellationTokenSource();
         var listen1 = Task.Run(

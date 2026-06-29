@@ -41,10 +41,10 @@ public sealed class ThrowingHeadlessMessageDispatcher : IHeadlessOutboxDispatche
     public Task DispatchAsync(
         IReadOnlyList<IIntegrationEvent> integrationEvents,
         CancellationToken cancellationToken
-    ) => throw new InvalidOperationException(PublishFailureMessage);
+    ) => throw new InvalidOperationException(_PublishFailureMessage);
 
     public void Dispatch(IReadOnlyList<IIntegrationEvent> integrationEvents) =>
-        throw new InvalidOperationException(PublishFailureMessage);
+        throw new InvalidOperationException(_PublishFailureMessage);
 
-    private const string PublishFailureMessage = ThrowingPublishAuditTestDbContext.PublishFailureMessage;
+    private const string _PublishFailureMessage = ThrowingPublishAuditTestDbContext.PublishFailureMessage;
 }

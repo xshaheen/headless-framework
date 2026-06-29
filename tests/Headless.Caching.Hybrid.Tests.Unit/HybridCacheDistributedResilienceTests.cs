@@ -40,7 +40,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
 
         var factoryCalls = 0;
         var task = cache
-            .GetOrAddAsync<int>(
+            .GetOrAddAsync(
                 key,
                 _ =>
                 {
@@ -298,7 +298,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
 
         // when — the factory produces a value but the L2 store-write faults
         var act = async () =>
-            await cache.GetOrAddAsync<int>(
+            await cache.GetOrAddAsync(
                 Faker.Random.AlphaNumeric(10),
                 _ => new ValueTask<int>(42),
                 TimeSpan.FromMinutes(5),

@@ -6,7 +6,6 @@ using Headless.Blobs.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Options;
 
-// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
 [Collection<RedisBlobStorageFixture>]

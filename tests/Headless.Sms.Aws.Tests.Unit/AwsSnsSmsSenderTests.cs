@@ -5,7 +5,6 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Headless.Sms;
 using Headless.Sms.Aws;
-using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
@@ -14,7 +13,7 @@ namespace Tests;
 
 public sealed class AwsSnsSmsSenderTests
 {
-    private static AwsSnsSmsSender CreateSender(IAmazonSimpleNotificationService client)
+    private static AwsSnsSmsSender _CreateSender(IAmazonSimpleNotificationService client)
     {
         var options = Options.Create(new AwsSnsSmsOptions { SenderId = "SENDER", MaxPrice = null });
 
@@ -29,7 +28,7 @@ public sealed class AwsSnsSmsSenderTests
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-1", HttpStatusCode = HttpStatusCode.OK });
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeTrue();
         result.ProviderMessageId.Should().Be("msg-1");
@@ -43,7 +42,7 @@ public sealed class AwsSnsSmsSenderTests
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-1", HttpStatusCode = HttpStatusCode.OK });
 
-        await CreateSender(client).SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
+        await _CreateSender(client).SendAsync(SmsRequests.Single(code: 20, number: "1001234567"));
 
         await client
             .Received(1)
@@ -55,7 +54,7 @@ public sealed class AwsSnsSmsSenderTests
     {
         var client = Substitute.For<IAmazonSimpleNotificationService>();
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")));
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Batch("hi", (20, "1"), (20, "2")));
 
         result.Success.Should().BeFalse();
         await client.DidNotReceive().PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
@@ -69,7 +68,7 @@ public sealed class AwsSnsSmsSenderTests
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("network down"));
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
         result.FailureKind.Should().Be(SmsFailureKind.Transient);
@@ -83,7 +82,7 @@ public sealed class AwsSnsSmsSenderTests
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { HttpStatusCode = HttpStatusCode.BadRequest });
 
-        var result = await CreateSender(client).SendAsync(SmsRequests.Single());
+        var result = await _CreateSender(client).SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
     }

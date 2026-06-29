@@ -115,10 +115,10 @@ public sealed class SetupTests : TestBase
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseNats("nats://localhost:4222");
-                setup.ForMessage<_ShardTestMessage>(message =>
+                setup.ForMessage<ShardTestMessage>(message =>
                     message
                         .UseNats(nats => nats.SubjectShard(m => m.TenantId))
-                        .OnBus<_ShardTestConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
+                        .OnBus<ShardTestConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
                 );
             });
 
@@ -138,8 +138,8 @@ public sealed class SetupTests : TestBase
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseNats("nats://localhost:4222");
-                setup.ForMessage<_ShardTestMessage>(message =>
-                    message.UseNats(nats => nats.SubjectShard(m => m.TenantId)).OnBus<_ShardTestConsumer>()
+                setup.ForMessage<ShardTestMessage>(message =>
+                    message.UseNats(nats => nats.SubjectShard(m => m.TenantId)).OnBus<ShardTestConsumer>()
                 );
             });
 
@@ -163,7 +163,7 @@ public sealed class SetupTests : TestBase
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseNats("nats://localhost:4222");
-                setup.ForMessage<_ShardTestMessage>(message => message.OnBus<_ShardTestConsumer>());
+                setup.ForMessage<ShardTestMessage>(message => message.OnBus<ShardTestConsumer>());
             });
 
         // then
@@ -175,11 +175,11 @@ public sealed class SetupTests : TestBase
         return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
     }
 
-    private sealed record _ShardTestMessage(string TenantId);
+    private sealed record ShardTestMessage(string TenantId);
 
-    private sealed class _ShardTestConsumer : IConsume<_ShardTestMessage>
+    private sealed class ShardTestConsumer : IConsume<ShardTestMessage>
     {
-        public ValueTask ConsumeAsync(ConsumeContext<_ShardTestMessage> context, CancellationToken cancellationToken) =>
+        public ValueTask ConsumeAsync(ConsumeContext<ShardTestMessage> context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 }

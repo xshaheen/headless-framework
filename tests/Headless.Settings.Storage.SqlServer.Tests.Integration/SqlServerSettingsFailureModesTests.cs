@@ -11,7 +11,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 [Collection<SqlServerSettingsFixture>]
 public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture fixture)
 {

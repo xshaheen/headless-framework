@@ -11,7 +11,6 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class AzureServiceBusQueueTransportTests
 {
     private static readonly IOptions<AzureServiceBusOptions> _Options = Options.Create(

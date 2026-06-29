@@ -126,5 +126,6 @@ public abstract partial class DurableWorkBuffer<TRow>(
         Level = LogLevel.Warning,
         Message = "Durable commit work row {RowType} was enlisted without a relational commit context."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogProviderMismatch(ILogger logger, string rowType);
 }

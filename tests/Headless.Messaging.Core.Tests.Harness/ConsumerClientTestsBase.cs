@@ -8,7 +8,6 @@ using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 /// <summary>Base class for consumer client implementation tests.</summary>
 [PublicAPI]
 public abstract class ConsumerClientTestsBase : TestBase

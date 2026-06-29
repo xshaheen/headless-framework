@@ -4,7 +4,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Threading;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class HeadlessTaskExtensionsTests : TestBase
 {
     [Fact]

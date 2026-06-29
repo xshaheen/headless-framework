@@ -3,7 +3,6 @@
 using System.Net;
 using Headless.Sms;
 using Headless.Sms.Connekio;
-using Headless.Sms.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using WireMock.RequestBuilders;
@@ -21,7 +20,7 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
         _fixture.Reset();
     }
 
-    private ConnekioSmsSender CreateSender(string singlePath = "/single", string batchPath = "/batch")
+    private ConnekioSmsSender _CreateSender(string singlePath = "/single", string batchPath = "/batch")
     {
         var options = Options.Create(
             new ConnekioSmsOptions
@@ -38,7 +37,7 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
         return new ConnekioSmsSender(_fixture.HttpClientFactory, options, NullLogger<ConnekioSmsSender>.Instance);
     }
 
-    private void Stub(string path, HttpStatusCode statusCode, string body)
+    private void _Stub(string path, HttpStatusCode statusCode, string body)
     {
         _fixture
             .Server.Given(Request.Create().WithPath(path).UsingPost())
@@ -48,9 +47,9 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     [Fact]
     public async Task should_succeed_on_success_status()
     {
-        Stub("/single", HttpStatusCode.OK, "{}");
+        _Stub("/single", HttpStatusCode.OK, "{}");
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeTrue();
     }
@@ -59,9 +58,9 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     public async Task should_succeed_on_success_status_with_empty_body()
     {
         // Regression: a success status must win even when the body is empty.
-        Stub("/single", HttpStatusCode.OK, string.Empty);
+        _Stub("/single", HttpStatusCode.OK, string.Empty);
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeTrue();
     }
@@ -69,9 +68,9 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     [Fact]
     public async Task should_fail_on_non_success_status()
     {
-        Stub("/single", HttpStatusCode.InternalServerError, "boom");
+        _Stub("/single", HttpStatusCode.InternalServerError, "boom");
 
-        var result = await CreateSender().SendAsync(SmsRequests.Single());
+        var result = await _CreateSender().SendAsync(SmsRequests.Single());
 
         result.Success.Should().BeFalse();
     }
@@ -79,9 +78,9 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     [Fact]
     public async Task should_route_batch_requests_to_the_batch_endpoint()
     {
-        Stub("/batch", HttpStatusCode.OK, "{}");
+        _Stub("/batch", HttpStatusCode.OK, "{}");
 
-        var result = await CreateSender().SendAsync(SmsRequests.Batch("hi", (20, "1001"), (20, "1002")));
+        var result = await _CreateSender().SendAsync(SmsRequests.Batch("hi", (20, "1001"), (20, "1002")));
 
         result.Success.Should().BeTrue();
         _fixture.Server.FindLogEntries(Request.Create().WithPath("/batch").UsingPost()).Should().ContainSingle();
@@ -90,9 +89,9 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     [Fact]
     public async Task should_send_a_basic_authorization_header()
     {
-        Stub("/single", HttpStatusCode.OK, "{}");
+        _Stub("/single", HttpStatusCode.OK, "{}");
 
-        await CreateSender().SendAsync(SmsRequests.Single());
+        await _CreateSender().SendAsync(SmsRequests.Single());
 
         var headers = _fixture.Server.LogEntries.Single().RequestMessage?.Headers;
         headers.Should().ContainKey("Authorization");
@@ -124,11 +123,11 @@ public sealed class ConnekioSmsSenderTests : IClassFixture<SmsWireMockFixture>
     [Fact]
     public async Task should_propagate_cancellation()
     {
-        Stub("/single", HttpStatusCode.OK, "{}");
+        _Stub("/single", HttpStatusCode.OK, "{}");
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = async () => await CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
+        var act = async () => await _CreateSender().SendAsync(SmsRequests.Single(), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

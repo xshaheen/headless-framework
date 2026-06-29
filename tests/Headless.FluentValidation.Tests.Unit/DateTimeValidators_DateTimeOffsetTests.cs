@@ -12,9 +12,9 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
     private static readonly DateTimeOffset _Past = new(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset _Future = new(2030, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private static FakeTimeProvider Clock() => new(_Now);
+    private static FakeTimeProvider _Clock() => new(_Now);
 
-    private static DateTimeOffset Resolve(string when) =>
+    private static DateTimeOffset _Resolve(string when) =>
         when switch
         {
             "past" => _Past,
@@ -36,9 +36,9 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
     public void in_the_past(string when, bool expectError)
     {
         var validator = new InlineValidator<Model>();
-        validator.RuleFor(x => x.Value).InThePast(Clock());
+        validator.RuleFor(x => x.Value).InThePast(_Clock());
 
-        var result = validator.TestValidate(new Model(Resolve(when)));
+        var result = validator.TestValidate(new Model(_Resolve(when)));
 
         if (expectError)
         {
@@ -61,9 +61,9 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
     public void in_the_future(string when, bool expectError)
     {
         var validator = new InlineValidator<Model>();
-        validator.RuleFor(x => x.Value).InTheFuture(Clock());
+        validator.RuleFor(x => x.Value).InTheFuture(_Clock());
 
-        var result = validator.TestValidate(new Model(Resolve(when)));
+        var result = validator.TestValidate(new Model(_Resolve(when)));
 
         if (expectError)
         {
@@ -86,9 +86,9 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
     public void not_in_the_past(string when, bool expectError)
     {
         var validator = new InlineValidator<Model>();
-        validator.RuleFor(x => x.Value).NotInThePast(Clock());
+        validator.RuleFor(x => x.Value).NotInThePast(_Clock());
 
-        var result = validator.TestValidate(new Model(Resolve(when)));
+        var result = validator.TestValidate(new Model(_Resolve(when)));
 
         if (expectError)
         {
@@ -111,9 +111,9 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
     public void not_in_the_future(string when, bool expectError)
     {
         var validator = new InlineValidator<Model>();
-        validator.RuleFor(x => x.Value).NotInTheFuture(Clock());
+        validator.RuleFor(x => x.Value).NotInTheFuture(_Clock());
 
-        var result = validator.TestValidate(new Model(Resolve(when)));
+        var result = validator.TestValidate(new Model(_Resolve(when)));
 
         if (expectError)
         {
@@ -133,10 +133,10 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
     public void nullable_rules_pass_when_value_is_null()
     {
         var validator = new InlineValidator<NullableModel>();
-        validator.RuleFor(x => x.Value).InThePast(Clock());
-        validator.RuleFor(x => x.Value).InTheFuture(Clock());
-        validator.RuleFor(x => x.Value).NotInThePast(Clock());
-        validator.RuleFor(x => x.Value).NotInTheFuture(Clock());
+        validator.RuleFor(x => x.Value).InThePast(_Clock());
+        validator.RuleFor(x => x.Value).InTheFuture(_Clock());
+        validator.RuleFor(x => x.Value).NotInThePast(_Clock());
+        validator.RuleFor(x => x.Value).NotInTheFuture(_Clock());
 
         var result = validator.TestValidate(new NullableModel(Value: null));
 
@@ -147,7 +147,7 @@ public sealed class DateTimeValidatorsDateTimeOffsetTests
     public void nullable_in_the_past_validates_present_value()
     {
         var validator = new InlineValidator<NullableModel>();
-        validator.RuleFor(x => x.Value).InThePast(Clock());
+        validator.RuleFor(x => x.Value).InThePast(_Clock());
 
         var result = validator.TestValidate(new NullableModel(_Future));
 

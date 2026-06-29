@@ -9,7 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-// ReSharper disable AccessToDisposedClosure
 public sealed class AzureServiceBusConsumerClientTests
 {
     private readonly ILogger _logger = Substitute.For<ILogger>();
