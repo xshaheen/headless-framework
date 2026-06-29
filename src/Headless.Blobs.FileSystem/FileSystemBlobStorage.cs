@@ -288,6 +288,12 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         var (_, _, sourcePath) = _ResolveLocation(source);
         var (_, _, destinationPath) = _ResolveLocation(destination);
 
+        if (string.Equals(sourcePath, destinationPath, StringComparison.Ordinal))
+        {
+            // A resolved self-copy is a no-op: opening destinationPath with FileMode.Create would truncate the source.
+            return ValueTask.FromResult(true);
+        }
+
         _logger.LogCopyingFile(sourcePath, destinationPath);
 
         if (!File.Exists(sourcePath))
@@ -327,6 +333,15 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
+        var (_, _, sourceFullPath) = _ResolveLocation(source);
+        var (_, _, destinationFullPath) = _ResolveLocation(destination);
+
+        if (string.Equals(sourceFullPath, destinationFullPath, StringComparison.Ordinal))
+        {
+            // A resolved self-move is a no-op: copy-then-delete on the same path would delete the blob.
+            return true;
+        }
+
         // Non-atomic copy-then-delete; the sidecar moves with the blob (KTD6/KTD7).
         if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
         {

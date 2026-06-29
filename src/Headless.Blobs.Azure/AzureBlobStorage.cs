@@ -346,6 +346,15 @@ public sealed class AzureBlobStorage(
         var (oldContainer, oldKey) = BlobLocationResolver.Resolve(source, normalizer);
         var (newContainer, newKey) = BlobLocationResolver.Resolve(destination, normalizer);
 
+        if (
+            string.Equals(oldContainer, newContainer, StringComparison.Ordinal)
+            && string.Equals(oldKey, newKey, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-copy is a no-op; copying a blob onto itself has nothing to do.
+            return true;
+        }
+
         var oldBlobClient = blobServiceClient.GetBlobContainerClient(oldContainer).GetBlobClient(oldKey);
         var newBlobClient = blobServiceClient.GetBlobContainerClient(newContainer).GetBlobClient(newKey);
 
@@ -375,6 +384,18 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
+        var (sourceContainer, sourceKey) = BlobLocationResolver.Resolve(source, normalizer);
+        var (destinationContainer, destinationKey) = BlobLocationResolver.Resolve(destination, normalizer);
+
+        if (
+            string.Equals(sourceContainer, destinationContainer, StringComparison.Ordinal)
+            && string.Equals(sourceKey, destinationKey, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-move is a no-op: a self-copy then DeleteAsync(source) would delete the blob.
+            return true;
+        }
+
         // Non-atomic copy-then-delete with best-effort destination rollback if deleting the source fails.
         if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
         {

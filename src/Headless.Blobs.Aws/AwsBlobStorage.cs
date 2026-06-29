@@ -420,6 +420,15 @@ public sealed class AwsBlobStorage(
         var (oldBucket, oldKey) = BlobLocationResolver.Resolve(source, normalizer);
         var (newBucket, newKey) = BlobLocationResolver.Resolve(destination, normalizer);
 
+        if (
+            string.Equals(oldBucket, newBucket, StringComparison.Ordinal)
+            && string.Equals(oldKey, newKey, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-copy is a no-op (S3 rejects an identical CopyObject); there is nothing to copy.
+            return true;
+        }
+
         var request = new CopyObjectRequest
         {
             CannedACL = _options.CannedAcl,
@@ -450,6 +459,18 @@ public sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
+        var (sourceBucket, sourceKey) = BlobLocationResolver.Resolve(source, normalizer);
+        var (destinationBucket, destinationKey) = BlobLocationResolver.Resolve(destination, normalizer);
+
+        if (
+            string.Equals(sourceBucket, destinationBucket, StringComparison.Ordinal)
+            && string.Equals(sourceKey, destinationKey, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-move is a no-op: copy-then-delete on the same key would delete the blob.
+            return true;
+        }
+
         // Non-atomic copy-then-delete with best-effort destination rollback if the source delete fails.
         if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
         {

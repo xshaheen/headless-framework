@@ -223,6 +223,16 @@ public sealed class ContractTypesTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
+    [Fact]
+    public void should_throw_when_query_prefix_is_sidecar_suffix()
+    {
+        // Act
+        var act = () => new BlobQuery("bucket", "report.hlmeta");
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]

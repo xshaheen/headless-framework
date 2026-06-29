@@ -428,6 +428,15 @@ public sealed class RedisBlobStorage : IBlobStorage
         var src = _Resolve(source);
         var dst = _Resolve(destination);
 
+        if (
+            string.Equals(src.BlobsHash, dst.BlobsHash, StringComparison.Ordinal)
+            && string.Equals(src.Key, dst.Key, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-move is a no-op: the Lua HSET-then-HDEL on the same field would delete the blob.
+            return true;
+        }
+
         _logger.LogMovingPath(src.Key, dst.Key);
 
         try
@@ -466,6 +475,15 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         var src = _Resolve(source);
         var dst = _Resolve(destination);
+
+        if (
+            string.Equals(src.BlobsHash, dst.BlobsHash, StringComparison.Ordinal)
+            && string.Equals(src.Key, dst.Key, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-copy is a no-op; copying a blob onto itself has nothing to do.
+            return true;
+        }
 
         _logger.LogCopyingPath(src.Key, dst.Key);
 

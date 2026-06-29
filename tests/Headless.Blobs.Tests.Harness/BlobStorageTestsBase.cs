@@ -424,9 +424,22 @@ public abstract class BlobStorageTestsBase : TestBase
 
         await ResetAsync(storage);
 
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["k"] = "v" };
+
         await storage.UploadContentAsync(_Loc("keep", "a.txt"), "a", AbortToken);
-        await storage.UploadContentAsync(_Loc("drop", "b.txt"), "b", AbortToken);
-        await storage.UploadContentAsync(_Loc("drop", "nested", "c.txt"), "c", AbortToken);
+
+        // Upload the to-be-deleted blobs WITH metadata so the filesystem-like backends create a .hlmeta sidecar next
+        // to each. DeleteAllAsync must count the two blobs (not the blobs plus their sidecars) and remove the sidecars
+        // with them; GetBlobsListAsync must then return only the surviving blob (sidecars are never listed).
+        await using (var dropB = new MemoryStream("b"u8.ToArray()))
+        {
+            await storage.UploadAsync(_Loc("drop", "b.txt"), dropB, metadata, AbortToken);
+        }
+
+        await using (var dropC = new MemoryStream("c"u8.ToArray()))
+        {
+            await storage.UploadAsync(_Loc("drop", "nested", "c.txt"), dropC, metadata, AbortToken);
+        }
 
         (await storage.DeleteAllAsync(new BlobQuery(ContainerName, "drop/"), AbortToken)).Should().Be(2);
 
@@ -668,6 +681,19 @@ public abstract class BlobStorageTestsBase : TestBase
         info.Should().NotBeNull();
         info.Metadata.Should().NotBeNull();
         info.Metadata!["k"].Should().Be("v");
+
+        // A self-move / self-copy (source resolves to the same backend address as destination) must be a no-op that
+        // preserves the blob, NOT a copy-then-delete that destroys it.
+        (await storage.MoveAsync(destination, destination, AbortToken))
+            .Should()
+            .BeTrue();
+        (await storage.ExistsAsync(destination, AbortToken)).Should().BeTrue("a self-move must not delete the blob");
+        (await storage.GetBlobContentAsync(destination, AbortToken)).Should().Be("payload");
+
+        (await storage.CopyAsync(destination, destination, AbortToken)).Should().BeTrue();
+        (await storage.GetBlobContentAsync(destination, AbortToken))
+            .Should()
+            .Be("payload", "a self-copy must not truncate the blob");
     }
 
     #endregion

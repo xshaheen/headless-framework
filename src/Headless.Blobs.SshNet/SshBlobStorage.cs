@@ -291,6 +291,12 @@ public sealed class SshBlobStorage(
         var (sourcePath, sourceSidecar) = _ResolvePaths(source);
         var (destPath, destSidecar) = _ResolvePaths(destination);
 
+        if (string.Equals(sourcePath, destPath, StringComparison.Ordinal))
+        {
+            // A resolved self-copy is a no-op: opening destPath with FileMode.Create would truncate the source.
+            return true;
+        }
+
         logger.LogCopyingBlob(sourcePath, destPath);
 
         var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
@@ -350,6 +356,14 @@ public sealed class SshBlobStorage(
         // succeeds, so a failed move never destroys a pre-existing destination ahead of time. If deleting the source
         // fails after a successful copy, a best-effort rollback deletes the destination copy to preserve the original.
         // The metadata sidecar moves with the blob (CopyAsync copies it, DeleteAsync removes the source's).
+        if (
+            string.Equals(_ResolvePaths(source).BlobPath, _ResolvePaths(destination).BlobPath, StringComparison.Ordinal)
+        )
+        {
+            // A resolved self-move is a no-op: copy-then-delete on the same path would zero then delete the blob.
+            return true;
+        }
+
         if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
         {
             return false;

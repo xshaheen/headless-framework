@@ -33,7 +33,8 @@ public sealed record BlobQuery
     /// <param name="continuationToken">Opaque token from a previous <see cref="BlobPage"/>, or <see langword="null"/> to start from the first page.</param>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="container"/> is empty/whitespace, or when <paramref name="container"/> or a non-empty
-    /// <paramref name="prefix"/> contains a path-traversal sequence, is absolute, or contains control characters.
+    /// <paramref name="prefix"/> contains a path-traversal sequence, is absolute, or contains control characters, or
+    /// when <paramref name="prefix"/> contains a segment ending in the reserved sidecar-metadata suffix.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="pageSize"/> is not positive.</exception>
     public BlobQuery(string container, string? prefix = null, int pageSize = 100, string? continuationToken = null)
@@ -44,6 +45,16 @@ public sealed record BlobQuery
         if (!string.IsNullOrEmpty(prefix))
         {
             PathValidation.ValidatePathSegment(prefix);
+
+            // Reject a sidecar-suffix prefix at construction, mirroring BlobLocation, so rejection is symmetric across
+            // the two addressing types (the resolve seam re-checks it too, but failing here is clearer).
+            if (BlobStorageHelpers.HasSidecarSegment(prefix))
+            {
+                throw new ArgumentException(
+                    $"Blob query prefix segments ending in the reserved sidecar suffix '{BlobStorageHelpers.SidecarSuffix}' are not allowed.",
+                    nameof(prefix)
+                );
+            }
         }
 
         Argument.IsPositive(pageSize);
