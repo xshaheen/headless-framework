@@ -342,6 +342,13 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             return true;
         }
 
+        if (File.Exists(destinationFullPath))
+        {
+            // Reject an occupied destination: Move never overwrites. This eliminates the rollback-data-loss class —
+            // the compensating delete below can only ever remove the copy this Move just created, never prior content.
+            return false;
+        }
+
         // Non-atomic copy-then-delete; the sidecar moves with the blob (KTD6/KTD7).
         if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
         {
@@ -356,23 +363,26 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         {
             _DeleteBlobAndSidecar(sourcePath);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception e)
         {
             _logger.LogFailedToDeleteOriginal(e, sourcePath);
 
-            // Best-effort rollback so the original is preserved: drop the destination copy.
+            // The copy succeeded but deleting the source failed; roll back the destination copy so the original is
+            // preserved, then propagate. Harmonized with the object-store providers: any source-delete failure (incl.
+            // cancellation) rolls back and rethrows. Safe by construction — reject-occupied guarantees the destination
+            // is the copy this Move just created.
             var (_, _, destinationPath) = _ResolveLocation(destination);
 
             try
             {
                 _DeleteBlobAndSidecar(destinationPath);
             }
-            catch (Exception rollbackException) when (rollbackException is IOException or UnauthorizedAccessException)
+            catch (Exception rollbackException)
             {
                 _logger.LogFailedToRollbackDestination(rollbackException, destinationPath);
             }
 
-            return false;
+            throw;
         }
 
         return true;

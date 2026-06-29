@@ -218,11 +218,12 @@ public abstract class BlobStorageTestsBase : TestBase
         (await storage.GetBlobContentAsync(_Loc("archive", "new.txt"), AbortToken)).Should().Be("test");
         (await storage.GetBlobsListAsync(Container)).Should().ContainSingle();
 
-        // Move & overwrite the destination
+        // Move rejects an occupied destination (never overwrites): both blobs are left intact.
         await storage.UploadContentAsync(_Loc("test2.txt"), "test2", AbortToken);
-        (await storage.MoveAsync(_Loc("test2.txt"), _Loc("archive", "new.txt"), AbortToken)).Should().BeTrue();
-        (await storage.GetBlobContentAsync(_Loc("archive", "new.txt"), AbortToken)).Should().Be("test2");
-        (await storage.GetBlobsListAsync(Container)).Should().ContainSingle();
+        (await storage.MoveAsync(_Loc("test2.txt"), _Loc("archive", "new.txt"), AbortToken)).Should().BeFalse();
+        (await storage.GetBlobContentAsync(_Loc("archive", "new.txt"), AbortToken)).Should().Be("test");
+        (await storage.GetBlobContentAsync(_Loc("test2.txt"), AbortToken)).Should().Be("test2");
+        (await storage.GetBlobsListAsync(Container)).Should().HaveCount(2);
     }
 
     public virtual async Task can_round_trip_seekable_stream()

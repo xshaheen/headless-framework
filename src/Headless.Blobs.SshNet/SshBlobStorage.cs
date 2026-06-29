@@ -351,17 +351,25 @@ public sealed class SshBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        // Move is a non-atomic copy-then-delete (folds L4). Unlike the old rename, the destination is NOT pre-deleted:
-        // the copy overwrites an existing destination in place, and the source is removed only after the copy
-        // succeeds, so a failed move never destroys a pre-existing destination ahead of time. If deleting the source
-        // fails after a successful copy, a best-effort rollback deletes the destination copy to preserve the original.
-        // The metadata sidecar moves with the blob (CopyAsync copies it, DeleteAsync removes the source's).
+        // Move is a non-atomic copy-then-delete (folds L4) that rejects an occupied destination: an existing
+        // destination is never overwritten (Move returns false), and the source is removed only after the copy
+        // succeeds. If deleting the source fails after a successful copy, a best-effort rollback deletes the
+        // destination copy to preserve the original — safe because reject-occupied guarantees that copy is the one
+        // this Move just created. The metadata sidecar moves with the blob (CopyAsync copies it, DeleteAsync removes
+        // the source's).
         if (
             string.Equals(_ResolvePaths(source).BlobPath, _ResolvePaths(destination).BlobPath, StringComparison.Ordinal)
         )
         {
             // A resolved self-move is a no-op: copy-then-delete on the same path would zero then delete the blob.
             return true;
+        }
+
+        if (await ExistsAsync(destination, cancellationToken).ConfigureAwait(false))
+        {
+            // Reject an occupied destination: Move never overwrites. Keeps the rollback below safe by construction —
+            // the compensating delete can only ever remove the copy this Move just created, never prior content.
+            return false;
         }
 
         if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
@@ -375,7 +383,7 @@ public sealed class SshBlobStorage(
 
             return true;
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e)
         {
             logger.LogMoveRollback(e, source.ToString(), destination.ToString());
 

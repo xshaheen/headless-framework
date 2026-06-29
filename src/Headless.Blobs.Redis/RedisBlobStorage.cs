@@ -48,14 +48,16 @@ public sealed class RedisBlobStorage : IBlobStorage
     // Server-page hint for the internal full-scan loops (delete-all). The public ListAsync uses BlobQuery.PageSize.
     private const int _ScanBatchSize = 1000;
 
-    // Lua script for atomic move: copies blob+info then deletes source.
+    // Lua script for atomic move: rejects an occupied destination, else copies blob+info then deletes source.
     // KEYS[1] = source blob hash, KEYS[2] = source info hash
     // KEYS[3] = dest blob hash, KEYS[4] = dest info hash
     // ARGV[1] = source field name, ARGV[2] = dest field name
+    // Returns 1 on success, 0 when the source does not exist, -1 when the destination is occupied (never overwrites).
     private const string _MoveScript = """
         local blobData = redis.call('HGET', KEYS[1], ARGV[1])
         local infoData = redis.call('HGET', KEYS[2], ARGV[1])
         if not blobData then return 0 end
+        if redis.call('HEXISTS', KEYS[3], ARGV[2]) == 1 then return -1 end
         redis.call('HSET', KEYS[3], ARGV[2], blobData)
         redis.call('HSET', KEYS[4], ARGV[2], infoData)
         redis.call('HDEL', KEYS[1], ARGV[1])
@@ -442,7 +444,9 @@ public sealed class RedisBlobStorage : IBlobStorage
         try
         {
             // Redis performs the copy-then-delete atomically inside one Lua script, which is strictly stronger than
-            // the contract's "non-atomic, best-effort rollback" promise. Returns 0 when the source does not exist.
+            // the contract's "non-atomic, best-effort rollback" promise. The script rejects an occupied destination
+            // (never overwrites): it returns 1 on success, 0 when the source is missing, -1 when the destination is
+            // occupied — both 0 and -1 surface as false.
             var result = await _retryPipeline
                 .ExecuteAsync(
                     async _ =>

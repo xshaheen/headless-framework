@@ -396,6 +396,17 @@ public sealed class AzureBlobStorage(
             return true;
         }
 
+        var destinationClient = blobServiceClient
+            .GetBlobContainerClient(destinationContainer)
+            .GetBlobClient(destinationKey);
+
+        if (await destinationClient.ExistsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            // Reject an occupied destination: Move never overwrites. Keeps the rollback below safe by construction —
+            // the compensating delete can only ever remove the copy this Move just created, never prior content.
+            return false;
+        }
+
         // Non-atomic copy-then-delete with best-effort destination rollback if deleting the source fails.
         if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
         {

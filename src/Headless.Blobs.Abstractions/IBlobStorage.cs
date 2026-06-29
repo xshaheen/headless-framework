@@ -110,11 +110,18 @@ public interface IBlobStorage : IAsyncDisposable
     /// <param name="source">The blob to move.</param>
     /// <param name="destination">The target location.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns><see langword="true"/> if the blob was moved; <see langword="false"/> if <paramref name="source"/> was not found.</returns>
+    /// <returns>
+    /// <see langword="true"/> if the blob was moved; <see langword="false"/> if <paramref name="source"/> was not
+    /// found or <paramref name="destination"/> is already occupied.
+    /// </returns>
     /// <remarks>
-    /// Move is a non-atomic copy-then-delete. If deleting the source fails after a successful copy, the implementation
-    /// makes a best-effort attempt to roll back by deleting the destination copy so the original is preserved. On
-    /// filesystem-like providers the metadata sidecar moves with the blob.
+    /// Move never overwrites: when <paramref name="destination"/> already exists the move is rejected and returns
+    /// <see langword="false"/> without touching either blob (delete-then-move, or <see cref="CopyAsync"/> for
+    /// overwrite semantics). Move is otherwise a non-atomic copy-then-delete; if deleting the source fails after a
+    /// successful copy, the implementation makes a best-effort attempt to roll back by deleting the destination copy
+    /// so the original is preserved — safe because reject-occupied guarantees that copy is the one this move created.
+    /// A resolved self-move (source and destination resolving to the same backend address) is a no-op returning
+    /// <see langword="true"/>. On filesystem-like providers the metadata sidecar moves with the blob.
     /// </remarks>
     ValueTask<bool> MoveAsync(
         BlobLocation source,

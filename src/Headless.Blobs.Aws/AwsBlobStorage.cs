@@ -471,6 +471,13 @@ public sealed class AwsBlobStorage(
             return true;
         }
 
+        if (await _ExistsAsync(destinationBucket, destinationKey, cancellationToken).ConfigureAwait(false))
+        {
+            // Reject an occupied destination: Move never overwrites. Keeps the rollback below safe by construction —
+            // the compensating delete can only ever remove the copy this Move just created, never prior content.
+            return false;
+        }
+
         // Non-atomic copy-then-delete with best-effort destination rollback if the source delete fails.
         if (!await CopyAsync(source, destination, cancellationToken).ConfigureAwait(false))
         {
