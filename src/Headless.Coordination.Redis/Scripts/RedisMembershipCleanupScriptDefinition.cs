@@ -76,9 +76,9 @@ internal sealed class RedisMembershipCleanupScriptDefinition : RedisScriptDefini
 /// <summary>Parameters for <see cref="RedisMembershipCleanupScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
 internal readonly record struct CleanupParams(
-    RedisKey KnownKey,
-    RedisKey LiveKey,
-    string GenerationFieldPrefix,
-    long PruneMs
+    RedisKey knownKey,
+    RedisKey liveKey,
+    string generationFieldPrefix,
+    long pruneMs
 );
 #pragma warning restore IDE1006

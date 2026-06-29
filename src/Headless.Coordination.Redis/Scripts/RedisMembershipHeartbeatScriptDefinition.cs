@@ -42,14 +42,14 @@ internal sealed class RedisMembershipHeartbeatScriptDefinition : RedisScriptDefi
 /// <summary>Parameters for <see cref="RedisMembershipHeartbeatScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
 internal readonly record struct HeartbeatParams(
-    RedisKey LiveKey,
-    RedisKey KnownKey,
-    RedisKey GenKey,
-    string GenerationField,
-    string Member,
-    long Incarnation,
-    long HardMs,
-    string Role,
-    string Metadata
+    RedisKey liveKey,
+    RedisKey knownKey,
+    RedisKey genKey,
+    string generationField,
+    string member,
+    long incarnation,
+    long hardMs,
+    string role,
+    string metadata
 );
 #pragma warning restore IDE1006

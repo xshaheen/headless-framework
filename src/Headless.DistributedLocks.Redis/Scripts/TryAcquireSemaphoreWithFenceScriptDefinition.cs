@@ -42,10 +42,10 @@ internal sealed class TryAcquireSemaphoreWithFenceScriptDefinition : RedisScript
 /// <summary>Parameters for <see cref="TryAcquireSemaphoreWithFenceScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
 internal readonly record struct SemaphoreAcquireParams(
-    RedisKey HoldersKey,
-    RedisKey FenceKey,
-    string LeaseId,
-    int MaxCount,
-    long Expires
+    RedisKey holdersKey,
+    RedisKey fenceKey,
+    string leaseId,
+    int maxCount,
+    long expires
 );
 #pragma warning restore IDE1006

@@ -26,5 +26,5 @@ internal sealed class RemoveIfEqualScriptDefinition : RedisScriptDefinition
 #pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
 /// <summary>Parameters for <see cref="RemoveIfEqualScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
-internal readonly record struct RemoveIfEqualParams(RedisKey Key, string? Expected);
+internal readonly record struct RemoveIfEqualParams(RedisKey key, string? expected);
 #pragma warning restore IDE1006

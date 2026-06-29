@@ -33,5 +33,5 @@ internal sealed class ReplaceIfEqualScriptDefinition : RedisScriptDefinition
 #pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
 /// <summary>Parameters for <see cref="ReplaceIfEqualScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
-internal readonly record struct ReplaceIfEqualParams(RedisKey Key, string? Value, string Expected, RedisValue Expires);
+internal readonly record struct ReplaceIfEqualParams(RedisKey key, string? value, string expected, RedisValue expires);
 #pragma warning restore IDE1006

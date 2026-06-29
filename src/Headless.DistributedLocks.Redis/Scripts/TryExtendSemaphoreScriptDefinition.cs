@@ -55,5 +55,5 @@ internal sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition
 /// <see cref="ValidateSemaphoreScriptDefinition"/>, <see cref="ReleaseSemaphoreScriptDefinition"/>).
 /// </summary>
 [StructLayout(LayoutKind.Auto)]
-internal readonly record struct SemaphoreSlotParams(RedisKey HoldersKey, string LeaseId, RedisValue Expires);
+internal readonly record struct SemaphoreSlotParams(RedisKey holdersKey, string leaseId, RedisValue expires);
 #pragma warning restore IDE1006

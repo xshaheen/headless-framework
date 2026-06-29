@@ -102,16 +102,9 @@ public sealed class DefaultSettingErrorsDescriptor : ISettingErrorsDescriptor
     /// <inheritdoc/>
     public ErrorDescriptor DecryptionFailed(string settingName)
     {
-        var description = string.Format(
-            CultureInfo.InvariantCulture,
-            Messages.setting_decryption_failed,
-            settingName
-        );
+        var description = string.Format(CultureInfo.InvariantCulture, Messages.setting_decryption_failed, settingName);
 
-        var error = new ErrorDescriptor("setting:decryption_failed", description).WithParam(
-            "settingName",
-            settingName
-        );
+        var error = new ErrorDescriptor("setting:decryption_failed", description).WithParam("settingName", settingName);
 
         return error;
     }
