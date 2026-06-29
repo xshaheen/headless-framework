@@ -57,7 +57,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     [Fact]
     public async Task should_persist_and_retrieve_keys_with_real_storage()
     {
-        // Arrange
+        // given
         await using var storage = _CreateStorage();
         var repository = new BlobStorageDataProtectionXmlRepository(storage, LoggerFactory);
 
@@ -69,11 +69,11 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
             new XElement("encryptedKey", Faker.Random.AlphaNumeric(64))
         );
 
-        // Act
+        // when
         repository.StoreElement(element, $"key-{keyId}");
         var retrievedElements = repository.GetAllElements();
 
-        // Assert
+        // then
         retrievedElements.Should().NotBeEmpty();
         var retrieved = retrievedElements.FirstOrDefault(e => e.Attribute("id")?.Value == keyId);
         retrieved.Should().NotBeNull();
@@ -83,7 +83,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     [Fact]
     public async Task should_persist_multiple_keys()
     {
-        // Arrange
+        // given
         await using var storage = _CreateStorage();
         var repository = new BlobStorageDataProtectionXmlRepository(storage, LoggerFactory);
 
@@ -101,7 +101,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
             })
             .ToList();
 
-        // Act
+        // when
         foreach (var key in keys)
         {
             repository.StoreElement(key, $"multi-key-{key.Attribute("id")!.Value}");
@@ -109,7 +109,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
 
         var retrievedElements = repository.GetAllElements();
 
-        // Assert
+        // then
         foreach (var key in keys)
         {
             var keyId = key.Attribute("id")!.Value;
@@ -122,7 +122,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     [Fact]
     public async Task should_preserve_xml_structure()
     {
-        // Arrange
+        // given
         await using var storage = _CreateStorage();
         var repository = new BlobStorageDataProtectionXmlRepository(storage, LoggerFactory);
 
@@ -152,11 +152,11 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
             new XElement("masterKey", Convert.ToBase64String(Faker.Random.Bytes(32)))
         );
 
-        // Act
+        // when
         repository.StoreElement(complexElement, $"complex-key-{keyId}");
         var retrievedElements = repository.GetAllElements();
 
-        // Assert
+        // then
         var retrieved = retrievedElements.FirstOrDefault(e => e.Attribute("id")?.Value == keyId);
         retrieved.Should().NotBeNull();
 
@@ -177,7 +177,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
     [Fact]
     public async Task should_handle_concurrent_operations()
     {
-        // Arrange
+        // given
         await using var storage = _CreateStorage();
         var repository = new BlobStorageDataProtectionXmlRepository(storage, LoggerFactory);
         const int keyCount = 10;
@@ -196,7 +196,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
             })
             .ToList();
 
-        // Act - concurrent store operations
+        // when - concurrent store operations
         Parallel.ForEach(
             keys,
             new ParallelOptions { MaxDegreeOfParallelism = 5 },
@@ -205,7 +205,7 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
 
         var retrievedElements = repository.GetAllElements();
 
-        // Assert
+        // then
         foreach (var key in keys)
         {
             var keyId = key.Attribute("id")!.Value;

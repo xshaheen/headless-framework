@@ -33,10 +33,10 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
 
     protected override async ValueTask<IReadOnlyList<string>> ResolveSubscriptionTopicsAsync(
         IConsumerClient consumer,
-        IReadOnlyList<string> topics
+        IReadOnlyList<string> messageNames
     )
     {
-        var resolved = await consumer.FetchMessageNamesAsync(topics);
+        var resolved = await consumer.FetchMessageNamesAsync(messageNames);
         return resolved.ToList();
     }
 

@@ -121,10 +121,7 @@ internal sealed class NatsConsumerClient(
     // The JetStream stream config and the consumer FilterSubjects must cover exactly the same subject
     // set, so both derive from one method: the base subject plus, for sharded names, the 'base.>'
     // wildcard, de-duplicated. (Verified output-equivalent to the prior two near-duplicate methods.)
-    private static IReadOnlyList<string> _BuildSubjects(
-        IEnumerable<string> messageNames,
-        ISet<string> shardedMessageNames
-    )
+    private static List<string> _BuildSubjects(IEnumerable<string> messageNames, ISet<string> shardedMessageNames)
     {
         Argument.IsNotNull(messageNames);
         Argument.IsNotNull(shardedMessageNames);
@@ -688,7 +685,7 @@ internal sealed class NatsConsumerClient(
         lock (_receiveLock)
         {
             receiveTokenState.RefCount--;
-            shouldDispose = receiveTokenState.RefCount == 0 && receiveTokenState.Retired;
+            shouldDispose = receiveTokenState is { RefCount: 0, Retired: true };
         }
 
         if (shouldDispose)

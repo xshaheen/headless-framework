@@ -624,7 +624,9 @@ internal sealed class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult(_ClaimMessagesOfNeedRetry(PublishedMessages, cancellationToken));
+        return ValueTask.FromResult<IEnumerable<MediumMessage>>(
+            _ClaimMessagesOfNeedRetry(PublishedMessages, cancellationToken)
+        );
     }
 
     public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
@@ -639,7 +641,9 @@ internal sealed class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult(_ClaimMessagesOfNeedRetry(ReceivedMessages, cancellationToken));
+        return ValueTask.FromResult<IEnumerable<MediumMessage>>(
+            _ClaimMessagesOfNeedRetry(ReceivedMessages, cancellationToken)
+        );
     }
 
     public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
@@ -650,7 +654,7 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(_ReclaimDeadOwners(ReceivedMessages, deadOwners, cancellationToken));
     }
 
-    private IEnumerable<MediumMessage> _ClaimMessagesOfNeedRetry(
+    private List<MediumMessage> _ClaimMessagesOfNeedRetry(
         ConcurrentDictionary<Guid, MemoryMessage> source,
         CancellationToken cancellationToken
     )

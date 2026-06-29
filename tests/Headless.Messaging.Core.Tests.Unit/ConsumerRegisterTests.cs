@@ -115,12 +115,12 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, factorySub);
 
-        // Act — ReStartAsync should propagate the exception from ExecuteAsync.
+        // when — ReStartAsync should propagate the exception from ExecuteAsync.
         var act = async () => await register.ReStartAsync(force: true, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
 
-        // Assert — the CTS created inside ReStartAsync must have been disposed.
+        // then — the CTS created inside ReStartAsync must have been disposed.
         var ctsField = typeof(ConsumerRegister).GetField(
             "_stoppingCts",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly

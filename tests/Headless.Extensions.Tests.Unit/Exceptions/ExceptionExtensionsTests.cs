@@ -55,7 +55,7 @@ public sealed partial class ExceptionExtensionsTests
         var result = a.GetInnermostException();
 
         // then it terminates and returns one of the chain members rather than hanging
-        new Exception[] { a, b }
+        new[] { a, b }
             .Should()
             .Contain(result!);
     }

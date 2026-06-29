@@ -79,7 +79,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     [Fact]
     public async Task should_restart_consumers_for_runtime_subscription_added_after_consumer_register_is_ready()
     {
-        var blocker = new BlockingProcessingServer();
+        await using var blocker = new BlockingProcessingServer();
         await using var provider = _CreateProvider(blocker);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();

@@ -42,7 +42,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task pause_async_should_complete_without_throwing()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
 
         // when
         var act = async () => await client.PauseAsync();
@@ -55,7 +55,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task resume_async_should_complete_without_throwing()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
 
         // when
         var act = async () => await client.ResumeAsync();
@@ -68,7 +68,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task pause_async_is_idempotent_when_called_multiple_times()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
 
         // when
         var act = async () =>
@@ -86,7 +86,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task resume_async_is_idempotent_when_called_multiple_times()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
 
         // when
         var act = async () =>
@@ -104,7 +104,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task pause_async_accepts_cancellation_token()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
         using var cts = new CancellationTokenSource();
 
         // when
@@ -118,7 +118,7 @@ public sealed class ConsumerClientPauseResumeTests
     public async Task resume_async_accepts_cancellation_token()
     {
         // given
-        IConsumerClient client = new MinimalConsumerClient();
+        await using IConsumerClient client = new MinimalConsumerClient();
         using var cts = new CancellationTokenSource();
 
         // when

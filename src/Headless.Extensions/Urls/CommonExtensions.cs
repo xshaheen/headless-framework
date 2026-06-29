@@ -68,7 +68,7 @@ public static class CommonExtensions
         return i == -1 ? [s] : [s[..i], s[(i + separator.Length)..]];
     }
 
-    private static IEnumerable<(string Key, object? Value)> _StringToKV(string s)
+    private static List<(string Key, object? Value)> _StringToKV(string s)
     {
         if (string.IsNullOrEmpty(s))
         {

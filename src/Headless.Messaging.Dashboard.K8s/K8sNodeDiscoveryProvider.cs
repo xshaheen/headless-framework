@@ -21,13 +21,13 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     private const string _TagPrefix = "headless.messaging";
     private readonly ILogger<K8sNodeDiscoveryProvider> _logger = logger.CreateLogger<K8sNodeDiscoveryProvider>();
 
-    public async Task<Node?> GetNode(string svcName, string? ns = null, CancellationToken cancellationToken = default)
+    public async Task<Node?> GetNode(string nodeName, string? ns = null, CancellationToken cancellationToken = default)
     {
         try
         {
             using var client = new Kubernetes(options.K8SClientConfig);
             var service = await client
-                .CoreV1.ReadNamespacedServiceAsync(svcName, ns, cancellationToken: cancellationToken)
+                .CoreV1.ReadNamespacedServiceAsync(nodeName, ns, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             return new Node

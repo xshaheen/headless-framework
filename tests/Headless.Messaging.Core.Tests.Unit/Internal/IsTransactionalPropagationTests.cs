@@ -38,7 +38,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var transport = new RecordingTransport();
+        await using var transport = new RecordingTransport();
         var options = new MessagingOptions();
         var registry = _CreateRegistry();
         var optionsAccessor = Options.Create(options);
@@ -71,7 +71,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var transaction = new TestDbTransaction();
+        await using var transaction = new TestDbTransaction();
         var stack = new CommitScopeStack();
         var scope = new CommitScopeFactory(stack).Begin(
             new EmptyServiceProvider(),
