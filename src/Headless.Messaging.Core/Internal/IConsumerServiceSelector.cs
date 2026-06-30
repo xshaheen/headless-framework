@@ -219,13 +219,15 @@ public sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) : 
         var cacheKey = _CreateWildcardCacheKey(executeDescriptor);
         if (!_cacheList.TryGetValue(cacheKey, out var tmpList))
         {
-            tmpList = executeDescriptor
-                .Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
+            tmpList =
+            [
+                .. executeDescriptor.Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
                 {
                     Name = Helper.WildcardToRegex(x.MessageName),
                     Descriptor = x,
-                })
-                .ToList();
+                }),
+            ];
+
             _cacheList.TryAdd(cacheKey, tmpList);
         }
 

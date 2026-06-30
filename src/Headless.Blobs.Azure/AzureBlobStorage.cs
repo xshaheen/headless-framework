@@ -144,7 +144,7 @@ public sealed class AzureBlobStorage(
         // Materialize to an indexed list so each result lands in the slot matching its input position.
         // Parallel.ForEachAsync does not run bodies in enumeration order, so deriving the index from execution
         // order (e.g. via Interlocked) would misalign results with their inputs whenever parallelism > 1.
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? blobs.ToList();
+        var items = blobs.AsIReadOnlyList();
         var results = new Result<Exception>[items.Count];
 
         var options = new ParallelOptions

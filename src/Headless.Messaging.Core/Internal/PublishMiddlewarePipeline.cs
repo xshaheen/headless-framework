@@ -143,12 +143,14 @@ internal sealed class PublishMiddlewarePipeline(
             && descriptorRegistry.TryGetPublishDescriptors(context.MessageType, out var descriptors)
         )
         {
-            return descriptors
-                .Select(descriptor => _ResolveDescriptor(provider, descriptor))
-                .Where(static middleware => middleware is not null)
-                .Cast<object>()
-                .Concat(_GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Publish))
-                .ToArray();
+            return
+            [
+                .. descriptors
+                    .Select(descriptor => _ResolveDescriptor(provider, descriptor))
+                    .Where(static middleware => middleware is not null)
+                    .Cast<object>(),
+                .. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Publish),
+            ];
         }
 
         return directMiddleware;
@@ -163,7 +165,7 @@ internal sealed class PublishMiddlewarePipeline(
             .Where(static middleware => middleware is not null)
             .Cast<object>();
 
-        return busMiddleware.Concat(typedMiddleware).ToArray();
+        return [.. busMiddleware, .. typedMiddleware];
     }
 
     private IEnumerable<object> _GetUntrackedDirectMiddleware(

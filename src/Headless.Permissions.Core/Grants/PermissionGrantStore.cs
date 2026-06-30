@@ -413,7 +413,7 @@ public sealed class PermissionGrantStore(
                 tenantId
             ));
 
-        var permissionGrantRecords = newDenials as PermissionGrantRecord[] ?? [.. newDenials];
+        var permissionGrantRecords = newDenials.AsArray();
 
         if (permissionGrantRecords.Length > 0)
         {

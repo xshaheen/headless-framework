@@ -29,7 +29,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private ImmutableArray<string> _queueUrls = ImmutableArray<string>.Empty;
+    private ImmutableArray<string> _queueUrls = [];
     private int _disposed;
     private string _queueUrl = string.Empty;
 

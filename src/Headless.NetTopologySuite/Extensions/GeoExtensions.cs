@@ -846,7 +846,7 @@ public static class GeoExtensions
         return g switch
         {
             Point or LineString => [g],
-            GeometryCollection c => c.Geometries.SelectMany(x => x.GetSimpleGeometryOrEmpty()).ToArray(),
+            GeometryCollection c => [.. c.Geometries.SelectMany(x => x.GetSimpleGeometryOrEmpty())],
             _ => [],
         };
     }

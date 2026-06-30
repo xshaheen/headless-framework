@@ -683,7 +683,7 @@ public sealed partial class HybridCache
         Argument.IsNotNull(value);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var items = value as T[] ?? [.. value];
+        var items = value.AsArray();
         var addedCount = await l2Cache.SetAddAsync(key, items, expiration, cancellationToken).ConfigureAwait(false);
 
         if (addedCount == items.Length)

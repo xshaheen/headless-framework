@@ -69,7 +69,7 @@ internal sealed class NatsConsumerClient(
     {
         // Materialize once: the source is consumed by GroupBy and the return value, so a lazy
         // input would otherwise be enumerated twice.
-        var names = messageNames as IReadOnlyList<string> ?? messageNames.ToList();
+        var names = messageNames.AsIReadOnlyList();
 
         if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {

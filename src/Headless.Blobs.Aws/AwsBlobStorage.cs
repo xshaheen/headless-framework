@@ -178,7 +178,7 @@ public sealed class AwsBlobStorage(
 
         // Index results by enumeration position, not the order parallel bodies start, so results[i] always
         // describes items[i] — honoring the "one Result per input blob, in original order" contract.
-        var items = blobs as IReadOnlyList<BlobUploadRequest> ?? [.. blobs];
+        var items = blobs.AsIReadOnlyList();
         var results = new Result<Exception>[items.Count];
 
         var options = new ParallelOptions

@@ -45,9 +45,9 @@ public static partial class EnumerableExtensions
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static List<T> AsIList<T>(this IEnumerable<T> source)
+    public static IList<T> AsIList<T>(this IEnumerable<T> source)
     {
-        return source as List<T> ?? [.. source];
+        return source as IList<T> ?? [.. source];
     }
 
     /// <summary>

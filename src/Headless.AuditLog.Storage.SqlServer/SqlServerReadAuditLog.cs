@@ -53,7 +53,7 @@ internal sealed class SqlServerReadAuditLog<TContext>(
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddRange(parameters.ToArray());
+        command.Parameters.AddRange([.. parameters]);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))

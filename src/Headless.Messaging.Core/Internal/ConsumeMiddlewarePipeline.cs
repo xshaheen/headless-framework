@@ -204,12 +204,14 @@ internal sealed class ConsumeMiddlewarePipeline(
             && descriptorRegistry.TryGetConsumeDescriptors(context.MessageType, groupName, out var descriptors)
         )
         {
-            return descriptors
-                .Select(descriptor => _ResolveDescriptor(provider, descriptor))
-                .Where(static middleware => middleware is not null)
-                .Cast<object>()
-                .Concat(_GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume))
-                .ToArray();
+            return
+            [
+                .. descriptors
+                    .Select(descriptor => _ResolveDescriptor(provider, descriptor))
+                    .Where(static middleware => middleware is not null)
+                    .Cast<object>(),
+                .. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume),
+            ];
         }
 
         return directMiddleware;
@@ -227,7 +229,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             .Where(static middleware => middleware is not null)
             .Cast<object>();
 
-        return busMiddleware.Concat(typedMiddleware).ToArray();
+        return [.. busMiddleware, .. typedMiddleware];
     }
 
     private IEnumerable<object> _GetUntrackedDirectMiddleware(

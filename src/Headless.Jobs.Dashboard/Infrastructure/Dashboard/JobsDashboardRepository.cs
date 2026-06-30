@@ -511,10 +511,12 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .Select(group => new CronOccurrenceJobGraphData
             {
                 Date = group.Key,
-                Results = group
-                    .GroupBy(x => x.Status)
-                    .Select(statusGroup => Tuple.Create((int)statusGroup.Key, statusGroup.Count()))
-                    .ToArray(),
+                Results =
+                [
+                    .. group
+                        .GroupBy(x => x.Status)
+                        .Select(statusGroup => Tuple.Create((int)statusGroup.Key, statusGroup.Count())),
+                ],
             })
             .ToList();
 

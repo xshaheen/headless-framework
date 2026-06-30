@@ -155,8 +155,9 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                     RetryIntervals = updatedTimeJob.RetryIntervals,
                     ParentId = updatedTimeJob.ParentId,
                     ExecutionTime = updatedTimeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
-                    TimeJobChildren = updatedTimeJob
-                        .Children.Select(ch => new InternalFunctionContext
+                    TimeJobChildren =
+                    [
+                        .. updatedTimeJob.Children.Select(ch => new InternalFunctionContext
                         {
                             FunctionName = ch.Function,
                             JobId = ch.Id,
@@ -165,8 +166,9 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                             RetryIntervals = ch.RetryIntervals,
                             ParentId = ch.ParentId,
                             RunCondition = ch.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                            TimeJobChildren = ch
-                                .Children.Select(gch => new InternalFunctionContext
+                            TimeJobChildren =
+                            [
+                                .. ch.Children.Select(gch => new InternalFunctionContext
                                 {
                                     FunctionName = gch.Function,
                                     JobId = gch.Id,
@@ -175,17 +177,17 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                                     RetryIntervals = gch.RetryIntervals,
                                     ParentId = gch.ParentId,
                                     RunCondition = ch.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                                })
-                                .ToList(),
-                        })
-                        .ToList(),
+                                }),
+                            ],
+                        }),
+                    ],
                 }
             );
 
             await notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob).ConfigureAwait(false);
         }
 
-        return results.ToArray();
+        return [.. results];
     }
 
     private async Task<InternalFunctionContext[]> _QueueNextCronJobsAsync(
@@ -228,7 +230,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
             }
         }
 
-        return results.ToArray();
+        return [.. results];
     }
 
     private async Task<(DateTime Key, InternalManagerContext[] Items)?> _GetEarliestCronJobGroupAsync(
@@ -510,7 +512,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
         {
             await persistenceProvider
                 .UpdateTimeJobsWithUnifiedContext(
-                    resources.Select(x => x.JobId).ToArray(),
+                    [.. resources.Select(x => x.JobId)],
                     unifiedFunctionContext,
                     cancellationToken
                 )
@@ -569,8 +571,9 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                     RetryIntervals = timedOutTimeJob.RetryIntervals,
                     ParentId = timedOutTimeJob.ParentId,
                     ExecutionTime = timedOutTimeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
-                    TimeJobChildren = timedOutTimeJob
-                        .Children.Select(ch => new InternalFunctionContext
+                    TimeJobChildren =
+                    [
+                        .. timedOutTimeJob.Children.Select(ch => new InternalFunctionContext
                         {
                             FunctionName = ch.Function,
                             JobId = ch.Id,
@@ -579,8 +582,9 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                             RetryIntervals = ch.RetryIntervals,
                             ParentId = ch.ParentId,
                             RunCondition = ch.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                            TimeJobChildren = ch
-                                .Children.Select(gch => new InternalFunctionContext
+                            TimeJobChildren =
+                            [
+                                .. ch.Children.Select(gch => new InternalFunctionContext
                                 {
                                     FunctionName = gch.Function,
                                     JobId = gch.Id,
@@ -589,10 +593,10 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                                     RetryIntervals = gch.RetryIntervals,
                                     ParentId = gch.ParentId,
                                     RunCondition = ch.RunCondition ?? RunCondition.OnAnyCompletedStatus,
-                                })
-                                .ToList(),
-                        })
-                        .ToList(),
+                                }),
+                            ],
+                        }),
+                    ],
                 }
             );
 
@@ -622,7 +626,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
         }
 
-        return results.ToArray();
+        return [.. results];
     }
 
     public async Task MigrateDefinedCronJobs(

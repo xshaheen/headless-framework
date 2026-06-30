@@ -366,7 +366,7 @@ public sealed partial class HybridCache(
         Argument.IsNotNull(cacheKeys);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var keysCollection = cacheKeys as ICollection<string> ?? [.. cacheKeys];
+        var keysCollection = cacheKeys.AsICollection();
         if (keysCollection.Count == 0)
         {
             return new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal);
