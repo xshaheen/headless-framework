@@ -390,9 +390,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        using var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
 
         // when
-        await new FactoryCacheCoordinator(_timeProvider, logger).GetOrAddAsync<string>(
+        await coordinator.GetOrAddAsync<string>(
             _store,
             key,
             _ => throw new InvalidOperationException("downstream unavailable"),
@@ -544,7 +545,8 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             lastModifiedAt: now.AddMinutes(-30),
             tags: tags
         );
-        var coordinator = _CreateCoordinator();
+
+        using var coordinator = _CreateCoordinator();
 
         // when — the factory throws, activating fail-safe and the throttle restamp
         var stale = await coordinator.GetOrAddAsync<string>(
@@ -775,8 +777,15 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
 
         // when
-        var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(_store, key, _ => ValueTask.FromResult<string?>(null), _CreateOptions(), AbortToken);
+        using var coordinator = _CreateCoordinator();
+
+        var result = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            _ => ValueTask.FromResult<string?>(null),
+            _CreateOptions(),
+            AbortToken
+        );
 
         // then
         result.HasValue.Should().BeTrue();

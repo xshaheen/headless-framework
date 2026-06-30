@@ -32,7 +32,7 @@ public sealed partial class HybridCache
         // longer reflects the L2 response, so we optimistically populate L1 (the additive write succeeded
         // locally) and return true. Capture every value the detached lambda needs before returning so it never
         // races disposal. A failed background write routes to recovery (when enabled) or is logged and swallowed.
-        if (options.AllowBackgroundDistributedCacheOperations)
+        if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
             var localExpiration = _GetLocalExpiration(expiration);
             await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
@@ -60,7 +60,9 @@ public sealed partial class HybridCache
             }
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                    && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                    && (
+                        RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero
+                    )
                 )
             {
                 // Degraded mode: with recovery on, queue the L2 write; with only the circuit breaker on, avoid
@@ -236,7 +238,7 @@ public sealed partial class HybridCache
         // Bulk ops are not captured by auto-recovery (issue #440), so a failed background bulk write is purely
         // best-effort: logged and swallowed. Snapshot the dictionary and key array before detaching so the
         // background lambda owns immutable state and never observes a caller-side mutation.
-        if (options.AllowBackgroundDistributedCacheOperations)
+        if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
             var snapshot = new Dictionary<string, T>(value, StringComparer.Ordinal);
             var keys = snapshot.Keys.ToArray();
@@ -262,7 +264,7 @@ public sealed partial class HybridCache
             }
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                    && options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero
+                    && cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero
                 )
             {
                 _OpenDistributedCacheCircuit(exception, value.Keys.First());
@@ -324,7 +326,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             _OpenDistributedCacheCircuit(exception, key);
@@ -373,7 +375,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             _OpenDistributedCacheCircuit(exception, key);
@@ -726,7 +728,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // Trip the breaker on a configured-breaker or recovery-enabled L2 failure so concurrent callers stop
@@ -780,7 +782,7 @@ public sealed partial class HybridCache
         }
         catch (Exception exception)
             when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
-                && (RecoveryQueue is not null || options.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
+                && (RecoveryQueue is not null || cacheOptions.DistributedCacheCircuitBreakerDuration > TimeSpan.Zero)
             )
         {
             // Trip the breaker on a configured-breaker or recovery-enabled L2 failure so concurrent callers stop
@@ -1077,7 +1079,7 @@ public sealed partial class HybridCache
                 _QueueMarkerRecovery(writer, writeMarker, recoveryKey, message);
             }
 
-            if (options.ReThrowDistributedCacheExceptions)
+            if (cacheOptions.ReThrowDistributedCacheExceptions)
             {
                 throw;
             }

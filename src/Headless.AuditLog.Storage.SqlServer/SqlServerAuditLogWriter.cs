@@ -124,7 +124,7 @@ internal sealed class SqlServerAuditLogWriter(
     {
         var table = SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value);
 
-        var builder = new StringBuilder(256 + rowCount * 220);
+        var builder = new StringBuilder(256 + (rowCount * 220));
         builder.Append("INSERT INTO ").Append(table);
         builder.Append(
             " ([CreatedAt],[UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode]) VALUES "

@@ -192,7 +192,7 @@ public sealed class InMemoryCache
         if (expiration is { Ticks: <= 0 })
         {
             _RemoveExpiredKey(key);
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         // Single clock read reused for the expiry, the entry's last-access stamp, and maintenance scheduling —
@@ -205,7 +205,7 @@ public sealed class InMemoryCache
 
         if (!_ValidateEntrySize(entrySize))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         var entry = new CacheEntry(
@@ -356,7 +356,7 @@ public sealed class InMemoryCache
         if (expiration is { Ticks: <= 0 })
         {
             _RemoveExpiredKey(key);
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         // Single clock read reused for the expiry, the entry's birth/last-access stamp, and maintenance
@@ -369,7 +369,7 @@ public sealed class InMemoryCache
 
         if (!_ValidateEntrySize(entrySize))
         {
-            return new ValueTask<bool>(false);
+            return new ValueTask<bool>(result: false);
         }
 
         var entry = new CacheEntry(
@@ -781,7 +781,7 @@ public sealed class InMemoryCache
                     // Type conversion failed - treat as if no current value
                 }
 
-                if (currentValue.HasValue && currentValue.Value < value)
+                if (currentValue < value)
                 {
                     difference = value - currentValue.Value;
                     var computedSize = _CalculateEntrySize(value);
@@ -965,7 +965,7 @@ public sealed class InMemoryCache
                     // Type conversion failed - treat as if no current value
                 }
 
-                if (currentValue.HasValue && currentValue.Value > value)
+                if (currentValue > value)
                 {
                     difference = currentValue.Value - value;
                     var computedSize = _CalculateEntrySize(value);
@@ -1501,7 +1501,7 @@ public sealed class InMemoryCache
     {
         if (!dictionaryCacheValue.HasValue)
         {
-            return new CacheValue<ICollection<T>>([], false);
+            return new CacheValue<ICollection<T>>([], hasValue: false);
         }
 
         var nonExpiredKeys = dictionaryCacheValue
@@ -1511,16 +1511,16 @@ public sealed class InMemoryCache
 
         if (nonExpiredKeys.Length is 0)
         {
-            return new CacheValue<ICollection<T>>([], false);
+            return new CacheValue<ICollection<T>>([], hasValue: false);
         }
 
         if (!pageIndex.HasValue)
         {
-            return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
+            return new CacheValue<ICollection<T>>(nonExpiredKeys, hasValue: true);
         }
 
         var skip = (pageIndex.Value - 1) * pageSize;
-        return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), true);
+        return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), hasValue: true);
     }
 
     private static CacheValue<ICollection<T>> _GetSetObjectItems<T>(
@@ -1532,7 +1532,7 @@ public sealed class InMemoryCache
     {
         if (!dictionaryCacheValue.HasValue)
         {
-            return new CacheValue<ICollection<T>>([], false);
+            return new CacheValue<ICollection<T>>([], hasValue: false);
         }
 
         var nonExpiredKeys = dictionaryCacheValue
@@ -1542,16 +1542,16 @@ public sealed class InMemoryCache
 
         if (nonExpiredKeys.Length is 0)
         {
-            return new CacheValue<ICollection<T>>([], false);
+            return new CacheValue<ICollection<T>>([], hasValue: false);
         }
 
         if (!pageIndex.HasValue)
         {
-            return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
+            return new CacheValue<ICollection<T>>(nonExpiredKeys, hasValue: true);
         }
 
         var skip = (pageIndex.Value - 1) * pageSize;
-        return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), true);
+        return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), hasValue: true);
     }
 
     /// <summary>
@@ -2990,12 +2990,12 @@ public sealed class InMemoryCache
 
         /// <summary>Physical-expiry check against a caller-supplied <paramref name="now"/>, so a hot read path can
         /// fetch the clock once and reuse it across the expiry/logical-expiry/sliding-rearm checks.</summary>
-        internal bool IsExpiredAt(DateTime now) => PhysicalExpiresAt.HasValue && PhysicalExpiresAt.Value <= now;
+        internal bool IsExpiredAt(DateTime now) => PhysicalExpiresAt <= now;
 
         internal bool IsLogicallyExpired => IsLogicallyExpiredAt(_timeProvider.GetUtcNow().UtcDateTime);
 
         /// <summary>Logical-expiry check against a caller-supplied <paramref name="now"/> (see <see cref="IsExpiredAt"/>).</summary>
-        internal bool IsLogicallyExpiredAt(DateTime now) => LogicalExpiresAt.HasValue && LogicalExpiresAt.Value <= now;
+        internal bool IsLogicallyExpiredAt(DateTime now) => LogicalExpiresAt <= now;
 
         internal bool ShouldRemoveAt(long expiresAtTicks)
         {

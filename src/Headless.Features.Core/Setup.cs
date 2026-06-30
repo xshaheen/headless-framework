@@ -54,10 +54,7 @@ public static class SetupCore
         {
             services.AddSingleton<T>();
 
-            services.Configure<FeatureManagementProvidersOptions>(options =>
-            {
-                options.DefinitionProviders.Add<T>();
-            });
+            services.Configure<FeatureManagementProvidersOptions>(options => options.DefinitionProviders.Add<T>());
 
             return services;
         }

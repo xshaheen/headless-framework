@@ -510,7 +510,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .UnprocessableEntity(
                 Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
-                    && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
+                    && d["idempotency_key"].Exists(e => e.Code == "g:idempotency_key_reused")
                 )
             );
     }
@@ -695,7 +695,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .UnprocessableEntity(
                 Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
-                    && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
+                    && d["idempotency_key"].Exists(e => e.Code == "g:idempotency_key_reused")
                 )
             );
     }
@@ -917,7 +917,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .UnprocessableEntity(
                 Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
                     d.ContainsKey("idempotency_key")
-                    && d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
+                    && d["idempotency_key"].Exists(e => e.Code == "g:idempotency_key_reused")
                 )
             );
     }
@@ -1447,7 +1447,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .Received(1)
             .UnprocessableEntity(
                 Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
-                    d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
+                    d["idempotency_key"].Exists(e => e.Code == "g:idempotency_key_reused")
                 )
             );
     }

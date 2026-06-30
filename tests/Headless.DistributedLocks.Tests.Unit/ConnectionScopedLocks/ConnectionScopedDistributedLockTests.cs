@@ -371,7 +371,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         public int ReleaseCount { get; private set; }
 
         private Dictionary<string, string> LocalLeaseIds { get; } = new(StringComparer.Ordinal);
-        private Dictionary<string, string> ResourcesByLeaseId { get; } = new(StringComparer.Ordinal);
 
         public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
             string resource,
@@ -397,7 +396,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             }
 
             LocalLeaseIds[resource] = leaseId;
-            ResourcesByLeaseId[leaseId] = resource;
 
             return new ConnectionScopedLockHandle(
                 resource,
@@ -412,7 +410,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             cancellationToken.ThrowIfCancellationRequested();
             ReleaseCount++;
             LocalLeaseIds.Remove(handle.Resource);
-            ResourcesByLeaseId.Remove(handle.LeaseId);
 
             return ValueTask.CompletedTask;
         }
@@ -422,7 +419,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             cancellationToken.ThrowIfCancellationRequested();
             ReleaseCount++;
             LocalLeaseIds.Remove(resource);
-            ResourcesByLeaseId.Remove(leaseId);
 
             return ValueTask.CompletedTask;
         }

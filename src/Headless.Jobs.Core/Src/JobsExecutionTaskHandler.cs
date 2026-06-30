@@ -176,7 +176,6 @@ internal class JobsExecutionTaskHandler(
             ScheduledFor = context.ExecutionTime,
             // The running job invokes this action during execution (before any exit path disposes the CTS — see the
             // CA2000 note above), so the captured cancellationTokenSource is alive whenever the closure runs.
-            // ReSharper disable once AccessToDisposedClosure
             RequestCancelOperationAction = () => cancellationTokenSource.Cancel(),
             CronOccurrenceOperations = new CronOccurrenceOperations
             {

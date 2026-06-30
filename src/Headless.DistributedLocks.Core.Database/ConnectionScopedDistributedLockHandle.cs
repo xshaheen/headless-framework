@@ -52,7 +52,7 @@ internal sealed class ConnectionScopedDistributedLockHandle(
     /// Always zero for connection-scoped locks because <see cref="RenewAsync"/> is a no-op (the advisory
     /// lock is held for the connection's lifetime and has no TTL to extend).
     /// </summary>
-    public int RenewalCount { get; private set; }
+    public int RenewalCount { get; }
 
     /// <inheritdoc/>
     public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();

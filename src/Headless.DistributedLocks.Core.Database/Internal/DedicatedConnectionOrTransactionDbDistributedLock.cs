@@ -201,7 +201,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
 
         public ValueTask DisposeAsync()
         {
-            return Interlocked.Exchange(ref _innerHandle, null)?.DisposeAsync() ?? default;
+            return Interlocked.Exchange(ref _innerHandle, value: null)?.DisposeAsync() ?? default;
         }
 
         private sealed class InnerHandle(

@@ -56,7 +56,7 @@ public readonly struct BrokerAddress : IEquatable<BrokerAddress>
     /// </exception>
     public BrokerAddress(string? name, string? endpoint)
     {
-        if (name is not null && name.Contains('$', StringComparison.Ordinal))
+        if (name?.Contains('$', StringComparison.Ordinal) == true)
         {
             throw new ArgumentException(
                 "BrokerAddress.Name must not contain the reserved '$' separator.",

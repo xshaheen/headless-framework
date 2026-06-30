@@ -346,7 +346,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
             storageOptions.Value,
             storageOptions.Value.FeatureGroupDefinitionsTableName
         );
-        var builder = new StringBuilder(128 + rowCount * 80);
+        var builder = new StringBuilder(128 + (rowCount * 80));
         builder
             .Append("INSERT INTO ")
             .Append(table)

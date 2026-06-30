@@ -38,17 +38,16 @@ public static class CommonExtensions
     }
 
     internal static bool OrdinalEquals(this string? s, string? value, bool ignoreCase = false) =>
-        s is not null && s.Equals(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        s?.Equals(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
 
     internal static bool OrdinalContains(this string? s, string value, bool ignoreCase = false) =>
-        s is not null && s.Contains(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        s?.Contains(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
 
     internal static bool OrdinalStartsWith(this string? s, string value, bool ignoreCase = false) =>
-        s is not null
-        && s.StartsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        s?.StartsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
 
     internal static bool OrdinalEndsWith(this string? s, string value, bool ignoreCase = false) =>
-        s is not null && s.EndsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        s?.EndsWith(value, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) == true;
 
     /// <summary>
     /// Splits at the first occurrence of the given separator.

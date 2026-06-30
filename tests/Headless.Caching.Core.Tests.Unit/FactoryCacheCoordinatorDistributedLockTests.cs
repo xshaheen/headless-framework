@@ -70,7 +70,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         using var hold = _lockProvider.Hold(key);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
         // Required now: fail-safe + finite soft timeout needs a finite ceiling (lock-hold guard).
         var options = _CreateOptions(
@@ -103,7 +103,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         // per-key lock is free, so only the distributed acquisition times out.
         var key = Faker.Random.AlphaNumeric(8);
         using var hold = _lockProvider.Hold(key);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
         var options = _CreateOptions(lockTimeout: TimeSpan.FromMilliseconds(50));
 
@@ -127,8 +127,8 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     {
         // given — two coordinators (two "nodes") sharing one store and one lock provider
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinatorA = _CreateCoordinator();
-        var coordinatorB = _CreateCoordinator();
+        using var coordinatorA = _CreateCoordinator();
+        using var coordinatorB = _CreateCoordinator();
         var factoryCalls = 0;
         var winnerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -169,7 +169,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -219,7 +219,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var options = _CreateOptions(isFailSafeEnabled: true);
 
         static ValueTask<string?> factory(CancellationToken cancellationToken) =>
@@ -265,7 +265,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var eagerRefreshAt = now.AddSeconds(-1);
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: eagerRefreshAt);
         using var hold = _lockProvider.Hold(key);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var factoryCalls = 0;
@@ -299,7 +299,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         coordinator.BackgroundOperationFinished = () => backgroundFinished.TrySetResult();
         var factoryCalls = 0;
@@ -329,7 +329,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
     {
         // given
         var key = Faker.Random.AlphaNumeric(8);
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var options = _CreateOptions(useDistributedFactoryLock: false);
 
         // when
@@ -355,7 +355,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "cached", now.AddMinutes(5), now.AddMinutes(5));
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
 
         ValueTask<string?> factory(CancellationToken cancellationToken)
@@ -395,7 +395,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
         var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
+        using var coordinator = new FactoryCacheCoordinator(_timeProvider, logger, _lockProvider);
         var factoryCalls = 0;
         var options = _CreateOptions(isFailSafeEnabled: true);
 
@@ -437,7 +437,7 @@ public sealed class FactoryCacheCoordinatorDistributedLockTests : TestBase
         // given — no stale reserve exists, so there is nothing to degrade to
         var key = Faker.Random.AlphaNumeric(8);
         _lockProvider.AcquireFault = () => new InvalidOperationException("lock backend unavailable");
-        var coordinator = _CreateCoordinator();
+        using var coordinator = _CreateCoordinator();
         var factoryCalls = 0;
 
         ValueTask<string?> factory(CancellationToken cancellationToken)

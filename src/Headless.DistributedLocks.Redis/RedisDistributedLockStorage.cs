@@ -360,7 +360,8 @@ public sealed class RedisDistributedLockStorage(
         )
         {
             var logicalKey = _TryGetLogicalKey(key);
-            if (logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+
+            if (logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 count++;
             }
@@ -533,7 +534,8 @@ public sealed class RedisDistributedLockStorage(
         {
             var value = await valueTask.ConfigureAwait(false);
             var logicalKey = _TryGetLogicalKey(key);
-            if (value.HasValue && logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+
+            if (value.HasValue && logicalKey?.StartsWith(prefix, StringComparison.Ordinal) == true)
             {
                 var ttl = await ttlTask.ConfigureAwait(false);
                 result[logicalKey] = (value.ToString(), ttl);

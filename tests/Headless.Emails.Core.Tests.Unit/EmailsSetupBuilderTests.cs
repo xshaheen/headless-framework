@@ -22,11 +22,11 @@ public sealed class EmailsSetupBuilderTests
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*exactly one default provider*")
-            .And.Contain("UseAzure")
-            .And.Contain("UseAwsSes")
-            .And.Contain("UseMailkit")
-            .And.Contain("UseDevelopment")
-            .And.Contain("UseNoop");
+            .WithMessage("*UseAzure*")
+            .WithMessage("*UseAwsSes*")
+            .WithMessage("*UseMailkit*")
+            .WithMessage("*UseDevelopment*")
+            .WithMessage("*UseNoop*");
     }
 
     [Fact]

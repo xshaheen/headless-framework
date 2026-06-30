@@ -3,6 +3,7 @@
 using Confluent.Kafka;
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

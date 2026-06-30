@@ -351,7 +351,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
             storageOptions.Value,
             storageOptions.Value.FeatureGroupDefinitionsTableName
         );
-        var builder = new StringBuilder(128 + rowCount * 80);
+        var builder = new StringBuilder(128 + (rowCount * 80));
         builder.Append("INSERT INTO ").Append(table).Append(" ([Id],[Name],[DisplayName],[ExtraProperties]) VALUES ");
 
         for (var i = 0; i < rowCount; i++)
@@ -383,7 +383,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
             storageOptions.Value,
             storageOptions.Value.FeatureDefinitionsTableName
         );
-        var builder = new StringBuilder(192 + rowCount * 200);
+        var builder = new StringBuilder(192 + (rowCount * 200));
         builder.Append("INSERT INTO ").Append(table);
         builder.Append(
             " ([Id],[GroupName],[Name],[DisplayName],[ParentName],[Description],[DefaultValue],[IsVisibleToClients],[IsAvailableToHost],[Providers],[ExtraProperties]) VALUES "

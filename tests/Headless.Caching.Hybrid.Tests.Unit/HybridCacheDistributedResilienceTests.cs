@@ -266,7 +266,7 @@ public sealed class HybridCacheDistributedResilienceTests : TestBase
     {
         // given
         var timeProvider = TimeProvider.System;
-        var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+        using var l1 = new InMemoryCache(timeProvider, new InMemoryCacheOptions { CloneValues = true });
         using var l2 = new GatedRemoteCache(timeProvider) { ReadFault = new InvalidOperationException("l2 read down") };
         var cache = _CreateCache(l1, l2, new HybridCacheOptions(), timeProvider);
         await using var _ = cache;

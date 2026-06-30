@@ -437,7 +437,7 @@ public sealed class Url
     /// <returns>The Url object with the query parameter added</returns>
     public Url SetQueryParam(string name, object? value, NullValueHandling nullValueHandling = NullValueHandling.Remove)
     {
-        QueryParams.AddOrReplace(name, value, false, nullValueHandling);
+        QueryParams.AddOrReplace(name, value, isEncoded: false, nullValueHandling);
         return this;
     }
 

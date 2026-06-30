@@ -4,7 +4,6 @@ using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
-using Headless.Core;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -12,6 +11,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
@@ -469,10 +469,7 @@ public static class SetupMessaging
                 {
                     var logger = provider.GetService<ILoggerFactory>()?.CreateLogger(typeof(SetupMessaging).FullName!);
 
-                    if (logger is not null)
-                    {
-                        SetupMessagingLog.ForMessageCalledAfterProviderBuilt(logger, descriptorCount - resolvedCount);
-                    }
+                    logger?.ForMessageCalledAfterProviderBuilt(descriptorCount - resolvedCount);
                 }
             }
 

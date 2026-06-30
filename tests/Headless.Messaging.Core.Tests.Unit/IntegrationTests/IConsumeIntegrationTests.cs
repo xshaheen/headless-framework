@@ -60,7 +60,7 @@ public sealed class IConsumeIntegrationTests
             messaging.Options.Version = "v1";
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         // Build consume context manually
         var message = new OrderPlaced("ORDER-123", 99.99m);
@@ -188,12 +188,12 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(setup =>
-        {
-            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>());
-        });
 
-        using var provider = services.BuildServiceProvider();
+        services.AddHeadlessMessaging(setup =>
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>())
+        );
+
+        await using var provider = services.BuildServiceProvider();
 
         // when
         await using var scope = provider.CreateAsyncScope();

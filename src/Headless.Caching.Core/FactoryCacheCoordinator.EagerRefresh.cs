@@ -213,7 +213,6 @@ public sealed partial class FactoryCacheCoordinator
                     // The observe lambda runs inside the awaited race; the finally below disposes internalCts only
                     // when ctsTransferred is false (the factory was observed to completion), so the closure never
                     // touches a disposed CTS.
-                    // ReSharper disable once AccessToDisposedClosure
                     () => _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts)
                 )
                 .ConfigureAwait(false);

@@ -496,6 +496,6 @@ internal static class Parser
         ns
             is {
                 Name: "Numerics",
-                ContainingNamespace: { Name: "System", ContainingNamespace.IsGlobalNamespace: true }
+                ContainingNamespace: { Name: "System", ContainingNamespace.IsGlobalNamespace: true },
             };
 }

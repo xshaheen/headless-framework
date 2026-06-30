@@ -103,7 +103,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var container = new[] { $"presign-{Guid.NewGuid():N}" };
         var content = "presigned-content"u8.ToArray();
 
-        using (var stream = new MemoryStream(content))
+        await using (var stream = new MemoryStream(content))
         {
             await ((IBlobStorage)storage).UploadAsync(container, "file.txt", stream, cancellationToken: AbortToken);
         }
@@ -149,7 +149,7 @@ public sealed class CloudflareR2BlobStorageTests : BlobStorageTestsBase
         var readBack = await ((IBlobStorage)storage).OpenReadStreamAsync(container, "file.txt", AbortToken);
         readBack.Should().NotBeNull();
 
-        using var buffer = new MemoryStream();
+        await using var buffer = new MemoryStream();
         await readBack!.Stream.CopyToAsync(buffer, AbortToken);
         buffer.ToArray().Should().Equal(content);
     }

@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Nats;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace

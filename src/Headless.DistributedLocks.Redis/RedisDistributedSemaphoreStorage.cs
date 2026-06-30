@@ -113,7 +113,7 @@ public sealed class RedisDistributedSemaphoreStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = _GetKeys(resource);
+        var (holdersKey, _) = _GetKeys(resource);
         Argument.IsNotNullOrEmpty(leaseId);
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
@@ -122,7 +122,7 @@ public sealed class RedisDistributedSemaphoreStorage(
             .EvaluateAsync(
                 Db,
                 TryExtendSemaphoreScriptDefinition.Instance,
-                _GetSemaphoreSlotParameters(keys.HoldersKey, leaseId, ttl),
+                _GetSemaphoreSlotParameters(holdersKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);

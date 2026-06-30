@@ -247,7 +247,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_channel is not null && !_channel.IsClosed)
+            if (_channel?.IsClosed == false)
             {
                 return;
             }

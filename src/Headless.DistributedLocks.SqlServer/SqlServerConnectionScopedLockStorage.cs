@@ -500,7 +500,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
 
                 // Zero-wait gate: if release (or another probe) holds the connection, skip this tick rather than
                 // queueing a concurrent command on the non-thread-safe SqlConnection.
-                if (!await _connectionGate.WaitAsync(TimeSpan.Zero).ConfigureAwait(false))
+                if (!await _connectionGate.WaitAsync(TimeSpan.Zero, CancellationToken.None).ConfigureAwait(false))
                 {
                     return;
                 }

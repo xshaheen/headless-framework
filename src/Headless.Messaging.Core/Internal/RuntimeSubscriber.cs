@@ -51,10 +51,7 @@ internal sealed class RuntimeSubscriber(
                 result.MessageName,
                 result.Group,
                 result.HandlerId,
-                async () =>
-                {
-                    await UnsubscribeAsync(result.SubscriptionId!, CancellationToken.None).ConfigureAwait(false);
-                }
+                async () => await UnsubscribeAsync(result.SubscriptionId!, CancellationToken.None).ConfigureAwait(false)
             );
         }
         finally

@@ -887,7 +887,7 @@ public sealed class RedisCache(
                     else
                     {
                         var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
-                        cacheValue = new CacheValue<T>(framedValue, true);
+                        cacheValue = new CacheValue<T>(framedValue, hasValue: true);
                     }
 
                     result[originalKeys[i]] = new CacheValueWithExpiration<T>(cacheValue, logicalRemaining);

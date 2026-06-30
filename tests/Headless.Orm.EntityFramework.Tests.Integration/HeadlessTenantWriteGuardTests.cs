@@ -264,7 +264,7 @@ public sealed class HeadlessTenantWriteGuardTests(
     public async Task tenant_write_guard_bypass_should_not_leak_into_async_work_spawned_inside_scope()
     {
         // given
-        using var provider = _BuildBypassProvider();
+        await using var provider = _BuildBypassProvider();
         var bypass = provider.GetRequiredService<ITenantWriteGuardBypass>();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

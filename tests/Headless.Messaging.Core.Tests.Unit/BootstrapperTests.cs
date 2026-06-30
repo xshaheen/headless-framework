@@ -63,7 +63,8 @@ public sealed class BootstrapperTests : TestBase
     public async Task should_fail_bootstrap_when_required_processor_fails_to_start()
     {
         var failure = new InvalidOperationException("processor boom");
-        await using var provider = _CreateProvider(beforeMessaging: new FailingProcessingServer(failure));
+        await using var beforeMessaging = new FailingProcessingServer(failure);
+        await using var provider = _CreateProvider(beforeMessaging: beforeMessaging);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
 
         var act = async () => await bootstrapper.BootstrapAsync(AbortToken);
@@ -75,7 +76,7 @@ public sealed class BootstrapperTests : TestBase
     [Fact]
     public async Task should_not_stop_runtime_when_owner_bootstrap_token_is_canceled_after_startup()
     {
-        var processor = new TrackingProcessingServer();
+        await using var processor = new TrackingProcessingServer();
         await using var provider = _CreateProvider(beforeMessaging: processor);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
         using var ownerCts = new CancellationTokenSource();
@@ -94,12 +95,10 @@ public sealed class BootstrapperTests : TestBase
     [Fact]
     public async Task should_stop_started_processors_when_later_processor_fails_during_bootstrap()
     {
-        var startedProcessor = new TrackingProcessingServer();
+        await using var startedProcessor = new TrackingProcessingServer();
         var failure = new InvalidOperationException("processor boom");
-        await using var provider = _CreateProvider(
-            beforeMessaging: startedProcessor,
-            afterMessaging: new FailingProcessingServer(failure)
-        );
+        await using var afterMessaging = new FailingProcessingServer(failure);
+        await using var provider = _CreateProvider(beforeMessaging: startedProcessor, afterMessaging: afterMessaging);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
 
         var act = async () => await bootstrapper.BootstrapAsync(AbortToken);

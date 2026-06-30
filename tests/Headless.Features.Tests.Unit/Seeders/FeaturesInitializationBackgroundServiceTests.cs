@@ -32,7 +32,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
     public async Task should_report_not_initialized_before_start()
     {
         // given
-        var sut = _CreateSut(
+        using var sut = _CreateSut(
             new FeatureManagementOptions { SaveStaticFeaturesToDatabase = true, IsDynamicFeatureStoreEnabled = false }
         );
 
@@ -44,7 +44,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
     public async Task should_report_initialized_when_options_disabled()
     {
         // given
-        var sut = _CreateSut(
+        using var sut = _CreateSut(
             new FeatureManagementOptions { SaveStaticFeaturesToDatabase = false, IsDynamicFeatureStoreEnabled = false }
         );
 
@@ -97,7 +97,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
 
         _store.SaveAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -124,7 +124,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
             .GetGroupsAsync(Arg.Any<CancellationToken>())
             .Returns<IReadOnlyList<FeatureGroupDefinition>>(_ => throw exception);
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(CancellationToken.None);
@@ -156,7 +156,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
                 await Task.Delay(Timeout.Infinite, callInfo.Arg<CancellationToken>());
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
         await sut.StartAsync(AbortToken);
         await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -182,7 +182,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
             IsDynamicFeatureStoreEnabled = false,
         };
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -210,6 +210,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
         };
 
         var saveCalled = new TaskCompletionSource();
+
         _store
             .SaveAsync(Arg.Any<CancellationToken>())
             .Returns(callInfo =>
@@ -218,7 +219,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
                 return Task.CompletedTask;
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);

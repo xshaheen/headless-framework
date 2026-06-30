@@ -231,7 +231,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             if (!string.IsNullOrEmpty(query.Group))
             {
                 expression = expression.Where(x =>
-                    x.Group is not null && x.Group.Equals(query.Group, StringComparison.OrdinalIgnoreCase)
+                    x.Group?.Equals(query.Group, StringComparison.OrdinalIgnoreCase) == true
                 );
             }
 

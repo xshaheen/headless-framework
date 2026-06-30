@@ -269,7 +269,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         // Otherwise check the mutable list
         lock (_lock)
         {
-            return _consumers?.Any(m => m.MessageType == messageType) ?? false;
+            return _consumers?.Exists(m => m.MessageType == messageType) ?? false;
         }
     }
 

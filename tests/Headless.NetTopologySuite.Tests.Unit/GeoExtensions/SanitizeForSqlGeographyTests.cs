@@ -152,7 +152,9 @@ public sealed class SanitizeForSqlGeographyTests
         var result = polygon.SanitizeForSqlGeography();
 
         // then - coordinates are snapped to the 1e6 grid (~6 decimals); full precision is gone.
-        result.Coordinates.Should().NotContain(c => c.X == 0.123456789012, "full-precision X must be reduced");
+        result
+            .Coordinates.Should()
+            .NotContain(c => Math.Abs(c.X - 0.123456789012) < 1e-9, "full-precision X must be reduced");
         result.Coordinates.Should().Contain(c => Math.Abs(c.X - 0.123457) < 1e-9, "X must snap to the 1e6 grid");
         result.Coordinates.Should().Contain(c => Math.Abs(c.X - 1.123457) < 1e-9);
     }

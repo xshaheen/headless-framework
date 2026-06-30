@@ -2,6 +2,7 @@
 
 using Confluent.Kafka;
 using Headless.Checks;
+using Headless.Messaging.Registration;
 
 namespace Headless.Messaging.Kafka;
 

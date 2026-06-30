@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 
-namespace Headless.Messaging;
+namespace Headless.Messaging.Registration;
 
 /// <summary>
 /// Describes a consumer discovered by assembly scanning before it is registered.

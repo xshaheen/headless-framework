@@ -291,7 +291,7 @@ public sealed class HybridCacheTagTests : TestBase
         var tag = Faker.Random.AlphaNumeric(8);
         var payload = Faker.Random.Bytes(16);
 
-        await l2.UpsertEntryAsync<byte[]>(
+        await l2.UpsertEntryAsync(
             key,
             payload,
             new CacheEntryOptions { Duration = TimeSpan.FromMinutes(5), Tags = [tag] },

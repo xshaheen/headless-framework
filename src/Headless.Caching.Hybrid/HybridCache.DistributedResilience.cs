@@ -5,7 +5,7 @@ namespace Headless.Caching;
 public sealed partial class HybridCache
 {
     private readonly DistributedCacheCircuitBreaker _distributedCircuit = new(
-        options.DistributedCacheCircuitBreakerDuration,
+        cacheOptions.DistributedCacheCircuitBreakerDuration,
         timeProvider ?? TimeProvider.System
     );
 
@@ -14,19 +14,19 @@ public sealed partial class HybridCache
         var timeout = Timeout.InfiniteTimeSpan;
 
         if (
-            options.DistributedCacheSoftTimeout != Timeout.InfiniteTimeSpan
+            cacheOptions.DistributedCacheSoftTimeout != Timeout.InfiniteTimeSpan
             && (hasLocalFallback || softCanDegradeToMiss)
         )
         {
-            timeout = options.DistributedCacheSoftTimeout;
+            timeout = cacheOptions.DistributedCacheSoftTimeout;
         }
 
         if (
-            options.DistributedCacheHardTimeout != Timeout.InfiniteTimeSpan
-            && (timeout == Timeout.InfiniteTimeSpan || options.DistributedCacheHardTimeout < timeout)
+            cacheOptions.DistributedCacheHardTimeout != Timeout.InfiniteTimeSpan
+            && (timeout == Timeout.InfiniteTimeSpan || cacheOptions.DistributedCacheHardTimeout < timeout)
         )
         {
-            timeout = options.DistributedCacheHardTimeout;
+            timeout = cacheOptions.DistributedCacheHardTimeout;
         }
 
         return timeout;
@@ -56,7 +56,7 @@ public sealed partial class HybridCache
             {
                 _OpenDistributedCacheCircuit(exception, key);
 
-                if (options.ReThrowDistributedCacheExceptions)
+                if (cacheOptions.ReThrowDistributedCacheExceptions)
                 {
                     throw;
                 }
@@ -103,7 +103,7 @@ public sealed partial class HybridCache
                     operationCts = null;
                     _OpenDistributedCacheCircuit(exception, key);
 
-                    if (options.ReThrowDistributedCacheExceptions)
+                    if (cacheOptions.ReThrowDistributedCacheExceptions)
                     {
                         throw;
                     }

@@ -39,7 +39,7 @@ internal sealed class FakeDbCommand(FakeDbConnection connection) : DbCommand
 
     public override int ExecuteNonQuery() => throw new NotSupportedException("Async-only fake.");
 
-    public override object? ExecuteScalar() => throw new NotSupportedException("Async-only fake.");
+    public override object ExecuteScalar() => throw new NotSupportedException("Async-only fake.");
 
     public override void Prepare() { }
 

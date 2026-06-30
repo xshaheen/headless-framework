@@ -25,7 +25,7 @@ public sealed class HybridCacheExpireTests : TestBase
         var l1 = new InMemoryCache(_timeProvider, l1Options);
 
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        using var l2Base = new InMemoryCache(_timeProvider, l2Options);
+        var l2Base = new InMemoryCache(_timeProvider, l2Options);
         var l2 = new InMemoryRemoteCacheAdapter(l2Base);
 
         var publisher = Substitute.For<IBus>();

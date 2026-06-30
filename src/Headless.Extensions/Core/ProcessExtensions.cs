@@ -208,8 +208,7 @@ public static class ProcessExtensions
                 {
                     if (cancellationToken.CanBeCanceled && !process.HasExited)
                     {
-                        // ReSharper disable once AccessToDisposedClosure
-                        registration = cancellationToken.Register(() => process.TryToKill());
+                        registration = cancellationToken.Register(process.TryToKill);
                     }
 
                     await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);

@@ -103,10 +103,10 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
-    public void should_return_none_handle_lost_token_when_monitor_is_absent()
+    public async Task should_return_none_handle_lost_token_when_monitor_is_absentAsync()
     {
         // given
-        var sut = _CreateLock(Faker.Random.AlphaNumeric(10), Faker.Random.Guid().ToString());
+        await using var sut = _CreateLock(Faker.Random.AlphaNumeric(10), Faker.Random.Guid().ToString());
 
         // when
         var token = sut.LostToken;

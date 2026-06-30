@@ -150,7 +150,7 @@ public sealed partial class HybridCache
         // against), then detach the L2 write + recovery bookkeeping + publish under CancellationToken.None so a
         // caller token going away cannot abandon the L2 mirror. The descriptor is already captured by value
         // (the SetEntryAsync forwarder copies the `in` parameter), so the lambda owns immutable state.
-        if (options.AllowBackgroundDistributedCacheOperations)
+        if (cacheOptions.AllowBackgroundDistributedCacheOperations)
         {
             var localWrite = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
 
@@ -175,9 +175,10 @@ public sealed partial class HybridCache
             return false;
         }
 
-        var localWriteSync = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken).ConfigureAwait(false);
+        var (committed, physicalStamp) = await _WriteSetEntryToLocalAsync(key, entry, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (!localWriteSync.Committed)
+        if (!committed)
         {
             return false;
         }
@@ -187,7 +188,7 @@ public sealed partial class HybridCache
                 entry,
                 skipL2,
                 l2WriteSucceeded,
-                localWriteSync.PhysicalStamp,
+                physicalStamp,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -434,7 +435,7 @@ public sealed partial class HybridCache
                 _OpenDistributedCacheCircuit(exception, key);
                 _logger.LogFailedToWriteToL2Cache(exception, key);
 
-                if (options.ReThrowDistributedCacheExceptions)
+                if (cacheOptions.ReThrowDistributedCacheExceptions)
                 {
                     throw;
                 }
@@ -460,7 +461,7 @@ public sealed partial class HybridCache
                 _OpenDistributedCacheCircuit(exception, key);
                 _logger.LogFailedToWriteToL2Cache(exception, key);
 
-                if (options.ReThrowDistributedCacheExceptions)
+                if (cacheOptions.ReThrowDistributedCacheExceptions)
                 {
                     throw;
                 }
@@ -488,8 +489,8 @@ public sealed partial class HybridCache
         }
 
         var now = _GetUtcNow();
-        var localCeiling = options.DefaultLocalExpiration.HasValue
-            ? now.Add(options.DefaultLocalExpiration.Value)
+        var localCeiling = cacheOptions.DefaultLocalExpiration.HasValue
+            ? now.Add(cacheOptions.DefaultLocalExpiration.Value)
             : (DateTime?)null;
 
         // Legacy/unframed L2 entries carry no expiration metadata. Promote them into L1 bounded by the local

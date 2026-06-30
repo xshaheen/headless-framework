@@ -348,10 +348,10 @@ public sealed class RedisDistributedReadWriteLockStorage(
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> fires (eagerly or during the await).</exception>
     public async ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
-        var keys = _GetKeys(resource);
+        var (_, readerKey) = _GetKeys(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.HashLengthAsync(keys.ReaderKey).WaitAsync(cancellationToken).ConfigureAwait(false) > 0;
+        return await Db.HashLengthAsync(readerKey).WaitAsync(cancellationToken).ConfigureAwait(false) > 0;
     }
 
     /// <summary>

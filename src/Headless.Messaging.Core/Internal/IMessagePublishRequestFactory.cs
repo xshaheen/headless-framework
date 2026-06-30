@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;

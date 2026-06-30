@@ -131,6 +131,6 @@ public sealed class PasswordGeneratorTests
         password.Any(char.IsDigit).Should().BeTrue("a digit is required by default");
         password.Any(char.IsLower).Should().BeTrue("a lowercase letter is required by default");
         password.Any(char.IsUpper).Should().BeTrue("an uppercase letter is required by default");
-        password.Should().Contain(c => !char.IsLetterOrDigit(c), "a non-alphanumeric is required by default");
+        password.Any(c => !char.IsLetterOrDigit(c)).Should().BeTrue("a non-alphanumeric is required by default");
     }
 }

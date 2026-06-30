@@ -17,7 +17,7 @@ internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
         // between the active-check and the increment. AsyncLocal can flow the same BypassState object
         // into parallel branches, so the increment must be race-safe against a concurrent last release;
         // if the shared state died, install a fresh one rather than returning an inactive ("zombie") scope.
-        if (state is null || !state.TryAddRef())
+        if (state?.TryAddRef() != true)
         {
             state = new BypassState();
             state.TryAddRef(); // 0 -> 1; the object is thread-private until published on the next line.

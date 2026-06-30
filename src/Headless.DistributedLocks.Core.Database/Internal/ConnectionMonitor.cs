@@ -354,17 +354,20 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             if (isCancel)
             {
                 // Cancel on a background thread in case a registered callback hangs or throws.
-                _ = Task.Run(() =>
-                {
-                    try
+                _ = Task.Run(
+                    () =>
                     {
-                        cancellationTokenSource.Cancel();
-                    }
-                    finally
-                    {
-                        cancellationTokenSource.Dispose();
-                    }
-                });
+                        try
+                        {
+                            cancellationTokenSource.Cancel();
+                        }
+                        finally
+                        {
+                            cancellationTokenSource.Dispose();
+                        }
+                    },
+                    CancellationToken.None
+                );
             }
             else
             {
@@ -423,17 +426,20 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
         // Cancel asynchronously: the Cancel() thread can otherwise run continuations inside the monitoring loop.
         // Setting the new source before cancelling the old one already avoids the worst of that, but doing the cancel
         // off-thread keeps this method fast and easy to reason about.
-        _ = Task.Run(() =>
-        {
-            try
+        _ = Task.Run(
+            () =>
             {
-                monitorStateChangedTokenSource.Cancel();
-            }
-            finally
-            {
-                monitorStateChangedTokenSource.Dispose();
-            }
-        });
+                try
+                {
+                    monitorStateChangedTokenSource.Cancel();
+                }
+                finally
+                {
+                    monitorStateChangedTokenSource.Dispose();
+                }
+            },
+            CancellationToken.None
+        );
     }
 
     private async Task _MonitorWorkerLoopAsync()
@@ -556,20 +562,6 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 #pragma warning disable VSTHRD003 // The caller always passes a task it just started against this connection.
             await task.ConfigureAwait(false);
 #pragma warning restore VSTHRD003
-        }
-#pragma warning disable CA1031, ERP022 // The worker loop intentionally ignores probe failures; loss is surfaced via state change/handle cancellation.
-        catch
-        {
-            // Intentionally empty.
-        }
-#pragma warning restore CA1031, ERP022
-    }
-
-    private static async Task _SuppressAsync(ValueTask task)
-    {
-        try
-        {
-            await task.ConfigureAwait(false);
         }
 #pragma warning disable CA1031, ERP022 // The worker loop intentionally ignores probe failures; loss is surfaced via state change/handle cancellation.
         catch

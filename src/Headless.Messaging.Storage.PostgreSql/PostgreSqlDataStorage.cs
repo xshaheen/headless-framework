@@ -1104,10 +1104,7 @@ internal sealed class PostgreSqlDataStorage(
                 sqlParams:
                 [
                     new NpgsqlParameter("@Now", now),
-                    new NpgsqlParameter("@DeadOwners", NpgsqlDbType.Array | NpgsqlDbType.Varchar)
-                    {
-                        Value = deadOwners.ToArray(),
-                    },
+                    new NpgsqlParameter("@DeadOwners", deadOwners.ToArray()) { DataTypeName = "varchar[]" },
                 ],
                 cancellationToken: cancellationToken
             )

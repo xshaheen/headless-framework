@@ -26,10 +26,7 @@ public static class SetupFeaturesPostgreSql
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return setup.UsePostgreSql(options =>
-            {
-                options.ConnectionString = connectionString;
-            });
+            return setup.UsePostgreSql(options => options.ConnectionString = connectionString);
         }
 
         /// <summary>Registers the PostgreSQL features storage provider using a configuration delegate.</summary>

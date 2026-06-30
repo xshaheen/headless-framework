@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.SqlServer;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,15 +24,24 @@ namespace Tests;
 /// failure, never the success signal.
 /// </remarks>
 [Collection<SqlServerCommitCoordinationFixture>]
-public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordinationFixture fixture) : IAsyncLifetime
+public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordinationFixture fixture) : TestBase
 {
     private static readonly TimeSpan _DrainTimeout = TimeSpan.FromSeconds(15);
 
     private ServiceProvider _services = null!;
     private SqlServerCommitDiagnosticHostedService _diagnostic = null!;
 
-    public async ValueTask InitializeAsync()
+    protected override async ValueTask DisposeAsyncCore()
     {
+        // Tear down this test's subscription so observers never accumulate across the run (cross-test diagnostic bleed).
+        await base.DisposeAsyncCore();
+        await _diagnostic.StopAsync(CancellationToken.None);
+        await _services.DisposeAsync();
+    }
+
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
         var collection = new ServiceCollection();
         collection.AddLogging();
         collection.AddSqlServerCommitCoordination();
@@ -44,13 +54,6 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         _diagnostic = _services.GetServices<IHostedService>().OfType<SqlServerCommitDiagnosticHostedService>().Single();
 
         await _diagnostic.StartAsync(TestContext.Current.CancellationToken);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        // Tear down this test's subscription so observers never accumulate across the run (cross-test diagnostic bleed).
-        await _diagnostic.StopAsync(CancellationToken.None);
-        await _services.DisposeAsync();
     }
 
     [Fact]
@@ -67,7 +70,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
 
         // Enlist AFTER open: ClientConnectionId is Guid.Empty until the connection is opened, and the diagnostic
         // observer correlates the commit edge by that same id on the same open connection.
-        var scope = connection.EnlistCommitCoordination(tx, _services);
+        var scope = connection.EnlistCommitCoordination(tx, _services, AbortToken);
 
         await using (scope)
         {
@@ -110,7 +113,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
 
         await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(ct);
 
-        var scope = connection.EnlistCommitCoordination(tx, _services);
+        var scope = connection.EnlistCommitCoordination(tx, _services, AbortToken);
 
         await using (scope)
         {
@@ -158,7 +161,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         await using var tx = (SqlTransaction)await connection.BeginTransactionAsync(ct);
 
         await using var providerScope = _services.CreateAsyncScope();
-        var scope = connection.EnlistCommitCoordination(tx, providerScope.ServiceProvider);
+        var scope = connection.EnlistCommitCoordination(tx, providerScope.ServiceProvider, AbortToken);
 
         await using (scope)
         {
@@ -203,7 +206,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
 
         await using (var tx1 = (SqlTransaction)await connection.BeginTransactionAsync(ct))
         {
-            var scope1 = connection.EnlistCommitCoordination(tx1, _services);
+            var scope1 = connection.EnlistCommitCoordination(tx1, _services, AbortToken);
 
             await using (scope1)
             {
@@ -226,7 +229,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         // Reuse the SAME still-open connection: identical ClientConnectionId, the collision-prone case.
         await using (var tx2 = (SqlTransaction)await connection.BeginTransactionAsync(ct))
         {
-            var scope2 = connection.EnlistCommitCoordination(tx2, _services);
+            var scope2 = connection.EnlistCommitCoordination(tx2, _services, AbortToken);
 
             await using (scope2)
             {
@@ -250,6 +253,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
             .Read(ref firstCount)
             .Should()
             .Be(1, "the first transaction's work drains exactly once on its own commit");
+
         Volatile
             .Read(ref secondCount)
             .Should()

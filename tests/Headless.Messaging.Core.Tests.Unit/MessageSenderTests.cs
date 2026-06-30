@@ -66,8 +66,8 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton(storage);
         services.AddSingleton(serializer);
         services.AddSingleton(transport);
-        services.AddSingleton<IBusTransport>(new TestBusTransportAdapter(transport));
-        services.AddSingleton<IQueueTransport>(new TestQueueTransportAdapter(transport));
+        services.AddSingleton<IBusTransport>(_ => new TestBusTransportAdapter(transport));
+        services.AddSingleton<IQueueTransport>(_ => new TestQueueTransportAdapter(transport));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(options));
         if (lifetime is not null)

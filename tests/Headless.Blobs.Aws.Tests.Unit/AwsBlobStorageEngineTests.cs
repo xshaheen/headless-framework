@@ -37,11 +37,11 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
 
-        using var stream = new MemoryStream("hello"u8.ToArray());
-        await sut.UploadAsync(["bucket"], "file.txt", stream);
+        await using var stream = new MemoryStream("hello"u8.ToArray());
+        await sut.UploadAsync(["bucket"], "file.txt", stream, cancellationToken: AbortToken);
 
-        await _s3.DidNotReceiveWithAnyArgs().PutBucketAsync(default(PutBucketRequest)!, default);
-        await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, default);
+        await _s3.DidNotReceiveWithAnyArgs().PutBucketAsync(default(PutBucketRequest)!, AbortToken);
+        await _s3.ReceivedWithAnyArgs(1).PutObjectAsync(default!, AbortToken);
     }
 
     [Fact]
@@ -53,8 +53,8 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         var sut = _CreateSut(new AwsBlobStorageOptions { AutoCreateContainer = false });
 
-        using var stream = new MemoryStream("hi"u8.ToArray());
-        await sut.UploadAsync(["My-Bucket", "Reports"], "Q1.pdf", stream);
+        await using var stream = new MemoryStream("hi"u8.ToArray());
+        await sut.UploadAsync(["My-Bucket", "Reports"], "Q1.pdf", stream, cancellationToken: AbortToken);
 
         // Two-tier naming: the first segment (bucket) is lowercased by NormalizeContainerName; the sub-path and
         // blob name are preserved because AwsBlobNamingNormalizer.NormalizeBlobName is validate-only.
@@ -254,17 +254,20 @@ public sealed class AwsBlobStorageEngineTests : TestBase
 
         // A single ensure on a fresh instance issues the same S3 calls; concurrency must not multiply them.
         var fresh = Substitute.For<IAmazonS3>();
+
         fresh
             .PutBucketAsync(Arg.Any<PutBucketRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PutBucketResponse());
-        var freshSut = new AwsBlobStorage(
+
+        await using var freshSut = new AwsBlobStorage(
             fresh,
             new MimeTypeProvider(),
             new Clock(TimeProvider.System),
             new OptionsWrapper<AwsBlobStorageOptions>(new AwsBlobStorageOptions()),
             new AwsBlobNamingNormalizer()
         );
-        await freshSut.CreateContainerAsync(["bucket"]);
+
+        await freshSut.CreateContainerAsync(["bucket"], AbortToken);
 
         concurrentCalls.Should().Be(fresh.ReceivedCalls().Count());
     }

@@ -338,7 +338,9 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     {
         try
         {
+#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             _handleLostSource.Cancel();
+#pragma warning restore MA0045 // Do not use blocking calls, even when the calling method must become async
         }
         catch (ObjectDisposedException)
         {

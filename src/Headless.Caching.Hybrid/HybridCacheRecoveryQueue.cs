@@ -402,7 +402,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                 }
                 finally
                 {
-                    Volatile.Write(ref _replaying, null);
+                    Volatile.Write(ref _replaying, value: null);
                 }
 
                 // Conditional remove: a newer item (or this item's own residual publish) may have replaced this
@@ -411,7 +411,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
                 {
                     // Invalidate the tracked minimum so the next queue-full Enqueue re-scans rather than
                     // trusting a pointer that may now refer to a removed item.
-                    Volatile.Write(ref _minExpiryItem, null);
+                    Volatile.Write(ref _minExpiryItem, value: null);
                 }
 
                 if (outcome == HybridCacheRecoveryReplayOutcome.Replayed)
@@ -471,7 +471,7 @@ internal sealed class HybridCacheRecoveryQueue : IDisposable
     {
         var active = _activeProcessTask;
 
-        if (active is null || active.IsCompleted)
+        if (active?.IsCompleted != false)
         {
             return;
         }

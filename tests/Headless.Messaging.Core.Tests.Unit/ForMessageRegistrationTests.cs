@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Registration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Tests.Helpers;
@@ -456,6 +457,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+            // ReSharper disable once AccessToDisposedClosure
             provider.GetRequiredService<IBootstrapper>().BootstrapAsync(TestContext.Current.CancellationToken);
 
         // then
