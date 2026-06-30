@@ -224,4 +224,91 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
     }
 
     #endregion
+
+    #region PersistKeysToBlobStorage(serviceKey) (keyed) Tests
+
+    [Fact]
+    public void should_resolve_keyed_storage_and_container_manager()
+    {
+        // given
+        const string key = "dpkeys";
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(key, Substitute.For<IBlobStorage>());
+        services.AddKeyedSingleton(key, Substitute.For<IBlobContainerManager>());
+        var builder = services.AddDataProtection();
+
+        // when
+        builder.PersistKeysToBlobStorage(key);
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+        options.XmlRepository.Should().BeOfType<BlobStorageDataProtectionXmlRepository>();
+    }
+
+    [Fact]
+    public void should_resolve_keyed_storage_even_without_a_keyed_container_manager()
+    {
+        // A keyed store with no matching keyed manager still configures (ensure becomes a no-op); it must not throw.
+        const string key = "dpkeys";
+        var services = new ServiceCollection();
+        services.AddKeyedSingleton(key, Substitute.For<IBlobStorage>());
+        var builder = services.AddDataProtection();
+
+        builder.PersistKeysToBlobStorage(key);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+        options.XmlRepository.Should().BeOfType<BlobStorageDataProtectionXmlRepository>();
+    }
+
+    [Fact]
+    public void should_throw_when_keyed_storage_not_registered()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = services.AddDataProtection();
+
+        // when
+        builder.PersistKeysToBlobStorage("missing-key");
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    #endregion
+
+    #region PersistKeysToBlobStorage(storageFactory, containerManagerFactory) Tests
+
+    [Fact]
+    public void should_invoke_container_manager_factory_when_supplied()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = services.AddDataProtection();
+        var managerFactoryInvoked = false;
+
+        // when
+        builder.PersistKeysToBlobStorage(
+            _ => Substitute.For<IBlobStorage>(),
+            _ =>
+            {
+                managerFactoryInvoked = true;
+                return Substitute.For<IBlobContainerManager>();
+            }
+        );
+
+        // then
+        using var provider = services.BuildServiceProvider();
+        _ = provider.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+
+        managerFactoryInvoked.Should().BeTrue();
+    }
+
+    #endregion
 }

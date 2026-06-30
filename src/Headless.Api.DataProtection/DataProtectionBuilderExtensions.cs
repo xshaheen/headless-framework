@@ -81,19 +81,66 @@ public static class DataProtectionBuilderExtensions
     /// A factory delegate that receives the application's <see cref="IServiceProvider"/> and returns the
     /// <see cref="IBlobStorage"/> instance to use. Invoked once when the <c>KeyManagementOptions</c> are first configured.
     /// </param>
+    /// <param name="containerManagerFactory">
+    /// Optional factory resolving the <see cref="IBlobContainerManager"/> that ensures the key container before writes.
+    /// Supply this when the storage is a keyed/named registration so the matching keyed manager is used; when
+    /// <see langword="null"/> the unkeyed <see cref="IBlobContainerManager"/> is resolved (or none, if unregistered).
+    /// </param>
     /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="builder"/> or <paramref name="storageFactory"/> is <see langword="null"/>.
     /// </exception>
     public static IDataProtectionBuilder PersistKeysToBlobStorage(
         this IDataProtectionBuilder builder,
-        Func<IServiceProvider, IBlobStorage> storageFactory
+        Func<IServiceProvider, IBlobStorage> storageFactory,
+        Func<IServiceProvider, IBlobContainerManager?>? containerManagerFactory = null
     )
     {
         builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>
         {
             var storage = storageFactory.Invoke(services);
-            var containerManager = services.GetService<IBlobContainerManager>();
+            var containerManager =
+                containerManagerFactory?.Invoke(services) ?? services.GetService<IBlobContainerManager>();
+            var loggerFactory = services.GetService<ILoggerFactory>();
+
+            return new ConfigureOptions<KeyManagementOptions>(options =>
+                options.XmlRepository = new BlobStorageDataProtectionXmlRepository(
+                    storage,
+                    containerManager,
+                    loggerFactory
+                )
+            );
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures the data protection system to persist XML key descriptors to a <em>keyed</em>
+    /// <see cref="IBlobStorage"/> backend registered under <paramref name="serviceKey"/>, ensuring its key container
+    /// through the matching keyed <see cref="IBlobContainerManager"/> (when registered) before writes.
+    /// </summary>
+    /// <param name="builder">The <see cref="IDataProtectionBuilder"/> to configure.</param>
+    /// <param name="serviceKey">The DI service key the blob storage (and its container manager) are registered under.</param>
+    /// <returns>The <paramref name="builder"/> so that additional calls can be chained.</returns>
+    /// <remarks>
+    /// Resolves <see cref="IBlobStorage"/> via <c>GetRequiredKeyedService</c> and the container manager via
+    /// <c>GetKeyedService</c> under the same key, so a named/keyed store ensures <em>its own</em> container rather than
+    /// the unkeyed default. Without this, a keyed store would resolve the unkeyed (or missing) manager and the first
+    /// key write/rotation would fail on Azure/S3, since the data plane no longer auto-creates containers.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="builder"/> or <paramref name="serviceKey"/> is <see langword="null"/>.
+    /// </exception>
+    public static IDataProtectionBuilder PersistKeysToBlobStorage(
+        this IDataProtectionBuilder builder,
+        object serviceKey
+    )
+    {
+        builder.Services.AddSingleton<IConfigureOptions<KeyManagementOptions>>(services =>
+        {
+            var storage = services.GetRequiredKeyedService<IBlobStorage>(serviceKey);
+            var containerManager = services.GetKeyedService<IBlobContainerManager>(serviceKey);
             var loggerFactory = services.GetService<ILoggerFactory>();
 
             return new ConfigureOptions<KeyManagementOptions>(options =>
